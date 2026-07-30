@@ -2440,6 +2440,8 @@ class S {
   String get minSuffix => _es ? 'min' : 'min';
   // Fleet descriptions
   String get vipDesc => _es ? 'SUV de lujo con comodidades premium' : 'Luxury SUV with premium amenities';
+  String get suvXlDesc => _es ? 'SUV grande para grupos y equipaje' : 'Full-size SUV for groups and luggage';
+  String get suvXlFeatures => _es ? 'Hasta 6 • Equipaje XL • Climatizado' : 'Up to 6 • XL luggage • Climate';
   String get vipFeatures => _es ? 'Espacioso • Cuero • Snacks y Bebidas' : 'Spacious • Leather • Snacks & Drinks';
   String get premiumDesc => _es ? 'Sedán elegante para cualquier ocasión' : 'Elegant sedan for any occasion';
   String get premiumFeatures => _es ? 'Confort • Clima • Cargador' : 'Comfort • Climate • Charger';

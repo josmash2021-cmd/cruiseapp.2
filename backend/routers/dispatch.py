@@ -255,12 +255,25 @@ async def _find_nearest_drivers(
     )
 
     # Vehicle tier filtering in SQL — single JOIN query
-    requested_type = (vehicle_type or "comfort").lower()
-    
+    # The rider app sends the tier's display name ("SUV XL"), so spaces and
+    # hyphens have to be folded away or the tier lands in the else branch and
+    # gets offered to sedans.
+    requested_type = (
+        (vehicle_type or "comfort").strip().lower().replace(" ", "_").replace("-", "_")
+    )
+
     # Build vehicle tier condition
     if requested_type == "vip":
         # VIP: only VIP vehicles
         vehicle_condition = func.coalesce(func.lower(Vehicle.vehicle_type), "comfort") == "vip"
+    elif requested_type == "suv_xl":
+        # SUV XL: any driver with an SUV on file. 'vip' is the luxury SUV
+        # already in the fleet; 'suv'/'suv_xl' are the tags for a plain
+        # full-size SUV, so a Traverse or Tahoe becomes eligible by setting
+        # the vehicle's type — no schema change, it is a free-text column.
+        vehicle_condition = func.coalesce(
+            func.lower(Vehicle.vehicle_type), "comfort"
+        ).in_(["suv", "suv_xl", "vip"])
     elif requested_type == "premium":
         # Premium: premium or VIP vehicles (comfort with high rating handled separately)
         vehicle_condition = func.coalesce(func.lower(Vehicle.vehicle_type), "comfort").in_(["premium", "vip"])

@@ -48,12 +48,18 @@ _COMMISSION_BY_TYPE = {
     "sedan":    (0.40, 0.60),  # (platform_rate, driver_rate)
     "comfort":  (0.40, 0.60),
     "premium":  (0.35, 0.65),
+    "suv_xl":   (0.32, 0.68),
     "vip":      (0.30, 0.70),
 }
 _DEFAULT_COMMISSION = (0.40, 0.60)  # fallback = comfort rates
 
 # Alias map: Flutter driver app sends variant status names that must be
 # normalised to canonical values before transition checks or DB storage.
+def _vehicle_key(vehicle_type: str | None) -> str:
+    """Normalise a display name ("SUV XL") to a table key ("suv_xl")."""
+    return (vehicle_type or "comfort").strip().lower().replace(" ", "_").replace("-", "_")
+
+
 _STATUS_ALIASES = {
     "arrived_pickup": "arrived",
     "arrived_at_pickup": "arrived",
@@ -112,7 +118,7 @@ _DEDUP_CACHE_MAX = 2000
 
 def _get_commission(vehicle_type: str | None) -> tuple[float, float]:
     """Return (platform_rate, driver_rate) for the given vehicle type."""
-    return _COMMISSION_BY_TYPE.get((vehicle_type or "comfort").lower(), _DEFAULT_COMMISSION)
+    return _COMMISSION_BY_TYPE.get(_vehicle_key(vehicle_type), _DEFAULT_COMMISSION)
 
 
 # ── Wait time fee policy (Uber/Lyft inspired) ──
@@ -124,6 +130,7 @@ _WAIT_POLICY_BY_TYPE = {
     "sedan":   (2, 0.40),
     "comfort": (2, 0.40),
     "premium": (3, 0.60),
+    "suv_xl":  (5, 1.00),
     "vip":     (5, 1.00),
 }
 _DEFAULT_WAIT_POLICY = (2, 0.40)
@@ -133,9 +140,7 @@ def _wait_policy(vehicle_type: str | None, is_airport: bool) -> tuple[int, float
     """Return (free_wait_minutes, fee_per_minute_usd) for this trip."""
     if is_airport:
         return _AIRPORT_WAIT_POLICY
-    return _WAIT_POLICY_BY_TYPE.get(
-        (vehicle_type or "comfort").lower(), _DEFAULT_WAIT_POLICY
-    )
+    return _WAIT_POLICY_BY_TYPE.get(_vehicle_key(vehicle_type), _DEFAULT_WAIT_POLICY)
 
 # Legacy constants kept for backward-compat in places that don't have vehicle_type
 PLATFORM_COMMISSION_RATE = 0.40

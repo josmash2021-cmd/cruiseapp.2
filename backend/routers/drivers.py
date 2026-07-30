@@ -46,6 +46,7 @@ _COMMISSION_BY_TYPE = {
     "sedan":    (0.40, 0.60),  # (platform_rate, driver_rate)
     "comfort":  (0.40, 0.60),
     "premium":  (0.35, 0.65),
+    "suv_xl":   (0.32, 0.68),
     "vip":      (0.30, 0.70),
 }
 _DEFAULT_COMMISSION = (0.40, 0.60)  # fallback = comfort rates
@@ -56,7 +57,8 @@ DRIVER_SHARE_RATE = 0.60
 
 def _get_driver_rate(vehicle_type: str | None) -> float:
     """Return the driver share rate for the given vehicle type."""
-    return _COMMISSION_BY_TYPE.get((vehicle_type or "comfort").lower(), _DEFAULT_COMMISSION)[1]
+    key = (vehicle_type or "comfort").strip().lower().replace(" ", "_").replace("-", "_")
+    return _COMMISSION_BY_TYPE.get(key, _DEFAULT_COMMISSION)[1]
 
 
 def _driver_trip_amounts(trip: Trip) -> tuple[float, float]:

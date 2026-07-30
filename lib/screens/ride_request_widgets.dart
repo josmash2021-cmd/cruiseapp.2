@@ -673,6 +673,7 @@ extension _RideRequestWidgets on _RideRequestScreenState {
   String _carAssetForOption(String name) {
     // Same three pre-cropped renders as the home "Choose a ride" cards.
     final key = name.trim().toLowerCase();
+    if (key.contains('suv xl')) return 'assets/images/cruisert_suvxl.png';
     if (key.contains('vip') || key.contains('suburban')) return 'assets/images/cruisert1.png';
     if (key.contains('sedan') || key.contains('camry')) return 'assets/images/cruisert2.png';
     return 'assets/images/cruisert3.png';
@@ -683,11 +684,17 @@ extension _RideRequestWidgets on _RideRequestScreenState {
   Widget _buildRideOptionCard(AppColors c, RideOption opt, bool selected) {
     final isSuv = opt.id == 'suburban';
     final isFusion = opt.id == 'fusion';
+    final isSuvXl = opt.id == 'suv_xl';
 
-    final bool isVIP = isSuv;
-    final bool isPremium = !isSuv && !isFusion;
-    final String tierLabel = isVIP ? 'VIP' : (isPremium ? 'PREMIUM' : 'COMFORT');
-    final String displayName = isVIP ? 'BLACK' : (isPremium ? 'PREMIUM' : 'STANDARD');
+    // SUV XL is priced above PREMIUM, so it carries the same black-and-gold
+    // badge as BLACK rather than the silver one every non-matching id used
+    // to fall into.
+    final bool isVIP = isSuv || isSuvXl;
+    final bool isPremium = !isVIP && !isFusion;
+    final String tierLabel =
+        isSuv ? 'VIP' : isSuvXl ? 'SUV XL' : (isPremium ? 'PREMIUM' : 'COMFORT');
+    final String displayName =
+        isSuv ? 'BLACK' : isSuvXl ? 'SUV XL' : (isPremium ? 'PREMIUM' : 'STANDARD');
 
     // Badge styles 1:1 with shopify-live-pull/sections/ride-request.liquid:142,764-770:
     //   VIP     → BLACK gradient (#1a1a1a→#000) + gold border, white text, diamond glyph
@@ -979,9 +986,11 @@ extension _RideRequestWidgets on _RideRequestScreenState {
   Widget _buildRideHorizontalCard(AppColors c, RideOption opt) {
     final bool isSuv = opt.id == 'suburban';
     final bool isFusion = opt.id == 'fusion';
-    final bool isVIP = isSuv;
-    final bool isPremium = !isSuv && !isFusion;
-    final String displayName = isVIP ? 'BLACK' : (isPremium ? 'PREMIUM' : 'STANDARD');
+    final bool isSuvXl = opt.id == 'suv_xl';
+    final bool isVIP = isSuv || isSuvXl;
+    final bool isPremium = !isVIP && !isFusion;
+    final String displayName =
+        isSuv ? 'BLACK' : isSuvXl ? 'SUV XL' : (isPremium ? 'PREMIUM' : 'STANDARD');
 
     // Trip distance comes from the pickup→dropoff route (already
     // formatted in miles, e.g. "12.34 mi"). Em dash while the route is
@@ -1240,10 +1249,12 @@ extension _RideRequestWidgets on _RideRequestScreenState {
   Widget _buildRideOptionCardGrid(AppColors c, RideOption opt, bool selected) {
     final isSuv = opt.id == 'suburban';
     final isFusion = opt.id == 'fusion';
+    final isSuvXl = opt.id == 'suv_xl';
 
-    final bool isVIP = isSuv;
-    final bool isPremium = !isSuv && !isFusion;
-    final String displayName = isVIP ? 'BLACK' : (isPremium ? 'PREMIUM' : 'STANDARD');
+    final bool isVIP = isSuv || isSuvXl;
+    final bool isPremium = !isVIP && !isFusion;
+    final String displayName =
+        isSuv ? 'BLACK' : isSuvXl ? 'SUV XL' : (isPremium ? 'PREMIUM' : 'STANDARD');
     final String carAsset = _carAssetForOption(opt.name);
 
     // Same visual rhythm as the home fleet cards: name on top, car right

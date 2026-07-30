@@ -607,6 +607,19 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
         capacity: 7,
         surgeMultiplier: surge,
       ),
+      // SUV XL sits between BLACK and PREMIUM: priced 10% over Premium,
+      // paid 68/32 in the driver's favour, 5 free wait minutes then $1/min.
+      // Any driver with a registered SUV can take it.
+      RideOption(
+        id: 'suv_xl',
+        name: 'SUV XL',
+        description: 'Up to 6 • XL luggage • Climate',
+        priceEstimate: _round(surgedBase * 1.485),
+        etaMinutes: baseDuration + 2,
+        icon: '🚙',
+        capacity: 6,
+        surgeMultiplier: surge,
+      ),
       RideOption(
         id: 'camry',
         name: 'Sedan',

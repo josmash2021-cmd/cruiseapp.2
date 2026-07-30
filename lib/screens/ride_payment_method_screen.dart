@@ -218,11 +218,32 @@ class _RidePaymentMethodScreenState extends State<RidePaymentMethodScreen>
 
   void _pick(String id) {
     HapticService.selectionClick();
+    // Select and stay.
+    //
+    // This used to close the screen 260 ms after a tap, which left no
+    // moment in which "set as default" could exist — the rider was already
+    // gone. Choosing and keeping are two different decisions, and the
+    // second one needs the screen to still be there to make it on.
     setState(() => _selected = id);
-    // Small delay so the user sees the gold check animate, then close.
-    Future.delayed(const Duration(milliseconds: 260), () {
-      if (mounted) Navigator.of(context).pop(id);
-    });
+  }
+
+  bool _savingDefault = false;
+
+  /// Keep this method for future rides, then leave.
+  Future<void> _saveAsDefault() async {
+    if (_selected.isEmpty || _savingDefault) return;
+    setState(() => _savingDefault = true);
+    HapticService.mediumImpact();
+    await LocalDataService.setDefaultPaymentMethod(_selected);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(S.of(context).savedAsDefaultPayment),
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 2),
+      ),
+    );
+    Navigator.of(context).pop(_selected);
   }
 
   bool _linkingBank = false;
@@ -349,7 +370,11 @@ class _RidePaymentMethodScreenState extends State<RidePaymentMethodScreen>
           children: [
             _Header(
               title: s.paymentMethodTitle,
-              onBack: () => Navigator.of(context).pop(),
+              // Carries the choice back for THIS ride. Nothing is
+              // written to storage on this path — leaving without pressing
+              // "set as default" is how the rider says "just this once".
+              onBack: () => Navigator.of(context)
+                  .pop(_selected.isEmpty ? null : _selected),
             ),
             Expanded(
               child: Padding(
@@ -479,6 +504,64 @@ class _RidePaymentMethodScreenState extends State<RidePaymentMethodScreen>
                   ],
                 ),
               ),
+            ),
+
+            // ── Keep this one for next time ──
+            //
+            // Only once something is selected, and it slides up rather than
+            // appearing: a button that materialises under the thumb is a
+            // button people press by accident.
+            //
+            // Its absence is meaningful too. Leaving by the back arrow
+            // without pressing it is the rider saying "just this ride" —
+            // there is no separate confirm to hunt for, because choosing is
+            // already confirmed the moment they tap a card.
+            AnimatedSize(
+              duration: const Duration(milliseconds: 340),
+              curve: Curves.easeInOutCubicEmphasized,
+              alignment: Alignment.topCenter,
+              child: _selected.isEmpty
+                  ? const SizedBox(width: double.infinity, height: 0)
+                  : SafeArea(
+                      top: false,
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+                        child: GestureDetector(
+                          onTap: _savingDefault ? null : _saveAsDefault,
+                          child: Container(
+                            height: 52,
+                            alignment: Alignment.center,
+                            decoration: BoxDecoration(
+                              color: _gold.withValues(alpha: 0.12),
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(
+                                color: _gold.withValues(alpha: 0.45),
+                              ),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.push_pin_rounded,
+                                    color: _gold, size: 17),
+                                const SizedBox(width: 8),
+                                Flexible(
+                                  child: Text(
+                                    S.of(context).setAsDefaultPayment,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      color: _gold,
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
             ),
           ],
         ),

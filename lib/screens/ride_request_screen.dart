@@ -24,6 +24,7 @@ import '../config/app_theme.dart';
 import '../config/map_styles.dart';
 import '../config/page_transitions.dart';
 import '../services/api_service.dart';
+import '../services/driver_wait_estimate.dart';
 import '../services/directions_service.dart';
 import '../services/local_data_service.dart';
 import '../services/payment_service.dart';
@@ -451,7 +452,15 @@ class _RideRequestScreenState extends State<RideRequestScreen>
   bool _cancelDialogShown = false;
 
   // ── Payment state ──
-  String _selectedPaymentMethod = defaultTargetPlatform == TargetPlatform.iOS ? 'apple_pay' : 'google_pay';
+  /// Nothing chosen until the rider chooses, or until a default they saved
+  /// on purpose is loaded.
+  ///
+  /// This used to open on Apple Pay or Google Pay depending on the phone.
+  /// Nobody picked that — the platform did — and it sat there looking
+  /// decided, so a rider who never opened the payment screen was one tap
+  /// away from paying by a method they had not agreed to. An empty value
+  /// makes the row read "Choose a payment method", which is the truth.
+  String _selectedPaymentMethod = '';
   Set<String> _linkedPaymentMethods = {};
   String? _savedCardLast4;
   String? _savedCardBrand;
@@ -552,6 +561,17 @@ class _RideRequestScreenState extends State<RideRequestScreen>
   @override
   void initState() {
     super.initState();
+
+    // Restore the method the rider chose to keep, if they ever chose one.
+    //
+    // Only a deliberate "set as default" writes that value, so anything
+    // found here was asked for. Nothing found means nothing preselected,
+    // and the row says "Choose a payment method" — which is the honest
+    // state for a rider who has never told us how they want to pay.
+    unawaited(LocalDataService.getDefaultPaymentMethod().then((id) {
+      if (!mounted || id == null || id.isEmpty) return;
+      setState(() => _selectedPaymentMethod = id);
+    }));
 
     // Load Cruise Cash balance once so the picked vehicle card can show
     // the discount preview. Fire-and-forget — failure is silent (the

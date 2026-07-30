@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:math' as math;
 import 'package:audioplayers/audioplayers.dart';
+
+import '../services/audio_session_config.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -35,6 +37,7 @@ import '../config/page_transitions.dart';
 import '../services/api_service.dart';
 import '../services/screen_security_service.dart';
 import '../services/directions_service.dart';
+import '../services/driver_wait_estimate.dart';
 import '../services/local_data_service.dart';
 import '../services/notification_service.dart';
 import '../services/places_service.dart';
@@ -248,7 +251,11 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
     _startLocationWatchdogs();
     // Gold dot for the "Your location" mini map — the ticker drives
     // annotation redraws; camera follow is throttled in the GPS listener.
-    unawaited(_homeDot.build(this, _updateHomeDotAnnotation));
+    unawaited(_homeDot.build(this, _updateHomeDotAnnotation, onFrame: () {
+      if (!mounted) return;
+      _miniDotFrame.value++;   // repaint the Flutter dot with the frame
+      _recenterHomeMiniMap();  // and keep the map under it
+    }));
     // Defer driver check until after first frame to avoid blocking startup
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _checkDriversOnline();
@@ -359,6 +366,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     HomeScreen.scheduledRideRefresh.removeListener(_onScheduledRideRefresh);
+    _miniDotFrame.dispose();
     _homeDot.dispose();
     _homeDotRetryTimer?.cancel();
     _homeDotRetryTimer = null;
@@ -387,12 +395,20 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
 
   /// Preload ride-related sounds during init so they play instantly later.
   void _preloadSounds() {
-    const sounds = ['cruise_online', 'cruise_offer'];
-    for (final s in sounds) {
-      final player = AudioPlayer();
-      player.setSource(AssetSource('sounds/$s.wav')).catchError((_) {});
-      _soundPlayers[s] = player;
-    }
+    // Settle the audio category first. These players are created during
+    // startup, before NotificationService finishes its deferred init, so
+    // this is the earliest an AudioPlayer exists in the rider app — and
+    // whichever one touches the session first decides whether the user's
+    // music survives opening Cruise.
+    unawaited(ensureNonInterruptingAudio().then((_) {
+      if (!mounted) return;
+      const sounds = ['cruise_online', 'cruise_offer'];
+      for (final s in sounds) {
+        final player = AudioPlayer();
+        player.setSource(AssetSource('sounds/$s.wav')).catchError((_) {});
+        _soundPlayers[s] = player;
+      }
+    }));
   }
 
   Future<void> _checkUserStateZone(LatLng position) async {
@@ -583,6 +599,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
   void _feedHomeDot(double lat, double lng) {
     if (_homeDot.lat == null) {
       _homeDot.snapTo(lat, lng);
+      // First real fix: put the map there at once. Waiting for the next
+      // frame is what left the card showing the fallback city a beat longer
+      // than it had to.
+      _recenterHomeMiniMap();
     } else {
       _homeDot.ensureRunning();
       _homeDot.setTarget(lat, lng);
@@ -710,7 +730,11 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
       // failed, currentBytes stays null and every draw below is a silent
       // no-op forever — rebuild it here so the retry can actually succeed.
       if (!_homeDot.isReady) {
-        await _homeDot.build(this, _updateHomeDotAnnotation);
+        await _homeDot.build(this, _updateHomeDotAnnotation, onFrame: () {
+          if (!mounted) return;
+          _miniDotFrame.value++;
+          _recenterHomeMiniMap();
+        });
       }
       if (!mounted) return;
       await _updateHomeDotAnnotation();
@@ -721,42 +745,56 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin, 
   /// Recenter the mini map camera on the rider at most once per [interval].
   /// Uses the interpolated dot position so camera and annotation stay in
   /// sync. easeTo keeps zoom/bearing/pitch constant — only the center glides.
-  void _recenterHomeMiniMap({Duration interval = const Duration(milliseconds: 500)}) {
+  /// Keep the mini map under the dot.
+  ///
+  /// Was a 250 ms easeTo throttled to twice a second. Two animations then
+  /// described the same movement at different speeds — the dot gliding on
+  /// its own ticker, the map easing in half-second hops after it — so the
+  /// dot drifted off centre and snapped back, twice a second, forever.
+  ///
+  /// One instant write per dot frame instead, dropped rather than queued
+  /// while the previous is in flight. The smoothing already happened in the
+  /// dot; the map only has to agree with it.
+  void _recenterHomeMiniMap({Duration interval = Duration.zero}) {
     if (!mounted || _homeMiniMapCtrl == null) return;
+    if (_miniCamBusy) return;
     final lat = _homeDot.lat ?? _currentLatLng?.latitude;
     final lng = _homeDot.lng ?? _currentLatLng?.longitude;
     if (lat == null || lng == null) return;
 
-    final now = DateTime.now();
-    if (now.difference(_lastMiniMapRecenter) < interval) return;
-    _lastMiniMapRecenter = now;
-
     final point = safePoint(lng, lat);
     if (point == null) return;
 
+    _miniCamBusy = true;
     try {
-      // .catchError is required, not decorative: the try/catch only sees
-      // synchronous throws, and easeTo rejects asynchronously when the
-      // native map is torn down mid-animation (backgrounding, style
-      // reload). Without it that rejection escapes as an unhandled async
-      // error instead of being ignored.
-      unawaited(_homeMiniMapCtrl!
-          .easeTo(
-            mapbox.CameraOptions(
-              center: point,
-              zoom: 15.0,
-              pitch: 0,
-              bearing: 0,
-            ),
-            mapbox.MapAnimationOptions(duration: 250),
-          )
-          .catchError((e) {
-        if (kDebugMode) debugPrint('[HomeScreen] Mini map ease failed: $e');
-      }));
+      _homeMiniMapCtrl!
+          .setCamera(mapbox.CameraOptions(
+        center: point,
+        zoom: 15.0,
+        pitch: 0,
+        bearing: 0,
+      ))
+          .then((_) {
+        _miniCamBusy = false;
+      }).catchError((Object e) {
+        // The native map can be torn down mid-write (backgrounding, style
+        // reload) and rejects asynchronously; the try/catch below only sees
+        // synchronous throws.
+        _miniCamBusy = false;
+      });
     } catch (e) {
+      _miniCamBusy = false;
       if (kDebugMode) debugPrint('[HomeScreen] Mini map recenter failed: $e');
     }
   }
+
+  /// A mini-map camera write is crossing the platform channel.
+  bool _miniCamBusy = false;
+
+  /// Ticks once per dot frame so the Flutter-painted dot repaints with it.
+  /// The screen's own setState runs nowhere near often enough — see the
+  /// same notifier on the driver screens.
+  final ValueNotifier<int> _miniDotFrame = ValueNotifier<int>(0);
 
   Timer? _driverCheckTimer;
   Timer? _accountStatusTimer;

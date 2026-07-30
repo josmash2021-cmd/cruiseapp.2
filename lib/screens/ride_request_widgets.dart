@@ -230,14 +230,39 @@ extension _RideRequestWidgets on _RideRequestScreenState {
     // the "lifted" feel.
     return Positioned(
       top: 0,
-      left: 14,
-      right: 14,
-      bottom: 24,
+      // Flush to the edges, not floating.
+      //
+      // It used to hover with 14 px down each side and 24 px of map showing
+      // beneath it. Those margins cost height at the top of the sheet, and
+      // the sheet is what pushes the map up — so on a long trip the route
+      // ran off under the panel and the rider could not see where they were
+      // going. A sheet that hugs the bottom gives that back to the map.
+      left: 0,
+      right: 0,
+      bottom: 0,
       child: Align(
         alignment: Alignment.bottomCenter,
         child: Container(
-            // Floating sheet on the shared neumorphic surface.
-            decoration: neuBox(radius: 24),
+            // Rounded at the top only now that it meets the screen edges —
+            // neuBox cannot express that, so its two shadows are replicated
+            // on neuSurface here (same treatment as the driver's panel).
+            decoration: BoxDecoration(
+              color: neuSurface,
+              borderRadius:
+                  const BorderRadius.vertical(top: Radius.circular(26)),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.55),
+                  blurRadius: 24,
+                  offset: const Offset(0, -8),
+                ),
+                BoxShadow(
+                  color: Colors.white.withValues(alpha: 0.03),
+                  blurRadius: 1,
+                  offset: const Offset(0, -1),
+                ),
+              ],
+            ),
             child: SafeArea(
               top: false,
               child: Padding(
@@ -296,6 +321,36 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
+                      // Back to the full picker.
+                      //
+                      // Takes no room when there is nothing to go back to:
+                      // an arrow that is always there but only sometimes
+                      // does anything is worse than one that appears when it
+                      // means something. Sized rather than removed so the
+                      // title does not shift sideways as it comes and goes.
+                      SizedBox(
+                        width: 32,
+                        child: AnimatedOpacity(
+                          duration: const Duration(milliseconds: 420),
+                          curve: Curves.easeInOutCubic,
+                          opacity: (option != null && !_gridExpanded) ? 1 : 0,
+                          child: IgnorePointer(
+                            ignoring: option == null || _gridExpanded,
+                            child: GestureDetector(
+                              behavior: HitTestBehavior.opaque,
+                              onTap: () {
+                                HapticService.selectionClick();
+                                _setState(() => _gridExpanded = true);
+                              },
+                              child: const Icon(
+                                Icons.arrow_back_rounded,
+                                color: Colors.white,
+                                size: 20,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
                       Flexible(
                         child: Text(
                           widget.fastRide
@@ -327,6 +382,11 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                           color: const Color(0xFFE8C547),
                         ),
                       ],
+                      // Mirrors the back arrow's width so the title stays
+                      // optically centred whether the arrow is showing or
+                      // not — otherwise it slides sideways on every
+                      // selection.
+                      const SizedBox(width: 32),
                     ],
                   ),
                   const SizedBox(height: 12),
@@ -348,99 +408,126 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                       ],
                     )
                   else
-                    AnimatedSize(
-                      duration: const Duration(milliseconds: 380),
-                      curve: const Cubic(0.22, 1, 0.36, 1),
-                      alignment: Alignment.topCenter,
-                      child: AnimatedSwitcher(
-                        duration: const Duration(milliseconds: 420),
-                        switchInCurve: const Cubic(0.22, 1, 0.36, 1),
-                        switchOutCurve: const Cubic(0.4, 0, 1, 1),
-                        transitionBuilder: (child, anim) {
-                          // Premium entrance: fade + slide-up 14px + scale .94->1.
-                          // Soft elastic-out feel via custom cubic so the card
-                          // settles into place instead of snapping.
-                          return FadeTransition(
-                            opacity: anim,
-                            child: SlideTransition(
-                              position: Tween<Offset>(
-                                begin: const Offset(0, 0.10),
-                                end: Offset.zero,
-                              ).animate(anim),
-                              child: ScaleTransition(
-                                scale: Tween<double>(
-                                  begin: 0.94,
-                                  end: 1.0,
-                                ).animate(anim),
-                                child: child,
-                              ),
-                            ),
-                          );
-                        },
-                        child: (option != null && !_gridExpanded)
-                            // ── COLLAPSED: single horizontal card with all info ──
-                            ? _PressableScale(
-                                key: ValueKey('ride_horizontal_${option.id}'),
-                                onTap: () {
-                                  HapticService.selectionClick();
-                                  _setState(() => _gridExpanded = true);
-                                },
-                                child: _buildRideHorizontalCard(c, option),
-                              )
-                            // ── EXPANDED: all 3 cards in a row ──
-                            : Row(
-                                key: const ValueKey('expanded_grid'),
-                                children: [
-                                  for (int i = 0; i < displayOptions.length; i++) ...[
-                                    Expanded(
+                    // One row that reshapes, not two views that swap.
+                    //
+                    // It used to crossfade between "three cards" and "one
+                    // card" — which reads as a replacement, not as a choice
+                    // being made. Here the cards never leave the row: the
+                    // ones not chosen shrink their width to nothing while
+                    // fading, and because they are laid out left to right,
+                    // the chosen card is carried leftward by their collapse.
+                    // The movement is the layout, so it cannot desync from
+                    // the fade the way two separate animations would.
+                    TweenAnimationBuilder<double>(
+                      tween: Tween<double>(
+                        begin: (option != null && !_gridExpanded) ? 1 : 0,
+                        end: (option != null && !_gridExpanded) ? 1 : 0,
+                      ),
+                      // Slow enough to be watched, eased at both ends.
+                      //
+                      // 460 ms on a curve that starts at full speed made the
+                      // row snap and then coast — the movement was over
+                      // before the eye had followed it, which is what reads
+                      // as abrupt no matter how smooth the interpolation is.
+                      // Material's emphasized easing accelerates gently and
+                      // settles gently, so the cards look like they have
+                      // weight rather than being teleported and decelerated.
+                      duration: const Duration(milliseconds: 680),
+                      curve: Curves.easeInOutCubicEmphasized,
+                      builder: (context, t, _) {
+                        return LayoutBuilder(
+                          builder: (context, box) {
+                            final n = displayOptions.length;
+                            const gap = 8.0;
+                            final full = box.maxWidth;
+                            // Width of one card when all of them are shown.
+                            final each = n > 0
+                                ? (full - gap * (n - 1)) / n
+                                : full;
+                            final selIdx = option == null
+                                ? -1
+                                : displayOptions
+                                    .indexWhere((o) => o.id == option.id);
+
+                            return Row(
+                              children: [
+                                for (int i = 0; i < n; i++) ...[
+                                  if (i == selIdx)
+                                    // Grows into the space the others leave.
+                                    SizedBox(
+                                      width: ui.lerpDouble(each, full, t),
                                       child: _PressableScale(
-                                        key: ValueKey('ride_opt_${displayOptions[i].id}'),
                                         onTap: () {
                                           HapticService.selectionClick();
-                                          _ctrl.selectRideOption(displayOptions[i]);
-                                          // Collapse to single card after pick.
-                                          _setState(() => _gridExpanded = false);
-                                          if (_mapCtrl != null && !_cinematicRunning) {
-                                            final st = _ctrl.state;
-                                            if (st.pickup != null &&
-                                                st.dropoff != null) {
-                                              final pts = st.route?.points ??
-                                                  [
-                                                    LatLng(st.pickup!.lat,
-                                                        st.pickup!.lng),
-                                                    LatLng(st.dropoff!.lat,
-                                                        st.dropoff!.lng),
-                                                  ];
-                                              Future.delayed(
-                                                  const Duration(milliseconds: 350),
-                                                  () {
-                                                if (mounted && !_cinematicRunning) {
-                                                  _fitRoute(pts, preserveCamera: true);
-                                                }
-                                              });
-                                            }
-                                          }
+                                          _setState(() => _gridExpanded = !_gridExpanded);
                                         },
-                                        child: _buildRideOptionCardGrid(
-                                          c,
-                                          displayOptions[i],
-                                          option?.id == displayOptions[i].id,
+                                        child: t > 0.5
+                                            ? _buildRideHorizontalCard(
+                                                c, displayOptions[i])
+                                            : _buildRideOptionCardGrid(
+                                                c, displayOptions[i], true),
+                                      ),
+                                    )
+                                  else
+                                    // Folds away. Clipped so its contents do
+                                    // not spill while the width closes.
+                                    SizedBox(
+                                      width: ui.lerpDouble(each, 0, t),
+                                      child: ClipRect(
+                                        child: Opacity(
+                                          // Gone by two-thirds of the way,
+                                          // so the last third is pure
+                                          // movement with nothing dissolving
+                                          // over it. Fading and travelling
+                                          // at once for the whole duration
+                                          // is what makes a transition look
+                                          // busy instead of calm.
+                                          opacity: (1 - t * 1.55).clamp(0.0, 1.0),
+                                          child: OverflowBox(
+                                            maxWidth: each,
+                                            minWidth: each,
+                                            alignment: Alignment.centerLeft,
+                                            child: _PressableScale(
+                                              onTap: () {
+                                                HapticService.selectionClick();
+                                                _ctrl.selectRideOption(
+                                                    displayOptions[i]);
+                                                _setState(() =>
+                                                    _gridExpanded = false);
+                                                _refitRouteAfterPick();
+                                              },
+                                              child: _buildRideOptionCardGrid(
+                                                c,
+                                                displayOptions[i],
+                                                option?.id ==
+                                                    displayOptions[i].id,
+                                              ),
+                                            ),
+                                          ),
                                         ),
                                       ),
                                     ),
-                                    if (i < displayOptions.length - 1)
-                                      const SizedBox(width: 8),
-                                  ],
+                                  if (i < n - 1)
+                                    SizedBox(width: ui.lerpDouble(gap, 0, t)!),
                                 ],
-                              ),
-                      ),
+                              ],
+                            );
+                          },
+                        );
+                      },
                     ),
 
                   // .vipRide__rideDetail — appears only when the rider
                   // re-expanded the grid (so they can compare detail
                   // while picking). In collapsed mode the horizontal
                   // card already shows stats and price.
-                  if (option != null && _gridExpanded) ...[
+                  // Shown in both states now. It used to appear only while
+                  // the picker was open, because the collapsed card had
+                  // swallowed those figures into itself — and the collapsed
+                  // card is now the tier and its wait, nothing else. The
+                  // rider should not have to reopen the picker to see the
+                  // price they are about to pay.
+                  if (option != null) ...[
                     const SizedBox(height: 14),
                     _buildRideDetailPanel(c, option),
                   ],
@@ -465,8 +552,18 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                       key: ValueKey('req_${option.id}'),
                       delayMs: 400,
                       child: _WebRequestButton(
+                        // Nobody within twenty miles means there is nothing
+                        // to request. Better to show it disabled than to
+                        // take the request and leave the rider watching a
+                        // search that was never going to find anyone.
+                        //
+                        // Only a confirmed zero disables it — an unknown
+                        // count (the server did not answer) leaves the
+                        // button live, because a network hiccup is not the
+                        // same as an empty city.
                         enabled: !_isProcessingPayment &&
-                            _hasAnyPaymentMethod,
+                            _hasAnyPaymentMethod &&
+                            !_noDriversNearby,
                         isLoading: _isProcessingPayment,
                         // "Reserve Now" for both scheduled rides AND
                         // airport bookings (both go through pre-pickup
@@ -949,16 +1046,16 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                 // $126.42 price do not fit one line on a 320pt screen, and
                 // a Row would throw a RenderFlex overflow there. They stay
                 // on one line wherever there is room.
-                Wrap(
-                  spacing: 6,
-                  runSpacing: 6,
-                  children: [
-                    _neuStatChip(
-                        Icons.schedule_rounded, '${opt.etaMinutes} min'),
-                    _neuStatChip(Icons.route_rounded, distanceText),
-                    _neuStatChip(Icons.person_rounded, '${opt.capacity}'),
-                  ],
-                ),
+                // The space that opens beside the tier.
+                //
+                // The name and the car stay exactly where they were; this is
+                // the room that appears next to them, carrying the one thing
+                // the rider cannot work out for themselves — whether anyone
+                // is coming, and roughly how soon. The minutes, miles and
+                // seats that used to sit here moved to the panel below,
+                // which now shows in both states rather than only while the
+                // picker is open.
+                _buildWaitEstimate(),
               ],
             ),
           ),
@@ -1175,10 +1272,39 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                 ),
               ),
             ),
+            // The wait, under the car. Just the range — the same figure the
+            // expanded card spells out in full, so the rider sees the same
+            // number before and after choosing.
+            const SizedBox(height: 6),
+            Text(
+              _gridWaitRangeText(),
+              textAlign: TextAlign.center,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontFamily: 'Poppins',
+                color: Colors.white.withValues(alpha: 0.55),
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0.2,
+              ),
+            ),
           ],
         ),
       ),
     );
+  }
+
+  /// Wait range for the small tier cards. Cache-only: these build on every
+  /// frame of the collapse animation, and a build must never start network
+  /// work. The expanded card's FutureBuilder is what fetches it.
+  String _gridWaitRangeText() {
+    final pickup = _ctrl.state.pickup;
+    if (pickup == null) return '';
+    final est = DriverWaitEstimate.cached(pickup.lat, pickup.lng);
+    if (est == null) return '';
+    if (est.driverCount == 0) return S.of(context).noDriversAvailable;
+    return '${est.minMinutes}-${est.maxMinutes} min';
   }
 
   // Shimmer card for grid loading state - web style
@@ -1615,6 +1741,122 @@ extension _RideRequestWidgets on _RideRequestScreenState {
 
   /// Small sunken neumorphic stat chip (icon + value) used on the
   /// collapsed tier card — inset well via the shared neu style.
+  /// "5-20 min de espera", or the reason there is none.
+  ///
+  /// Reads the cached answer first so the card paints complete on the very
+  /// frame the rider taps a tier — the count is per pickup point, not per
+  /// vehicle, so switching between tiers can never need a new request. Only
+  /// the first tap on a new pickup waits, and only for as long as one cached
+  /// call takes.
+  Widget _buildWaitEstimate() {
+    final pickup = _ctrl.state.pickup;
+    if (pickup == null) return const SizedBox.shrink();
+
+    final cached = DriverWaitEstimate.cached(pickup.lat, pickup.lng);
+    return FutureBuilder<WaitEstimate>(
+      initialData: cached,
+      future: DriverWaitEstimate.fetch(lat: pickup.lat, lng: pickup.lng),
+      builder: (context, snap) {
+        final est = snap.data;
+        // Still asking. Deliberately blank rather than "0 min" or a spinner:
+        // an empty space for a beat reads as loading, a number that then
+        // changes reads as the app having lied.
+        if (est == null) return const SizedBox(height: 34);
+
+        final none = est.driverCount == 0;
+        final text = none
+            ? S.of(context).noDriversAvailable
+            : '${est.minMinutes}-${est.maxMinutes} min';
+
+        return AnimatedSwitcher(
+          // Longer than the card's own move and eased the same way, so the
+          // wait does not land while the card is still travelling — it
+          // arrives into a card that has come to rest.
+          duration: const Duration(milliseconds: 420),
+          switchInCurve: Curves.easeOutCubic,
+          transitionBuilder: (child, anim) => FadeTransition(
+            opacity: anim,
+            child: SlideTransition(
+              position: Tween<Offset>(
+                begin: const Offset(0.12, 0),
+                end: Offset.zero,
+              ).animate(anim),
+              child: child,
+            ),
+          ),
+          child: Column(
+            key: ValueKey('wait_${none}_$text'),
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                text,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontFamily: 'Poppins',
+                  color: none ? const Color(0xFFEF9A9A) : Colors.white,
+                  fontSize: none ? 14 : 19,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: -0.4,
+                  height: 1.1,
+                ),
+              ),
+              if (!none) ...[
+                const SizedBox(height: 2),
+                Text(
+                  S.of(context).ofWait,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontFamily: 'Poppins',
+                    color: Colors.white.withValues(alpha: 0.55),
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  /// True only when the server has confirmed there is nobody in range.
+  ///
+  /// Reads the cache rather than fetching: the wait widget above has
+  /// already asked for this pickup, and the answer is shared. A build must
+  /// never start network work — it runs many times per gesture.
+  bool get _noDriversNearby {
+    final pickup = _ctrl.state.pickup;
+    if (pickup == null) return false;
+    final est = DriverWaitEstimate.cached(pickup.lat, pickup.lng);
+    return est != null && est.driverCount == 0;
+  }
+
+  /// Re-frame the map on the route after the rider picks a tier.
+  ///
+  /// Delayed past the card animation so the fit is computed against the
+  /// sheet height it is settling into, not the one it is leaving — fitting
+  /// mid-collapse frames the route for a panel that is about to be a
+  /// different size.
+  void _refitRouteAfterPick() {
+    if (_mapCtrl == null || _cinematicRunning) return;
+    final st = _ctrl.state;
+    if (st.pickup == null || st.dropoff == null) return;
+    final pts = st.route?.points ??
+        [
+          LatLng(st.pickup!.lat, st.pickup!.lng),
+          LatLng(st.dropoff!.lat, st.dropoff!.lng),
+        ];
+    Future.delayed(const Duration(milliseconds: 480), () {
+      if (mounted && !_cinematicRunning) {
+        _fitRoute(pts, preserveCamera: true);
+      }
+    });
+  }
+
   Widget _neuStatChip(IconData icon, String label) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),

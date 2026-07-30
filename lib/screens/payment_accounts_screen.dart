@@ -237,6 +237,14 @@ class _PaymentAccountsScreenState extends State<PaymentAccountsScreen>
     );
   }
 
+  /// Ids currently collapsing out of the list.
+  ///
+  /// The row used to vanish the instant the request returned — a card is on
+  /// screen, then the ones below it jump up into the gap. Marking it here
+  /// first lets it fold away, and the list closes behind it, before it is
+  /// actually removed.
+  final Set<int> _removingIds = <int>{};
+
   Future<void> _deleteServerMethod(int id) async {
     final target = _serverMethods.firstWhere(
       (m) => m['id'] == id,
@@ -245,7 +253,14 @@ class _PaymentAccountsScreenState extends State<PaymentAccountsScreen>
     try {
       await ApiService.deleteRiderPaymentMethod(id);
       if (!mounted) return;
-      setState(() => _serverMethods.removeWhere((m) => m['id'] == id));
+      // Fold it away first, drop it from the list once the fold has played.
+      setState(() => _removingIds.add(id));
+      await Future<void>.delayed(const Duration(milliseconds: 260));
+      if (!mounted) return;
+      setState(() {
+        _serverMethods.removeWhere((m) => m['id'] == id);
+        _removingIds.remove(id);
+      });
       // If the deleted method was the bank account, wipe its local cache
       // so no stale ACH PaymentMethod id survives.
       if (target['method_type'] == 'bank_account') {
@@ -259,6 +274,9 @@ class _PaymentAccountsScreenState extends State<PaymentAccountsScreen>
       _showSnack('Payment method removed');
     } catch (_) {
       if (!mounted) return;
+      // Put it back if it was mid-fold — a row that half-disappeared and
+      // then failed reads as the delete having half-worked.
+      setState(() => _removingIds.remove(id));
       _showSnack('Could not remove method. Try again.');
     }
   }
@@ -450,6 +468,7 @@ class _PaymentAccountsScreenState extends State<PaymentAccountsScreen>
                 ),
                 const SizedBox(height: 12),
                 ..._serverMethods.map((m) {
+                  final removing = _removingIds.contains(m['id']);
                   final isDefault = m['is_default'] == true;
                   final type = m['method_type'] as String? ?? '';
                   IconData icon;
@@ -471,7 +490,19 @@ class _PaymentAccountsScreenState extends State<PaymentAccountsScreen>
                       icon = Icons.payment_rounded;
                       iconColor = const Color(0xFF6B7280);
                   }
-                  return Container(
+                  // Folds shut instead of blinking out: height to zero and
+                  // fading as it goes, so the rows underneath slide up into
+                  // the space rather than jumping into it.
+                  return AnimatedSize(
+                    duration: const Duration(milliseconds: 260),
+                    curve: Curves.easeInOutCubic,
+                    alignment: Alignment.topCenter,
+                    child: AnimatedOpacity(
+                      duration: const Duration(milliseconds: 200),
+                      opacity: removing ? 0.0 : 1.0,
+                      child: removing
+                          ? const SizedBox(width: double.infinity, height: 0)
+                          : Container(
                     margin: const EdgeInsets.only(bottom: 12),
                     padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                     decoration: neuBox(radius: 16).copyWith(
@@ -523,6 +554,8 @@ class _PaymentAccountsScreenState extends State<PaymentAccountsScreen>
                           ),
                         ),
                       ],
+                    ),
+                          ),
                     ),
                   );
                 }),

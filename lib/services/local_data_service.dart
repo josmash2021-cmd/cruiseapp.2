@@ -446,6 +446,29 @@ class LocalDataService {
   }
 
   /// Mark a payment method as linked.
+  static const String _defaultPaymentKey = 'default_payment_method';
+
+  /// The method the rider chose to keep, or null if they never asked for one.
+  ///
+  /// Deliberately separate from "what is selected right now". Picking a
+  /// method on the payment screen applies to the ride in front of them;
+  /// only pressing "set as default" writes here, and only this is read back
+  /// on the next ride. The app used to open on Apple Pay or Google Pay
+  /// depending on the handset — a choice nobody made, sitting there looking
+  /// made.
+  static Future<String?> getDefaultPaymentMethod() async {
+    final v = _p.getString(_defaultPaymentKey);
+    return (v == null || v.isEmpty) ? null : v;
+  }
+
+  static Future<void> setDefaultPaymentMethod(String id) async {
+    if (id.isEmpty) {
+      await _p.remove(_defaultPaymentKey);
+      return;
+    }
+    await _p.setString(_defaultPaymentKey, id);
+  }
+
   static Future<void> linkPaymentMethod(String id) async {
     final prefs = _p;
     final current = prefs.getStringList(_linkedPaymentsKey) ?? [];

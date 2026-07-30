@@ -363,6 +363,28 @@ class S {
   String get locationSharingDesc => _es
       ? 'Comparte tu ubicación con conductores durante viajes para recogidas precisas.'
       : 'Share your location with drivers during rides for accurate pickups.';
+  // Android foreground-service notification shown while the driver's
+  // location is being published in the background.
+  /// Payment screen: keep this method for future rides.
+  String get setAsDefaultPayment =>
+      _es ? 'Seleccionar como predeterminado' : 'Set as default';
+  String get savedAsDefaultPayment =>
+      _es ? 'Guardado como predeterminado' : 'Saved as your default';
+
+  /// The wait shown beside the chosen vehicle, and the reason there is none.
+  String get ofWait => _es ? 'de espera' : 'of wait';
+  /// Shown on the rider's live-location card before the first GPS fix.
+  String get syncing => _es ? 'Sincronizando' : 'Syncing';
+
+  String get driverLocationNotifTitle =>
+      _es ? 'Cruise está compartiendo tu ubicación' : 'Cruise is sharing your location';
+  String get driverLocationNotifOnTrip => _es
+      ? 'Tu pasajero puede ver dónde estás durante el viaje.'
+      : 'Your passenger can see where you are during the trip.';
+  String get driverLocationNotifOnline => _es
+      ? 'Estás en línea y recibiendo viajes.'
+      : "You're online and receiving ride requests.";
+
   String get usageAnalytics => _es ? 'Análisis de Uso' : 'Usage Analytics';
   String get usageAnalyticsDesc => _es
       ? 'Ayúdanos a mejorar la app compartiendo datos de uso anónimos.'
@@ -434,7 +456,7 @@ class S {
   String get phone => _es ? 'Teléfono' : 'Phone';
 
   // ── Safety Screen ─────────────────────────────────────────────────────────
-  String get safetyTitle => _es ? 'Seguridad' : 'Safety';
+  String get safetyTitle => _es ? 'Centro de Seguridad' : 'Safety Hub';
   String get safetySubtitle => _es
       ? 'Tu seguridad es nuestra prioridad.'
       : 'Your safety is our priority.';

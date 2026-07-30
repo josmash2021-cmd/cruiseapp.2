@@ -1438,9 +1438,29 @@ extension _HomeScreenWidgets on _HomeScreenState {
       );
     }
 
-    // Default to NYC if no GPS yet — the camera recenters when the fix
-    // arrives (throttled in the GPS stream listener).
-    final pos = _currentLatLng ?? const LatLng(40.7128, -74.0060);
+    // No position, no map.
+    //
+    // This used to fall back to Times Square. Under a heading that says
+    // "Your live location", a map of Manhattan shown to someone in Alabama
+    // is not a placeholder — it is a wrong answer, delivered confidently,
+    // and it stayed on screen for as long as the fix took. An honest "still
+    // finding you" is better than a confident lie about where you are.
+    final pos = _currentLatLng;
+    if (pos == null) {
+      return Container(
+        height: Responsive.h(190),
+        decoration: neuBox(radius: 24),
+        alignment: Alignment.center,
+        child: Text(
+          S.of(context).syncing,
+          style: TextStyle(
+            color: Colors.white.withValues(alpha: 0.45),
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      );
+    }
 
     return Container(
       height: Responsive.h(190),
@@ -1450,6 +1470,35 @@ extension _HomeScreenWidgets on _HomeScreenState {
         // IgnorePointer guarantees the Android platform view can't absorb
         // scroll touches (all gestures are already disabled natively).
         child: IgnorePointer(
+          child: Stack(
+            children: [
+              Positioned.fill(child: _homeMiniMapSurface(pos)),
+              // The dot, painted by Flutter at the centre the camera is
+              // held on. Same reason as the driver's arrow: an annotation
+              // only advances as fast as the platform channel drains, which
+              // is far slower than the display. Here it does not have to
+              // travel at all — the map is kept underneath it.
+              Positioned.fill(
+                child: ListenableBuilder(
+                  listenable: _miniDotFrame,
+                  builder: (_, __) => Center(
+                    child: GoldLocationDotOverlay(
+                      bearing: 0,
+                      heading: false,
+                      size: 30,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _homeMiniMapSurface(LatLng pos) {
+    return IgnorePointer(
           child: mapbox.MapWidget(
           key: const ValueKey('home_mini_map'),
           styleUri: MapboxConfig.styleDark,
@@ -1563,8 +1612,6 @@ extension _HomeScreenWidgets on _HomeScreenState {
             if (kDebugMode) debugPrint('[HomeScreen] Mini map load error: ${err.message} (type: ${err.type})');
           },
         ),
-        ),
-      ),
     );
   }
 
@@ -1680,8 +1727,37 @@ extension _HomeScreenWidgets on _HomeScreenState {
                             ),
                           ),
                         ),
+                        // The wait, under the car.
+                        //
+                        // Just the range — no "of wait", no icon. On a card
+                        // this size the number is the whole message, and a
+                        // label beside it would take the room the car needs.
+                        Positioned(
+                          left: 8,
+                          right: 8,
+                          bottom: 10,
+                          child: Text(
+                            _homeWaitRangeText(),
+                            textAlign: TextAlign.center,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: Colors.white.withValues(alpha: 0.55),
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: 0.2,
+                            ),
+                          ),
+                        ),
                         // Car image centered inside the card with breathing
                         // room on the sides and a gap above the bottom edge.
+                        //
+                        // Left at 16 even though the wait line below is
+                        // nominally inside its 58 px box: the render has
+                        // transparent space under the wheels, so the car
+                        // stops short of the box and the text sits in the
+                        // gap. Box maths said they collide; the artwork says
+                        // otherwise, and the artwork is what is on screen.
                         Positioned(
                           left: 16,
                           right: 16,
@@ -1710,6 +1786,31 @@ extension _HomeScreenWidgets on _HomeScreenState {
         );
       }).toList(),
     );
+  }
+
+  /// The wait range for the tier cards on this screen.
+  ///
+  /// Reads the shared cache and asks for it once if it is not there yet —
+  /// the same answer the ride screen uses, so the rider is not told one
+  /// thing here and another after tapping through. Blank until it lands
+  /// rather than a guess that changes.
+  String _homeWaitRangeText() {
+    final pos = _currentLatLng;
+    if (pos == null) return '';
+    final est = DriverWaitEstimate.cached(pos.latitude, pos.longitude);
+    if (est == null) {
+      // Not fetched yet. Kick it off and repaint when it arrives; the
+      // request is shared and cached, so three cards cause one call.
+      unawaited(
+        DriverWaitEstimate.fetch(lat: pos.latitude, lng: pos.longitude)
+            .then((_) {
+          if (mounted) setState(() {});
+        }),
+      );
+      return '';
+    }
+    if (est.driverCount == 0) return S.of(context).noDriversAvailable;
+    return '${est.minMinutes}-${est.maxMinutes} min';
   }
 
   // ─── Quick access grid (Home, Work, places) ───

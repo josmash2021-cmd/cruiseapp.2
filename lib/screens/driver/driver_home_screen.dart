@@ -48,7 +48,6 @@ import '../../l10n/app_localizations.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import '../../widgets/gold_location_dot.dart';
 import '../../widgets/user_profile_photo.dart';
-import '../../widgets/verified_avatar.dart';
 import '../../widgets/velocity_aware_panel.dart';
 import '../../utils/responsive.dart';
 import '../../utils/name_helper.dart' as nh;
@@ -105,6 +104,15 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   double _todayEarnings = 0.0;
   int _todayTrips = 0;
   double _todayHours = 0.0;
+
+  // ── Earnings pill (top bar) ──
+  /// Which period the pill is showing: 0 = this week, 1 = today. Opens on
+  /// today, same as the online screen's pill.
+  int _earningsPage = 1;
+  /// Previous values, so a refreshed figure counts up from the old one
+  /// instead of snapping. First paint animates from zero.
+  double _prevTodayEarnings = 0.0;
+  double _prevWeekEarnings = 0.0;
 
   // ── Earnings panel ──
   double _weekEarnings = 0.0;
@@ -829,6 +837,10 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       }
 
       setState(() {
+        // Where the pill's count-up starts from — captured before the new
+        // figures land, or every refresh would animate from itself.
+        _prevTodayEarnings = _todayEarnings;
+        _prevWeekEarnings = _weekEarnings;
         _todayEarnings = dbl(today['total'], _todayEarnings);
         _todayTrips = (today['trips_count'] as num?)?.toInt() ?? _todayTrips;
         _todayHours = dbl(today['online_hours'], _todayHours);
@@ -1474,41 +1486,6 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   }
 
   // ═══════════════════════════════════════════════════
-  //  TOP BAR
-  // ═══════════════════════════════════════════════════
-  /// One figure in the top pill. [emphasis] is today — the number a driver is
-  /// actually checking — so it gets the gold and the weight.
-  Widget _topEarning(
-      DriverColors dc, String label, double amount, bool emphasis) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text(
-          label.toUpperCase(),
-          style: TextStyle(
-            color: dc.textSecondary,
-            fontSize: Responsive.sp(9),
-            fontWeight: FontWeight.w700,
-            letterSpacing: 0.9,
-          ),
-        ),
-        SizedBox(height: Responsive.h(2)),
-        Text(
-          '\$${amount.toStringAsFixed(2)}',
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: TextStyle(
-            color: emphasis ? _gold : dc.text,
-            fontSize: Responsive.sp(emphasis ? 16 : 14),
-            fontWeight: FontWeight.w800,
-          ),
-        ),
-      ],
-    );
-  }
-
-  // ═══════════════════════════════════════════════════
   //  EARNINGS PANEL — chart + period toggle
   // ═══════════════════════════════════════════════════
 
@@ -1763,7 +1740,6 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   }
 
   Widget _buildTopBar() {
-    final dc = DriverColors.of(context);
     return Row(
       children: [
         // Menu
@@ -1792,56 +1768,16 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
 
         const SizedBox(width: 12),
 
-        // Earnings pill — raised neumorphic surface.
+        // Earnings pill — the same one the driver already reads while online.
         //
-        // Was a greeting and the driver's own name, which they already know.
-        // The two numbers they open this app to check now live in the most
-        // prominent slot on the screen, and tapping them goes where the detail
-        // is. The avatar stays: it is how they confirm they are in the right
-        // account, and it is the only place on this screen that shows it.
-        Expanded(
-          child: GestureDetector(
-            onTap: () {
-              HapticService.selectionClick();
-              Navigator.of(context).push(
-                slideFromRightRoute(const DriverEarningsScreen()),
-              );
-            },
-            child: Container(
-              padding: EdgeInsets.symmetric(
-                  horizontal: Responsive.w(14), vertical: Responsive.h(9)),
-              decoration: neuBox(radius: 28),
-              child: Row(
-                children: [
-                  VerifiedAvatar(
-                    photoUrl: UserSession.photoUrlNotifier.value.isNotEmpty
-                        ? UserSession.photoUrlNotifier.value
-                        : (_photoUrl != null && _photoUrl!.startsWith('http') ? _photoUrl : null),
-                    photoPath: _photoUrl != null && !_photoUrl!.startsWith('http') ? _photoUrl : null,
-                    radius: Responsive.w(16),
-                    fallbackName: _driverName,
-                    uid: UserSession.currentUid,
-                    role: 'driver',
-                    isVerified: _isVerified,
-                  ),
-                  SizedBox(width: Responsive.w(12)),
-                  Expanded(child: _topEarning(
-                    dc, S.of(context).today, _todayEarnings, true)),
-                  Container(
-                    width: 1,
-                    height: Responsive.h(26),
-                    color: Colors.white.withValues(alpha: 0.07),
-                  ),
-                  Expanded(child: Padding(
-                    padding: EdgeInsets.only(left: Responsive.w(12)),
-                    child: _topEarning(
-                        dc, S.of(context).weekLabel, _weekEarnings, false),
-                  )),
-                ],
-              ),
-            ),
-          ),
-        ),
+        // It used to be a wide box with the avatar and TODAY / WEEK side by
+        // side: two small figures where the online screen shows one big one,
+        // so the number the driver checks all day changed size and place the
+        // moment they went online. Now it is the same object in both screens —
+        // one period at a time, swipe to change it, tap for the detail. The
+        // avatar went with the old box; the menu behind the left button is
+        // where the account lives.
+        Expanded(child: Center(child: _earningsPill())),
 
         const SizedBox(width: 12),
 
@@ -1858,6 +1794,127 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
         ),
 
       ],
+    );
+  }
+
+  /// Top-bar earnings pill — the offline twin of the online screen's pill
+  /// ([driver_online_widgets.dart] `_earningsPill`). Same 160×52 footprint,
+  /// same type sizes, same page dots, so going online does not move the
+  /// figure the driver is looking at. Two periods here instead of three:
+  /// the home screen never fetches a last-trip total.
+  Widget _earningsPill() {
+    const pillBorder = Color(0x0FFFFFFF); // white @ 6%
+    const pillText = Colors.white;
+    const pillSub = Colors.white38;
+    const dotActive = Colors.white;
+    const dotInactive = Color(0x33FFFFFF); // white @ 20%
+
+    final amounts = [_weekEarnings, _todayEarnings];
+    final prevAmounts = [_prevWeekEarnings, _prevTodayEarnings];
+    final labels = [
+      S.of(context).thisWeek.toUpperCase(),
+      S.of(context).today.toUpperCase(),
+    ];
+    final pageCount = amounts.length;
+    final safePage = _earningsPage.clamp(0, pageCount - 1);
+
+    Widget pillPage(double amount, double prevAmount, String label) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(20),
+        child: BackdropFilter(
+          filter: ui.ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+            decoration: neuBox(radius: 20, borderColor: pillBorder),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TweenAnimationBuilder<double>(
+                  key: ValueKey<double>(amount),
+                  duration: const Duration(milliseconds: 900),
+                  curve: Curves.easeOutCubic,
+                  tween: Tween<double>(begin: prevAmount, end: amount),
+                  builder: (_, val, __) => Text(
+                    '\$${val.toStringAsFixed(2)}',
+                    style: const TextStyle(
+                      color: pillText,
+                      fontSize: 17,
+                      fontWeight: FontWeight.w800,
+                      fontFeatures: [ui.FontFeature.tabularFigures()],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 1),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      label,
+                      style: const TextStyle(
+                        color: pillSub,
+                        fontSize: 9,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 1.5,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    for (int i = 0; i < pageCount; i++) ...[
+                      Container(
+                        width: 4,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: i == safePage ? dotActive : dotInactive,
+                        ),
+                      ),
+                      if (i < pageCount - 1) const SizedBox(width: 3),
+                    ],
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    return GestureDetector(
+      onTap: () {
+        HapticService.selectionClick();
+        Navigator.of(context).push(
+          slideFromRightRoute(const DriverEarningsScreen()),
+        );
+      },
+      onHorizontalDragEnd: (details) {
+        if (details.primaryVelocity == null) return;
+        if (details.primaryVelocity! < -200 && safePage < pageCount - 1) {
+          HapticService.selectionClick();
+          setState(() => _earningsPage = safePage + 1);
+        } else if (details.primaryVelocity! > 200 && safePage > 0) {
+          HapticService.selectionClick();
+          setState(() => _earningsPage = safePage - 1);
+        }
+      },
+      child: SizedBox(
+        width: 160,
+        height: 52,
+        child: AnimatedSwitcher(
+          duration: const Duration(milliseconds: 400),
+          reverseDuration: const Duration(milliseconds: 300),
+          switchInCurve: Curves.easeInOut,
+          switchOutCurve: Curves.easeInOut,
+          transitionBuilder: (child, animation) =>
+              FadeTransition(opacity: animation, child: child),
+          child: Center(
+            key: ValueKey<int>(safePage),
+            child: pillPage(
+              amounts[safePage],
+              prevAmounts[safePage],
+              labels[safePage],
+            ),
+          ),
+        ),
+      ),
     );
   }
 
@@ -1939,7 +1996,11 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
           Container(
             width: Responsive.w(48),
             height: Responsive.w(48),
-            decoration: neuBox(radius: 14, pressed: true),
+            // Raised, not a sunken well: `pressed: true` paints neuPressed
+            // (#101014), which next to the pill's neuSurface read as two
+            // black holes flanking a grey card. Same grey as every other
+            // raised surface, and as the online screen's side buttons.
+            decoration: neuBox(radius: 14),
             child: Icon(icon, color: dc.text, size: Responsive.sp(22)),
           ),
           if (badge != null)

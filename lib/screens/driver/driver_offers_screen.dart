@@ -55,7 +55,7 @@ class _DriverOffersScreenState extends State<DriverOffersScreen>
   LatLng? _driverPos;
   bool _loading = true;
   bool _accepting = false;
-  final GoldLocationDot _goldDot = GoldLocationDot();
+  final GoldLocationDot _goldDot = GoldLocationDot(heading: true);
   Timer? _countdownTimer;
   final Set<String> _expiredOffers = {};  // Track offers we've auto-declined
   bool _warningHaptic5Played = false;
@@ -164,6 +164,8 @@ class _DriverOffersScreenState extends State<DriverOffersScreen>
         iconSize: 0.5,
         iconAnchor: mapbox.IconAnchor.CENTER,
         iconOffset: [0, 0],
+        // The badge is drawn pointing north; this turns it to the heading.
+        iconRotate: _goldDot.bearing,
       ));
     }
   }

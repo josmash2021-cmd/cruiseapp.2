@@ -337,7 +337,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   final String _activeVehicleAsset = 'suburban';
 
   // -- Golden animated dot --
-  final GoldLocationDot _goldDot = GoldLocationDot();
+  final GoldLocationDot _goldDot = GoldLocationDot(heading: true);
   Uint8List? _goldPinBytes;
   bool _dotPopDone = false;   // true after first-appearance pop completes
   double _dotPopScale = 0.0;  // 0→1.15→1.0 during pop, then 1.0

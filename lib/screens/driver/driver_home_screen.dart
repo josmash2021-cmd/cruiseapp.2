@@ -90,7 +90,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   // several attempts to open. The map is remounted when the trip screen
   // pops.
   bool _mapSuspended = false;
-  final GoldLocationDot _goldDot = GoldLocationDot();
+  final GoldLocationDot _goldDot = GoldLocationDot(heading: true);
   // Retries the first dot draw until it lands. _updateMyLocAnnotation() no-ops
   // until BOTH the annotation manager and the dot image exist, and the dot
   // ticker only fires when the position actually changes — so a driver sitting
@@ -507,6 +507,20 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   /// into the annotation in memory (cheap), and only fire mgr.update()
   /// when the previous IPC finished. The next IPC always carries the
   /// latest position, no information lost.
+  /// The heading to point the arrow at, or null when the fix has none.
+  ///
+  /// Geolocator reports -1 (and iOS sometimes NaN) when it cannot determine
+  /// a course — parked, or no compass. Forwarding that would snap the arrow
+  /// to north every time the driver stops at a light, so a fix without a
+  /// heading leaves the last good one on screen. Speed gate for the same
+  /// reason: a course computed from GPS noise at walking pace spins.
+  double? _usableHeading(Position p) {
+    final h = p.heading;
+    if (h.isNaN || h.isInfinite || h < 0) return null;
+    if (p.speed.isFinite && p.speed < 0.7) return null; // ~2.5 km/h
+    return h;
+  }
+
   Future<void> _updateMyLocAnnotation() async {
     final mgr = _pointAnnotMgr;
     if (mgr == null) return;
@@ -532,6 +546,8 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
           iconSize: 1.0,
           iconAnchor: mapbox.IconAnchor.CENTER,
           iconOffset: [0, 0],
+          // The badge is drawn pointing north; the heading is applied here.
+          iconRotate: _goldDot.bearing,
         ));
       } catch (_) {
         // creation failed — leave null so we retry next frame
@@ -547,6 +563,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     try {
       _myLocAnnot!.geometry = point;
       _myLocAnnot!.image = bytes;
+      _myLocAnnot!.iconRotate = _goldDot.bearing;
       mgr.update(_myLocAnnot!).catchError((_) {
         _myLocAnnot = null;
       });
@@ -691,7 +708,8 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       final last = await Geolocator.getLastKnownPosition();
       if (last != null && mounted) {
         _currentLatLng = LatLng(last.latitude, last.longitude);
-        _goldDot.setTarget(last.latitude, last.longitude);
+        _goldDot.setTarget(last.latitude, last.longitude,
+            bearing: _usableHeading(last));
         setState(() {});
       }
 
@@ -703,7 +721,8 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       );
       if (!mounted) return;
       _currentLatLng = LatLng(pos.latitude, pos.longitude);
-      _goldDot.setTarget(pos.latitude, pos.longitude);
+      _goldDot.setTarget(pos.latitude, pos.longitude,
+          bearing: _usableHeading(pos));
       setState(() {});
       _updateMyLocAnnotation();
       _mapController?.flyTo(
@@ -728,7 +747,8 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
         if (!mounted) return;
         final ll = LatLng(p.latitude, p.longitude);
         _currentLatLng = ll;
-        _goldDot.setTarget(ll.latitude, ll.longitude);
+        _goldDot.setTarget(ll.latitude, ll.longitude,
+            bearing: _usableHeading(p));
         debugPrint('[DriverHome] GPS update: ${ll.latitude.toStringAsFixed(5)},${ll.longitude.toStringAsFixed(5)} '
             'speed=${p.speed.toStringAsFixed(1)}m/s accuracy=${p.accuracy.toStringAsFixed(1)}m');
         // Camera follow is handled per dot-tick in _updateMyLocAnnotation

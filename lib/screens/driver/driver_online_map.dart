@@ -73,6 +73,10 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
             iconSize: _dotPopScale,
             iconAnchor: mapbox.IconAnchor.CENTER,
             iconOffset: [0, 0],
+            // The badge carries a heading arrow now, so it turns with the
+            // driver — same _heading the nav car uses, already smoothed by
+            // _motion (shortest-arc, low-passed).
+            iconRotate: _heading,
           ));
           _goldDotAnnotGen = _mapGeneration;
           if (!_dotPopDone) _animateDotPop();
@@ -88,6 +92,7 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
         _goldDotAnnot!.geometry = mapbox.Point(coordinates: mapbox.Position(_pos!.longitude, _pos!.latitude));
         _goldDotAnnot!.image = dotBytes;
         _goldDotAnnot!.iconSize = _dotPopScale;
+        _goldDotAnnot!.iconRotate = _heading;
       } catch (_) {
         // Annotation became invalid (rare). Null it so next tick recreates.
         _goldDotAnnot = null;

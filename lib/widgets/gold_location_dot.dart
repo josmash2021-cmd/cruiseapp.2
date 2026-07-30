@@ -8,18 +8,36 @@ import 'package:flutter/scheduler.dart';
 
 import '../utils/smooth_motion.dart';
 
-/// Animated gold location dot for Mapbox map screens.
+/// Animated own-location marker for Mapbox map screens.
 ///
 /// Position smoothing is delegated to the canonical [SmoothMotion]
 /// (constant-velocity + gentle correction + shortest-arc bearing).
-/// The dot is driven by a real vsync [Ticker].
+/// The marker is driven by a real vsync [Ticker].
 ///
-/// Visual: single static gold dot with white halo — rendered once,
-/// no sprite atlas, no heavy initState cost.
+/// Two looks, one motion engine:
+///
+///  * default — the gold dot with a white ring. What a rider sees for
+///    themselves: they are somewhere, they are not steering.
+///  * [heading] — the navigation badge: black disc, gold ring, white arrow.
+///    For the driver screens, where the direction the car is pointing is
+///    half of what the marker has to say.
+///
+/// The arrow is rasterised once pointing north and turned by the map, never
+/// redrawn per heading: callers set `iconRotate` on the annotation from
+/// [bearing]. Re-encoding a PNG on every GPS fix is not a rotation.
 class GoldLocationDot {
+  GoldLocationDot({this.heading = false});
+
+  /// Draw the direction arrow instead of the plain dot. Driver screens only.
+  final bool heading;
+
   static const Color _gold = Color(0xFFE8C547);
+  static const Color _body = Color(0xFF07070A);
   static const double _canvasSize = 160.0;
-  static const double _dotR = 18.0;
+  /// Outer edge of the marker.
+  static const double _dotR = 20.0;
+  /// The plain dot is smaller than the badge — it has no arrow to hold.
+  static const double _plainDotR = 18.0;
 
   final SmoothMotion _motion = SmoothMotion();
 
@@ -40,16 +58,28 @@ class GoldLocationDot {
   double? get lat => _motion.lat;
   double? get lng => _motion.lng;
 
+  /// Smoothed heading in degrees (0 = north). Feed this straight into the
+  /// annotation's `iconRotate` — the bitmap is drawn pointing north.
+  double get bearing => _motion.bearing;
+
   bool get isReady => _frame != null;
 
   Uint8List? get currentBytes => _frame;
 
   /// Feed each raw GPS fix. The dot glides toward it at the measured
   /// velocity — no jumps, no stalls.
-  void setTarget(double lat, double lng) => _motion.setTarget(lat, lng);
+  ///
+  /// [bearing] is optional because not every fix carries one: geolocator
+  /// reports heading as -1 when the device cannot determine it (stationary,
+  /// or no compass), and passing that through would swing the arrow to north
+  /// every time the driver stops. Callers should drop invalid headings
+  /// rather than forward them.
+  void setTarget(double lat, double lng, {double? bearing}) =>
+      _motion.setTarget(lat, lng, bearing: bearing);
 
   /// Hard-reset the rendered position (e.g. resuming from background).
-  void snapTo(double lat, double lng) => _motion.snapTo(lat, lng);
+  void snapTo(double lat, double lng, {double? bearing}) =>
+      _motion.snapTo(lat, lng, bearing: bearing);
 
   /// Build the dot image once, then start the vsync ticker.
   ///
@@ -65,40 +95,11 @@ class GoldLocationDot {
     );
     const center = Offset(_canvasSize / 2, _canvasSize / 2);
 
-    // Outer glow (static, no pulse)
-    canvas.drawCircle(
-      center,
-      _dotR * 1.8,
-      Paint()
-        ..color = Colors.white.withValues(alpha: 0.12)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6),
-    );
-
-    // Middle halo
-    canvas.drawCircle(
-      center,
-      _dotR * 1.3,
-      Paint()
-        ..color = Colors.white.withValues(alpha: 0.15)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3),
-    );
-
-    // White ring
-    canvas.drawCircle(
-      center,
-      _dotR,
-      Paint()
-        ..color = Colors.white
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 2.5,
-    );
-
-    // Gold core
-    canvas.drawCircle(
-      center,
-      _dotR - 1.5,
-      Paint()..color = _gold.withValues(alpha: 0.9),
-    );
+    if (heading) {
+      _paintHeadingBadge(canvas, center);
+    } else {
+      _paintPlainDot(canvas, center);
+    }
 
     // Rasterising can fail (GPU context lost while backgrounding, OOM on
     // low-end devices). Left unguarded it escapes as an unhandled async
@@ -147,6 +148,88 @@ class GoldLocationDot {
       _onTick = null;
       _vsync = null;
     }
+  }
+
+  /// The classic marker: gold core, white ring, soft white halo.
+  static void _paintPlainDot(Canvas canvas, Offset center) {
+    canvas.drawCircle(
+      center,
+      _plainDotR * 1.8,
+      Paint()
+        ..color = Colors.white.withValues(alpha: 0.12)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6),
+    );
+    canvas.drawCircle(
+      center,
+      _plainDotR * 1.3,
+      Paint()
+        ..color = Colors.white.withValues(alpha: 0.15)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3),
+    );
+    canvas.drawCircle(
+      center,
+      _plainDotR,
+      Paint()
+        ..color = Colors.white
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2.5,
+    );
+    canvas.drawCircle(
+      center,
+      _plainDotR - 1.5,
+      Paint()..color = _gold.withValues(alpha: 0.9),
+    );
+  }
+
+  /// The driver badge: black disc, gold ring, white arrow pointing north.
+  static void _paintHeadingBadge(Canvas canvas, Offset center) {
+    // Gold halo — the only thing holding the badge off a dark map. Kept
+    // faint: this sits under the driver's own car at all times.
+    canvas.drawCircle(
+      center,
+      _dotR * 1.7,
+      Paint()
+        ..color = _gold.withValues(alpha: 0.16)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 7),
+    );
+
+    // Black body.
+    canvas.drawCircle(center, _dotR, Paint()..color = _body);
+
+    // Gold ring around it.
+    canvas.drawCircle(
+      center,
+      _dotR - 1.75,
+      Paint()
+        ..color = _gold
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 3.5,
+    );
+
+    // White arrow, drawn pointing north — the map turns it.
+    //
+    // The notch in the base is what makes it read as a direction arrow
+    // rather than a triangle; it is the shape every navigation app uses,
+    // and the one the driver already knows from Google Maps.
+    const tipY = -11.5;      // apex, relative to centre
+    const baseY = 9.5;       // outer corners
+    const notchY = 4.0;      // centre of the base, pulled up
+    const halfW = 8.6;
+    final arrow = Path()
+      ..moveTo(center.dx, center.dy + tipY)
+      ..lineTo(center.dx + halfW, center.dy + baseY)
+      ..lineTo(center.dx, center.dy + notchY)
+      ..lineTo(center.dx - halfW, center.dy + baseY)
+      ..close();
+
+    // Shadow under the arrow so it survives against the gold ring.
+    canvas.drawPath(
+      arrow,
+      Paint()
+        ..color = Colors.black.withValues(alpha: 0.55)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2),
+    );
+    canvas.drawPath(arrow, Paint()..color = Colors.white);
   }
 
   /// Restart the ticker if it was stopped (e.g. after app resume).

@@ -271,13 +271,28 @@ extension _RideRequestWidgets on _RideRequestScreenState {
             ),
             child: SafeArea(
               top: false,
-              child: Padding(
+              // Never more than 40% of the screen, whatever is inside it.
+              //
+              // The height used to be whatever its contents summed to,
+              // which drifted with every row added — and three separate
+              // layout faults in two builds came from adding something and
+              // not recomputing what it displaced. A ceiling measured off
+              // the screen cannot drift: the map keeps its 60% on every
+              // handset, and anything that does not fit scrolls instead of
+              // pushing the map off the top.
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxHeight: MediaQuery.of(context).size.height * 0.40,
+                ),
+                child: SingleChildScrollView(
+                  physics: const ClampingScrollPhysics(),
+                  child: Padding(
                 // Bottom is tighter than the other 3 sides so the panel
                 // hugs the last visible row (badges when no tier is
                 // picked yet, or the Request Ride button after one is).
                 // Otherwise the 14px equal-all-around padding leaves a
                 // visible empty band below the badges in the no-pick state.
-                padding: const EdgeInsets.fromLTRB(14, 14, 14, 6),
+                padding: const EdgeInsets.fromLTRB(14, 12, 14, 6),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -395,7 +410,7 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                       const SizedBox(width: 32),
                     ],
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 10),
 
                   // Grid of ride cards - 1:1 with web design.
                   // Behavior: when no tier is picked OR the rider tapped the
@@ -534,7 +549,7 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                   // rider should not have to reopen the picker to see the
                   // price they are about to pay.
                   if (option != null) ...[
-                    const SizedBox(height: 14),
+                    const SizedBox(height: 10),
                     _buildRideDetailPanel(c, option),
                   ],
 
@@ -597,6 +612,8 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                     ),
                   ],
                 ],
+                ),
+              ),
                 ),
               ),
             ),
@@ -1233,14 +1250,13 @@ extension _RideRequestWidgets on _RideRequestScreenState {
     // below it with a fixed height, comfortable padding all around — no
     // Expanded/Spacer, so there's no empty band in the middle.
     return Container(
-      // 12 top + name 17 + 10 gap + car 58 + 6 gap + wait 13 + 12 bottom.
+      // 10 top + name 17 + 8 gap + car 46 + 5 gap + wait 13 + 10 bottom.
       //
-      // Raised from 124 when the wait line was added inside. 124 was the
-      // exact sum of what was here before, so the new line overflowed by
-      // eight pixels — and the card clips, so it did not shout about it:
-      // the minutes were simply cut off. A fixed height has to be
-      // recomputed every time something joins it.
-      height: 142,
+      // Every value here is spent twice — the sheet is capped at 40% of the
+      // screen, so what the card takes, the map does not get. Trimmed to
+      // fit inside that ceiling without the sheet needing to scroll on a
+      // normal handset.
+      height: 120,
       clipBehavior: Clip.antiAlias,
       decoration: selected
           ? neuBox(
@@ -1250,7 +1266,7 @@ extension _RideRequestWidgets on _RideRequestScreenState {
             )
           : neuBox(radius: 24),
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(8, 12, 8, 12),
+        padding: const EdgeInsets.fromLTRB(8, 10, 8, 10),
         child: Column(
           children: [
             // Vehicle name on top — home screen style
@@ -1267,11 +1283,11 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                 letterSpacing: 0.5,
               ),
             ),
-            const SizedBox(height: 10),
-            // Car render with fixed height, centered — same 58px as the
-            // home fleet cards, clear of the bottom edge.
+            const SizedBox(height: 8),
+            // Car render, centered. Shorter than the home fleet cards on
+            // purpose: this sheet competes with the map for the screen.
             SizedBox(
-              height: 58,
+              height: 46,
               width: double.infinity,
               child: CarImage3D(
                 assetPath: carAsset,
@@ -1287,7 +1303,7 @@ extension _RideRequestWidgets on _RideRequestScreenState {
             // The wait, under the car. Just the range — the same figure the
             // expanded card spells out in full, so the rider sees the same
             // number before and after choosing.
-            const SizedBox(height: 6),
+            const SizedBox(height: 5),
             Text(
               _gridWaitRangeText(),
               textAlign: TextAlign.center,
@@ -1324,7 +1340,7 @@ extension _RideRequestWidgets on _RideRequestScreenState {
     return Container(
       // Matches the real card, or the sheet visibly jumps taller the
       // moment the fares land and the skeletons are replaced.
-      height: 142,
+      height: 120,
       decoration: BoxDecoration(
         gradient: const LinearGradient(
           begin: Alignment.topLeft,

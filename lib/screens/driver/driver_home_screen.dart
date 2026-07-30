@@ -2903,18 +2903,15 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
               ),
             ),
             ),
-            // The GO button used to sit here, inside the column.
+            // The GO button used to sit here, inside the column, and a
+            // 72 px spacer was left behind to hold its place.
             //
-            // It cannot any more: it has to travel out of the panel and hover
-            // over the map when the sheet closes, and a child cannot leave
-            // its parent. It lives in the screen's Stack now — see
-            // _buildMorphingGoButton — and this space is what it occupies
-            // when the sheet is open.
-            // Scaled by the drag, not a fixed reservation. Held at full
-            // height it would leave a 72 px band of nothing in the collapsed
-            // sheet — the button is not there any more, it is hovering over
-            // the map — and the sheet would look like it had lost something.
-            SizedBox(height: (_kGoPillH + 16) * panelExtent),
+            // That was the wrong end. The button travels to the *bottom* of
+            // the screen as the sheet opens — see _buildMorphingGoButton —
+            // so reserving the room up here left a band of nothing under
+            // "You're offline" while the button came down on top of the last
+            // row of the list. The room it needs is reserved at the foot of
+            // the scrolling content instead, below.
 
             // ── Panel content — hidden when collapsed; fades/slides in
             // proportionally to the drag for a fluid open gesture ──
@@ -2939,9 +2936,15 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                     // The panel's drag lives on the handle and the status row,
                     // so a scrollable body here cannot fight it.
                     physics: const ClampingScrollPhysics(),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 20,
-                      vertical: 8,
+                    // The foot of the list clears the GO button hovering
+                    // over it: the button's own height, the gap it keeps
+                    // above the home indicator, and a little air on top.
+                    // Without this the last row sits underneath it.
+                    padding: EdgeInsets.fromLTRB(
+                      20,
+                      8,
+                      20,
+                      8 + _kGoPillH + 26 + MediaQuery.of(context).padding.bottom,
                     ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,

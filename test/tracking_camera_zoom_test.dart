@@ -129,4 +129,52 @@ void main() {
       expect(wide, greaterThanOrEqualTo(narrow));
     });
   });
+
+  /// The in-trip chase camera: the rider watching their own car drive.
+  ///
+  /// These two numbers have been widened twice in the name of legibility
+  /// and reported as a bug both times — at a district-wide zoom, or with
+  /// the car parked in the middle of the screen, the view is
+  /// indistinguishable from the route overview and stops reading as
+  /// following the car at all. They are pinned here on purpose.
+  group('chase camera', () {
+    test('never pulls back to an overview at any speed', () {
+      for (final speed in [0.0, 1.0, 5.0, 12.0, 25.0, 40.0]) {
+        final z = chaseZoomForSpeed(speed);
+        expect(z, greaterThanOrEqualTo(16.0),
+            reason: '$speed m/s → $z is overview-wide, not a chase');
+        expect(z, lessThanOrEqualTo(17.5), reason: '$speed m/s → $z');
+      }
+    });
+
+    test('widens monotonically with speed', () {
+      final speeds = [0.0, 1.9, 2.0, 7.9, 8.0, 17.9, 18.0, 35.0];
+      for (var i = 1; i < speeds.length; i++) {
+        expect(chaseZoomForSpeed(speeds[i]),
+            lessThanOrEqualTo(chaseZoomForSpeed(speeds[i - 1])),
+            reason: '${speeds[i]} m/s must not be closer than ${speeds[i - 1]}');
+      }
+    });
+
+    test('holds the car low on the screen, not in the middle', () {
+      final y = chaseAnchorY(screen.height, topPad, bottomPad);
+      expect(y / screen.height, greaterThan(0.55),
+          reason: 'car parked at ${y / screen.height} of the screen');
+      // And still clear of the driver card.
+      expect(y, lessThanOrEqualTo(screen.height - bottomPad));
+    });
+
+    test('keeps the car clear of both cards on a short screen', () {
+      const shortScreen = 600.0;
+      final y = chaseAnchorY(shortScreen, 150, 260);
+      expect(y, greaterThanOrEqualTo(150));
+      expect(y, lessThanOrEqualTo(shortScreen - 260));
+    });
+
+    test('survives cards taller than the screen', () {
+      final y = chaseAnchorY(500, 400, 400);
+      expect(y.isFinite, isTrue);
+      expect(y, inInclusiveRange(0, 500));
+    });
+  });
 }

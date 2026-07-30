@@ -217,8 +217,16 @@ class TrackingMapCamera {
   bool _navChaseActive = false;
   double _navBearing = 0;
   double _navPitch = 0;
-  double _navZoom = 16.0;
+  double _navZoom = 17.0;
   DateTime? _lastNavFrameAt;
+
+  /// Tilt of the chase view. This is what "the camera sits behind the car"
+  /// means: the map leans away from the viewer so the road the car is about
+  /// to drive is the part of the screen you are looking at.
+  ///
+  /// It was dropped to 35° in the same pass that widened the zoom, and
+  /// between the two the view stopped reading as a chase at all.
+  static const double _kChasePitch = 50.0;
 
   /// True while a camera write is crossing the platform channel. Same
   /// latest-wins discipline as the car marker: frames produced during a
@@ -252,9 +260,26 @@ class TrackingMapCamera {
   // rotates around and settles behind the car. It replays whenever the
   // chase is handed back — after the rider pans, or on recenter.
   static const int _kChaseIntroMs = 1500;
+
+  /// How long the intro waits for its seed before giving up on the swing.
+  ///
+  /// The seed is a platform-channel read, and a read that never answers used
+  /// to be unrecoverable: [updateChaseFrame] returned on every frame waiting
+  /// for it, so the camera stayed on whatever the previous phase had left on
+  /// screen — a wide, flat, north-up overview — for the whole ride. That is
+  /// one of the two ways the rider's view "goes back to the map of the
+  /// route". A missed swing is a cosmetic loss; a camera that never chases
+  /// is the bug being reported.
+  static const int _kIntroSeedTimeoutMs = 700;
   bool _introActive = false;
   bool _introSeeding = false;
   DateTime? _introStartedAt;
+  DateTime? _introSeedStartedAt;
+
+  /// Bumped on every [_beginChaseIntro] so a seed from an abandoned intro
+  /// (rider panned, chase restarted) cannot land on top of the live one and
+  /// hand it a start point from ten seconds ago.
+  int _introGen = 0;
   LatLng? _introFromCenter;
   double _introFromZoom = 16.0;
   double _introFromPitch = 0.0;
@@ -273,11 +298,14 @@ class TrackingMapCamera {
   /// than from this class's stale internal values.
   void _beginChaseIntro() {
     if (_map == null) return;
+    final gen = ++_introGen;
     _introActive = true;
     _introSeeding = true;
     _introStartedAt = null; // stamped on the first frame after seeding, so
     _introFromCenter = null; // the async read is not counted as animation
+    _introSeedStartedAt = DateTime.now();
     _map!.getCameraState().then((state) {
+      if (gen != _introGen) return; // a newer intro owns the camera now
       _introFromZoom = state.zoom;
       _introFromPitch = state.pitch;
       _introFromBearing = state.bearing;
@@ -285,6 +313,7 @@ class TrackingMapCamera {
       _introFromCenter = LatLng(c.lat.toDouble(), c.lng.toDouble());
       _introSeeding = false;
     }).catchError((Object e) {
+      if (gen != _introGen) return;
       // Could not read the live camera. Drop the intro and let the chase
       // take over directly: a hard cut is worse than a swing, but a
       // camera stalled mid-ride waiting on a seed is worse than both.
@@ -292,6 +321,17 @@ class TrackingMapCamera {
       _introSeeding = false;
       _introActive = false;
     });
+  }
+
+  /// The seed is still missing and has run out of time. Only ever true
+  /// before the intro has started moving — a swing already under way is
+  /// never cut short by this.
+  bool get _introSeedTimedOut {
+    if (!_introSeeding && _introFromCenter != null) return false;
+    final started = _introSeedStartedAt;
+    if (started == null) return false;
+    return DateTime.now().difference(started).inMilliseconds >
+        _kIntroSeedTimeoutMs;
   }
 
   static double _easeInOut(double t) => t < 0.5
@@ -394,7 +434,7 @@ class TrackingMapCamera {
   /// [speedMps]    Driver speed in m/s for adaptive zoom.
   /// [screenSize]  Full screen size.
   /// [topPadding] / [bottomPadding]  Visible map insets (cards + safe area).
-  /// [use3DPitch]  When true, pitch is 55° like Uber; false = 2D north-up.
+  /// [use3DPitch]  When true, tilt to [_kChasePitch]; false = 2D north-up.
   void updateChaseFrame({
     required LatLng driverPos,
     required double bearing,
@@ -417,20 +457,7 @@ class TrackingMapCamera {
     double tf(double base) =>
         1.0 - math.pow(1.0 - base, (dtSec.clamp(0.0, 0.1) * 60)).toDouble();
 
-    // Zoom by speed: closer when stopped, wider as the car goes faster.
-    //
-    // Pulled back ~1.5 levels from the original 17.5/16.5/15.5/14.5. At
-    // 17.5 a stopped car filled the screen with a single block — the
-    // rider could see the car but not the street it was on, where it was
-    // heading, or how far was left. They are a passenger watching, not a
-    // driver navigating; legibility beats intimacy.
-    final targetZoom = speedMps < 2.0
-        ? 16.0
-        : speedMps < 8.0
-            ? 15.4
-            : speedMps < 18.0
-                ? 14.8
-                : 14.0;
+    final targetZoom = chaseZoomForSpeed(speedMps);
 
     // ── Intro: swing in and settle behind the car ──
     //
@@ -439,6 +466,11 @@ class TrackingMapCamera {
     // asymptotically, which is right for chasing a moving car but would
     // leave the opening move drifting in for several seconds with no
     // defined end. The intro has a duration and an easing curve.
+    if (_introActive && _introSeedTimedOut) {
+      debugPrint('[TrackingMapCamera] intro seed timed out — chasing directly');
+      _introActive = false;
+      _introSeeding = false;
+    }
     if (_introActive) {
       if (_introSeeding || _introFromCenter == null) return; // seed in flight
       _introStartedAt ??= now;
@@ -461,16 +493,14 @@ class TrackingMapCamera {
       final from = _introFromCenter!;
       _navZoom = _introFromZoom + (targetZoom - _introFromZoom) * e;
       _navPitch = _introFromPitch +
-          ((use3DPitch ? 35.0 : 0.0) - _introFromPitch) * e;
+          ((use3DPitch ? _kChasePitch : 0.0) - _introFromPitch) * e;
       _navBearing = (_introFromBearing + introDb * e) % 360;
 
       // The anchor eases too. A bounds-fit camera sits on the viewport
-      // centre; the chase hangs the car 62% down the visible box. Snapping
-      // that in one frame slides the car across the screen right as the
-      // swing lands.
-      final introVisibleH = screenSize.height - topPadding - bottomPadding;
+      // centre; the chase hangs the car low on the screen. Snapping that in
+      // one frame slides the car across the screen right as the swing lands.
       final anchorYFrom = screenSize.height / 2;
-      final anchorYTo = topPadding + introVisibleH * 0.62;
+      final anchorYTo = _chaseAnchorY(screenSize.height, topPadding, bottomPadding);
 
       _writeChaseFrame(
         center: LatLng(
@@ -501,24 +531,17 @@ class TrackingMapCamera {
     }
     _navBearing = (_navBearing + db * tf(0.25)) % 360;
 
-    // Smooth pitch: animate into 3D once chase starts.
-    //
-    // 35°, not the 55° a driver's turn-by-turn view uses. At 55° the road
-    // ahead compresses into a thin band at the top and the map stops
-    // being readable — combined with the old close zoom, that is the view
-    // the rider complained about. 35° keeps a sense of depth and motion
-    // while the streets stay legible.
-    final targetPitch = use3DPitch ? 35.0 : 0.0;
+    // Smooth pitch: animate into the chase tilt once the chase starts.
+    final targetPitch = use3DPitch ? _kChasePitch : 0.0;
     _navPitch = _navPitch + (targetPitch - _navPitch) * tf(0.12);
 
     // Smooth zoom.
     _navZoom = _navZoom + (targetZoom - _navZoom) * tf(0.08);
 
-    // Anchor the driver a bit above the lower third of the visible map area
-    // (Uber-style): enough road ahead is visible while the car stays prominent.
-    final visibleH = screenSize.height - topPadding - bottomPadding;
+    // Hang the car low on the screen: the camera is behind it and the road
+    // it is driving into takes the rest of the view.
     final anchorX = screenSize.width / 2;
-    final anchorY = topPadding + visibleH * 0.62;
+    final anchorY = _chaseAnchorY(screenSize.height, topPadding, bottomPadding);
 
     _writeChaseFrame(
       center: driverPos,
@@ -526,6 +549,13 @@ class TrackingMapCamera {
       anchorY: anchorY,
     );
   }
+
+  double _chaseAnchorY(
+    double screenH,
+    double topPadding,
+    double bottomPadding,
+  ) =>
+      chaseAnchorY(screenH, topPadding, bottomPadding);
 
   /// Push one chase frame to the map.
   ///
@@ -569,6 +599,47 @@ class TrackingMapCamera {
       _frameInFlight = false;
     }
   }
+}
+
+/// Zoom the chase camera holds at a given driver speed.
+///
+/// Closer when stopped, a little wider as the car goes faster — but the
+/// whole table stays inside one zoom level of 17, because the subject of
+/// this shot is the car, not the trip.
+///
+/// Top-level and tested for the same reason [zoomToFitSpan] is: this table
+/// was once "made more legible" down to 16.0/15.4/14.8/14.0, and at 14.x
+/// the car is a speck on a district-wide map — visually identical to the
+/// route overview the rider gets in other phases, and reported three times
+/// as the camera refusing to follow the car. The test is what stops that
+/// happening a fourth time.
+double chaseZoomForSpeed(double speedMps) => speedMps < 2.0
+    ? 17.2
+    : speedMps < 8.0
+        ? 16.9
+        : speedMps < 18.0
+            ? 16.5
+            : 16.1;
+
+/// Where the car is held on screen during the chase, as a fraction of the
+/// FULL screen height.
+///
+/// It used to be 62% of the box *between* the cards, and with a driver card
+/// as tall as this one that box is centred on the screen — so the car ended
+/// up pinned at the middle with a wide empty strip above it, which is the
+/// framing of an overview, not of a chase. Measured against the whole
+/// screen the car sits low and the road ahead gets the space.
+const double kChaseAnchorFrac = 0.64;
+
+/// Screen y for the car during the chase.
+///
+/// Clamped so it can never slide under the driver card at the bottom nor up
+/// behind the status pill at the top on a short screen.
+double chaseAnchorY(double screenH, double topPadding, double bottomPadding) {
+  final lower = topPadding + 56.0;
+  final upper = screenH - bottomPadding - 24.0;
+  if (upper <= lower) return screenH * 0.6; // cards taller than the screen
+  return (screenH * kChaseAnchorFrac).clamp(lower, upper);
 }
 
 /// Zoom level that fits the span between two points inside the visible map

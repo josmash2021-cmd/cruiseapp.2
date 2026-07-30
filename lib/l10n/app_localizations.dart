@@ -3229,6 +3229,12 @@ class S {
   String get dropoffAddressProblem => _es ? 'Problema con dirección de destino' : 'Dropoff address problem';
   String get tripProblem => _es ? 'Problema con el viaje' : 'Trip problem';
   String get safetyCenter => _es ? 'Centro de seguridad' : 'Safety Center';
+  /// One panel for the two header buttons the trip screen used to carry
+  /// separately — emergency/safety on top, support below.
+  String get safetyAndSupport => _es ? 'Seguridad y soporte' : 'Safety & Support';
+  String get safetyAndSupportSubtitle => _es
+      ? 'Emergencias, reportes y ayuda con el viaje'
+      : 'Emergency, reports and trip help';
   String get openAppleMaps => _es ? 'Abrir en Apple Maps' : 'Open in Apple Maps';
   String get openGoogleMaps => _es ? 'Abrir en Google Maps' : 'Open in Google Maps';
 

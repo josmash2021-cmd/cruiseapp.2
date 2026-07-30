@@ -16,7 +16,7 @@ from fastapi import (
     UploadFile, File,
 )
 from fastapi.responses import JSONResponse, FileResponse, Response
-from sqlalchemy import select, func, and_, text
+from sqlalchemy import select, func, and_, or_, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from models.database import (
     get_db, SessionLocal, User, Trip, SupportChat, SupportMessage, ActionRequest,
@@ -207,11 +207,20 @@ async def _get_user_context(user_id: int, db: AsyncSession, lang: str) -> dict[s
                 "amount": ar.details if ar.details else "unknown",
             })
 
-    # Active trip (not completed, not canceled)
+    # Active trip (not completed, not cancelled)
+    #
+    # Rider OR driver. Every trip lookup in here used to be rider_id only, so
+    # a driver mid-ride asking about "the pickup address" was told, in the
+    # system prompt, that they had no active trip and no trips at all — the
+    # bot answering nothing useful to drivers was this line, not the model.
+    #
+    # Both spellings of cancelled are excluded: the canonical status carries
+    # two Ls, and matching only "canceled" left cancelled trips counting as
+    # active.
     active_r = await db.execute(
         select(Trip).where(
-            Trip.rider_id == user_id,
-            Trip.status.notin_(["completed", "canceled"]),
+            or_(Trip.rider_id == user_id, Trip.driver_id == user_id),
+            Trip.status.notin_(["completed", "canceled", "cancelled"]),
         ).order_by(Trip.created_at.desc()).limit(1)
     )
     active_trip = active_r.scalar_one_or_none()
@@ -239,9 +248,9 @@ async def _get_user_context(user_id: int, db: AsyncSession, lang: str) -> dict[s
             "created_at": active_trip.created_at,
         }
 
-    # Recent completed/canceled trips
+    # Recent completed/cancelled trips — again either side of the ride.
     recent_r = await db.execute(
-        select(Trip).where(Trip.rider_id == user_id)
+        select(Trip).where(or_(Trip.rider_id == user_id, Trip.driver_id == user_id))
         .order_by(Trip.created_at.desc()).limit(5)
     )
     recent = recent_r.scalars().all()
@@ -313,9 +322,12 @@ async def _bot_cancel_trip(user_id: int, db: AsyncSession, lang: str) -> str:
     instead of mutating trip.status, and returns a message telling the
     user a human dispatcher will handle the cancellation shortly.
     """
+    # Either side of the ride: a driver asking to get out of a trip is a
+    # dispatch decision like any other, and rider_id-only meant the bot told
+    # them they had no active trip instead of routing it.
     result = await db.execute(
         select(Trip).where(
-            Trip.rider_id == user_id,
+            or_(Trip.rider_id == user_id, Trip.driver_id == user_id),
             Trip.status.notin_(["completed", "cancelled", "canceled"]),
         ).order_by(Trip.created_at.desc()).limit(1)
     )
@@ -772,21 +784,36 @@ def _build_claude_system_prompt(agent_name: str, user_type: str, lang: str, ctx:
         frustration_guide = ""
 
     # Active trip block
+    #
+    # The trip now resolves for drivers too, so say which seat the user is in.
+    # Without that line the driver reads as the passenger and the agent offers
+    # them a refund for their own ride.
     active_block = ""
     if active_trip:
+        is_driver = user_type == "driver"
         if is_es:
+            side = (
+                "El usuario es EL CONDUCTOR de este viaje"
+                if is_driver else
+                f"Conductor: {active_trip.get('driver_name','N/A')}"
+            )
             active_block = (
                 f"\nVIAJE ACTIVO DEL USUARIO: #{active_trip.get('id','?')} | "
                 f"Estado: {active_trip.get('status','?')} | "
                 f"Ruta: {active_trip.get('pickup','?')} -> {active_trip.get('dropoff','?')} | "
-                f"Tarifa: ${active_trip.get('fare', 0):.2f} | Conductor: {active_trip.get('driver_name','N/A')}"
+                f"Tarifa: ${active_trip.get('fare', 0):.2f} | {side}"
             )
         else:
+            side = (
+                "The user IS THE DRIVER on this trip"
+                if is_driver else
+                f"Driver: {active_trip.get('driver_name','N/A')}"
+            )
             active_block = (
                 f"\nUSER'S ACTIVE TRIP: #{active_trip.get('id','?')} | "
                 f"Status: {active_trip.get('status','?')} | "
                 f"Route: {active_trip.get('pickup','?')} -> {active_trip.get('dropoff','?')} | "
-                f"Fare: ${active_trip.get('fare', 0):.2f} | Driver: {active_trip.get('driver_name','N/A')}"
+                f"Fare: ${active_trip.get('fare', 0):.2f} | {side}"
             )
 
     # ── How the product actually works ───────────────────────────────────
@@ -1532,8 +1559,11 @@ def _generate_human_chat(user_msg: str, user_name: str, agent_name: str, lang: s
 
 async def _lookup_user_trips(user_id: int, db: AsyncSession, limit: int = 5):
     """Look up recent trips for a support user to provide real data in responses."""
+    # Rider or driver — same reason as _get_user_context: this is the text the
+    # bot quotes back, and for a driver it always read "no recent trips".
     result = await db.execute(
-        select(Trip).where(Trip.rider_id == user_id).order_by(Trip.created_at.desc()).limit(limit)
+        select(Trip).where(or_(Trip.rider_id == user_id, Trip.driver_id == user_id))
+        .order_by(Trip.created_at.desc()).limit(limit)
     )
     trips = result.scalars().all()
     return trips
@@ -1574,12 +1604,39 @@ async def _create_refund_request(user_id: int, trip_id: int, reason: str, db: As
     return notif.id
 
 
+# Every phase this function actually branches on. A chat sitting in anything
+# else falls through the whole if/elif chain and returns no replies at all —
+# the user types and nothing ever comes back.
+_HANDLED_BOT_PHASES = {
+    "welcome", "awaiting_details", "awaiting_cancel_confirm",
+    "agent_active", "escalated",
+}
+
+
 async def _generate_bot_replies(chat, user_msg: str, user_name: str, db: AsyncSession):
     """Generate AI bot replies with real DB lookups. Returns list of dicts."""
     phase = chat.bot_phase or "welcome"
     lang = getattr(chat, "locale", "en") or "en"
     suffix = "_es" if lang.startswith("es") else "_en"
     replies = []
+
+    # proactive_support_agent opens chats with bot_phase="proactive", and that
+    # phase has never had a branch here: the agent greets the user, the user
+    # answers, and the bot is silent from then on — permanently, because the
+    # open chat is handed back on every later visit. Four of the seven open
+    # chats in production were in this state, including the test driver's.
+    #
+    # Route anything unrecognised into the agent path (the chat already has an
+    # agent name attached) and persist it, so the chat is repaired rather than
+    # re-diagnosed on every message. dispatch_takeover never reaches this
+    # function — _background_bot_reply returns before calling it.
+    if phase not in _HANDLED_BOT_PHASES:
+        logging.info(
+            "[SupportBot] chat %s in unhandled phase %r — moving to agent_active",
+            getattr(chat, "id", "?"), phase,
+        )
+        phase = "agent_active"
+        chat.bot_phase = "agent_active"
 
     if phase == "welcome":
         # Realistic typing delay based on response length (Agent 4)
@@ -2161,12 +2218,49 @@ async def create_or_get_support_chat(request: Request, user: User = Depends(_get
     body = await request.json()
     subject = (body.get("subject") or "").strip()
     locale = (body.get("locale") or "en").strip()[:5]
+    # The caller is starting a new conversation (the driver accepted another
+    # trip) and does not want the previous transcript. Without this every
+    # user has exactly one chat for life: the open one is handed back forever,
+    # so a chat that was escalated once stays escalated — and an escalated
+    # chat never gets another bot reply (see bot_phase == "dispatch_takeover"
+    # in send_support_message). That is why support went dead for drivers.
+    fresh = bool(body.get("fresh"))
 
     # Check for existing open chat
     result = await db.execute(
         select(SupportChat).where(SupportChat.user_id == user.id, SupportChat.status == "open")
     )
     chat = result.scalar_one_or_none()
+
+    # A chat nobody has spoken in for hours is not a live conversation, and
+    # handing it back is how users end up talking into a dead escalated
+    # transcript. The product already closes idle chats after 5m30 — but only
+    # from _check_chat_inactivity, an in-process asyncio chain that dies with
+    # the container on every deploy, so anything open during a redeploy stays
+    # open forever. This is the same rule, enforced where it cannot be lost.
+    if chat and not fresh:
+        _idle_since = chat.last_user_message_at or chat.updated_at or chat.created_at
+        if _idle_since and (datetime.now(timezone.utc) - _aware(_idle_since)) > timedelta(hours=6):
+            logging.info("[support] chat %s idle since %s — starting a fresh one", chat.id, _idle_since)
+            fresh = True
+
+    if chat and fresh:
+        chat.status = "closed"
+        chat.updated_at = datetime.now(timezone.utc)
+        await db.commit()
+        if _HAS_FIRESTORE:
+            try:
+                firestore_sync.sync_support_chat(
+                    chat.id, chat.user_id, user.first_name, user.last_name,
+                    user.photo_url, user.role, chat.subject, "closed",
+                )
+            except Exception as e:
+                logging.error("Firestore close-on-fresh sync failed: %s", e)
+        # Drop the inactivity follow-up chain aimed at the chat we just closed.
+        _old_task = _inactivity_tasks.pop(chat.id, None)
+        if _old_task and not _old_task.done():
+            _old_task.cancel()
+        chat = None
     if chat:
         # Update locale if changed
         if locale and chat.locale != locale:

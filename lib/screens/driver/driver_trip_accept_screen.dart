@@ -1702,14 +1702,18 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   }
 
   /// Driver menu, opened from the header. Replaces the bare back arrow.
+  ///
+  /// Comes in from the left edge, not up from the bottom: a bottom sheet
+  /// reads as one more control belonging to the trip, and this is the way
+  /// out of it — to the menu, to earnings, to support. The motion is the
+  /// only thing that says so before the driver has read a single row.
   void _showDriverMenu() {
     HapticService.mediumImpact();
     final s = S.of(context);
-    _showSheet(
+    _showLeftPanel(
       title: s.menu,
       icon: Icons.menu_rounded,
       iconColor: _gold,
-      fullScreen: true,
       items: [
         // Opens the real driver menu — profile, Cruise Level, earnings,
         // vehicles, documents. It used to drop the driver onto the home
@@ -1728,26 +1732,31 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
             slideFromRightRoute(const DriverEarningsScreen()),
           );
         }),
-        _SheetItem(Icons.support_agent_rounded, s.helpTitle,
-            s.helpMenuSubtitle, () {
+        // One row for what used to be two: the header carries a single
+        // Safety & Support button now (see _showSafetySupportMenu).
+        _SheetItem(Icons.shield_rounded, s.safetyAndSupport,
+            s.safetyAndSupportSubtitle, () {
           Navigator.pop(context);
-          _showHelpMenu();
-        }),
-        _SheetItem(Icons.shield_rounded, s.safetyCenter, s.safetyCenterDesc,
-            () {
-          Navigator.pop(context);
-          _showSafetyMenu();
+          _showSafetySupportMenu();
         }),
       ],
     );
   }
 
-  void _showSafetyMenu() {
+  /// Safety and support in one panel.
+  ///
+  /// They were two header buttons opening two sheets, and the split was ours,
+  /// not the driver's: someone whose passenger is shouting does not first
+  /// decide whether that is a "safety" matter or a "support" matter, they
+  /// reach for help. Emergency sits at the top where it can be hit without
+  /// reading, the trip problems follow, and Cancel stays at the bottom.
+  void _showSafetySupportMenu() {
     HapticService.mediumImpact();
     _showSheet(
-      title: S.of(context).safetyCenter,
+      title: S.of(context).safetyAndSupport,
       icon: Icons.shield_rounded,
       iconColor: const Color(0xFF4CAF50),
+      fullScreen: true,
       items: [
         _SheetItem(Icons.emergency_rounded, S.of(context).emergency,
             S.of(context).call911OrEmergency, () {
@@ -1758,18 +1767,6 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
             S.of(context).reportSafetyIssueSubtitle, () => Navigator.pop(context)),
         _SheetItem(Icons.share_location_rounded, S.of(context).shareMyLocationTip,
             S.of(context).shareMyLocationSubtitle, () => Navigator.pop(context)),
-      ],
-    );
-  }
-
-  void _showHelpMenu() {
-    HapticService.mediumImpact();
-    _showSheet(
-      title: S.of(context).helpTitle,
-      icon: Icons.help_rounded,
-      iconColor: _gold,
-      fullScreen: true,
-      items: [
         // All three go straight into the support chat with the problem
         // already stated, instead of opening a second form to pick a reason
         // from. The reason lists still exist for the cancel flow below.
@@ -1861,6 +1858,11 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
       slideFromRightRoute(CruiseSupportChatScreen(
         initialMessage: opener,
         inTrip: true,
+        // One conversation per trip. Without this the driver reopens support
+        // on trip #400 and lands in the transcript from #398 — including the
+        // escalation that muted the bot in it (see CruiseSupportChatScreen's
+        // sessionKey). Reopening support during THIS trip keeps its history.
+        sessionKey: 'trip:${widget.tripId}',
       )),
     );
   }
@@ -2114,6 +2116,100 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   /// roughly half of it. Opt-in per sheet: the driver menu is a destination
   /// and earns the whole screen, while Help and Safety are three-item
   /// pickers that would look abandoned in all that space.
+  /// Full-height panel that slides in from the left edge.
+  ///
+  /// Deliberately a `showGeneralDialog` and not a pushed route: a route would
+  /// put a PageRoute over this screen, and the driver home underneath now
+  /// drops its Mapbox surface whenever that happens (route_observers.dart).
+  /// A popup route leaves the trip's own map alone, which is the whole point
+  /// of a panel that is gone in a third of a second.
+  void _showLeftPanel({
+    required String title,
+    required IconData icon,
+    required Color iconColor,
+    required List<_SheetItem> items,
+  }) {
+    final media = MediaQuery.of(context);
+    // Never the full width: the sliver of trip still showing on the right is
+    // what tells the driver this is a layer, not a screen they navigated to.
+    final panelW = math.min(media.size.width * 0.86, 360.0);
+    showGeneralDialog(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: MaterialLocalizations.of(context).modalBarrierDismissLabel,
+      barrierColor: Colors.black.withValues(alpha: 0.55),
+      transitionDuration: const Duration(milliseconds: 320),
+      pageBuilder: (ctx, _, __) => Align(
+        alignment: Alignment.centerLeft,
+        child: Material(
+          color: Colors.transparent,
+          child: Container(
+            width: panelW,
+            height: double.infinity,
+            decoration: const BoxDecoration(
+              color: neuBase,
+              borderRadius: BorderRadius.only(
+                topRight: Radius.circular(22),
+                bottomRight: Radius.circular(22),
+              ),
+            ),
+            padding: EdgeInsets.fromLTRB(
+                18, media.padding.top + 14, 18, media.padding.bottom + 12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(children: [
+                  Icon(icon, color: iconColor, size: 22),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 17,
+                            fontWeight: FontWeight.w800)),
+                  ),
+                  GestureDetector(
+                    onTap: () => Navigator.pop(ctx),
+                    child: Container(
+                      width: Responsive.w(34),
+                      height: Responsive.w(34),
+                      decoration: neuBox(radius: Responsive.w(17), pressed: true),
+                      child: Icon(Icons.close_rounded,
+                          color: Colors.white.withValues(alpha: 0.8),
+                          size: Responsive.sp(18)),
+                    ),
+                  ),
+                ]),
+                const SizedBox(height: 16),
+                Expanded(
+                  child: SingleChildScrollView(
+                    child: Column(children: items.map(_buildSheetItem).toList()),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+      transitionBuilder: (ctx, anim, __, child) {
+        final curved = CurvedAnimation(
+          parent: anim,
+          curve: Curves.easeOutCubic,
+          reverseCurve: Curves.easeInCubic,
+        );
+        return SlideTransition(
+          position: Tween<Offset>(
+            begin: const Offset(-1, 0),
+            end: Offset.zero,
+          ).animate(curved),
+          child: FadeTransition(opacity: curved, child: child),
+        );
+      },
+    );
+  }
+
   void _showSheet({
     required String title,
     required IconData icon,
@@ -2844,13 +2940,13 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
                         size: 22,
                       ),
                       const Spacer(),
-                      _headerIconBtn(Icons.shield_rounded, _showSafetyMenu),
-                      SizedBox(width: Responsive.w(10)),
-                      // Support agent, not a question mark: this sheet is
-                      // where the driver reaches a human — and now also
-                      // where Cancel Trip lives.
+                      // One button, not two. A shield and a headset side by
+                      // side asked the driver to classify their own problem
+                      // before they could report it; both now open the same
+                      // panel, with 911 at the top and Cancel Trip at the
+                      // bottom. See _showSafetySupportMenu.
                       _headerIconBtn(
-                          Icons.support_agent_rounded, _showHelpMenu),
+                          Icons.shield_rounded, _showSafetySupportMenu),
                     ],
                   ),
                   SizedBox(height: Responsive.h(16)),
@@ -3234,7 +3330,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
                     child: _buildCurrentPhaseWidget(),
                   ),
                   // Cancel trip moved into the support sheet — see
-                  // _showHelpMenu. It used to sit right under the slider,
+                  // _showSafetySupportMenu. It used to sit right under the slider,
                   // one mis-tap from ending a live trip.
                 ],
               ),

@@ -15,6 +15,7 @@ import '../widgets/neu_style.dart';
 import '../l10n/app_localizations.dart';
 import '../services/api_service.dart';
 import '../services/user_session.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 /// Fully functional Help & Support screen with topic detail pages,
 /// search, FAQs, and contact options.
@@ -881,7 +882,19 @@ class CruiseSupportChatScreen extends StatefulWidget {
     super.key,
     this.initialMessage,
     this.inTrip = false,
+    this.sessionKey,
   });
+
+  /// Which conversation this is. When it differs from the last one opened,
+  /// the previous chat is closed server-side and a clean one starts.
+  ///
+  /// The backend keeps one open chat per user forever, so without this a
+  /// driver who asked about trip #398 was still reading that transcript on
+  /// trip #400 — and if #398 had been escalated to dispatch, the bot stayed
+  /// muted in it (`bot_phase == 'dispatch_takeover'` never replies again).
+  /// The trip screen passes `trip:<id>`; a null key means "wherever I left
+  /// off", which is what the menu and inbox entry points want.
+  final String? sessionKey;
 
   /// Sent on the user's behalf as soon as the chat is ready.
   ///
@@ -970,6 +983,28 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
 
   // ── Initialization ──────────────────────────────────────────────────
 
+  /// Where the last opened [CruiseSupportChatScreen.sessionKey] is remembered.
+  static const _prefsSessionKey = 'support_chat_session_key';
+
+  /// True the first time a given session key is opened, false afterwards.
+  ///
+  /// Stores the key before returning, so the re-init that follows an
+  /// auto-restarted chat — and any reopen within the same trip — resumes the
+  /// conversation instead of closing it again.
+  Future<bool> _consumeFreshSessionFlag() async {
+    final key = widget.sessionKey;
+    if (key == null || key.isEmpty) return false;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (prefs.getString(_prefsSessionKey) == key) return false;
+      await prefs.setString(_prefsSessionKey, key);
+      return true;
+    } catch (_) {
+      // No prefs is not a reason to wipe a conversation.
+      return false;
+    }
+  }
+
   Future<void> _initChat() async {
     _initAttemptCount++;
     if (_initAttemptCount > 3) {
@@ -977,6 +1012,8 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
       if (mounted) setState(() => _loading = false);
       return;
     }
+    // Declared out here so the retry inside the catch can see it.
+    bool fresh = false;
     try {
       final locale = Localizations.localeOf(context).languageCode;
 
@@ -985,9 +1022,18 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
       _userRole = mode.isNotEmpty ? mode : 'rider';
 
       await ApiService.probeAndSetBestUrl(timeout: const Duration(seconds: 4));
+      // A different session key than the one we opened last time means this
+      // is a new conversation — the server closes the old chat and hands
+      // back a clean one. Consumed once (the key is stored as we ask, so a
+      // reopen inside the same trip resumes instead of wiping) and held in
+      // `fresh`, which the retry path in the catch below reuses: asking again
+      // there would return false and quietly resume the old transcript on the
+      // one attempt that actually creates the chat.
+      fresh = await _consumeFreshSessionFlag();
       final chat = await ApiService.createSupportChat(
         subject: 'Soporte general',
         locale: locale,
+        fresh: fresh,
       );
       _chatId = chat['id'] as int?;
       _agentName = chat['agent_name'] as String?;
@@ -1048,6 +1094,7 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
           final chat = await ApiService.createSupportChat(
             subject: 'Soporte general',
             locale: 'en',
+            fresh: fresh,
           );
           _chatId = chat['id'] as int?;
           _agentName = chat['agent_name'] as String?;

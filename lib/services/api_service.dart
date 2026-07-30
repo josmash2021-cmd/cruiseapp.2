@@ -1254,9 +1254,16 @@ class ApiService {
 
   /// Create or get existing open support chat.
   /// Uses retry logic to survive transient failures.
+  /// Open the user's support chat.
+  ///
+  /// [fresh] closes whatever chat is still open for this user and starts an
+  /// empty one. The caller decides when that is right — the trip screen does
+  /// it once per trip; the menu never does, so "resume where I left off"
+  /// still works from there.
   static Future<Map<String, dynamic>> createSupportChat({
     String subject = '',
     String locale = 'en',
+    bool fresh = false,
   }) async {
     final token = await getToken();
     if (token == null) throw ApiException(401, 'Not logged in');
@@ -1265,7 +1272,11 @@ class ApiService {
           .post(
             Uri.parse('$_baseUrl/support/chats'),
             headers: _jsonHeaders(token),
-            body: jsonEncode({'subject': subject, 'locale': locale}),
+            body: jsonEncode({
+              'subject': subject,
+              'locale': locale,
+              if (fresh) 'fresh': true,
+            }),
           )
           .timeout(const Duration(seconds: 12)),
       maxAttempts: 3,

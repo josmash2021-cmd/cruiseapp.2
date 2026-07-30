@@ -26,6 +26,9 @@ import '../../widgets/verified_avatar.dart';
 import '../../widgets/map/circular_pin_renderer.dart';
 import '../../l10n/app_localizations.dart';
 import '../../models/lat_lng.dart';
+import '../../map/map_surface_coordinator.dart';
+import '../../services/resilient_position_stream.dart';
+import '../../utils/driver_location_settings.dart';
 import '../../utils/mapbox_safe.dart';
 import '../../services/map_controller_cache.dart';
 import '../chat_screen.dart';
@@ -110,7 +113,7 @@ class DriverTripAcceptScreen extends StatefulWidget {
 }
 
 class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
-    with TickerProviderStateMixin {
+    with TickerProviderStateMixin, WidgetsBindingObserver {
   // ── Colours ──────────────────────────────────────────────────────────────
   static const _gold   = Color(0xFFD4A843);
   // Neumorphic base, not near-black: soft shadows are invisible on
@@ -182,7 +185,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   Animation<double>? _camBearingAnim;
 
   // ── Continuous GPS → GpsService (keeps RTDB live for rider tracking) ──
-  StreamSubscription<Position>? _liveGpsSub;
+  ResilientPositionStream? _liveGps;
   final GpsService _gpsService = GpsService();
 
   // ── Arrived at pickup detection ──
@@ -278,6 +281,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   // the handoff costs nothing visible.
   bool _previewMapMounted = false;
   Timer? _previewMapTimer;
+  static const String _mapSurfaceOwner = 'DriverTripAccept';
 
   // ── Trip distance pickup→dropoff ─────────────────────────────────────────
   double get _tripKm {
@@ -307,6 +311,9 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   @override
   void initState() {
     super.initState();
+    // Observed for one reason: coming back from background is where a dead
+    // GPS stream is found, and this screen owns the one the passenger sees.
+    WidgetsBinding.instance.addObserver(this);
     _enforceDriverRole();
     _pickupAddr = widget.pickupAddress;
     _dropoffAddr = widget.dropoffAddress;
@@ -411,16 +418,38 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     // uploaded during the entire trip lifecycle.
     _startLiveGpsForRider();
 
-    // Mount the preview map only after the handoff transition has landed.
-    // The online screen releases its native surface at kTripHandoffMs + 200;
-    // landing just after that keeps a single Mapbox surface alive at all
-    // times (see field note above).
-    _previewMapTimer = Timer(
-      const Duration(milliseconds: kTripHandoffMs + 250),
-      () {
-        if (mounted) setState(() => _previewMapMounted = true);
+    // Mount the preview map once the screen we came from has actually let
+    // go of the native surface.
+    //
+    // This used to be a timer set to kTripHandoffMs + 250, chosen to land
+    // just after the online screen's own timer at kTripHandoffMs + 200 —
+    // fifty milliseconds of margin against a PlatformView teardown that
+    // takes as long as it takes, during the busiest moment of the whole
+    // flow. Ask instead of guess.
+    _acquireMapSurface();
+  }
+
+  /// Claim the one live Mapbox surface, then mount our map.
+  ///
+  /// [surfaceRemoved] is what makes our own revoke honest: flipping the flag
+  /// only schedules the rebuild, so we wait for the frames that unmount the
+  /// widget before telling the coordinator we are clear.
+  Future<void> _acquireMapSurface() async {
+    await MapSurfaceCoordinator.instance.acquire(
+      owner: _mapSurfaceOwner,
+      onRevoke: () async {
+        if (!mounted || !_previewMapMounted) return;
+        setState(() => _previewMapMounted = false);
+        await surfaceRemoved();
       },
     );
+    if (!mounted) {
+      // Disposed while waiting our turn — do not leave the coordinator
+      // holding a claim for a screen that no longer exists.
+      MapSurfaceCoordinator.instance.release(_mapSurfaceOwner);
+      return;
+    }
+    setState(() => _previewMapMounted = true);
   }
 
   Future<void> _resolveRiderPhotoFromTrip() async {
@@ -485,8 +514,21 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      // The driver was in Google Maps, or the screen was locked. If iOS or
+      // Android killed the location stream while we were away, this is the
+      // earliest possible moment to notice — the watchdog would take up to
+      // half a minute more, and that is half a minute of frozen car.
+      _liveGps?.onAppResumed();
+    }
+  }
+
+  @override
   void dispose() {
-    _liveGpsSub?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
+    MapSurfaceCoordinator.instance.release(_mapSurfaceOwner);
+    unawaited(_liveGps?.stop());
     _gpsSub?.cancel();
     _dropoffGpsSub?.cancel();
     _riderConfirmSub?.cancel();
@@ -514,39 +556,60 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     // H5 fix: cancel any pre-existing live GPS subscription before creating
     // a new one. Without this, calling _startLiveGpsForRider more than once
     // (e.g. on lifecycle resume) leaks a native geolocation stream.
-    _liveGpsSub?.cancel();
-    _liveGpsSub = Geolocator.getPositionStream(
-      locationSettings: const LocationSettings(
-        accuracy: LocationAccuracy.bestForNavigation,
+    await _liveGps?.stop();
+    // One frame of delay: this runs from initState, and the Android
+    // foreground-service strings come from Localizations — an inherited
+    // lookup that initState is not allowed to make.
+    await WidgetsBinding.instance.endOfFrame;
+    if (!mounted) return;
+    // Background-capable AND self-healing. This is the stream the
+    // passenger's car marker is driven by; the driver spends most of a trip
+    // with this app behind Google Maps or behind a locked screen, and if it
+    // dies there is nothing on the passenger's side that can compensate —
+    // their car simply stops. See driverLocationSettings and
+    // ResilientPositionStream.
+    final s = S.of(context);
+    _liveGps = ResilientPositionStream(
+      label: 'DriverTripGps',
+      settings: driverLocationSettings(
         distanceFilter: 5,
+        notificationTitle: s.driverLocationNotifTitle,
+        notificationText: s.driverLocationNotifOnTrip,
       ),
-    ).listen((pos) {
-      if (!mounted) return;
-      _lastDriverPos = LatLng(pos.latitude, pos.longitude);
-      _gpsService.updatePosition(
-        LatLng(pos.latitude, pos.longitude),
-        pos.heading,
-        pos.speed,
-      );
-      // Refresh the distance chip. The stream already only fires every 5 m,
-      // and rebuilding is skipped unless the rounded label would change —
-      // no setState storm from a driver sitting at a light.
-      if (!_rideStarted) {
-        final miles = Geolocator.distanceBetween(
-              pos.latitude,
-              pos.longitude,
-              widget.pickupLatLng.latitude,
-              widget.pickupLatLng.longitude,
-            ) /
-            1609.34;
-        final prev = _milesToPickup;
-        if (prev == null || (prev - miles).abs() >= 0.05) {
-          setState(() => _milesToPickup = miles);
-        } else {
-          _milesToPickup = miles;
+      // Push the first fix after a gap straight out instead of waiting for
+      // the upload throttle — the passenger has been watching a frozen car.
+      onFirstFixAfterGap: () {
+        final p = _lastDriverPos;
+        if (p != null) _gpsService.updatePosition(p, 0, 0);
+      },
+      onPosition: (pos) {
+        if (!mounted) return;
+        _lastDriverPos = LatLng(pos.latitude, pos.longitude);
+        _gpsService.updatePosition(
+          LatLng(pos.latitude, pos.longitude),
+          pos.heading,
+          pos.speed,
+        );
+        // Refresh the distance chip. The stream already only fires every 5 m,
+        // and rebuilding is skipped unless the rounded label would change —
+        // no setState storm from a driver sitting at a light.
+        if (!_rideStarted) {
+          final miles = Geolocator.distanceBetween(
+                pos.latitude,
+                pos.longitude,
+                widget.pickupLatLng.latitude,
+                widget.pickupLatLng.longitude,
+              ) /
+              1609.34;
+          final prev = _milesToPickup;
+          if (prev == null || (prev - miles).abs() >= 0.05) {
+            setState(() => _milesToPickup = miles);
+          } else {
+            _milesToPickup = miles;
+          }
         }
-      }
-    });
+      },
+    )..start();
 
     // Start GpsService upload ASAP — don't block on async user ID lookup.
     // The position stream is already running; once GpsService starts, it

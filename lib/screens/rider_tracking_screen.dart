@@ -280,6 +280,22 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   /// Current traveled distance in meters along the route.
   double _traveledM = 0;
 
+  /// Ticks once per animation frame so the Flutter-painted car repaints
+  /// with the motion.
+  ///
+  /// Nothing in this screen's GPS path calls setState per frame — the
+  /// annotations were written straight to the map, which needs no rebuild,
+  /// and the widget tree is deliberately rebuilt at about three times a
+  /// second so the cards stay cheap. A CustomPaint or an Image drawn on top
+  /// only redraws when something tells it to, so without this the car would
+  /// have been repainted three times a second while claiming sixty. That
+  /// exact mistake shipped twice on the driver screens today.
+  ///
+  /// A notifier and not setState: this repaints one 88-pixel image, where
+  /// setState would rebuild the map, both cards and the chat pill sixty
+  /// times a second.
+  final ValueNotifier<int> _carFrame = ValueNotifier<int>(0);
+
   Ticker? _interpTicker;
   /// True when animation has converged — ticker is paused to save CPU/battery.
   /// Restarted automatically when new GPS data arrives.
@@ -473,6 +489,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
       NetworkService().onlineNotifier.removeListener(_networkListener!);
       _networkListener = null;
     }
+    _carFrame.dispose();
     _interpTicker?.dispose();
     _camTimer?.cancel();
     _carHeartbeatTimer?.cancel();
@@ -507,6 +524,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
     _rtdbReconnectTimer?.cancel();
     _staleDriverTimer?.cancel();
     _gpsFallbackTimer?.cancel();
+    _driverGpsWatchdog?.cancel();
     _approachRouteTimer?.cancel();
     _trafficRefreshTimer?.cancel();
     _labelAnimJob?.cancel();
@@ -612,6 +630,17 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   /// perfectly connected and perfectly silent, and the one channel that
   /// would have caught it — this poll — was the thing being skipped.
   DateTime? _lastLiveStatusAt;
+
+  /// When a driver position last arrived, from ANY channel.
+  ///
+  /// The one honest measure of whether the passenger is being told where
+  /// their car is. Every other signal available here — socket connected,
+  /// listener attached, Firestore responding — can be true while this stays
+  /// null and the car sits frozen on the map.
+  DateTime? _lastDriverGpsAt;
+
+  /// Re-arms the RTDB driver feed when [_lastDriverGpsAt] goes quiet.
+  Timer? _driverGpsWatchdog;
 
   // Fallback: fetch approach route from backend if no RTDB GPS in 5s
   Timer? _gpsFallbackTimer;

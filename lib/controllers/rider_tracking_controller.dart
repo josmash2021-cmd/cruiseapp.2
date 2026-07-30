@@ -198,26 +198,35 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     // Delayed start — SSE handles 99% of updates, Firestore is safety net.
     _initFirebaseAndListeners(tripId, sqlDocId, fallbackDocId);
 
-    // ── 3. RTDB driver GPS — fallback when Socket.io is down ──
-    // Only start RTDB if Socket.io is not connected. If Socket.io IS connected,
-    // RTDB is redundant and wastes bandwidth. We'll start it on-demand if Socket.io fails.
+    // ── 3. RTDB driver GPS — the fallback, armed by silence ──
+    //
+    // This used to defer to Socket.io whenever the socket was *connected*,
+    // on the reasoning that RTDB would then be redundant bandwidth. Connected
+    // is not delivering: a rider holding a perfectly healthy socket that is
+    // simply not being sent this driver's GPS got no position at all, and the
+    // condition guarding the fallback (`!SocketService.isConnected`) was
+    // false the entire time, so it never armed. The car sat frozen on the map
+    // for the whole ride and nothing in the app considered that a fault.
+    //
+    // Keep the deferral — the socket really is the cheaper channel — but arm
+    // it on the only evidence that matters: whether any GPS has arrived.
     final did = widget.driverId;
     if (did != null && did.isNotEmpty && _rtdbDriverId != did) {
       if (!SocketService.isConnected) {
         _startRtdbDriverListener(did);
       } else {
         debugPrint('[RiderTracking] Socket.io connected — deferring RTDB start');
-        // Start RTDB after a delay only if Socket.io hasn't delivered GPS
         _gpsFallbackTimer?.cancel();
         _gpsFallbackTimer = Timer(const Duration(seconds: 8), () {
           if (!mounted || _phase == _TrackPhase.completed) return;
-          if (!SocketService.isConnected && _rtdbDriverId == null) {
-            debugPrint('[RiderTracking] Socket.io still down after 8s — starting RTDB fallback');
+          if (_lastDriverGpsAt == null && _rtdbDriverId == null) {
+            debugPrint('[RiderTracking] no driver GPS after 8s — starting RTDB fallback');
             _startRtdbDriverListener(did);
           }
         });
       }
     }
+    _startDriverGpsWatchdog();
 
     // Start chase camera follow timer
     _startCameraFollowTracking();
@@ -423,9 +432,49 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     }
   }
 
+  /// Watch for the driver's position going silent and re-arm the fallback.
+  ///
+  /// The two live GPS channels fail differently and neither reports it: a
+  /// Socket.io room can stay joined while nothing is routed to it, and an
+  /// RTDB listener can survive an auth expiry as a subscription that never
+  /// fires again. In both cases every health flag the app owns keeps saying
+  /// "fine" while the passenger watches a car that has stopped moving.
+  /// Silence is the only symptom, so silence is what this watches.
+  void _startDriverGpsWatchdog() {
+    _driverGpsWatchdog?.cancel();
+    _driverGpsWatchdog = Timer.periodic(const Duration(seconds: 5), (_) {
+      if (!mounted || _phase == _TrackPhase.completed) {
+        _driverGpsWatchdog?.cancel();
+        return;
+      }
+      final did = widget.driverId ?? _rtdbDriverId;
+      if (did == null || did.isEmpty) return;
+
+      final last = _lastDriverGpsAt;
+      // 15 s. Long enough that a driver stopped at a light — the streams use
+      // a distance filter and legitimately emit nothing — is not mistaken
+      // for a dead channel.
+      final silent = last == null ||
+          DateTime.now().difference(last).inSeconds > 15;
+      if (!silent) return;
+
+      // Bring RTDB up, or rebuild it if it is the one that went quiet. This
+      // is deliberately cheap to repeat: _startRtdbDriverListener cancels
+      // its previous subscription first.
+      debugPrint('[RiderTracking] driver GPS silent — re-arming RTDB feed');
+      _startRtdbDriverListener(did);
+
+      // And ask the backend directly. RTDB only carries what the driver's
+      // app publishes; if that is what died, the server's last known
+      // position is the only thing left that can move the car.
+      if (_phase != _TrackPhase.arrived) _fetchDriverPositionFallback();
+    });
+  }
+
   /// Process real-time driver location from RTDB.
   void _onRealDriverLocation(LatLng ll, {double? bearing, double? speed}) {
     if (ll.latitude == 0 && ll.longitude == 0) return;
+    _lastDriverGpsAt = DateTime.now();
     // Validate bearing — NaN/Infinity would break rotation interpolation
     if (bearing != null && (bearing.isNaN || bearing.isInfinite)) bearing = null;
     if (speed != null && (speed.isNaN || speed.isInfinite || speed < 0)) speed = null;

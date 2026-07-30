@@ -1,5 +1,7 @@
+import 'dart:async';
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
+import '../../map/map_surface_coordinator.dart';
 import '../../services/haptic_service.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_database/firebase_database.dart';
@@ -48,6 +50,17 @@ class _DriverRateRiderScreenState extends State<DriverRateRiderScreen>
   static const _gold = Color(0xFFD4A843);
   static const _bg   = Color(0xFF0A0D1A);
 
+  /// Identifies this screen to [MapSurfaceCoordinator].
+  static const String _mapSurfaceOwner = 'DriverRateRider';
+
+  /// The backdrop map waits its turn. This screen is pushed straight off
+  /// the trip screen, which is still holding a live surface — mounting
+  /// unconditionally, as this did, put two up at the end of every ride.
+  /// It is a blurred decorative backdrop, so arriving a few frames late
+  /// costs nothing visible.
+  bool _mapMounted = false;
+
+
   int _stars = 0;
   final Set<String> _selectedTags = {};
   bool _submitting = false;
@@ -72,12 +85,30 @@ class _DriverRateRiderScreenState extends State<DriverRateRiderScreen>
       duration: const Duration(milliseconds: 500),
     )..forward();
     _fadeAnim = CurvedAnimation(parent: _fadeCtrl, curve: Curves.easeOut);
+    unawaited(_acquireMapSurface());
   }
 
   @override
   void dispose() {
+    MapSurfaceCoordinator.instance.release(_mapSurfaceOwner);
     _fadeCtrl.dispose();
     super.dispose();
+  }
+
+  Future<void> _acquireMapSurface() async {
+    await MapSurfaceCoordinator.instance.acquire(
+      owner: _mapSurfaceOwner,
+      onRevoke: () async {
+        if (!mounted || !_mapMounted) return;
+        setState(() => _mapMounted = false);
+        await surfaceRemoved();
+      },
+    );
+    if (!mounted) {
+      MapSurfaceCoordinator.instance.release(_mapSurfaceOwner);
+      return;
+    }
+    setState(() => _mapMounted = true);
   }
 
   String get _firstName => widget.riderName.split(' ').first;
@@ -164,6 +195,7 @@ class _DriverRateRiderScreenState extends State<DriverRateRiderScreen>
       body: Stack(
         children: [
           // ── Blurred dark Mapbox map background ──
+          if (_mapMounted)
           Positioned.fill(
             child: IgnorePointer(
               child: mapbox.MapWidget(

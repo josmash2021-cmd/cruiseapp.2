@@ -74,6 +74,42 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
       );
     }
     return RepaintBoundary(
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          // The projection turns a coordinate into a pixel of THIS box, so
+          // it has to be measured rather than assumed.
+          _onlineMapSize = Size(constraints.maxWidth, constraints.maxHeight);
+          final offset = _dotScreenOffset;
+          return Stack(
+            children: [
+              Positioned.fill(child: _mapSurface(isDark)),
+              // The marker, painted by Flutter: centred while the camera
+              // follows, at its own projected pixel once the driver has
+              // panned or zoomed away. The Mapbox annotation takes back over
+              // only where neither applies — see _dotOverlayOwnsMarker.
+              Positioned.fill(
+                child: ListenableBuilder(
+                listenable: _markerFrame,
+                builder: (context, _) {
+                  if (!_dotOverlayOwnsMarker) return const SizedBox.shrink();
+                  final o = _dotScreenOffset;
+                  final dot = GoldLocationDotOverlay(bearing: _heading);
+                  const half = GoldLocationDot.driverOverlaySize / 2;
+                  if (o == null) return Center(child: dot);
+                  return Stack(children: [
+                    Positioned(left: o.dx - half, top: o.dy - half, child: dot),
+                  ]);
+                },
+              )),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _mapSurface(bool isDark) {
+    return RepaintBoundary(
       child: mapbox.MapWidget(
         key: _mapKey,
         textureView: true,
@@ -175,6 +211,14 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
         },
         onScrollListener: (_) {
           _onCameraMoveStarted();
+        },
+        onCameraChangeListener: (data) {
+          _onlineCamState = data.cameraState;
+          // See the same listener on the home screen: the overlay's pixel
+          // comes from this camera, and the motion ticker parks when the
+          // driver stops, so without this the arrow would stick to a stale
+          // pixel while a stationary driver drags the map.
+          _markerFrame.value++;
         },
       ),
     );
@@ -339,35 +383,22 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
         return _searchingBar(isDark, surface, textMuted, borderC);
       case _Phase.rideRequest:
         return const SizedBox.shrink(); // handled by stacked cards overlay
+      // The trip is run by DriverTripAcceptScreen, which this screen pushes
+      // on accept. These four phases belonged to an earlier design where the
+      // whole ride happened here instead — panels, turn-by-turn, arrival and
+      // start-trip buttons, a tilted navigation camera. Nothing has been able
+      // to enter that flow since the separate screen was introduced: its two
+      // doors, _showPickupSummary and _toPickup, had no callers at all, and
+      // every other state in it was only reachable from another state inside
+      // it. A closed loop with no entrance.
+      //
+      // The panels are gone. The phase constants stay because they are still
+      // read by camera, GPS and annotation code as harmless guards, and
+      // unpicking those is a separate job with its own risk.
       case _Phase.enRouteToPickup:
-        return _pickupPanel(
-          isDark,
-          bg,
-          textPrimary,
-          textMuted,
-          borderC,
-          shadowC,
-        );
       case _Phase.arrivedAtPickup:
-        return _arrivedPanel(
-          isDark,
-          bg,
-          textPrimary,
-          textMuted,
-          borderC,
-          shadowC,
-        );
       case _Phase.routeSummary:
-        return _routeSummaryPanel(
-          isDark,
-          bg,
-          textPrimary,
-          textMuted,
-          borderC,
-          shadowC,
-        );
       case _Phase.inTrip:
-        return _tripPanel(isDark, bg, textPrimary, textMuted, borderC, shadowC);
       case _Phase.completed:
         return const SizedBox.shrink();
     }
@@ -2374,545 +2405,8 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
     );
   }
 
-  // â”€â”€ ROUTE SUMMARY PANEL (Google Maps-style overview before navigation) â”€â”€
-  Widget _routeSummaryPanel(
-    bool isDark,
-    Color bg,
-    Color textPrimary,
-    Color textMuted,
-    Color borderC,
-    Color shadowC,
-  ) {
-    return _wrapInDraggableSheet(
-      isDark: isDark,
-      surface: bg,
-      shadowC: shadowC,
-      minChildSize: 0.45,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          _handle(isDark),
-          const SizedBox(height: 10),
-          // Rider info header with fare
-          Row(
-            children: [
-              _avatar(42, showBadge: true),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      _riderName,
-                      style: TextStyle(
-                        color: textPrimary,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                    Text(
-                      _vehicleType,
-                      style: TextStyle(
-                        color: _gold,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Text(
-                '\$${_fare.toStringAsFixed(2)}',
-                style: const TextStyle(
-                  color: _gold,
-                  fontSize: 20,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          // Distance / ETA / Trip info badges
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: [
-              _summaryBadge(
-                Icons.navigation_rounded,
-                '${(_navDist * 0.621371).toStringAsFixed(1)} mi',
-                textPrimary,
-                textMuted,
-              ),
-              _summaryBadge(
-                Icons.access_time_rounded,
-                '$_navEta min',
-                textPrimary,
-                textMuted,
-              ),
-              _summaryBadge(
-                Icons.route_rounded,
-                '${(_tripDist * 0.621371).toStringAsFixed(1)} mi trip',
-                textPrimary,
-                textMuted,
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          // Pickup & Dropoff addresses
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: _gold.withValues(alpha: 0.04),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: _gold.withValues(alpha: 0.10)),
-            ),
-            child: Column(
-              children: [
-                Row(
-                  children: [
-                    const Icon(Icons.location_on_rounded, color: _gold, size: 18),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        _pickupAddr,
-                        style: TextStyle(color: textPrimary, fontSize: 13, fontWeight: FontWeight.w600),
-                        maxLines: 3,
-                        softWrap: true,
-                      ),
-                    ),
-                  ],
-                ),
-                Padding(
-                  padding: const EdgeInsets.only(left: 8),
-                  child: Align(
-                    alignment: Alignment.centerLeft,
-                    child: Container(
-                      width: 2, height: 16,
-                      color: _gold.withValues(alpha: 0.3),
-                    ),
-                  ),
-                ),
-                Row(
-                  children: [
-                    const Icon(Icons.flag_rounded, color: _gold, size: 18),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        _dropoffAddr,
-                        style: TextStyle(color: textPrimary, fontSize: 13, fontWeight: FontWeight.w600),
-                        maxLines: 3,
-                        softWrap: true,
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 10),
-          // Re-center button + Start Navigation button
-          Row(
-            children: [
-              // Re-center / overview button
-              GestureDetector(
-                onTap: () {
-                  HapticService.lightImpact();
-                  _fitBoundsMulti([_pos!, _pickupLL, _dropoffLL]);
-                },
-                child: Container(
-                  width: 48,
-                  height: 48,
-                  decoration: BoxDecoration(
-                    color: _gold.withValues(alpha: 0.08),
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: _gold.withValues(alpha: 0.2)),
-                  ),
-                  child: const Icon(
-                    Icons.center_focus_strong_rounded,
-                    color: _gold,
-                    size: 22,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 12),
-              // Start Navigation button
-              Expanded(
-                child: SizedBox(
-                  height: 48,
-                  child: ElevatedButton.icon(
-                    onPressed: () => _beginNavigation(),
-                    icon: const Icon(
-                      Icons.navigation_rounded,
-                      color: Colors.black,
-                      size: 20,
-                    ),
-                    label: Flexible(
-                      child: Text(
-                        S.of(context).startNavigation,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: Colors.black,
-                          fontSize: 16,
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
-                    ),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: _gold,
-                      foregroundColor: Colors.black,
-                      elevation: 4,
-                      shadowColor: _gold.withValues(alpha: 0.3),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
 
-  // ── PICKUP PANEL ──
-  Widget _pickupPanel(
-    bool isDark,
-    Color bg,
-    Color textPrimary,
-    Color textMuted,
-    Color borderC,
-    Color shadowC,
-  ) {
-    return Container(
-      decoration: BoxDecoration(
-        color: bg,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.12),
-            blurRadius: 14,
-            offset: const Offset(0, -4),
-          )
-        ],
-      ),
-      child: SafeArea(
-        top: false,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Center(
-                child: Container(
-                  width: 40, height: 4,
-                  margin: const EdgeInsets.only(bottom: 16),
-                  decoration: BoxDecoration(
-                    color: borderC,
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-              ),
-              Row(
-                children: [
-                  const Icon(Icons.location_on_rounded, color: _gold, size: 20),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          _riderName,
-                          style: TextStyle(
-                            color: textPrimary,
-                            fontSize: 17,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          _pickupAddr,
-                          style: TextStyle(
-                            color: textMuted,
-                            fontSize: 13,
-                            fontWeight: FontWeight.w500,
-                          ),
-                          maxLines: 3,
-                          softWrap: true,
-                        ),
-                      ],
-                    ),
-                  ),
-                  IconButton(
-                    onPressed: () async {
-                      final tid = _tripId;
-                      if (tid != null) {
-                        await MaskedCallService.callCounterparty(tripId: tid, role: 'driver');
-                      }
-                    },
-                    icon: const Icon(Icons.phone, color: _gold, size: 22),
-                    style: IconButton.styleFrom(
-                      backgroundColor: isDark
-                          ? Colors.white.withValues(alpha: 0.1)
-                          : Colors.black.withValues(alpha: 0.05),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              // Navigate button row
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: () => MapLauncherService.navigate(
-                        destLat: _pickupLL.latitude,
-                        destLng: _pickupLL.longitude,
-                      ),
-                      icon: const Icon(Icons.navigation_rounded, size: 18),
-                      label: Text(S.of(context).navigateLabel),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: isDark ? Colors.white : Colors.black,
-                        side: BorderSide(
-                          color: isDark
-                              ? Colors.white.withValues(alpha: 0.2)
-                              : Colors.black.withValues(alpha: 0.2),
-                        ),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        minimumSize: const Size.fromHeight(48),
-                        textStyle: const TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: 0.5,
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              SizedBox(
-                width: double.infinity,
-                height: 56,
-                child: ElevatedButton(
-                  onPressed: _arrivePickup,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.black,
-                    foregroundColor: Colors.white,
-                    elevation: 0,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                  child: Text(
-                    _nearPickupNotified
-                        ? S.of(context).arrived.toUpperCase()
-                        : S.of(context).arrivedAtPickup.toUpperCase(),
-                    style: const TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 0.5,
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
 
-  // ── ARRIVED PANEL ──
-  Widget _arrivedPanel(
-    bool isDark,
-    Color bg,
-    Color textPrimary,
-    Color textMuted,
-    Color borderC,
-    Color shadowC,
-  ) {
-    return _wrapInDraggableSheet(
-      isDark: isDark,
-      surface: bg,
-      shadowC: shadowC,
-      minChildSize: 0.38,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          _handle(isDark),
-          const SizedBox(height: 12),
-          // Waiting status
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(vertical: 10),
-            decoration: BoxDecoration(
-              color: _goldLight.withValues(alpha: 0.05),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: _goldLight.withValues(alpha: 0.1)),
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                SizedBox(
-                  width: 14,
-                  height: 14,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    valueColor: AlwaysStoppedAnimation(
-                      _goldLight.withValues(alpha: 0.8),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Text(
-                  S.of(context).waitingForRider,
-                  style: TextStyle(
-                    color: textMuted,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: 0.8,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              _avatar(50, showBadge: true),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      _riderName,
-                      style: TextStyle(
-                        color: textPrimary,
-                        fontSize: 18,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 2,
-                      ),
-                      decoration: BoxDecoration(
-                        color: _gold.withValues(alpha: 0.08),
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: Text(
-                        _vehicleType,
-                        style: const TextStyle(
-                          color: _gold,
-                          fontSize: 10,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              _actionBtn(Icons.phone_rounded, () async {
-                final tid = _tripId;
-                if (tid != null) {
-                  await MaskedCallService.callCounterparty(tripId: tid, role: 'driver');
-                }
-              }),
-              const SizedBox(width: 8),
-              Stack(
-                clipBehavior: Clip.none,
-                children: [
-                  _actionBtn(Icons.chat_bubble_rounded, () {
-                    Navigator.of(context, rootNavigator: true).push(
-                      slideFromRightRoute(ChatScreen(
-                        recipientName: _riderName,
-                        tripId: _tripId,
-                        currentUserId: _driverId?.toString(),
-                        currentRole: 'driver',
-                      )),
-                    );
-                  }),
-                  if (_tripId != null)
-                    StreamBuilder<int>(
-                      stream: ChatService().unreadCountStream(
-                        rideId: _tripId.toString(),
-                        readerRole: 'driver',
-                      ),
-                      builder: (context, snap) {
-                        final count = snap.data ?? 0;
-                        if (count == 0) return const SizedBox.shrink();
-                        return Positioned(
-                          right: -4,
-                          top: -4,
-                          child: Container(
-                            padding: const EdgeInsets.all(4),
-                            decoration: const BoxDecoration(
-                              color: Color(0xFFEF4444),
-                              shape: BoxShape.circle,
-                            ),
-                            constraints: const BoxConstraints(minWidth: 18, minHeight: 18),
-                            child: Text(
-                              count > 9 ? '9+' : '$count',
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 10,
-                                fontWeight: FontWeight.w800,
-                              ),
-                              textAlign: TextAlign.center,
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-                ],
-              ),
-            ],
-          ),
-          const SizedBox(height: 14),
-          // START TRIP button
-          SizedBox(
-            width: double.infinity,
-            height: 52,
-            child: ElevatedButton.icon(
-              onPressed: _startTrip,
-              icon: const Icon(
-                Icons.play_arrow_rounded,
-                color: Colors.black,
-                size: 22,
-              ),
-              label: Text(
-                S.of(context).startTrip,
-                style: const TextStyle(
-                  color: Colors.black,
-                  fontSize: 16,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: _gold,
-                foregroundColor: Colors.black,
-                elevation: 4,
-                shadowColor: _gold.withValues(alpha: 0.4),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(14),
-                ),
-              ),
-            ),
-          ),
-          // Cancel policy 2026-04-11: driver can no longer directly
-          // cancel. The old _cancelRow textbutton was removed — any
-          // driver-initiated abort must go through "Contact Support".
-        ],
-      ),
-    );
-  }
 
   // â”€â”€ IN-TRIP PANEL â”€â”€
   // NAV STAT CHIP (icon + label, used in Google Maps-style ETA strip)
@@ -2934,215 +2428,6 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
     );
   }
 
-  Widget _tripPanel(
-    bool isDark,
-    Color bg,
-    Color textPrimary,
-    Color textMuted,
-    Color borderC,
-    Color shadowC,
-  ) {
-    return Container(
-      decoration: BoxDecoration(
-        color: bg,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.1),
-            blurRadius: 16,
-            offset: const Offset(0, -2),
-          ),
-        ],
-      ),
-      child: SafeArea(
-        top: false,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // ETA strip - Uber style
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        '$_navEta min',
-                        style: TextStyle(
-                          color: textPrimary,
-                          fontSize: 28,
-                          fontWeight: FontWeight.w900,
-                          height: 1.0,
-                        ),
-                      ),
-                      Text(
-                        '${(_navDist * 0.621371).toStringAsFixed(1)} mi away',
-                        style: TextStyle(
-                          color: textMuted,
-                          fontSize: 13,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ],
-                  ),
-                  Text(
-                    '\$${_fare.toStringAsFixed(2)}',
-                    style: TextStyle(
-                      color: textPrimary,
-                      fontSize: 24,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-              // Rider info with avatar + badge
-              Row(
-                children: [
-                  _avatar(42, showBadge: true),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          _riderName,
-                          style: TextStyle(
-                            color: textPrimary,
-                            fontSize: 16,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          _vehicleType,
-                          style: const TextStyle(
-                            color: _gold,
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  IconButton(
-                    onPressed: () async {
-                      final tid = _tripId;
-                      if (tid != null) {
-                        await MaskedCallService.callCounterparty(tripId: tid, role: 'driver');
-                      }
-                    },
-                    icon: const Icon(
-                      Icons.phone,
-                      color: _gold,
-                      size: 22,
-                    ),
-                    style: IconButton.styleFrom(
-                      backgroundColor: isDark
-                          ? Colors.white.withValues(alpha: 0.1)
-                          : Colors.black.withValues(alpha: 0.05),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              // Dropoff address card — full text, gold icon
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: isDark ? const Color(0xFF1A1A1F) : Colors.grey.shade100,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Row(
-                  children: [
-                    const Icon(Icons.flag_rounded, color: _gold, size: 20),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        _dropoffAddr,
-                        style: TextStyle(
-                          color: textPrimary,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                        ),
-                        maxLines: 3,
-                        softWrap: true,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 12),
-              // Navigate to dropoff button
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: () => MapLauncherService.navigate(
-                        destLat: _dropoffLL.latitude,
-                        destLng: _dropoffLL.longitude,
-                      ),
-                      icon: const Icon(Icons.navigation_rounded, size: 18),
-                      label: Text(S.of(context).navigateLabel),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: isDark ? Colors.white : Colors.black,
-                        side: BorderSide(
-                          color: isDark
-                              ? Colors.white.withValues(alpha: 0.2)
-                              : Colors.black.withValues(alpha: 0.2),
-                        ),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        minimumSize: const Size.fromHeight(48),
-                        textStyle: const TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: 0.5,
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              // COMPLETE TRIP button - Uber style
-              SizedBox(
-                width: double.infinity,
-                height: 56,
-                child: ElevatedButton(
-                  onPressed: _complete,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: _nearDropoffNotified
-                        ? Colors.black
-                        : Colors.black.withValues(alpha: 0.3),
-                    foregroundColor: Colors.white,
-                    elevation: 0,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                  child: Text(
-                    _nearDropoffNotified
-                        ? S.of(context).finishTrip.toUpperCase()
-                        : 'COMPLETE TRIP',
-                    style: const TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 0.5,
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
 
   // â”€â”€ COMPLETED OVERLAY â”€â”€
   Widget _completedOverlay(

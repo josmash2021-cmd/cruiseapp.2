@@ -1,6 +1,8 @@
 import 'dart:async';
 import '../utils/app_platform.dart';
 import 'package:audioplayers/audioplayers.dart';
+
+import 'audio_session_config.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart' show Color;
@@ -101,6 +103,9 @@ class NotificationService {
     // Pre-load audio players AND pre-warm iOS audio session in background
     Future<void>(() async {
       try {
+        // Before the pre-warm below activates the session — that silent
+        // play at launch is what used to stop the user's music.
+        await ensureNonInterruptingAudio();
         await _offerPlayer.setReleaseMode(ReleaseMode.stop);
         await _offerPlayer.setSource(AssetSource('sounds/cruise_online.wav'));
         // Explicitly release player state when the clip ends so the

@@ -1233,8 +1233,14 @@ extension _RideRequestWidgets on _RideRequestScreenState {
     // below it with a fixed height, comfortable padding all around — no
     // Expanded/Spacer, so there's no empty band in the middle.
     return Container(
-      // Compact fixed height: 12 top + name + 10 gap + 58 car + 16 bottom.
-      height: 124,
+      // 12 top + name 17 + 10 gap + car 58 + 6 gap + wait 13 + 12 bottom.
+      //
+      // Raised from 124 when the wait line was added inside. 124 was the
+      // exact sum of what was here before, so the new line overflowed by
+      // eight pixels — and the card clips, so it did not shout about it:
+      // the minutes were simply cut off. A fixed height has to be
+      // recomputed every time something joins it.
+      height: 142,
       clipBehavior: Clip.antiAlias,
       decoration: selected
           ? neuBox(
@@ -1244,7 +1250,7 @@ extension _RideRequestWidgets on _RideRequestScreenState {
             )
           : neuBox(radius: 24),
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(8, 12, 8, 16),
+        padding: const EdgeInsets.fromLTRB(8, 12, 8, 12),
         child: Column(
           children: [
             // Vehicle name on top — home screen style
@@ -1316,7 +1322,9 @@ extension _RideRequestWidgets on _RideRequestScreenState {
   // Shimmer card for grid loading state - web style
   Widget _buildShimmerCardGrid() {
     return Container(
-      height: 124,
+      // Matches the real card, or the sheet visibly jumps taller the
+      // moment the fares land and the skeletons are replaced.
+      height: 142,
       decoration: BoxDecoration(
         gradient: const LinearGradient(
           begin: Alignment.topLeft,

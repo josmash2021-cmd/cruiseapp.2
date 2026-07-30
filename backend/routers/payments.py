@@ -167,7 +167,8 @@ async def create_payment_intent(body: PaymentIntentIn, user: User = Depends(_get
         customer_id = await _get_or_create_stripe_customer(user, db)
         if customer_id:
             intent_params["customer"] = customer_id
-        if body.payment_method_id:
+        off_session = bool(body.payment_method_id)
+        if off_session:
             intent_params["payment_method"] = body.payment_method_id
             intent_params["confirm"] = True
             intent_params["off_session"] = True
@@ -182,8 +183,23 @@ async def create_payment_intent(body: PaymentIntentIn, user: User = Depends(_get
         if body.hold_only:
             intent_params["capture_method"] = "manual"
 
-        # Save payment method for future off-session charges
-        intent_params["setup_future_usage"] = "off_session"
+        # Save the payment method for future charges — but ONLY when the rider
+        # is present to approve it.
+        #
+        # This was set unconditionally, and Stripe rejects the combination
+        # outright: `setup_future_usage` together with `off_session=True` is an
+        # error, not a warning. So the request never became a charge. Nothing
+        # was authorised, nothing was debited, and the rider got Stripe's
+        # internal explanation printed at them as if their bank had declined —
+        # the same result for every rider paying with a saved method, every
+        # time, which is why it looked like the button did nothing.
+        #
+        # The flag is also pointless in that branch: a `payment_method_id` only
+        # exists because the method was already saved. There is nothing left to
+        # set up. It belongs on the on-session path, where the rider is looking
+        # at a payment sheet and can complete whatever the bank asks for.
+        if not off_session:
+            intent_params["setup_future_usage"] = "off_session"
 
         if body.trip_id:
             intent_params["metadata"]["trip_id"] = str(body.trip_id)

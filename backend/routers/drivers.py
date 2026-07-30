@@ -1324,11 +1324,53 @@ async def add_rider_payment_method(body: RiderPaymentMethodIn, user: User = Depe
 
 @router.delete("/riders/payment-methods/{pm_id}", dependencies=[Depends(_verify_api_key)])
 async def delete_rider_payment_method(pm_id: int, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
+    """Remove a saved card or bank — from Stripe as well as from our table.
+
+    This used to delete only our row. The PaymentMethod stayed attached to
+    the rider's Stripe customer, which means it stayed chargeable, and the
+    endpoints that read methods from Stripe rather than from us kept
+    returning it — so a card the rider deleted could reappear in the picker
+    on the next sync and could still be billed in the meantime. Deleting a
+    payment method has to mean deleting it.
+    """
     result = await db.execute(select(RiderPaymentMethod).where(RiderPaymentMethod.id == pm_id, RiderPaymentMethod.user_id == user.id))
     pm = result.scalar_one_or_none()
     if not pm:
         raise HTTPException(404, "Payment method not found")
+
+    stripe_pm_id = getattr(pm, "stripe_pm_id", None)
+    was_default = bool(getattr(pm, "is_default", False))
+
+    if stripe_pm_id:
+        try:
+            from routers.payments import _HAS_STRIPE, _stripe_mod
+            if _HAS_STRIPE:
+                _stripe_mod.PaymentMethod.detach(stripe_pm_id)
+                logging.info("[Stripe] detached %s for user %s", stripe_pm_id, user.id)
+        except Exception as e:
+            # Already detached, or Stripe is unreachable. Do NOT abort: leaving
+            # our row behind would show the rider a method they just deleted
+            # and believe is gone. A stale attachment on Stripe's side is
+            # recoverable; a card that refuses to disappear is not.
+            logging.warning(
+                "[Stripe] detach failed for %s (user %s): %s — removing locally anyway",
+                stripe_pm_id, user.id, e,
+            )
+
     await db.delete(pm)
+    await db.flush()
+
+    # Something has to be the default, or the next ride has nothing to charge.
+    if was_default:
+        remaining = await db.execute(
+            select(RiderPaymentMethod)
+            .where(RiderPaymentMethod.user_id == user.id)
+            .order_by(RiderPaymentMethod.id.desc())
+        )
+        nxt = remaining.scalars().first()
+        if nxt is not None:
+            nxt.is_default = True
+
     await db.commit()
     return {"status": "deleted"}
 

@@ -600,6 +600,19 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   // heard from Firestore → poll runs normally (safe default).
   DateTime? _lastFirestoreEventAt;
 
+  /// When a live push channel (SSE, Socket.io, Firestore) last delivered an
+  /// actual trip status — not merely when it was connected.
+  ///
+  /// The poll used to stand down whenever Socket.io reported `isConnected`
+  /// and Firestore had said anything recently. Connected is not the same as
+  /// delivering: the backend runs several uvicorn workers and both the SSE
+  /// event bus and the Socket.io rooms live in one process's memory, so a
+  /// status pushed by the worker that handled the driver's request never
+  /// reaches a rider parked on a different one. The rider's socket is
+  /// perfectly connected and perfectly silent, and the one channel that
+  /// would have caught it — this poll — was the thing being skipped.
+  DateTime? _lastLiveStatusAt;
+
   // Fallback: fetch approach route from backend if no RTDB GPS in 5s
   Timer? _gpsFallbackTimer;
   Timer? _approachRouteTimer;  // FIX: separate from _gpsFallbackTimer to avoid overwriting RTDB fallback
@@ -709,6 +722,12 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
         opacity: _pickupOverlayFade,
         child: SlideTransition(
           position: _pickupOverlaySlide,
+          // The overlay slides over a live Mapbox texture. Given its own
+          // layer, the entrance re-composites an already-rasterised screen;
+          // without one, every frame of the slide re-rasterises this screen
+          // and the map underneath together — which is what made the arrival
+          // screen come in torn instead of gliding.
+          child: RepaintBoundary(
           child: RiderConfirmPickupScreen(
             driverName: widget.driverName,
             vehicleDesc: vehicleDesc,
@@ -743,6 +762,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
               }
             },
           ),
+        ),
         ),
       ),
     );

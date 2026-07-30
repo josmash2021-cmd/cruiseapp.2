@@ -44,18 +44,29 @@ ENV PYTHONDONTWRITEBYTECODE=1
 
 # Uvicorn tuning.
 #
-# WORKERS is capped by the DATABASE, not by CPU. The service has 24 vCPU and
-# 24 GB available, and the app is I/O-bound, so cores are not the limit —
-# Postgres max_connections=100 is. Each worker builds its own pool
-# (DB_POOL_SIZE + DB_MAX_OVERFLOW = 18 by default), so 4 workers reserve at
-# most 72 connections and leave room for the scheduler leader's lock plus
-# admin sessions. Going higher means raising max_connections or putting a
-# pooler in front FIRST — otherwise extra workers make things worse, failing
-# checkouts instead of queueing them.
+# ONE WORKER, and it is not about CPU or about the database.
 #
-# This was 2, with a comment reading "2 CPUs on Hobby plan": the plan grew,
-# the setting did not, so the service was running on 2 of its 24 cores.
-ENV UVICORN_WORKERS=4
+# The realtime layer is process-local. services/event_bus.py keeps its
+# subscribers in a plain dict of asyncio.Queues, and socketio_service.py has
+# its Redis client_manager commented out — so an SSE stream and a Socket.io
+# room only exist inside the single process that accepted them. The driver's
+# PATCH /trips/{id}/status lands on whichever worker the proxy picks, and
+# push_trip_update() drops the event into that worker's queues. At four
+# workers the rider was on a different process three times out of four, and
+# both of their "instant" channels stayed silent while looking perfectly
+# connected: the passenger's screen only caught up when the HTTP poll or the
+# Firestore mirror got there, seconds after the driver swiped.
+#
+# So: DO NOT raise this until the event bus is bridged across processes
+# (Redis pub/sub) AND the Socket.io Redis manager is re-enabled. REDIS_URL is
+# already provisioned for exactly that. Until then every extra worker is a
+# 1-in-N chance of silently losing every trip status event.
+#
+# The database ceiling, for whenever that day comes: Postgres
+# max_connections=100, each worker builds its own pool of
+# DB_POOL_SIZE + DB_MAX_OVERFLOW = 18, so four workers reserve at most 72 and
+# leave room for the scheduler leader's lock plus admin sessions.
+ENV UVICORN_WORKERS=1
 ENV UVICORN_TIMEOUT_KEEP_ALIVE=75
 ENV UVICORN_LIMIT_CONCURRENCY=2000
 
@@ -74,7 +85,7 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/ping', timeout=5)" || exit 1
 
 # Start with optimized uvicorn settings
-# --workers 2: Railway Hobby has 2 CPUs
+# --workers: see the UVICORN_WORKERS block above — it is 1 on purpose
 # --timeout-keep-alive 75: Keep connections alive for SSE/WebSocket
 # --limit-concurrency 2000: Handle many concurrent riders/drivers
 # --loop uvloop: Faster event loop (if available)

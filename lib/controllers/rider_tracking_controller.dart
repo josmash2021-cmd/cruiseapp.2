@@ -59,6 +59,9 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
         // goes quiet. The skip is tight (700 ms window) so the poll still
         // fires when Firestore stalls.
         _lastFirestoreEventAt = DateTime.now();
+        if ((data['status']?.toString() ?? '').trim().isNotEmpty) {
+          _lastLiveStatusAt = _lastFirestoreEventAt;
+        }
         _onTripStatusUpdate(data);
       },
       onError: (error) {
@@ -252,16 +255,19 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
         _statusPollTimer?.cancel();
         return;
       }
-      // Skip poll ticks when Socket.io delivered data recently (< 3s ago)
-      // and Firestore delivered data recently (< 2s ago).
-      // This eliminates redundant HTTP calls when real-time channels are healthy.
-      final socketHealthy = SocketService.isConnected;
-      final firestoreRecent = _lastFirestoreEventAt != null &&
-          DateTime.now().difference(_lastFirestoreEventAt!).inSeconds < 3;
-      if (socketHealthy && firestoreRecent) {
-        // Both primary channels healthy — skip this poll tick entirely
-        return;
-      }
+      // Skip only what would be genuinely redundant: a status that a live
+      // channel already delivered inside this same tick window.
+      //
+      // The old condition was `Socket.io connected && Firestore spoke
+      // recently`, which is a statement about plumbing, not about data. See
+      // [_lastLiveStatusAt] — a rider can hold a healthy socket to a worker
+      // that will never be handed the driver's status change, and this poll
+      // is the only channel that always sees the database itself. Skipping
+      // it on a liveness proxy is how a swipe on the driver's phone took
+      // several seconds to reach the passenger's screen.
+      final justDelivered = _lastLiveStatusAt != null &&
+          DateTime.now().difference(_lastLiveStatusAt!).inMilliseconds < 1500;
+      if (justDelivered) return;
       _pollBackendTripStatus();
     });
     unawaited(_pollBackendTripStatus()); // first poll fires immediately
@@ -288,6 +294,9 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
         }
 
         debugPrint('[SSE] Trip status update: ${data['status']}');
+        if ((data['status']?.toString() ?? '').trim().isNotEmpty) {
+          _lastLiveStatusAt = DateTime.now();
+        }
         _onTripStatusUpdate(data);
       },
       onError: (e) {
@@ -353,6 +362,7 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       }
 
       debugPrint('[Socket.io] Trip status update: $status');
+      _lastLiveStatusAt = DateTime.now();
       _onTripStatusUpdate({'status': status, 'driver_id': data['driver_id']});
     });
 
@@ -1207,8 +1217,26 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     if (!mounted || _confirmPickupShown) return;
     _confirmPickupShown = true;
     _setState(() => _showPickupOverlay = true);
-    // Fade + slide overlay in from the bottom
-    _pickupOverlayCtrl.forward(from: 0);
+
+    // Start the entrance only once the overlay has been through a full
+    // frame, invisible.
+    //
+    // RiderConfirmPickupScreen is not a light widget: eight animation
+    // controllers, three staggered ripple rings and a network avatar all
+    // come up in its initState. Building, laying out and rasterising that
+    // for the first time costs several frames — and an AnimationController
+    // measures wall-clock, not frames. Starting it in the same breath as
+    // the mount meant the 450 ms curve had already run most of its length
+    // by the time the first pixel appeared, so the screen arrived at
+    // three-quarters opacity, half-way through its slide: a hard cut with
+    // a torn frame in the middle of it, which is precisely how the rider
+    // described it.
+    //
+    // One frame of delay costs 16 ms and buys the whole animation.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_showPickupOverlay) return;
+      _pickupOverlayCtrl.forward(from: 0);
+    });
   }
 
   /// Listen to driver GPS from Firebase RTDB for sub-200ms updates.

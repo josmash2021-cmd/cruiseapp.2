@@ -601,7 +601,7 @@ class S {
   String get addDebitCreditCardAction =>
       _es ? 'Agregar tarjeta de débito/crédito' : 'Add Debit/Credit Card';
   String get selectPaymentMethod =>
-      _es ? 'Seleccionar método de pago' : 'Select payment method';
+      _es ? 'Elige un método de pago' : 'Choose a payment method';
   String get creditDebitCard =>
       _es ? 'Tarjeta de crédito o débito' : 'Credit or debit card';
 

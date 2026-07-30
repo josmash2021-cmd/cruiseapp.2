@@ -2727,33 +2727,6 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                     ],
                   ),
                 ),
-                // ── Gloss shimmer sweep ──
-                //
-                // Off. A light band travelling across the button behind the
-                // word read as a rendering artefact rather than as polish —
-                // the button already breathes with the pulse, and two
-                // moving things on one control is one too many.
-                if (false)
-                  Positioned.fill(
-                    child: IgnorePointer(
-                      child: Transform.translate(
-                        offset: Offset((g * 3.0 - 1.0) * 200, 0), // sweep left to right
-                        child: Container(
-                          width: 60,
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              colors: [
-                                Colors.white.withValues(alpha: 0.0),
-                                Colors.white.withValues(alpha: 0.18),
-                                Colors.white.withValues(alpha: 0.0),
-                              ],
-                              stops: const [0.0, 0.5, 1.0],
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
               ],
             ),
           );

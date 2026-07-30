@@ -18,6 +18,7 @@ import 'package:permission_handler/permission_handler.dart'
     show openAppSettings;
 import '../../config/map_styles.dart';
 import '../../config/page_transitions.dart';
+import '../../config/route_observers.dart';
 import '../../config/driver_colors.dart';
 import '../../services/api_service.dart';
 import '../../services/local_data_service.dart';
@@ -68,7 +69,8 @@ class DriverHomeScreen extends StatefulWidget {
 }
 
 class _DriverHomeScreenState extends State<DriverHomeScreen>
-    with TickerProviderStateMixin, WidgetsBindingObserver, VelocityAwarePanelMixin {
+    with TickerProviderStateMixin, WidgetsBindingObserver, VelocityAwarePanelMixin,
+        RouteAware {
   static final _sqlPrefixRe = RegExp(r'^sql_');
   static const _gold = Color(0xFFE8C547);
   static const _goldLight = Color(0xFFF5D990);
@@ -398,7 +400,48 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final route = ModalRoute.of(context);
+    if (route is PageRoute) {
+      mapRouteObserver.subscribe(this, route);
+    }
+  }
+
+  // ── RouteAware: one live Mapbox surface at a time ──
+  //
+  // This screen sits at the bottom of the driver stack for the whole shift,
+  // and every screen it opens (online offers, the trip screen) brings its
+  // own native map. Our MapWidget stayed mounted underneath all of them —
+  // two live Mapbox surfaces, which is the iOS crash the driver hits right
+  // after accepting a ride. The explicit _suspendMap() calls only covered
+  // the trip pushes we make ourselves; this covers every route that lands
+  // on top of us, including the ones other screens push (the online screen
+  // re-created by pushAndRemoveUntil at the end of a trip).
+  //
+  // The observer is typed on PageRoute, so bottom sheets and dialogs never
+  // reach here — opening a sheet over the map must not tear it down.
+
+  @override
+  void didPushNext() {
+    // Wait out the incoming transition before releasing the surface:
+    // unmounting a PlatformView under a route that is still partly
+    // transparent flashes our base colour in the driver's face. The
+    // longest push transition out of here is 500 ms.
+    Future.delayed(const Duration(milliseconds: 600), () {
+      if (!mounted) return;
+      // Came back inside the delay window — keep the map.
+      if (ModalRoute.of(context)?.isCurrent == true) return;
+      _suspendMap();
+    });
+  }
+
+  @override
+  void didPopNext() => _unsuspendMap();
+
+  @override
   void dispose() {
+    mapRouteObserver.unsubscribe(this);
     _fcmTokenRefreshSub?.cancel();
     disposePanelAnimation();
     _pulseCtrl.dispose();
@@ -423,6 +466,11 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed && mounted) {
+      // Safety net for the suspended map: routes removed with
+      // removeRoute/pushAndRemoveUntil never fire didPopNext, so a stack
+      // that unwound while we were backgrounded could leave us on top with
+      // no map. _unsuspendMap no-ops unless we really are the top route.
+      _unsuspendMap();
       // Always re-check vehicle doc approval when app comes back
       if (!_vehicleDocsApproved) _checkVehicleDocStatus();
       // Re-check scheduled ride lockout (driver may return from background)
@@ -2681,9 +2729,16 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     _myLocAnnot = null;
   }
 
-  /// Bring the map back once the trip screen above us is gone.
+  /// Bring the map back once the screen above us is gone.
+  ///
+  /// Only when nothing is on top of us any more. A trip screen that ends
+  /// with `pushAndRemoveUntil(DriverOnlineScreen, (r) => r.isFirst)` hands
+  /// control straight to another map-owning screen without ever popping
+  /// back to us — remounting there would put two native surfaces up again,
+  /// which is the crash this whole path exists to avoid.
   void _unsuspendMap() {
     if (!_mapSuspended || !mounted) return;
+    if (ModalRoute.of(context)?.isCurrent != true) return;
     setState(() => _mapSuspended = false);
   }
 

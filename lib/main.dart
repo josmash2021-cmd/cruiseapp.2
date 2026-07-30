@@ -23,6 +23,7 @@ import 'config/app_theme.dart';
 import 'config/env.dart';
 import 'config/theme_notifier.dart';
 import 'config/feature_flags.dart';
+import 'config/route_observers.dart';
 import 'state/accessibility_notifier.dart';
 import 'screens/splash_screen.dart';
 import 'screens/driver/driver_online_screen.dart';
@@ -1143,7 +1144,13 @@ class _UberCloneAppState extends State<UberCloneApp>
               }
               return const Locale('en');
             },
-            navigatorObservers: [AnalyticsService.instance.observer],
+            navigatorObservers: [
+              AnalyticsService.instance.observer,
+              // Lets a screen underneath the stack drop its native Mapbox
+              // surface while something else is on top — see
+              // lib/config/route_observers.dart.
+              mapRouteObserver,
+            ],
             home: const SplashScreen(),
             builder: (context, child) {
               Responsive.init(context);

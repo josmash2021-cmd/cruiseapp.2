@@ -1588,6 +1588,8 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
             child: _buildDraggablePanel(pad),
           ),
 
+          // ── GO — travels out of the panel as the sheet closes ──
+          _buildMorphingGoButton(pad),
         ],
       ),
     );
@@ -2480,26 +2482,40 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   /// both the rest of the way together.
   Widget _buildMorphingGoButton(EdgeInsets pad) {
     final t = panelExtent; // 0 = closed circle, 1 = open pill
-    final screenW = MediaQuery.of(context).size.width;
-
-    final width = ui.lerpDouble(_kGoCircleD, screenW - _kGoSideInset * 2, t)!;
     final height = ui.lerpDouble(_kGoCircleD, _kGoPillH, t)!;
     final radius = ui.lerpDouble(_kGoCircleD / 2, 16.0, t)!;
 
     // Closed: floating clear of the sheet's rounded top. Open: resting on the
     // sheet's floor, above the home indicator.
-    final bottomClosed = _panelCollapsedH + 20;
+    // Lower: close enough to the sheet to belong to it, not floating in
+    // the middle of the map.
+    final bottomClosed = _panelCollapsedH + 8;
     final bottomOpen = pad.bottom + 14;
     final bottom = ui.lerpDouble(bottomClosed, bottomOpen, t)!;
 
+    // Inset on both sides and centred inside whatever that leaves, rather
+    // than positioned from the screen's width.
+    //
+    // It used to compute `left: (screenWidth - width) / 2`, which is only
+    // right if this Stack is exactly as wide as the screen. It is not, so
+    // the open bar sat off-centre and ran off the left edge. Measuring the
+    // box we are actually in cannot be wrong about it.
     return Positioned(
       bottom: bottom,
-      left: (screenW - width) / 2,
-      width: width,
+      left: _kGoSideInset,
+      right: _kGoSideInset,
       height: height,
       child: FadeTransition(
         opacity: _fabScale,
-        child: _buildGoButton(radius: radius, morph: t),
+        child: LayoutBuilder(
+          builder: (context, box) => Center(
+            child: SizedBox(
+              width: ui.lerpDouble(_kGoCircleD, box.maxWidth, t),
+              height: height,
+              child: _buildGoButton(radius: radius, morph: t),
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -2533,9 +2549,16 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
           //
           // Still breathing with the pulse, just narrower: a body this dark
           // shows a large swing as flicker rather than as a heartbeat.
-          const greyTop1 = Color(0xFF32323C);
-          const greyTop2 = Color(0xFF3A3A46);
-          const greyBot = Color(0xFF1E1E26);
+          // Near-black when it is the disc, a shade lighter as it becomes
+          // the bar. The disc sits on a dark map and has a gold ring, a
+          // gold word and gold radar inside it — a lighter body would put
+          // all four in competition and none of them would read.
+          final greyTop1 = Color.lerp(
+              const Color(0xFF0B0B0F), const Color(0xFF32323C), morph)!;
+          final greyTop2 = Color.lerp(
+              const Color(0xFF14141A), const Color(0xFF3A3A46), morph)!;
+          final greyBot = Color.lerp(
+              const Color(0xFF06060A), const Color(0xFF1E1E26), morph)!;
 
           final topColor = Color.lerp(greyTop1, greyTop2, p)!;
           final botColor = greyBot;
@@ -2554,7 +2577,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                 // vanishing at some threshold mid-gesture. Rings on a pill
                 // read as a glitch; rings appearing and disappearing under
                 // the driver's thumb read as a worse one.
-                if (false)
+                if (enabled && morph < 0.9)
                   Positioned.fill(
                     child: IgnorePointer(
                       child: Opacity(
@@ -2577,9 +2600,14 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                       ? BoxDecoration(
                           borderRadius: BorderRadius.circular(radius),
                           boxShadow: [
+                            // Tight on the disc, softer on the bar. At the
+                            // old 16-24 px blur a 74 px circle was more
+                            // halo than button — it read as a glow with a
+                            // word floating in it rather than as a control.
                             BoxShadow(
-                              color: glowColor.withValues(alpha: 0.3 + 0.15 * p),
-                              blurRadius: 16 + 8 * p,
+                              color: glowColor.withValues(
+                                  alpha: ui.lerpDouble(0.12, 0.3 + 0.15 * p, morph)!),
+                              blurRadius: ui.lerpDouble(8, 16 + 8 * p, morph)!,
                               spreadRadius: 0,
                               offset: const Offset(0, 3),
                             ),

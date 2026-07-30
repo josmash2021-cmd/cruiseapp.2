@@ -1749,19 +1749,18 @@ extension _HomeScreenWidgets on _HomeScreenState {
                             ),
                           ),
                         ),
-                        // Car image centered inside the card with breathing
-                        // room on the sides and a gap above the bottom edge.
+                        // Car image centered inside the card, lifted clear
+                        // of the wait line beneath it.
                         //
-                        // Left at 16 even though the wait line below is
-                        // nominally inside its 58 px box: the render has
-                        // transparent space under the wheels, so the car
-                        // stops short of the box and the text sits in the
-                        // gap. Box maths said they collide; the artwork says
-                        // otherwise, and the artwork is what is on screen.
+                        // The 58 px box reaching to 16 px from the bottom
+                        // leaves no room for a 13 px line of text, and the
+                        // render fills enough of that box that the two
+                        // collide — the minutes ended up behind the wheels.
+                        // Checked on screen, not assumed.
                         Positioned(
                           left: 16,
                           right: 16,
-                          bottom: 16,
+                          bottom: 32,
                           child: SizedBox(
                             height: 58,
                             child: CarImage3D(

@@ -229,7 +229,13 @@ extension _RideRequestWidgets on _RideRequestScreenState {
     // bottom. Stronger drop shadow + subtle gold-tinted top glow sells
     // the "lifted" feel.
     return Positioned(
-      top: 0,
+      // No `top` — bottom-anchored, height from the content.
+      //
+      // It was pinned top AND bottom while being made flush to the edges,
+      // which stops being a bottom sheet: pinned on both sides the box is
+      // the full height of the screen, so the panel took the whole display
+      // and the map disappeared behind it. Anchoring only the bottom lets
+      // the sheet be as tall as what is in it and no taller.
       // Flush to the edges, not floating.
       //
       // It used to hover with 14 px down each side and 24 px of map showing

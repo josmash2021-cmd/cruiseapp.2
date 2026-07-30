@@ -82,6 +82,13 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   LatLng? _currentLatLng;
   // ignore: unused_field
   bool _mapReady = false;
+  // True while a trip screen covers us: our MapWidget is unmounted so the
+  // trip screen owns the only live native Mapbox surface. Two surfaces at
+  // once is the iOS crash the driver hit right after accepting — and, on
+  // relaunch with an active trip, the crash loop that made the app take
+  // several attempts to open. The map is remounted when the trip screen
+  // pops.
+  bool _mapSuspended = false;
   final GoldLocationDot _goldDot = GoldLocationDot();
   // Retries the first dot draw until it lands. _updateMyLocAnnotation() no-ops
   // until BOTH the annotation manager and the dot image exist, and the dot
@@ -1260,6 +1267,12 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   //  MAP
   // ═══════════════════════════════════════════════════
   Widget _buildMap() {
+    // While a trip screen sits on top of us the native map stays unmounted
+    // — see _mapSuspended. Solid base color underneath; none of it is
+    // visible until the trip screen pops and the map remounts.
+    if (_mapSuspended) {
+      return Container(color: neuBase);
+    }
     // Use Google Maps on both iOS and Android
     final dc = DriverColors.of(context);
     // Mapbox Maps Flutter has no web implementation — its MapWidget crashes
@@ -2650,6 +2663,30 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     );
   }
 
+  /// Unmount our native map while a trip screen is on top of us.
+  ///
+  /// DriverTripAcceptScreen mounts its own MapWidget, and two live native
+  /// Mapbox surfaces at once is the iOS crash on accept — and the crash
+  /// loop on relaunch with an active trip. The controller and annotation
+  /// manager belong to the PlatformView being destroyed, so they go with
+  /// it; onMapCreated rebuilds both (and the location dot) on remount.
+  void _suspendMap() {
+    if (_mapSuspended || !mounted) return;
+    setState(() {
+      _mapSuspended = true;
+      _mapReady = false;
+    });
+    _mapController = null;
+    _pointAnnotMgr = null;
+    _myLocAnnot = null;
+  }
+
+  /// Bring the map back once the trip screen above us is gone.
+  void _unsuspendMap() {
+    if (!_mapSuspended || !mounted) return;
+    setState(() => _mapSuspended = false);
+  }
+
   /// Navigate directly to DriverTripAcceptScreen for a scheduled trip.
   void _navigateToScheduledTripScreen(Map<String, dynamic> trip) {
     final pickupLat = _pickDouble(trip, ['pickup_lat']);
@@ -2670,6 +2707,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     final riderName = _pickString(trip, ['rider_name'], fallback: 'Rider');
     final riderId = int.tryParse((trip['rider_id'] ?? '').toString());
 
+    _suspendMap();
     Navigator.of(context).push(
       slideFromRightRoute(
         DriverTripAcceptScreen(
@@ -2692,7 +2730,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
           tripAlreadyStarted: true,
         ),
       ),
-    );
+    ).whenComplete(() => _unsuspendMap());
   }
 
   Future<void> _resumeActiveTrip() async {
@@ -2764,35 +2802,43 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     final passengerIdRaw = _pickString(trip, ['riderId', 'rider_id', 'passengerId', 'passenger_id']);
     final resumeRiderId = int.tryParse(passengerIdRaw.replaceFirst('sql_', ''));
 
-    await Navigator.of(context).push(
-      slideFromRightRoute(
-        DriverTripAcceptScreen(
-          tripId: tripId,
-          riderName: riderName,
-          riderPhotoUrl: _normalizePhotoUrl(
-            _pickString(trip, ['riderPhotoUrl', 'rider_photo_url', 'passengerPhotoUrl', 'passenger_photo_url']),
+    // Drop our native map before the trip screen mounts its own — two live
+    // Mapbox surfaces on iOS is the crash this whole path kept hitting on
+    // relaunch. _unsuspendMap remounts it when the trip screen pops.
+    _suspendMap();
+    try {
+      await Navigator.of(context).push(
+        slideFromRightRoute(
+          DriverTripAcceptScreen(
+            tripId: tripId,
+            riderName: riderName,
+            riderPhotoUrl: _normalizePhotoUrl(
+              _pickString(trip, ['riderPhotoUrl', 'rider_photo_url', 'passengerPhotoUrl', 'passenger_photo_url']),
+            ),
+            riderRating: _pickDouble(trip, ['riderRating', 'rider_rating']) ?? 0,
+            riderIsNew: trip['rider_is_new'] == true,
+            riderId: resumeRiderId,
+            pickupLatLng: pickup,
+            dropoffLatLng: dropoff,
+            pickupAddress: pickupAddress,
+            dropoffAddress: dropoffAddress,
+            fare: fare,
+            vehicleType: vehicleType,
+            driverPos: driverPos,
+            distToPickupKm: distKm,
+            etaMinutes: etaMinutes,
+            riderPhone: riderPhone,
+            pickupInstructions: _pickString(trip, ['pickupInstructions', 'pickup_instructions']),
+            dropoffInstructions: _pickString(trip, ['dropoffInstructions', 'dropoff_instructions']),
+            arrivedAtPickup: arrivedAtPickup,
+            rideStarted: rideStarted,
+            tripAlreadyStarted: true,
           ),
-          riderRating: _pickDouble(trip, ['riderRating', 'rider_rating']) ?? 0,
-          riderIsNew: trip['rider_is_new'] == true,
-          riderId: resumeRiderId,
-          pickupLatLng: pickup,
-          dropoffLatLng: dropoff,
-          pickupAddress: pickupAddress,
-          dropoffAddress: dropoffAddress,
-          fare: fare,
-          vehicleType: vehicleType,
-          driverPos: driverPos,
-          distToPickupKm: distKm,
-          etaMinutes: etaMinutes,
-          riderPhone: riderPhone,
-          pickupInstructions: _pickString(trip, ['pickupInstructions', 'pickup_instructions']),
-          dropoffInstructions: _pickString(trip, ['dropoffInstructions', 'dropoff_instructions']),
-          arrivedAtPickup: arrivedAtPickup,
-          rideStarted: rideStarted,
-          tripAlreadyStarted: true,
         ),
-      ),
-    );
+      );
+    } finally {
+      _unsuspendMap();
+    }
 
     // After trip screen pops, re-check if the trip is still active.
     // If completed/cancelled, clear state and resume polling for new trips.

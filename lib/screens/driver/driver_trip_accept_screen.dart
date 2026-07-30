@@ -268,6 +268,17 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   late final AnimationController _shimmerCtrl;
   late final Animation<double> _shimmerAnim;
 
+  // ── Map preview mount delay ──
+  // This screen is always pushed over a screen that still owns a native
+  // Mapbox surface (online offers, driver home, offers list), and that
+  // surface only goes away once the push transition has landed. Creating
+  // our preview map in the very first frame leaves two native Mapbox
+  // surfaces alive at the same moment — the iOS crash right after the
+  // driver accepts a ride. The preview is a 190px card, so waiting out
+  // the handoff costs nothing visible.
+  bool _previewMapMounted = false;
+  Timer? _previewMapTimer;
+
   // ── Trip distance pickup→dropoff ─────────────────────────────────────────
   double get _tripKm {
     const r = 6371.0;
@@ -399,6 +410,17 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     // screen is on top, so we ensure the driver's live location is always
     // uploaded during the entire trip lifecycle.
     _startLiveGpsForRider();
+
+    // Mount the preview map only after the handoff transition has landed.
+    // The online screen releases its native surface at kTripHandoffMs + 200;
+    // landing just after that keeps a single Mapbox surface alive at all
+    // times (see field note above).
+    _previewMapTimer = Timer(
+      const Duration(milliseconds: kTripHandoffMs + 250),
+      () {
+        if (mounted) setState(() => _previewMapMounted = true);
+      },
+    );
   }
 
   Future<void> _resolveRiderPhotoFromTrip() async {
@@ -470,6 +492,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     _riderConfirmSub?.cancel();
     _statusPollTimer?.cancel();
     _finishNavTimer?.cancel();
+    _previewMapTimer?.cancel();
     _camCycleTimer?.cancel();
     _camCycleCtrl?.dispose();
     _fadeCtrl.dispose();
@@ -2931,22 +2954,29 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
                     height: Responsive.h(190),
                     child: Stack(
                       children: [
-                        RepaintBoundary(
-                          child: mapbox.MapWidget(
-                            styleUri: MapboxConfig.styleDark,
-                            cameraOptions: mapbox.CameraOptions(
-                              center: mapbox.Point(coordinates: mapbox.Position(
-                                widget.pickupLatLng.longitude,
-                                widget.pickupLatLng.latitude,
-                              )),
-                              zoom: 12.0,
-                              pitch: 0.0,
-                              bearing: 0.0,
+                        if (_previewMapMounted)
+                          RepaintBoundary(
+                            child: mapbox.MapWidget(
+                              styleUri: MapboxConfig.styleDark,
+                              cameraOptions: mapbox.CameraOptions(
+                                center: mapbox.Point(coordinates: mapbox.Position(
+                                  widget.pickupLatLng.longitude,
+                                  widget.pickupLatLng.latitude,
+                                )),
+                                zoom: 12.0,
+                                pitch: 0.0,
+                                bearing: 0.0,
+                              ),
+                              onMapCreated: _onMapReady,
+                              onStyleLoadedListener: _onStyleLoaded,
                             ),
-                            onMapCreated: _onMapReady,
-                            onStyleLoadedListener: _onStyleLoaded,
-                          ),
-                        ),
+                          )
+                        else
+                          // Dark stand-in while the previous screen's map
+                          // surface is still being torn down (see
+                          // _previewMapMounted). The vignettes and chips
+                          // below draw over it, so nothing looks missing.
+                          const ColoredBox(color: Color(0xFF0B0E14)),
                         // 3D fade vignette — top edge
                         Positioned(
                           top: 0, left: 0, right: 0,

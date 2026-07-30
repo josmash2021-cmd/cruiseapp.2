@@ -1280,18 +1280,25 @@ extension _RideRequestWidgets on _RideRequestScreenState {
         padding: const EdgeInsets.fromLTRB(8, 10, 8, 10),
         child: Column(
           children: [
-            // Vehicle name on top — home screen style
-            Text(
-              displayName,
-              textAlign: TextAlign.center,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontFamily: 'Poppins',
-                color: Colors.white,
-                fontSize: Responsive.vehicleNameSize,
-                fontWeight: FontWeight.w800,
-                letterSpacing: 0.5,
+            // Vehicle name on top — home screen style.
+            //
+            // Shrinks to fit rather than truncating. Four tiers share the
+            // row now, so a card is about 80 px wide and "STANDARD" no
+            // longer fits at full size — ellipsis would leave "STANDAR…",
+            // which reads as a bug.
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text(
+                displayName,
+                textAlign: TextAlign.center,
+                maxLines: 1,
+                style: TextStyle(
+                  fontFamily: 'Poppins',
+                  color: Colors.white,
+                  fontSize: Responsive.vehicleNameSize,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 0.5,
+                ),
               ),
             ),
             const SizedBox(height: 8),

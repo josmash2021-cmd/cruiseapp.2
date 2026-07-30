@@ -1774,18 +1774,19 @@ extension _HomeScreenWidgets on _HomeScreenState {
                             ),
                           ),
                         ),
-                        // Car image centered inside the card, lifted clear
-                        // of the wait line beneath it.
+                        // Car centred in the band the title and the wait
+                        // line leave between them.
                         //
-                        // The 58 px box reaching to 16 px from the bottom
-                        // leaves no room for a 13 px line of text, and the
-                        // render fills enough of that box that the two
-                        // collide — the minutes ended up behind the wheels.
-                        // Checked on screen, not assumed.
+                        // Measured, not guessed: the title runs to y=32 and
+                        // the wait line starts at y=126, so a 58 px car
+                        // placed at y=50 has 18 px of air above and below.
+                        // Anchoring it to the bottom instead pushed it onto
+                        // the minutes — that is how they ended up behind
+                        // the wheels — and left the card top-heavy.
                         Positioned(
                           left: 8,
                           right: 8,
-                          bottom: 32,
+                          top: 50,
                           child: SizedBox(
                             height: 58,
                             child: CarImage3D(

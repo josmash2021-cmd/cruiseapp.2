@@ -197,7 +197,11 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   // Was 92, from when the button floated over the map above the panel instead
   // of living inside it. Anyone changing the button's padding or font must
   // revisit this number.
-  static const double _panelBaseH = 160.0;
+  // Collapsed height. Trimmed from 160: the GO button briefly left the
+  // panel and the space it had occupied stayed behind as a band of nothing
+  // under "You're offline". The button is back inside, so the panel only
+  // needs what it actually holds.
+  static const double _panelBaseH = 148.0;
   // Extra height reserved while the scheduled-rides banner is shown above the
   // header (finding-trips state). Without it the banner's ~46px eats into the
   // scroll viewport and clips the bottom rows on devices with small insets.
@@ -1584,8 +1588,6 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
             child: _buildDraggablePanel(pad),
           ),
 
-          // ── GO button — above the panel so it can leave it ──
-          _buildMorphingGoButton(pad),
         ],
       ),
     );
@@ -2552,7 +2554,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                 // vanishing at some threshold mid-gesture. Rings on a pill
                 // read as a glitch; rings appearing and disappearing under
                 // the driver's thumb read as a worse one.
-                if (enabled && morph < 0.98)
+                if (false)
                   Positioned.fill(
                     child: IgnorePointer(
                       child: Opacity(
@@ -2693,8 +2695,13 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                     ],
                   ),
                 ),
-                // ── Gloss shimmer sweep (enabled state only) ──
-                if (enabled)
+                // ── Gloss shimmer sweep ──
+                //
+                // Off. A light band travelling across the button behind the
+                // word read as a rendering artefact rather than as polish —
+                // the button already breathes with the pulse, and two
+                // moving things on one control is one too many.
+                if (false)
                   Positioned.fill(
                     child: IgnorePointer(
                       child: Transform.translate(

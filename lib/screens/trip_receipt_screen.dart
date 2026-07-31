@@ -99,13 +99,35 @@ class _TripReceiptScreenState extends State<TripReceiptScreen>
   String get _effectiveDuration {
     final fbMin = (_fareBreakdown?['duration_minutes'] as num?)?.toInt();
     if (fbMin != null && fbMin > 0) {
-      return '$fbMin min';
+      return _durationText(fbMin);
     }
     final local = trip.duration;
     if (local.isNotEmpty && local != '-- min' && local != '0 min') {
-      return local;
+      // The local value arrives as plain minutes too, so it needs the same
+      // treatment — otherwise the receipt reads in hours or not depending on
+      // which of the two sources answered.
+      final m = RegExp(r'^\s*(\d+)\s*min\s*$').firstMatch(local);
+      final n = m == null ? null : int.tryParse(m.group(1)!);
+      return n == null ? local : _durationText(n);
     }
     return '0 min';
+  }
+
+  /// Minutes, and hours once there are sixty of them.
+  ///
+  /// A receipt printing "2127 min" is asking the passenger to do the division
+  /// themselves for a trip they have already taken and paid for.
+  ///
+  /// Exact, unlike the wait estimate on the booking sheet — that one rounds to
+  /// five minutes because it is a guess, and rounding a guess is honest. This
+  /// is a record of what happened, so 35 h 27 min stays 35 h 27 min.
+  ///
+  /// "min" and "h" are the same word in both languages this app speaks.
+  String _durationText(int minutes) {
+    if (minutes < 60) return '$minutes min';
+    final h = minutes ~/ 60;
+    final m = minutes % 60;
+    return m == 0 ? '$h h' : '$h h $m min';
   }
 
   /// What the passenger actually paid — backend `total` (trip.fare) wins,
@@ -539,7 +561,7 @@ class _TripReceiptScreenState extends State<TripReceiptScreen>
     if (centsOf('wait_time_charge') > 0) {
       extras.add((
         label: S.of(context).waitTimeLabel(
-            '${((fb['wait_time_minutes'] as num?) ?? 0).toInt()} min'),
+            _durationText(((fb['wait_time_minutes'] as num?) ?? 0).toInt())),
         cents: centsOf('wait_time_charge'),
         highlight: false,
       ));

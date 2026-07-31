@@ -1345,6 +1345,25 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     //   the next frames cleanly), then schedule haptic + sound on the
     //   post-frame callback so they cross the platform boundary AFTER
     //   the route transition has begun.
+    // Our map goes now, before the push — not when the next screen asks.
+    //
+    // The handover was correct but tight. This screen keeps its map on
+    // purpose, so during the 420 ms transition it is still up while the
+    // online screen is being built; the coordinator then revokes ours and
+    // that screen waits. Everything hangs on that wait being honoured on a
+    // platform thread already busy standing up a PlatformView, and two live
+    // Mapbox surfaces close the app on iOS.
+    //
+    // Starting the teardown here removes the overlap instead of sequencing
+    // it: by the time the online screen asks, our surface has been gone for
+    // most of the transition. The coordinator still runs and still waits —
+    // this is a margin on top of it, not a replacement.
+    //
+    // Nothing is awaited, so the push is not delayed. The cost is that the
+    // map behind the transition is a solid card for those 420 ms, which
+    // costs nothing the driver can act on; the crash costs the shift.
+    _suspendMap();
+
     final pushFuture = Navigator.of(context).push<Map<String, dynamic>>(
       PageRouteBuilder(
         opaque: true,

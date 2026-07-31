@@ -641,9 +641,34 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
   }
 
   /// Apply cinematic camera tilt + bearing per animation frame.
+  /// Every camera write on this screen, in one guarded place.
+  ///
+  /// The handle outlives the native view: `_map` is only cleared once
+  /// _releaseMapSurface runs, so between the coordinator revoking us and
+  /// that teardown finishing, and again while a remount is in flight, it
+  /// points at a view that is going away. Calling into that is a native
+  /// crash, not a Dart exception — which is how a tap on recenter, or a
+  /// couple of trips through offline/online, closed the app.
+  void _camera(mapbox.CameraOptions options, {int? animateMs}) {
+    if (!mounted || !_mapMounted) return;
+    final map = _map;
+    if (map == null) return;
+    try {
+      final Future<void> f = animateMs == null
+          ? map.setCamera(options)
+          : map.flyTo(options, mapbox.MapAnimationOptions(duration: animateMs));
+      // Rejected asynchronously when the view is destroyed mid-flight; the
+      // try/catch below only sees synchronous throws.
+      f.catchError((Object e) {
+        debugPrint('[DriverOnline] camera write rejected: $e');
+      });
+    } catch (e) {
+      debugPrint('[DriverOnline] camera write failed: $e');
+    }
+  }
+
   void _applyOfferCamera() {
-    if (_map == null || !mounted) return;
-    _map!.setCamera(mapbox.CameraOptions(
+    _camera(mapbox.CameraOptions(
       pitch: _offerTiltAnim?.value,
       bearing: _offerBearingAnim?.value,
     ));
@@ -654,12 +679,7 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     _offerTiltAnim?.removeListener(_applyOfferCamera);
     _offerTiltCtrl?.stop();
     _offerBearingCtrl?.stop();
-    if (_map != null && mounted) {
-      _map!.flyTo(
-        mapbox.CameraOptions(pitch: 0, bearing: 0),
-        mapbox.MapAnimationOptions(duration: 500),
-      );
-    }
+    _camera(mapbox.CameraOptions(pitch: 0, bearing: 0), animateMs: 500);
   }
 
   /// Spring scale curve: 0→1.2→0.9→1.0
@@ -1112,6 +1132,15 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
   /// returning null, so there is no phase check here to keep in sync.
   bool get _dotOverlayOwnsMarker {
     if (_pos == null) return false;
+    // Nothing else is drawing it, so we do — whatever the rules below say.
+    //
+    // Every branch here hands the marker to the Mapbox annotation, which is
+    // fine while that annotation exists. It does not exist in the window
+    // after a remount: coming back from another screen, resuming the app,
+    // going offline and online again. The annotation is destroyed with the
+    // surface and takes a moment to be rebuilt, and if the driver looked in
+    // that window the arrow was simply gone.
+    if (_goldDotAnnot == null) return true;
     // An offer preview flies the camera around the route. The overlay is
     // positioned from camera-change events, which arrive over the same
     // channel we are avoiding — during an animation they lag, and a marker

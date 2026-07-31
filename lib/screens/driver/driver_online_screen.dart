@@ -169,15 +169,39 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     double bearing = 0,
     double tilt = 0,
   }) {
-    _map?.flyTo(
-      mapbox.CameraOptions(
-        center: mapbox.Point(coordinates: mapbox.Position(pos.longitude, pos.latitude)),
-        zoom: zoom,
-        bearing: bearing,
-        pitch: tilt,
-      ),
-      mapbox.MapAnimationOptions(duration: 600),
-    );
+    // Guarded, and gated on the surface still being ours.
+    //
+    // This was a bare `_map?.flyTo(...)`: no mounted check, no catch, and
+    // the returned Future dropped on the floor. `_map` is only null once
+    // _releaseMapSurface has run, so between the coordinator revoking us
+    // and that teardown finishing — and again while a remount is in
+    // flight — the handle is non-null and points at a native view that is
+    // going away. Recentring in that window called into a dead Mapbox
+    // object, which is not a Dart exception to be caught: it takes the
+    // process down. Tapping recenter closed the app.
+    if (!mounted || !_mapMounted) return;
+    final map = _map;
+    if (map == null) return;
+    try {
+      map
+          .flyTo(
+            mapbox.CameraOptions(
+              center: mapbox.Point(
+                  coordinates: mapbox.Position(pos.longitude, pos.latitude)),
+              zoom: zoom,
+              bearing: bearing,
+              pitch: tilt,
+            ),
+            mapbox.MapAnimationOptions(duration: 600),
+          )
+          // The native side rejects asynchronously when the view is torn
+          // down mid-animation; the try/catch only sees synchronous throws.
+          .catchError((Object e) {
+        debugPrint('[DriverOnline] flyTo rejected: $e');
+      });
+    } catch (e) {
+      debugPrint('[DriverOnline] flyTo failed: $e');
+    }
   }
 
   void _moveToLatLng(LatLng pos) {
@@ -455,6 +479,27 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   // Track previous amounts for smooth TweenAnimationBuilder transitions
   double _prevEarnings = 0;
   double _prevWeeklyEarnings = 0;
+  double _monthlyEarnings = 0;
+  double _prevMonthlyEarnings = 0;
+
+  // ── What the expanded panel shows, same figures as the home sheet ──
+  int _tripsToday = 0;
+  double _hoursToday = 0;
+  /// 24 buckets, local hours. Empty until the first fetch lands.
+  List<double> _hourlySeries = const [];
+  /// Seven days, oldest first, paired with [_daySeriesLabels].
+  List<double> _daySeries = const [];
+  List<String> _daySeriesLabels = const [];
+  bool _panelWeekTab = false;
+
+  /// The searching label alternates between two lines every five seconds.
+  /// 0 = "Finding trips", 1 = "You're online".
+  /// The panel body: false = earnings, true = the reserved-rides view.
+  /// Reset to earnings every time the panel closes.
+  bool _panelShowsReserve = false;
+
+  int _statusLine = 0;
+  Timer? _statusLineTimer;
   double _prevLastTripEarnings = 0;
 
   // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
@@ -501,6 +546,20 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     // "Finding trips" bar. This is cheap (just a CustomPaint) and gives
     // instant visual feedback that the driver is online and searching.
     _searchPulse.repeat();
+    // Swap the searching label every five seconds. A single line that never
+    // changes stops being read after the first glance; two that trade places
+    // keep saying "this is live" without the driver having to look for a
+    // spinner.
+    //
+    // Only while searching, for the same reason _syncSearchPulse stops the
+    // border pulse off that phase: during a trip this label is not on
+    // screen, and an unconditional setState every five seconds rebuilt the
+    // whole screen — live map included — to change something nobody could
+    // see.
+    _statusLineTimer = Timer.periodic(const Duration(seconds: 5), (_) {
+      if (!mounted || _phase != _Phase.searching) return;
+      _setState(() => _statusLine = _statusLine == 0 ? 1 : 0);
+    });
     _searchPulseVal = Tween<double>(begin: 0.0, end: 1.0).animate(
       CurvedAnimation(parent: _searchPulse, curve: Curves.linear),
     );
@@ -597,9 +656,43 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     // tearing one down. Claiming through the coordinator keeps the tiles
     // essentially as immediate (the home map releases in a couple of
     // frames) without ever overlapping the map we are replacing.
-    unawaited(_acquireMapSurface().then((_) {
-      if (mounted && !_mapMounted) _setState(() => _mapMounted = true);
-    }));
+    // And not until the route transition has finished.
+    //
+    // Claiming the surface tears the home map down and stands a native
+    // PlatformView up, and both of those run on the UI thread. Doing it
+    // while the 420 ms push is mid-flight is what made Go Online hitch for
+    // a few frames right as the new screen slid in. Waiting for the
+    // animation to settle costs nothing the driver can perceive — the map
+    // was going to take longer than that to load its tiles anyway — and
+    // the transition itself stays smooth.
+    //
+    // The listener is a fallback for the case where there is no route
+    // animation at all (a replace, or a cold start straight onto this
+    // screen): then it is already `completed` and this runs immediately.
+    void claim() {
+      unawaited(_acquireMapSurface().then((_) {
+        if (mounted && !_mapMounted) _setState(() => _mapMounted = true);
+      }));
+    }
+
+    // Post-frame, because this runs from initState and ModalRoute.of walks
+    // the inherited widgets — which is not allowed until the first build
+    // has happened.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final anim = ModalRoute.of(context)?.animation;
+      if (anim == null || anim.isCompleted) {
+        claim();
+        return;
+      }
+      void onStatus(AnimationStatus status) {
+        if (status != AnimationStatus.completed) return;
+        anim.removeStatusListener(onStatus);
+        if (mounted) claim();
+      }
+
+      anim.addStatusListener(onStatus);
+    });
   }
 
   bool _appInForeground = true;
@@ -672,6 +765,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     _driverAnim.dispose();
     _reqCtrl?.dispose();
     _doneCtrl?.dispose();
+    _statusLineTimer?.cancel();
     _searchPulse.dispose();
     _pollT?.cancel();
     _offerSseSub?.cancel();
@@ -1773,26 +1867,26 @@ CircularPinIcon _goldPinIconFor(_PlaceType type) {
 
 /// Paints an animated gold glow segment around the "Finding trips" panel.
 /// Uses 48 micro-segments for a smooth, fluid gradient — no pixelation.
-/// [expansion] 0.0 = collapsed (glow runs around ALL 4 sides),
-///             1.0 = expanded  (glow runs only across the top edge).
+/// The glow runs the full outline of a sheet that is welded to both sides
+/// and to the bottom, so the shape is the same open or shut.
 class _SearchingBorderPainter extends CustomPainter {
   final double progress; // 0.0 → 1.0, loops continuously
-  final double expansion; // 0.0 = collapsed, 1.0 = expanded
   static const Color _gold = Color(0xFFE8C547);
   static const Color _goldLight = Color(0xFFFBE47A);
 
-  _SearchingBorderPainter({required this.progress, this.expansion = 0.0});
+  _SearchingBorderPainter({required this.progress});
 
   @override
   void paint(Canvas canvas, Size size) {
     final rect = Offset.zero & size;
-    final botRadius = 20.0 * (1.0 - expansion);
+    // Fixed shape: the sheet is welded to both sides and to the bottom
+    // whether it is open or shut, so only the top corners are round. There
+    // used to be an `expansion` input that eased the bottom pair from 20 to
+    // 0 while the panel floated; there is no floating state left to ease.
     final rrect = RRect.fromRectAndCorners(
       rect,
-      topLeft: const Radius.circular(20),
-      topRight: const Radius.circular(20),
-      bottomLeft: Radius.circular(botRadius),
-      bottomRight: Radius.circular(botRadius),
+      topLeft: const Radius.circular(26),
+      topRight: const Radius.circular(26),
     );
 
     // Subtle base border — always visible
@@ -1867,6 +1961,5 @@ class _SearchingBorderPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(_SearchingBorderPainter old) =>
-      old.progress != progress || old.expansion != expansion;
+  bool shouldRepaint(_SearchingBorderPainter old) => old.progress != progress;
 }

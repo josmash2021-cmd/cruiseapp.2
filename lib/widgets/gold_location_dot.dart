@@ -53,7 +53,14 @@ class GoldLocationDot {
   static const double _driverBaseSize = 44.0;
 
   /// How much larger than that baseline the driver's arrow is drawn.
-  static const double driverScale = 1.45;
+  ///
+  /// Remember what this scales: the 44 is the marker's *box*, and the arrow
+  /// itself fills a quarter of it — the rest is the room the halo needs to
+  /// fade out in. So 1.45 drew a 64 px box with a 16 px arrow in it, which
+  /// on a full-screen map the driver glances at while moving was too small
+  /// to find. At 2.90 the arrow is 32 px and the box 128 — twice the 16 px
+  /// it started at.
+  static const double driverScale = 2.90;
 
   /// Width of the Flutter overlay, in logical pixels.
   static const double driverOverlaySize = _driverBaseSize * driverScale;
@@ -147,6 +154,14 @@ class GoldLocationDot {
     VoidCallback? onFrame,
   }) async {
     _onFrame = onFrame;
+    // Re-arm. [dispose] latches _isDisposing and nothing ever cleared it, so
+    // the flag outlived the thing it was guarding: the driver screens call
+    // dispose() when the app is backgrounded, and on resume this object was
+    // permanently deaf. Every later raster hit `if (_isDisposing) return`
+    // and dropped the frame, so a marker that had failed to rasterise before
+    // the pause could never come back — the arrow was simply gone for the
+    // life of the screen. Calling build() is a request to run again.
+    _isDisposing = false;
     // Already rasterised once in this process — reuse it. This is the path
     // every screen after the first takes, and it cannot fail: no canvas, no
     // GPU, no await before the marker is ready.

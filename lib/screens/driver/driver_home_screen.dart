@@ -146,11 +146,15 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   // ── Earnings pill (top bar) ──
   /// Which period the pill is showing: 0 = this week, 1 = today. Opens on
   /// today, same as the online screen's pill.
-  int _earningsPage = 1;
+  /// Which period the top-bar figure is showing: 0 today, 1 week, 2 month.
+  /// Opens on today — the number the driver checks between rides.
+  int _earningsPage = 0;
   /// Previous values, so a refreshed figure counts up from the old one
   /// instead of snapping. First paint animates from zero.
   double _prevTodayEarnings = 0.0;
   double _prevWeekEarnings = 0.0;
+  double _monthEarnings = 0.0;
+  double _prevMonthEarnings = 0.0;
 
   // ── Earnings panel ──
   double _weekEarnings = 0.0;
@@ -201,7 +205,16 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   // panel and the space it had occupied stayed behind as a band of nothing
   // under "You're offline". The button is back inside, so the panel only
   // needs what it actually holds.
-  static const double _panelBaseH = 148.0;
+  /// Height of the collapsed sheet.
+  ///
+  /// Measured from what is actually in it rather than picked: the grab
+  /// handle (10 + 4 + 6) and the status row (10 + 26 + 10), plus a little
+  /// air, plus whatever the home indicator takes. At a flat 148 there were
+  /// about seventy pixels of nothing under "You're offline" — a sheet that
+  /// looked like it had content it was refusing to show.
+  static const double _panelBaseMinH = 82.0;
+  double get _panelBaseH =>
+      _panelBaseMinH + (MediaQuery.maybeOf(context)?.padding.bottom ?? 0);
   // Extra height reserved while the scheduled-rides banner is shown above the
   // header (finding-trips state). Without it the banner's ~46px eats into the
   // scroll viewport and clips the bottom rows on devices with small insets.
@@ -1070,6 +1083,20 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       _unreadCount = notifs.where((n) => n['is_read'] != true).length;
     });
 
+    // And the chart's own numbers.
+    //
+    // This load takes the totals out of the same response and stops there,
+    // so the bars and the week were left to a 60-second timer: the driver
+    // opened the panel to an empty axis, and the Week tab to nothing at all
+    // — no bars, no day labels — until a minute had passed. Most of the time
+    // they had closed it again by then, which is why the chart looked like
+    // it simply did not work.
+    //
+    // _refreshStats fetches both periods and fills both series. The 'today'
+    // call lands on the 10-second response cache this load just filled, so
+    // it costs one extra request.
+    unawaited(_refreshStats());
+
     // Update local cache
     prefs.setString('driver_cached_name', _driverName);
     prefs.setDouble('driver_cached_earnings', _todayEarnings);
@@ -1091,10 +1118,13 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
             .catchError((_) => <String, dynamic>{}),
         ApiService.getDriverEarnings(period: 'week')
             .catchError((_) => <String, dynamic>{}),
+        ApiService.getDriverEarnings(period: 'month')
+            .catchError((_) => <String, dynamic>{}),
       ]);
       if (!mounted) return;
       final today = results[0];
       final week = results[1];
+      final month = results[2];
 
       // Coerced, never cast: a hard `as num` on a payload field throws on the
       // first backend that sends a numeric string, and this runs on a timer.
@@ -1114,10 +1144,12 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
         // figures land, or every refresh would animate from itself.
         _prevTodayEarnings = _todayEarnings;
         _prevWeekEarnings = _weekEarnings;
+        _prevMonthEarnings = _monthEarnings;
         _todayEarnings = dbl(today['total'], _todayEarnings);
         _todayTrips = (today['trips_count'] as num?)?.toInt() ?? _todayTrips;
         _todayHours = dbl(today['online_hours'], _todayHours);
         _weekEarnings = dbl(week['total'], _weekEarnings);
+        _monthEarnings = dbl(month['total'], _monthEarnings);
 
         // Keep the last good series when a response arrives without one —
         // an empty chart reads as "you earned nothing", which is a lie the
@@ -1821,6 +1853,27 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   //  EARNINGS PANEL — chart + period toggle
   // ═══════════════════════════════════════════════════
 
+  /// Time online, read as a clock rather than as a decimal.
+  ///
+  /// It used to print one decimal place and an "h": half an hour showed as
+  /// "0.5h", which is a number the driver has to convert before it means
+  /// anything, and a first shift showed "0.0h" for its first six minutes as
+  /// though nothing had been counted at all. Hours and minutes say it
+  /// directly.
+  ///
+  ///   0.0 -> 0h        0.5 -> 30min
+  ///   0.9 -> 54min     1.0 -> 1h
+  ///   2.25 -> 2h 15min
+  String _onlineTimeText(double hours) {
+    if (!hours.isFinite || hours <= 0) return '0h';
+    final totalMinutes = (hours * 60).round();
+    final h = totalMinutes ~/ 60;
+    final m = totalMinutes % 60;
+    if (h == 0) return '${m}min';
+    if (m == 0) return '${h}h';
+    return '${h}h ${m}min';
+  }
+
   /// Bars for the selected period. Hand-drawn rather than pulling in a chart
   /// package: it is a row of rectangles, and a dependency for that would cost
   /// a native rebuild to ship.
@@ -2186,27 +2239,39 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     const dotActive = Colors.white;
     const dotInactive = Color(0x33FFFFFF); // white @ 20%
 
-    final amounts = [_weekEarnings, _todayEarnings];
-    final prevAmounts = [_prevWeekEarnings, _prevTodayEarnings];
+    // Today, then the week, then the month — swiped left in that order,
+    // shortest span first, the way a driver widens the question.
+    final amounts = [_todayEarnings, _weekEarnings, _monthEarnings];
+    final prevAmounts = [
+      _prevTodayEarnings,
+      _prevWeekEarnings,
+      _prevMonthEarnings,
+    ];
+    // One word each, and tightly set.
+    //
+    // The capsule is as wide as its widest line, and with "THIS MONTH" that
+    // line was the label, not the figure — 95 px against 53 for "$8.40", so
+    // the box never shrank for a small amount no matter what the number did.
+    // TODAY / WEEK / MONTH puts the figure back in charge of the width.
     final labels = [
-      S.of(context).thisWeek.toUpperCase(),
       S.of(context).today.toUpperCase(),
+      S.of(context).weekLabel.toUpperCase(),
+      S.of(context).monthLabel.toUpperCase(),
     ];
     final pageCount = amounts.length;
     final safePage = _earningsPage.clamp(0, pageCount - 1);
 
-    // No plate behind the figure.
+    // The plate is around the swiper, not inside it.
     //
-    // It used to sit on a blurred, bordered slab. Standing still that is a
-    // pill; the moment the driver swipes it, the slab is a rectangle sliding
-    // over the map with its own edges and its own blur, and the eye follows
-    // the box instead of the number that changed. The amount is white on a
-    // dark map and needs no help being read — so the container goes and only
-    // the type travels.
+    // First it was a slab per page, so swiping slid a bordered rectangle
+    // across the map and the eye followed the box instead of the number that
+    // had changed. Taking it away fixed that but left the figure floating on
+    // the map with nothing to hold it. One box around the whole control does
+    // both: it never moves, and only the type travels through it.
     Widget pillPage(double amount, double prevAmount, String label) {
       return SizedBox(
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -2235,7 +2300,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                         color: pillSub,
                         fontSize: 9,
                         fontWeight: FontWeight.w700,
-                        letterSpacing: 1.5,
+                        letterSpacing: 1.0,
                       ),
                     ),
                     const SizedBox(width: 6),
@@ -2281,10 +2346,35 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
           });
         }
       },
-      child: SizedBox(
-        width: 160,
-        height: 52,
-        child: AnimatedSwitcher(
+      // Wrapped tight around the figure, not a slab with the figure adrift
+      // in the middle of it.
+      //
+      // It was a fixed 160 px, so "$28.51" sat in a box with forty empty
+      // pixels either side of it. The box takes the width of whatever page
+      // is showing instead — and since "THIS MONTH" is wider than "TODAY",
+      // AnimatedSize eases that difference rather than letting the box jump
+      // width as the driver swipes.
+      // Grows and shrinks with the figure.
+      //
+      // The amount is set in tabular figures, so every digit is the same
+      // width and the count-up does not make the capsule shiver — it only
+      // changes width when a digit is gained or lost ($9.99 to $10.00), and
+      // then it eases rather than snapping. Material's emphasized curve, the
+      // same one the rider's vehicle row uses, so the two feel related.
+      child: AnimatedSize(
+        duration: const Duration(milliseconds: 420),
+        curve: Curves.easeInOutCubicEmphasized,
+        child: Container(
+          // 48 tall like the two buttons flanking it, and rounded all the way
+          // — radius is half the height, so the ends are semicircles and the
+          // shape is a capsule rather than a rectangle with soft corners.
+          // Square button, capsule, square button: one family across the bar.
+          height: 48,
+          // Clipped, so a page sliding in is cut at the rounded edge instead
+          // of running out across the map.
+          clipBehavior: Clip.antiAlias,
+          decoration: neuBox(radius: 24),
+          child: AnimatedSwitcher(
           duration: const Duration(milliseconds: 380),
           reverseDuration: const Duration(milliseconds: 380),
           switchInCurve: Curves.easeOutCubic,
@@ -2324,6 +2414,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
           ),
         ),
       ),
+        ),
     );
   }
 
@@ -2332,7 +2423,15 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   Future<void> _refreshScheduledCount() async {
     if (!_isStillOnline || _activeTripData != null) return;
     try {
-      final trips = await ApiService.getAvailableScheduledTrips(lat: 0, lng: 0, radiusKm: 100);
+      // Same reasoning as the online screen: reserved rides are same-state
+      // only, and 0,0 turned that rule off. Uses the position this screen
+      // already holds — no extra Geolocator call to hang on.
+      final here = _currentLatLng;
+      final trips = await ApiService.getAvailableScheduledTrips(
+        lat: here?.latitude ?? 0,
+        lng: here?.longitude ?? 0,
+        radiusKm: 100,
+      );
       if (!mounted) return;
       final newCount = trips.length;
       // Backend sends FCM push to 'drivers_available' topic when new scheduled
@@ -2494,8 +2593,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     // Lower: close enough to the sheet to belong to it, not floating in
     // the middle of the map.
     final bottomClosed = _panelCollapsedH + 8;
-    final bottomOpen = pad.bottom + 14;
-    final bottom = ui.lerpDouble(bottomClosed, bottomOpen, t)!;
+    final bottom = ui.lerpDouble(bottomClosed, 0, t)!;
 
     // Inset on both sides and centred inside whatever that leaves, rather
     // than positioned from the screen's width.
@@ -2504,19 +2602,45 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     // right if this Stack is exactly as wide as the screen. It is not, so
     // the open bar sat off-centre and ran off the left edge. Measuring the
     // box we are actually in cannot be wrong about it.
+    // Open, the button sits in a bar of its own at the foot of the sheet —
+    // the shape Uber's "View issues" uses. Closed, that bar is not there at
+    // all and the disc floats over the map, so the footer's ground, its
+    // hairline and its padding all arrive with the drag.
     return Positioned(
       bottom: bottom,
-      left: _kGoSideInset,
-      right: _kGoSideInset,
-      height: height,
+      left: ui.lerpDouble(_kGoSideInset, 0, t)!,
+      right: ui.lerpDouble(_kGoSideInset, 0, t)!,
       child: FadeTransition(
         opacity: _fabScale,
-        child: LayoutBuilder(
-          builder: (context, box) => Center(
-            child: SizedBox(
-              width: ui.lerpDouble(_kGoCircleD, box.maxWidth, t),
-              height: height,
-              child: _buildGoButton(radius: radius, morph: t),
+        child: Container(
+          padding: EdgeInsets.fromLTRB(
+            ui.lerpDouble(0, 20, t)!,
+            ui.lerpDouble(0, 14, t)!,
+            ui.lerpDouble(0, 20, t)!,
+            ui.lerpDouble(0, 14 + pad.bottom, t)!,
+          ),
+          decoration: BoxDecoration(
+            color: neuSurface.withValues(alpha: t),
+            border: Border(
+              top: BorderSide(
+                color: Colors.white.withValues(alpha: 0.05 * t),
+              ),
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.45 * t),
+                blurRadius: 14 * t,
+                offset: Offset(0, -4 * t),
+              ),
+            ],
+          ),
+          child: LayoutBuilder(
+            builder: (context, box) => Center(
+              child: SizedBox(
+                width: ui.lerpDouble(_kGoCircleD, box.maxWidth, t),
+                height: height,
+                child: _buildGoButton(radius: radius, morph: t),
+              ),
             ),
           ),
         ),
@@ -2557,18 +2681,27 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
           // the bar. The disc sits on a dark map and has a gold ring, a
           // gold word and gold radar inside it — a lighter body would put
           // all four in competition and none of them would read.
+          // Black disc closed, gold bar open.
+          //
+          // The disc sits on the map, where a gold puck would compete with
+          // the gold arrow a few centimetres above it; the bar sits at the
+          // foot of a dark sheet, where gold is the only thing that reads as
+          // the one action on the screen.
           final greyTop1 = Color.lerp(
-              const Color(0xFF0B0B0F), const Color(0xFF32323C), morph)!;
+              const Color(0xFF0B0B0F), const Color(0xFFF2D45E), morph)!;
           final greyTop2 = Color.lerp(
-              const Color(0xFF14141A), const Color(0xFF3A3A46), morph)!;
+              const Color(0xFF14141A), const Color(0xFFE8C547), morph)!;
           final greyBot = Color.lerp(
-              const Color(0xFF06060A), const Color(0xFF1E1E26), morph)!;
+              const Color(0xFF06060A), const Color(0xFFD4A82A), morph)!;
 
           final topColor = Color.lerp(greyTop1, greyTop2, p)!;
           final botColor = greyBot;
           final glowColor = _gold;
 
-          final fgColor = enabled ? _gold : dc.textSecondary;
+          // Gold on black, then black on gold.
+          final fgColor = enabled
+              ? Color.lerp(_gold, const Color(0xFF0B0B0F), morph)!
+              : dc.textSecondary;
 
           return ClipRRect(
             borderRadius: BorderRadius.circular(radius),
@@ -2634,20 +2767,33 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                     // and a min-size Row in a stretched box hugs the left edge.
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      // No icon in the normal state — the label says it.
+                      // A power symbol, in its own disc, to the left of the
+                      // label.
                       //
-                      // The circle survives for two things that are not
-                      // decoration: the spinner while navigating, and the
-                      // warning when documents are missing or expired, where
-                      // the button is refusing to do what it says and needs to
-                      // look like it.
-                      if (_isNavigatingToOnline || !docsOk) ...[
+                      // Only on the bar: the closed disc is 74 px with the
+                      // word GO in it and has no room beside it, so the badge
+                      // fades in with the shape. The same disc still carries
+                      // the spinner while navigating and the warning when
+                      // documents are missing — states where the button is
+                      // refusing to do what it says and has to look like it.
+                      if (_isNavigatingToOnline || !docsOk || morph > 0.35) ...[
+                        Opacity(
+                          opacity: (_isNavigatingToOnline || !docsOk)
+                              ? 1.0
+                              : ((morph - 0.35) / 0.65).clamp(0.0, 1.0),
+                          child:
                         Container(
                           width: 28,
                           height: 28,
                           decoration: BoxDecoration(
+                            // Dark well on the gold bar, light one on the
+                            // black disc — the fill has to flip with the body
+                            // underneath it or the icon disappears into it.
                             color: enabled
-                                ? Colors.black.withValues(alpha: 0.15)
+                                ? Color.lerp(
+                                    Colors.white.withValues(alpha: 0.10),
+                                    Colors.black.withValues(alpha: 0.16),
+                                    morph)
                                 : Colors.white.withValues(alpha: 0.08),
                             shape: BoxShape.circle,
                           ),
@@ -2661,12 +2807,15 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                                   ),
                                 )
                               : Icon(
-                                  _hasExpiredDocs
-                                      ? Icons.warning_amber_rounded
-                                      : Icons.upload_file_rounded,
+                                  !docsOk
+                                      ? (_hasExpiredDocs
+                                          ? Icons.warning_amber_rounded
+                                          : Icons.upload_file_rounded)
+                                      : Icons.power_settings_new_rounded,
                                   color: fgColor,
                                   size: 16,
                                 ),
+                        ),
                         ),
                         const SizedBox(width: 10),
                       ],
@@ -2983,7 +3132,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                           const SizedBox(width: 8),
                           _panelStat(
                             Icons.schedule_rounded,
-                            '${_todayHours.toStringAsFixed(1)}h',
+                            _onlineTimeText(_todayHours),
                             S.of(context).hoursOnline,
                           ),
                         ],

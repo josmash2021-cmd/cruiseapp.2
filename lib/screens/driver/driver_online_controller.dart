@@ -194,19 +194,23 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       final results = await Future.wait([
         ApiService.getDriverEarnings(period: 'week'),
         ApiService.getDriverEarnings(period: 'today'),
+        ApiService.getDriverEarnings(period: 'month'),
       ]);
       if (!mounted) return;
 
       final weekData = results[0];
       final todayData = results[1];
+      final monthData = results[2];
       final weekTotal = (weekData['total'] as num?)?.toDouble() ?? 0;
       final todayTotal = (todayData['total'] as num?)?.toDouble() ?? 0;
+      final monthTotal = (monthData['total'] as num?)?.toDouble() ?? 0;
       final txns = todayData['transactions'] as List<dynamic>?;
       final lastFare = (txns != null && txns.isNotEmpty)
           ? (txns.first['fare'] as num?)?.toDouble() ?? 0.0
           : 0.0;
 
-      bool changed = false;
+      bool changed = true; // the chart and counters refresh every pass
+      if (monthTotal != _monthlyEarnings) changed = true;
       if (weekTotal != _weeklyEarnings) changed = true;
       if (todayTotal > _earnings) changed = true;
       if (_lastTripEarnings == 0 && lastFare > 0) changed = true;
@@ -216,6 +220,34 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
           if (weekTotal != _weeklyEarnings) {
             _prevWeeklyEarnings = _weeklyEarnings;
             _weeklyEarnings = weekTotal;
+          }
+          if (monthTotal != _monthlyEarnings) {
+            _prevMonthlyEarnings = _monthlyEarnings;
+            _monthlyEarnings = monthTotal;
+          }
+
+          // The panel's chart and counters, out of the same two responses —
+          // no extra request. Kept when a response arrives without them, so
+          // a partial reply never blanks a chart that was already drawn.
+          _tripsToday =
+              (todayData['trips_count'] as num?)?.toInt() ?? _tripsToday;
+          _hoursToday =
+              (todayData['online_hours'] as num?)?.toDouble() ?? _hoursToday;
+          final hourly = (todayData['hourly_earnings'] as List<dynamic>?)
+              ?.map((e) => (e as num?)?.toDouble() ?? 0.0)
+              .toList(growable: false);
+          if (hourly != null && hourly.length == 24) _hourlySeries = hourly;
+          final daily = (weekData['daily_earnings'] as List<dynamic>?)
+              ?.map((e) => (e as num?)?.toDouble() ?? 0.0)
+              .toList(growable: false);
+          final dayLabels = weekData['day_labels'];
+          if (daily != null &&
+              daily.isNotEmpty &&
+              dayLabels is List &&
+              dayLabels.length == daily.length) {
+            _daySeries = daily;
+            _daySeriesLabels =
+                dayLabels.map((e) => e?.toString() ?? '').toList(growable: false);
           }
           if (todayTotal > _earnings) {
             _prevEarnings = _earnings;
@@ -899,7 +931,24 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       onPosition: (pos) {
           if (!mounted) return;
           final newLL = LatLng(pos.latitude, pos.longitude);
-          _smoothedBearing = _lerpAngle(_smoothedBearing, pos.heading, 0.25);
+          // Only turn the arrow when the course is worth believing.
+          //
+          // Position.heading is -1 when the platform has none to give, and
+          // at a crawl it is noise: standing at a light, the reported course
+          // wanders or drops to zero. Fed straight into the filter that
+          // swung the arrow round to face north while the driver sat still,
+          // and again on the first fix of every shift.
+          //
+          // Below ~5 km/h the last good bearing is a better answer than a
+          // fresh bad one — a parked car is still pointing where it was.
+          final gpsHeading = pos.heading;
+          final courseIsReal = gpsHeading >= 0 &&
+              gpsHeading <= 360 &&
+              !gpsHeading.isNaN &&
+              pos.speed >= 1.4;
+          if (courseIsReal) {
+            _smoothedBearing = _lerpAngle(_smoothedBearing, gpsHeading, 0.25);
+          }
           _currentSpeedMph = (pos.speed * 2.23694).clamp(0.0, 200.0);
           // Snap to route polyline — prevents GPS drift off-road
           final snappedLL = _snapToRoute(newLL);
@@ -1282,7 +1331,21 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
 
   Future<void> _fetchScheduledCount() async {
     try {
-      final trips = await ApiService.getAvailableScheduledTrips(lat: 0, lng: 0, radiusKm: 100);
+      // Where the driver actually is, not 0,0.
+      //
+      // Reserved rides are same-state only, and the server decides that from
+      // this coordinate. Zeros used to switch both the distance and the
+      // state rule off, so the badge counted every unclaimed reservation in
+      // the country. The backend now falls back to the position the
+      // heartbeat stores, so this is no longer the only guard — but sending
+      // the live one keeps the count and the list the driver opens in
+      // agreement.
+      final here = _pos;
+      final trips = await ApiService.getAvailableScheduledTrips(
+        lat: here?.latitude ?? 0,
+        lng: here?.longitude ?? 0,
+        radiusKm: 100,
+      );
       if (!mounted) return;
       final newCount = trips.length;
       final oldCount = _scheduledAvailCount;
@@ -2106,14 +2169,14 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     );
     if (center != null) {
       try {
-        _map?.flyTo(
+        _camera(
           mapbox.CameraOptions(
             center: center,
             zoom: 14.5,
             pitch: 20.0,
             bearing: _bearingBetween(driverPos, _pickupLL),
           ),
-          mapbox.MapAnimationOptions(duration: 900),
+          animateMs: 900,
         );
       } catch (e) {
         debugPrint('[DriverOnline] accepted camera failed: $e');
@@ -2455,18 +2518,12 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     if (!mounted) return;
 
     // Phase 2: Tilt to 55
-    _map?.flyTo(
-      mapbox.CameraOptions(pitch: 55),
-      mapbox.MapAnimationOptions(duration: 800),
-    );
+    _camera(mapbox.CameraOptions(pitch: 55), animateMs: 800);
     await Future.delayed(const Duration(milliseconds: 800));
     if (!mounted) return;
 
     // Phase 3: Rotate 20
-    _map?.flyTo(
-      mapbox.CameraOptions(bearing: 20),
-      mapbox.MapAnimationOptions(duration: 600),
-    );
+    _camera(mapbox.CameraOptions(bearing: 20), animateMs: 600);
   }
 
 

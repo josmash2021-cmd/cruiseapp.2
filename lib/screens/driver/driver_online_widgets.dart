@@ -190,10 +190,17 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
             await MapTheme.applyNavyGold(_map!);
             // Ensure top-down view on entry (no tilt unless actively navigating)
             if (_phase == _Phase.searching || _phase == _Phase.rideRequest) {
-              await _map!.flyTo(
-                mapbox.CameraOptions(pitch: 0, bearing: 0),
-                mapbox.MapAnimationOptions(duration: 0),
-              );
+              // The only camera write on this screen still outside the
+              // guarded helper, and it needed its own catch: a style reload
+              // can be the last thing a surface does before it is torn down.
+              try {
+                await _map!.flyTo(
+                  mapbox.CameraOptions(pitch: 0, bearing: 0),
+                  mapbox.MapAnimationOptions(duration: 0),
+                );
+              } catch (e) {
+                debugPrint('[DriverOnline] flatten on style load failed: $e');
+              }
             }
             // Re-apply pin layer properties after style reload —
             // applyNavyGold resets them so they must be re-set here.
@@ -242,23 +249,24 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
         ? Colors.white.withValues(alpha: 0.2)
         : Colors.black.withValues(alpha: 0.15);
 
-    // Build pages dynamically — hide "LAST TRIP" for new drivers
-    // who haven't completed any trips yet.
-    final hasLastTrip = _lastTripEarnings > 0;
-    final amounts = [
-      _weeklyEarnings,
-      _earnings,
-      if (hasLastTrip) _lastTripEarnings,
-    ];
+    // The same three spans as the home screen, in the same order: today,
+    // this week, this month. It used to be week / today / last trip, so
+    // going online reshuffled the pages under the driver's thumb and the
+    // figure they were looking at moved. One control, one order.
+    //
+    // Last trip went with the reshuffle. It answers a different question
+    // ("what did that one pay?") and the trip's own summary already
+    // answers it.
+    final amounts = [_earnings, _weeklyEarnings, _monthlyEarnings];
     final prevAmounts = [
-      _prevWeeklyEarnings,
       _prevEarnings,
-      if (hasLastTrip) _prevLastTripEarnings,
+      _prevWeeklyEarnings,
+      _prevMonthlyEarnings,
     ];
     final labels = [
-      S.of(context).thisWeek.toUpperCase(),
       S.of(context).today.toUpperCase(),
-      if (hasLastTrip) S.of(context).lastTripLabel.toUpperCase(),
+      S.of(context).weekLabel.toUpperCase(),
+      S.of(context).monthLabel.toUpperCase(),
     ];
     final pageCount = amounts.length;
 
@@ -422,7 +430,6 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
         builder: (_, __) => CustomPaint(
           foregroundPainter: _SearchingBorderPainter(
             progress: _searchPulseVal.value,
-            expansion: 1.0,
           ),
           child: Container(
             decoration: BoxDecoration(
@@ -456,15 +463,15 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                 height: 50,
                 child: Row(
                   children: [
+                    // Closed, the bar carries the status and nothing else.
+                    //
+                    // The avatar and the list button sat either side of it
+                    // and neither did anything the driver needed while
+                    // waiting — the avatar is not a control at all, and the
+                    // list duplicates what opening the panel gives. Safety
+                    // and Reserved appear in their place, but only once the
+                    // panel is open and there is room to label them.
                     const SizedBox(width: 16),
-                    VerifiedAvatar(
-                      photoUrl: widget.photoUrl,
-                      radius: 15,
-                      fallbackName: null,
-                      uid: _driverId?.toString(),
-                      role: 'driver',
-                      isVerified: false,
-                    ),
                     const Spacer(),
                     // Connection status dot: green = SSE real-time, amber = polling fallback
                     Container(
@@ -483,20 +490,11 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                       ),
                     ),
                     const SizedBox(width: 8),
-                    Text(
-                      S.of(context).findingTrips,
-                      style: TextStyle(
-                        color: textMuted,
-                        fontSize: 15,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
+                    // Centred: a Spacer either side, so the dot and the label
+                    // sit together in the middle of the bar whatever the
+                    // label's width does as it swaps between the two lines.
+                    _searchingLabel(textMuted),
                     const Spacer(),
-                    Icon(
-                      Icons.format_list_bulleted_rounded,
-                      color: textMuted,
-                      size: 22,
-                    ),
                     const SizedBox(width: 16),
                   ],
                 ),
@@ -2654,7 +2652,13 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
     });
     _panelAnimCtrl!.forward().then((_) {
       if (!mounted) return;
-      _setState(() => _panelOpen = target > 0.5);
+      _setState(() {
+        _panelOpen = target > 0.5;
+        // Back to the money when it closes. Reserved is somewhere the driver
+        // went, not a state the panel should still be in next time they pull
+        // it up.
+        if (!_panelOpen) _panelShowsReserve = false;
+      });
     });
   }
 
@@ -2670,37 +2674,36 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
     final botPad = MediaQuery.of(context).padding.bottom;
     final t = _panelFrac.clamp(0.0, 1.0);
 
-    // Collapsed pill height + expanded max height
-    const collapsedH = 78.0;
-    final expandedH = screenH * 0.55;
+    // Collapsed pill height + expanded max height.
+    //
+    // 0.82, not 0.55. The panel used to hold three one-line links and 55%
+    // of the screen was plenty; it now holds the earnings card, the chart,
+    // two counters, the promotions row and the button that ends the shift
+    // — 617 px of content. At 55% of a 844 pt phone that is 464, so the
+    // last two items were below the fold on every handset, and the one
+    // control that goes offline was the first thing to fall off.
+    //
+    // 0.82 is the same ceiling the offers sheet in this file uses, and it
+    // still leaves the map showing above the panel. Short phones scroll —
+    // the list inside was always scrollable.
+    //
+    // The collapsed pill used to float — 12 px of map either side and 10
+    // above the home indicator, with all four corners rounded. It is the
+    // same sheet as "You're offline" on the home screen, one tap earlier in
+    // the shift, so it now sits the same way: welded to both sides and to
+    // the bottom edge, top corners only. Going online should move the
+    // driver forward, not slide the furniture around.
+    final collapsedH = 78.0 + botPad;
+    final expandedH = screenH * 0.82;
     final currentH = collapsedH + (expandedH - collapsedH) * t;
 
-    // Margins: collapsed = 12 horizontal + 10 bottom; expanded = 0
-    final hMargin = 12.0 * (1.0 - t);
-    final bMargin = (10.0 + botPad) * (1.0 - t);
-
-    // Border radius: collapsed = 20 all; expanded = 24 top only
-    final radius = BorderRadius.only(
-      topLeft: const Radius.circular(24),
-      topRight: const Radius.circular(24),
-      bottomLeft: Radius.circular(20.0 * (1.0 - t)),
-      bottomRight: Radius.circular(20.0 * (1.0 - t)),
-    );
-
-    final panelItemText = isDark
-        ? Colors.white.withValues(alpha: 0.7)
-        : Colors.black.withValues(alpha: 0.6);
-    final panelItemIcon = isDark
-        ? Colors.white.withValues(alpha: 0.5)
-        : Colors.black.withValues(alpha: 0.4);
-    final panelItemChevron = isDark
-        ? Colors.white.withValues(alpha: 0.15)
-        : Colors.black.withValues(alpha: 0.12);
+    // 26, the radius _buildDraggablePanel uses on the home screen.
+    const radius = BorderRadius.vertical(top: Radius.circular(26));
 
     return Positioned(
-      bottom: bMargin,
-      left: hMargin,
-      right: hMargin,
+      bottom: 0,
+      left: 0,
+      right: 0,
       height: currentH,
       child: GestureDetector(
         onVerticalDragUpdate: (d) {
@@ -2728,7 +2731,6 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
           builder: (_, child) => CustomPaint(
             foregroundPainter: _SearchingBorderPainter(
               progress: _searchPulseVal.value,
-              expansion: t,
             ),
             child: child,
           ),
@@ -2780,21 +2782,47 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                 child: Row(
                   children: [
                     const SizedBox(width: 14),
-                    _panelWell(Icons.tune_rounded, isDark, textMuted),
-                    const Spacer(),
-                    Text(
-                      S.of(context).findingTrips,
-                      style: TextStyle(
-                        color: textMuted,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const Spacer(),
-                    _panelWell(
-                      Icons.format_list_bulleted_rounded,
+                    // Safety on the left, Reserved on the right — only here,
+                    // in the open panel, where each has room for a word.
+                    _panelAction(
+                      Icons.health_and_safety_outlined,
                       isDark,
                       textMuted,
+                      active: false,
+                      semanticLabel: S.of(context).safetyHub,
+                      onTap: () {
+                        HapticService.selectionClick();
+                        Navigator.push(
+                          context,
+                          slideFromRightRoute(const SafetyScreen()),
+                        );
+                      },
+                    ),
+                    const Spacer(),
+                    // The alternating status, not a fixed word.
+                    //
+                    // This is the header the driver reads while waiting —
+                    // _floatingPanel is what the searching phase renders.
+                    // The label had been written into _searchingBar and into
+                    // the offers sheet, neither of which is on screen here.
+                    _searchingLabel(textMuted),
+                    const Spacer(),
+                    _panelAction(
+                      Icons.event_available_rounded,
+                      isDark,
+                      textMuted,
+                      active: _panelShowsReserve,
+                      badge: _scheduledAvailCount,
+                      semanticLabel: S.of(context).reservedLabel,
+                      onTap: () {
+                        HapticService.selectionClick();
+                        // Swaps the body below, in place. Reserved rides are
+                        // a different answer to the same question the panel
+                        // is already answering — not another screen.
+                        _setState(
+                            () => _panelShowsReserve = !_panelShowsReserve);
+                        if (_panelShowsReserve) _fetchScheduledCount();
+                      },
                     ),
                     const SizedBox(width: 14),
                   ],
@@ -2813,83 +2841,62 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                       children: [
                         const SizedBox(height: 12),
                         Divider(height: 1, color: borderC),
-                        const SizedBox(height: 16),
-                        Center(
+                        const SizedBox(height: 18),
+                        // "Earnings", not "Recommended for you".
+                        //
+                        // The old heading introduced three links to other
+                        // screens. What follows it now is the figures
+                        // themselves, and a heading that promises
+                        // recommendations above a bar chart is just wrong.
+                        // Left-aligned and small, the same label the home
+                        // sheet puts over the same card.
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 18),
                           child: Text(
-                            S.of(context).recommendedForYou,
+                            S.of(context).earningsTitle.toUpperCase(),
                             style: TextStyle(
-                              color: textPrimary,
-                              fontSize: 17,
-                              fontWeight: FontWeight.w800,
+                              fontFamily: 'Poppins',
+                              color: Colors.white.withValues(alpha: 0.45),
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: 1.4,
                             ),
                           ),
                         ),
-                        const SizedBox(height: 16),
-                        // Recommendations — sunken neu group inside the
-                        // raised panel, hairline-divided.
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 14),
-                          child: Container(
-                            decoration: isDark
-                                ? neuBox(radius: 18, pressed: true)
-                                : BoxDecoration(
-                                    color: Colors.black.withValues(alpha: 0.03),
-                                    borderRadius: BorderRadius.circular(18),
-                                  ),
-                            child: Column(
+                        const SizedBox(height: 10),
+                        // Earnings, or the reserved rides — the same slot,
+                        // crossed over rather than swapped, and the height
+                        // eased so the button below never jumps.
+                        AnimatedSize(
+                          duration: const Duration(milliseconds: 420),
+                          curve: Curves.easeInOutCubicEmphasized,
+                          alignment: Alignment.topCenter,
+                          child: AnimatedSwitcher(
+                            duration: const Duration(milliseconds: 340),
+                            switchInCurve: Curves.easeOutCubic,
+                            switchOutCurve: Curves.easeIn,
+                            layoutBuilder: (current, previous) => Stack(
+                              alignment: Alignment.topCenter,
                               children: [
-                                _panelItem(
-                                  Icons.bar_chart_rounded,
-                                  S.of(context).seeEarningsTrends,
-                                  panelItemIcon,
-                                  panelItemText,
-                                  panelItemChevron,
-                                  () {
-                                    Navigator.push(
-                                      context,
-                                      slideFromRightRoute(
-                                        const DriverEarningsScreen(),
-                                      ),
-                                    );
-                                  },
-                                ),
-                                Divider(height: 1, indent: 65, color: borderC),
-                                _panelItem(
-                                  Icons.star_outline_rounded,
-                                  S.of(context).seeUpcomingPromotions,
-                                  panelItemIcon,
-                                  panelItemText,
-                                  panelItemChevron,
-                                  () {
-                                    Navigator.push(
-                                      context,
-                                      slideFromRightRoute(
-                                        const DriverPromosScreen(),
-                                      ),
-                                    );
-                                  },
-                                ),
-                                Divider(height: 1, indent: 65, color: borderC),
-                                _panelItem(
-                                  Icons.access_time_rounded,
-                                  S.of(context).seeDrivingTime,
-                                  panelItemIcon,
-                                  panelItemText,
-                                  panelItemChevron,
-                                  () {
-                                    Navigator.push(
-                                      context,
-                                      slideFromRightRoute(
-                                        const DriverAnalyticsScreen(),
-                                      ),
-                                    );
-                                  },
-                                ),
+                                ...previous,
+                                if (current != null) current,
                               ],
                             ),
+                            child: _panelShowsReserve
+                                ? KeyedSubtree(
+                                    key: const ValueKey('reserve'),
+                                    child: _panelReserveBody(isDark),
+                                  )
+                                : KeyedSubtree(
+                                    key: const ValueKey('earnings'),
+                                    child: _panelEarningsBody(isDark, borderC),
+                                  ),
                           ),
                         ),
-                        const SizedBox(height: 20),
+                        // A clear gap before the one button that ends the
+                        // shift, so it never reads as another row in the list
+                        // above it.
+                        const SizedBox(height: 26),
                         // GO OFFLINE button — raised neu disc, red accent
                         Center(
                           child: GestureDetector(
@@ -2939,7 +2946,9 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                             ),
                           ),
                         ),
-                        const SizedBox(height: 20),
+                        // Just the home indicator's own space. The 20 px
+                        // on top of it left the button floating above a
+                        // band of nothing at the foot of the panel.
                         SizedBox(height: botPad),
                       ],
                     ),
@@ -2950,6 +2959,584 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
             ],
           ),
         ),
+        ),
+      ),
+    );
+  }
+
+  /// Time online as a clock, not a decimal — same rule as the home sheet.
+  String _onlineTimeText(double hours) {
+    if (!hours.isFinite || hours <= 0) return '0h';
+    final totalMinutes = (hours * 60).round();
+    final h = totalMinutes ~/ 60;
+    final m = totalMinutes % 60;
+    if (h == 0) return '${m}min';
+    if (m == 0) return '${h}h';
+    return '${h}h ${m}min';
+  }
+
+  /// One counter — trips today, or time online.
+  Widget _panelStat(IconData icon, String value, String label, bool isDark) {
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 14),
+      decoration: isDark
+          ? neuBox(radius: 18)
+          : BoxDecoration(
+              color: Colors.black.withValues(alpha: 0.03),
+              borderRadius: BorderRadius.circular(18),
+            ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 30,
+            height: 30,
+            decoration: neuBox(radius: 10, pressed: true),
+            alignment: Alignment.center,
+            child: Icon(icon, size: 15, color: _gold),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            value,
+            style: const TextStyle(
+              fontFamily: 'Poppins',
+              color: Colors.white,
+              fontSize: 17,
+              fontWeight: FontWeight.w800,
+              fontFeatures: [ui.FontFeature.tabularFigures()],
+            ),
+          ),
+          Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontFamily: 'Poppins',
+              color: Colors.white.withValues(alpha: 0.45),
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Earnings, with the day or the week drawn underneath.
+  ///
+  /// A plain row of rectangles rather than a chart package: the panel is
+  /// already the heaviest thing on this screen, and a dependency for two
+  /// dozen bars would cost a native rebuild to ship.
+  Widget _panelEarningsCard(bool isDark, Color borderC) {
+    final week = _panelWeekTab;
+    final values = week ? _daySeries : _hourlySeries;
+    final total = week ? _weeklyEarnings : _earnings;
+    const barH = 74.0;
+    final peak = values.fold<double>(0, math.max);
+    final labels = week
+        ? _daySeriesLabels
+        : const ['12AM', '', '', '', '', '', '6AM', '', '', '', '', '',
+                 '12PM', '', '', '', '', '', '6PM', '', '', '', '', ''];
+
+    Widget tab(String text, bool on, VoidCallback onTap) {
+      return GestureDetector(
+        onTap: onTap,
+        behavior: HitTestBehavior.opaque,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          decoration: on
+              ? BoxDecoration(
+                  color: _gold.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(14),
+                )
+              : null,
+          child: Text(
+            text,
+            style: TextStyle(
+              fontFamily: 'Poppins',
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              color: on ? _gold : Colors.white.withValues(alpha: 0.45),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: isDark
+          ? neuBox(radius: 18)
+          : BoxDecoration(
+              color: Colors.black.withValues(alpha: 0.03),
+              borderRadius: BorderRadius.circular(18),
+            ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              tab(S.of(context).today, !week,
+                  () => _setState(() => _panelWeekTab = false)),
+              const SizedBox(width: 6),
+              tab(S.of(context).weekLabel, week,
+                  () => _setState(() => _panelWeekTab = true)),
+              const Spacer(),
+              Text(
+                '\$${total.toStringAsFixed(2)}',
+                style: const TextStyle(
+                  fontFamily: 'Poppins',
+                  color: Colors.white,
+                  fontSize: 22,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: -0.5,
+                  fontFeatures: [ui.FontFeature.tabularFigures()],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          // The axis draws even with no data — a floor of 3% on every bar,
+          // so an empty day reads as "nothing yet" instead of as broken.
+          SizedBox(
+            height: barH,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                for (int i = 0; i < (week ? 7 : 24); i++) ...[
+                  if (i > 0) SizedBox(width: week ? 7 : 2),
+                  Expanded(
+                    child: Align(
+                      alignment: Alignment.bottomCenter,
+                      child: Container(
+                        width: week ? 10 : 4,
+                        height: barH *
+                            (i < values.length && peak > 0
+                                ? math.max(0.03, values[i] / peak)
+                                : 0.03),
+                        decoration: BoxDecoration(
+                          color: _gold.withValues(alpha: 0.5),
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          const SizedBox(height: 6),
+          Row(
+            children: [
+              for (int i = 0; i < (week ? 7 : 24); i++) ...[
+                if (i > 0) SizedBox(width: week ? 7 : 2),
+                Expanded(
+                  child: Text(
+                    i < labels.length ? labels[i] : '',
+                    textAlign: TextAlign.center,
+                    maxLines: 1,
+                    overflow: TextOverflow.visible,
+                    softWrap: false,
+                    style: TextStyle(
+                      fontFamily: 'Poppins',
+                      color: Colors.white.withValues(alpha: 0.3),
+                      fontSize: 9,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// The searching label: three dots that count up, and a highlight that
+  /// sweeps the width of the words.
+  ///
+  /// It sits in the middle of the panel header, between the two icons, and
+  /// the sweep is sized to the text rather than to the bar — from the first
+  /// letter to the last dot. A fixed word would be read once and then
+  /// ignored; two that trade places under something that moves keep saying
+  /// the machine is still working, which is the one thing the driver wants
+  /// to know while nothing is happening.
+  ///
+  /// Everything rides the 3 s pulse that already drives the border, so no
+  /// second ticker is started for this.
+  Widget _searchingLabel(Color textMuted) {
+    return AnimatedBuilder(
+      animation: _searchPulseVal,
+      builder: (context, _) {
+        final p = _searchPulseVal.value; // 0..1, three seconds per lap
+        // One dot per second: 1, 2, 3, repeat.
+        final dots = 1 + (p * 3).floor().clamp(0, 2);
+        final text = _statusLine == 0
+            ? S.of(context).findingTrips
+            : S.of(context).youreOnlineStatus;
+
+        // The width eases too.
+        //
+        // "You're online" is narrower than "Finding trips", so without this
+        // the block snapped to its new width the instant the switch
+        // finished — a jump at the end of an otherwise smooth fade, and the
+        // sweep rail underneath jumped with it.
+        return AnimatedSize(
+          duration: const Duration(milliseconds: 520),
+          curve: Curves.easeInOutCubicEmphasized,
+          alignment: Alignment.centerLeft,
+          child: AnimatedSwitcher(
+          duration: const Duration(milliseconds: 520),
+          // Material's emphasized easing, the same one the rider's vehicle
+          // row uses: leaves slowly, arrives slowly. A short slide, because
+          // a long one on two words reads as a card being dealt.
+          switchInCurve: Curves.easeInOutCubicEmphasized,
+          switchOutCurve: Curves.easeInOutCubicEmphasized,
+          // Stacked and centred, so the outgoing line holds its place while
+          // it fades instead of collapsing and shoving the incoming one.
+          layoutBuilder: (current, previous) => Stack(
+            alignment: Alignment.centerLeft,
+            children: [
+              ...previous,
+              if (current != null) current,
+            ],
+          ),
+          transitionBuilder: (child, anim) => FadeTransition(
+            opacity: anim,
+            child: SlideTransition(
+              position: Tween<Offset>(
+                begin: const Offset(0, 0.18),
+                end: Offset.zero,
+              ).animate(anim),
+              child: child,
+            ),
+          ),
+          // Sized to the words, so the sweep below runs from the first
+          // letter to the last dot and stops — not across the whole bar.
+          child: IntrinsicWidth(
+            key: ValueKey<int>(_statusLine),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '$text${'.' * dots}',
+                  maxLines: 1,
+                  overflow: TextOverflow.clip,
+                  style: TextStyle(
+                    fontFamily: 'Poppins',
+                    color: textMuted,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                // The sweep. A short gold segment travelling left to right
+                // on a hairline, once per lap of the pulse.
+                SizedBox(
+                  height: 1.5,
+                  child: LayoutBuilder(
+                    builder: (context, box) {
+                      final w = box.maxWidth;
+                      const segFrac = 0.34;
+                      final segW = w * segFrac;
+                      // Eased travel, and a fade at both ends.
+                      //
+                      // Linear, the segment arrived at the right edge and
+                      // reappeared at the left in the same frame — a visible
+                      // snap once every lap. Easing gives it weight; the
+                      // opacity envelope means it is already invisible when
+                      // it wraps, so the reset cannot be seen at all.
+                      final eased = Curves.easeInOutSine.transform(p);
+                      final x = -segW + (w + segW) * eased;
+                      final fade = p < 0.15
+                          ? p / 0.15
+                          : p > 0.85
+                              ? (1 - p) / 0.15
+                              : 1.0;
+                      return Stack(
+                        clipBehavior: Clip.hardEdge,
+                        children: [
+                          Positioned.fill(
+                            child: DecoratedBox(
+                              decoration: BoxDecoration(
+                                color: Colors.white.withValues(alpha: 0.07),
+                                borderRadius: BorderRadius.circular(1),
+                              ),
+                            ),
+                          ),
+                          Positioned(
+                            left: x,
+                            width: segW,
+                            top: 0,
+                            bottom: 0,
+                            child: Opacity(
+                              opacity: fade.clamp(0.0, 1.0),
+                              child: DecoratedBox(
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(1),
+                                gradient: LinearGradient(
+                                  colors: [
+                                    _gold.withValues(alpha: 0.0),
+                                    _gold.withValues(alpha: 0.85),
+                                    _gold.withValues(alpha: 0.0),
+                                  ],
+                                  stops: const [0.0, 0.5, 1.0],
+                                ),
+                              ),
+                            ),
+                          ),
+                          ),
+                        ],
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        );
+      },
+    );
+  }
+
+  /// A labelled control in the panel's header. Icon over a word, in a
+  /// sunken well, with an optional count.
+  Widget _panelAction(
+    IconData icon,
+    bool isDark,
+    Color textMuted, {
+    required bool active,
+    required VoidCallback onTap,
+    required String semanticLabel,
+    int badge = 0,
+  }) {
+    final tint = active ? _gold : textMuted;
+    // The label the icon dropped has to go somewhere. Nothing on screen
+    // says what these two do, so without this a screen reader announces
+    // two unnamed buttons.
+    return Semantics(
+      button: true,
+      label: badge > 0 ? '$semanticLabel, $badge' : semanticLabel,
+      child: GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        width: 38,
+        height: 34,
+        alignment: Alignment.center,
+        decoration: isDark
+            ? neuBox(
+                radius: 14,
+                pressed: true,
+                borderColor: active ? _gold.withValues(alpha: 0.45) : null,
+                borderWidth: active ? 1 : 0,
+              )
+            : BoxDecoration(
+                color: Colors.black.withValues(alpha: 0.04),
+                borderRadius: BorderRadius.circular(14),
+              ),
+        // The icon alone. Two words in a 34 px header crowded the status
+        // out of the middle, and both symbols are ones the driver already
+        // knows from the buttons on the map behind this panel.
+        child: Stack(
+          clipBehavior: Clip.none,
+          alignment: Alignment.center,
+          children: [
+            Icon(icon, size: 19, color: tint),
+            if (badge > 0)
+              Positioned(
+                top: -3,
+                right: -5,
+                child: Container(
+                  constraints: const BoxConstraints(minWidth: 15),
+                  height: 15,
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: _gold,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    '$badge',
+                    style: const TextStyle(
+                      fontFamily: 'Poppins',
+                      color: Color(0xFF0B0B0F),
+                      fontSize: 9.5,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+      ),
+    );
+  }
+
+  /// The default panel body: the money, the two counters, and the one link
+  /// that goes somewhere this panel cannot show inline.
+  Widget _panelEarningsBody(bool isDark, Color borderC) {
+    final panelItemIcon = isDark ? _gold : Colors.black.withValues(alpha: 0.55);
+    final panelItemText =
+        isDark ? Colors.white.withValues(alpha: 0.7) : Colors.black87;
+    final panelItemChevron = isDark
+        ? Colors.white.withValues(alpha: 0.25)
+        : Colors.black.withValues(alpha: 0.25);
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14),
+          child: _panelEarningsCard(isDark, borderC),
+        ),
+        const SizedBox(height: 14),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14),
+          child: Row(
+            children: [
+              Expanded(
+                child: _panelStat(
+                  Icons.local_taxi_rounded,
+                  '$_tripsToday',
+                  S.of(context).tripsToday,
+                  isDark,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _panelStat(
+                  Icons.schedule_rounded,
+                  _onlineTimeText(_hoursToday),
+                  S.of(context).hoursOnline,
+                  isDark,
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 14),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14),
+          child: Container(
+            decoration: isDark
+                ? neuBox(radius: 18, pressed: true)
+                : BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.03),
+                    borderRadius: BorderRadius.circular(18),
+                  ),
+            child: _panelItem(
+              Icons.star_outline_rounded,
+              S.of(context).seeUpcomingPromotions,
+              panelItemIcon,
+              panelItemText,
+              panelItemChevron,
+              () {
+                Navigator.push(
+                  context,
+                  slideFromRightRoute(const DriverPromosScreen()),
+                );
+              },
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// The reserved-rides body: what is bookable near the driver, or the fact
+  /// that nothing is.
+  Widget _panelReserveBody(bool isDark) {
+    final none = _scheduledAvailCount <= 0;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(14, 4, 14, 0),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(vertical: 26, horizontal: 18),
+        decoration: isDark
+            ? neuBox(radius: 18)
+            : BoxDecoration(
+                color: Colors.black.withValues(alpha: 0.03),
+                borderRadius: BorderRadius.circular(18),
+              ),
+        child: Column(
+          children: [
+            Container(
+              width: 44,
+              height: 44,
+              decoration: neuBox(radius: 15, pressed: true),
+              alignment: Alignment.center,
+              child: Icon(
+                none
+                    ? Icons.event_busy_rounded
+                    : Icons.event_available_rounded,
+                size: 21,
+                color: none ? Colors.white.withValues(alpha: 0.35) : _gold,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              none
+                  ? S.of(context).noScheduledNearby
+                  : '$_scheduledAvailCount '
+                      '${_scheduledAvailCount == 1 ? S.of(context).scheduledNearbyCountOne : S.of(context).scheduledNearbyCount}',
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontFamily: 'Poppins',
+                color: Colors.white,
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              // Each half of the card gets its own line. The "we'll tell you
+              // when one turns up" copy sat under both, so it contradicted
+              // the count it was printed beneath.
+              none
+                  ? S.of(context).noScheduledNearbySub
+                  : S.of(context).scheduledNearbySub,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontFamily: 'Poppins',
+                color: Colors.white.withValues(alpha: 0.45),
+                fontSize: 12.5,
+                fontWeight: FontWeight.w500,
+                height: 1.35,
+              ),
+            ),
+            if (!none) ...[
+              const SizedBox(height: 16),
+              GestureDetector(
+                onTap: () {
+                  HapticService.selectionClick();
+                  Navigator.push(
+                    context,
+                    slideFromRightRoute(const ScheduledRidesScreen(initialTab: 0)),
+                  ).then((_) => _fetchScheduledCount());
+                },
+                behavior: HitTestBehavior.opaque,
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+                  decoration: neuBox(radius: 14),
+                  child: Text(
+                    S.of(context).viewAllScheduled,
+                    style: TextStyle(
+                      fontFamily: 'Poppins',
+                      color: _gold,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ],
         ),
       ),
     );

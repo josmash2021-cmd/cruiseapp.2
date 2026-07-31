@@ -338,7 +338,12 @@ class DirectionsService {
     final decoded = _decodePolyline(points);
     final validated = _validatePoints(decoded);
     final anchored = _anchorRoutePoints(validated, origin, destination);
-    debugPrint('[Route] Google overview → ${anchored.length} points. First: ${anchored.first} Last: ${anchored.last}');
+    // Guarded: `.first` on an empty list throws, and this list is empty
+    // exactly when every point failed validation — the case worth logging.
+    debugPrint(anchored.isEmpty
+        ? '[Route] Google overview → 0 points (all filtered)'
+        : '[Route] Google overview → ${anchored.length} points. '
+            'First: ${anchored.first} Last: ${anchored.last}');
 
     return RouteResult(
       points: anchored,
@@ -396,10 +401,7 @@ class DirectionsService {
         for (final leg in legs) {
           final steps = (leg['steps'] as List?) ?? [];
           for (final step in steps) {
-            final stepGeometry = step['geometry']?.toString();
-            if (stepGeometry != null && stepGeometry.isNotEmpty) {
-              detailedPoints.addAll(_decodePolyline(stepGeometry));
-            }
+            detailedPoints.addAll(_pointsFromGeometry(step['geometry']));
           }
         }
       }
@@ -409,9 +411,8 @@ class DirectionsService {
         decoded = detailedPoints;
         debugPrint('[Route] OSRM steps → ${decoded.length} points');
       } else {
-        final geometry = bestRoute['geometry']?.toString();
-        if (geometry == null || geometry.isEmpty) return null;
-        decoded = _decodePolyline(geometry);
+        decoded = _pointsFromGeometry(bestRoute['geometry']);
+        if (decoded.isEmpty) return null;
         debugPrint('[Route] OSRM overview → ${decoded.length} points');
       }
       if (decoded.isEmpty) return null;
@@ -563,6 +564,42 @@ class DirectionsService {
   ) {
     if (input.isEmpty) return [origin, destination];
     return input;
+  }
+
+  /// Route points out of whatever shape `geometry` arrived in.
+  ///
+  /// It is an encoded polyline when the request asked for one and a GeoJSON
+  /// LineString when it did not, and the two are not interchangeable. Calling
+  /// `.toString()` on the object form and handing that to the polyline decoder
+  /// is what produced points like LatLng(343630.6, 429409.6): the decoder read
+  /// the braces and quotes of a printed Map as varint payload and accumulated
+  /// deltas that never stopped growing. Every point then failed the -90..90
+  /// check, the whole route was filtered away, and the fare was computed from
+  /// a route with no length.
+  ///
+  /// GeoJSON is [longitude, latitude]. Reversed here, once, rather than in
+  /// each caller.
+  List<LatLng> _pointsFromGeometry(dynamic geometry) {
+    if (geometry == null) return const <LatLng>[];
+    if (geometry is String) {
+      return geometry.isEmpty ? const <LatLng>[] : _decodePolyline(geometry);
+    }
+    if (geometry is Map) {
+      final coords = geometry['coordinates'];
+      if (coords is List) {
+        final out = <LatLng>[];
+        for (final c in coords) {
+          if (c is List && c.length >= 2) {
+            final lng = c[0], lat = c[1];
+            if (lng is num && lat is num) {
+              out.add(LatLng(lat.toDouble(), lng.toDouble()));
+            }
+          }
+        }
+        return out;
+      }
+    }
+    return const <LatLng>[];
   }
 
   List<LatLng> _decodePolyline(String poly) {

@@ -1391,7 +1391,7 @@ extension _RideRequestWidgets on _RideRequestScreenState {
       return '';
     }
     if (est.driverCount == 0) return S.of(context).noDriversAvailable;
-    return '${est.minMinutes}-${est.maxMinutes} min';
+    return est.rangeLabel;
   }
 
   // Shimmer card for grid loading state - web style
@@ -1855,7 +1855,7 @@ extension _RideRequestWidgets on _RideRequestScreenState {
         final none = est.driverCount == 0;
         final text = none
             ? S.of(context).noDriversAvailable
-            : '${est.minMinutes}-${est.maxMinutes} min';
+            : est.rangeLabel;
 
         return AnimatedSwitcher(
           // Longer than the card's own move and eased the same way, so the

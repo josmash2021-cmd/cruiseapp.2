@@ -33,6 +33,32 @@ class WaitEstimate {
 
   /// Nobody within range. The ride cannot be requested.
   bool get hasDrivers => driverCount > 0;
+
+  /// The range as the rider reads it.
+  ///
+  /// Minutes stop at the hour. "46-61 min" is not something anyone says, and
+  /// once the far end crosses sixty the unit has to change with it — a driver
+  /// fifteen miles out is an hour away, and an hour is how that is said.
+  ///
+  /// Anything an hour or more is rounded to five minutes first. The number is
+  /// a padded estimate to begin with, so "1 h 1 min" claims a precision the
+  /// range itself does not have.
+  ///
+  /// "min" and "h" are the same word in both languages this app speaks, which
+  /// is why they are written here rather than fetched from the strings.
+  String get rangeLabel {
+    if (maxMinutes < 60) return '$minMinutes-$maxMinutes min';
+    if (minMinutes < 60) return '$minMinutes min - ${_hm(maxMinutes)}';
+    return '${_hm(minMinutes)} - ${_hm(maxMinutes)}';
+  }
+
+  static String _hm(int minutes) {
+    final m = ((minutes / 5).round()) * 5;
+    final h = m ~/ 60;
+    final rest = m % 60;
+    if (h == 0) return '$m min';
+    return rest == 0 ? '$h h' : '$h h $rest min';
+  }
 }
 
 /// Turns "how many drivers are near" into "how long until one arrives".

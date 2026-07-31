@@ -1835,7 +1835,7 @@ extension _HomeScreenWidgets on _HomeScreenState {
     // The booking sheet is where the question is actually put, and that is
     // where the empty answer belongs; it says so in full there.
     if (est.driverCount == 0) return '';
-    return '${est.minMinutes}-${est.maxMinutes} min';
+    return est.rangeLabel;
   }
 
   // ─── Quick access grid (Home, Work, places) ───

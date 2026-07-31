@@ -4,9 +4,10 @@ import '../../services/api_service.dart';
 import '../../services/user_session.dart';
 import '../../config/page_transitions.dart';
 import '../../l10n/app_localizations.dart';
+import '../../widgets/neu_style.dart';
 import '../home_screen.dart';
 
-/// Driver Inbox – tabs: All, Messages, Alerts, Updates, Deals
+/// Driver Inbox – tabs: All, Messages, Alerts.
 class DriverInboxScreen extends StatefulWidget {
   const DriverInboxScreen({super.key});
 
@@ -27,7 +28,7 @@ class _DriverInboxScreenState extends State<DriverInboxScreen>
   void initState() {
     super.initState();
     _enforceDriverRole();
-    _tabCtrl = TabController(length: 5, vsync: this);
+    _tabCtrl = TabController(length: 3, vsync: this);
     _fetchNotifications();
   }
 
@@ -72,10 +73,6 @@ class _DriverInboxScreenState extends State<DriverInboxScreen>
     switch (s) {
       case 'message':
         return InboxType.message;
-      case 'update':
-        return InboxType.update;
-      case 'deal':
-        return InboxType.deal;
       default:
         return InboxType.alert;
     }
@@ -87,10 +84,6 @@ class _DriverInboxScreenState extends State<DriverInboxScreen>
         return Icons.support_agent_rounded;
       case InboxType.alert:
         return Icons.trending_up_rounded;
-      case InboxType.update:
-        return Icons.system_update_rounded;
-      case InboxType.deal:
-        return Icons.card_giftcard_rounded;
     }
   }
 
@@ -100,10 +93,6 @@ class _DriverInboxScreenState extends State<DriverInboxScreen>
         return const Color(0xFF2196F3);
       case InboxType.alert:
         return const Color(0xFF4CAF50);
-      case InboxType.update:
-        return const Color(0xFF9C27B0);
-      case InboxType.deal:
-        return const Color(0xFFFF9800);
     }
   }
 
@@ -130,10 +119,6 @@ class _DriverInboxScreenState extends State<DriverInboxScreen>
         return _items.where((i) => i.type == InboxType.message).toList();
       case 2:
         return _items.where((i) => i.type == InboxType.alert).toList();
-      case 3:
-        return _items.where((i) => i.type == InboxType.update).toList();
-      case 4:
-        return _items.where((i) => i.type == InboxType.deal).toList();
       default:
         return _items;
     }
@@ -143,7 +128,10 @@ class _DriverInboxScreenState extends State<DriverInboxScreen>
   Widget build(BuildContext context) {
     final s = S.of(context);
     return Scaffold(
-      backgroundColor: Colors.black,
+      // neuBase, not pure black: neumorphic shadows are two lights, one dark
+      // and one pale, and over #000000 the dark one has nowhere to go — every
+      // raised surface flattens into the background.
+      backgroundColor: neuBase,
       body: SafeArea(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -158,10 +146,7 @@ class _DriverInboxScreenState extends State<DriverInboxScreen>
                     child: Container(
                       width: 40,
                       height: 40,
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.06),
-                        shape: BoxShape.circle,
-                      ),
+                      decoration: neuBox(radius: 20),
                       child: const Icon(
                         Icons.arrow_back_rounded,
                         color: Colors.white,
@@ -196,10 +181,7 @@ class _DriverInboxScreenState extends State<DriverInboxScreen>
                         horizontal: 12,
                         vertical: 6,
                       ),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.06),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
+                      decoration: neuBox(radius: 12),
                       child: Text(
                         s.markAllRead,
                         style: TextStyle(
@@ -223,7 +205,7 @@ class _DriverInboxScreenState extends State<DriverInboxScreen>
                 controller: _tabCtrl,
                 isScrollable: true,
                 tabAlignment: TabAlignment.start,
-                labelColor: Colors.black,
+                labelColor: _gold,
                 unselectedLabelColor: Colors.white.withValues(alpha: 0.5),
                 labelStyle: const TextStyle(
                   fontSize: 13,
@@ -233,9 +215,12 @@ class _DriverInboxScreenState extends State<DriverInboxScreen>
                   fontSize: 13,
                   fontWeight: FontWeight.w500,
                 ),
-                indicator: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(20),
+                // The selected filter is a raised neu plate with a gold rim,
+                // not a white slab. A solid white pill was the brightest
+                // thing on a screen whose content is the point.
+                indicator: neuBox(
+                  radius: 20,
+                  borderColor: _gold.withValues(alpha: 0.30),
                 ),
                 indicatorSize: TabBarIndicatorSize.tab,
                 dividerColor: Colors.transparent,
@@ -255,18 +240,12 @@ class _DriverInboxScreenState extends State<DriverInboxScreen>
                         .where((i) => i.type == InboxType.alert && i.unread)
                         .length,
                   ),
-                  _tabChip(
-                    s.updatesTab,
-                    _items
-                        .where((i) => i.type == InboxType.update && i.unread)
-                        .length,
-                  ),
-                  _tabChip(
-                    s.dealsTab,
-                    _items
-                        .where((i) => i.type == InboxType.deal && i.unread)
-                        .length,
-                  ),
+                  // Updates and Deals are gone. The backend has never sent a
+                  // notif_type of "update" or "deal" — it sends level_up,
+                  // level_down, trip, driver_report, refund_request and
+                  // account_deletion — so both tabs were guaranteed empty
+                  // from the day they were added, and an empty tab is a
+                  // promise the app cannot keep.
                 ],
               ),
             ),
@@ -276,7 +255,7 @@ class _DriverInboxScreenState extends State<DriverInboxScreen>
             Expanded(
               child: TabBarView(
                 controller: _tabCtrl,
-                children: List.generate(5, (tabIndex) {
+                children: List.generate(3, (tabIndex) {
                   if (_loading) {
                     return const Center(
                       child: CircularProgressIndicator(color: _gold),
@@ -381,25 +360,22 @@ class _DriverInboxScreenState extends State<DriverInboxScreen>
       child: Container(
         margin: const EdgeInsets.only(bottom: 8),
         padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: item.unread ? Colors.white.withValues(alpha: 0.06) : _card,
-          borderRadius: BorderRadius.circular(16),
-          border: item.unread
-              ? Border.all(
-                  color: const Color(0xFF2196F3).withValues(alpha: 0.2),
-                )
-              : null,
-        ),
+        // Unread is raised with a gold rim; read is the same plate pressed
+        // into the page. Depth carries the state, so the row still reads as
+        // unread at a glance without a second colour doing the work.
+        decoration: item.unread
+            ? neuBox(radius: 16, borderColor: _gold.withValues(alpha: 0.28))
+            : neuBox(radius: 16, pressed: true),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Container(
               width: 44,
               height: 44,
-              decoration: BoxDecoration(
-                color: item.iconColor.withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(13),
-              ),
+              // A sunken well, the established place for an icon in this
+              // system — the tinted square it replaces was the only flat
+              // colour left on the row.
+              decoration: neuBox(radius: 13, pressed: true),
               child: Icon(item.icon, color: item.iconColor, size: 22),
             ),
             const SizedBox(width: 14),
@@ -550,7 +526,7 @@ class _DriverInboxScreenState extends State<DriverInboxScreen>
   }
 }
 
-enum InboxType { message, alert, update, deal }
+enum InboxType { message, alert }
 
 class _InboxItem {
   final int id;

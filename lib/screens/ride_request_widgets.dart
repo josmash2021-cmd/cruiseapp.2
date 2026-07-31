@@ -220,10 +220,6 @@ extension _RideRequestWidgets on _RideRequestScreenState {
     // fares land, so nobody can book at a rate the app made up.
     final bool faresReady = displayOptions.isNotEmpty;
     if (!faresReady) displayOptions = _placeholderTiers();
-    debugPrint('[Sheet] faresReady=$faresReady opts=${displayOptions.length} '
-        'sel=${s.selectedOption?.id} phase=${s.phase} '
-        'pickup=${s.pickup != null} dropoff=${s.dropoff != null} '
-        'expanded=$_gridExpanded');
 
     final option = widget.fastRide
         ? (displayOptions.isNotEmpty ? displayOptions.first : s.selectedOption)
@@ -239,7 +235,27 @@ extension _RideRequestWidgets on _RideRequestScreenState {
     // edge so it visibly hovers above the map instead of hugging the
     // bottom. Stronger drop shadow + subtle gold-tinted top glow sells
     // the "lifted" feel.
-    return Positioned(
+    // Floating while it is only the four cards, flush once a tier is picked.
+    //
+    // This was one or the other and both were wrong half the time. It hovered
+    // with 14 px down each side and 24 px of map beneath, which looks right
+    // over a map but costs height at the top of the sheet — and the sheet is
+    // what pushes the map up, so on a long trip the route ran under the panel.
+    // Made flush, that came back, but a short four-card panel welded to the
+    // bottom edge reads as a wall rather than a choice.
+    //
+    // Which one is right depends on how tall the sheet is, and that is exactly
+    // what picking a tier changes. Unpicked it is short and there is map to
+    // spare, so it floats. Picked it grows by the detail row, the payment row
+    // and the button, and every pixel of that goes to the content instead of
+    // to margins.
+    final bool floating = option == null;
+
+    return AnimatedPositioned(
+      // Moves with the card row rather than after it, so the panel settling
+      // against the edge is part of the same gesture as the tiers collapsing.
+      duration: const Duration(milliseconds: 380),
+      curve: Curves.easeInOutCubicEmphasized,
       // No `top` — bottom-anchored, height from the content.
       //
       // It was pinned top AND bottom while being made flush to the edges,
@@ -247,26 +263,23 @@ extension _RideRequestWidgets on _RideRequestScreenState {
       // the full height of the screen, so the panel took the whole display
       // and the map disappeared behind it. Anchoring only the bottom lets
       // the sheet be as tall as what is in it and no taller.
-      // Flush to the edges, not floating.
-      //
-      // It used to hover with 14 px down each side and 24 px of map showing
-      // beneath it. Those margins cost height at the top of the sheet, and
-      // the sheet is what pushes the map up — so on a long trip the route
-      // ran off under the panel and the rider could not see where they were
-      // going. A sheet that hugs the bottom gives that back to the map.
-      left: 0,
-      right: 0,
-      bottom: 0,
+      left: floating ? 14 : 0,
+      right: floating ? 14 : 0,
+      bottom: floating ? 24 : 0,
       child: Align(
         alignment: Alignment.bottomCenter,
-        child: Container(
-            // Rounded at the top only now that it meets the screen edges —
-            // neuBox cannot express that, so its two shadows are replicated
-            // on neuSurface here (same treatment as the driver's panel).
+        child: AnimatedContainer(
+            duration: const Duration(milliseconds: 380),
+            curve: Curves.easeInOutCubicEmphasized,
+            // Rounded all round while it floats, top-only once it meets the
+            // screen edges — neuBox cannot express either, so its two shadows
+            // are replicated on neuSurface here (same treatment as the
+            // driver's panel).
             decoration: BoxDecoration(
               color: neuSurface,
-              borderRadius:
-                  const BorderRadius.vertical(top: Radius.circular(26)),
+              borderRadius: floating
+                  ? BorderRadius.circular(26)
+                  : const BorderRadius.vertical(top: Radius.circular(26)),
               boxShadow: [
                 BoxShadow(
                   color: Colors.black.withValues(alpha: 0.55),
@@ -282,22 +295,24 @@ extension _RideRequestWidgets on _RideRequestScreenState {
             ),
             child: SafeArea(
               top: false,
-              // Never more than 40% of the screen, whatever is inside it.
+              // The sheet is as tall as what is in it. No ceiling, no scroll.
               //
-              // The height used to be whatever its contents summed to,
-              // which drifted with every row added — and three separate
-              // layout faults in two builds came from adding something and
-              // not recomputing what it displaced. A ceiling measured off
-              // the screen cannot drift: the map keeps its 60% on every
-              // handset, and anything that does not fit scrolls instead of
-              // pushing the map off the top.
-              child: ConstrainedBox(
-                constraints: BoxConstraints(
-                  maxHeight: MediaQuery.of(context).size.height * 0.40,
-                ),
-                child: SingleChildScrollView(
-                  physics: const ClampingScrollPhysics(),
-                  child: Padding(
+              // It used to be capped at 40% of the screen with a scroll view
+              // underneath, which fit the four cards and nothing else: pick a
+              // tier and the panel grows by the detail row, the payment row
+              // and the button, and Request Ride ended up past the bottom
+              // edge — the one control this screen exists for, reachable only
+              // by scrolling a panel that does not look scrollable.
+              //
+              // The cap was there because the height used to drift: three
+              // layout faults in two builds came from adding a row and not
+              // recomputing what it displaced. That risk is real and it comes
+              // back with this. It is the right trade anyway — a sheet that
+              // is sometimes taller than intended is a smaller problem than a
+              // button nobody can reach — but anything added below must be
+              // checked against a short handset, because there is no longer a
+              // scroll view to absorb it.
+              child: Padding(
                 // Bottom is tighter than the other 3 sides so the panel
                 // hugs the last visible row (badges when no tier is
                 // picked yet, or the Request Ride button after one is).
@@ -485,9 +500,6 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                             // finite to keep the cards on screen.
                             final raw = box.maxWidth;
                             final full = (raw.isFinite && raw > 0) ? raw : 360.0;
-                            debugPrint('[Sheet] row n=$n raw=$raw full=$full '
-                                't=$t maxH=${box.maxHeight} '
-                                'minH=${box.minHeight}');
                             // Width of one card when all of them are shown.
                             final each = n > 0
                                 ? (full - gap * (n - 1)) / n
@@ -759,8 +771,6 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                     ),
                   ],
                 ],
-                ),
-              ),
                 ),
               ),
             ),
@@ -1340,8 +1350,6 @@ extension _RideRequestWidgets on _RideRequestScreenState {
     final carH = 46 * s;
     final nameSize = math.max(10.0, Responsive.vehicleNameSize * s);
     final waitSize = math.max(10.0, 11 * s);
-    debugPrint('[Sheet] card ${opt.id} name=$displayName h=$height s=$s '
-        'nameSize=$nameSize asset=$carAsset');
 
     return Container(
       // Height comes from the caller, which derives it from how wide the

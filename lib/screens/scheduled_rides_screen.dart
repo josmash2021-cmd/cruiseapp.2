@@ -888,14 +888,35 @@ class _TripCardState extends State<_TripCard> with TickerProviderStateMixin {
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
-                      Text(
-                        _tierLabel(vehicleType),
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 15,
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: 0.5,
-                        ),
+                      // The chevron sits on the tier's line, not beside the
+                      // whole column — in the row it was centred against the
+                      // tier and the car together, which put it level with
+                      // neither.
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            _tierLabel(vehicleType),
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 15,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: 0.5,
+                            ),
+                          ),
+                          if (_hasCoords) ...[
+                            const SizedBox(width: 4),
+                            AnimatedRotation(
+                              turns: _expanded ? 0.5 : 0,
+                              duration: const Duration(milliseconds: 300),
+                              child: Icon(
+                                Icons.expand_more_rounded,
+                                color: _gold.withValues(alpha: 0.7),
+                                size: 20,
+                              ),
+                            ),
+                          ],
+                        ],
                       ),
                       const SizedBox(height: 4),
                       SizedBox(
@@ -909,18 +930,6 @@ class _TripCardState extends State<_TripCard> with TickerProviderStateMixin {
                       ),
                     ],
                   ),
-                  if (_hasCoords) ...[
-                    const SizedBox(width: 6),
-                    AnimatedRotation(
-                      turns: _expanded ? 0.5 : 0,
-                      duration: const Duration(milliseconds: 300),
-                      child: Icon(
-                        Icons.expand_more_rounded,
-                        color: _gold.withValues(alpha: 0.7),
-                        size: 20,
-                      ),
-                    ),
-                  ],
                 ],
               ),
             ),

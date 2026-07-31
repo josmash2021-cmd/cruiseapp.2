@@ -2559,8 +2559,15 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
         clipBehavior: Clip.none,
         children: [
           Container(
-            width: Responsive.w(48),
-            height: Responsive.w(48),
+            // 48 flat, not Responsive.w(48).
+            //
+            // Responsive.w is `px * (width / 390)`, so these grew with the
+            // viewport while the online screen's side buttons are passed a
+            // plain 48 — the same two controls came out different sizes on
+            // anything that is not a 390-wide phone, and on a browser window
+            // three times that wide they came out three times as big.
+            width: 48,
+            height: 48,
             // Round, with the same faint gold rim the online screen's side
             // buttons carry.
             //
@@ -2575,18 +2582,21 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
             // 0xFFE8C547 at 18% that `_fab` uses over there — one family
             // across both screens.
             decoration: neuBox(
-              radius: Responsive.w(48) / 2,
+              radius: 24,
               borderColor: const Color(0xFFE8C547).withValues(alpha: 0.18),
             ),
-            child: Icon(icon, color: dc.text, size: Responsive.sp(22)),
+            // 48 * 0.44, the ratio `_fab` uses.
+            child: Icon(icon, color: dc.text, size: 48 * 0.44),
           ),
           if (badge != null)
             Positioned(
               top: -2,
               right: -2,
               child: Container(
-                width: Responsive.w(18),
-                height: Responsive.w(18),
+                // Flat too, so the badge keeps its proportion to the button
+                // it sits on instead of growing past it.
+                width: 18,
+                height: 18,
                 decoration: const BoxDecoration(
                   color: Color(0xFFEF4444),
                   shape: BoxShape.circle,
@@ -2594,9 +2604,9 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                 child: Center(
                   child: Text(
                     '$badge',
-                    style: TextStyle(
+                    style: const TextStyle(
                       color: Colors.white,
-                      fontSize: Responsive.sp(10),
+                      fontSize: 10,
                       fontWeight: FontWeight.w800,
                     ),
                   ),

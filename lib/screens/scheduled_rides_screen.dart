@@ -879,14 +879,35 @@ class _TripCardState extends State<_TripCard> with TickerProviderStateMixin {
                   // took the tier's old line under the date. The tier is what
                   // the rider is picking the card out by, so it gets the spot
                   // the eye lands on; the status is a note about it.
-                  Text(
-                    _tierLabel(vehicleType),
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 15,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: 0.5,
-                    ),
+                  // The car belongs to the word above it, so it lives in the
+                  // same column and centres on it. In a row of its own it
+                  // could only ever line up with the row's edge — which is
+                  // how it ended up under the chevron instead of under the
+                  // tier it names.
+                  Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      Text(
+                        _tierLabel(vehicleType),
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 0.5,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      SizedBox(
+                        width: 74,
+                        height: 30,
+                        child: Image.asset(
+                          _tierAsset(vehicleType),
+                          fit: BoxFit.contain,
+                          errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                        ),
+                      ),
+                    ],
                   ),
                   if (_hasCoords) ...[
                     const SizedBox(width: 6),
@@ -920,18 +941,6 @@ class _TripCardState extends State<_TripCard> with TickerProviderStateMixin {
               child: Row(
                 children: [
                   _statusBadge(context, status, isPast),
-                  const Spacer(),
-                  // The car under the tier that now sits above it, on the
-                  // same side, so the two read as one label.
-                  SizedBox(
-                    width: 74,
-                    height: 30,
-                    child: Image.asset(
-                      _tierAsset(vehicleType),
-                      fit: BoxFit.contain,
-                      errorBuilder: (_, __, ___) => const SizedBox.shrink(),
-                    ),
-                  ),
                 ],
               ),
             ),

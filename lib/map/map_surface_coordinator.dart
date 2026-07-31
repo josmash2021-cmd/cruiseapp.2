@@ -43,7 +43,14 @@ class MapSurfaceCoordinator {
   /// release path — must not leave the incoming screen with a permanently
   /// blank map. Losing the guarantee for one transition is bad; a driver
   /// staring at an empty rectangle for the rest of the trip is worse.
-  static const Duration revokeTimeout = Duration(milliseconds: 1500);
+  ///
+  /// 4 s, not 1.5. This is the one path that can put two surfaces up, and
+  /// two surfaces close the app — so it has to be long enough that only a
+  /// genuinely dead holder reaches it, never a slow one. The old 1.5 s was
+  /// under the worst case it has to survive: a handoff that starts while a
+  /// 420 ms route transition is animating, on a phone whose platform thread
+  /// is busy tearing down a PlatformView and standing another one up.
+  static const Duration revokeTimeout = Duration(seconds: 4);
 
   String? _owner;
   Future<void> Function()? _onRevoke;
@@ -82,9 +89,13 @@ class MapSurfaceCoordinator {
         try {
           await revoke().timeout(revokeTimeout);
         } on TimeoutException {
+          // Loud, because this is the only way two surfaces can be alive at
+          // once and that closes the app. If this line ever shows up in a
+          // log next to a crash, it is the cause and not a coincidence.
           debugPrint(
-            '[MapSurface] $_owner did not release within '
-            '${revokeTimeout.inMilliseconds}ms — taking the surface anyway',
+            '[MapSurface] FATAL RISK: $_owner did not release within '
+            '${revokeTimeout.inSeconds}s — granting to $owner anyway. Two '
+            'native surfaces may now be alive.',
           );
         } catch (e) {
           debugPrint('[MapSurface] $_owner failed to release: $e');
@@ -121,8 +132,18 @@ class MapSurfaceCoordinator {
 /// unlike the ones it replaces it runs *after* the teardown has been
 /// ordered rather than in parallel with it, so it is a margin on top of a
 /// guarantee instead of a substitute for one.
+/// Never waits on frames alone. `endOfFrame` completes when a frame is
+/// produced, and a backgrounded app produces none — so a driver who taps Go
+/// Online and immediately switches apps used to leave the outgoing screen
+/// parked here, the coordinator's timeout would fire, and the incoming
+/// screen would mount the second surface that closes the app on resume.
+/// Each wait races the clock, so this always returns.
 Future<void> surfaceRemoved() async {
-  await WidgetsBinding.instance.endOfFrame;
-  await WidgetsBinding.instance.endOfFrame;
+  Future<void> frame() => Future.any(<Future<void>>[
+        WidgetsBinding.instance.endOfFrame,
+        Future<void>.delayed(const Duration(milliseconds: 200)),
+      ]);
+  await frame();
+  await frame();
   await Future<void>.delayed(const Duration(milliseconds: 120));
 }

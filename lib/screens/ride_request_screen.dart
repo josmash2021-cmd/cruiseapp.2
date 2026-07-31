@@ -976,11 +976,21 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                     ctrl.compass.updateSettings(mapbox.CompassSettings(enabled: false));
                     ctrl.attribution.updateSettings(mapbox.AttributionSettings(enabled: false));
                     ctrl.logo.updateSettings(mapbox.LogoSettings(enabled: false));
-                    // Polyline below labels, points always on top
-                    _polylineAnnotMgr = await ctrl.annotations.createPolylineAnnotationManager(
+                    // Polyline below labels, points always on top.
+                    //
+                    // Guarded across the awaits: the rider can pop this sheet
+                    // or pick a vehicle and be pushed onward before the
+                    // managers land, and finishing the setup against a map
+                    // that has been torn down is a native crash, not an
+                    // exception.
+                    final poly = await ctrl.annotations.createPolylineAnnotationManager(
                       below: "road-label",
                     );
-                    _pointAnnotMgr = await ctrl.annotations.createPointAnnotationManager();
+                    if (!mounted) return;
+                    _polylineAnnotMgr = poly;
+                    final point = await ctrl.annotations.createPointAnnotationManager();
+                    if (!mounted) return;
+                    _pointAnnotMgr = point;
                     // Retry _drawRoute now that managers are ready. If the
                     // controller fired previewRoute before the map finished
                     // loading, _drawRoute bailed early — this is our catch-up.

@@ -666,14 +666,38 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     // was going to take longer than that to load its tiles anyway — and
     // the transition itself stays smooth.
     //
-    // The listener is a fallback for the case where there is no route
-    // animation at all (a replace, or a cold start straight onto this
-    // screen): then it is already `completed` and this runs immediately.
+    // Waiting for the transition is an optimisation. It must never be the
+    // only way in.
+    //
+    // This used to hang the claim off `AnimationStatus.completed` and
+    // nothing else. That status is not guaranteed to arrive: interrupt the
+    // push — a back swipe part-way, a second route on top, a pop and a
+    // re-push — and the animation goes forward, reverse, dismissed, and
+    // never completes. The listener then sits there for the life of the
+    // screen and _mapMounted stays false, which is a driver looking at a
+    // black rectangle with a spinner on it for the whole shift while the
+    // app keeps telling them they are online.
+    //
+    // So the deadline below is what actually guarantees the map, and the
+    // animation is only allowed to make it happen sooner. Whichever fires
+    // first wins; claim() is idempotent.
+    bool claimed = false;
     void claim() {
+      if (claimed || !mounted) return;
+      claimed = true;
       unawaited(_acquireMapSurface().then((_) {
+        if (mounted && !_mapMounted) _setState(() => _mapMounted = true);
+      }).catchError((Object e) {
+        // Even a failed handoff must not leave the screen mapless — the
+        // coordinator already serialises us, so mounting here is the same
+        // risk the timeout path takes, against a certain blank map.
+        debugPrint('[DriverOnline] map surface claim failed: $e');
         if (mounted && !_mapMounted) _setState(() => _mapMounted = true);
       }));
     }
+
+    // The deadline. 420 ms of push plus a frame of slack.
+    Timer(const Duration(milliseconds: 520), claim);
 
     // Post-frame, because this runs from initState and ModalRoute.of walks
     // the inherited widgets — which is not allowed until the first build
@@ -688,7 +712,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
       void onStatus(AnimationStatus status) {
         if (status != AnimationStatus.completed) return;
         anim.removeStatusListener(onStatus);
-        if (mounted) claim();
+        claim();
       }
 
       anim.addStatusListener(onStatus);

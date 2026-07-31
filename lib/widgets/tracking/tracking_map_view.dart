@@ -1187,20 +1187,34 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
               ctrl.compass.updateSettings(mapbox.CompassSettings(enabled: false));
               ctrl.attribution.updateSettings(mapbox.AttributionSettings(enabled: false));
               ctrl.logo.updateSettings(mapbox.LogoSettings(enabled: false));
-              _polylineAnnotMgr = await ctrl.annotations.createPolylineAnnotationManager(
+              // Every await here is a chance for the screen to go away —
+              // the rider pops back, the trip completes and pushes rating,
+              // the OS destroys the surface on background. Continuing past
+              // that point calls into a freed native map and takes the app
+              // down with no Dart error. Same guard as the driver's online
+              // screen; this is the rider's copy of that crash.
+              final poly = await ctrl.annotations.createPolylineAnnotationManager(
                 below: 'road-label',
               );
-              _pointAnnotMgr = await ctrl.annotations.createPointAnnotationManager();
+              if (!mounted) return;
+              _polylineAnnotMgr = poly;
+
+              final point = await ctrl.annotations.createPointAnnotationManager();
+              if (!mounted) return;
+              _pointAnnotMgr = point;
               try {
-                await ctrl.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-pitch-alignment', 'viewport');
-                await ctrl.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-rotation-alignment', 'viewport');
-                await ctrl.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-allow-overlap', true);
-                await ctrl.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-ignore-placement', true);
-                await ctrl.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-anchor', 'bottom');
+                await ctrl.style.setStyleLayerProperty(point.id, 'icon-pitch-alignment', 'viewport');
+                await ctrl.style.setStyleLayerProperty(point.id, 'icon-rotation-alignment', 'viewport');
+                await ctrl.style.setStyleLayerProperty(point.id, 'icon-allow-overlap', true);
+                await ctrl.style.setStyleLayerProperty(point.id, 'icon-ignore-placement', true);
+                await ctrl.style.setStyleLayerProperty(point.id, 'icon-anchor', 'bottom');
               } catch (_) {}
+              if (!mounted) return;
               // Separate annotation manager for car icon (icon-anchor: center, on top)
-              _carAnnotMgr = await ctrl.annotations.createPointAnnotationManager();
-              
+              final car = await ctrl.annotations.createPointAnnotationManager();
+              if (!mounted) return;
+              _carAnnotMgr = car;
+
               // Initialize new modular map components (AFTER managers are created)
               _mapAnnotations = TrackingMapAnnotations(map: ctrl, pointAnnotMgr: _pointAnnotMgr);
               _mapRoute = TrackingMapRoute(map: ctrl, polylineAnnotMgr: _polylineAnnotMgr);

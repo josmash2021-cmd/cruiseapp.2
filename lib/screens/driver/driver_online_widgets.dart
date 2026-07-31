@@ -73,6 +73,11 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
         ),
       );
     }
+    // Read once, and hand it down. _mapSurface used to reach back for `_pos!`
+    // itself — a bang inside a build method, on a field a dozen callbacks
+    // write. The guard above and that dereference were forty lines apart and
+    // nothing tied them together.
+    final here = _pos!;
     return RepaintBoundary(
       child: LayoutBuilder(
         builder: (context, constraints) {
@@ -82,7 +87,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
           final offset = _dotScreenOffset;
           return Stack(
             children: [
-              Positioned.fill(child: _mapSurface(isDark)),
+              Positioned.fill(child: _mapSurface(isDark, here)),
               // The marker, painted by Flutter: centred while the camera
               // follows, at its own projected pixel once the driver has
               // panned or zoomed away. The Mapbox annotation takes back over
@@ -108,14 +113,14 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
     );
   }
 
-  Widget _mapSurface(bool isDark) {
+  Widget _mapSurface(bool isDark, LatLng pos) {
     return RepaintBoundary(
       child: mapbox.MapWidget(
         key: _mapKey,
         textureView: true,
         styleUri: MapboxConfig.styleDark,
         cameraOptions: mapbox.CameraOptions(
-          center: mapbox.Point(coordinates: mapbox.Position(_pos!.longitude, _pos!.latitude)),
+          center: mapbox.Point(coordinates: mapbox.Position(pos.longitude, pos.latitude)),
           zoom: 16.0, // match home screen zoom — glides to 15.5 via _onSmoothTick
           bearing: 0,
           pitch: 0,
@@ -155,33 +160,74 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
           // microtask so the map tiles render FIRST. The driver sees the
           // map immediately; annotations (gold dot, route lines) appear
           // a few frames later. This eliminates the 1-2s blank screen.
+          // The generation this map was born in. Everything below is only
+          // allowed to touch `ctrl` while it is still the current one.
+          final gen = _mapGeneration;
+
+          // This microtask is the app's hardest crash.
+          //
+          // It captures `ctrl` and then awaits — five times. Between any two
+          // of those awaits the native map can be gone: the driver backgrounds
+          // the app and Android destroys the SurfaceView, a trip screen takes
+          // the surface through the coordinator, the driver pops the screen.
+          // `_releaseMapSurface` nulls `_map` and bumps `_mapGeneration`
+          // exactly for this, and this method was the one place that never
+          // read it. The next `await ctrl.annotations…` then calls into a
+          // native object that has been freed — and that does not throw a
+          // Dart exception you can catch and shrug at, it takes the process
+          // down. The app closes with no error, which is exactly what a
+          // driver reports as "it just shuts".
+          //
+          // So: check the generation after every await, and wrap the lot. A
+          // stale pass returns quietly; onMapCreated will run again against
+          // the new map and rebuild all of this from scratch.
           Future.microtask(() async {
-            // Polyline manager with no 'below' constraint — avoids silent failure
-            // when the layer name doesn't exist in the style.
-            _polylineAnnotMgr = await ctrl.annotations.createPolylineAnnotationManager(
-              below: "road-label",
-            );
-            _pointAnnotMgr = await ctrl.annotations.createPointAnnotationManager();
-            try { await ctrl.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-pitch-alignment', 'viewport'); } catch (_) {}
-            try { await ctrl.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-allow-overlap', true); } catch (_) {}
-            try { await ctrl.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-ignore-placement', true); } catch (_) {}
-            // Separate pin manager for teardrop pins — anchored at tip (bottom), upright (viewport)
-            _pinAnnotMgr = await ctrl.annotations.createPointAnnotationManager();
-            try { await ctrl.style.setStyleLayerProperty(_pinAnnotMgr!.id, 'icon-pitch-alignment', 'viewport'); } catch (_) {}
-            try { await ctrl.style.setStyleLayerProperty(_pinAnnotMgr!.id, 'icon-rotation-alignment', 'viewport'); } catch (_) {}
-            try { await ctrl.style.setStyleLayerProperty(_pinAnnotMgr!.id, 'icon-allow-overlap', true); } catch (_) {}
-            try { await ctrl.style.setStyleLayerProperty(_pinAnnotMgr!.id, 'icon-ignore-placement', true); } catch (_) {}
-            try { await ctrl.style.setStyleLayerProperty(_pinAnnotMgr!.id, 'icon-anchor', 'bottom'); } catch (_) {}
-            // Use already-known position from home screen — no blocking GPS call needed
-            if (_pos != null) _animateToPosition(_pos!, zoom: 16.0, bearing: _heading, tilt: 0);
-            _updateDriverAnnotation();
-            // Re-draw route if map initialised after _drawRoute already ran
-            if (_routePts.length > 1) {
-              _setRouteAnnotation(_routePts, _navyRoute);
-              final dest = (_phase == _Phase.enRouteToPickup || _phase == _Phase.routeSummary)
-                  ? _pickupLL
-                  : _dropoffLL;
-              if (_pos != null) _fitBounds(_pos!, dest);
+            bool stale() => !mounted || _mapGeneration != gen || _map == null;
+            try {
+              // Polyline manager with no 'below' constraint — avoids silent failure
+              // when the layer name doesn't exist in the style.
+              final poly = await ctrl.annotations.createPolylineAnnotationManager(
+                below: "road-label",
+              );
+              if (stale()) return;
+              _polylineAnnotMgr = poly;
+
+              final point = await ctrl.annotations.createPointAnnotationManager();
+              if (stale()) return;
+              _pointAnnotMgr = point;
+              try { await ctrl.style.setStyleLayerProperty(point.id, 'icon-pitch-alignment', 'viewport'); } catch (_) {}
+              try { await ctrl.style.setStyleLayerProperty(point.id, 'icon-allow-overlap', true); } catch (_) {}
+              try { await ctrl.style.setStyleLayerProperty(point.id, 'icon-ignore-placement', true); } catch (_) {}
+              if (stale()) return;
+
+              // Separate pin manager for teardrop pins — anchored at tip (bottom), upright (viewport)
+              final pin = await ctrl.annotations.createPointAnnotationManager();
+              if (stale()) return;
+              _pinAnnotMgr = pin;
+              try { await ctrl.style.setStyleLayerProperty(pin.id, 'icon-pitch-alignment', 'viewport'); } catch (_) {}
+              try { await ctrl.style.setStyleLayerProperty(pin.id, 'icon-rotation-alignment', 'viewport'); } catch (_) {}
+              try { await ctrl.style.setStyleLayerProperty(pin.id, 'icon-allow-overlap', true); } catch (_) {}
+              try { await ctrl.style.setStyleLayerProperty(pin.id, 'icon-ignore-placement', true); } catch (_) {}
+              try { await ctrl.style.setStyleLayerProperty(pin.id, 'icon-anchor', 'bottom'); } catch (_) {}
+              if (stale()) return;
+
+              // Use already-known position from home screen — no blocking GPS call needed
+              final here = _pos;
+              if (here != null) _animateToPosition(here, zoom: 16.0, bearing: _heading, tilt: 0);
+              _updateDriverAnnotation();
+              // Re-draw route if map initialised after _drawRoute already ran
+              if (_routePts.length > 1) {
+                _setRouteAnnotation(_routePts, _navyRoute);
+                final dest = (_phase == _Phase.enRouteToPickup || _phase == _Phase.routeSummary)
+                    ? _pickupLL
+                    : _dropoffLL;
+                if (here != null) _fitBounds(here, dest);
+              }
+            } catch (e) {
+              // Unhandled before. Anything thrown here aborted the rest of
+              // the method, so the driver dot was never drawn either — the
+              // "the arrow is missing" report and this one share a cause.
+              debugPrint('[DriverOnline] annotation setup failed: $e');
             }
           });
         },

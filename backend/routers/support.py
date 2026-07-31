@@ -2271,35 +2271,58 @@ async def create_or_get_support_chat(request: Request, user: User = Depends(_get
                 "bot_phase": chat.bot_phase or "welcome",
                 "created_at": chat.created_at.isoformat() if chat.created_at else None}
 
-    chat = SupportChat(user_id=user.id, subject=subject or "Soporte general", bot_phase="welcome", locale=locale)
+    # Someone answers, and they have a name from the first line.
+    #
+    # agent_name was only assigned later, when the conversation escalated, so
+    # the opening message came from "Cruise Support System" — a piece of
+    # software announcing itself. The rest of the chat then introduced a
+    # person, which reads as a handover that never happened.
+    agent = _rng.choice(_AGENT_NAMES)
+    chat = SupportChat(user_id=user.id, subject=subject or "Soporte general",
+                       bot_phase="welcome", locale=locale, agent_name=agent)
     db.add(chat)
     await db.commit()
     await db.refresh(chat)
 
-    # Send welcome message
+    # The opening line.
+    #
+    # It used to read "Cruise Support System  Session started." over a
+    # bulleted menu of departments — the tone of a terminal booting, and the
+    # shape of a phone tree. Someone writing in has a problem already; being
+    # handed a directory first asks them to file it themselves.
+    #
+    # So: a name, their name, and one plain sentence saying they can just say
+    # what happened. The examples stay because they set expectations about
+    # what this chat can actually settle — but as a sentence, not a menu, and
+    # they name outcomes (cancel, refund, a left-behind bag) rather than
+    # departments.
+    first = (user.first_name or "").strip().split(" ")[0]
     if locale.startswith("es"):
+        hello = f"Hola {first}" if first else "Hola"
         welcome_text = (
-            "Sistema de soporte Cruise  Sesion iniciada.\n\n"
-            "Bienvenido al centro de ayuda automatizado. "
-            "Seleccione o describa su problema para que podamos asistirlo.\n\n"
-            " Viajes y tarifas\n"
-            " Pagos y reembolsos\n"
-            " Cuenta y perfil\n"
-            " Seguridad\n"
-            " Problemas con la app"
+            f"{hello}, soy {agent} de Cruise.\n\n"
+            "Cuenteme que paso y lo resolvemos ahora mismo. Puedo cancelar un "
+            "viaje, revisar un cobro, tramitar un reembolso, ayudarle a "
+            "recuperar algo que dejo en el carro, o reportar un problema con "
+            "la app.\n\n"
+            "Escriba con sus palabras, no hace falta que elija una categoria."
         )
     else:
+        hello = f"Hi {first}" if first else "Hi"
         welcome_text = (
-            "Cruise Support System  Session started.\n\n"
-            "Welcome to our automated help center. "
-            "Please select or describe your issue so we can assist you.\n\n"
-            " Trips & fares\n"
-            " Payments & refunds\n"
-            " Account & profile\n"
-            " Safety\n"
-            " App issues"
+            f"{hello}, I'm {agent} from Cruise.\n\n"
+            "Tell me what happened and we'll sort it out. I can cancel a "
+            "ride, look into a charge, start a refund, help you get back "
+            "something you left in the car, or report a problem with the "
+            "app.\n\n"
+            "Just say it in your own words — you don't need to pick a "
+            "category."
         )
-    welcome_msg = SupportMessage(chat_id=chat.id, sender_id=None, sender_role="system", message=welcome_text)
+    # "bot", not "system": the app renders a system message as a small grey
+    # pill centred on the screen, which is right for "Ana joined the chat" and
+    # wrong for Ana talking. A greeting from a named person belongs in a
+    # bubble like the rest of what she says.
+    welcome_msg = SupportMessage(chat_id=chat.id, sender_id=None, sender_role="bot", message=welcome_text)
     db.add(welcome_msg)
     await db.commit()
     await db.refresh(welcome_msg)

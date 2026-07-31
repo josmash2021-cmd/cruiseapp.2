@@ -21,7 +21,21 @@ import os
 from typing import Any
 
 import httpx
-import openai
+
+
+class SupportAuthError(Exception):
+    """Kimi rejected our credentials, our quota, or the request itself.
+
+    Was openai.AuthenticationError, borrowed as a shared vocabulary back when
+    two providers had to raise something the same code could catch. With only
+    Kimi left, importing an SDK this file never calls to get an exception name
+    is a dependency pretending to be a design.
+    """
+
+
+class SupportBadRequest(Exception):
+    """The provider refused the request shape — tools, most often."""
+
 
 _log = logging.getLogger(__name__)
 
@@ -32,13 +46,15 @@ _ESCALATION_PHRASES = (
     "connect you with a supervisor", "transfer you to",
 )
 
-# ── Provider selection ────────────────────────────────────────────────
-# Kimi first when its key is present, OpenAI as the fallback. Deliberately
-# not a hard swap: a missing or rejected Moonshot key must not take
-# support down, it should just fall through to whatever else is
-# configured — and to the human-escalation path if nothing is.
+# ── Provider ─────────────────────────────────────────────────────────
+# Kimi, and nothing behind it.
+#
+# OpenAI used to stand by here. It is gone by request, which means a Kimi
+# key that is missing, rejected or out of quota no longer moves sideways to
+# another model — it falls through to the rule-based replies in
+# cruise_ai_engine, and past those to a human. Support never goes silent;
+# it just stops sounding like a person until Kimi answers again.
 _MOONSHOT_API_KEY = os.getenv("MOONSHOT_API_KEY", "") or os.getenv("KIMI_API_KEY", "")
-_OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 
 # Kimi Code (kimi.com/code) speaks the ANTHROPIC Messages protocol, not
 # OpenAI's — verified against a live key. Keys from that console are the
@@ -46,40 +62,27 @@ _OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 # which is a separate product with separate billing.
 _KIMI_BASE_URL = os.getenv("MOONSHOT_BASE_URL", "https://api.kimi.com/coding")
 
-# Model ids move faster than this file does, so all are env-overridable.
+# Model ids move faster than this file does, so it is env-overridable.
 _MOONSHOT_MODEL = os.getenv("MOONSHOT_MODEL", "k3")
-_OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
-
-def _build_openai() -> tuple[Any, str, str] | None:
-    if not _OPENAI_API_KEY:
-        return None
-    return (openai.AsyncOpenAI(api_key=_OPENAI_API_KEY), _OPENAI_MODEL, "openai")
 
 
 def _build_kimi() -> tuple[Any, str, str] | None:
     """Kimi needs no client object — _anthropic_completion talks raw HTTP.
 
-    The Anthropic wire format is a single POST and httpx is already a
-    pinned dependency, so this avoids adding an SDK to a production
-    backend just to change one call's shape.
+    The Anthropic wire format is a single POST and httpx is already a pinned
+    dependency, so this never needed an SDK to change one call's shape.
     """
     if not _MOONSHOT_API_KEY:
         return None
     return (None, _MOONSHOT_MODEL, "kimi")
 
 
-_openai_client = None
-_MODEL = _OPENAI_MODEL
+_MODEL = _MOONSHOT_MODEL
 _PROVIDER = "none"
 
-# Kimi first, OpenAI behind it.
-_primary = _build_kimi() or _build_openai()
+_primary = _build_kimi()
 if _primary:
-    _openai_client, _MODEL, _PROVIDER = _primary
-
-# The standby is only meaningful when Kimi is primary — it is what a
-# rejected Moonshot key falls back TO.
-_fallback = _build_openai() if _PROVIDER == "kimi" else None
+    _, _MODEL, _PROVIDER = _primary
 
 # Not logged here: main.py's lifespan reports the resolved provider at
 # startup, which is where an operator actually looks. Logging it at import
@@ -161,7 +164,7 @@ async def _anthropic_completion(messages: list[dict[str, Any]]) -> dict[str, Any
         )
 
     if resp.status_code == 401:
-        raise openai.AuthenticationError(
+        raise SupportAuthError(
             f"kimi rejected the key: {resp.text[:120]}",
             response=resp, body=None,
         )
@@ -197,71 +200,24 @@ async def _anthropic_completion(messages: list[dict[str, Any]]) -> dict[str, Any
     }
 
 
-async def _chat_completion(messages: list[dict[str, Any]]):
-    """One completion request, degrading past a provider that rejects tools.
-
-    Not every model behind an OpenAI-compatible endpoint accepts a `tools`
-    payload. Losing autonomous actions is a degradation; losing the reply
-    is a broken support chat. So a BadRequest retries once as plain text
-    and remembers, to stop paying for a round-trip we know will fail.
-    """
-    global _TOOLS_UNSUPPORTED
-    extra = {} if _TOOLS_UNSUPPORTED else {
-        "tools": _FUNCTIONS,
-        "tool_choice": "auto",
-    }
-    try:
-        return await _openai_client.chat.completions.create(
-            model=_MODEL,
-            messages=messages,
-            max_tokens=500,
-            temperature=0.7,
-            **extra,
-        )
-    except openai.BadRequestError as e:
-        if _TOOLS_UNSUPPORTED:
-            raise
-        _log.warning(
-            "[Support AI] %s rejected tools (%s) — retrying without them",
-            _PROVIDER, e,
-        )
-        _TOOLS_UNSUPPORTED = True
-        return await _openai_client.chat.completions.create(
-            model=_MODEL,
-            messages=messages,
-            max_tokens=500,
-            temperature=0.7,
-        )
-
-
 def _demote_primary(reason: str) -> bool:
-    """Primary provider rejected our credentials — switch to the standby.
+    """Kimi rejected the request. There is nowhere to demote to.
 
-    Config-time selection alone is not a fallback chain: a Moonshot key
-    that is present but INVALID would otherwise shadow a perfectly good
-    OpenAI key and answer every rider with the escalation message, with
-    nothing in the logs explaining why. A rejected key has to demote at
-    request time, permanently, and say so loudly.
+    Kept as a function so the call sites read the same and a standby can be
+    put back later by returning True from here. It logs loudly because this
+    is the line that explains a support bot which suddenly sounds like a
+    form letter: the caller falls through to the rule-based replies.
 
-    Returns True when a standby took over.
+    The usual cause is not a bad key — a rejected key answers 401. Quota
+    answers 403, and reads identically from the outside.
     """
-    global _openai_client, _MODEL, _PROVIDER, _fallback, _TOOLS_UNSUPPORTED
-    if not _fallback:
-        _log.error(
-            "[Support AI] %s rejected our credentials (%s) and there is no "
-            "standby configured — support will escalate to humans",
-            _PROVIDER, reason,
-        )
-        return False
     _log.error(
-        "[Support AI] %s rejected our credentials (%s) — falling back to %s. "
-        "Fix or remove that key.",
-        _PROVIDER, reason, _fallback[2],
+        "[Support AI] Kimi rejected the request (%s) and no standby is "
+        "configured — falling through to rule-based replies. If this is a "
+        "403, the account is out of quota rather than misconfigured.",
+        reason,
     )
-    _openai_client, _MODEL, _PROVIDER = _fallback
-    _fallback = None
-    _TOOLS_UNSUPPORTED = False  # a different provider, a different answer
-    return True
+    return False
 
 # System prompt for Cruise support agent
 _SYSTEM_PROMPT = """You are Cruise Support, an AI assistant for a premium ride-sharing app called Cruise.
@@ -619,22 +575,14 @@ async def generate_support_response(
     global _TOOLS_UNSUPPORTED
     try:
         # Kimi answers over the Anthropic protocol and returns the finished
-        # dict directly; OpenAI-compatible providers fall through below.
-        if _PROVIDER == "kimi":
-            try:
-                return await _anthropic_completion(openai_messages)
-            except openai.AuthenticationError as e:
-                if not _demote_primary(str(e)[:120]):
-                    raise
-
+        # dict directly. It is the only provider now, so there is no second
+        # branch to fall through to — a refusal raises and the caller drops
+        # to the rule-based replies.
         try:
-            response = await _chat_completion(openai_messages)
-        except openai.AuthenticationError as e:
-            # Bad key on the primary. Demote and answer this rider with the
-            # standby rather than making them the one who found out.
-            if not _demote_primary(str(e)[:120]):
-                raise
-            response = await _chat_completion(openai_messages)
+            return await _anthropic_completion(openai_messages)
+        except SupportAuthError as e:
+            _demote_primary(str(e)[:120])
+            raise
 
         message = response.choices[0].message
 
@@ -667,13 +615,13 @@ async def generate_support_response(
             "escalate": escalate,
         }
 
-    except openai.RateLimitError:
+    except SupportAuthError:
         _log.warning("[OpenAI] Rate limit exceeded")
         return {
             "response": "I'm experiencing high demand right now. Please try again in a moment, or I can connect you with a human agent.",
             "escalate": True,
         }
-    except openai.APIError as e:
+    except Exception as e:
         _log.error("[OpenAI] API error: %s", e)
         return {
             "response": "I'm having technical difficulties. Let me connect you with a human agent who can assist you.",

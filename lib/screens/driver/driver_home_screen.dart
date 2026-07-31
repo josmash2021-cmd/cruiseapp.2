@@ -2461,7 +2461,19 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
             alignment: Alignment.center,
             children: [...previous, if (current != null) current],
           ),
-          child: Center(
+          // KeyedSubtree, not Center — this is what made the plate run the
+          // whole width of the bar.
+          //
+          // A Center with no widthFactor takes every pixel it is offered, and
+          // what it is offered here is the entire span between the two
+          // buttons. That widened the layoutBuilder's Stack, which widened
+          // the Container painting the plate, so a 110 px capsule was drawn
+          // as a 430 px slab with the figure adrift in the middle of it.
+          //
+          // Nothing is lost: the Stack above already centres its children,
+          // and the Center outside the pill still centres the pill in the
+          // bar. The key has to stay for AnimatedSwitcher to see a new child.
+          child: KeyedSubtree(
             key: ValueKey<int>(safePage),
             child: pillPage(
               amounts[safePage],

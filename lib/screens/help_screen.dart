@@ -2465,10 +2465,20 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
                   if (!isUser && (msg.senderName.isNotEmpty || _agentName != null))
                     Padding(
                       padding: const EdgeInsets.only(bottom: 3),
+                      // The brand signs the message, not the agent.
+                      //
+                      // The name still belongs in what she says — "I'm Sofia
+                      // from Cruise" reads as a person introducing herself.
+                      // Above the bubble it read as the sender, and the
+                      // rider does not know a Sofia; they wrote to Cruise.
+                      // Dispatch keeps its own name, because by then a
+                      // specific human really has taken the conversation.
                       child: Text(
-                        (msg.senderName.isNotEmpty && msg.senderName != 'Unknown')
+                        isDispatch &&
+                                msg.senderName.isNotEmpty &&
+                                msg.senderName != 'Unknown'
                             ? msg.senderName
-                            : (_agentName ?? (_isSpanish ? 'Soporte Cruise' : 'Cruise Support')),
+                            : (_isSpanish ? 'Soporte Cruise' : 'Cruise Support'),
                         style: TextStyle(
                           fontSize: 10.5,
                           fontWeight: FontWeight.w700,

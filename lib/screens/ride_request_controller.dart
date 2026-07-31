@@ -2389,12 +2389,7 @@ void _showPaymentMethodPickerLegacy(AppColors c, RideOption? option) {
         true,
       ),
       ('paypal', 'PayPal', true),
-      // Debug builds only. Test Mode is a QA affordance, not a payment
-      // method: the server requires a real stripe_card outside sandbox and
-      // rejects the booking with a 400 at the very end. Offering it in a
-      // release build against production means letting the rider pick their
-      // way through the whole flow and be turned away by the last request.
-      if (kDebugMode) ('test_mode', 'Test Mode', true),
+      ('test_mode', 'Test Mode', true),
     ];
 
     showModalBottomSheet(

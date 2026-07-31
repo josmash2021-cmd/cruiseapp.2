@@ -2414,15 +2414,23 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
         duration: const Duration(milliseconds: 420),
         curve: Curves.easeInOutCubicEmphasized,
         child: Container(
-          // 48 tall like the two buttons flanking it, and rounded all the way
-          // — radius is half the height, so the ends are semicircles and the
-          // shape is a capsule rather than a rectangle with soft corners.
-          // Square button, capsule, square button: one family across the bar.
+          // The same plate the online screen carries, down to the numbers.
+          //
+          // It was a full capsule here — 48 tall at radius 24, so the ends
+          // were semicircles — while online it is a rounded rectangle at
+          // radius 20 with a faint white rim. Going online therefore
+          // reshaped the one figure the driver checks all day, which is the
+          // thing this control was rebuilt to stop doing.
+          //
+          // 48 tall still, matching the two round buttons beside it.
           height: 48,
           // Clipped, so a page sliding in is cut at the rounded edge instead
           // of running out across the map.
           clipBehavior: Clip.antiAlias,
-          decoration: neuBox(radius: 24),
+          decoration: neuBox(
+            radius: 20,
+            borderColor: Colors.white.withValues(alpha: 0.06),
+          ),
           child: AnimatedSwitcher(
           duration: const Duration(milliseconds: 380),
           reverseDuration: const Duration(milliseconds: 380),

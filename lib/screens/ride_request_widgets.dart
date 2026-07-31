@@ -419,6 +419,18 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                   // sheet feels lighter and the focus stays on the choice.
                   if (_ctrl.state.routeFetchFailed && displayOptions.isEmpty)
                     _buildRouteFailedRetry()
+                  // An endpoint is missing, and no amount of waiting fixes it.
+                  //
+                  // _tryFetchRoute() returns on its first line when either
+                  // pickup or dropoff is null, so rideOptions is never filled
+                  // and the shimmer below runs for ever. Shimmering for ever
+                  // is indistinguishable from being broken — worse, at 7%
+                  // white on this panel it is indistinguishable from being
+                  // empty. Say which end is missing and offer the way back.
+                  else if (displayOptions.isEmpty &&
+                      (_ctrl.state.pickup == null ||
+                          _ctrl.state.dropoff == null))
+                    _buildMissingEndpointNotice()
                   else if (displayOptions.isEmpty)
                     // Same count and same size as the row it stands in for.
                     //
@@ -2084,6 +2096,62 @@ extension _RideRequestWidgets on _RideRequestScreenState {
           ),
         );
       },
+    );
+  }
+
+  /// Why the sheet has no cards, when waiting cannot produce any.
+  ///
+  /// The fares are worked out from the two endpoints, so with one of them
+  /// missing there is nothing to compute and nothing to wait for. The rider
+  /// needs to be told which end is missing and given the control that fixes
+  /// it, not a loading state that never ends.
+  Widget _buildMissingEndpointNotice() {
+    final st = _ctrl.state;
+    final needsPickup = st.pickup == null;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 18),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1E1E1E),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+      ),
+      child: Column(
+        children: [
+          Text(
+            needsPickup
+                ? S.of(context).setPickupOnMap
+                : S.of(context).whereTo,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.7),
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 12),
+          GestureDetector(
+            onTap: () {
+              HapticService.selectionClick();
+              _ctrl.startLocationSelection();
+            },
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: const Color(0xFFE8C547)),
+              ),
+              child: Text(
+                S.of(context).chooseOnMap,
+                style: const TextStyle(
+                  color: Color(0xFFE8C547),
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 

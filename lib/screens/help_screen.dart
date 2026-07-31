@@ -1199,18 +1199,29 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
 
       // Check if any new message triggers transition to queue
       if (_phase == _ChatPhase.bot) {
-        for (final m in newMessages) {
+        for (var i = 0; i < newMessages.length; i++) {
+          final m = newMessages[i];
           if ((m.role == 'bot' || m.role == 'system') &&
               AiSupportService.isConnectingMessage(m.text)) {
-            // Show the connecting message, then start queue
+            // Show up to "connecting you" and hold back the rest.
+            //
+            // This used to merge the whole server list, and by the time the
+            // connecting line is detected the server has usually already
+            // written "X has joined" behind it — so the arrival appeared
+            // above a queue card that had not started counting. Everything
+            // after this message waits in the buffer for the queue to end.
+            final shown = newMessages.take(i + 1).toList();
+            final held = newMessages.skip(i + 1).toList();
             final stick = _atBottom();
             setState(() {
-              _mergeMessages(newMessages);
+              _mergeMessages(shown);
+              _bufferedMessages
+                ..clear()
+                ..addAll(held);
               _showQuickActions = false;
-              _preQueueMsgCount = newMessages.length;
+              _preQueueMsgCount = i + 1;
             });
             if (stick) _scrollToBottom();
-            _scrollToBottom();
             // Short delay then transition to queue
             await Future.delayed(const Duration(seconds: 2));
             if (mounted) {
@@ -1313,7 +1324,7 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
     // reads as a script firing rather than a person picking up — the queue
     // card vanished and a fully-formed paragraph was already on screen.
     //
-    //   queue ends → 10 s → "X has joined" (the card goes with it)
+    //   queue ends → 15 s → "X has joined" (the card goes with it)
     //                → 15 s → typing starts, for as long as the line takes
     //
     // Nothing here is a fixed wait for the whole handover: the typing
@@ -1324,7 +1335,7 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
       _showQuickActions = false;
     });
 
-    await Future.delayed(const Duration(seconds: 10));
+    await Future.delayed(const Duration(seconds: 15));
     if (!mounted) return;
 
     // Reveal buffered messages one at a time with typing delays
@@ -2113,8 +2124,14 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
     }
 
     // Message bubbles
+    //
+    // Each one fades and rises the first time it is built, so a reply lands
+    // rather than blinking into place. Keyed by the message's own identity:
+    // without a key Flutter reuses the widget for whatever text occupies that
+    // slot next, and every bubble would replay its entrance each time one
+    // arrived above it.
     for (final msg in _messages) {
-      items.add(_buildBubble(msg));
+      items.add(_ArrivingMessage(key: ValueKey(msg.key), child: _buildBubble(msg)));
     }
 
     // Quick action chips — only when chat is active
@@ -2780,4 +2797,48 @@ class _HelpTopic {
     required this.title,
     required this.answer,
   });
+}
+
+
+/// Fades and lifts a message into place the first time it appears.
+///
+/// The list is rebuilt on every poll, so this cannot animate on rebuild — it
+/// runs once, in initState, and never again for that message.
+class _ArrivingMessage extends StatefulWidget {
+  const _ArrivingMessage({super.key, required this.child});
+
+  final Widget child;
+
+  @override
+  State<_ArrivingMessage> createState() => _ArrivingMessageState();
+}
+
+class _ArrivingMessageState extends State<_ArrivingMessage>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _c = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 340),
+  )..forward();
+
+  late final Animation<double> _fade =
+      CurvedAnimation(parent: _c, curve: Curves.easeOut);
+
+  // Eight pixels, not thirty. A bubble that travels far reads as something
+  // sliding in from off-screen; this should read as it settling.
+  late final Animation<Offset> _slide = Tween<Offset>(
+    begin: const Offset(0, 0.06),
+    end: Offset.zero,
+  ).animate(CurvedAnimation(parent: _c, curve: Curves.easeOutCubic));
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => FadeTransition(
+        opacity: _fade,
+        child: SlideTransition(position: _slide, child: widget.child),
+      );
 }

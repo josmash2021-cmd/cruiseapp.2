@@ -1,5 +1,24 @@
 part of 'ride_request_screen.dart';
 
+/// Minutes, and hours once there are sixty of them.
+///
+/// "122 min" makes the rider divide by hand to find out their trip is two
+/// hours. Sixty is where the unit changes, everywhere a duration is printed.
+///
+/// Exact, not rounded: this is the estimate the fare was computed from, and a
+/// number the rider can check against the receipt afterwards.
+///
+/// Top-level rather than a method — a part file can only reach top-level
+/// declarations from inside a const expression, and this file is a part.
+///
+/// "min" and "h" are the same word in both languages the app speaks.
+String durationLabel(int minutes) {
+  if (minutes < 60) return '$minutes min';
+  final h = minutes ~/ 60;
+  final m = minutes % 60;
+  return m == 0 ? '$h h' : '$h h $m min';
+}
+
 final _whitespaceRe = RegExp(r'\s+');
 
 // ════════════════════════════════════════════════════════════
@@ -1308,7 +1327,7 @@ extension _RideRequestWidgets on _RideRequestScreenState {
         decoration: neuBox(radius: 14, pressed: true),
         child: Row(
           children: [
-            _neuStatChip(Icons.schedule_rounded, '${opt.etaMinutes} min'),
+            _neuStatChip(Icons.schedule_rounded, durationLabel(opt.etaMinutes)),
             const SizedBox(width: 6),
             _neuStatChip(Icons.route_rounded,
                 _ctrl.state.route?.distanceText ?? '— mi'),
@@ -1818,7 +1837,7 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                       children: [
                         _chipWidget(
                           Icons.schedule_rounded,
-                          '${opt.etaMinutes} min',
+                          durationLabel(opt.etaMinutes),
                         ),
                         const SizedBox(width: 6),
                         _chipWidget(

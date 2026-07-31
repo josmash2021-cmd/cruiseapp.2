@@ -21,11 +21,22 @@ BoxDecoration neuBox({
 }) => BoxDecoration(
   color: pressed ? neuPressed : neuSurface,
   borderRadius: BorderRadius.circular(radius),
+  // Soft, and pulled back inside the element's own footprint.
+  //
+  // The dark side used to be black at 55% offset 6 with no spread. Against a
+  // #14141A ground that does not read as depth — it reads as a second copy of
+  // the card sitting behind it, down and to the right, with a visible edge of
+  // its own. On an 87 px tier card a 6 px offset is 7% of its width, so the
+  // duplicate is not even subtle.
+  //
+  // Lower alpha, more blur, and a negative spread so the shadow starts inside
+  // the box and bleeds out rather than beginning at the edge already at full
+  // strength. That is the difference between a lit surface and a stamp.
   boxShadow: pressed
-      ? [BoxShadow(color: Colors.black.withValues(alpha: 0.7), offset: const Offset(3, 3), blurRadius: 6, spreadRadius: -2)]
+      ? [BoxShadow(color: Colors.black.withValues(alpha: 0.55), offset: const Offset(3, 3), blurRadius: 8, spreadRadius: -3)]
       : [
-          BoxShadow(color: Colors.black.withValues(alpha: 0.55), offset: const Offset(6, 6), blurRadius: 14),
-          BoxShadow(color: Colors.white.withValues(alpha: 0.045), offset: const Offset(-4, -4), blurRadius: 10),
+          BoxShadow(color: Colors.black.withValues(alpha: 0.32), offset: const Offset(4, 4), blurRadius: 16, spreadRadius: -4),
+          BoxShadow(color: Colors.white.withValues(alpha: 0.04), offset: const Offset(-3, -3), blurRadius: 12, spreadRadius: -4),
         ],
   border: Border.all(
     color: borderColor ?? Colors.white.withValues(alpha: 0.04),

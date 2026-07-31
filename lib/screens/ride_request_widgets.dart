@@ -220,6 +220,10 @@ extension _RideRequestWidgets on _RideRequestScreenState {
     // fares land, so nobody can book at a rate the app made up.
     final bool faresReady = displayOptions.isNotEmpty;
     if (!faresReady) displayOptions = _placeholderTiers();
+    debugPrint('[Sheet] faresReady=$faresReady opts=${displayOptions.length} '
+        'sel=${s.selectedOption?.id} phase=${s.phase} '
+        'pickup=${s.pickup != null} dropoff=${s.dropoff != null} '
+        'expanded=$_gridExpanded');
 
     final option = widget.fastRide
         ? (displayOptions.isNotEmpty ? displayOptions.first : s.selectedOption)
@@ -467,7 +471,22 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                           builder: (context, box) {
                             final n = displayOptions.length;
                             const gap = 8.0;
-                            final full = box.maxWidth;
+                            // An unbounded width poisons every number below
+                            // it. `full` feeds each card's width through
+                            // lerpDouble, and lerping to infinity gives NaN,
+                            // which a RenderBox rejects — the row then throws
+                            // during layout and Flutter leaves that subtree
+                            // blank while the title above it draws normally.
+                            // Which is a booking sheet with a heading and
+                            // nothing under it.
+                            //
+                            // A Row inside a horizontally unbounded parent is
+                            // not exotic, and the fallback only has to be
+                            // finite to keep the cards on screen.
+                            final raw = box.maxWidth;
+                            final full = (raw.isFinite && raw > 0) ? raw : 360.0;
+                            debugPrint(
+                                '[Sheet] row n=$n raw=$raw full=$full t=$t');
                             // Width of one card when all of them are shown.
                             final each = n > 0
                                 ? (full - gap * (n - 1)) / n

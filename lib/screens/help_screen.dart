@@ -926,6 +926,10 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
   final List<_ChatMsg> _messages = [];
   final List<_ChatMsg> _bufferedMessages = [];
 
+  /// When the queue card started counting, so the server's arrival row
+  /// cannot cut the wait short the moment it lands.
+  DateTime? _queueEnteredAt;
+
   int? _chatId;
   String? _agentName;
   String _subtitle = '';
@@ -1190,8 +1194,20 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
         // own clock, and that row ending the queue is what makes the handoff
         // survive the app being closed. The countdown widget is only the
         // visual — it no longer gets to decide when a supervisor arrived.
+        // Only once the card has actually had its time.
+        //
+        // The server's "has joined" row usually lands within a second or two
+        // of entering the queue, and ending the wait on it made the card
+        // appear and vanish. It still ends the queue — that is what makes a
+        // handover survive the app being closed — but not before the wait it
+        // is showing has elapsed.
+        final entered = _queueEnteredAt;
+        final elapsed = entered == null
+            ? Duration.zero
+            : DateTime.now().difference(entered);
         if (_bufferedMessages
-            .any((m) => AiSupportService.isAgentJoinedMessage(m.text))) {
+                .any((m) => AiSupportService.isAgentJoinedMessage(m.text)) &&
+            elapsed.inSeconds >= _queueDuration) {
           _onQueueComplete();
         }
         return;
@@ -1225,6 +1241,7 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
             // Short delay then transition to queue
             await Future.delayed(const Duration(seconds: 2));
             if (mounted) {
+              _queueEnteredAt = DateTime.now();
               setState(() {
                 _phase = _ChatPhase.queue;
                 _subtitle = _isSpanish
@@ -1280,9 +1297,18 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
       }
 
       // Default: just update messages
+      // Follow anything that actually arrived, wherever they were reading.
+      //
+      // The guard below used to leave the view alone whenever the reader was
+      // more than a screenful up, which was written for a poll that replaced
+      // the whole list every two seconds. The merge only appends what is new
+      // now, so "something was added" is a real event and worth following —
+      // it is the reader's own conversation moving on, not the list churning
+      // underneath them.
+      var arrived = false;
       final stick = _atBottom();
       setState(() {
-        _mergeMessages(newMessages);
+        arrived = _mergeMessages(newMessages);
         _sending = false;
         if (_chatClosed) {
           _subtitle = S.of(context).chatClosed;
@@ -1290,7 +1316,7 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
           _subtitle = '${_agentName!} · ${_isSpanish ? 'En línea' : 'Online'}';
         }
       });
-      if (stick) _scrollToBottom();
+      if (arrived || stick) _scrollToBottom(force: arrived);
     } catch (e) {
       debugPrint('[SupportChat] poll error: $e');
       _pollFailures++;
@@ -1324,8 +1350,9 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
     // reads as a script firing rather than a person picking up — the queue
     // card vanished and a fully-formed paragraph was already on screen.
     //
-    //   queue ends → 15 s → "X has joined" (the card goes with it)
+    //   queue ends → 20 s → "X has joined" (the card goes with it)
     //                → 15 s → typing starts, for as long as the line takes
+    //                → then 30 s of visible typing between replies
     //
     // Nothing here is a fixed wait for the whole handover: the typing
     // duration still comes from the message, so a long answer takes visibly
@@ -1335,7 +1362,7 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
       _showQuickActions = false;
     });
 
-    await Future.delayed(const Duration(seconds: 15));
+    await Future.delayed(const Duration(seconds: 20));
     if (!mounted) return;
 
     // Reveal buffered messages one at a time with typing delays
@@ -1377,7 +1404,12 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
         }
         if (mounted) setState(() => _isAgentTyping = true);
         _scrollToBottom();
-        final delay = AiSupportService.typingDuration(msg.text).clamp(3000, 10000);
+        // Long enough to read as someone writing, and the indicator is up for
+        // all of it — a silent gap between two replies reads as the chat
+        // having stalled. The first line keeps its own shorter beat; it has
+        // already waited out the arrival above.
+        final base = AiSupportService.typingDuration(msg.text).clamp(3000, 10000);
+        final delay = firstAgentLine ? base : base + 30000;
         await Future.delayed(Duration(milliseconds: delay));
         if (!mounted) return;
         if (alreadyShown(msg)) {
@@ -1764,7 +1796,7 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
   ///
   /// Merging by key leaves untouched messages untouched, so Flutter has
   /// nothing to rebuild and the position stays where it was.
-  void _mergeMessages(List<_ChatMsg> incoming) {
+  bool _mergeMessages(List<_ChatMsg> incoming) {
     final seen = {for (final m in _messages) m.key};
     // A local message the server has now confirmed: drop the local copy so
     // the confirmed one takes its place with a real id.
@@ -1775,10 +1807,15 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
     seen
       ..clear()
       ..addAll(_messages.map((m) => m.key));
+    var added = false;
     for (final m in incoming) {
-      if (seen.add(m.key)) _messages.add(m);
+      if (seen.add(m.key)) {
+        _messages.add(m);
+        added = true;
+      }
     }
     _messages.sort((a, b) => a.time.compareTo(b.time));
+    return added;
   }
 
   /// Whether the reader is parked at the newest message.

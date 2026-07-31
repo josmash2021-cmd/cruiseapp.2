@@ -47,7 +47,7 @@ class KeepAliveService {
             Uri.parse('$url/ping'),
             headers: {
               'Accept': 'application/json',
-              'ngrok-skip-browser-warning': 'true',
+              if (!kIsWeb) 'ngrok-skip-browser-warning': 'true',
             },
           )
           .timeout(const Duration(seconds: 3));

@@ -58,7 +58,9 @@ extension type _JSMap._(JSObject _) implements JSObject {
 /// the setters (compiles to plain property assignment).
 extension type _JSMapOptions._(JSObject _) implements JSObject {
   external set container(JSObject element);
-  external set style(String styleUri);
+  // JSAny, not String: GL JS accepts either a style URL or an inline style
+  // object here, and the keyless fallback passes the object.
+  external set style(JSAny style);
   external set center(JSAny lngLat);
   external set zoom(double zoom);
   external set attributionControl(bool enabled);
@@ -699,13 +701,35 @@ class _WebMapViewState extends State<WebMapView> {
     _register();
   }
 
+  /// A dark basemap that needs no Mapbox token.
+  ///
+  /// The token is a build-time define that only CI holds, so a developer
+  /// running `flutter run -d web-server` to review layout has none — and an
+  /// empty token used to make the map area a grey apology. Mapbox GL JS can
+  /// render a plain raster style from any tile server, so when there is no
+  /// token it draws CARTO's dark basemap instead: free, keyless, and close
+  /// enough in tone to the app's own dark style that spacing and contrast
+  /// can still be judged against it.
+  ///
+  /// Vector styling, 3D and the navy/gold theme need the real token. This is
+  /// for reviewing what sits ON the map, not the map itself.
+  static const String _keylessDarkStyle = '''
+{"version":8,
+ "sources":{"carto-dark":{"type":"raster",
+   "tiles":["https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}@2x.png",
+            "https://b.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}@2x.png",
+            "https://c.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}@2x.png"],
+   "tileSize":256,
+   "attribution":"© OpenStreetMap contributors © CARTO"}},
+ "layers":[{"id":"carto-dark","type":"raster","source":"carto-dark"}]}
+''';
+
   void _register() {
     final token = MapboxConfig.accessToken;
-    if (token.isEmpty) {
-      _fatalError =
-          'MAPBOX_TOKEN vacío — ejecuta con --dart-define=MAPBOX_TOKEN=pk.…';
-      debugPrint('[WebMapView] $_fatalError');
-      return;
+    final keyless = token.isEmpty;
+    if (keyless) {
+      debugPrint('[WebMapView] no MAPBOX_TOKEN — falling back to a keyless '
+          'dark basemap. Vector styling and the navy/gold theme are off.');
     }
     if (_mapboxglPresence == null) {
       _fatalError =
@@ -719,11 +743,15 @@ class _WebMapViewState extends State<WebMapView> {
       ..width = '100%'
       ..height = '100%';
 
-    _mapboxgl.accessToken = token;
+    // GL JS insists on a non-empty token even for a raster style it never
+    // calls Mapbox for; any string satisfies it.
+    _mapboxgl.accessToken = keyless ? 'no-token' : token;
 
     final options = _JSMapOptions._(JSObject());
     options.container = container;
-    options.style = widget.styleUri ?? MapboxConfig.styleDark;
+    options.style = keyless
+        ? _json.parse(_keylessDarkStyle)
+        : (widget.styleUri ?? MapboxConfig.styleDark).toJS;
     options.center =
         _json.parse(jsonEncode([widget.initialLng, widget.initialLat]));
     options.zoom = widget.initialZoom;

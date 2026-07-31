@@ -753,9 +753,21 @@ else:
     if _is_debug_cors:
         _CORS_ORIGINS.extend(["http://localhost:3000", "http://localhost:8000"])
 app.add_middleware(GZipMiddleware, minimum_size=1000, compresslevel=4)
+# Any localhost port, not just 8080.
+#
+# The Flutter app now runs in a browser for design review, and `flutter run`
+# picks a different port every time unless it is pinned. Hardcoding one port
+# meant the first thing the reviewer saw was "Connection error — is the
+# server running?", which is a CORS rejection wearing the wrong label.
+#
+# The origin is still restricted to loopback: a page has to be served from
+# the reviewer's own machine to match, which is the same trust boundary the
+# existing localhost:8080 entry already assumed.
+_CORS_LOCALHOST_RE = r"http://(localhost|127\.0\.0\.1)(:\d+)?"
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_CORS_ORIGINS,
+    allow_origin_regex=_CORS_LOCALHOST_RE,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type", "X-Api-Key", "X-Timestamp", "X-Nonce", "X-Signature", "X-Device-FP", "X-Client-Version"],

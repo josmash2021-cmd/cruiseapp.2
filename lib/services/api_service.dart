@@ -407,9 +407,12 @@ class ApiService {
     List<String>? candidates,
     Duration timeout = const Duration(seconds: 3),
   }) async {
-    const probeHeaders = {
+    // Same reason as _authHeaders: the ngrok header is unlisted upstream, so
+    // on web it turns this probe — the app's own "is the server reachable"
+    // check — into a guaranteed failure.
+    final probeHeaders = <String, String>{
       'Accept': 'application/json',
-      'ngrok-skip-browser-warning': 'true',
+      if (!kIsWeb) 'ngrok-skip-browser-warning': 'true',
     };
 
     // Build the full list of URLs to try — all at once, in parallel.
@@ -638,8 +641,11 @@ class ApiService {
     final requestHeaders = {
       'Content-Type': 'application/json',
       'Accept': 'application/json',
-      'Accept-Encoding': 'gzip, deflate',
-      'Connection': 'keep-alive',
+      // Accept-Encoding and Connection are forbidden header names in a
+      // browser: the fetch spec makes them the user agent's business and
+      // silently drops whatever we set. Sending them on web is noise.
+      if (!kIsWeb) 'Accept-Encoding': 'gzip, deflate',
+      if (!kIsWeb) 'Connection': 'keep-alive',
       if (token != null) 'Authorization': 'Bearer $token',
       'X-API-Key': _apiKey,
       'X-Timestamp': timestamp,
@@ -649,7 +655,15 @@ class ApiService {
           ? SecurityService.deviceFingerprint.substring(0, 16)
           : SecurityService.deviceFingerprint,
       'X-Client-Version': '1.0.0',
-      if (kDebugMode) 'ngrok-skip-browser-warning': 'true',
+      // Native debug builds only.
+      //
+      // This skips ngrok's interstitial page, which is a native-client
+      // problem — a browser never sees it. What a browser DOES see is a
+      // header outside the API's Access-Control-Allow-Headers list, which
+      // makes the preflight fail with 400 before the real request is ever
+      // sent. Every call from the web build died there, and the app
+      // reported it as "Connection error — is the server running?".
+      if (kDebugMode && !kIsWeb) 'ngrok-skip-browser-warning': 'true',
     };
     return requestHeaders;
   }

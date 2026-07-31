@@ -474,7 +474,15 @@ class _LoginPasswordScreenState extends State<LoginPasswordScreen> {
         _errorText = msg;
       });
       HapticService.mediumImpact();
-    } catch (e) {
+    } catch (e, st) {
+      // Say what actually broke.
+      //
+      // Everything below turns any failure into one sentence — "Connection
+      // error — is the server running?" — which is a guess, not a diagnosis.
+      // It says the same thing for a refused socket, a rejected CORS
+      // preflight, a plugin missing on the platform and a null field, and
+      // that made the browser build impossible to debug from the outside.
+      debugPrint('[Login] sign-in failed: $e\n$st');
       if (!mounted) return;
       // Auto re-probe for a working server URL and retry once
       final newUrl = await ApiService.probeAndSetBestUrl(

@@ -4,7 +4,8 @@ import 'dart:io' show File;
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart' show kDebugMode;
+import '../../map/web_map_view.dart';
+import 'package:flutter/foundation.dart' show kDebugMode, kIsWeb;
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
@@ -507,6 +508,12 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   /// Bounce non-driver users back to the rider home screen.
   void _enforceDriverRole() {
+    // The browser build has no login, so the stored mode is never 'driver'
+    // and both driver screens used to eject to the rider home a few
+    // milliseconds after mounting — two of the four screens worth reviewing,
+    // unreachable.
+    if (kIsWeb) return;
+
     UserSession.getMode().then((mode) {
       if (mode != 'driver' && mounted) {
         Navigator.of(context, rootNavigator: true).pushAndRemoveUntil(

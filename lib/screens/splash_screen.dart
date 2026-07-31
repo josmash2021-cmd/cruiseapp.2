@@ -187,7 +187,19 @@ class _SplashScreenState extends State<SplashScreen>
     });
 
     // ── Fast login check: if already logged in, skip CRUISE animation ──
-    final loggedIn = await UserSession.isLoggedInLocal();
+    // Never let this decide whether the app starts.
+    //
+    // It reads the token through flutter_secure_storage, which needs
+    // window.crypto.subtle on web — absent unless the page is served from
+    // localhost or https. Unguarded it threw before the entrance animation
+    // had run, so _runSequence aborted and the splash stayed black with no
+    // letters and no navigation.
+    bool loggedIn = false;
+    try {
+      loggedIn = await UserSession.isLoggedInLocal();
+    } catch (e) {
+      debugPrint('[Splash] stored-session check failed: $e');
+    }
     if (_disposed || !mounted) return;
 
     if (loggedIn) {

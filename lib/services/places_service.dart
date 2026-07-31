@@ -384,7 +384,7 @@ class PlacesService {
     final res = await http.get(uri, headers: {
       ...ApiService.jsonHeaders(),
       'Accept': 'application/json',
-      'ngrok-skip-browser-warning': 'true',
+      if (!kIsWeb) 'ngrok-skip-browser-warning': 'true',
     }).timeout(const Duration(seconds: 8));
 
     if (res.statusCode != 200) {
@@ -757,7 +757,7 @@ class PlacesService {
 
     final res = await http.get(uri, headers: {
       'Accept': 'application/json',
-      'ngrok-skip-browser-warning': 'true',
+      if (!kIsWeb) 'ngrok-skip-browser-warning': 'true',
     }).timeout(const Duration(seconds: 8));
 
     if (res.statusCode != 200) {

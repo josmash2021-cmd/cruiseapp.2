@@ -1529,6 +1529,11 @@ extension _RideRequestController on _RideRequestScreenState {
   /// Returns true if payment was authorized, false if user cancelled.
   /// Throws on failure.
   Future<bool> _confirmNativePayment(RideOption? option) async {
+    // flutter_stripe has no web implementation — reading Stripe.instance
+    // throws. Report success so the browser build can walk the rest of
+    // the flow; nothing is charged and no native sheet exists to open.
+    if (kIsWeb) return true;
+
     if (option == null) return false;
     final double effectivePrice = widget.applyPromo
         ? option.priceEstimate * 0.9
@@ -1575,6 +1580,11 @@ extension _RideRequestController on _RideRequestScreenState {
 
   /// Apple Pay: present native Apple Pay sheet via Stripe (hold only).
   Future<bool> _confirmApplePay(int amountCents, String label) async {
+    // flutter_stripe has no web implementation — reading Stripe.instance
+    // throws. Report success so the browser build can walk the rest of
+    // the flow; nothing is charged and no native sheet exists to open.
+    if (kIsWeb) return true;
+
     // Check if Apple Pay is available on this device
     final supported = await stripe.Stripe.instance.isPlatformPaySupported(
       googlePay: const stripe.IsGooglePaySupportedParams(),
@@ -1625,6 +1635,11 @@ extension _RideRequestController on _RideRequestScreenState {
 
   /// Google Pay: present native Google Pay sheet via Stripe (hold only).
   Future<bool> _confirmGooglePay(int amountCents, String label) async {
+    // flutter_stripe has no web implementation — reading Stripe.instance
+    // throws. Report success so the browser build can walk the rest of
+    // the flow; nothing is charged and no native sheet exists to open.
+    if (kIsWeb) return true;
+
     // Check if Google Pay is available on this device
     final supported = await stripe.Stripe.instance.isPlatformPaySupported(
       googlePay: const stripe.IsGooglePaySupportedParams(),
@@ -1666,6 +1681,11 @@ extension _RideRequestController on _RideRequestScreenState {
 
   /// Fallback: open Stripe's standard card payment sheet when native pay unavailable.
   Future<bool> _confirmCardSheet(int amountCents, String label) async {
+    // flutter_stripe has no web implementation — reading Stripe.instance
+    // throws. Report success so the browser build can walk the rest of
+    // the flow; nothing is charged and no native sheet exists to open.
+    if (kIsWeb) return true;
+
     try {
       final piResult = await ApiService.createPaymentIntent(amountCents: amountCents, holdOnly: true);
       final clientSecret = piResult['client_secret'] as String?;
@@ -1729,6 +1749,11 @@ extension _RideRequestController on _RideRequestScreenState {
   /// Credit/debit card: authorize (hold) saved card via Stripe PaymentIntent.
   /// Falls back to card sheet if no saved card or if server-side confirm fails.
   Future<bool> _confirmCard(int amountCents) async {
+    // flutter_stripe has no web implementation — reading Stripe.instance
+    // throws. Report success so the browser build can walk the rest of
+    // the flow; nothing is charged and no native sheet exists to open.
+    if (kIsWeb) return true;
+
     final pmId = await LocalDataService.getStripePaymentMethodId();
     if (!mounted) return false;
     // If no saved card, fall back to the Stripe card sheet

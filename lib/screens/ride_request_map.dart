@@ -1573,15 +1573,24 @@ extension _RideRequestMap on _RideRequestScreenState {
 
   Future<void> _pickerOnCameraIdle() async {
     _pickerDebounce?.cancel();
-    if (!mounted || _mapCtrl == null) return;
+    if (!mounted) return;
+    // On web the native controller is never created; the browser map has its
+    // own. Bailing on `_mapCtrl == null` made the whole picker inert there.
+    if (_mapCtrl == null && _webMapCtrl == null) return;
     final gen = ++_pickerGeocodeGen;
 
     // Read current camera center — that's where the fixed pin tip is.
     LatLng? snap;
     try {
-      final cam = await _mapCtrl!.getCameraState();
-      final c = cam.center.coordinates;
-      snap = LatLng(c.lat.toDouble(), c.lng.toDouble());
+      final web = _webMapCtrl;
+      if (web != null) {
+        final c = web.getCenter();
+        snap = LatLng(c.lat, c.lng);
+      } else {
+        final cam = await _mapCtrl!.getCameraState();
+        final c = cam.center.coordinates;
+        snap = LatLng(c.lat.toDouble(), c.lng.toDouble());
+      }
     } catch (_) {}
     if (snap == null || !mounted || gen != _pickerGeocodeGen) return;
 

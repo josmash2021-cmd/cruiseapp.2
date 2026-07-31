@@ -5,8 +5,9 @@ import '../config/route_observers.dart';
 import '../map/map_surface_coordinator.dart';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
-import 'package:flutter/foundation.dart' show kDebugMode, defaultTargetPlatform, TargetPlatform;
+import 'package:flutter/foundation.dart' show kDebugMode, kIsWeb, defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/material.dart';
+import '../map/web_map_view.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_stripe/flutter_stripe.dart' as stripe;
@@ -526,6 +527,13 @@ class _RideRequestScreenState extends State<RideRequestScreen>
   bool _pickupLabelRevealed = false;
   bool _dropoffLabelRevealed = false;
 
+  /// The browser map's controller, when there is one.
+  ///
+  /// Everything downstream of the picker asks the NATIVE controller where
+  /// the camera is, and on web that is null — so dragging the map moved the
+  /// pin and told nobody, and Confirm had no coordinate to confirm.
+  WebMapController? _webMapCtrl;
+
   // ── In-place map picker state (RiderPhase.pickingLocation) ──
   // Mirrors the Shopify widget's drop-a-pin mode but inside the same
   // Mapbox canvas — no Navigator push, no second map instance.
@@ -948,6 +956,32 @@ class _RideRequestScreenState extends State<RideRequestScreen>
             else if ((_driverFoundVisible && _ctrl.state.driver != null) ||
                 !_mapMounted)
               const ColoredBox(color: Color(0xFF07080D))
+            // Same reason as the driver's online screen: Mapbox GL JS in the
+            // browser, the native SDK everywhere else.
+            else if (kIsWeb)
+              WebMapView(
+                initialLng: _center!.longitude,
+                initialLat: _center!.latitude,
+                initialZoom: 14,
+                styleUri: MapboxConfig.styleDark,
+                onControllerCreated: (c) {
+                  _webMapCtrl = c;
+                  // The same two hooks the native map wires below, so the
+                  // pin under the finger geocodes as the map is dragged.
+                  c.onCameraMove = (_, __, ___) {
+                    if (!mounted) return;
+                    if (_ctrl.state.phase == RiderPhase.pickingLocation) {
+                      _pickerScheduleGeocode();
+                    }
+                  };
+                  c.onReady = () {
+                    if (!mounted) return;
+                    if (_ctrl.state.phase == RiderPhase.pickingLocation) {
+                      _pickerScheduleGeocode();
+                    }
+                  };
+                },
+              )
             else
               RepaintBoundary(
                 child: mapbox.MapWidget(

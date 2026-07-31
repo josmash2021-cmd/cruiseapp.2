@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import '../services/local_cache.dart';
@@ -11,6 +12,13 @@ import '../models/lat_lng.dart';
 /// Everything loads in PARALLEL via Future.wait so no screen
 /// has to wait for data when it opens.
 class PreloadService {
+  /// Where the browser build pretends to be: downtown Birmingham, AL — the
+  /// market the test data sits in. Web has no usable last-known fix and the
+  /// permission prompt can hang forever, so the screens get a real coordinate
+  /// instead of a spinner that never resolves.
+  static const double _kWebSeedLat = 33.5186;
+  static const double _kWebSeedLng = -86.8104;
+
   PreloadService._();
 
   static bool _done = false;
@@ -42,6 +50,25 @@ class PreloadService {
 
   // ── GPS: get first fix early (takes longest on cold start) ──
   static Future<void> _preloadGps() async {
+    // The browser reports an ungranted permission as `denied`, so this used
+    // to bail and leave initialPosition null forever — and that field is the
+    // instant first fix both the rider home and the driver's online screen
+    // read. One seed here gives both a position to draw with.
+    if (kIsWeb) {
+      initialPosition = Position(
+        latitude: _kWebSeedLat,
+        longitude: _kWebSeedLng,
+        timestamp: DateTime.now(),
+        accuracy: 10,
+        altitude: 0,
+        altitudeAccuracy: 0,
+        heading: 0,
+        headingAccuracy: 0,
+        speed: 0,
+        speedAccuracy: 0,
+      );
+      return;
+    }
     try {
       if (!await Geolocator.isLocationServiceEnabled()) return;
       final perm = await Geolocator.checkPermission();

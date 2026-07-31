@@ -114,6 +114,20 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
   }
 
   Widget _mapSurface(bool isDark, LatLng pos) {
+    // The browser draws its own map.
+    //
+    // mapbox_maps_flutter has no web implementation — MapWidget throws in its
+    // first layout. But web/index.html already loads Mapbox GL JS, and
+    // lib/map/web_map_view.dart wraps it, so the browser gets a real,
+    // interactive map with the same style rather than a grey rectangle.
+    if (kIsWeb) {
+      return WebMapView(
+        initialLng: pos.longitude,
+        initialLat: pos.latitude,
+        initialZoom: 15.5,
+        styleUri: MapboxConfig.styleDark,
+      );
+    }
     return RepaintBoundary(
       child: mapbox.MapWidget(
         key: _mapKey,

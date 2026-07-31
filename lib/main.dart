@@ -489,7 +489,11 @@ void main() async {
       //     rebuilds cleanly on the next frame. Log to Crashlytics.
       //   - >5 errors in 10s → something is genuinely broken (infinite loop,
       //     memory exhaustion). Show the blocking modal as last resort.
-      if (kReleaseMode) {
+      // Not on web. The modal covers the whole screen after five failed
+      // builds, and on web a single unsupported plugin widget reaches five in
+      // one frame — so the one thing the browser build exists to show would be
+      // hidden behind "Something went wrong".
+      if (kReleaseMode && !kIsWeb) {
         final errorTimes = <DateTime>[];
         ErrorWidget.builder = (FlutterErrorDetails details) {
           final now = DateTime.now();
@@ -591,8 +595,12 @@ void main() async {
       PaintingBinding.instance.imageCache.maximumSizeBytes = 50 * 1024 * 1024; // 50 MB — prevents OOM on low-end devices
       PaintingBinding.instance.imageCache.maximumSize = 500;
 
-      // Mapbox init with error handling — prevents crash on invalid token
-      if (MapboxConfig.accessToken.isEmpty) {
+      // Mapbox init with error handling — prevents crash on invalid token.
+      // Native only: setAccessToken drops the Pigeon future, so on web the
+      // MissingPluginException escapes this try and lands in runZonedGuarded.
+      if (kIsWeb) {
+        debugPrint('[MapboxInit] web build — using Mapbox GL JS, no native token');
+      } else if (MapboxConfig.accessToken.isEmpty) {
         debugPrint('[MapboxInit] CRITICAL: MAPBOX_TOKEN is empty — map will be black');
       } else {
         try {
@@ -663,8 +671,11 @@ Future<bool> _initFirebase() async {
       persistenceEnabled: true,
       cacheSizeBytes: 100 * 1024 * 1024, // 100 MB cap — prevents OOM on low-end devices
     );
-    // Enable RTDB disk persistence so messages survive restarts & work offline
-    FirebaseDatabase.instance.setPersistenceEnabled(true);
+    // Enable RTDB disk persistence so messages survive restarts & work offline.
+    // Web throws UnsupportedError here, synchronously — which used to abort the
+    // rest of this method, including the anonymous sign-in right below. Every
+    // rule that reads `auth != null` then rejected the whole session.
+    if (!kIsWeb) FirebaseDatabase.instance.setPersistenceEnabled(true);
 
     // ── Ensure Firebase Auth so RTDB/Firestore rules (auth != null) pass ──
     // Retry with exponential backoff — don't let the app continue without auth.
@@ -734,8 +745,8 @@ Future<void> heavyInit() async {
   NetworkService().init();
 
   await Future.wait([
-    // Initialize Mapbox offline tile cache
-    MapCacheService().init(),
+    // Initialize Mapbox offline tile cache (native only — TileStore has no web side)
+    if (kIsWeb) Future<void>.value() else MapCacheService().init(),
 
     // Initialize profile photo notifier
     UserSession.initPhotoNotifier(),
@@ -759,6 +770,7 @@ Future<void> heavyInit() async {
     // NOTE: Firebase.initializeApp() and anonymous auth are already done
     // in main() Group 1. We only set up FCM handlers here.
     () async {
+      if (kIsWeb) return; // no Crashlytics, no service worker, no FCM
       try {
         try {
           await FirebaseCrashlytics.instance.setCrashlyticsCollectionEnabled(kReleaseMode);
@@ -931,6 +943,7 @@ Future<void> heavyInit() async {
 
     // ── Local Notifications ──
     () async {
+      if (kIsWeb) return; // flutter_local_notifications has no web package
       try {
         await NotificationService.init();
       } catch (e) {

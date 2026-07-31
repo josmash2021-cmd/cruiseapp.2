@@ -299,6 +299,12 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
 
   /// Bounce non-driver users back to the rider home screen.
   void _enforceDriverRole() {
+    // The browser build has no login, so the stored mode is never 'driver'
+    // and both driver screens used to eject to the rider home a few
+    // milliseconds after mounting — two of the four screens worth reviewing,
+    // unreachable.
+    if (kIsWeb) return;
+
     UserSession.getMode().then((mode) {
       if (mode != 'driver' && mounted) {
         Navigator.of(context).pushAndRemoveUntil(
@@ -968,7 +974,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
         return;
       }
 
-      final last = await Geolocator.getLastKnownPosition();
+      final last = kIsWeb ? null : await Geolocator.getLastKnownPosition();
       if (last != null && mounted) {
         _currentLatLng = LatLng(last.latitude, last.longitude);
         _goldDot.setTarget(last.latitude, last.longitude,

@@ -356,7 +356,7 @@ extension _HomeScreenController on _HomeScreenState {
       }
       // Permission already granted — seed from the last known fix for an
       // instant dot, then run the full fetch (starts the stream).
-      final last = await Geolocator.getLastKnownPosition();
+      final last = kIsWeb ? null : await Geolocator.getLastKnownPosition();
       if (last != null && mounted && _currentLatLng == null) {
         _setState(() {
           _currentLatLng = LatLng(last.latitude, last.longitude);

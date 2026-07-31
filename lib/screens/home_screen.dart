@@ -613,7 +613,9 @@ class _HomeScreenState extends State<HomeScreen>
       }
 
       // 3. Try last known first for instant display
-      final lastKnown = await Geolocator.getLastKnownPosition();
+      // geolocator_web throws here unconditionally, which aborted the whole
+      // location sequence — no stream, no position, no wait estimates.
+      final lastKnown = kIsWeb ? null : await Geolocator.getLastKnownPosition();
       if (lastKnown != null && mounted) {
         setState(() {
           _currentLatLng = LatLng(lastKnown.latitude, lastKnown.longitude);

@@ -298,6 +298,13 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
         }
         return;
       }
+      // requestPermission() on web is a getCurrentPosition with a one-day
+      // timeout: ignore the browser prompt and the future never completes,
+      // so the screen sits on "Getting your location" for good.
+      if (kIsWeb) {
+        _setState(() => _pos = const LatLng(33.5186, -86.8104));
+        return;
+      }
       var p = await Geolocator.checkPermission();
       if (p == LocationPermission.denied) {
         p = await Geolocator.requestPermission();
@@ -376,6 +383,10 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
   /// missing or half-scaled — late icon bytes, a dropped pop-scale flush, a
   /// map recreated on resume — would then stay broken until they drove off.
   void _startDotWatchdog() {
+    // Its exit condition is a live Mapbox annotation, which the browser build
+    // never creates — so on web it would rasterise the marker every two
+    // seconds forever.
+    if (kIsWeb) return;
     _dotWatchdog?.cancel();
     _dotWatchdog = Timer.periodic(const Duration(seconds: 2), (_) async {
       if (!mounted) return;

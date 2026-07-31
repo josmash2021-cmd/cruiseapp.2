@@ -53,15 +53,22 @@ class _ScheduledRidesScreenState extends State<ScheduledRidesScreen>
   /// is not a scheduled ride — it is a thing that did not happen, and a list of
   /// what is coming is the wrong place to keep it.
   ///
-  /// Only the untouched ones go. A ride that is being driven right now has a
-  /// scheduled_at in the past too, so anything past `scheduled` is kept
-  /// whatever the clock says — otherwise the rider's trip in progress would
-  /// vanish from the screen they are watching it on.
+  /// Both of the statuses that mean "booked but never started" count, not just
+  /// `scheduled`. A driver accepting a booking moves it to
+  /// `scheduled_accepted`, and if it then never happened it is every bit as
+  /// expired — the first pass only caught the first status and left those
+  /// behind, still wearing the badge and still impossible to remove, because
+  /// the cancel button requires the ride to be in the future.
+  ///
+  /// `scheduled_active` and everything after it stay whatever the clock says.
+  /// A ride being driven right now has a scheduled_at in the past too, and it
+  /// must not vanish from the screen the rider is watching it on.
   List<Map<String, dynamic>> _upcomingOnly(List<Map<String, dynamic>> trips) {
+    const neverStarted = {'scheduled', 'scheduled_accepted'};
     final now = DateTime.now();
     return trips.where((t) {
       final status = (t['status'] as String?) ?? 'scheduled';
-      if (status != 'scheduled') return true;
+      if (!neverStarted.contains(status)) return true;
       final raw = t['scheduled_at'] as String?;
       if (raw == null) return true;
       final at = DateTime.tryParse(raw);

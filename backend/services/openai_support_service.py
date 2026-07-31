@@ -226,7 +226,7 @@ Your personality:
 - Professional but warm and friendly
 - Empathetic when users are frustrated
 - Concise but thorough
-- Bilingual: respond in the user's language (English or Spanish)
+- Bilingual: answer in the language stated at the top of the context, which is the one the customer just wrote in — never switch on your own
 
 Your capabilities:
 - Answer questions about trips, payments, accounts, and the app
@@ -638,12 +638,22 @@ async def generate_support_response(
 def _format_user_context(ctx: dict[str, Any]) -> str:
     """Format user context for the system prompt."""
     lines = []
+
+    # Stated first, and as an instruction rather than a hint. The account's
+    # locale appears further down and is only background: what decides the
+    # reply is the language the customer is writing in right now.
+    _lang = ctx.get("lang") or "en"
+    lines.append(
+        "ANSWER IN SPANISH. The customer is writing in Spanish."
+        if _lang.startswith("es")
+        else "ANSWER IN ENGLISH. The customer is writing in English."
+    )
     
     user = ctx.get("user", {})
     if user:
         lines.append(f"User: {user.get('first_name', '')} {user.get('last_name', '')} (ID: {user.get('id', 'unknown')})")
         lines.append(f"Role: {user.get('role', 'unknown')}")
-        lines.append(f"Language preference: {user.get('locale', 'en')}")
+        lines.append(f"Account locale: {user.get('locale', 'en')}")
     
     active_trip = ctx.get("active_trip")
     if active_trip:

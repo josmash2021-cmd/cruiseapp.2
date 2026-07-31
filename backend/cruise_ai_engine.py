@@ -597,8 +597,13 @@ def generate_response(
     return response
 
 
-def detect_language(text: str) -> str:
-    """Detect if text is Spanish or English based on common words."""
+def detect_language(text: str) -> str | None:
+    """Spanish, English, or None when the text does not say.
+
+    None matters: it is the difference between "they switched language" and
+    "this message was too short to tell", and only the first should change how
+    the conversation is answered.
+    """
     es_words = {
         "hola", "que", "como", "por", "para", "con", "una", "los", "las",
         "del", "viaje", "quiero", "tengo", "ayuda", "necesito", "mi",
@@ -615,4 +620,11 @@ def detect_language(text: str) -> str:
     es_count = len(words & es_words)
     en_count = len(words & en_words)
 
-    return "es" if es_count >= en_count else "en"
+    # A tie is not a vote. "ok", "4242", "gracias?" and every message whose
+    # words are in neither list scored 0-0, and `es_count >= en_count` handed
+    # all of them to Spanish — so an English speaker writing "cancel" got
+    # answered in Spanish. Ties and silences return None, and the caller keeps
+    # whatever language the conversation was already in.
+    if es_count == en_count:
+        return None
+    return "es" if es_count > en_count else "en"

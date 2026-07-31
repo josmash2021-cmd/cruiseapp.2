@@ -1452,6 +1452,26 @@ async def _generate_ai_response(
     from services.openai_support_service import generate_support_response
 
     lang = getattr(chat, "locale", "en") or "en"
+
+    # The customer's language decides, on every message, in both directions.
+    #
+    # This used to happen only in the rule-based fallback, and only one way:
+    # it could switch a chat into Spanish and never back out. So a rider who
+    # opened in Spanish and then wrote in English kept being answered in
+    # Spanish for the rest of the conversation.
+    #
+    # Written to chat.locale, so the next reply — and the escalation script,
+    # and the closing message, which all read the locale — stay in the same
+    # language rather than each deciding for themselves.
+    _detected = detect_language(user_msg)
+    if _detected and not lang.startswith(_detected):
+        logging.info("[Support] chat %s switching language %s -> %s",
+                     chat.id, lang, _detected)
+        lang = _detected
+        chat.locale = _detected
+        db.add(chat)
+        await db.commit()
+
     actions: list[dict] = []
 
     # Build conversation history for OpenAI
@@ -1468,6 +1488,11 @@ async def _generate_ai_response(
     # Build user context
     ctx = await _get_user_context(chat.user_id, db, lang)
     ctx["frustration_score"] = await _compute_frustration_score(chat.id, db)
+    # The language this conversation is being held in, as opposed to whatever
+    # the account was created with. The prompt used the account's locale, so a
+    # rider whose profile said English but who wrote in Spanish was answered
+    # in English by the model and in Spanish by the fallback.
+    ctx["lang"] = lang
 
     # Try OpenAI first
     try:
@@ -1494,11 +1519,6 @@ async def _generate_ai_response(
         logging.warning("[Support] OpenAI failed, falling back to rule-based: %s", e)
 
     # -- Fallback: Rule-based system (original code) --
-    detected_lang = detect_language(user_msg)
-    if detected_lang == "es" and not lang.startswith("es"):
-        lang = "es"
-        chat.locale = "es"
-
     intent, confidence = detect_intent(user_msg)
     if confidence >= 20:
         is_followup = len(history) >= 4

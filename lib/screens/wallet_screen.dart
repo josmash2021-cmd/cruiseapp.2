@@ -330,25 +330,35 @@ class _WalletScreenState extends State<WalletScreen> with SecureScreenMixin {
         );
         if (mounted) _loadCruiseCash();
       },
+      // Built like a saved payment method, because that is what it is.
+      //
+      // It had its own geometry — 22 of radius against 16, an icon of 50
+      // against 44, a balance at 28 pt — so the one thing on this screen that
+      // pays for rides looked like a banner sitting above the list of things
+      // that pay for rides. Same padding, radius, well and gap as
+      // _buildMethodItem now: it reads as another card in the wallet.
+      //
+      // The gold rim stays, at the strength a default method uses. It is the
+      // balance; it is allowed to be the one that catches the eye.
       child: Container(
-        padding: const EdgeInsets.fromLTRB(20, 18, 18, 18),
-        decoration: neuBox(radius: 22).copyWith(
+        padding: const EdgeInsets.all(14),
+        decoration: neuBox(radius: 16).copyWith(
           border: Border.all(
-            color: _gold.withValues(alpha: 0.28),
-            width: 1.2,
+            color: _gold.withValues(alpha: 0.45),
+            width: 1.4,
           ),
         ),
         child: Row(
           children: [
             Container(
-              width: 50,
-              height: 50,
-              decoration: neuBox(radius: 15, pressed: true),
+              width: 44,
+              height: 44,
+              decoration: neuBox(radius: 12, pressed: true),
               alignment: Alignment.center,
               child: const Icon(Icons.card_giftcard_rounded,
-                  color: _gold, size: 22),
+                  color: _gold, size: 20),
             ),
-            const SizedBox(width: 14),
+            const SizedBox(width: 12),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -363,22 +373,22 @@ class _WalletScreenState extends State<WalletScreen> with SecureScreenMixin {
                       letterSpacing: 1.2,
                     ),
                   ),
-                  const SizedBox(height: 4),
+                  const SizedBox(height: 2),
                   Text(
                     '\$$dollars',
                     style: const TextStyle(
                       fontFamily: 'Poppins',
                       color: _gold,
-                      fontSize: 28,
-                      fontWeight: FontWeight.w900,
-                      letterSpacing: -0.6,
+                      fontSize: 17,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: -0.3,
                     ),
                   ),
                 ],
               ),
             ),
             const Icon(Icons.chevron_right_rounded,
-                color: _gold, size: 22),
+                color: _gold, size: 20),
           ],
         ),
       ),

@@ -293,7 +293,23 @@ async def create_trip(body: CreateTripIn, user: User = Depends(_get_current_user
     # SECURITY: Validate rider has a valid payment method before creating trip
     # (skip for test mode / sandbox where no real charge occurs)
     is_sandbox = os.environ.get("RAILWAY_ENVIRONMENT_NAME", "") != "production"
-    if not is_sandbox and user.role == "rider":
+    # Named accounts may book without a card, for testing against production.
+    #
+    # The request cannot say "this is a test booking" — CreateTripIn carries no
+    # payment method — so trusting the client here would mean any caller could
+    # skip the check by claiming to be a tester, and this check is the only
+    # thing standing between the app and free rides.
+    #
+    # An id allowlist cannot be spoofed: `user` comes from the JWT. Empty by
+    # default, so production is unchanged until someone is explicitly named in
+    # TEST_MODE_RIDER_IDS.
+    _raw_testers = os.environ.get("TEST_MODE_RIDER_IDS", "")
+    _tester_ids = {
+        int(p) for p in (s.strip() for s in _raw_testers.split(",")) if p.isdigit()
+    }
+    if user.id in _tester_ids:
+        logging.info("[Trips] rider %s is a named tester — payment check skipped", user.id)
+    if not is_sandbox and user.role == "rider" and user.id not in _tester_ids:
         pm_r = await db.execute(
             select(RiderPaymentMethod).where(
                 RiderPaymentMethod.user_id == user.id,

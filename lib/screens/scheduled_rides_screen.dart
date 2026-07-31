@@ -41,6 +41,34 @@ class _ScheduledRidesScreenState extends State<ScheduledRidesScreen>
   late final Animation<double> _fadeAnim;
 
   List<Map<String, dynamic>> _trips = [];
+
+  /// Drops the ones whose time came and went without anyone taking them.
+  ///
+  /// Completed and cancelled rides never arrive here — the endpoint only
+  /// returns scheduled and in-flight statuses, so those two already leave this
+  /// page on their own and turn up under Your Trips.
+  ///
+  /// What was left behind is a third case: a booking that stayed `scheduled`
+  /// past its own time. It sat here wearing an "Expired" badge for ever, which
+  /// is not a scheduled ride — it is a thing that did not happen, and a list of
+  /// what is coming is the wrong place to keep it.
+  ///
+  /// Only the untouched ones go. A ride that is being driven right now has a
+  /// scheduled_at in the past too, so anything past `scheduled` is kept
+  /// whatever the clock says — otherwise the rider's trip in progress would
+  /// vanish from the screen they are watching it on.
+  List<Map<String, dynamic>> _upcomingOnly(List<Map<String, dynamic>> trips) {
+    final now = DateTime.now();
+    return trips.where((t) {
+      final status = (t['status'] as String?) ?? 'scheduled';
+      if (status != 'scheduled') return true;
+      final raw = t['scheduled_at'] as String?;
+      if (raw == null) return true;
+      final at = DateTime.tryParse(raw);
+      if (at == null) return true;
+      return !at.toLocal().isBefore(now);
+    }).toList(growable: false);
+  }
   bool _loading = true;
   String? _error;
   Timer? _refreshTimer;
@@ -86,7 +114,7 @@ class _ScheduledRidesScreenState extends State<ScheduledRidesScreen>
       final trips = await ApiService.getScheduledTrips(userId);
       if (!mounted) return;
       setState(() {
-        _trips = trips;
+        _trips = _upcomingOnly(trips);
         _loading = false;
       });
       _fadeCtrl.forward(from: 0);

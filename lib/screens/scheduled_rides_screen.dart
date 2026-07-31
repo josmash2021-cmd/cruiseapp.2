@@ -16,7 +16,6 @@ import '../services/places_service.dart';
 import '../utils/app_toast.dart';
 import '../widgets/map/circular_pin_renderer.dart';
 import '../l10n/app_localizations.dart';
-import '../widgets/tier_badge.dart';
 import '../utils/mapbox_safe.dart';
 import '../widgets/neu_style.dart';
 import '../services/map_controller_cache.dart';
@@ -99,7 +98,7 @@ class _ScheduledRidesScreenState extends State<ScheduledRidesScreen>
     _loadTrips();
     // Refresh every 30s to pick up driver assignment status changes
     _refreshTimer = Timer.periodic(const Duration(seconds: 30), (_) {
-      if (mounted) _loadTrips();
+      if (mounted) _loadTrips(silent: true);
     });
   }
 
@@ -110,11 +109,22 @@ class _ScheduledRidesScreenState extends State<ScheduledRidesScreen>
     super.dispose();
   }
 
-  Future<void> _loadTrips() async {
-    setState(() {
-      _loading = true;
+  /// [silent] refreshes the data without emptying the screen first.
+  ///
+  /// The 30-second poll called this the same way the first load does, so every
+  /// half minute the list was replaced by a spinner and rebuilt — the page
+  /// looked like it was restarting on its own while the rider was reading it.
+  /// The poll is worth keeping (it is how "Pending Driver" becomes "Driver
+  /// Assigned" without a pull-to-refresh); showing it is not.
+  Future<void> _loadTrips({bool silent = false}) async {
+    if (silent) {
       _error = null;
-    });
+    } else {
+      setState(() {
+        _loading = true;
+        _error = null;
+      });
+    }
     try {
       final userId = await ApiService.getCurrentUserId();
       if (userId == null) {
@@ -132,7 +142,10 @@ class _ScheduledRidesScreenState extends State<ScheduledRidesScreen>
         _trips = _upcomingOnly(trips);
         _loading = false;
       });
-      _fadeCtrl.forward(from: 0);
+      // The entry fade belongs to arriving on the screen. Replaying it every
+      // thirty seconds is the other half of what made the page look like it
+      // kept restarting.
+      if (!silent) _fadeCtrl.forward(from: 0);
 
       // Schedule 30-minute reminders for upcoming trips
       _scheduleReminders(trips);
@@ -144,6 +157,10 @@ class _ScheduledRidesScreenState extends State<ScheduledRidesScreen>
       // that screen they can act on, so the text should say what happened and
       // leave it at that.
       debugPrint('[ScheduledRides] load failed: $e');
+      // A failed background poll keeps whatever is already on screen. The
+      // rider is reading a list that loaded fine; a network blip thirty
+      // seconds later is no reason to take it away from them.
+      if (silent) return;
       setState(() {
         _error = S.of(context).networkError;
         _loading = false;
@@ -747,7 +764,6 @@ class _TripCardState extends State<_TripCard> with TickerProviderStateMixin {
     final rawPickup = widget.trip['pickup_address'] as String? ?? '';
     final pickup = _resolvedPickup ?? rawPickup;
     final dropoff = widget.trip['dropoff_address'] as String? ?? '';
-    final fare = (widget.trip['fare'] as num?)?.toDouble();
     final vehicleType = widget.trip['vehicle_type'] as String? ?? 'Comfort';
     final terminal = widget.trip['terminal'] as String?;
     final airportCode = widget.trip['airport_code'] as String?;
@@ -850,6 +866,45 @@ class _TripCardState extends State<_TripCard> with TickerProviderStateMixin {
               ),
             ),
 
+            // ── The tier, and its car ──
+            //
+            // Up here rather than in a chip under the addresses. This is what
+            // the rider recognises the booking by — a BLACK at eight is a
+            // different thing from a STANDARD at eight — so it reads as the
+            // card's subject instead of as one more chip in a row of them.
+            //
+            // The fare went with the badge. A price sitting beside a booking
+            // that has not happened is an estimate wearing the clothes of a
+            // receipt; the amount that matters is the one on the receipt
+            // afterwards, and that has its own screen.
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+              child: Row(
+                children: [
+                  Text(
+                    _tierLabel(vehicleType),
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 0.5,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  // Small: it is here to identify, not to sell. The renders
+                  // are about 2.7:1, so 62 wide lands near 23 tall.
+                  SizedBox(
+                    width: 62,
+                    height: 26,
+                    child: Image.asset(
+                      _tierAsset(vehicleType),
+                      fit: BoxFit.contain,
+                      errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                    ),
+                  ),
+                ],
+              ),
+            ),
 
             // ── Route info (hidden when expanded) ──
             AnimatedCrossFade(
@@ -935,23 +990,10 @@ class _TripCardState extends State<_TripCard> with TickerProviderStateMixin {
               padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
               child: Row(
                 children: [
-                  TierBadge(rideName: vehicleType),
-                  if (fare != null && fare > 0) ...[
-                    const SizedBox(width: 10),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                      decoration: neuBox(radius: 12, pressed: true),
-                      child: Text(
-                        '\$ ${fare.toStringAsFixed(2)}',
-                        style: const TextStyle(
-                          color: _gold,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: -0.3,
-                        ),
-                      ),
-                    ),
-                  ],
+                  // The tier badge and the fare used to live here, under the
+                  // addresses. Both moved to the header, where the tier is
+                  // now the card's title with its car beside it — which is
+                  // what the rider is identifying the booking by.
                   if (terminal != null) ...[
                     const SizedBox(width: 8),
                     _infoChip(Icons.door_front_door_outlined, terminal, c),
@@ -1244,6 +1286,38 @@ class _TripCardState extends State<_TripCard> with TickerProviderStateMixin {
         ],
       ),
     );
+  }
+
+  /// The tier as the rider is shown it, from whatever `vehicle_type` holds.
+  ///
+  /// Not TierInfo: that still answers VIP / PREMIUM / COMFORT and is used on
+  /// other screens, so renaming it there would change more than this card.
+  ///
+  /// `suv` is tested before `vip` on purpose — "SUV XL" would otherwise match
+  /// the VIP branch and every booking would come back BLACK.
+  String _tierLabel(String vehicleType) {
+    final n = vehicleType.toLowerCase();
+    if (n.contains('suv')) return 'PREMIUM';
+    if (n.contains('vip') || n.contains('suburban') || n.contains('black')) {
+      return 'BLACK';
+    }
+    if (n.contains('sedan') || n.contains('camry') || n.contains('premium')) {
+      return 'COMPACT';
+    }
+    return 'STANDARD';
+  }
+
+  /// The car that goes with it — the same four renders the booking sheet uses.
+  String _tierAsset(String vehicleType) {
+    final n = vehicleType.toLowerCase();
+    if (n.contains('suv')) return 'assets/images/cruisert_suvxl.png';
+    if (n.contains('vip') || n.contains('suburban') || n.contains('black')) {
+      return 'assets/images/cruisert1.png';
+    }
+    if (n.contains('sedan') || n.contains('camry') || n.contains('premium')) {
+      return 'assets/images/cruisert_compact.png';
+    }
+    return 'assets/images/cruisert3.png';
   }
 
   Widget _statusBadge(BuildContext context, String status, bool isPast) {

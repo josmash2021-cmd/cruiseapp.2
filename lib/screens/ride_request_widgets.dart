@@ -493,13 +493,36 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                                 : displayOptions
                                     .indexWhere((o) => o.id == option.id);
 
+                            // An empty sheet, and this is how it happened.
+                            //
+                            // At t=1 exactly one card is meant to grow to the
+                            // full width while the rest shrink to nothing. The
+                            // one that grows is picked by `i == selIdx` — so if
+                            // selIdx is -1, nothing matches, every card takes
+                            // the shrinking branch, and all of them animate to
+                            // zero. The rider gets "Choose a vehicle" over a
+                            // blank panel with no way out.
+                            //
+                            // selIdx is -1 whenever the selected option is not
+                            // in the list being drawn, which is not exotic:
+                            // fastRide swaps displayOptions for a single
+                            // comfort_express card while selectedOption still
+                            // holds whatever was picked before, and a selection
+                            // made against one route survives into the next.
+                            //
+                            // No match means nothing is selected, so draw the
+                            // full row. Losing the collapse animation for one
+                            // frame is not a bug the rider can see; an empty
+                            // booking sheet is the whole screen.
+                            final tt = selIdx < 0 ? 0.0 : t;
+
                             return Row(
                               children: [
                                 for (int i = 0; i < n; i++) ...[
                                   if (i == selIdx)
                                     // Grows into the space the others leave.
                                     SizedBox(
-                                      width: ui.lerpDouble(each, full, t),
+                                      width: ui.lerpDouble(each, full, tt),
                                       child: _PressableScale(
                                         onTap: () {
                                           HapticService.selectionClick();
@@ -565,7 +588,7 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                                     // Folds away. Clipped so its contents do
                                     // not spill while the width closes.
                                     SizedBox(
-                                      width: ui.lerpDouble(each, 0, t),
+                                      width: ui.lerpDouble(each, 0, tt),
                                       child: ClipRect(
                                         child: Opacity(
                                           // Gone by two-thirds of the way,
@@ -600,7 +623,7 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                                       ),
                                     ),
                                   if (i < n - 1)
-                                    SizedBox(width: ui.lerpDouble(gap, 0, t)!),
+                                    SizedBox(width: ui.lerpDouble(gap, 0, tt)!),
                                 ],
                               ],
                             );

@@ -1644,19 +1644,22 @@ extension _HomeScreenWidgets on _HomeScreenState {
       },
       {
         'tier': 'SUV_XL',
-        'displayName': 'SUV XL',
+        'displayName': 'PREMIUM',
         'desc': s.suvXlDesc,
         'features': s.suvXlFeatures,
         'idx': 1,
         'image': 'cruisert_suvxl.png',
       },
       {
+        // 'tier' is the internal key — it maps to the 'camry' ride id and
+        // picks the badge styling, so it stays PREMIUM. Only what the rider
+        // reads changes.
         'tier': 'PREMIUM',
-        'displayName': 'PREMIUM',
+        'displayName': 'COMPACT',
         'desc': s.premiumDesc,
         'features': s.premiumFeatures,
         'idx': 2,
-        'image': 'cruisert2.png',
+        'image': 'cruisert_compact.png',
       },
       {
         'tier': 'COMFORT',

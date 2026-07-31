@@ -769,7 +769,10 @@ extension _RideRequestWidgets on _RideRequestScreenState {
     final key = name.trim().toLowerCase();
     if (key.contains('suv xl')) return 'assets/images/cruisert_suvxl.png';
     if (key.contains('vip') || key.contains('suburban')) return 'assets/images/cruisert1.png';
-    if (key.contains('sedan') || key.contains('camry')) return 'assets/images/cruisert2.png';
+    // The camry tier shows as COMPACT, so it carries the compact SUV render
+    // rather than the sedan one. Matched on the internal name, which is still
+    // 'Sedan' — the ids never move, only what the rider is shown.
+    if (key.contains('sedan') || key.contains('camry')) return 'assets/images/cruisert_compact.png';
     return 'assets/images/cruisert3.png';
   }
 
@@ -786,9 +789,9 @@ extension _RideRequestWidgets on _RideRequestScreenState {
     final bool isVIP = isSuv || isSuvXl;
     final bool isPremium = !isVIP && !isFusion;
     final String tierLabel =
-        isSuv ? 'VIP' : isSuvXl ? 'SUV XL' : (isPremium ? 'PREMIUM' : 'COMFORT');
+        isSuv ? 'VIP' : isSuvXl ? 'PREMIUM' : (isPremium ? 'COMPACT' : 'COMFORT');
     final String displayName =
-        isSuv ? 'BLACK' : isSuvXl ? 'SUV XL' : (isPremium ? 'PREMIUM' : 'STANDARD');
+        isSuv ? 'BLACK' : isSuvXl ? 'PREMIUM' : (isPremium ? 'COMPACT' : 'STANDARD');
 
     // Badge styles 1:1 with shopify-live-pull/sections/ride-request.liquid:142,764-770:
     //   VIP     → BLACK gradient (#1a1a1a→#000) + gold border, white text, diamond glyph
@@ -1084,7 +1087,7 @@ extension _RideRequestWidgets on _RideRequestScreenState {
     final bool isVIP = isSuv || isSuvXl;
     final bool isPremium = !isVIP && !isFusion;
     final String displayName =
-        isSuv ? 'BLACK' : isSuvXl ? 'SUV XL' : (isPremium ? 'PREMIUM' : 'STANDARD');
+        isSuv ? 'BLACK' : isSuvXl ? 'PREMIUM' : (isPremium ? 'COMPACT' : 'STANDARD');
 
     // Trip distance comes from the pickup→dropoff route (already
     // formatted in miles, e.g. "12.34 mi"). Em dash while the route is
@@ -1263,7 +1266,7 @@ extension _RideRequestWidgets on _RideRequestScreenState {
     final bool isVIP = isSuv || isSuvXl;
     final bool isPremium = !isVIP && !isFusion;
     final String displayName =
-        isSuv ? 'BLACK' : isSuvXl ? 'SUV XL' : (isPremium ? 'PREMIUM' : 'STANDARD');
+        isSuv ? 'BLACK' : isSuvXl ? 'PREMIUM' : (isPremium ? 'COMPACT' : 'STANDARD');
     final String carAsset = _carAssetForOption(opt.name);
 
     // Same visual rhythm as the home fleet cards: name on top, car right

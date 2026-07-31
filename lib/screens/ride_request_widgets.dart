@@ -1195,7 +1195,12 @@ extension _RideRequestWidgets on _RideRequestScreenState {
           // read as one unit. bottomCenter keeps the wheels planted no
           // matter how tall the source asset is.
           SizedBox(
-            width: 84,
+            // 108 rather than 84, and the render 76 tall rather than 60.
+            //
+            // The car is the only picture on a card otherwise made of type,
+            // and at 84 wide it was smaller than the words beside it — the
+            // thing the rider actually recognises, losing to a label.
+            width: 108,
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -1214,7 +1219,7 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                 ),
                 const SizedBox(height: 6),
                 SizedBox(
-                  height: 60,
+                  height: 76,
                   child: CarImage3D(
                     assetPath: _carAssetForOption(opt.name),
                     cacheWidth: 640,
@@ -1944,44 +1949,53 @@ extension _RideRequestWidgets on _RideRequestScreenState {
               child: child,
             ),
           ),
-          child: Column(
+          // One line: the range, then "of wait" beside it.
+          //
+          // It was stacked, which made a two-line block out of what is really
+          // one phrase — and the second line, at 11 px under a 19 px figure,
+          // read as a footnote to the number rather than part of it. Side by
+          // side and closer in size, it reads as a sentence.
+          //
+          // Baseline-aligned, so the small word sits on the same line as the
+          // digits instead of floating at their vertical centre.
+          child: FittedBox(
             key: ValueKey('wait_${none}_$text'),
-            crossAxisAlignment: CrossAxisAlignment.center,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // Shrinks rather than ellipsing. "No drivers available" is a
-              // sentence, not a number — cut to "No drivers av…" it stops
-              // being an answer at all.
-              FittedBox(
-                fit: BoxFit.scaleDown,
-                child: Text(
-                text,
-                maxLines: 1,
-                style: TextStyle(
-                  fontFamily: 'Poppins',
-                  color: none ? const Color(0xFFEF9A9A) : Colors.white,
-                  fontSize: none ? 14 : 19,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: -0.4,
-                  height: 1.1,
-                ),
-                ),
-              ),
-              if (!none) ...[
-                const SizedBox(height: 2),
+            fit: BoxFit.scaleDown,
+            // Shrinks rather than ellipsing. "No drivers available" is a
+            // sentence, not a number — cut to "No drivers av…" it stops
+            // being an answer at all.
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              textBaseline: TextBaseline.alphabetic,
+              crossAxisAlignment: CrossAxisAlignment.baseline,
+              children: [
                 Text(
-                  S.of(context).ofWait,
+                  text,
                   maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     fontFamily: 'Poppins',
-                    color: Colors.white.withValues(alpha: 0.55),
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
+                    color: none ? const Color(0xFFEF9A9A) : Colors.white,
+                    fontSize: none ? 15 : 23,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: -0.4,
+                    height: 1.1,
                   ),
                 ),
+                if (!none) ...[
+                  const SizedBox(width: 6),
+                  Text(
+                    S.of(context).ofWait,
+                    maxLines: 1,
+                    style: TextStyle(
+                      fontFamily: 'Poppins',
+                      color: Colors.white.withValues(alpha: 0.55),
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
               ],
-            ],
+            ),
           ),
         );
       },

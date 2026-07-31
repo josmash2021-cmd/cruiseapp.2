@@ -126,7 +126,9 @@ class _AboutScreenState extends State<AboutScreen> {
                     ),
                     const SizedBox(height: 14),
                     Text(
-                      'Cruise',
+                      // The full name, which is what the copyright line at
+                      // the bottom of this same screen already says.
+                      'Cruise in Ride',
                       style: TextStyle(
                         fontSize: 28,
                         fontWeight: FontWeight.w800,

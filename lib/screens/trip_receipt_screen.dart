@@ -2,9 +2,10 @@ import 'package:flutter/material.dart';
 
 import '../config/app_theme.dart';
 import '../l10n/app_localizations.dart';
+import '../config/api_keys.dart';
 import '../services/api_service.dart';
+import '../services/places_service.dart';
 import '../services/local_data_service.dart';
-import '../widgets/tier_badge.dart';
 
 class TripReceiptScreen extends StatefulWidget {
   final TripHistoryItem trip;
@@ -30,6 +31,32 @@ class _TripReceiptScreenState extends State<TripReceiptScreen>
   Map<String, dynamic>? _fareBreakdown;
   bool _breakdownLoading = true;
 
+  /// The pickup street, when the stored address does not name one.
+  ///
+  /// A ride hailed from the rider's own position is saved as the literal
+  /// "Current location". On a receipt that is worse than on a live screen —
+  /// this is the record they keep, and it has to say where they were picked
+  /// up, not where they happened to be standing when they opened the app.
+  String? _resolvedPickup;
+
+  Future<void> _resolvePickup() async {
+    final raw = trip.pickup.toLowerCase().trim();
+    final generic =
+        raw.isEmpty || raw == 'current location' || raw == 'my location';
+    if (!generic) return;
+    final lat = trip.pickupLat, lng = trip.pickupLng;
+    if (lat == null || lng == null) return;
+    try {
+      final addr = await PlacesService(ApiKeys.webServices)
+          .reverseGeocode(lat: lat, lng: lng);
+      if (addr != null && addr.isNotEmpty && mounted) {
+        setState(() => _resolvedPickup = addr);
+      }
+    } catch (_) {
+      // The stored phrase stays. A receipt is still a receipt without it.
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -50,6 +77,7 @@ class _TripReceiptScreenState extends State<TripReceiptScreen>
     ));
     _entryController.forward();
     _loadFareBreakdown();
+    _resolvePickup();
   }
 
   @override
@@ -136,6 +164,35 @@ class _TripReceiptScreenState extends State<TripReceiptScreen>
     final t = (_fareBreakdown?['total'] as num?)?.toDouble();
     if (t != null && t > 0) return '\$${t.toStringAsFixed(2)}';
     return trip.price;
+  }
+
+  /// The tier as the rider is shown it, from whatever `vehicle_type` holds.
+  ///
+  /// `suv` is tested before `vip`, or "SUV XL" matches the VIP branch and
+  /// every receipt comes back BLACK.
+  String _tierLabel(String vehicleType) {
+    final n = vehicleType.toLowerCase();
+    if (n.contains('suv')) return 'PREMIUM';
+    if (n.contains('vip') || n.contains('suburban') || n.contains('black')) {
+      return 'BLACK';
+    }
+    if (n.contains('sedan') || n.contains('camry') || n.contains('premium')) {
+      return 'COMPACT';
+    }
+    return 'STANDARD';
+  }
+
+  /// The car that goes with it — the same four renders the booking sheet uses.
+  String _tierAsset(String vehicleType) {
+    final n = vehicleType.toLowerCase();
+    if (n.contains('suv')) return 'assets/images/cruisert_suvxl.png';
+    if (n.contains('vip') || n.contains('suburban') || n.contains('black')) {
+      return 'assets/images/cruisert1.png';
+    }
+    if (n.contains('sedan') || n.contains('camry') || n.contains('premium')) {
+      return 'assets/images/cruisert_compact.png';
+    }
+    return 'assets/images/cruisert3.png';
   }
 
   BoxDecoration _neu({double radius = 24}) => BoxDecoration(
@@ -252,10 +309,13 @@ class _TripReceiptScreenState extends State<TripReceiptScreen>
                                     ],
                                   ),
                                 ),
-                                // PAID stamp — invoice style
-                                Transform.rotate(
-                                  angle: -0.10,
-                                  child: Container(
+                                // PAID stamp — square to the page.
+                                //
+                                // It was rotated ten degrees to look like an
+                                // ink stamp. On a receipt whose every other
+                                // line is aligned, one tilted element reads as
+                                // a rendering fault rather than as a flourish.
+                                Container(
                                     padding: const EdgeInsets.symmetric(
                                         horizontal: 14, vertical: 6),
                                     decoration: BoxDecoration(
@@ -275,38 +335,70 @@ class _TripReceiptScreenState extends State<TripReceiptScreen>
                                       ),
                                     ),
                                   ),
-                                ),
                               ],
                             ),
                             const SizedBox(height: 20),
 
-                            // Total paid + tier
-                            Center(
-                              child: Column(
-                                children: [
-                                  Text(
-                                    _paidTotal,
-                                    style: const TextStyle(
-                                      color: _gold,
-                                      fontSize: 46,
-                                      fontWeight: FontWeight.w900,
-                                      letterSpacing: -1,
+                            // What they rode, and what it cost, on one line.
+                            //
+                            // This was a centred stack: the amount, the words
+                            // "Paid by passenger" under it, and a tier pill
+                            // under that. The caption said what the PAID stamp
+                            // and the Payment Summary below already say twice
+                            // over, and the pill named the tier without
+                            // showing the car.
+                            //
+                            // Service on the left with its render, amount on
+                            // the right. Two facts, one line, nothing repeated.
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.center,
+                              children: [
+                                Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      _tierLabel(trip.rideName),
+                                      style: TextStyle(
+                                        color: c.textPrimary,
+                                        fontSize: 15,
+                                        fontWeight: FontWeight.w800,
+                                        letterSpacing: 0.5,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    SizedBox(
+                                      width: 88,
+                                      height: 34,
+                                      child: Image.asset(
+                                        _tierAsset(trip.rideName),
+                                        fit: BoxFit.contain,
+                                        errorBuilder: (_, __, ___) =>
+                                            const SizedBox.shrink(),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const Spacer(),
+                                // Shrinks rather than wrapping: a long fare is
+                                // still one number and must read as one.
+                                Flexible(
+                                  child: FittedBox(
+                                    fit: BoxFit.scaleDown,
+                                    alignment: Alignment.centerRight,
+                                    child: Text(
+                                      _paidTotal,
+                                      maxLines: 1,
+                                      style: const TextStyle(
+                                        color: _gold,
+                                        fontSize: 40,
+                                        fontWeight: FontWeight.w900,
+                                        letterSpacing: -1,
+                                      ),
                                     ),
                                   ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    S.of(context).paidByPassengerLabel,
-                                    style: TextStyle(
-                                      color: c.textTertiary,
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.w600,
-                                      letterSpacing: 0.4,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 12),
-                                  TierBadge(rideName: trip.rideName),
-                                ],
-                              ),
+                                ),
+                              ],
                             ),
 
                             Padding(
@@ -388,7 +480,8 @@ class _TripReceiptScreenState extends State<TripReceiptScreen>
                                         _routeBlock(
                                           c,
                                           label: S.of(context).pickupTagLabel,
-                                          address: trip.pickup,
+                                          address:
+                                              _resolvedPickup ?? trip.pickup,
                                         ),
                                         const SizedBox(height: 22),
                                         _routeBlock(

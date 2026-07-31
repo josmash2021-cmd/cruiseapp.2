@@ -52,6 +52,15 @@ class TripHistoryItem {
   final String duration;
   final DateTime createdAt;
 
+  /// Where the pickup actually was, when the address itself does not say.
+  ///
+  /// A trip booked from the rider's own position is stored with the literal
+  /// string "Current location", which is fine at the moment of booking and
+  /// useless in a history a week later. Keeping the coordinates lets the card
+  /// reverse-geocode it into a street.
+  final double? pickupLat;
+  final double? pickupLng;
+
   const TripHistoryItem({
     this.tripId,
     required this.pickup,
@@ -61,6 +70,8 @@ class TripHistoryItem {
     required this.miles,
     required this.duration,
     required this.createdAt,
+    this.pickupLat,
+    this.pickupLng,
   });
 
   Map<String, dynamic> toJson() => {
@@ -72,6 +83,8 @@ class TripHistoryItem {
     'miles': miles,
     'duration': duration,
     'createdAt': createdAt.toIso8601String(),
+    'pickupLat': pickupLat,
+    'pickupLng': pickupLng,
   };
 
   static TripHistoryItem fromJson(Map<String, dynamic> json) {
@@ -86,6 +99,8 @@ class TripHistoryItem {
       createdAt:
           DateTime.tryParse(json['createdAt']?.toString() ?? '') ??
           DateTime.now(),
+      pickupLat: (json['pickupLat'] as num?)?.toDouble(),
+      pickupLng: (json['pickupLng'] as num?)?.toDouble(),
     );
   }
 }

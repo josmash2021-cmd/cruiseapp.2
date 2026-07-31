@@ -1,12 +1,15 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../config/app_theme.dart';
 import '../config/page_transitions.dart';
 import '../l10n/app_localizations.dart';
 import '../services/local_data_service.dart';
+import '../config/api_keys.dart';
 import '../services/api_service.dart';
+import '../services/places_service.dart';
 import '../widgets/neu_style.dart';
-import '../widgets/tier_badge.dart';
 import 'trip_receipt_screen.dart';
 
 class RideHistoryScreen extends StatefulWidget {
@@ -22,6 +25,38 @@ class _RideHistoryScreenState extends State<RideHistoryScreen> {
   static const _gold = Color(0xFFE8C547);
   List<TripHistoryItem> _trips = [];
   bool _loading = true;
+
+  /// Street addresses for trips whose pickup is stored as a generic phrase.
+  ///
+  /// A ride booked from the rider's own position is saved as the literal
+  /// "Current location", which meant every such trip in the history read the
+  /// same. Resolved once per trip id, from the coordinates the row already
+  /// carries, and reused after that.
+  final Map<int, String> _resolvedPickups = {};
+
+  static bool _isGenericPickup(String s) {
+    final n = s.toLowerCase().trim();
+    return n.isEmpty || n == 'current location' || n == 'my location';
+  }
+
+  Future<void> _resolvePickups(List<TripHistoryItem> trips) async {
+    final places = PlacesService(ApiKeys.webServices);
+    for (final t in trips) {
+      final id = t.tripId;
+      if (id == null || _resolvedPickups.containsKey(id)) continue;
+      if (!_isGenericPickup(t.pickup)) continue;
+      final lat = t.pickupLat, lng = t.pickupLng;
+      if (lat == null || lng == null) continue;
+      try {
+        final addr = await places.reverseGeocode(lat: lat, lng: lng);
+        if (addr != null && addr.isNotEmpty && mounted) {
+          setState(() => _resolvedPickups[id] = addr);
+        }
+      } catch (_) {
+        // Leave the generic string. It is not worth an error on a list.
+      }
+    }
+  }
 
   /// Format minutes into a human-readable string.
   ///   ≤ 60  → "45 min"
@@ -88,6 +123,8 @@ class _RideHistoryScreenState extends State<RideHistoryScreen> {
               createdAt:
                   DateTime.tryParse(t['created_at']?.toString() ?? '') ??
                   DateTime.now(),
+              pickupLat: (t['pickup_lat'] as num?)?.toDouble(),
+              pickupLng: (t['pickup_lng'] as num?)?.toDouble(),
             );
           }).toList();
           parsed.sort((a, b) => b.createdAt.compareTo(a.createdAt));
@@ -97,6 +134,7 @@ class _RideHistoryScreenState extends State<RideHistoryScreen> {
             _trips = visible(parsed);
             _loading = false;
           });
+          unawaited(_resolvePickups(_trips));
           return;
         }
       }
@@ -219,6 +257,36 @@ class _RideHistoryScreenState extends State<RideHistoryScreen> {
     );
   }
 
+  /// The tier as the rider is shown it, from whatever `vehicle_type` holds.
+  ///
+  /// Not TierInfo: that still answers VIP / PREMIUM / COMFORT and is used on
+  /// other screens. `suv` is tested before `vip`, or "SUV XL" matches the VIP
+  /// branch and every trip comes back BLACK.
+  static String _tierLabel(String vehicleType) {
+    final n = vehicleType.toLowerCase();
+    if (n.contains('suv')) return 'PREMIUM';
+    if (n.contains('vip') || n.contains('suburban') || n.contains('black')) {
+      return 'BLACK';
+    }
+    if (n.contains('sedan') || n.contains('camry') || n.contains('premium')) {
+      return 'COMPACT';
+    }
+    return 'STANDARD';
+  }
+
+  /// The car that goes with it — the same four renders the booking sheet uses.
+  static String _tierAsset(String vehicleType) {
+    final n = vehicleType.toLowerCase();
+    if (n.contains('suv')) return 'assets/images/cruisert_suvxl.png';
+    if (n.contains('vip') || n.contains('suburban') || n.contains('black')) {
+      return 'assets/images/cruisert1.png';
+    }
+    if (n.contains('sedan') || n.contains('camry') || n.contains('premium')) {
+      return 'assets/images/cruisert_compact.png';
+    }
+    return 'assets/images/cruisert3.png';
+  }
+
   Widget _buildTripCard(AppColors c, TripHistoryItem trip) {
     final d = trip.createdAt;
     final months = [
@@ -240,13 +308,6 @@ class _RideHistoryScreenState extends State<RideHistoryScreen> {
     final date =
         '${months[d.month - 1]} ${d.day}, ${d.year} · $hour:${d.minute.toString().padLeft(2, '0')} $ampm';
 
-    final tier = TierInfo.from(trip.rideName);
-    final tierIcon = tier.isVIP
-        ? Icons.diamond_rounded
-        : tier.isPremium
-            ? Icons.star_rounded
-            : Icons.directions_car_rounded;
-    final tierColor = tier.isComfort ? const Color(0xFFC7C7D1) : _gold;
 
     return GestureDetector(
       onTap: () {
@@ -263,28 +324,42 @@ class _RideHistoryScreenState extends State<RideHistoryScreen> {
             // ── Header: tier icon + ride title + date · price ──
             Row(
               children: [
-                Container(
-                  width: 44,
-                  height: 44,
-                  decoration: neuBox(radius: 14, pressed: true),
-                  child: Icon(tierIcon, color: tierColor, size: 21),
+                // The tier and its car, in place of a generic icon.
+                //
+                // The icon was a diamond, a star or a car outline depending on
+                // the tier, which told the rider which band it was in but not
+                // which vehicle they rode. The render does both, and it is the
+                // same one they picked from when they booked.
+                Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      _tierLabel(trip.rideName),
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w800,
+                        color: c.textPrimary,
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    SizedBox(
+                      width: 74,
+                      height: 30,
+                      child: Image.asset(
+                        _tierAsset(trip.rideName),
+                        fit: BoxFit.contain,
+                        errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                      ),
+                    ),
+                  ],
                 ),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        TierInfo.displayTitle(trip.rideName),
-                        style: TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w800,
-                          color: c.textPrimary,
-                          letterSpacing: 0.2,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
                       const SizedBox(height: 3),
                       Text(
                         date,
@@ -354,7 +429,9 @@ class _RideHistoryScreenState extends State<RideHistoryScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          trip.pickup,
+                          // The resolved street when we have one, and the
+                          // stored phrase until then.
+                          _resolvedPickups[trip.tripId] ?? trip.pickup,
                           style: TextStyle(
                             fontSize: 15,
                             fontWeight: FontWeight.w600,

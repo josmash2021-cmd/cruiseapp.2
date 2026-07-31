@@ -232,6 +232,34 @@ class PlacesService {
       }
     } catch (_) {}
 
+    // Mapbox, when neither of the first two could answer.
+    //
+    // The native path is the `geocoding` plugin, which has no web
+    // implementation, and the Google path needs a key this build may not
+    // have — on web both come back empty and the caller was left with
+    // whatever generic string it started with ("Current location").
+    //
+    // Mapbox is already the provider this app geocodes and routes with, so
+    // there is nothing new to configure: if the token is missing this returns
+    // null exactly as before.
+    try {
+      final token = MapboxConfig.accessToken;
+      if (token.isEmpty) return null;
+      final uri = Uri.https(
+        'api.mapbox.com',
+        '/geocoding/v5/mapbox.places/$lng,$lat.json',
+        {'access_token': token, 'limit': '1', 'types': 'address,poi'},
+      );
+      final res = await http.get(uri).timeout(const Duration(seconds: 5));
+      if (res.statusCode == 200) {
+        final feats = (jsonDecode(res.body) as Map)['features'] as List?;
+        if (feats != null && feats.isNotEmpty) {
+          final name = feats.first['place_name']?.toString();
+          if (name != null && name.isNotEmpty) return name;
+        }
+      }
+    } catch (_) {}
+
     return null;
   }
 

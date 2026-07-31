@@ -511,6 +511,7 @@ class _TripCardState extends State<_TripCard> with TickerProviderStateMixin {
     _removeSize = Tween<double>(begin: 1.0, end: 0.0)
         .animate(CurvedAnimation(parent: _removeCtrl, curve: Curves.easeInCubic));
     _resolvePickupAddress();
+    _loadTripStats();
   }
 
   /// If pickup_address is generic ("Current location", empty), reverse-geocode
@@ -563,6 +564,31 @@ class _TripCardState extends State<_TripCard> with TickerProviderStateMixin {
   bool _routeLoaded = false;
   bool _routeLoading = false;
   String _tripDuration = '';
+
+  /// Trip length for the stats row, fetched whether or not the map is open.
+  ///
+  /// The route was only ever requested when the card expanded, because until
+  /// now it existed to draw the line. The minutes and miles are on the face of
+  /// the card now, so they cannot wait for a tap.
+  String _tripDistance = '';
+
+  Future<void> _loadTripStats() async {
+    if (!_hasCoords || !mounted) return;
+    try {
+      final route = await DirectionsService(ApiKeys.webServices).getRoute(
+        origin: LatLng(_pickupLat!, _pickupLng!),
+        destination: LatLng(_dropoffLat!, _dropoffLng!),
+      );
+      if (route == null || !mounted) return;
+      setState(() {
+        _tripDuration = route.durationText;
+        _tripDistance = route.distanceText;
+      });
+    } catch (_) {
+      // The chips simply do not appear. A booking with no mileage on it is
+      // still a booking; an error about one is not worth the rider's time.
+    }
+  }
 
   double? get _pickupLat => (widget.trip['pickup_lat'] as num?)?.toDouble();
   double? get _pickupLng => (widget.trip['pickup_lng'] as num?)?.toDouble();
@@ -849,7 +875,19 @@ class _TripCardState extends State<_TripCard> with TickerProviderStateMixin {
                       color: const Color(0xFF4285F4),
                     ),
                   const SizedBox(width: 6),
-                  _statusBadge(context, status, isPast),
+                  // The tier took the status badge's corner, and the status
+                  // took the tier's old line under the date. The tier is what
+                  // the rider is picking the card out by, so it gets the spot
+                  // the eye lands on; the status is a note about it.
+                  Text(
+                    _tierLabel(vehicleType),
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 0.5,
+                    ),
+                  ),
                   if (_hasCoords) ...[
                     const SizedBox(width: 6),
                     AnimatedRotation(
@@ -878,24 +916,16 @@ class _TripCardState extends State<_TripCard> with TickerProviderStateMixin {
             // receipt; the amount that matters is the one on the receipt
             // afterwards, and that has its own screen.
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+              padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
               child: Row(
                 children: [
-                  Text(
-                    _tierLabel(vehicleType),
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 15,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: 0.5,
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  // Small: it is here to identify, not to sell. The renders
-                  // are about 2.7:1, so 62 wide lands near 23 tall.
+                  _statusBadge(context, status, isPast),
+                  const Spacer(),
+                  // The car under the tier that now sits above it, on the
+                  // same side, so the two read as one label.
                   SizedBox(
-                    width: 62,
-                    height: 26,
+                    width: 74,
+                    height: 30,
                     child: Image.asset(
                       _tierAsset(vehicleType),
                       fit: BoxFit.contain,
@@ -990,6 +1020,20 @@ class _TripCardState extends State<_TripCard> with TickerProviderStateMixin {
               padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
               child: Row(
                 children: [
+                  // Minutes, miles, seats — what the booking actually is.
+                  //
+                  // The minutes and miles come from the route and only appear
+                  // once it answers; the seat count comes from the tier and is
+                  // known immediately, so it never waits on the network.
+                  if (_tripDuration.isNotEmpty)
+                    _infoChip(Icons.schedule_rounded, _tripDuration, c),
+                  if (_tripDistance.isNotEmpty) ...[
+                    const SizedBox(width: 8),
+                    _infoChip(Icons.route_rounded, _tripDistance, c),
+                  ],
+                  const SizedBox(width: 8),
+                  _infoChip(Icons.person_rounded,
+                      '${_tierSeats(vehicleType)}', c),
                   // The tier badge and the fare used to live here, under the
                   // addresses. Both moved to the header, where the tier is
                   // now the card's title with its car beside it — which is
@@ -1305,6 +1349,16 @@ class _TripCardState extends State<_TripCard> with TickerProviderStateMixin {
       return 'COMPACT';
     }
     return 'STANDARD';
+  }
+
+  /// Seats for the tier, matching the capacities the booking sheet quotes.
+  int _tierSeats(String vehicleType) {
+    final n = vehicleType.toLowerCase();
+    if (n.contains('suv')) return 6;
+    if (n.contains('vip') || n.contains('suburban') || n.contains('black')) {
+      return 7;
+    }
+    return 4;
   }
 
   /// The car that goes with it — the same four renders the booking sheet uses.

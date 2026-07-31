@@ -1827,7 +1827,14 @@ extension _HomeScreenWidgets on _HomeScreenState {
       );
       return '';
     }
-    if (est.driverCount == 0) return S.of(context).noDriversAvailable;
+    // Nothing at all when nobody is out there, not "No drivers available".
+    //
+    // These four cards are a menu, not an answer — the rider has not asked
+    // for anything yet, and telling them the town is empty before they have
+    // named a destination reads as the app turning them away at the door.
+    // The booking sheet is where the question is actually put, and that is
+    // where the empty answer belongs; it says so in full there.
+    if (est.driverCount == 0) return '';
     return '${est.minMinutes}-${est.maxMinutes} min';
   }
 

@@ -27,8 +27,8 @@ class WaitEstimate {
 class DriverWaitEstimate {
   DriverWaitEstimate._();
 
-  /// The catchment the rider is told about. 20 miles, per product.
-  static const double radiusMiles = 20.0;
+  /// The catchment the rider is told about. 15 miles, per product.
+  static const double radiusMiles = 15.0;
   static const double _milesToKm = 1.60934;
 
   /// The floor and ceiling of the range shown. Deliberately a range and not

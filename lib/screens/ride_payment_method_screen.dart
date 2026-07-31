@@ -1,6 +1,6 @@
 import '../utils/app_platform.dart';
 
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show kDebugMode, kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_stripe/flutter_stripe.dart';
 import '../services/haptic_service.dart';
@@ -487,7 +487,11 @@ class _RidePaymentMethodScreenState extends State<RidePaymentMethodScreen>
                           ? () => _pick(PaymentMethodId.bank)
                           : () => _openBankConnection(context),
                     ),
-                    if (widget.showTestMode)
+                    // Debug builds only, whatever the caller asked for. The
+                    // server rejects a booking without a real stripe_card
+                    // outside sandbox, so in a release build this tile is an
+                    // offer nothing can honour.
+                    if (widget.showTestMode && kDebugMode)
                       _PayCard(
                         entryCtl: _entryCtl,
                         staggerDelay: 0.24,

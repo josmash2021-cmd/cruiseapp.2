@@ -441,7 +441,9 @@ class _MapPickerScreenState extends State<MapPickerScreen>
         children: [
           // ── Map ──
           if (!_mapMounted)
-            const ColoredBox(color: Color(0xFF0A1128))
+            const Positioned.fill(
+              child: ColoredBox(color: Color(0xFF0A1128)),
+            )
           else
           RepaintBoundary(
             child: mapbox.MapWidget(
@@ -516,11 +518,16 @@ class _MapPickerScreenState extends State<MapPickerScreen>
             ),
           ),
 
-          // ── Bottom floating card (matches web #vipMpFooter) ──
+          // ── Bottom card, flush to the screen ──
+          //
+          // It used to float with 10 px of map showing down both sides and
+          // underneath, so it read as a slab dropped on top rather than as
+          // the bottom of the screen. Anchored to the three edges instead,
+          // rounded only where it meets the map.
           Positioned(
-            left: 10,
-            right: 10,
-            bottom: 10,
+            left: 0,
+            right: 0,
+            bottom: 0,
             child: _FooterCard(
               title: widget.isPickup ? s.setYourPickup : s.setYourDropoff,
               subtitle: widget.isPickup
@@ -643,7 +650,10 @@ class _FooterCardState extends State<_FooterCard> {
           22,
           20,
           22 + MediaQuery.of(context).padding.bottom),
-      decoration: neuBox(radius: 24),
+      // Top corners only — the other two are off-screen now.
+      decoration: neuBox(radius: 24).copyWith(
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+      ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,

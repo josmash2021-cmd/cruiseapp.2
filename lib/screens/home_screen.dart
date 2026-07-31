@@ -181,11 +181,7 @@ class _HomeScreenState extends State<HomeScreen>
 
   // ── Home mini map ("Your location" card) ──
   mapbox.MapboxMap? _homeMiniMapCtrl;
-  mapbox.PointAnnotationManager? _homeDotAnnotMgr;
-  mapbox.PointAnnotation? _homeDotAnnot;
   bool _creatingHomeDotAnnot = false; // guard: prevents parallel annotation creation
-  Timer? _homeDotRetryTimer; // backoff ladder until the dot actually draws
-  int _homeDotRetryAttempt = 0;
   final GoldLocationDot _homeDot = GoldLocationDot();
   // Throttle camera recentering so it doesn't fight the dot ticker.
   DateTime _lastMiniMapRecenter = DateTime(0);
@@ -256,9 +252,14 @@ class _HomeScreenState extends State<HomeScreen>
     });
     // Self-healing watchdog: restart dead GPS streams.
     _startLocationWatchdogs();
-    // Gold dot for the "Your location" mini map — the ticker drives
-    // annotation redraws; camera follow is throttled in the GPS listener.
-    unawaited(_homeDot.build(this, _updateHomeDotAnnotation, onFrame: () {
+    // The mini map's dot.
+    //
+    // Nothing here draws it — it is a CustomPaint pinned to the centre of
+    // the card. What this runs for is the motion: GoldLocationDot smooths
+    // the GPS fixes, and every tick slides the map underneath so the rider
+    // stays under the dot. Walking looks like the map gliding past, the way
+    // it does in Google Maps, rather than a marker being re-placed.
+    unawaited(_homeDot.build(this, _recenterHomeMiniMap, onFrame: () {
       if (!mounted) return;
       _miniDotFrame.value++;   // repaint the Flutter dot with the frame
       _recenterHomeMiniMap();  // and keep the map under it
@@ -456,8 +457,6 @@ class _HomeScreenState extends State<HomeScreen>
     // ValueNotifier.
     _homeDot.dispose();
     _miniDotFrame.dispose();
-    _homeDotRetryTimer?.cancel();
-    _homeDotRetryTimer = null;
     _boltFlashCtrl.dispose();
     _promoShimmerCtrl.dispose();
     _rideFadeCtrl.dispose();
@@ -695,140 +694,8 @@ class _HomeScreenState extends State<HomeScreen>
       _homeDot.ensureRunning();
       _homeDot.setTarget(lat, lng);
     }
-    unawaited(_updateHomeDotAnnotation());
   }
 
-  /// Redraw the gold dot on the "Your location" mini map. Driven by the
-  /// GoldLocationDot ticker (throttled to ~30fps internally).
-  /// Pattern v494: deleteAll() before create, and null the handle
-  /// immediately if an update fails so the next tick recreates it.
-  Future<void> _updateHomeDotAnnotation() async {
-    if (!mounted) return;
-    final mgr = _homeDotAnnotMgr;
-    if (mgr == null) return;
-
-    final lat = _homeDot.lat ?? _currentLatLng?.latitude;
-    final lng = _homeDot.lng ?? _currentLatLng?.longitude;
-    if (lat == null || lng == null) return;
-
-    final point = safePoint(lng, lat);
-    if (point == null) return;
-
-    final bytes = _homeDot.currentBytes;
-    if (bytes == null) return;
-
-    // First-time creation must be guarded — without it the per-frame
-    // ticker would attempt to create N annotations in parallel and we'd
-    // end up with stacked dots.
-    if (_homeDotAnnot == null) {
-      if (_creatingHomeDotAnnot) return;
-      _creatingHomeDotAnnot = true;
-      try {
-        // Defensive cleanup: delete any stale annotation left behind by a
-        // failed update or a style reload, so we never draw two gold dots.
-        try { await mgr.deleteAll(); } catch (_) {}
-        final created = await mgr.create(mapbox.PointAnnotationOptions(
-          geometry: point,
-          image: bytes,
-          iconSize: 1.05,
-          iconAnchor: mapbox.IconAnchor.CENTER,
-          iconOffset: [0, 0],
-        ));
-        // A style reload can swap the manager while create() is in flight.
-        // Publishing this handle then would leave _homeDotAnnot non-null
-        // pointing at an annotation on a dead manager — invisible, yet
-        // enough to stop the retry ladder. Drop it and let the retry run.
-        if (!mounted || _homeDotAnnotMgr != mgr) {
-          try { await mgr.delete(created); } catch (_) {}
-          return;
-        }
-        _homeDotAnnot = created;
-      } catch (e) {
-        if (kDebugMode) debugPrint('[HomeScreen] Mini map dot create failed: $e');
-        // Don't leave the dot missing until the next GPS fix — a stationary
-        // rider may not get one for minutes.
-        _retryHomeDotDraw();
-      } finally {
-        _creatingHomeDotAnnot = false;
-      }
-      return;
-    }
-
-    // Subsequent updates: write geometry in memory and fire the Mapbox
-    // update without awaiting — the ticker must not stall on the platform
-    // channel. Only geometry changes; the image bytes are static.
-    final annot = _homeDotAnnot!;
-    try {
-      annot.geometry = point;
-      mgr.update(annot).catchError((e) {
-        // Update failed: null the handle immediately so the next tick
-        // recreates, and delete the stale annotation fire-and-forget.
-        // Otherwise the old dot stays visible and we get stacked dots.
-        if (_homeDotAnnot == annot) {
-          _homeDotAnnot = null;
-          mgr.delete(annot).catchError((_) {});
-          // THE dot is now off the map. "The next tick recreates it" only
-          // holds while the rider is moving — GoldLocationDot skips the
-          // callback when the position is unchanged, so a stationary rider
-          // would watch the dot vanish and never come back. Kick the retry
-          // ladder so it is redrawn within a second.
-          _retryHomeDotDraw();
-        }
-        if (kDebugMode) debugPrint('[HomeScreen] Mini map dot update failed: $e');
-      });
-    } catch (e) {
-      if (kDebugMode) debugPrint('[HomeScreen] Mini map dot geometry write failed: $e');
-      _homeDotAnnot = null;
-      _retryHomeDotDraw(); // same reasoning as above
-    }
-  }
-
-  /// Backoff schedule for [_retryHomeDotDraw] — ~12 s of total coverage.
-  static const List<int> _homeDotRetryDelaysMs = [
-    250, 400, 600, 800, 1000, 1200, 1500, 2000, 2000, 2000,
-  ];
-
-  /// Keep retrying the mini map dot draw until it actually lands.
-  ///
-  /// The draw needs four things at once: the annotation manager, a GPS
-  /// position, a valid point and the rendered dot bytes. On a cold start
-  /// every one of them is racing (native map init, style download, first
-  /// fix), and the ticker is no safety net — GoldLocationDot skips the
-  /// callback entirely when the dot hasn't moved, so a stationary rider
-  /// gets nothing. The old version fired three fixed shots (500/1500/
-  /// 3000 ms) and then gave up forever, which is why the dot could stay
-  /// missing for the whole session.
-  ///
-  /// This retries on a backoff and stops as soon as the annotation
-  /// exists, so a slow map or a slow GPS no longer loses the race.
-  void _retryHomeDotDraw() {
-    // Restart from scratch: a fresh map or style reload means any pending
-    // attempt is chasing a manager that no longer exists.
-    _homeDotRetryTimer?.cancel();
-    _homeDotRetryAttempt = 0;
-    _scheduleHomeDotRetry();
-  }
-
-  void _scheduleHomeDotRetry() {
-    if (_homeDotRetryAttempt >= _homeDotRetryDelaysMs.length) return;
-    final ms = _homeDotRetryDelaysMs[_homeDotRetryAttempt++];
-    _homeDotRetryTimer = Timer(Duration(milliseconds: ms), () async {
-      if (!mounted || _homeDotAnnot != null) return; // already on screen
-      // The dot bitmap is rendered once in initState. If that rasterise
-      // failed, currentBytes stays null and every draw below is a silent
-      // no-op forever — rebuild it here so the retry can actually succeed.
-      if (!_homeDot.isReady) {
-        await _homeDot.build(this, _updateHomeDotAnnotation, onFrame: () {
-          if (!mounted) return;
-          _miniDotFrame.value++;
-          _recenterHomeMiniMap();
-        });
-      }
-      if (!mounted) return;
-      await _updateHomeDotAnnotation();
-      if (mounted && _homeDotAnnot == null) _scheduleHomeDotRetry();
-    });
-  }
 
   /// Recenter the mini map camera on the rider at most once per [interval].
   /// Uses the interpolated dot position so camera and annotation stay in

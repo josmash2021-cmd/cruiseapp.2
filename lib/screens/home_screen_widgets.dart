@@ -1492,7 +1492,7 @@ extension _HomeScreenWidgets on _HomeScreenState {
                     child: GoldLocationDotOverlay(
                       bearing: 0,
                       heading: false,
-                      size: 30,
+                      size: 40,
                     ),
                   ),
                 ),
@@ -1520,9 +1520,6 @@ extension _HomeScreenWidgets on _HomeScreenState {
           onMapCreated: (ctrl) async {
             try {
               _homeMiniMapCtrl = ctrl;
-              // The native view was just created — any previous annotation
-              // belongs to an old manager. Reset so we create a fresh one.
-              _homeDotAnnot = null;
 
               // Same race as the driver map: cameraOptions above is only
               // the INITIAL camera, and the GPS listener recenters through
@@ -1559,29 +1556,20 @@ extension _HomeScreenWidgets on _HomeScreenState {
                 pitchEnabled: false,
               ));
 
-              // Null the manager while creating so concurrent dot updates
-              // return early instead of touching a stale manager.
-              _homeDotAnnotMgr = null;
-              try {
-                _homeDotAnnotMgr = await ctrl.annotations.createPointAnnotationManager();
-              } catch (e) {
-                if (kDebugMode) debugPrint('[HomeScreen] Mini map annotation manager failed: $e');
-              }
-              if (_homeDotAnnotMgr != null) {
-                try {
-                  await ctrl.style.setStyleLayerProperty(_homeDotAnnotMgr!.id, 'icon-pitch-alignment', 'viewport');
-                  await ctrl.style.setStyleLayerProperty(_homeDotAnnotMgr!.id, 'icon-rotation-alignment', 'viewport');
-                  await ctrl.style.setStyleLayerProperty(_homeDotAnnotMgr!.id, 'icon-allow-overlap', true);
-                } catch (_) {}
-              }
-
-              // Native puck stays off — we draw the gold dot ourselves.
-              await ctrl.location.updateSettings(mapbox.LocationComponentSettings(enabled: false));
-
-              // Draw now, and retry shortly in case the GPS fix hadn't
-              // arrived yet (the ticker alone won't fire while idle).
-              unawaited(_updateHomeDotAnnotation());
-              _retryHomeDotDraw();
+              // No annotation, and so no manager.
+              //
+              // The dot on this card is painted by Flutter, dead centre, and
+              // the camera is held on the rider — see _recenterHomeMiniMap.
+              // A Mapbox annotation was being drawn as well, at its own
+              // size, so the card showed two dots: a big one on the map and
+              // a small one on top. And the annotation was the fragile half
+              // — destroyed on every style reload and every time this card
+              // gave up the surface, which is why it kept vanishing on the
+              // way back from another screen and needed a retry ladder to
+              // come back at all. The painted one cannot fail: no bitmap, no
+              // platform channel, no manager to go stale.
+              await ctrl.location.updateSettings(
+                  mapbox.LocationComponentSettings(enabled: false));
             } catch (e) {
               if (kDebugMode) debugPrint('[HomeScreen] Mini map onMapCreated error: $e');
             }
@@ -1591,22 +1579,9 @@ extension _HomeScreenWidgets on _HomeScreenState {
               final ctrl = _homeMiniMapCtrl;
               if (ctrl == null) return;
               await MapTheme.applyNavyGold(ctrl);
-              // Mapbox DESTROYS annotations + managers on style reload —
-              // recreate them, then redraw the dot.
-              _homeDotAnnot = null;
-              _homeDotAnnotMgr = null;
-              try {
-                _homeDotAnnotMgr = await ctrl.annotations.createPointAnnotationManager();
-                await ctrl.style.setStyleLayerProperty(_homeDotAnnotMgr!.id, 'icon-pitch-alignment', 'viewport');
-                await ctrl.style.setStyleLayerProperty(_homeDotAnnotMgr!.id, 'icon-rotation-alignment', 'viewport');
-                await ctrl.style.setStyleLayerProperty(_homeDotAnnotMgr!.id, 'icon-allow-overlap', true);
-              } catch (e) {
-                if (kDebugMode) debugPrint('[HomeScreen] Mini map manager recreate failed: $e');
-              }
-              // Draw now, and retry shortly in case the GPS fix or the
-              // manager wasn't ready yet (the ticker won't fire while idle).
-              unawaited(_updateHomeDotAnnotation());
-              _retryHomeDotDraw();
+              // Nothing to rebuild here any more. A style reload destroys
+              // annotations and managers, which is what used to take the
+              // dot with it; the painted dot is not on the map at all.
               // Re-disable native puck in case the style reset re-enabled it
               try {
                 await ctrl.location.updateSettings(mapbox.LocationComponentSettings(enabled: false));
@@ -1693,6 +1668,19 @@ extension _HomeScreenWidgets on _HomeScreenState {
       },
     ];
 
+    // The card keeps its shape as tiers are added instead of getting
+    // narrower against a fixed height. Four tiers in the width three used
+    // to have would otherwise leave a card half as wide as it is tall —
+    // stretched, which is exactly what a vehicle card must not look like.
+    // Same geometry as the picker's cards, down to the numbers: 8 px apart,
+    // height 1.10 x width, everything inside scaled off a 120 px base. They
+    // are the same card in two places, and at 1 : 1.39 this one carried a
+    // band of dead air the other did not.
+    const double gap = 8.0;
+    final double cardW = (screenW - 48 - gap * 3) / 4;
+    final double cardH = (cardW * 1.10).clamp(84.0, 120.0);
+    final double k = cardH / 120.0;
+
     return Row(
       children: vehicles.map((v) {
         final idx = v['idx'] as int;
@@ -1710,7 +1698,7 @@ extension _HomeScreenWidgets on _HomeScreenState {
 
         return Expanded(
           child: Padding(
-            padding: EdgeInsets.only(right: idx < 3 ? 6 : 0),
+            padding: EdgeInsets.only(right: idx < 3 ? gap : 0),
             child: IgnorePointer(
               ignoring: active,
               child: Opacity(
@@ -1718,23 +1706,21 @@ extension _HomeScreenWidgets on _HomeScreenState {
                 child: GestureDetector(
                   onTap: () => _openSearchThenRide(rideId: rideId),
                   child: Container(
-                    height: 152,
+                    height: cardH,
                     clipBehavior: Clip.antiAlias,
-                    // Selected tier (PREMIUM) gets a thin gold border on top
-                    // of the neumorphic surface.
-                    decoration: tier == 'PREMIUM'
-                        ? neuBox(radius: 24).copyWith(
-                            border: Border.all(
-                              color: _gold.withValues(alpha: 0.45),
-                              width: 1,
-                            ),
-                          )
-                        : neuBox(radius: 24),
+                    // No ring on any of them.
+                    //
+                    // PREMIUM carried a permanent gold border, which read as
+                    // "this one is selected" on a row where nothing is
+                    // selected — these four are a way in, not a choice being
+                    // held. The picker lost the same marking for the same
+                    // reason.
+                    decoration: neuBox(radius: 24),
                     child: Stack(
                       children: [
                         // Display name pinned to the top
                         Positioned(
-                          top: 12,
+                          top: cardH * 0.083,
                           left: 8,
                           right: 8,
                           child: FittedBox(
@@ -1743,9 +1729,9 @@ extension _HomeScreenWidgets on _HomeScreenState {
                               displayName,
                               textAlign: TextAlign.center,
                               maxLines: 1,
-                              style: const TextStyle(
+                              style: TextStyle(
                                 color: Colors.white,
-                                fontSize: 14,
+                                fontSize: math.max(10.0, 13 * k),
                                 fontWeight: FontWeight.w800,
                                 letterSpacing: 0.5,
                               ),
@@ -1760,7 +1746,7 @@ extension _HomeScreenWidgets on _HomeScreenState {
                         Positioned(
                           left: 8,
                           right: 8,
-                          bottom: 10,
+                          bottom: cardH * 0.122,
                           child: Text(
                             _homeWaitRangeText(),
                             textAlign: TextAlign.center,
@@ -1768,7 +1754,7 @@ extension _HomeScreenWidgets on _HomeScreenState {
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
                               color: Colors.white.withValues(alpha: 0.55),
-                              fontSize: 11,
+                              fontSize: math.max(10.0, 11 * k),
                               fontWeight: FontWeight.w700,
                               letterSpacing: 0.2,
                             ),
@@ -1783,12 +1769,16 @@ extension _HomeScreenWidgets on _HomeScreenState {
                         // Anchoring it to the bottom instead pushed it onto
                         // the minutes — that is how they ended up behind
                         // the wheels — and left the card top-heavy.
+                        // 14 instead of 8: the render is far wider than it
+                        // is tall, so on a card this narrow the width is
+                        // what sets the car's size. Trimming the box height
+                        // would leave it exactly as big as it was.
                         Positioned(
-                          left: 8,
-                          right: 8,
-                          top: 50,
+                          left: 10,
+                          right: 10,
+                          top: cardH * 0.295,
                           child: SizedBox(
-                            height: 58,
+                            height: cardH * 0.383,
                             child: CarImage3D(
                               assetPath: 'assets/images/${v['image']}',
                               cacheWidth: 640,

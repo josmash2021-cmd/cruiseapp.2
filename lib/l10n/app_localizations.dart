@@ -831,6 +831,7 @@ class S {
       : 'Tap GO to find trips nearby';
   String get today => _es ? 'Hoy' : 'Today';
   String get weekLabel => _es ? 'Semana' : 'Week';
+  String get monthLabel => _es ? 'Mes' : 'Month';
   String get seeMore => _es ? 'Ver más' : 'See more';
   String get tripsLabel => _es ? 'Viajes' : 'Trips';
   String get onlineLabel => _es ? 'En Línea' : 'Online';
@@ -840,6 +841,31 @@ class S {
   String get tripsToday => _es ? 'Viajes Hoy' : 'Trips Today';
   String get hoursOnline => _es ? 'Horas en Línea' : 'Hours Online';
   String get findingTrips => _es ? 'Buscando viajes' : 'Finding trips';
+  String get youreOnlineStatus => _es ? 'Estás en línea' : "You're online";
+  String get safetyHub => _es ? 'Seguridad' : 'Safety';
+  String get reservedLabel => _es ? 'Reservas' : 'Reserved';
+  String get noScheduledNearby =>
+      _es ? 'No hay viajes programados' : 'No scheduled trips';
+  String get noScheduledNearbySub => _es
+      ? 'Aparecerán aquí cuando alguien reserve cerca de ti'
+      : 'They show up here when someone books near you';
+  /// Subtitle for the other half of the same card — when there *are* rides.
+  /// [noScheduledNearbySub] was shown in both states, so a driver looking at
+  /// "3 viajes reservados" was told underneath that they would appear when
+  /// someone booked one.
+  String get scheduledNearbySub => _es
+      ? 'Elige el que te quede de camino'
+      : 'Pick the one that fits your route';
+  String get scheduledNearbyCount =>
+      _es ? 'viajes reservados' : 'rides reserved';
+  String get scheduledNearbyCountOne =>
+      _es ? 'viaje reservado' : 'ride reserved';
+  String get viewAllScheduled => _es ? 'Ver todos' : 'View all';
+  /// Shown when the claim is refused because the pickup is in another state.
+  /// The backend sends this reason in English; the driver reads it here.
+  String get scheduledOutOfState => _es
+      ? 'Esta reserva es de otro estado. Solo puedes aceptar reservas del estado donde estás activo.'
+      : 'This reservation is in another state. You can only take reservations in the state you are active in.';
   String get tripRequest => _es ? 'Solicitud de Viaje' : 'Trip Request';
   String get accept => _es ? 'Aceptar' : 'Accept';
   String get decline => _es ? 'Rechazar' : 'Decline';

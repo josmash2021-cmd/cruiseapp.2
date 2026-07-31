@@ -420,13 +420,29 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                   if (_ctrl.state.routeFetchFailed && displayOptions.isEmpty)
                     _buildRouteFailedRetry()
                   else if (displayOptions.isEmpty)
-                    Row(
-                      children: [
-                        for (int i = 0; i < 3; i++) ...[
-                          Expanded(child: _buildShimmerCardGrid()),
-                          if (i < 2) const SizedBox(width: 8),
-                        ],
-                      ],
+                    // Same count and same size as the row it stands in for.
+                    //
+                    // It was three cards of 120 px while the real row is
+                    // four of 91, so the moment the fares landed the sheet
+                    // changed both how many cards it had and how tall they
+                    // were — a jump exactly where the rider is looking.
+                    LayoutBuilder(
+                      builder: (context, box) {
+                        const gap = 8.0;
+                        const n = 4;
+                        final each = (box.maxWidth - gap * (n - 1)) / n;
+                        final cardH = (each * 1.10).clamp(84.0, 120.0);
+                        return Row(
+                          children: [
+                            for (int i = 0; i < n; i++) ...[
+                              Expanded(
+                                  child:
+                                      _buildShimmerCardGrid(height: cardH)),
+                              if (i < n - 1) const SizedBox(width: gap),
+                            ],
+                          ],
+                        );
+                      },
                     )
                   else
                     // One row that reshapes, not two views that swap.
@@ -465,6 +481,13 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                             final each = n > 0
                                 ? (full - gap * (n - 1)) / n
                                 : full;
+                            // Height follows width, so the card keeps its
+                            // shape as tiers are added. Held at a fixed 120
+                            // it went from nearly square at three tiers to
+                            // tall and narrow at four — the card looked
+                            // stretched, which is the one thing it must not
+                            // look. Capped so three tiers keep today's size.
+                            final cardH = (each * 1.10).clamp(84.0, 120.0);
                             final selIdx = option == null
                                 ? -1
                                 : displayOptions
@@ -482,11 +505,60 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                                           HapticService.selectionClick();
                                           _setState(() => _gridExpanded = !_gridExpanded);
                                         },
-                                        child: t > 0.5
-                                            ? _buildRideHorizontalCard(
-                                                c, displayOptions[i])
-                                            : _buildRideOptionCardGrid(
-                                                c, displayOptions[i], true),
+                                        // The two layouts cross-fade, and the
+                                        // height eases between them.
+                                        //
+                                        // This used to be a bare ternary on
+                                        // t > 0.5, so halfway through an
+                                        // otherwise smooth 680 ms slide the
+                                        // card's contents were replaced in a
+                                        // single frame — and its height
+                                        // jumped with them. Going back it was
+                                        // worse: the big "5 - 20 min" on the
+                                        // right vanished mid-travel. The
+                                        // width was always animating; it was
+                                        // everything else that snapped.
+                                        child: AnimatedSize(
+                                          duration:
+                                              const Duration(milliseconds: 680),
+                                          curve:
+                                              Curves.easeInOutCubicEmphasized,
+                                          alignment: Alignment.topCenter,
+                                          child: AnimatedSwitcher(
+                                            duration: const Duration(
+                                                milliseconds: 300),
+                                            switchInCurve: Curves.easeOut,
+                                            switchOutCurve: Curves.easeIn,
+                                            // Stacked, so the outgoing layout
+                                            // keeps its place while it fades
+                                            // instead of collapsing and
+                                            // shoving the incoming one.
+                                            layoutBuilder: (current, previous) =>
+                                                Stack(
+                                              alignment: Alignment.topLeft,
+                                              children: [
+                                                ...previous,
+                                                if (current != null) current,
+                                              ],
+                                            ),
+                                            child: t > 0.5
+                                                ? KeyedSubtree(
+                                                    key: const ValueKey('wide'),
+                                                    child:
+                                                        _buildRideHorizontalCard(
+                                                            c,
+                                                            displayOptions[i]),
+                                                  )
+                                                : KeyedSubtree(
+                                                    key: const ValueKey('tile'),
+                                                    child:
+                                                        _buildRideOptionCardGrid(
+                                                            c,
+                                                            displayOptions[i],
+                                                            height: cardH),
+                                                  ),
+                                          ),
+                                        ),
                                       ),
                                     )
                                   else
@@ -520,8 +592,7 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                                               child: _buildRideOptionCardGrid(
                                                 c,
                                                 displayOptions[i],
-                                                option?.id ==
-                                                    displayOptions[i].id,
+                                                height: cardH,
                                               ),
                                             ),
                                           ),
@@ -1067,118 +1138,25 @@ extension _RideRequestWidgets on _RideRequestScreenState {
           ),
           const SizedBox(width: 12),
 
-          // ── Center: the three sunken stat chips.
+          // ── Right: the wait, pushed to the far edge.
+          //
+          // The price used to sit out here, beside the same figure the panel
+          // directly below already spells out — the same number twice on one
+          // screen, in two type sizes. It stays in the panel with the miles,
+          // the minutes and the seats. This side carries the one thing the
+          // rider cannot work out for themselves: whether anyone is coming,
+          // and roughly how soon.
           Expanded(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // Wrap, not Row: three chips beside an 84px car and a
-                // $126.42 price do not fit one line on a 320pt screen, and
-                // a Row would throw a RenderFlex overflow there. They stay
-                // on one line wherever there is room.
-                // The space that opens beside the tier.
-                //
-                // The name and the car stay exactly where they were; this is
-                // the room that appears next to them, carrying the one thing
-                // the rider cannot work out for themselves — whether anyone
-                // is coming, and roughly how soon. The minutes, miles and
-                // seats that used to sit here moved to the panel below,
-                // which now shows in both states rather than only while the
-                // picker is open.
-                _buildWaitEstimate(),
-              ],
+            child: Align(
+              // Centred in the room to the right of the car, not shoved
+              // against the card's edge.
+              //
+              // Hard right put "5 - 20 min" at 19 px flush with the padding,
+              // where it read as clipped and had nowhere to go if the range
+              // ever ran wider. Centring gives it air on both sides and
+              // keeps it clear of the tier name on the left.
+              child: _buildWaitEstimate(),
             ),
-          ),
-          const SizedBox(width: 10),
-
-          // ── Right: price (with crossed-out original when 10% promo or
-          // when Cruise Cash is being applied).
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            mainAxisAlignment: MainAxisAlignment.center,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (promoOn || hasCC) ...[
-                Text(
-                  oldPriceText,
-                  style: TextStyle(
-                    fontFamily: 'Poppins',
-                    color: Colors.white.withValues(alpha: 0.45),
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    decoration: TextDecoration.lineThrough,
-                    decorationColor: Colors.white.withValues(alpha: 0.45),
-                    decorationThickness: 1.5,
-                    height: 1.0,
-                  ),
-                ),
-                const SizedBox(height: 2),
-              ],
-              Text(
-                priceText,
-                style: TextStyle(
-                  fontFamily: 'Poppins',
-                  color: (promoOn || hasCC)
-                      ? const Color(0xFFE8C547)
-                      : Colors.white,
-                  fontSize: 20,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: -0.4,
-                ),
-              ),
-              if (promoOn) ...[
-                const SizedBox(height: 3),
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFE8C547).withValues(alpha: 0.15),
-                    borderRadius: BorderRadius.circular(4),
-                    border: Border.all(
-                      color: const Color(0xFFE8C547).withValues(alpha: 0.5),
-                      width: 0.8,
-                    ),
-                  ),
-                  child: const Text(
-                    '10% OFF',
-                    style: TextStyle(
-                      fontFamily: 'Poppins',
-                      color: Color(0xFFE8C547),
-                      fontSize: 8,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: 0.5,
-                    ),
-                  ),
-                ),
-              ],
-              if (hasCC) ...[
-                const SizedBox(height: 3),
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFE8C547).withValues(alpha: 0.15),
-                    borderRadius: BorderRadius.circular(4),
-                    border: Border.all(
-                      color: const Color(0xFFE8C547).withValues(alpha: 0.5),
-                      width: 0.8,
-                    ),
-                  ),
-                  child: Text(
-                    '−\$${ccApplied.toStringAsFixed(2)} CRUISE CASH',
-                    style: const TextStyle(
-                      fontFamily: 'Poppins',
-                      color: Color(0xFFE8C547),
-                      fontSize: 8,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: 0.5,
-                    ),
-                  ),
-                ),
-              ],
-            ],
           ),
         ],
       ),
@@ -1246,7 +1224,15 @@ extension _RideRequestWidgets on _RideRequestScreenState {
 
   // Grid card - 1:1 match with web design (3 columns)
   // Web CSS: .vipRide__rideCard grid version
-  Widget _buildRideOptionCardGrid(AppColors c, RideOption opt, bool selected) {
+  /// One tile in the four-up grid.
+  ///
+  /// Every tile looks the same, including the one currently chosen: no gold
+  /// border, no sunken well. Picking a tier is answered by the row itself —
+  /// the chosen card opens to full width and the others close — so marking
+  /// it as well said the same thing twice and made one card look like it
+  /// belonged to a different set.
+  Widget _buildRideOptionCardGrid(AppColors c, RideOption opt,
+      {double height = 120}) {
     final isSuv = opt.id == 'suburban';
     final isFusion = opt.id == 'fusion';
     final isSuvXl = opt.id == 'suv_xl';
@@ -1260,25 +1246,28 @@ extension _RideRequestWidgets on _RideRequestScreenState {
     // Same visual rhythm as the home fleet cards: name on top, car right
     // below it with a fixed height, comfortable padding all around — no
     // Expanded/Spacer, so there's no empty band in the middle.
+    // Everything inside shrinks with the card, so four tiers read as four
+    // smaller cards rather than four squeezed ones. Text has a floor —
+    // scaling a 13 px label by 0.75 gives 9 px, which is not a smaller
+    // label, it is an unreadable one.
+    final s = (height / 120).clamp(0.70, 1.0);
+    final pad = 10 * s;
+    final carH = 46 * s;
+    final nameSize = math.max(10.0, Responsive.vehicleNameSize * s);
+    final waitSize = math.max(10.0, 11 * s);
+
     return Container(
-      // 10 top + name 17 + 8 gap + car 46 + 5 gap + wait 13 + 10 bottom.
-      //
-      // Every value here is spent twice — the sheet is capped at 40% of the
-      // screen, so what the card takes, the map does not get. Trimmed to
-      // fit inside that ceiling without the sheet needing to scroll on a
-      // normal handset.
-      height: 120,
+      // Height comes from the caller, which derives it from how wide the
+      // card ended up — see the cardH above. Every value here is spent
+      // twice: the sheet is capped at 40% of the screen, so what the card
+      // takes, the map does not get.
+      height: height,
       clipBehavior: Clip.antiAlias,
-      decoration: selected
-          ? neuBox(
-              radius: 24,
-              pressed: true,
-              borderColor: const Color(0xFFE8C547).withValues(alpha: 0.45),
-            )
-          : neuBox(radius: 24),
+      decoration: neuBox(radius: 24),
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(8, 10, 8, 10),
+        padding: EdgeInsets.fromLTRB(8 * s, pad, 8 * s, pad),
         child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
             // Vehicle name on top — home screen style.
             //
@@ -1295,33 +1284,42 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                 style: TextStyle(
                   fontFamily: 'Poppins',
                   color: Colors.white,
-                  fontSize: Responsive.vehicleNameSize,
+                  fontSize: nameSize,
                   fontWeight: FontWeight.w800,
                   letterSpacing: 0.5,
                 ),
               ),
             ),
-            const SizedBox(height: 8),
+            SizedBox(height: 8 * s),
             // Car render, centered. Shorter than the home fleet cards on
             // purpose: this sheet competes with the map for the screen.
+            // Inset a little, so the car does not run edge to edge.
+            //
+            // Trimming the box height would do nothing: the render is 2.7
+            // times wider than it is tall, so inside a card this narrow it
+            // is the width that decides how big the car comes out, and
+            // there is already spare height above and below it.
             SizedBox(
-              height: 46,
+              height: carH,
               width: double.infinity,
-              child: CarImage3D(
-                assetPath: carAsset,
-                cacheWidth: 640,
-                alignment: Alignment.center,
-                fallback: Icon(
-                  Icons.directions_car_rounded,
-                  color: const Color(0xFFE8C547).withValues(alpha: 0.5),
-                  size: 40,
+              child: FractionallySizedBox(
+                widthFactor: 0.88,
+                child: CarImage3D(
+                  assetPath: carAsset,
+                  cacheWidth: 640,
+                  alignment: Alignment.center,
+                  fallback: Icon(
+                    Icons.directions_car_rounded,
+                    color: const Color(0xFFE8C547).withValues(alpha: 0.5),
+                    size: 40,
+                  ),
                 ),
               ),
             ),
             // The wait, under the car. Just the range — the same figure the
             // expanded card spells out in full, so the rider sees the same
             // number before and after choosing.
-            const SizedBox(height: 5),
+            SizedBox(height: 5 * s),
             Text(
               _gridWaitRangeText(),
               textAlign: TextAlign.center,
@@ -1330,7 +1328,7 @@ extension _RideRequestWidgets on _RideRequestScreenState {
               style: TextStyle(
                 fontFamily: 'Poppins',
                 color: Colors.white.withValues(alpha: 0.55),
-                fontSize: 11,
+                fontSize: waitSize,
                 fontWeight: FontWeight.w700,
                 letterSpacing: 0.2,
               ),
@@ -1348,17 +1346,34 @@ extension _RideRequestWidgets on _RideRequestScreenState {
     final pickup = _ctrl.state.pickup;
     if (pickup == null) return '';
     final est = DriverWaitEstimate.cached(pickup.lat, pickup.lng);
-    if (est == null) return '';
+    if (est == null) {
+      // Nothing cached yet — so ask.
+      //
+      // This used to return blank and stop there, waiting for a value that
+      // nothing was going to fetch. The expanded card asks (it is built on
+      // a FutureBuilder), so the minutes turned up only after opening a
+      // card; the four tiles sat with an empty line under the car, and if
+      // the rider set a pickup away from where they were standing, nothing
+      // had ever asked for that point and the line stayed empty for good.
+      //
+      // The request is shared and cached, so four tiles cause one call.
+      unawaited(
+        DriverWaitEstimate.fetch(lat: pickup.lat, lng: pickup.lng).then((_) {
+          _setState(() {});
+        }),
+      );
+      return '';
+    }
     if (est.driverCount == 0) return S.of(context).noDriversAvailable;
     return '${est.minMinutes}-${est.maxMinutes} min';
   }
 
   // Shimmer card for grid loading state - web style
-  Widget _buildShimmerCardGrid() {
+  Widget _buildShimmerCardGrid({double height = 120}) {
     return Container(
-      // Matches the real card, or the sheet visibly jumps taller the
-      // moment the fares land and the skeletons are replaced.
-      height: 120,
+      // Matches the real card, or the sheet visibly jumps the moment the
+      // fares land and the skeletons are replaced.
+      height: height,
       decoration: BoxDecoration(
         gradient: const LinearGradient(
           begin: Alignment.topLeft,
@@ -1834,13 +1849,17 @@ extension _RideRequestWidgets on _RideRequestScreenState {
           ),
           child: Column(
             key: ValueKey('wait_${none}_$text'),
-            crossAxisAlignment: CrossAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.center,
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(
+              // Shrinks rather than ellipsing. "No drivers available" is a
+              // sentence, not a number — cut to "No drivers av…" it stops
+              // being an answer at all.
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
                 text,
                 maxLines: 1,
-                overflow: TextOverflow.ellipsis,
                 style: TextStyle(
                   fontFamily: 'Poppins',
                   color: none ? const Color(0xFFEF9A9A) : Colors.white,
@@ -1848,6 +1867,7 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                   fontWeight: FontWeight.w800,
                   letterSpacing: -0.4,
                   height: 1.1,
+                ),
                 ),
               ),
               if (!none) ...[

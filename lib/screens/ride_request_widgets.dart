@@ -208,11 +208,18 @@ extension _RideRequestWidgets on _RideRequestScreenState {
           .toList();
     }
 
-    // NOTE: We intentionally do NOT generate fake fallback options when
-    // displayOptions is empty. The grid below already renders shimmer
-    // skeleton cards while the backend calculates fares, and a retry
-    // widget if the fetch fails. Hardcoded prices would be dangerous in
-    // production because the rider could book at an incorrect rate.
+    // Still no fabricated prices — but the sheet is never empty either.
+    //
+    // A booking sheet with nothing in it reads as broken however it got that
+    // way: no route, no pickup, a fare call still in flight. The four tiers
+    // are known without any of that, so they are drawn regardless, and the
+    // one thing that cannot be known — the money — is left as a dash.
+    //
+    // The old rule stands and is what makes this safe: a price of zero is
+    // never printed as a price, and Request Ride is disabled until real
+    // fares land, so nobody can book at a rate the app made up.
+    final bool faresReady = displayOptions.isNotEmpty;
+    if (!faresReady) displayOptions = _placeholderTiers();
 
     final option = widget.fastRide
         ? (displayOptions.isNotEmpty ? displayOptions.first : s.selectedOption)
@@ -417,46 +424,18 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                   // selected card to expand again, show all 3 cards. After a
                   // pick, collapse to ONLY the chosen card so the bottom
                   // sheet feels lighter and the focus stays on the choice.
-                  if (_ctrl.state.routeFetchFailed && displayOptions.isEmpty)
-                    _buildRouteFailedRetry()
-                  // An endpoint is missing, and no amount of waiting fixes it.
+                  // The cards are always drawn. Nothing replaces them.
                   //
-                  // _tryFetchRoute() returns on its first line when either
-                  // pickup or dropoff is null, so rideOptions is never filled
-                  // and the shimmer below runs for ever. Shimmering for ever
-                  // is indistinguishable from being broken — worse, at 7%
-                  // white on this panel it is indistinguishable from being
-                  // empty. Say which end is missing and offer the way back.
-                  else if (displayOptions.isEmpty &&
-                      (_ctrl.state.pickup == null ||
-                          _ctrl.state.dropoff == null))
-                    _buildMissingEndpointNotice()
-                  else if (displayOptions.isEmpty)
-                    // Same count and same size as the row it stands in for.
-                    //
-                    // It was three cards of 120 px while the real row is
-                    // four of 91, so the moment the fares landed the sheet
-                    // changed both how many cards it had and how tall they
-                    // were — a jump exactly where the rider is looking.
-                    LayoutBuilder(
-                      builder: (context, box) {
-                        const gap = 8.0;
-                        const n = 4;
-                        final each = (box.maxWidth - gap * (n - 1)) / n;
-                        final cardH = (each * 1.10).clamp(84.0, 120.0);
-                        return Row(
-                          children: [
-                            for (int i = 0; i < n; i++) ...[
-                              Expanded(
-                                  child:
-                                      _buildShimmerCardGrid(height: cardH)),
-                              if (i < n - 1) const SizedBox(width: gap),
-                            ],
-                          ],
-                        );
-                      },
-                    )
-                  else
+                  // A failed route, a missing endpoint and a fare call still
+                  // in flight used to each swap the row for something else,
+                  // and all three read to the rider as the app being broken.
+                  // The tiers are known without any of it, so they stay, the
+                  // money shows as a dash, and Request Ride carries the fact
+                  // that nothing can be booked yet.
+                  //
+                  // A missing endpoint is still worth a word, since waiting
+                  // will not fix it — it goes under the cards now instead of
+                  // in place of them.
                     // One row that reshapes, not two views that swap.
                     //
                     // It used to crossfade between "three cards" and "one
@@ -644,6 +623,20 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                       },
                     ),
 
+                  // Under the cards, not instead of them.
+                  //
+                  // Only when an endpoint is missing, because that is the one
+                  // state waiting cannot resolve: the fares are computed from
+                  // the two ends, so with one absent there is nothing on its
+                  // way. A fare call still in flight says nothing here — the
+                  // dashes already say it, and they go away on their own.
+                  if (!faresReady &&
+                      (_ctrl.state.pickup == null ||
+                          _ctrl.state.dropoff == null)) ...[
+                    const SizedBox(height: 10),
+                    _buildMissingEndpointNotice(),
+                  ],
+
                   // .vipRide__rideDetail — appears only when the rider
                   // re-expanded the grid (so they can compare detail
                   // while picking). In collapsed mode the horizontal
@@ -688,9 +681,14 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                         // count (the server did not answer) leaves the
                         // button live, because a network hiccup is not the
                         // same as an empty city.
+                        // And not before the fares are real. The cards are
+                        // drawn from placeholders when the route has not
+                        // produced any, so without this the rider could send
+                        // a request against a tier priced at nothing.
                         enabled: !_isProcessingPayment &&
                             _hasAnyPaymentMethod &&
-                            !_noDriversNearby,
+                            !_noDriversNearby &&
+                            faresReady,
                         isLoading: _isProcessingPayment,
                         // "Reserve Now" for both scheduled rides AND
                         // airport bookings (both go through pre-pickup
@@ -1121,8 +1119,12 @@ extension _RideRequestWidgets on _RideRequestScreenState {
         .clamp(0.0, promoPrice);
     final bool hasCC = ccApplied > 0;
     final double finalPrice = (promoPrice - ccApplied).clamp(0.0, double.infinity);
-    final String priceText = '\$${finalPrice.toStringAsFixed(2)}';
-    final String oldPriceText = '\$${basePrice.toStringAsFixed(2)}';
+    // Zero means the fares have not landed. A dash, never "$0.00".
+    final bool priceKnown = basePrice > 0;
+    final String priceText =
+        priceKnown ? '\$${finalPrice.toStringAsFixed(2)}' : '—';
+    final String oldPriceText =
+        priceKnown ? '\$${basePrice.toStringAsFixed(2)}' : '—';
 
     return Container(
       key: ValueKey('horizontal_${opt.id}'),
@@ -1245,7 +1247,9 @@ extension _RideRequestWidgets on _RideRequestScreenState {
               // .vipRide__rideDetail__price: clamp(18,5vw,22)
               // weight 800 color #fff.
               Text(
-                '\$${opt.priceEstimate.toStringAsFixed(2)}',
+                opt.priceEstimate > 0
+                    ? '\$${opt.priceEstimate.toStringAsFixed(2)}'
+                    : '—',
                 style: const TextStyle(
                   fontFamily: 'Poppins',
                   color: Colors.white,
@@ -1770,7 +1774,9 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                   _buildPriceShimmer(width: 54, height: 18)
                 else
                   Text(
-                    '\$${opt.priceEstimate.toStringAsFixed(2)}',
+                    opt.priceEstimate > 0
+                    ? '\$${opt.priceEstimate.toStringAsFixed(2)}'
+                    : '—',
                     style: TextStyle(
                       fontSize: 15,
                       fontWeight: FontWeight.w900,
@@ -2098,6 +2104,51 @@ extension _RideRequestWidgets on _RideRequestScreenState {
       },
     );
   }
+
+  /// The four tiers with everything the route decides left out.
+  ///
+  /// Ids and names match what [_generateRideOptions] builds, because the same
+  /// card widgets read them to pick the badge, the label and the car. A price
+  /// of zero is the signal for "not known yet" — every place that prints money
+  /// checks for it and prints a dash instead.
+  List<RideOption> _placeholderTiers() => const [
+        RideOption(
+          id: 'suburban',
+          name: 'VIP',
+          description: 'Spacious • Leather • Snacks & Drinks',
+          priceEstimate: 0,
+          etaMinutes: 0,
+          icon: '🚐',
+          capacity: 7,
+        ),
+        RideOption(
+          id: 'suv_xl',
+          name: 'SUV XL',
+          description: 'Up to 6 • XL luggage • Climate',
+          priceEstimate: 0,
+          etaMinutes: 0,
+          icon: '🚙',
+          capacity: 6,
+        ),
+        RideOption(
+          id: 'camry',
+          name: 'Sedan',
+          description: 'Comfort • Climate • Charger',
+          priceEstimate: 0,
+          etaMinutes: 0,
+          icon: '🚙',
+          capacity: 4,
+        ),
+        RideOption(
+          id: 'fusion',
+          name: 'Comfort',
+          description: 'Clean • Safe • Efficient',
+          priceEstimate: 0,
+          etaMinutes: 0,
+          icon: '🚗',
+          capacity: 4,
+        ),
+      ];
 
   /// Why the sheet has no cards, when waiting cannot produce any.
   ///

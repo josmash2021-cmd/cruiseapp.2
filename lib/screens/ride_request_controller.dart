@@ -292,6 +292,34 @@ extension _RideRequestController on _RideRequestScreenState {
 
   Future<void> _initLocation() async {
     try {
+      // The empty booking sheet starts here.
+      //
+      // On web the permission dance never resolves: requestPermission() is a
+      // getCurrentPosition with a one-day timeout, so ignoring the browser
+      // prompt leaves the future hanging and _userLocation null for good.
+      //
+      // Null there is not cosmetic. _userLocation is the only source a pickup
+      // ever gets when the rider did not search one by name, and
+      // _tryFetchRoute() returns early on `pickup == null` — so rideOptions is
+      // never filled and the sheet keeps its four shimmer cards forever.
+      // "Choose a vehicle" over what reads as an empty panel, no way forward.
+      //
+      // Same downtown Birmingham seed the driver screens already use.
+      if (kIsWeb) {
+        const seed = LatLng(33.5186, -86.8104);
+        _setState(() {
+          _userLocation = seed;
+          _center = seed;
+          _fetchingLocation = false;
+        });
+        _mapCtrl?.setCamera(mapbox.CameraOptions(
+          center: mapbox.Point(
+            coordinates: mapbox.Position(seed.longitude, seed.latitude),
+          ),
+          zoom: 15.5,
+        ));
+        return;
+      }
       bool svc = await Geolocator.isLocationServiceEnabled();
       if (!svc) {
         _setState(() => _fetchingLocation = false);

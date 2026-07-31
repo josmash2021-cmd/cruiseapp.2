@@ -3675,8 +3675,24 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     await MapSurfaceCoordinator.instance.acquire(
       owner: _kHomeMapSurfaceOwner,
       onRevoke: () async {
-        if (!mounted || _mapSuspended) return;
-        _suspendMap();
+        // Confirm the teardown even when the flag is already down.
+        //
+        // `_mapSuspended` is set by setState, which only schedules the
+        // rebuild — the element unmounts a frame later and the PlatformView
+        // is disposed over the channel after that. So a revoke arriving in
+        // that window saw the flag already true and returned instantly,
+        // telling the coordinator the surface was free while the native view
+        // was still being torn down. The incoming screen then mounts the
+        // second one, and two live surfaces close the app on iOS.
+        //
+        // The window is small and needs a revoke to land inside it, which is
+        // exactly what going online does: it suspends this map and claims
+        // the surface in the same handful of frames.
+        //
+        // surfaceRemoved() costs about two frames and races a timer, so
+        // waiting here cannot hang the handoff.
+        if (!mounted) return;
+        if (!_mapSuspended) _suspendMap();
         await surfaceRemoved();
       },
     );

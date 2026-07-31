@@ -485,8 +485,9 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                             // finite to keep the cards on screen.
                             final raw = box.maxWidth;
                             final full = (raw.isFinite && raw > 0) ? raw : 360.0;
-                            debugPrint(
-                                '[Sheet] row n=$n raw=$raw full=$full t=$t');
+                            debugPrint('[Sheet] row n=$n raw=$raw full=$full '
+                                't=$t maxH=${box.maxHeight} '
+                                'minH=${box.minHeight}');
                             // Width of one card when all of them are shown.
                             final each = n > 0
                                 ? (full - gap * (n - 1)) / n
@@ -526,7 +527,29 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                             // booking sheet is the whole screen.
                             final tt = selIdx < 0 ? 0.0 : t;
 
-                            return Row(
+                            // Bounded height, or nothing here gets painted.
+                            //
+                            // This builder is handed maxHeight: Infinity, and
+                            // each card sits in an OverflowBox, which takes
+                            // the largest size its constraints allow — so it
+                            // asked to be infinitely tall. A RenderBox cannot
+                            // have an infinite size, layout threw, and Flutter
+                            // left the whole row blank while the heading above
+                            // it drew normally.
+                            //
+                            // The cards were built the entire time. Their
+                            // build-time logs fired with the right names and
+                            // the right 95.7 px height; it was the layout pass
+                            // after that died, which is why the sheet looked
+                            // like it had no data when it had all of it.
+                            //
+                            // cardH is what the cards are already sized to, so
+                            // giving the row that height changes nothing about
+                            // how it looks — it only stops the constraint from
+                            // being unbounded.
+                            return SizedBox(
+                              height: cardH,
+                              child: Row(
                               children: [
                                 for (int i = 0; i < n; i++) ...[
                                   if (i == selIdx)
@@ -636,6 +659,7 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                                     SizedBox(width: ui.lerpDouble(gap, 0, tt)!),
                                 ],
                               ],
+                              ),
                             );
                           },
                         );
@@ -1316,6 +1340,8 @@ extension _RideRequestWidgets on _RideRequestScreenState {
     final carH = 46 * s;
     final nameSize = math.max(10.0, Responsive.vehicleNameSize * s);
     final waitSize = math.max(10.0, 11 * s);
+    debugPrint('[Sheet] card ${opt.id} name=$displayName h=$height s=$s '
+        'nameSize=$nameSize asset=$carAsset');
 
     return Container(
       // Height comes from the caller, which derives it from how wide the

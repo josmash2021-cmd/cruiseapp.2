@@ -2712,28 +2712,22 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
           return ClipRRect(
             borderRadius: BorderRadius.circular(radius),
             child: Stack(
+              // Without this the body never fills its own button.
+              //
+              // A Stack hands loose constraints to its non-positioned
+              // children, so the Container below sized itself to the Row
+              // inside it — measured, 74 x 14 inside the 74 x 74 disc and
+              // 182 x 56 inside a 360-wide bar — and sat in the top-left
+              // corner of the rest. Closed, that is a flattened sliver with
+              // GO in it and the radar circling something that is not there;
+              // open, it is a gold bar that stops two thirds of the way
+              // across. The two faults are the same fault.
+              //
+              // The Row below already says mainAxisAlignment.center, which
+              // only means anything in a box wider than the Row. This is
+              // what makes the box wider than the Row.
+              fit: StackFit.expand,
               children: [
-                // Radar sweep — only while the button is the round GO.
-                //
-                // Faded out by `morph` rather than switched off, so it thins
-                // away as the circle stretches into the pill instead of
-                // vanishing at some threshold mid-gesture. Rings on a pill
-                // read as a glitch; rings appearing and disappearing under
-                // the driver's thumb read as a worse one.
-                if (enabled && morph < 0.9)
-                  Positioned.fill(
-                    child: IgnorePointer(
-                      child: Opacity(
-                        opacity: (1 - morph).clamp(0.0, 1.0),
-                        child: CustomPaint(
-                          painter: _GoRadarPainter(
-                            progress: _radarCtrl.value,
-                            color: glowColor,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
                 Container(
                   padding: EdgeInsets.symmetric(
                     horizontal: ui.lerpDouble(0, 28, morph)!,
@@ -2742,6 +2736,23 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                   decoration: enabled
                       ? BoxDecoration(
                           borderRadius: BorderRadius.circular(radius),
+                          // The gold ring, which the disc was described as
+                          // having and never had.
+                          //
+                          // The body is near-black on purpose, so that the
+                          // word, the radar and the rim are the only gold in
+                          // it. But near-black on a dark map is a hole: what
+                          // reads as the button is then the lettering alone,
+                          // floating with rings around it. The rim is what
+                          // gives the disc an edge.
+                          //
+                          // Gone by the time it is the bar — a gold outline
+                          // on a gold body is either invisible or a seam.
+                          border: Border.all(
+                            color: _gold.withValues(
+                                alpha: 0.55 * (1 - morph).clamp(0.0, 1.0)),
+                            width: 1.5,
+                          ),
                           boxShadow: [
                             // Tight on the disc, softer on the bar. At the
                             // old 16-24 px blur a 74 px circle was more
@@ -2882,6 +2893,37 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                     ],
                   ),
                 ),
+                // Radar sweep — only while the button is the round GO.
+                //
+                // Painted after the body, not before it. Underneath, it was
+                // invisible from the moment the body started filling the disc
+                // the way it should: an opaque gradient covering the whole
+                // 74 px leaves nothing of a layer below it.
+                //
+                // Over the top it never reaches the word. The painter keeps
+                // its rings between 62% and 90% of the radius — outside the
+                // lettering, inside the rim — so there is no pass where a
+                // ring and the O are the same gold in the same place.
+                //
+                // Faded out by `morph` rather than switched off, so it thins
+                // away as the circle stretches into the pill instead of
+                // vanishing at some threshold mid-gesture. Rings on a pill
+                // read as a glitch; rings appearing and disappearing under
+                // the driver's thumb read as a worse one.
+                if (enabled && morph < 0.9)
+                  Positioned.fill(
+                    child: IgnorePointer(
+                      child: Opacity(
+                        opacity: (1 - morph).clamp(0.0, 1.0),
+                        child: CustomPaint(
+                          painter: _GoRadarPainter(
+                            progress: _radarCtrl.value,
+                            color: glowColor,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
               ],
             ),
           );

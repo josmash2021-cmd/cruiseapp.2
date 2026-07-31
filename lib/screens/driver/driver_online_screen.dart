@@ -335,6 +335,16 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
 
   // â”€â”€ Session â”€â”€
   double _earnings = 0;
+
+  /// Which local day [_earnings] belongs to, as yyyymmdd.
+  ///
+  /// Today's total is only ever allowed to climb, so that a fare added the
+  /// instant a trip ends is not wiped by the next poll arriving before the
+  /// server has counted it. That guard has no idea when the day ends, so at
+  /// midnight it kept yesterday's figure: the server started answering 0 for
+  /// today and 0 is never greater. Stamping the day is what tells the guard
+  /// the difference between "stale, ignore it" and "new day, start over".
+  int _earningsDay = 0;
   int _trips = 0;
   Duration _online = Duration.zero;
   Timer? _clock;

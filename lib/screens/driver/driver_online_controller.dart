@@ -146,12 +146,26 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     });
   }
 
+  /// The driver's current local day as yyyymmdd.
+  ///
+  /// Local, not UTC, and for the same reason the backend takes a tz_offset:
+  /// a UTC day starts at 6pm the evening before in Alabama, so a driver's
+  /// morning would land on the day before and "Today" would reset in the
+  /// middle of their afternoon.
+  int _localDayStamp() {
+    final n = DateTime.now();
+    return n.year * 10000 + n.month * 100 + n.day;
+  }
+
   /// Save current earnings snapshot to SharedPreferences for instant load next time.
   Future<void> _cacheEarnings() async {
     try {
       final prefs = (PrefsCache.instanceSync ?? await PrefsCache.instance);
       // Use same key as driver_home_screen for shared cache
       prefs.setDouble('driver_cached_earnings', _earnings);
+      // Which day that figure is from. A total without a date is only good
+      // until midnight, and this one was being read back for ever.
+      prefs.setInt('driver_cached_earnings_day', _localDayStamp());
       prefs.setDouble('driver_online_weekly', _weeklyEarnings);
       prefs.setDouble('driver_online_last_trip', _lastTripEarnings);
     } catch (_) {}
@@ -168,7 +182,14 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       double newEarnings = _earnings;
       double newWeekly = _weeklyEarnings;
       double newLastTrip = _lastTripEarnings;
-      if (_earnings == 0 && cachedToday != null && cachedToday > 0) {
+      // Only if the cache is from today. It is there so the card is not blank
+      // for the first second after a cold start, which is worth nothing at
+      // all if the number it shows belongs to a day that has ended.
+      final cachedDay = prefs.getInt('driver_cached_earnings_day');
+      if (_earnings == 0 &&
+          cachedToday != null &&
+          cachedToday > 0 &&
+          cachedDay == _localDayStamp()) {
         newEarnings = cachedToday; changed = true;
       }
       if (_weeklyEarnings == 0 && cachedWeekly != null && cachedWeekly > 0) {
@@ -249,7 +270,20 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
             _daySeriesLabels =
                 dayLabels.map((e) => e?.toString() ?? '').toList(growable: false);
           }
-          if (todayTotal > _earnings) {
+          // A new local day replaces the figure; the same day only raises it.
+          //
+          // Without the first branch the counters carried across midnight —
+          // yesterday's money still sitting under "Today", and the trip and
+          // hour counts with it — because the only way in was to be a bigger
+          // number than what was already there.
+          final today = _localDayStamp();
+          if (_earningsDay != today) {
+            _earningsDay = today;
+            _prevEarnings = _earnings;
+            _earnings = todayTotal;
+            _tripsToday = (todayData['trips_count'] as num?)?.toInt() ?? 0;
+            _hoursToday = (todayData['online_hours'] as num?)?.toDouble() ?? 0;
+          } else if (todayTotal > _earnings) {
             _prevEarnings = _earnings;
             _earnings = todayTotal;
           }

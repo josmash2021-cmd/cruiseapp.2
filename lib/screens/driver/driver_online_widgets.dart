@@ -1,5 +1,12 @@
 part of 'driver_online_screen.dart';
 
+/// Room above the week's bars for the amount that rides on each tip.
+///
+/// Top-level, not a static on the extension below: a class constant reached
+/// from inside a part file has failed the iOS build before, with the getter
+/// reported as undefined in a const expression.
+const double _kBarTipH = 13.0;
+
 // ══════════════════════════════════════════════════════════════
 //  WIDGETS — UI builders, panels, overlays, cards, sheets
 // ══════════════════════════════════════════════════════════════
@@ -3159,26 +3166,63 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
           // The axis draws even with no data — a floor of 3% on every bar,
           // so an empty day reads as "nothing yet" instead of as broken.
           SizedBox(
-            height: barH,
+            // The week keeps a band above the tallest bar for its amount.
+            // Taken out of the card rather than out of the bars, so adding
+            // the figures does not shorten the chart they sit on.
+            height: week ? barH + _kBarTipH : barH,
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
                 for (int i = 0; i < (week ? 7 : 24); i++) ...[
                   if (i > 0) SizedBox(width: week ? 7 : 2),
                   Expanded(
-                    child: Align(
-                      alignment: Alignment.bottomCenter,
-                      child: Container(
-                        width: week ? 10 : 4,
-                        height: barH *
-                            (i < values.length && peak > 0
-                                ? math.max(0.03, values[i] / peak)
-                                : 0.03),
-                        decoration: BoxDecoration(
-                          color: _gold.withValues(alpha: 0.5),
-                          borderRadius: BorderRadius.circular(2),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        // The amount, riding on the tip of its own bar.
+                        //
+                        // Only where there is money: a row of $0.00 under
+                        // every empty day is noise standing exactly where
+                        // the eye goes to compare the days that earned.
+                        //
+                        // Scaled down rather than clipped — seven columns on
+                        // a narrow phone leave about 40 px each, and a good
+                        // Saturday is wider than that.
+                        if (week)
+                          SizedBox(
+                            height: _kBarTipH,
+                            child: (i < values.length && values[i] > 0)
+                                ? FittedBox(
+                                    fit: BoxFit.scaleDown,
+                                    child: Text(
+                                      '\$${values[i].toStringAsFixed(2)}',
+                                      maxLines: 1,
+                                      style: TextStyle(
+                                        fontFamily: 'Poppins',
+                                        color: _gold.withValues(alpha: 0.85),
+                                        fontSize: 9,
+                                        fontWeight: FontWeight.w700,
+                                        fontFeatures: const [
+                                          ui.FontFeature.tabularFigures()
+                                        ],
+                                      ),
+                                    ),
+                                  )
+                                : null,
+                          ),
+                        Container(
+                          width: week ? 10 : 4,
+                          height: barH *
+                              (i < values.length && peak > 0
+                                  ? math.max(0.03, values[i] / peak)
+                                  : 0.03),
+                          decoration: BoxDecoration(
+                            color: _gold.withValues(alpha: 0.5),
+                            borderRadius: BorderRadius.circular(2),
+                          ),
                         ),
-                      ),
+                      ],
                     ),
                   ),
                 ],

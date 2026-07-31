@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:math';
 
-import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/foundation.dart';
 
@@ -98,7 +98,7 @@ class GpsService {
       }
     });
 
-    _setupPresence(driverId);
+    unawaited(_setupPresence(driverId));
     debugPrint('[GPS] Started: Socket.io 1s + RTDB 5s backup');
   }
 
@@ -308,6 +308,8 @@ class GpsService {
       'status': 'online',
     };
 
+    if (!await _ensureAuthenticated()) return;
+
     try {
       await _database.ref('driver_locations/$_activeDriverId').set(payload);
       await _database.ref('drivers/$_activeDriverId/location').set(payload);
@@ -323,25 +325,65 @@ class GpsService {
 
   // ── Presence (auto offline on disconnect) ───────────────────────────
 
-  void _setupPresence(String driverId) {
+  /// Set up the disconnect hooks that mark the driver offline.
+  ///
+  /// Every call here is fire-and-forget by nature — `onDisconnect` registers
+  /// an instruction with the server rather than returning a value — so each
+  /// one needs its own catch. Without them a rejected write became an
+  /// unhandled async error: `permission-denied` from
+  /// firebase_database_platform_interface, 45 of them across 1.0.9+513 and
+  /// +515 in Crashlytics, from the three lines below.
+  Future<void> _setupPresence(String driverId) async {
     if (_presenceSetUp) return;
+    if (!await _ensureAuthenticated()) return;
     _presenceSetUp = true;
 
     final connectedRef = _database.ref('.info/connected');
     _presenceSub = connectedRef.onValue.listen((event) {
-      if (event.snapshot.value == true) {
-        final liveRef = _database.ref('driver_locations/$driverId');
-        final legacyRef = _database.ref('drivers/$driverId/location');
-        // When this client disconnects, auto-set offline
-        liveRef.onDisconnect().remove();
-        legacyRef.onDisconnect().update({
-          'status': 'offline',
-          'timestamp': ServerValue.timestamp,
-        });
-        // Set online now
-        legacyRef.update({'status': 'online'});
-      }
+      if (event.snapshot.value != true) return;
+
+      final liveRef = _database.ref('driver_locations/$driverId');
+      final legacyRef = _database.ref('drivers/$driverId/location');
+
+      // When this client disconnects, auto-set offline.
+      liveRef.onDisconnect().remove().catchError(_onPresenceError);
+      legacyRef.onDisconnect().update({
+        'status': 'offline',
+        'timestamp': ServerValue.timestamp,
+      }).catchError(_onPresenceError);
+      // Set online now.
+      legacyRef.update({'status': 'online'}).catchError(_onPresenceError);
     });
+  }
+
+  void _onPresenceError(Object e) {
+    if (_isPermissionDenied(e)) {
+      debugPrint('[GPS] presence write denied — no Firebase session');
+      // The session went away after setup; let the next start rebuild it.
+      _presenceSetUp = false;
+      return;
+    }
+    debugPrint('[GPS] presence write failed: $e');
+  }
+
+  /// Guarantee a Firebase session before touching RTDB.
+  ///
+  /// Every path this service writes — `driver_locations/$id` and
+  /// `drivers/$id/location` — is gated on `auth != null` in
+  /// database.rules.json, and nothing here ever checked. The anonymous
+  /// session is created at startup, but a cold start races it and a token
+  /// refresh leaves a window with no user; the writes went out anyway and
+  /// came back denied. This is the same defence the Firestore screens
+  /// already apply, which RTDB never got.
+  Future<bool> _ensureAuthenticated() async {
+    if (FirebaseAuth.instance.currentUser != null) return true;
+    try {
+      await FirebaseAuth.instance.signInAnonymously();
+      return FirebaseAuth.instance.currentUser != null;
+    } catch (e) {
+      debugPrint('[GPS] anonymous sign-in failed: $e');
+      return false;
+    }
   }
 
   // ── Helpers ─────────────────────────────────────────────────────────

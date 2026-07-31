@@ -1134,8 +1134,18 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
 
   // ── Message loading & polling ───────────────────────────────────────
 
+  /// True while a poll is in flight, so two never overlap.
+  ///
+  /// The agent path sets _isAgentTyping, then awaits two to eight seconds of
+  /// "typing" before revealing the reply. The timer keeps firing during that
+  /// await, and the second poll took the default path and finished first —
+  /// which is the indicator that appears, vanishes, and comes back. One poll
+  /// at a time and it stops flapping.
+  bool _polling = false;
+
   Future<void> _loadMessages() async {
-    if (_chatId == null) return;
+    if (_chatId == null || _polling) return;
+    _polling = true;
     try {
       final msgs = await ApiService.getSupportMessages(_chatId!);
       if (!mounted) return;
@@ -1144,6 +1154,7 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
       final newMessages = msgs.map((m) {
         final role = m['sender_role'] ?? '';
         return _ChatMsg(
+          id: (m['id'] as num?)?.toInt(),
           text: m['message'] ?? '',
           role: role,
           time: DateTime.tryParse(m['created_at'] ?? '') ?? DateTime.now(),
@@ -1192,12 +1203,13 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
           if ((m.role == 'bot' || m.role == 'system') &&
               AiSupportService.isConnectingMessage(m.text)) {
             // Show the connecting message, then start queue
+            final stick = _atBottom();
             setState(() {
-              _messages.clear();
-              _messages.addAll(newMessages);
+              _mergeMessages(newMessages);
               _showQuickActions = false;
               _preQueueMsgCount = newMessages.length;
             });
+            if (stick) _scrollToBottom();
             _scrollToBottom();
             // Short delay then transition to queue
             await Future.delayed(const Duration(seconds: 2));
@@ -1241,25 +1253,25 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
           await Future.delayed(Duration(milliseconds: typingMs.clamp(2000, 8000)));
 
           if (!mounted) return;
+          final stick = _atBottom();
           setState(() {
             _isAgentTyping = false;
-            _messages.clear();
-            _messages.addAll(newMessages);
+            _mergeMessages(newMessages);
             if (_chatClosed) {
               _subtitle = S.of(context).chatClosed;
             } else if (_agentName != null) {
               _subtitle = '${_agentName!} · ${_isSpanish ? 'En línea' : 'Online'}';
             }
           });
-          _scrollToBottom();
+          if (stick) _scrollToBottom();
           return;
         }
       }
 
       // Default: just update messages
+      final stick = _atBottom();
       setState(() {
-        _messages.clear();
-        _messages.addAll(newMessages);
+        _mergeMessages(newMessages);
         _sending = false;
         if (_chatClosed) {
           _subtitle = S.of(context).chatClosed;
@@ -1267,7 +1279,7 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
           _subtitle = '${_agentName!} · ${_isSpanish ? 'En línea' : 'Online'}';
         }
       });
-      _scrollToBottom();
+      if (stick) _scrollToBottom();
     } catch (e) {
       debugPrint('[SupportChat] poll error: $e');
       _pollFailures++;
@@ -1276,6 +1288,11 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
         _pollFailures = 0;
         ApiService.probeAndSetBestUrl(timeout: const Duration(seconds: 6)).catchError((_) => null);
       }
+    } finally {
+      // finally, not the end of the body: this function returns early from
+      // half a dozen places, and a flag that only clears on the happy path
+      // would wedge polling shut the first time one of them fires.
+      _polling = false;
     }
   }
 
@@ -1685,6 +1702,50 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
           : 'Could not send the file. Please try again.'),
       backgroundColor: Colors.red,
     ));
+  }
+
+
+  /// Fold the server's list into the one on screen, keeping what matches.
+  ///
+  /// Every path used to do `_messages.clear()` then `addAll(newMessages)`,
+  /// on a poll that runs every couple of seconds. Three separate complaints
+  /// came out of that one line:
+  ///
+  ///   - the message you just sent disappeared and came back, because the
+  ///     local copy was thrown away before the server echoed it;
+  ///   - the whole list was rebuilt, so the scroll extent collapsed for a
+  ///     frame and the view jumped;
+  ///   - and once it jumped, _scrollToBottom's "did they scroll up?" guard
+  ///     saw the reader as having scrolled away and stopped following new
+  ///     messages at all. That is why it stuck at the top.
+  ///
+  /// Merging by key leaves untouched messages untouched, so Flutter has
+  /// nothing to rebuild and the position stays where it was.
+  void _mergeMessages(List<_ChatMsg> incoming) {
+    final seen = {for (final m in _messages) m.key};
+    // A local message the server has now confirmed: drop the local copy so
+    // the confirmed one takes its place with a real id.
+    final incomingText = {
+      for (final m in incoming) if (m.role == _userRole) 'local:${m.role}:${m.text}'
+    };
+    _messages.removeWhere((m) => m.id == null && incomingText.contains(m.key));
+    seen
+      ..clear()
+      ..addAll(_messages.map((m) => m.key));
+    for (final m in incoming) {
+      if (seen.add(m.key)) _messages.add(m);
+    }
+    _messages.sort((a, b) => a.time.compareTo(b.time));
+  }
+
+  /// Whether the reader is parked at the newest message.
+  ///
+  /// Asked BEFORE the list changes, not after. Afterwards the extent has
+  /// already moved and the answer is about a list that no longer exists.
+  bool _atBottom() {
+    if (!_scrollCtrl.hasClients) return true;
+    final pos = _scrollCtrl.position;
+    return pos.maxScrollExtent - pos.pixels <= 240;
   }
 
   void _scrollToBottom({bool force = false}) {
@@ -2617,16 +2678,28 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
 }
 
 class _ChatMsg {
+  /// The server's row id, or null while a message is only on this device.
+  ///
+  /// Without it there was no way to tell a message we already had from one
+  /// that just arrived, so every poll replaced the whole list — see the merge
+  /// in _pollMessages for what that cost.
+  final int? id;
   final String text;
   final String role; // rider, bot, system, dispatch
   final DateTime time;
   final String senderName;
   const _ChatMsg({
+    this.id,
     required this.text,
     required this.role,
     required this.time,
     this.senderName = '',
   });
+
+  /// Identity for merging. Falls back to content for messages this device
+  /// created a moment ago and the server has not echoed back yet, which is
+  /// what stops the sent message from vanishing and reappearing.
+  String get key => id != null ? 'id:$id' : 'local:$role:$text';
 }
 
 class _HelpCategory {

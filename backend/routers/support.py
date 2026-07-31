@@ -2291,16 +2291,21 @@ async def create_or_get_support_chat(request: Request, user: User = Depends(_get
     # shape of a phone tree. Someone writing in has a problem already; being
     # handed a directory first asks them to file it themselves.
     #
-    # So: a name, their name, and one plain sentence saying they can just say
-    # what happened. The examples stay because they set expectations about
-    # what this chat can actually settle — but as a sentence, not a menu, and
-    # they name outcomes (cancel, refund, a left-behind bag) rather than
-    # departments.
+    # So: their name, one plain sentence saying they can just say what
+    # happened, and what this chat can actually settle — as a sentence rather
+    # than a menu, naming outcomes (cancel, refund, a left-behind bag) instead
+    # of departments.
+    #
+    # It says "an automated system", not a first name. agent_name still exists
+    # and is still used further down, but opening with "I'm Isabella" is a
+    # machine claiming to be a person before it has done anything — and the
+    # header two lines above already reads "Automated system", so it was also
+    # contradicting itself on screen.
     first = (user.first_name or "").strip().split(" ")[0]
     if locale.startswith("es"):
         hello = f"Hola {first}" if first else "Hola"
         welcome_text = (
-            f"{hello}, soy {agent} de Cruise.\n\n"
+            f"{hello}, soy un sistema automatizado de Cruise.\n\n"
             "Cuenteme que paso y lo resolvemos ahora mismo. Puedo cancelar un "
             "viaje, revisar un cobro, tramitar un reembolso, ayudarle a "
             "recuperar algo que dejo en el carro, o reportar un problema con "
@@ -2310,7 +2315,7 @@ async def create_or_get_support_chat(request: Request, user: User = Depends(_get
     else:
         hello = f"Hi {first}" if first else "Hi"
         welcome_text = (
-            f"{hello}, I'm {agent} from Cruise.\n\n"
+            f"{hello}, I'm an automated system from Cruise.\n\n"
             "Tell me what happened and we'll sort it out. I can cancel a "
             "ride, look into a charge, start a refund, help you get back "
             "something you left in the car, or report a problem with the "

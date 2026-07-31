@@ -667,7 +667,7 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                       key: ValueKey('req_${option.id}'),
                       delayMs: 400,
                       child: _WebRequestButton(
-                        // Nobody within twenty miles means there is nothing
+                        // Nobody within fifteen miles means there is nothing
                         // to request. Better to show it disabled than to
                         // take the request and leave the rider watching a
                         // search that was never going to find anyone.

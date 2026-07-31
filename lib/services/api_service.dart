@@ -3042,6 +3042,43 @@ class ApiService {
     return 0;
   }
 
+  /// The drivers themselves, not just how many.
+  ///
+  /// Same endpoint and the same 15 s cache as [getNearbyDriversCount], so
+  /// asking for the list costs nothing extra when the count was already
+  /// fetched for the same point.
+  ///
+  /// Each entry carries `lat`/`lng`; `distance_km` is only there when the
+  /// answer came from Redis geo — the SQL fallback does not compute it — so
+  /// callers that need a distance have to be able to work it out themselves.
+  static Future<List<Map<String, dynamic>>> getNearbyDrivers({
+    required double lat,
+    required double lng,
+    double radiusKm = 15.0,
+  }) async {
+    try {
+      final h = await _authHeaders();
+      final res = await _cachedGet(
+        Uri.parse(
+          '$_baseUrl/drivers/nearby?lat=$lat&lng=$lng&radius_km=$radiusKm',
+        ),
+        headers: h,
+        cacheTtl: const Duration(seconds: 15),
+      );
+      if (res.statusCode >= 200 && res.statusCode < 300) {
+        final body = jsonDecode(res.body);
+        final list = body is List ? body : (body is Map ? body['drivers'] : null);
+        if (list is List) {
+          return list
+              .whereType<Map>()
+              .map((e) => e.cast<String, dynamic>())
+              .toList(growable: false);
+        }
+      }
+    } catch (_) {}
+    return const <Map<String, dynamic>>[];
+  }
+
   // ═══════════════════════════════════════════════════════
   //  VEHICLE  ENDPOINTS
   // ═══════════════════════════════════════════════════════

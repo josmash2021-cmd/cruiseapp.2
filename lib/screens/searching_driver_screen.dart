@@ -70,6 +70,7 @@ class _SearchingDriverScreenState extends State<SearchingDriverScreen>
   Timer? _paymentStartTimer;
   Timer? _declinedPopTimer;
   Timer? _searchTimeoutTimer; // Safety timeout to prevent getting stuck
+  Timer? _hardTimeoutTimer; // Pops even if the exit animations never finish
 
   // ── status text cycling ──
   // 0 = "Confirming your ride…" (briefly)
@@ -236,6 +237,26 @@ class _SearchingDriverScreenState extends State<SearchingDriverScreen>
         }
       },
     );
+
+    // A second timer that does not wait for anything.
+    //
+    // The graceful exit awaits two animations — the bar filling and the fade
+    // — and an awaited animation is only as reliable as its ticker. A
+    // backgrounded browser tab pauses tickers, so both awaits can sit there
+    // for as long as the tab is away and the screen never leaves, which is
+    // the one thing a timeout exists to prevent.
+    //
+    // One second past the visible cap, this pops outright. If the graceful
+    // path already ran, _popping is set and this does nothing.
+    _hardTimeoutTimer = Timer(
+      _visibleCap + const Duration(seconds: 1),
+      () {
+        if (!mounted || _popping) return;
+        debugPrint('[SearchingDriverScreen] hard cap — popping without waiting');
+        _popping = true;
+        Navigator.of(context).pop(false);
+      },
+    );
   }
 
   @override
@@ -245,6 +266,7 @@ class _SearchingDriverScreenState extends State<SearchingDriverScreen>
     _paymentStartTimer?.cancel();
     _declinedPopTimer?.cancel();
     _searchTimeoutTimer?.cancel();
+    _hardTimeoutTimer?.cancel();
     _radarCtrl.dispose();
     _glowCtrl.dispose();
     _particleCtrl.dispose();

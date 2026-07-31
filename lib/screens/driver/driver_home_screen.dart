@@ -1887,6 +1887,10 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     final week = _earningsWeekTab;
     final values = week ? _daySeries : _hourlySeries;
     final barH = Responsive.h(84);
+    // The band above the bars where the week's amounts sit. Reserved in the
+    // empty state too, or the chart grows by a line the moment data lands —
+    // which is the jump the empty axis below exists to avoid.
+    final tipH = week ? Responsive.sp(13) : 0.0;
 
     if (values.isEmpty) {
       // Draw the axis immediately, empty.
@@ -1902,11 +1906,11 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       // else. Nothing here claims an amount: an empty axis says "no numbers
       // yet", which is true, where "$0" would not be.
       return SizedBox(
-        height: barH + Responsive.h(6) + Responsive.sp(11),
+        height: barH + tipH + Responsive.h(6) + Responsive.sp(11),
         child: Column(
           children: [
             SizedBox(
-              height: barH,
+              height: barH + tipH,
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
@@ -1931,7 +1935,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     return Column(
       children: [
         SizedBox(
-          height: barH,
+          height: barH + tipH,
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
@@ -1945,13 +1949,52 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                 // fine on one device and collapses to nothing on another.
                 // barH is known right here, so the arithmetic is done here.
                 Expanded(
-                  // A floor of 3%, so an hour that earned nothing still
-                  // draws a baseline tick. Without it the axis has holes in
-                  // it and reads as broken rather than as empty.
-                  child: _chartBar(
-                    barH * (peak > 0 ? math.max(0.03, values[i] / peak) : 0.03),
-                    week,
-                    i == nowIdx,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      // The amount, riding on the tip of its own bar.
+                      //
+                      // Only on the week, and only where there is money: a
+                      // row of $0.00 under every empty day is noise standing
+                      // exactly where the eye goes to compare the days that
+                      // earned, and twenty-four hourly columns have no room
+                      // for a figure at all.
+                      //
+                      // Scaled down rather than clipped — seven columns on a
+                      // narrow phone leave about 40 px each, and a good
+                      // Saturday is wider than that.
+                      if (week)
+                        SizedBox(
+                          height: tipH,
+                          child: values[i] > 0
+                              ? FittedBox(
+                                  fit: BoxFit.scaleDown,
+                                  child: Text(
+                                    '\$${values[i].toStringAsFixed(2)}',
+                                    maxLines: 1,
+                                    style: TextStyle(
+                                      color: _gold.withValues(alpha: 0.85),
+                                      fontSize: Responsive.sp(9),
+                                      fontWeight: FontWeight.w700,
+                                      fontFeatures: const [
+                                        ui.FontFeature.tabularFigures()
+                                      ],
+                                    ),
+                                  ),
+                                )
+                              : null,
+                        ),
+                      // A floor of 3%, so an hour that earned nothing still
+                      // draws a baseline tick. Without it the axis has holes
+                      // in it and reads as broken rather than as empty.
+                      _chartBar(
+                        barH *
+                            (peak > 0 ? math.max(0.03, values[i] / peak) : 0.03),
+                        week,
+                        i == nowIdx,
+                      ),
+                    ],
                   ),
                 ),
               ],
@@ -2510,11 +2553,23 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
           Container(
             width: Responsive.w(48),
             height: Responsive.w(48),
+            // Round, with the same faint gold rim the online screen's side
+            // buttons carry.
+            //
             // Raised, not a sunken well: `pressed: true` paints neuPressed
             // (#101014), which next to the pill's neuSurface read as two
-            // black holes flanking a grey card. Same grey as every other
-            // raised surface, and as the online screen's side buttons.
-            decoration: neuBox(radius: 14),
+            // black holes flanking a grey card.
+            //
+            // These were rounded squares at radius 14 while going online
+            // swapped them for circles, so the two controls that never
+            // change what they do changed shape underneath the driver's
+            // thumb. Half the width is a circle, and the rim is the same
+            // 0xFFE8C547 at 18% that `_fab` uses over there — one family
+            // across both screens.
+            decoration: neuBox(
+              radius: Responsive.w(48) / 2,
+              borderColor: const Color(0xFFE8C547).withValues(alpha: 0.18),
+            ),
             child: Icon(icon, color: dc.text, size: Responsive.sp(22)),
           ),
           if (badge != null)

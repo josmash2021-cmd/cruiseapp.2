@@ -42,33 +42,41 @@ class _ScheduledRidesScreenState extends State<ScheduledRidesScreen>
 
   List<Map<String, dynamic>> _trips = [];
 
-  /// Drops the ones whose time came and went without anyone taking them.
+  /// Everything expired leaves; what is coming, and what is happening, stays.
   ///
-  /// Completed and cancelled rides never arrive here — the endpoint only
-  /// returns scheduled and in-flight statuses, so those two already leave this
-  /// page on their own and turn up under Your Trips.
+  /// An expired booking sat here wearing its badge for ever and could not be
+  /// removed either — the cancel button requires the ride to still be in the
+  /// future, so a past one was stuck on the list with no way out.
   ///
-  /// What was left behind is a third case: a booking that stayed `scheduled`
-  /// past its own time. It sat here wearing an "Expired" badge for ever, which
-  /// is not a scheduled ride — it is a thing that did not happen, and a list of
-  /// what is coming is the wrong place to keep it.
-  ///
-  /// Both of the statuses that mean "booked but never started" count, not just
-  /// `scheduled`. A driver accepting a booking moves it to
-  /// `scheduled_accepted`, and if it then never happened it is every bit as
-  /// expired — the first pass only caught the first status and left those
-  /// behind, still wearing the badge and still impossible to remove, because
-  /// the cancel button requires the ride to be in the future.
-  ///
-  /// `scheduled_active` and everything after it stay whatever the clock says.
-  /// A ride being driven right now has a scheduled_at in the past too, and it
-  /// must not vanish from the screen the rider is watching it on.
+  /// Completed and cancelled ones never reach this screen: the endpoint only
+  /// returns scheduled and in-flight statuses, so those leave on their own and
+  /// turn up under Your Trips instead.
   List<Map<String, dynamic>> _upcomingOnly(List<Map<String, dynamic>> trips) {
-    const neverStarted = {'scheduled', 'scheduled_accepted'};
+    // Named the other way round on purpose.
+    //
+    // Listing the statuses that expire meant chasing them one at a time —
+    // `scheduled` went first, then `scheduled_accepted` turned up still on the
+    // list, and there was no reason to believe that was the last of them. The
+    // badge does not work that way either: it calls anything past-dated
+    // "Expired" whatever its status, so any status can end up there.
+    //
+    // So the rule is inverted. Past its time, it goes — unless it is being
+    // driven right now, because a ride in progress has a scheduled_at in the
+    // past too and must not vanish from the screen the rider is watching it
+    // on. Nothing in the future is ever touched, so Pending Driver and Driver
+    // Assigned stay. Completed and cancelled never reach this screen at all;
+    // the endpoint does not return them.
+    const underway = {
+      'scheduled_active',
+      'driver_en_route',
+      'arrived',
+      'in_trip',
+      'in_progress',
+    };
     final now = DateTime.now();
     return trips.where((t) {
       final status = (t['status'] as String?) ?? 'scheduled';
-      if (!neverStarted.contains(status)) return true;
+      if (underway.contains(status)) return true;
       final raw = t['scheduled_at'] as String?;
       if (raw == null) return true;
       final at = DateTime.tryParse(raw);

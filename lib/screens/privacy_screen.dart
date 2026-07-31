@@ -6,6 +6,7 @@ import '../config/page_transitions.dart';
 import '../services/analytics_service.dart';
 import '../services/api_service.dart';
 import '../services/notification_service.dart';
+import '../services/local_data_service.dart';
 import '../services/user_session.dart';
 import '../widgets/neu_style.dart';
 import 'splash_screen.dart';
@@ -95,6 +96,9 @@ class _PrivacyScreenState extends State<PrivacyScreen> {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('trip_history_v1');
     await prefs.remove('destination_usage_v1');
+    // And remember that they asked, or the next open pulls it all back from
+    // the server — which is what this button did until now.
+    await LocalDataService.markTripHistoryCleared();
     if (!mounted) return;
     _showSnack(S.of(context).tripHistoryCleared);
   }

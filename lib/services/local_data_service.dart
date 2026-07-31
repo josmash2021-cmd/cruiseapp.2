@@ -195,6 +195,32 @@ class LocalDataService {
   static const _promoMonthKey = 'promo_month_v1';
   static const _recentSearchesKey = 'recent_searches_v1';
 
+  /// When the rider last cleared their trip history.
+  ///
+  /// Clearing used to drop the local cache alone, and Your Trips refreshes
+  /// from the server the moment it opens — so the list emptied for a second
+  /// and came back in full. A rider who asks to clear their history and
+  /// watches it return has been told no by a button that said yes.
+  ///
+  /// A timestamp rather than a delete, because the trips themselves are not
+  /// the rider's to remove: fare splits, the money ledger behind a driver's
+  /// balance, ratings and safety reports all hang off them. This hides
+  /// everything up to the moment they asked, and nothing about the records
+  /// changes.
+  static const _historyClearedAtKey = 'trip_history_cleared_at_v1';
+
+  /// Marks everything up to now as cleared.
+  static Future<void> markTripHistoryCleared() async {
+    await _p.setInt(
+        _historyClearedAtKey, DateTime.now().millisecondsSinceEpoch);
+  }
+
+  /// The cut-off, or null if the rider has never cleared.
+  static DateTime? tripHistoryClearedAt() {
+    final ms = _p.getInt(_historyClearedAtKey);
+    return ms == null ? null : DateTime.fromMillisecondsSinceEpoch(ms);
+  }
+
   /// Cached SharedPreferences instance â€” avoids 38 platform channel calls.
   static SharedPreferences? _prefs;
 

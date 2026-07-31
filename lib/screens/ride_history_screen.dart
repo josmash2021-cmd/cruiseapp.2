@@ -42,8 +42,18 @@ class _RideHistoryScreenState extends State<RideHistoryScreen> {
   }
 
   Future<void> _load() async {
+    // Anything from before the rider cleared their history stays hidden.
+    //
+    // Clearing dropped the local cache only, and the refresh below pulls the
+    // whole list back from the server — so the button emptied the screen for
+    // about a second. Both sources are filtered through the same cut-off now.
+    final clearedAt = LocalDataService.tripHistoryClearedAt();
+    List<TripHistoryItem> visible(List<TripHistoryItem> t) => clearedAt == null
+        ? t
+        : t.where((x) => x.createdAt.isAfter(clearedAt)).toList();
+
     // Show cached trips instantly (cache-first)
-    final localTrips = await LocalDataService.getTripHistory();
+    final localTrips = visible(await LocalDataService.getTripHistory());
     if (!mounted) return;
     if (localTrips.isNotEmpty) {
       setState(() {
@@ -84,7 +94,7 @@ class _RideHistoryScreenState extends State<RideHistoryScreen> {
 
           if (!mounted) return;
           setState(() {
-            _trips = parsed;
+            _trips = visible(parsed);
             _loading = false;
           });
           return;

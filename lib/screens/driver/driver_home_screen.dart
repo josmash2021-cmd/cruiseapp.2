@@ -212,7 +212,19 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   /// air, plus whatever the home indicator takes. At a flat 148 there were
   /// about seventy pixels of nothing under "You're offline" — a sheet that
   /// looked like it had content it was refusing to show.
-  static const double _panelBaseMinH = 82.0;
+  ///
+  /// 68, down from 82. The parts listed above come to 66, so the old number
+  /// carried sixteen pixels that nothing occupied: a band of dead space under
+  /// the status row, and the same sixteen pixels pushing the panel's top edge
+  /// higher up the map than it needed to be. Trimming it does both things the
+  /// panel needed — the row sits on the floor of the sheet, and the sheet
+  /// starts lower.
+  ///
+  /// The home indicator's inset is still added on top, so this is 68 on the
+  /// web and about 102 on a phone that reserves 34 for it. Do not fold that
+  /// allowance into this constant: it is a different thing, it varies by
+  /// device, and adding it here would put it back on devices that have none.
+  static const double _panelBaseMinH = 68.0;
   double get _panelBaseH =>
       _panelBaseMinH + (MediaQuery.maybeOf(context)?.padding.bottom ?? 0);
   // Extra height reserved while the scheduled-rides banner is shown above the

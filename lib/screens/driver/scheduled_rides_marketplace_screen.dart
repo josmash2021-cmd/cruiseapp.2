@@ -72,7 +72,16 @@ class _ScheduledRidesMarketplaceScreenState
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+        SnackBar(
+          // Same rule as the other marketplace: out-of-state is a refusal
+          // the driver can do something about, so it reads as a sentence.
+          content: Text(
+            e is ApiException && e.statusCode == 403
+                ? S.of(context).scheduledOutOfState
+                : 'Error: $e',
+          ),
+          backgroundColor: Colors.red,
+        ),
       );
     } finally {
       if (mounted) setState(() => _claimingId = null);

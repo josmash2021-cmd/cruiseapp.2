@@ -14,7 +14,7 @@ from models.schemas import CreateTripIn, AcceptTripIn
 from utils.security import (
     _get_current_user, _verify_api_key, _security_audit_log,
 )
-from utils.helpers import utc_now, _haversine, _trip_dict, _abs_photo_url, _resolve_rider_display, _safe_create_task, _compute_user_rating
+from utils.helpers import utc_now, _haversine, _trip_dict, _abs_photo_url, _resolve_rider_display, _safe_create_task, _compute_user_rating, MAX_DISPATCH_RADIUS_KM
 from services.fcm_service import _send_fcm_push_async, send_to_topic_async
 from services.sms_service import (
     notify_guest_driver_assigned,
@@ -453,6 +453,9 @@ async def get_available_trips(
     lat: float = Query(...), lng: float = Query(...), radius_km: float = Query(15.0),
     user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db),
 ):
+    # Same ceiling the cascade uses, so browsing and being offered agree on
+    # what is reachable. A client asking for more gets 500 miles.
+    radius_km = min(float(radius_km), MAX_DISPATCH_RADIUS_KM)
     # Pre-filter with bounding box in SQL to avoid full table scan
     # ~1 degree lat = 111km, ~1 degree lng = 85km at 33N
     lat_delta = radius_km / 111.0
@@ -468,23 +471,16 @@ async def get_available_trips(
     )
     trips = result.scalars().all()
 
-    # Same state rule as live dispatch and the scheduled marketplace: a
-    # driver only sees pickups in the state they are standing in. Closing
-    # this one too so the rule cannot be sidestepped by whichever path a
-    # client happens to call. Unknown state on either side keeps the trip.
-    from routers.dispatch import _state_for
-
-    driver_state = await _state_for(lat, lng)
-
+    # Distance is the only rule here. This used to also drop pickups outside
+    # the driver's state; live work is now bounded by the 500-mile radius
+    # instead, so a driver in Mobile can see and take a run that starts
+    # across the Mississippi line. The same-state rule still applies, but
+    # only to reserved rides, where it lives in routers/scheduled.py.
     nearby = []
     for t in trips:
         dist = _haversine(lat, lng, t.pickup_lat, t.pickup_lng)
         if dist > radius_km:
             continue
-        if driver_state:
-            pickup_state = await _state_for(t.pickup_lat, t.pickup_lng)
-            if pickup_state and pickup_state != driver_state:
-                continue
         nearby.append(_trip_dict_for_user(t, user))
     return nearby
 

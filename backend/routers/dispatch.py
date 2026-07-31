@@ -16,7 +16,7 @@ from utils.security import (
     _dispatch_sessions, _security_audit_log,
     JWT_SECRET, JWT_ALGORITHM,
 )
-from utils.helpers import _safe_create_task, utc_now, _haversine, _trip_dict, _user_dict, _abs_photo_url, _resolve_rider_display
+from utils.helpers import _safe_create_task, utc_now, _haversine, _trip_dict, _user_dict, _abs_photo_url, _resolve_rider_display, MAX_DISPATCH_RADIUS_KM
 from services.fcm_service import _send_fcm_push, _send_fcm_push_async
 from services.sms_service import notify_guest_driver_assigned
 from services.email_service import email_guest_driver_assigned
@@ -61,25 +61,31 @@ _ROUTE_CACHE_TTL = 300.0  # 5 minutes — routes don't change rapidly
 # ══════════════════════════════════════════════════════════════════════════════
 
 # ══════════════════════════════════════════════════════════════════════════════
-#  State filter: a driver only gets pickups in the state they are standing in
+#  Where a coordinate is: the state resolver
 # ══════════════════════════════════════════════════════════════════════════════
 #
-# A driver in Florida is not going to cross into Alabama to collect someone,
-# so offering them that pickup just ages the trip in their queue while the
-# rider waits. Trips *out of* their state are fine — that is a real fare —
-# so the test is on the PICKUP, not the destination.
+# Live dispatch does not use this. A driver may take live work anywhere
+# within MAX_DISPATCH_RADIUS_KM of where they are standing, state lines
+# included — that is the point of the radius, and crossing one is a real
+# fare, not a mistake. The only thing that bounds live work is distance.
+#
+# Reserved rides are the opposite and this is what enforces it: a driver
+# claims scheduled work only in the state they are active in. A reservation
+# is accepted hours or days ahead, so "I happen to be within range right
+# now" says nothing about where the driver will be at pickup time. The state
+# they work in does. See routers/scheduled.py.
 #
 # Neither User nor Trip stores a state (the app resolves one client-side by
-# geocoding), so it is derived from the coordinates dispatch already has.
-# Two things keep that affordable:
+# geocoding), so it is derived from the coordinates already on hand. Two
+# things keep that affordable:
 #
 #   * a cache keyed by coordinates rounded to 2 decimals (~1.1 km cells).
 #     Drivers idle in the same neighbourhood and pickups repeat, so a busy
 #     market settles on a handful of live entries.
 #   * failing OPEN. Missing key, dead API, odd response — the answer is
 #     None and the candidate is KEPT. A geocoding outage must never be able
-#     to strand every rider in the city: an out-of-state offer is a
-#     nuisance, nobody getting any offer is an outage.
+#     to empty every driver's marketplace: an out-of-state card is a
+#     nuisance, an empty list is an outage.
 
 # cell -> state code ("FL"), or None for "asked, no usable answer" so a dead
 # spot is not re-queried on every dispatch.
@@ -148,35 +154,19 @@ async def _state_for(lat: float | None, lng: float | None) -> str | None:
     return state
 
 
-async def _drop_out_of_state(
-    drivers: list, pickup_lat: float, pickup_lng: float
-) -> list:
-    """Keep only drivers standing in the same state as the pickup.
+async def same_state(lat_a, lng_a, lat_b, lng_b) -> bool:
+    """True unless both coordinates resolve to states that differ.
 
-    Unknown state on either side keeps the driver — see the fail-open note
-    above.
+    Fail-open by construction: an unresolved side answers True, so a dead
+    geocoder degrades to "no state rule" rather than to "nothing matches".
     """
-    if not drivers:
-        return drivers
-
-    pickup_state = await _state_for(pickup_lat, pickup_lng)
-    if not pickup_state:
-        return drivers
-
-    kept, dropped = [], []
-    for d in drivers:
-        driver_state = await _state_for(d.lat, d.lng)
-        if driver_state is None or driver_state == pickup_state:
-            kept.append(d)
-        else:
-            dropped.append((d.id, driver_state))
-
-    if dropped:
-        logging.info(
-            "[StateFilter] pickup in %s — dropped %d out-of-state driver(s): %s",
-            pickup_state, len(dropped), dropped,
-        )
-    return kept
+    state_a = await _state_for(lat_a, lng_a)
+    if not state_a:
+        return True
+    state_b = await _state_for(lat_b, lng_b)
+    if not state_b:
+        return True
+    return state_a == state_b
 
 
 async def _find_nearest_drivers(
@@ -185,17 +175,24 @@ async def _find_nearest_drivers(
     pickup_lng: float,
     exclude_driver_ids: set[int] | None = None,
     vehicle_type: str = "comfort",
-    radius_km: float = 30.0,
+    radius_km: float = MAX_DISPATCH_RADIUS_KM,
     limit: int = 10,
 ) -> list:
     """Find the nearest online drivers using a bounding-box pre-filter and
     SQL-side haversine ORDER BY so the database does the heavy lifting.
     Optimized: single JOIN query with Vehicle tier filtering in SQL.
 
+    [radius_km] is capped at MAX_DISPATCH_RADIUS_KM — 500 miles — however
+    generous a caller is. Results come back sorted nearest-first, so a wide
+    radius does not mean a far driver is picked: it means the cascade has
+    somewhere to go once everyone close has passed.
+
     Returns a list of User ORM objects sorted by distance (closest first).
     """
     if exclude_driver_ids is None:
         exclude_driver_ids = set()
+
+    radius_km = min(float(radius_km), MAX_DISPATCH_RADIUS_KM)
 
     active_cutoff = utc_now() - timedelta(minutes=15)
 
@@ -323,9 +320,20 @@ async def _find_nearest_drivers(
             eligible_comfort = [d for d in comfort_drivers if avg_ratings.get(d.id, 0) >= 4.7]
             drivers.extend(eligible_comfort[:remaining])
 
-    # Last, so the state lookups only run for candidates that already passed
-    # distance, tier and availability — a handful, not the driver table.
-    drivers = await _drop_out_of_state(drivers, pickup_lat, pickup_lng)
+    # The box is a rectangle and the limit is a circle: its corners reach
+    # about 1.41 x the radius, so without this a "500 mile" search hands back
+    # drivers 700 miles out. Cheap — this runs over the handful of rows that
+    # already passed distance ordering, tier and availability.
+    within = [
+        d for d in drivers
+        if _haversine(pickup_lat, pickup_lng, d.lat or 0, d.lng or 0) <= radius_km
+    ]
+    if len(within) != len(drivers):
+        logging.info(
+            "[NearbySearch] dropped %d driver(s) past the %.0f km cap",
+            len(drivers) - len(within), radius_km,
+        )
+    drivers = within
 
     if drivers:
         logging.info(
@@ -1147,7 +1155,7 @@ async def dispatch_request(body: DispatchRequestIn, user: User = Depends(_get_cu
         pickup_lat=trip.pickup_lat or 0,
         pickup_lng=trip.pickup_lng or 0,
         vehicle_type=trip.vehicle_type or "comfort",
-        radius_km=30.0,
+        radius_km=MAX_DISPATCH_RADIUS_KM,
         limit=10,
     )
 

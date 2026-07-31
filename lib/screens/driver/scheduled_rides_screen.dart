@@ -200,7 +200,13 @@ class _ScheduledRidesScreenState extends State<ScheduledRidesScreen>
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('${S.of(context).error}: $e'),
+        // The one refusal the driver can act on gets its own sentence.
+        // Everything else keeps the raw server reason.
+        content: Text(
+          e is ApiException && e.statusCode == 403
+              ? S.of(context).scheduledOutOfState
+              : '${S.of(context).error}: $e',
+        ),
         backgroundColor: Colors.red,
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),

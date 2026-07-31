@@ -136,6 +136,27 @@ def _haversine(lat1, lng1, lat2, lng2):
 
 
 # ═══════════════════════════════════════════════════════
+#  How far a driver may be sent from where they went online
+# ═══════════════════════════════════════════════════════
+#
+# Live work only. Five hundred miles is a whole day's drive, so this is a
+# ceiling, not a target: candidates are always sorted nearest-first and the
+# cascade walks outward, so a driver at the edge of it is only ever asked
+# after everyone closer has passed. What it buys is the long cross-state
+# fare — the driver in Mobile who can take a run to New Orleans — which a
+# tight radius made impossible to even offer.
+#
+# Reserved rides do NOT use this. They are same-state only, and that rule
+# lives in routers/scheduled.py.
+#
+# Lives here, not in dispatch.py, because trips.py needs the same number and
+# both modules already import from helpers — routing it through dispatch
+# would be an import cycle.
+MAX_DISPATCH_RADIUS_MILES = 500.0
+MAX_DISPATCH_RADIUS_KM = MAX_DISPATCH_RADIUS_MILES * 1.609344  # 804.672
+
+
+# ═══════════════════════════════════════════════════════
 #  Dict converters (ORM → API response)
 # ═══════════════════════════════════════════════════════
 

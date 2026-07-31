@@ -1,9 +1,18 @@
-"""Every path a driver can reach trips through applies the state rule.
+"""Which paths carry the state rule, and which carry the distance cap.
 
-The live-dispatch filter was added first, and two browse endpoints kept
-serving out-of-state pickups around it: /trips/available and, with a
-wider 50 km radius, the scheduled marketplace the driver app actually
-calls. This pins all three so a fourth path cannot quietly reopen it.
+The two are deliberately split and it is easy to reconnect them by
+accident:
+
+  * LIVE work — the cascade, /trips/available — is bounded by distance
+    only. A driver may cross a state line for a live fare inside
+    MAX_DISPATCH_RADIUS_KM. Putting a state filter back on these paths
+    silently un-does that.
+  * RESERVED work — the scheduled marketplace — is same-state only, at
+    browse AND at claim. Hiding a card is not enforcement; a trip id
+    outlives the list it came from.
+
+Both rules fail open on an unresolved coordinate: a dead geocoder must
+degrade to "no state rule", never to "nothing matches".
 """
 
 import inspect
@@ -31,21 +40,29 @@ def _clean_cache():
     D._state_cache.clear()
 
 
-async def test_live_dispatch_drops_out_of_state_driver():
+async def test_live_dispatch_has_no_state_filter():
+    """Crossing a state line for a live fare is allowed, on purpose."""
     from routers import dispatch as D
 
-    _seed({AL: "AL", FL: "FL"})
-
-    class _D:
-        def __init__(self, i, lat, lng):
-            self.id, self.lat, self.lng = i, lat, lng
-
-    kept = await D._drop_out_of_state([_D(1, *AL), _D(2, *FL)], *AL)
-    assert [d.id for d in kept] == [1]
+    src = inspect.getsource(D._find_nearest_drivers)
+    assert "_state_for" not in src and "same_state" not in src, (
+        "live dispatch resolves a state again — that re-closes the "
+        "cross-state fare the radius was widened to allow"
+    )
 
 
-def test_scheduled_marketplace_consults_the_filter():
-    """The 50 km browse must resolve state, not just distance."""
+def test_available_trips_has_no_state_filter():
+    from routers import trips
+
+    src = inspect.getsource(trips.get_available_trips)
+    assert "_state_for" not in src, (
+        "/trips/available filters by state again; live work is bounded by "
+        "MAX_DISPATCH_RADIUS_KM, not by state lines"
+    )
+
+
+def test_scheduled_browse_consults_the_filter():
+    """The marketplace browse must resolve state, not just distance."""
     from routers import scheduled
 
     src = inspect.getsource(scheduled.get_available_scheduled_trips)
@@ -54,28 +71,43 @@ def test_scheduled_marketplace_consults_the_filter():
     assert "pickup_state" in src
 
 
-def test_available_trips_consults_the_filter():
-    from routers import trips
+def test_scheduled_claim_enforces_the_filter():
+    """The browse hides; the claim refuses. Only the second one is a rule."""
+    from routers import scheduled
 
-    src = inspect.getsource(trips.get_available_trips)
-    assert "_state_for" in src, "/trips/available never resolves a state"
-    assert "driver_state" in src
+    src = inspect.getsource(scheduled.claim_scheduled_trip)
+    assert "same_state" in src, (
+        "claim accepts any trip id — an out-of-state reservation can be "
+        "taken straight from a stale list"
+    )
+    assert "403" in src
 
 
-def test_all_three_fail_open_on_unknown_state():
-    """None from the resolver must never mean 'exclude'.
+def test_scheduled_does_not_trust_the_client_for_position():
+    """0,0 from the app used to switch the whole rule off."""
+    from routers import scheduled
 
-    Each path guards its comparison on a truthy state on BOTH sides, so a
-    geocoding outage degrades to today's distance-only behaviour instead
-    of emptying every driver's list.
-    """
-    from routers import scheduled, trips
-
-    for fn in (scheduled.get_available_scheduled_trips, trips.get_available_trips):
-        src = inspect.getsource(fn)
-        assert "if driver_state" in src, (
-            f"{fn.__name__} filters without checking the driver state resolved"
+    for fn in (scheduled.get_available_scheduled_trips, scheduled.claim_scheduled_trip):
+        assert "_driver_position" in inspect.getsource(fn), (
+            f"{fn.__name__} takes the driver's coordinate on trust"
         )
-        assert "if pickup_state and pickup_state != driver_state" in src, (
-            f"{fn.__name__} compares without checking the pickup state resolved"
-        )
+
+    class _U:
+        lat, lng = AL
+
+    # Sent nothing → falls back to the row the heartbeat maintains.
+    assert scheduled._driver_position(_U(), 0, 0) == AL
+    # Sent something → that wins.
+    assert scheduled._driver_position(_U(), *FL) == FL
+
+
+async def test_state_rule_fails_open_on_unknown():
+    """None from the resolver must never mean 'exclude'."""
+    from routers import dispatch as D
+
+    _seed({AL: "AL", FL: None})
+    assert await D.same_state(*FL, *AL), "unknown driver state excluded a trip"
+
+    D._state_cache.clear()
+    _seed({AL: None, FL: "FL"})
+    assert await D.same_state(*FL, *AL), "unknown pickup state excluded a trip"

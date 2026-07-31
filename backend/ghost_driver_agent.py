@@ -434,13 +434,17 @@ class GhostDriverAgent:
         """Find the nearest online driver (other than the ghost) for a reoffer."""
         try:
             from routers.dispatch import _find_nearest_drivers
+            from utils.helpers import MAX_DISPATCH_RADIUS_KM
             drivers = await _find_nearest_drivers(
                 db,
                 pickup_lat=float(trip.pickup_lat or 0.0),
                 pickup_lng=float(trip.pickup_lng or 0.0),
                 exclude_driver_ids={exclude_id},
                 vehicle_type=(trip.vehicle_type or "comfort"),
-                radius_km=30.0,
+                # Same ceiling as first dispatch. A rider abandoned by a
+                # ghost is the last person who should get a narrower search
+                # than the one that found the ghost.
+                radius_km=MAX_DISPATCH_RADIUS_KM,
                 limit=1,
             )
             return drivers[0] if drivers else None

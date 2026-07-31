@@ -25,6 +25,17 @@ LOCKOUT_MINUTES = 30
 MIN_ADVANCE_MINUTES = 30
 
 
+def _driver_position(user: User, lat: float, lng: float) -> tuple[float, float]:
+    """The driver's coordinate: the one they sent, else the one on file.
+
+    Both the browse and the claim need this and must agree, or a driver
+    could be shown a list built one way and judged against another.
+    """
+    if lat and lng:
+        return float(lat), float(lng)
+    return float(user.lat or 0), float(user.lng or 0)
+
+
 def _scheduled_trip_card(trip: Trip, driver_lat: float = 0, driver_lng: float = 0) -> dict:
     """Build a marketplace card dict for a scheduled trip."""
     dist_km = 0.0
@@ -95,6 +106,16 @@ async def get_available_scheduled_trips(
     # outage must not empty every driver's marketplace.
     from routers.dispatch import _state_for
 
+    # Where the driver is, decided here rather than taken on trust.
+    #
+    # The rule below is only as good as the coordinate it is given, and a
+    # client that sends none — the driver app sent 0,0 for months — used to
+    # switch the whole filter off and get the entire country back. The
+    # server already knows: an online driver heartbeats their position onto
+    # their own row. Query params are a hint; the stored position wins when
+    # they are absent.
+    lat, lng = _driver_position(user, lat, lng)
+
     driver_state = await _state_for(lat, lng) if (lat and lng) else None
 
     cards = []
@@ -143,6 +164,30 @@ async def claim_scheduled_trip(
         raise HTTPException(404, "Trip not found")
     if trip.status != "scheduled" or trip.driver_id is not None:
         raise HTTPException(409, "This ride has already been claimed")
+
+    # Same state, enforced here and not only in the browse.
+    #
+    # Hiding a card is a courtesy; this is the rule. A trip id survives a
+    # stale list, a screenshot, a second device, a curl — and a reservation
+    # claimed today is driven days from now, so "I was within range when I
+    # tapped" proves nothing about where the driver will be at pickup. The
+    # state they work in is the thing that holds.
+    #
+    # Fails open on an unresolved coordinate, exactly like the browse: a
+    # dead geocoder must not make every reservation unclaimable.
+    from routers.dispatch import same_state
+
+    d_lat, d_lng = _driver_position(user, 0, 0)
+    if d_lat and d_lng and trip.pickup_lat and trip.pickup_lng:
+        if not await same_state(d_lat, d_lng, trip.pickup_lat, trip.pickup_lng):
+            logging.info(
+                "[Scheduled] driver %d refused trip %d — pickup is out of state",
+                user.id, trip.id,
+            )
+            raise HTTPException(
+                403,
+                "Reserved rides can only be claimed in the state you are active in",
+            )
 
     now = datetime.now(timezone.utc)
     minutes_until = (trip.scheduled_at - now).total_seconds() / 60 if trip.scheduled_at else 0

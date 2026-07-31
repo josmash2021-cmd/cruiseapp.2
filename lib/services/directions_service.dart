@@ -614,7 +614,14 @@ class DirectionsService {
         result |= (b & 0x1f) << shift;
         shift += 5;
       } while (b >= 0x20);
-      int dlat = ((result & 1) != 0 ? ~(result >> 1) : (result >> 1));
+      // -(n + 1) rather than ~n. They are the same number on a phone and not
+      // on the web: Dart ints are doubles there and `~` compiles to an
+      // unsigned 32-bit operation, so ~n comes back as 4294967295 - n. Every
+      // negative delta turned into a huge positive one and the running total
+      // climbed by exactly 2^32 a point — which is what
+      // LatLng(343630.63505, 429409.59793) is, and why this only ever broke
+      // in a browser.
+      int dlat = ((result & 1) != 0) ? -((result >> 1) + 1) : (result >> 1);
       lat += dlat;
 
       shift = 0;
@@ -624,7 +631,8 @@ class DirectionsService {
         result |= (b & 0x1f) << shift;
         shift += 5;
       } while (b >= 0x20);
-      int dlng = ((result & 1) != 0 ? ~(result >> 1) : (result >> 1));
+      // Same as dlat above: ~ is unsigned on the web.
+      int dlng = ((result & 1) != 0) ? -((result >> 1) + 1) : (result >> 1);
       lng += dlng;
 
       points.add(LatLng(lat / 1E5, lng / 1E5));

@@ -3075,9 +3075,15 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       child: Container(
       height: panelH + pad.bottom,
       decoration: BoxDecoration(
-        // Raised neumorphic sheet — neuBox can't express top-only radius,
-        // so replicate its dual-shadow treatment on neuSurface.
-        color: neuSurface,
+        // The ground the panel's cards sit on, so neuBase — neuBox cannot
+        // express a top-only radius, hence the dual shadow spelled out here.
+        //
+        // This was neuSurface, which is the colour of the cards themselves.
+        // The earnings card, the chart and the GO bar were then raised
+        // surfaces on a surface of the same tone, with nothing between them
+        // for their shadows to describe. Same fault the rider's booking sheet
+        // had, and the same fix: a raised thing needs a base to rise from.
+        color: neuBase,
         borderRadius: const BorderRadius.vertical(top: Radius.circular(26)),
         boxShadow: [
           BoxShadow(

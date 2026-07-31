@@ -276,7 +276,16 @@ extension _RideRequestWidgets on _RideRequestScreenState {
             // are replicated on neuSurface here (same treatment as the
             // driver's panel).
             decoration: BoxDecoration(
-              color: neuSurface,
+              // neuBase, not neuSurface — this is the ground the cards sit on.
+              //
+              // The style file labels them: neuBase is "screen/sheet
+              // background", neuSurface is "raised surface (cards)". Painted
+              // in neuSurface, the sheet was the same tone as the cards on it,
+              // so four raised tiles were sitting on another raised surface
+              // with nothing between them. The shadows were drawing the whole
+              // time — there was just no change in level for them to describe,
+              // and neumorphism is only ever a description of level.
+              color: neuBase,
               borderRadius: floating
                   ? BorderRadius.circular(26)
                   : const BorderRadius.vertical(top: Radius.circular(26)),

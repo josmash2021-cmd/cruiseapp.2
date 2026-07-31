@@ -1223,7 +1223,14 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                   child: CarImage3D(
                     assetPath: _carAssetForOption(opt.name),
                     cacheWidth: 640,
-                    alignment: Alignment.bottomCenter,
+                    // Centred in its box, not sitting on the floor of it.
+                    //
+                    // These renders are far wider than they are tall, so at
+                    // 108 wide the car only fills about a third of a 76 px
+                    // box. Anchored to the bottom it left all that space in
+                    // one band under the tier name, which read as a gap in
+                    // the card rather than as air around the car.
+                    alignment: Alignment.center,
                     fallback: Icon(
                       Icons.directions_car_rounded,
                       color: const Color(0xFFE8C547).withValues(alpha: 0.5),

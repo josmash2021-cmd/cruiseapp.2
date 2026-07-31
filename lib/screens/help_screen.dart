@@ -1306,26 +1306,46 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
     // loop below runs twice over the same buffer.
     if (_phase == _ChatPhase.agent) return;
 
-    // Transition to agent phase
+    // The handover, paced like one.
+    //
+    // A real transfer has beats: the queue ends, a moment passes, someone
+    // arrives, and only then do they start typing. Running those together
+    // reads as a script firing rather than a person picking up — the queue
+    // card vanished and a fully-formed paragraph was already on screen.
+    //
+    //   queue ends → 10 s → "X has joined" (the card goes with it)
+    //                → 15 s → typing starts, for as long as the line takes
+    //
+    // Nothing here is a fixed wait for the whole handover: the typing
+    // duration still comes from the message, so a long answer takes visibly
+    // longer to write than a short one.
     setState(() {
       _phase = _ChatPhase.agent;
       _showQuickActions = false;
     });
 
-    // Show typing indicator briefly
-    setState(() => _isAgentTyping = true);
-    await Future.delayed(const Duration(seconds: 3));
+    await Future.delayed(const Duration(seconds: 10));
     if (!mounted) return;
 
     // Reveal buffered messages one at a time with typing delays
     final toReveal = List<_ChatMsg>.from(_bufferedMessages);
     _bufferedMessages.clear();
 
+    // Whatever a poll already merged in stays as it is.
+    //
+    // This loop used to `_messages.add()` straight, and a poll can land
+    // while it is running — so the agent's opening line arrived twice, once
+    // from the poll and once from here. That is the duplicate.
+    bool alreadyShown(_ChatMsg m) => _messages.any((x) => x.key == m.key);
+
+    var firstAgentLine = true;
     for (final msg in toReveal) {
       if (!mounted) return;
+      if (alreadyShown(msg)) continue;
 
       if (msg.role == 'system') {
-        // System messages appear instantly
+        // "X has joined" — instant, and the queue card goes at the same
+        // moment, so the arrival and the waiting ending are one event.
         setState(() {
           _isAgentTyping = false;
           _messages.add(msg);
@@ -1336,11 +1356,23 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
       }
 
       if (msg.role == 'bot') {
+        // A beat before the first line: someone who just walked in reads
+        // the conversation before answering it.
+        if (firstAgentLine) {
+          firstAgentLine = false;
+          await Future.delayed(const Duration(seconds: 15));
+          if (!mounted) return;
+          if (alreadyShown(msg)) continue;
+        }
         if (mounted) setState(() => _isAgentTyping = true);
         _scrollToBottom();
         final delay = AiSupportService.typingDuration(msg.text).clamp(3000, 10000);
         await Future.delayed(Duration(milliseconds: delay));
         if (!mounted) return;
+        if (alreadyShown(msg)) {
+          setState(() => _isAgentTyping = false);
+          continue;
+        }
         setState(() {
           _isAgentTyping = false;
           _messages.add(msg);
@@ -2091,13 +2123,29 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
     }
 
     // Queue wait widget
-    if (_phase == _ChatPhase.queue) {
-      items.add(QueueStatusWidget(
-        totalDuration: _queueDuration,
-        onComplete: _onQueueComplete,
-        isSpanish: _isSpanish,
-      ));
-    }
+    //
+    // Faded and collapsed rather than removed. The card used to disappear
+    // between one frame and the next, which snaps the whole list upward by
+    // its height — the reader's eye is on the newest message and everything
+    // under it jumps. Shrinking it away moves the same distance over a beat,
+    // so the arrival reads as the wait ending rather than as a glitch.
+    items.add(AnimatedSize(
+      duration: const Duration(milliseconds: 420),
+      curve: Curves.easeInOutCubic,
+      alignment: Alignment.topCenter,
+      child: AnimatedOpacity(
+        opacity: _phase == _ChatPhase.queue ? 1 : 0,
+        duration: const Duration(milliseconds: 320),
+        curve: Curves.easeOut,
+        child: _phase == _ChatPhase.queue
+            ? QueueStatusWidget(
+                totalDuration: _queueDuration,
+                onComplete: _onQueueComplete,
+                isSpanish: _isSpanish,
+              )
+            : const SizedBox(width: double.infinity),
+      ),
+    ));
 
     // Typing indicator
     if (_isAgentTyping) {

@@ -138,8 +138,14 @@ class _ScheduledRidesScreenState extends State<ScheduledRidesScreen>
       _scheduleReminders(trips);
     } catch (e) {
       if (!mounted) return;
+      // "TimeoutException after 0:00:08.000000: Future not completed" is a
+      // sentence for whoever wrote the HTTP client, not for a rider looking
+      // for their booking. The Retry button beside it is the only part of
+      // that screen they can act on, so the text should say what happened and
+      // leave it at that.
+      debugPrint('[ScheduledRides] load failed: $e');
       setState(() {
-        _error = e.toString();
+        _error = S.of(context).networkError;
         _loading = false;
       });
     }

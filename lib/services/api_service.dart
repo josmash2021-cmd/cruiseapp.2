@@ -1709,7 +1709,12 @@ class ApiService {
     final h = await _authHeaders();
     final res = await _client
         .get(Uri.parse('$_baseUrl/trips/scheduled/rider/$riderId'), headers: h)
-        .timeout(const Duration(seconds: 8));
+        // 8 s was tighter than a cold start. The first request after a deploy
+        // hits a container that is still waking up, and this screen answered
+        // that with an error and a Retry button — for a list that was on its
+        // way. Long enough to cover the wake-up, short enough that a genuinely
+        // dead server is still reported rather than hung on.
+        .timeout(const Duration(seconds: 20));
     if (res.statusCode >= 200 && res.statusCode < 300) {
       final list = jsonDecode(res.body) as List;
       return list.cast<Map<String, dynamic>>();

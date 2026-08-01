@@ -1,3 +1,4 @@
+import 'dart:ui' as ui;
 import 'dart:math';
 import 'dart:convert';
 import 'package:flutter/material.dart';
@@ -41,9 +42,8 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
   List<String> _dayLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
   List<Map<String, dynamic>> _transactions = [];
 
-  // Error states
+  // Error state — surfaced under the headline figure.
   String? _earningsError;
-  String? _payoutError;
 
   // Auto-payout data
   DateTime? _nextPayoutDate;
@@ -53,6 +53,87 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
 
   // Payout methods
   bool _hasPayoutMethod = false;
+
+  /// Covers every figure on this screen with dots.
+  ///
+  /// A driver reads their earnings in a car with a passenger behind them.
+  /// Kept on the device — it is a preference about this phone's screen, not
+  /// something the server needs to know.
+  bool _hideEarnings = false;
+  static const _kHideEarningsKey = 'driver_hide_earnings';
+
+  Future<void> _loadHideEarnings() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final v = prefs.getBool(_kHideEarningsKey) ?? false;
+      if (mounted && v != _hideEarnings) setState(() => _hideEarnings = v);
+    } catch (_) {}
+  }
+
+  Future<void> _toggleHideEarnings() async {
+    HapticService.selectionClick();
+    setState(() => _hideEarnings = !_hideEarnings);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(_kHideEarningsKey, _hideEarnings);
+    } catch (_) {}
+  }
+
+  /// Payout history, on request rather than always on the page.
+  void _showCashoutHistorySheet() {
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (ctx) => Container(
+        decoration: BoxDecoration(
+          color: neuBase,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(26)),
+        ),
+        padding: EdgeInsets.fromLTRB(
+          20,
+          14,
+          20,
+          20 + MediaQuery.of(ctx).padding.bottom,
+        ),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 36,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.18),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 18),
+              if (_cashoutHistory.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 28),
+                  child: Center(
+                    child: Text(
+                      S.of(context).noTripsYet,
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.4),
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                )
+              else
+                ..._buildCashoutHistory(),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 
   double get _maxDay {
     final m = _dailyEarnings.isEmpty ? 0.0 : _dailyEarnings.reduce(max);
@@ -106,6 +187,7 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
       duration: const Duration(milliseconds: 600),
     );
     _listAnim = CurvedAnimation(parent: _listCtrl, curve: Curves.easeOutCubic);
+    _loadHideEarnings();
     _fetchEarnings();
     _fetchPayoutData();
     _fetchPayoutMethods();
@@ -204,15 +286,15 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
         _pendingBalance = (info['pending_balance'] as num?)?.toDouble() ?? 0.0;
         _stripeConnected = info['stripe_connected'] as bool? ?? false;
         _cashoutHistory = history;
-        _payoutError = null;
         final raw = info['next_payout_date'] as String?;
         if (raw != null) _nextPayoutDate = DateTime.tryParse(raw);
       });
     } catch (e) {
+      // Logged, not shown. The payout block degrades to zeros on its own
+      // and the headline figure carries its own error line — a second
+      // message about a second request is noise on a screen the driver
+      // opened to read one number.
       debugPrint('[Earnings] _fetchPayoutData error: $e');
-      if (mounted) {
-        setState(() => _payoutError = S.of(context).couldNotLoadPayoutData);
-      }
     }
   }
 
@@ -250,10 +332,14 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
   @override
   Widget build(BuildContext context) {
     final s = S.of(context);
-    final periods = [s.today, s.thisWeek, s.thisMonth];
     return Scaffold(
       backgroundColor: neuBase,
-      body: CustomScrollView(
+      // Stacked, so the balance bar can sit over the scroll instead of at
+      // the end of it. The list gets bottom padding to match — see the
+      // spacer at the foot of the column.
+      body: Stack(
+        children: [
+          CustomScrollView(
         physics: const BouncingScrollPhysics(),
         slivers: [
           // ── App bar ──
@@ -291,264 +377,45 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // ── Total card ──
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(24),
-                    decoration: neuBox(
-                      radius: 26,
-                      borderColor: _gold.withValues(alpha: 0.15),
-                    ),
-                    child: Column(
-                      children: [
-                        Text(
-                          periods[_selectedPeriod],
-                          style: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.5),
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        _loading
-                            ? const SizedBox(
-                                height: 44,
-                                child: Center(
-                                  child: CircularProgressIndicator(
-                                    color: _gold,
-                                    strokeWidth: 2,
-                                  ),
-                                ),
-                              )
-                            : Text(
-                                '\$${_total.toStringAsFixed(2)}',
-                                style: const TextStyle(
-                                  color: _gold,
-                                  fontSize: 44,
-                                  fontWeight: FontWeight.w900,
-                                  letterSpacing: -1,
-                                ),
-                              ),
-                        const SizedBox(height: 16),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: _miniStat('$_tripsCount', s.tripsStatLabel),
-                            ),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: _miniStat(
-                                '${_onlineHours.toStringAsFixed(1)}h',
-                                s.onlineStatLabel,
-                              ),
-                            ),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: _miniStat(
-                                '\$${_tipsTotal.toStringAsFixed(2)}',
-                                s.tipsStatLabel,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 24),
+                  // ── Period: Day / Week / Month ──
+                  _periodPill(),
+                  const SizedBox(height: 14),
+                  _periodLabel(),
+                  const SizedBox(height: 18),
 
-                  // ── Earnings error banner ──
-                  if (_earningsError != null) ...[
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(14),
-                      decoration: neuBox(
-                        radius: 14,
-                        borderColor: Colors.redAccent.withValues(alpha: 0.3),
-                      ),
-                      child: Row(
-                        children: [
-                          Icon(Icons.error_outline_rounded,
-                              color: Colors.redAccent.withValues(alpha: 0.8), size: 20),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: Text(
-                              _earningsError!,
-                              style: TextStyle(
-                                color: Colors.redAccent.withValues(alpha: 0.9),
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ),
-                          GestureDetector(
-                            onTap: _fetchEarnings,
-                            child: Icon(Icons.refresh_rounded,
-                                color: _gold, size: 20),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                  ],
+                  // ── The figure ──
+                  _heroAmount(),
+                  const SizedBox(height: 22),
 
-                  // ── Period selector ──
+                  // ── The chart ──
                   Container(
-                    padding: const EdgeInsets.all(5),
-                    decoration: neuBox(radius: 16, pressed: true),
-                    child: Row(
-                      children: List.generate(3, (i) {
-                        final sel = i == _selectedPeriod;
-                        return Expanded(
-                          child: GestureDetector(
-                            onTap: () {
-                              HapticService.selectionClick();
-                              setState(() => _selectedPeriod = i);
-                              _fetchEarnings();
-                            },
-                            child: AnimatedContainer(
-                              duration: const Duration(milliseconds: 300),
-                              curve: Curves.easeOutCubic,
-                              padding: const EdgeInsets.symmetric(vertical: 10),
-                              decoration: sel
-                                  ? neuBox(
-                                      radius: 12,
-                                      borderColor:
-                                          _gold.withValues(alpha: 0.35),
-                                    )
-                                  : const BoxDecoration(),
-                              child: Text(
-                                periods[i],
-                                textAlign: TextAlign.center,
-                                style: TextStyle(
-                                  color: sel ? _gold : Colors.white38,
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                            ),
-                          ),
-                        );
-                      }),
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-
-                  // ── Weekly bar chart ──
-                  Container(
-                    padding: const EdgeInsets.all(20),
+                    padding: const EdgeInsets.fromLTRB(16, 18, 16, 14),
                     decoration: neuBox(radius: 22),
                     child: ListenableBuilder(
                       listenable: _chartAnim,
                       builder: (ctx, child) => _buildBarChart(),
                     ),
                   ),
-                  const SizedBox(height: 24),
+                  const SizedBox(height: 26),
 
-                  // ── Cash Out (only when balance > 0 and payout method exists) ──
-                  if (_hasPayoutMethod && _pendingBalance > 0)
-                    SizedBox(
-                      width: double.infinity,
-                      height: 56,
-                      child: ElevatedButton.icon(
-                        onPressed: () {
-                          HapticService.mediumImpact();
-                          _showCashOutSheet();
-                        },
-                        icon: const Icon(Icons.account_balance_rounded, size: 20),
-                        label: Text(
-                          S.of(context).cashOut,
-                          style: const TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: _gold,
-                          foregroundColor: Colors.black,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(16),
-                          ),
-                          elevation: 4,
-                          shadowColor: _gold.withValues(alpha: 0.4),
-                        ),
-                      ),
-                    )
-                  else if (!_hasPayoutMethod)
-                    GestureDetector(
-                      onTap: () {
-                        HapticService.mediumImpact();
-                        _openPayoutMethodsScreen();
-                      },
-                      child: Container(
-                        width: double.infinity,
-                        height: 56,
-                        decoration: neuBox(
-                          radius: 16,
-                          borderColor: Colors.white.withValues(alpha: 0.10),
-                        ),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            const Icon(
-                              Icons.account_balance_wallet_rounded,
-                              size: 20,
-                              color: Colors.white,
-                            ),
-                            const SizedBox(width: 10),
-                            Text(
-                              S.of(context).configurePayments,
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 16,
-                                fontWeight: FontWeight.w800,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    )
-                  else
-                    // Has payout method but $0 balance — show disabled Cash Out
-                    SizedBox(
-                      width: double.infinity,
-                      height: 56,
-                      child: ElevatedButton.icon(
-                        onPressed: null,
-                        icon: const Icon(Icons.account_balance_rounded, size: 20),
-                        label: Text(
-                          S.of(context).cashOut,
-                          style: const TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: _gold.withValues(alpha: 0.2),
-                          foregroundColor: Colors.white.withValues(alpha: 0.4),
-                          disabledBackgroundColor: _gold.withValues(alpha: 0.15),
-                          disabledForegroundColor: Colors.white.withValues(alpha: 0.3),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(16),
-                          ),
-                          elevation: 0,
-                        ),
-                      ),
-                    ),
+                  // ── Stats ──
+                  _sectionLabel(S.of(context).earningsYourStats),
                   const SizedBox(height: 12),
+                  _statsRail(),
+                  const SizedBox(height: 26),
 
-                  // ── Stripe Connect (Setup Payouts) ──
-                  _StripeConnectButton(onMethodsChanged: _fetchPayoutMethods),
-
+                  // ── Actions ──
+                  _sectionLabel(S.of(context).earningsActions),
+                  const SizedBox(height: 12),
+                  _actionsCard(),
                   const SizedBox(height: 20),
 
-                  // ── Next Auto-Payout card ──
+                  // The auto-payout card keeps its place under the actions:
+                  // it is a statement of when money moves, not something to
+                  // press, so it does not belong in a list of controls.
                   _buildNextPayoutCard(),
-
                   const SizedBox(height: 28),
 
-                  // ── Cashout history ──
-                  if (_cashoutHistory.isNotEmpty) ...
-                    _buildCashoutHistory(),
 
                   // ── Recent transactions ──
                   Text(
@@ -615,12 +482,609 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
                       ),
                     ),
                   ),
-                  const SizedBox(height: 24),
+                  // Room for the pinned balance bar, so the last row is
+                  // reachable rather than parked underneath it.
+                  const SizedBox(height: 104),
                 ],
               ),
             ),
           ),
         ],
+      ),
+          _stickyFooter(),
+        ],
+      ),
+    );
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  //  THE REBUILT BODY
+  // ═══════════════════════════════════════════════════════════════════
+
+  /// Day / Week / Month, in a sunken track with the live one raised in gold.
+  ///
+  /// Year is not here. The earnings endpoint understands today, week and
+  /// month and nothing else, so a fourth tab would be a control that cannot
+  /// answer — better absent than dead.
+  Widget _periodPill() {
+    final s = S.of(context);
+    final labels = [
+      s.earningsPeriodDay,
+      s.earningsPeriodWeek,
+      s.earningsPeriodMonth,
+    ];
+    return Container(
+      padding: const EdgeInsets.all(4),
+      decoration: neuBox(radius: 22, pressed: true),
+      child: Row(
+        children: [
+          for (var i = 0; i < labels.length; i++)
+            Expanded(
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () {
+                  if (_selectedPeriod == i) return;
+                  HapticService.selectionClick();
+                  setState(() => _selectedPeriod = i);
+                  _fetchEarnings();
+                },
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 220),
+                  curve: Curves.easeOutCubic,
+                  padding: const EdgeInsets.symmetric(vertical: 10),
+                  decoration: BoxDecoration(
+                    color: i == _selectedPeriod ? _gold : Colors.transparent,
+                    borderRadius: BorderRadius.circular(18),
+                    boxShadow: i == _selectedPeriod
+                        ? [
+                            BoxShadow(
+                              color: _gold.withValues(alpha: 0.28),
+                              blurRadius: 12,
+                              offset: const Offset(0, 3),
+                            ),
+                          ]
+                        : null,
+                  ),
+                  child: Text(
+                    labels[i],
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: i == _selectedPeriod
+                          ? neuBase
+                          : Colors.white.withValues(alpha: 0.38),
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  /// Which stretch of time the figure covers, spelled out.
+  ///
+  /// The reference has arrows to step back a day at a time. They are not
+  /// here because the endpoint takes a period and not a date — it can only
+  /// answer for the current one, so arrows would be buttons that do nothing.
+  Widget _periodLabel() {
+    final now = DateTime.now();
+    const months = [
+      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+    ];
+    String text;
+    switch (_selectedPeriod) {
+      case 0:
+        text = '${months[now.month - 1]} ${now.day}';
+        break;
+      case 1:
+        // The week the backend reports: the last seven days ending today.
+        final from = now.subtract(const Duration(days: 6));
+        text = '${months[from.month - 1]} ${from.day} — '
+            '${months[now.month - 1]} ${now.day}';
+        break;
+      default:
+        text = '${months[now.month - 1]} ${now.year}';
+    }
+    return Center(
+      child: Text(
+        text,
+        style: TextStyle(
+          color: Colors.white.withValues(alpha: 0.55),
+          fontSize: 13.5,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
+  }
+
+  /// The number, at the size the screen is opened for.
+  Widget _heroAmount() {
+    final s = S.of(context);
+    if (_loading && _total == 0) {
+      return const SizedBox(
+        height: 74,
+        child: Center(
+          child: SizedBox(
+            width: 26,
+            height: 26,
+            child: CircularProgressIndicator(color: _gold, strokeWidth: 2.4),
+          ),
+        ),
+      );
+    }
+    final whole = _total.floor();
+    final cents = ((_total - whole) * 100).round().toString().padLeft(2, '0');
+    return Column(
+      children: [
+        if (_hideEarnings)
+          Text(
+            '••••',
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.35),
+              fontSize: 46,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 6,
+            ),
+          )
+        else
+          // The cents a shade quieter, so the eye lands on the dollars.
+          RichText(
+            text: TextSpan(
+              children: [
+                TextSpan(
+                  text: '\$$whole',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 46,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: -1.4,
+                    fontFamily: 'Poppins',
+                  ),
+                ),
+                TextSpan(
+                  text: '.$cents',
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.6),
+                    fontSize: 46,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: -1.4,
+                    fontFamily: 'Poppins',
+                  ),
+                ),
+              ],
+            ),
+          ),
+        const SizedBox(height: 8),
+        Text(
+          // The failure has to say so. The old body had a place for this
+          // message and the rewrite did not, which would have left a driver
+          // reading "$0.00 · no earnings yet" when the truth is that the
+          // request did not come back.
+          _earningsError ??
+              (_total <= 0
+                  ? s.earningsNoneYet
+                  : '$_tripsCount ${s.tripsLabel.toLowerCase()} · '
+                      '${s.earningsOnlineTime(_onlineHours.floor(), ((_onlineHours - _onlineHours.floor()) * 60).round())}'),
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            color: _earningsError != null
+                ? const Color(0xFFCC3333)
+                : Colors.white.withValues(alpha: 0.38),
+            fontSize: 13,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _sectionLabel(String text) => Text(
+        text,
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 17,
+          fontWeight: FontWeight.w700,
+          letterSpacing: -0.2,
+        ),
+      );
+
+  /// Three cards that scroll sideways, as in the reference.
+  Widget _statsRail() {
+    final s = S.of(context);
+    final perHour = _onlineHours > 0 ? _total / _onlineHours : 0.0;
+    return SizedBox(
+      height: 118,
+      child: ListView(
+        scrollDirection: Axis.horizontal,
+        physics: const BouncingScrollPhysics(),
+        padding: EdgeInsets.zero,
+        children: [
+          _statCard(
+            icon: Icons.attach_money_rounded,
+            title: s.earningsStatsCard,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _statBig(_hideEarnings
+                    ? '•••'
+                    : '\$${perHour.toStringAsFixed(2)}'),
+                const SizedBox(height: 3),
+                _statNote('${s.earningsPerOnlineHour}\n${s.earningsExcludingTips}'),
+              ],
+            ),
+          ),
+          const SizedBox(width: 10),
+          _statCard(
+            icon: Icons.local_taxi_rounded,
+            title: s.earningsDrivingCard,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _statRow(s.earningsCompleted, '$_tripsCount'),
+                _statRow(
+                  s.online,
+                  s.earningsOnlineTime(
+                    _onlineHours.floor(),
+                    ((_onlineHours - _onlineHours.floor()) * 60).round(),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 10),
+          _statCard(
+            icon: Icons.volunteer_activism_rounded,
+            title: s.earningsTipsCard,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _statBig(_hideEarnings
+                    ? '•••'
+                    : '\$${_tipsTotal.toStringAsFixed(2)}'),
+                const SizedBox(height: 3),
+                _statNote(s.earningsFromTrips(_tripsCount)),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _statCard({
+    required IconData icon,
+    required String title,
+    required Widget child,
+  }) {
+    return Container(
+      width: 172,
+      padding: const EdgeInsets.all(14),
+      decoration: neuBox(radius: 20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 22,
+                height: 22,
+                decoration: neuBox(radius: 7, pressed: true),
+                child: Icon(icon, size: 12, color: _gold),
+              ),
+              const SizedBox(width: 7),
+              Expanded(
+                child: Text(
+                  title.toUpperCase(),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.38),
+                    fontSize: 9.5,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 1,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Expanded(child: child),
+        ],
+      ),
+    );
+  }
+
+  Widget _statBig(String v) => Text(
+        v,
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 22,
+          fontWeight: FontWeight.w700,
+          letterSpacing: -0.5,
+        ),
+      );
+
+  Widget _statNote(String v) => Text(
+        v,
+        style: TextStyle(
+          color: Colors.white.withValues(alpha: 0.38),
+          fontSize: 11,
+          height: 1.25,
+        ),
+      );
+
+  Widget _statRow(String k, String v) => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 2.5),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              k,
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.38),
+                fontSize: 11.5,
+              ),
+            ),
+            Text(
+              v,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 11.5,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      );
+
+  /// One list of controls, hairline-separated.
+  ///
+  /// Payout methods appears once here. It used to be drawn twice on this
+  /// screen — a "Configure Payments" button in the balance block and the
+  /// Stripe Connect button right underneath it, both saying the same words
+  /// and both opening the same place.
+  Widget _actionsCard() {
+    final s = S.of(context);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      decoration: neuBox(radius: 20),
+      child: Column(
+        children: [
+          _actionRow(
+            icon: _hideEarnings
+                ? Icons.visibility_off_rounded
+                : Icons.visibility_rounded,
+            label: s.earningsHideMine,
+            sub: s.earningsHideMineDesc,
+            trailing: _hideSwitch(),
+            onTap: _toggleHideEarnings,
+          ),
+          _hairline(),
+          _actionRow(
+            icon: Icons.receipt_long_rounded,
+            label: s.earningsPayoutHistory,
+            sub: _cashoutHistory.isEmpty
+                ? null
+                : '${_cashoutHistory.length}',
+            trailing: _chevron(),
+            onTap: () {
+              HapticService.selectionClick();
+              _showCashoutHistorySheet();
+            },
+          ),
+          _hairline(),
+          _actionRow(
+            icon: Icons.account_balance_wallet_rounded,
+            label: s.earningsPayoutMethods,
+            sub: s.earningsPayoutMethodsDesc,
+            trailing: _chevron(),
+            onTap: () {
+              HapticService.mediumImpact();
+              _openPayoutMethodsScreen();
+            },
+          ),
+          // Stripe Connect, which is only reachable from this screen.
+          //
+          // It manages its own visibility — it draws nothing once the
+          // account is linked — and PayoutMethodsScreen does not offer it,
+          // so dropping it here would leave a driver with no way to set up
+          // payouts at all.
+          _StripeConnectButton(onMethodsChanged: _fetchPayoutMethods),
+        ],
+      ),
+    );
+  }
+
+  Widget _hairline() =>
+      Divider(height: 1, color: Colors.white.withValues(alpha: 0.05));
+
+  Widget _chevron() => Icon(
+        Icons.chevron_right_rounded,
+        color: Colors.white.withValues(alpha: 0.3),
+        size: 20,
+      );
+
+  Widget _actionRow({
+    required IconData icon,
+    required String label,
+    String? sub,
+    required Widget trailing,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 14),
+        child: Row(
+          children: [
+            Icon(icon, size: 18, color: Colors.white.withValues(alpha: 0.6)),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    label,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  if (sub != null) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      sub,
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.35),
+                        fontSize: 11.5,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            trailing,
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _hideSwitch() {
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 200),
+      curve: Curves.easeOutCubic,
+      width: 42,
+      height: 24,
+      decoration: BoxDecoration(
+        color: _hideEarnings ? _gold.withValues(alpha: 0.22) : neuPressed,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.55),
+            offset: const Offset(2, 2),
+            blurRadius: 5,
+            spreadRadius: -2,
+          ),
+        ],
+      ),
+      child: AnimatedAlign(
+        duration: const Duration(milliseconds: 200),
+        curve: Curves.easeOutCubic,
+        alignment:
+            _hideEarnings ? Alignment.centerRight : Alignment.centerLeft,
+        child: Container(
+          margin: const EdgeInsets.all(3),
+          width: 18,
+          height: 18,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: _hideEarnings
+                ? _gold
+                : Colors.white.withValues(alpha: 0.38),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Balance and the one button that moves it, always in reach.
+  ///
+  /// Pinned rather than placed in the scroll. Cashing out is the reason a
+  /// driver opens this screen with any urgency, and it used to sit halfway
+  /// down a page that grows with every trip they take.
+  Widget _stickyFooter() {
+    final s = S.of(context);
+    final canCash = _hasPayoutMethod && _pendingBalance > 0;
+    return Positioned(
+      left: 0,
+      right: 0,
+      bottom: 0,
+      child: Container(
+        padding: EdgeInsets.fromLTRB(
+          20,
+          12,
+          20,
+          12 + MediaQuery.of(context).padding.bottom,
+        ),
+        decoration: BoxDecoration(
+          color: neuBase.withValues(alpha: 0.96),
+          border: Border(
+            top: BorderSide(color: Colors.white.withValues(alpha: 0.05)),
+          ),
+        ),
+        child: Row(
+          children: [
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  _hideEarnings
+                      ? '•••'
+                      : '\$${_pendingBalance.toStringAsFixed(2)}',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                Text(
+                  s.earningsAvailable,
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.38),
+                    fontSize: 11,
+                  ),
+                ),
+              ],
+            ),
+            const Spacer(),
+            GestureDetector(
+              onTap: canCash
+                  ? () {
+                      HapticService.mediumImpact();
+                      _showCashOutSheet();
+                    }
+                  : () {
+                      HapticService.mediumImpact();
+                      _openPayoutMethodsScreen();
+                    },
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 26, vertical: 14),
+                decoration: BoxDecoration(
+                  color: canCash ? _gold : _gold.withValues(alpha: 0.18),
+                  borderRadius: BorderRadius.circular(18),
+                  boxShadow: canCash
+                      ? [
+                          BoxShadow(
+                            color: _gold.withValues(alpha: 0.25),
+                            blurRadius: 16,
+                            offset: const Offset(0, 4),
+                          ),
+                        ]
+                      : null,
+                ),
+                child: Text(
+                  canCash ? s.cashOut : s.configurePayments,
+                  style: TextStyle(
+                    color: canCash
+                        ? neuBase
+                        : Colors.white.withValues(alpha: 0.55),
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -817,18 +1281,39 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
             child: Column(
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
-                Text(
-                  '\$${val.toInt()}',
-                  style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.4),
-                    fontSize: 10,
-                    fontWeight: FontWeight.w600,
+                // Cents on the days that earned, and a quiet $0 on the ones
+                // that did not.
+                //
+                // Whole dollars on every column read as a row of equals: $7
+                // and $7 for $7.10 and $7.21 is the same figure printed
+                // twice. And a $0 in the same weight as an amount competes
+                // for the eye exactly where it is scanning for the days that
+                // made money.
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    val > 0
+                        ? (_hideEarnings ? '•••' : '\$${val.toStringAsFixed(2)}')
+                        : '\$0',
+                    maxLines: 1,
+                    style: TextStyle(
+                      color: val > 0
+                          ? _gold.withValues(alpha: 0.85)
+                          : Colors.white.withValues(alpha: 0.22),
+                      fontSize: 10,
+                      fontWeight: val > 0 ? FontWeight.w700 : FontWeight.w500,
+                      fontFeatures: const [ui.FontFeature.tabularFigures()],
+                    ),
                   ),
                 ),
                 const SizedBox(height: 6),
                 AnimatedContainer(
                   duration: const Duration(milliseconds: 600),
-                  height: h,
+                  // A floor, so a day with nothing still draws a tick on the
+                  // axis. Without it the chart has holes and reads as broken
+                  // rather than as empty — the same rule the home sheet's
+                  // chart follows.
+                  height: h < 4 ? 4 : h,
                   margin: const EdgeInsets.symmetric(horizontal: 6),
                   decoration: BoxDecoration(
                     gradient: isMax
@@ -869,34 +1354,6 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
     );
   }
 
-  Widget _miniStat(String value, String label) {
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
-      decoration: neuBox(radius: 14, pressed: true),
-      child: Column(
-        children: [
-          Text(
-            value,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 16,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-          const SizedBox(height: 2),
-          Text(
-            label,
-            style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.4),
-              fontSize: 12,
-            ),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-        ],
-      ),
-    );
-  }
 
   Widget _transactionTile(Map<String, dynamic> t) {
     final type = _toStr(t['type'], fallback: 'trip');

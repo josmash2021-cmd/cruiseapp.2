@@ -1229,6 +1229,45 @@ class S {
   String get cashOut => _es ? 'Retirar' : 'Cash Out';
   String get thisWeek => _es ? 'Esta Semana' : 'This Week';
   String get thisMonth => _es ? 'Este Mes' : 'This Month';
+
+  // ── Earnings screen, rebuilt layout ──
+  String get earningsPeriodDay => _es ? 'Día' : 'Day';
+  String get earningsPeriodWeek => _es ? 'Semana' : 'Week';
+  String get earningsPeriodMonth => _es ? 'Mes' : 'Month';
+  String get earningsNoneYet =>
+      _es ? 'Aún no hay ganancias' : 'No earnings yet';
+  String get earningsYourStats =>
+      _es ? 'Tus estadísticas' : 'Your stats';
+  String get earningsActions => _es ? 'Acciones' : 'Actions';
+  String get earningsStatsCard => _es ? 'Ganancias' : 'Earnings';
+  String get earningsPerOnlineHour =>
+      _es ? 'por hora en línea' : 'per online hour';
+  String get earningsExcludingTips =>
+      _es ? 'sin propinas' : 'excluding tips';
+  String get earningsDrivingCard => _es ? 'Conducción' : 'Driving';
+  String get earningsCompleted => _es ? 'Completados' : 'Completed';
+  String get earningsTipsCard => _es ? 'Propinas' : 'Tips';
+  String earningsFromTrips(int n) =>
+      _es ? 'de $n viajes' : 'from $n trips';
+  String get earningsHideMine =>
+      _es ? 'Ocultar mis ganancias' : 'Hide my earnings';
+  String get earningsHideMineDesc => _es
+      ? 'Cubre las cifras de esta pantalla'
+      : 'Covers the figures on this screen';
+  String get earningsPayoutHistory =>
+      _es ? 'Historial de pagos' : 'Payout history';
+  String get earningsPayoutMethods =>
+      _es ? 'Métodos de cobro' : 'Payout methods';
+  String get earningsPayoutMethodsDesc => _es
+      ? 'Dónde recibes tu dinero'
+      : 'Where your money arrives';
+  String get earningsAvailable => _es ? 'disponible' : 'available';
+  /// Hours and minutes, never a decimal — "5.5h" is not a time.
+  String earningsOnlineTime(int hours, int minutes) {
+    if (hours == 0) return _es ? '$minutes min' : '${minutes}min';
+    if (minutes == 0) return '${hours}h';
+    return _es ? '${hours}h $minutes min' : '${hours}h ${minutes}min';
+  }
   String availableBalance(String amount) =>
       _es ? 'Saldo disponible: \$$amount' : 'Available balance: \$$amount';
   String get fundsTransferDesc => _es

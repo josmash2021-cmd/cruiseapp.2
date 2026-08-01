@@ -327,26 +327,30 @@ class GoldLocationDot {
   static void paintHeadingShadow(Canvas canvas, Offset center) {
     canvas.drawOval(
       Rect.fromCenter(
-        center: center + const Offset(0, _shadowDrop * 1.6),
-        width: _dotR * 2.05,
-        height: _dotR * 1.5,
+        center: center + const Offset(0, _shadowDrop * 1.5),
+        width: _dotR * 2.2,
+        height: _dotR * 1.6,
       ),
       Paint()
-        ..color = Colors.black.withValues(alpha: 0.38)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 7),
+        ..color = Colors.black.withValues(alpha: 0.62)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8),
     );
     canvas.drawCircle(
       center + const Offset(0, _shadowDrop),
-      _dotR * 0.96,
+      _dotR * 0.99,
       Paint()
-        ..color = Colors.black.withValues(alpha: 0.55)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3),
+        ..color = Colors.black.withValues(alpha: 0.88)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2.5),
     );
   }
 
-  /// How far below the badge the shadow sits, in canvas units. Small: the
-  /// badge is meant to hover a little, not float.
-  static const double _shadowDrop = 3.0;
+  /// How far below the badge the shadow sits, in canvas units.
+  ///
+  /// The whole lift is carried by this number and the two opacities above.
+  /// Both were raised once already: the first pass was tuned against a white
+  /// mock-up and disappeared on the actual map, which is a dark navy the
+  /// shadow has to be darker than to be seen at all.
+  static const double _shadowDrop = 4.5;
 
   static void _paintPlainDot(Canvas canvas, Offset center) {
     canvas.drawCircle(

@@ -1243,15 +1243,24 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     // the UI thread cleanly.
     //
     // The deferral applies to the FIRST start only. Later restarts happen
-    // every time the driver pulls away after standing still (the ticker parks
-    // itself at the target), and delaying those by half a second is exactly
-    // the "dot doesn't follow me" lag — the transition is long gone by then.
+    // every time the driver comes back to this screen from a trip, and
+    // delaying those by half a second is exactly the "dot doesn't follow me"
+    // lag — the transition is long gone by then.
+    //
+    // Not while our map is gone. This screen stays mounted underneath the
+    // trip screen and its GPS stream keeps running, so a fix arriving mid-
+    // ride would restart the ticker against a surface we handed away — and
+    // since the ticker no longer parks itself at the target, it would then
+    // run at 60 fps for the length of the whole trip. Every write it makes
+    // is guarded and does nothing; it is the running that costs.
+    if (!_mapMounted) return;
+
     if (!(_smoothTicker?.isTicking ?? false)) {
       if (_smoothTickerStarted) {
         _smoothTicker?.start();
       } else {
         Future.delayed(const Duration(milliseconds: 500), () {
-          if (mounted && !(_smoothTicker?.isTicking ?? false)) {
+          if (mounted && _mapMounted && !(_smoothTicker?.isTicking ?? false)) {
             _smoothTickerStarted = true;
             _smoothTicker?.start();
           }
@@ -1295,6 +1304,16 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
   /// measured speed between GPS fixes instead of decelerating into a stall.
   void _onSmoothTick(Duration elapsed) {
     if (!mounted || _pos == null) return;
+    // Self-correcting stop. _releaseMapSurface already stops the ticker, and
+    // both start paths now check the map first — this is the backstop for
+    // any future one that forgets, because a ticker running against a map
+    // that has been handed to another screen is invisible: every write it
+    // makes is guarded, so it costs a frame's work sixty times a second and
+    // shows nothing to say it is happening.
+    if (!_mapMounted) {
+      _smoothTicker?.stop();
+      return;
+    }
     if (!_motion.hasPosition) return;
 
     // Frame delta in seconds. Clamp huge gaps (background resume) so we

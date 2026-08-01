@@ -1144,13 +1144,23 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
 
       final pos = await Geolocator.getCurrentPosition(
         locationSettings: const LocationSettings(
-          accuracy: LocationAccuracy.high,
+          // bestForNavigation, not high.
+          //
+          // geolocator's `high` is ten metres on iOS
+          // (kCLLocationAccuracyNearestTenMeters), which is the width of a
+          // road plus its pavement — so a driver standing in the street was
+          // being placed on the kerb and the app was not wrong by its own
+          // standards. Every other driver stream in the app already asks for
+          // bestForNavigation through driverLocationSettings; this screen was
+          // the one that did not, and it is the screen they look at while
+          // parked and checking the marker.
+          accuracy: LocationAccuracy.bestForNavigation,
           timeLimit: Duration(seconds: 15),
         ),
       );
       if (!mounted) return;
       _currentLatLng = LatLng(pos.latitude, pos.longitude);
-      _goldDot.setTarget(pos.latitude, pos.longitude);
+      _goldDot.setTarget(pos.latitude, pos.longitude, accuracyM: pos.accuracy);
       _headingSource.onFix(pos);
       setState(() {});
       _updateMyLocAnnotation();
@@ -1169,7 +1179,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       _posStream?.cancel();
       _posStream = Geolocator.getPositionStream(
         locationSettings: const LocationSettings(
-          accuracy: LocationAccuracy.high,
+          accuracy: LocationAccuracy.bestForNavigation,
           distanceFilter: 2,
         ),
       ).listen((p) {
@@ -1183,7 +1193,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
         // now — see the _headingSource subscription in initState — and this
         // hands the fix over so the service can decide whether the car is
         // going fast enough for the GPS course to be the better answer.
-        _goldDot.setTarget(ll.latitude, ll.longitude);
+        _goldDot.setTarget(ll.latitude, ll.longitude, accuracyM: p.accuracy);
         _headingSource.onFix(p);
         // Keep publishing while online — the driver can be on this screen
         // mid-shift now. See _feedGpsUploads.

@@ -1018,7 +1018,8 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
           _currentSpeedMph = (pos.speed * 2.23694).clamp(0.0, 200.0);
           // Snap to route polyline — prevents GPS drift off-road
           final snappedLL = _snapToRoute(newLL);
-          _smoothMoveTo(snappedLL, _smoothedBearing);
+          _smoothMoveTo(snappedLL, _smoothedBearing,
+              accuracyM: pos.accuracy);
 
           // Feed GpsService for RTDB upload (800ms throttled)
           _gpsService.updatePosition(newLL, pos.heading, pos.speed);
@@ -1236,8 +1237,12 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     });
   }
 
-  void _smoothMoveTo(LatLng target, double heading) {
-    _motion.setTarget(target.latitude, target.longitude, bearing: heading);
+  void _smoothMoveTo(LatLng target, double heading, {double? accuracyM}) {
+    // accuracyM sizes the standstill jitter hold — see SmoothMotion. Without
+    // it the hold falls back to a flat 15 m, which is wider than a road, and
+    // a parked driver gets drawn on the pavement and left there.
+    _motion.setTarget(target.latitude, target.longitude,
+        bearing: heading, accuracyM: accuracyM);
     // Seed _pos on the very first fix so the first render doesn't start
     // from (0, 0) — the ticker fills it in subsequent frames.
     if (_pos == null && _motion.hasPosition) {

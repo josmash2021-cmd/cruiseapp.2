@@ -78,9 +78,27 @@ class SmoothMotion {
   double get bearing => _bearing;
   bool get hasPosition => _lat != null;
 
+  /// How many fixes in a row the standstill hold has swallowed.
+  int _consecutiveHolds = 0;
+
+  /// After this many, the next fix is taken whatever it says. Five fixes is
+  /// a few seconds of a driver standing still — long enough to absorb a
+  /// burst of wander, short enough that a real move cannot be held out.
+  static const int _maxConsecutiveHolds = 5;
+
   /// Provide a new GPS target. Measures velocity from the delta to the
-  /// previous target. [bearing] is optional (degrees, 0 = north).
-  void setTarget(double lat, double lng, {double? bearing}) {
+  /// previous target.
+  ///
+  /// [bearing] is optional (degrees, 0 = north). [accuracyM] is the fix's
+  /// own reported radius of uncertainty — `Position.accuracy` — and sizes
+  /// the standstill hold below. Without it the hold falls back to the old
+  /// flat 15 m, which is wider than a road.
+  void setTarget(
+    double lat,
+    double lng, {
+    double? bearing,
+    double? accuracyM,
+  }) {
     // The busiest entry point, and the one that was not checking.
     //
     // snapTo guards its input and setBearing guards its own, but this runs on
@@ -116,15 +134,42 @@ class SmoothMotion {
           return;
         }
 
-        // Standstill jitter hold: while essentially parked, ignore small
-        // position hops (typical GPS wander is 5–20 m). Without this the
-        // velocity estimator ingests random jitter and the dot visibly
-        // jumps around a stationary car.
+        // Standstill jitter hold: while essentially parked, ignore position
+        // hops small enough to be GPS wander rather than movement.
+        //
+        // The radius was a flat 15 m, and that is wider than a road. A
+        // driver standing in the street was drawn on the pavement and stayed
+        // there, because every fix that would have corrected it landed
+        // inside the ring and was thrown away — and the ring is measured
+        // from the stale target, so it never caught up. Fifteen metres of
+        // permanent error, on the screen whose whole job is to say where
+        // the driver is.
+        //
+        // Sized to the fix instead. The platform reports how far off it
+        // might be; a reading good to 3 m that has moved 8 m has moved, and
+        // one good to 40 m that has moved 8 m has not necessarily. Floored
+        // at 2.5 m because no fix is better than that in a street, and
+        // capped at the old 15 so a wild accuracy figure cannot widen it.
+        final holdRadiusM = (accuracyM == null ||
+                !accuracyM.isFinite ||
+                accuracyM <= 0)
+            ? 15.0
+            : accuracyM.clamp(2.5, 15.0);
+
         final curSpeedMps = math.sqrt(
           math.pow(_vLng * 111320.0 * cosLat, 2) +
               math.pow(_vLat * 110540.0, 2),
         );
-        if (curSpeedMps < 1.2 && distM < 15.0) {
+        // And never more than a few in a row.
+        //
+        // Whatever the radius, a run of fixes that all agree on a new place
+        // is not noise. Without this a marker could be held indefinitely by
+        // readings that each sit just inside the ring, which is the same
+        // permanent error in a slower form.
+        if (curSpeedMps < 1.2 &&
+            distM < holdRadiusM &&
+            _consecutiveHolds < _maxConsecutiveHolds) {
+          _consecutiveHolds++;
           // Bleed off residual velocity and refresh the timestamp so the
           // extrapolation freeze doesn't kick in — but keep the old target.
           _vLat *= 0.5;
@@ -132,6 +177,7 @@ class SmoothMotion {
           _lastTargetAt = now;
           return;
         }
+        _consecutiveHolds = 0;
 
         final newVLat = dLat / dtSec;
         final newVLng = dLng / dtSec;
@@ -308,6 +354,7 @@ class SmoothMotion {
     }
     _vLat = 0;
     _vLng = 0;
+    _consecutiveHolds = 0;
     _lastTargetAt = DateTime.now();
   }
 
@@ -321,6 +368,7 @@ class SmoothMotion {
     _vLng = 0;
     _bearing = 0;
     _targetBearing = 0;
+    _consecutiveHolds = 0;
     _lastTargetAt = null;
   }
 }

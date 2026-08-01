@@ -165,8 +165,10 @@ class GoldLocationDot {
   /// or no compass), and passing that through would swing the arrow to north
   /// every time the driver stops. Callers should drop invalid headings
   /// rather than forward them.
-  void setTarget(double lat, double lng, {double? bearing}) =>
-      _motion.setTarget(lat, lng, bearing: bearing);
+  /// [accuracyM] is the fix's own reported uncertainty, which sizes the
+  /// standstill jitter hold — see SmoothMotion.setTarget.
+  void setTarget(double lat, double lng, {double? bearing, double? accuracyM}) =>
+      _motion.setTarget(lat, lng, bearing: bearing, accuracyM: accuracyM);
 
   /// Aim the marker without moving it.
   ///

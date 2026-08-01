@@ -111,6 +111,80 @@ void main() {
     });
   });
 
+  group('the standstill hold does not pin the marker', () {
+    // SmoothMotion times its own fixes off DateTime.now(), so the gaps here
+    // are real. They have to be: below 50 ms the whole velocity-and-hold
+    // block is skipped as a duplicate fix, and a first draft of these tests
+    // passed for exactly that reason — every fix sailed through a filter
+    // that never ran.
+    //
+    // 200 ms is the window. Long enough to be a fix, short enough to stay
+    // under the 60 m/s teleport guard for the distances used below.
+    Future<void> gap() => Future<void>.delayed(const Duration(milliseconds: 200));
+
+    const startLat = 33.32872, startLng = -86.78781;
+    double north(double metres) => startLat + metres / 110540.0;
+    double movedM(SmoothMotion m) => (m.lat! - startLat) * 110540.0;
+
+    /// A parked marker, settled, with no velocity to speak of.
+    Future<SmoothMotion> parked() async {
+      final m = SmoothMotion()..snapTo(startLat, startLng, bearing: 0);
+      await gap();
+      return m;
+    }
+
+    test('a fix good to 3 m, eight metres away, is a move', () async {
+      // This is the bug. A flat 15 m ring swallowed it, so a driver standing
+      // in the road was drawn on the pavement and stayed there.
+      final m = await parked();
+      m.setTarget(north(8), startLng, accuracyM: 3);
+      run(m, 2);
+      expect(movedM(m), greaterThan(6),
+          reason: 'the fix knows itself to 3 m; eight metres is not wander');
+    });
+
+    test('a fix good only to 40 m, eight metres away, is not', () async {
+      final m = await parked();
+      m.setTarget(north(8), startLng, accuracyM: 40);
+      run(m, 2);
+      expect(movedM(m), lessThan(1),
+          reason: 'eight metres is well inside what that fix admits to');
+    });
+
+    test('but a run of them gives way', () async {
+      // Six fixes all saying the same new place. Noise does not agree with
+      // itself six times.
+      final m = await parked();
+      for (var i = 0; i < 6; i++) {
+        m.setTarget(north(8), startLng, accuracyM: 40);
+        await gap();
+      }
+      run(m, 2);
+      expect(movedM(m), greaterThan(6),
+          reason: 'the marker must not be pinned indefinitely');
+    });
+
+    test('with no accuracy given, the old 15 m fallback still holds', () async {
+      final m = await parked();
+      m.setTarget(north(8), startLng); // no accuracyM
+      run(m, 2);
+      expect(movedM(m), lessThan(1));
+    });
+
+    test('a real drive is never held', () async {
+      // Moving properly, the speed gate opens before the radius is consulted
+      // at all.
+      final m = SmoothMotion()..snapTo(startLat, startLng, bearing: 0);
+      for (var i = 1; i <= 4; i++) {
+        await gap();
+        m.setTarget(north(6.0 * i), startLng, accuracyM: 40);
+        run(m, 0.2);
+      }
+      expect(movedM(m), greaterThan(10),
+          reason: 'a car at 30 m/s is not standing still');
+    });
+  });
+
   group('SmoothMotion.isAtTarget', () {
     test('is false while a turn is still in progress', () {
       final m = SmoothMotion()..setTarget(33.328, -86.788, bearing: 0);

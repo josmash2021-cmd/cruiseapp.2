@@ -20,17 +20,13 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../config/mapbox_config.dart';
-import '../../config/map_theme.dart';
 import '../../config/page_transitions.dart';
 import '../../widgets/verified_avatar.dart';
-import '../../widgets/map/circular_pin_renderer.dart';
+import '../../widgets/static_route_preview.dart';
 import '../../l10n/app_localizations.dart';
 import '../../models/lat_lng.dart';
-import '../../map/map_surface_coordinator.dart';
 import '../../services/resilient_position_stream.dart';
 import '../../utils/driver_location_settings.dart';
-import '../../utils/mapbox_safe.dart';
-import '../../services/map_controller_cache.dart';
 import '../chat_screen.dart';
 import '../help_screen.dart';
 import '../../services/chat_service.dart';
@@ -133,9 +129,6 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   late final Animation<double>   _fadeAnim;
   late final AnimationController _slideCtrl;
   late final Animation<Offset>   _slideAnim;
-  mapbox.MapboxMap? _map;
-  mapbox.PointAnnotationManager? _annotMgr;
-  mapbox.PolylineAnnotationManager? _polyMgr;
 
   // ── Start Trip → Continue/Directions fade ──
   bool _tripStarted = false;
@@ -152,37 +145,22 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   String? _complimentaryDrink;
 
   // ── Tilt animation ──
-  late final AnimationController _tiltCtrl;
-  late final Animation<double>   _tiltAnim;
 
   // ── Smooth route draw ──
   Ticker? _routeDrawTicker;
-  mapbox.PolylineAnnotation? _routeAnnot;
   List<LatLng> _routePoints = [];
 
   // ── Pin pop animation ──
   late final AnimationController _pinPopCtrl;
-  late final Animation<double> _pinPopAnim;
-  final List<mapbox.PointAnnotation> _pinAnnots = [];
 
   // ── Start Trip tap state ──
   bool   _slid     = false;
 
   // ── Mini map animation already played flag ──
-  bool _miniMapAnimDone = false;
 
   // ── Camera angle cycling (every 10s, smooth bearing+pitch) ──
-  static const _cameraAngles = <(double, double)>[
-    (55.0, 12.0),
-    (45.0, -30.0),
-    (60.0, 25.0),
-    (50.0, -10.0),
-  ];
   Timer? _camCycleTimer;
-  int _camCycleIdx = 0;
   AnimationController? _camCycleCtrl;
-  Animation<double>? _camPitchAnim;
-  Animation<double>? _camBearingAnim;
 
   // ── Continuous GPS → GpsService (keeps RTDB live for rider tracking) ──
   ResilientPositionStream? _liveGps;
@@ -279,9 +257,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   // surfaces alive at the same moment — the iOS crash right after the
   // driver accepts a ride. The preview is a 190px card, so waiting out
   // the handoff costs nothing visible.
-  bool _previewMapMounted = false;
   Timer? _previewMapTimer;
-  static const String _mapSurfaceOwner = 'DriverTripAccept';
 
   // ── Trip distance pickup→dropoff ─────────────────────────────────────────
   double get _tripKm {
@@ -362,22 +338,14 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
       end: Offset.zero,
     ).animate(CurvedAnimation(parent: _slideCtrl, curve: Curves.easeOutCubic));
 
-    // Tilt controller: smooth 0° → 55° camera tilt
-    _tiltCtrl = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1400),
-    );
-    _tiltAnim = Tween<double>(begin: 0.0, end: 55.0).animate(
-      CurvedAnimation(parent: _tiltCtrl, curve: Curves.easeInOutCubic),
-    );
-    _tiltCtrl.addListener(_applyMapTilt);
+    // The 0° → 55° camera tilt went with the live preview map — there is no
+    // camera to tilt on an image.
 
     // Pin pop controller (kept for compat, pins placed at full size now)
     _pinPopCtrl = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1),
     );
-    _pinPopAnim = Tween<double>(begin: 1.0, end: 1.0).animate(_pinPopCtrl);
 
     // Button fade controller for Start Trip → Continue/Directions transition
     _btnFadeCtrl = AnimationController(
@@ -418,38 +386,37 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     // uploaded during the entire trip lifecycle.
     _startLiveGpsForRider();
 
-    // Mount the preview map once the screen we came from has actually let
-    // go of the native surface.
+    // No map surface is claimed here any more.
     //
-    // This used to be a timer set to kTripHandoffMs + 250, chosen to land
-    // just after the online screen's own timer at kTripHandoffMs + 200 —
-    // fifty milliseconds of margin against a PlatformView teardown that
-    // takes as long as it takes, during the busiest moment of the whole
-    // flow. Ask instead of guess.
-    _acquireMapSurface();
+    // This screen used to take the app's one live Mapbox surface for a
+    // 190-point preview card with every gesture disabled. The online screen
+    // stays mounted underneath for the whole trip, so the cost of that was
+    // its map being destroyed on accept and rebuilt on return — and the
+    // handoff in between is where this flow's crashes lived. The preview is
+    // a static image now, which needs no surface, so the screen underneath
+    // simply keeps its map for the length of the ride.
+    //
+    // The route still has to be fetched, though: it used to be loaded from
+    // the map's onStyleLoaded, which no longer runs. The preview draws pins
+    // only until this lands, then redraws with the line.
+    _loadPreviewRoute();
   }
 
-  /// Claim the one live Mapbox surface, then mount our map.
+  /// Fetch the driving route for the preview card.
   ///
-  /// [surfaceRemoved] is what makes our own revoke honest: flipping the flag
-  /// only schedules the rebuild, so we wait for the frames that unmount the
-  /// widget before telling the coordinator we are clear.
-  Future<void> _acquireMapSurface() async {
-    await MapSurfaceCoordinator.instance.acquire(
-      owner: _mapSurfaceOwner,
-      onRevoke: () async {
-        if (!mounted || !_previewMapMounted) return;
-        setState(() => _previewMapMounted = false);
-        await surfaceRemoved();
-      },
-    );
-    if (!mounted) {
-      // Disposed while waiting our turn — do not leave the coordinator
-      // holding a claim for a screen that no longer exists.
-      MapSurfaceCoordinator.instance.release(_mapSurfaceOwner);
-      return;
+  /// Cheap to be wrong about — the card shows the two pins either way, and
+  /// the line is the part that arrives a moment later. Failures are left to
+  /// the empty list rather than retried: a preview without a route line is a
+  /// smaller problem than a screen that keeps hitting the network during a
+  /// trip.
+  Future<void> _loadPreviewRoute() async {
+    try {
+      final pts = await _loadRoute();
+      if (!mounted || pts.length < 2) return;
+      setState(() => _routePoints = pts);
+    } catch (e) {
+      debugPrint('[DriverTripAccept] preview route unavailable: $e');
     }
-    setState(() => _previewMapMounted = true);
   }
 
   Future<void> _resolveRiderPhotoFromTrip() async {
@@ -527,7 +494,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    MapSurfaceCoordinator.instance.release(_mapSurfaceOwner);
+    // No surface to release: this screen holds no live map any more.
     unawaited(_liveGps?.stop());
     _gpsSub?.cancel();
     _dropoffGpsSub?.cancel();
@@ -539,7 +506,6 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     _camCycleCtrl?.dispose();
     _fadeCtrl.dispose();
     _slideCtrl.dispose();
-    _tiltCtrl.dispose();
     _pinPopCtrl.dispose();
     _btnFadeCtrl.dispose();
     _finishFadeCtrl.dispose();
@@ -547,7 +513,6 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     _routeDrawTicker?.stop();
     _routeDrawTicker?.dispose();
     _routePoints = [];
-    _pinAnnots.clear();
     super.dispose();
   }
 
@@ -2431,317 +2396,11 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     return _fetchRoutePoints(widget.pickupLatLng, widget.dropoffLatLng);
   }
 
-  // onMapCreated — capture controller + disable all gestures for preview perf.
-  void _onMapReady(mapbox.MapboxMap ctrl) {
-    _map = ctrl;
-    // Cache controller for reuse across driver screens
-    MapControllerCache.instance.cache(ctrl);
-    // Disable all interaction — this is a read-only preview map.
-    ctrl.gestures.updateSettings(mapbox.GesturesSettings(
-      scrollEnabled: false,
-      rotateEnabled: false,
-      pinchToZoomEnabled: false,
-      doubleTapToZoomInEnabled: false,
-      doubleTouchToZoomOutEnabled: false,
-      pitchEnabled: false,
-      quickZoomEnabled: false,
-      simultaneousRotateAndPinchToZoomEnabled: false,
-    ));
-    // Hide compass + attribution for clean preview.
-    ctrl.compass.updateSettings(mapbox.CompassSettings(enabled: false));
-    ctrl.attribution.updateSettings(mapbox.AttributionSettings(
-      iconColor: 0x00000000,
-      position: mapbox.OrnamentPosition.BOTTOM_LEFT,
-    ));
-    ctrl.logo.updateSettings(mapbox.LogoSettings(
-      position: mapbox.OrnamentPosition.BOTTOM_LEFT,
-      marginLeft: -100,
-    ));
-  }
-
-  // onStyleLoadedListener — style is guaranteed ready here; run all setup.
-  Future<void> _onStyleLoaded(mapbox.StyleLoadedEventData _) async {
-    final ctrl = _map;
-    if (ctrl == null || !mounted) return;
-
-    // Fire all independent setup in parallel for speed.
-    final setupFutures = <Future>[
-      MapTheme.applyNavyGold(ctrl),
-      ctrl.annotations.createPolylineAnnotationManager().then((m) => _polyMgr = m),
-      ctrl.annotations.createPointAnnotationManager().then((m) async {
-        _annotMgr = m;
-        try {
-          // Keep pins upright in mini-map while preserving bottom tip anchor.
-          await ctrl.style.setStyleLayerProperty(m.id, 'icon-pitch-alignment', 'viewport');
-          await ctrl.style.setStyleLayerProperty(m.id, 'icon-rotation-alignment', 'viewport');
-          await ctrl.style.setStyleLayerProperty(m.id, 'icon-allow-overlap', true);
-          await ctrl.style.setStyleLayerProperty(m.id, 'icon-ignore-placement', true);
-          await ctrl.style.setStyleLayerProperty(m.id, 'icon-anchor', 'bottom');
-        } catch (_) {}
-      }),
-    ];
-    await Future.wait(setupFutures);
-    if (!mounted) return;
-
-    // Load route + render pins in parallel.
-    final results = await Future.wait([
-      _loadRoute(),
-      renderCircularPinBytes(icon: CircularPinIcon.person, isPickup: true, radius: 32),
-      renderCircularPinBytes(icon: CircularPinIcon.flag, isPickup: false, radius: 32),
-    ]);
-    if (!mounted) return;
-
-    _routePoints = results[0] as List<LatLng>;
-    final pickupPinBytes = results[1] as Uint8List;
-    final dropoffPinBytes = results[2] as Uint8List;
-
-    if (_routePoints.length < 2) return;
-
-    // Do NOT force raw pin coordinates — Mapbox Directions API already
-    // snaps start/end to the nearest road. Replacing them with the user's
-    // raw coordinates creates off-road straight-line segments.
-
-    // Include driver position + pickup + dropoff + route in bounds so everything is visible.
-    final allPoints = [
-      widget.driverPos,
-      widget.pickupLatLng,
-      widget.dropoffLatLng,
-      ..._routePoints,
-    ];
-    double minLat = 90, maxLat = -90, minLng = 180, maxLng = -180;
-    for (final p in allPoints) {
-      if (p.latitude  < minLat) minLat = p.latitude;
-      if (p.latitude  > maxLat) maxLat = p.latitude;
-      if (p.longitude < minLng) minLng = p.longitude;
-      if (p.longitude > maxLng) maxLng = p.longitude;
-    }
-    final bounds = mapbox.CoordinateBounds(
-      southwest: mapbox.Point(coordinates: mapbox.Position(minLng, minLat)),
-      northeast: mapbox.Point(coordinates: mapbox.Position(maxLng, maxLat)),
-      infiniteBounds: false,
-    );
-    // Compute a small auto-bearing based on route direction for a pleasant angle.
-    final rBearing = _routeBearing(_routePoints);
-    final prettBearing = (rBearing + 15.0) % 360;
-
-    // ── If returning (animation already played), show final state instantly ──
-    if (_miniMapAnimDone || widget.arrivedAtPickup) {
-      _miniMapAnimDone = true;
-      final cam = await ctrl.cameraForCoordinateBounds(
-        bounds,
-        mapbox.MbxEdgeInsets(top: 60, left: 50, bottom: 70, right: 50),
-        prettBearing,
-        55,
-        null, null,
-      );
-      if (!mounted) return;
-      // Reduce zoom by 0.5 to ensure route is fully visible with padding
-      final targetZoom = ((cam.zoom ?? 13) - 0.5).clamp(10.0, 14.0);
-      ctrl.setCamera(mapbox.CameraOptions(
-        center: cam.center, zoom: targetZoom, bearing: prettBearing, pitch: 55.0,
-      ));
-      // Place pins + route instantly
-      final pickupPoint = safePoint(widget.pickupLatLng.longitude, widget.pickupLatLng.latitude);
-      final dropoffPoint = safePoint(widget.dropoffLatLng.longitude, widget.dropoffLatLng.latitude);
-      _pinAnnots.clear();
-      if (_annotMgr != null && pickupPoint != null && dropoffPoint != null) {
-        final pins = await Future.wait([
-          _annotMgr!.create(mapbox.PointAnnotationOptions(
-            geometry: pickupPoint,
-            image: pickupPinBytes, iconSize: 0.86, iconAnchor: mapbox.IconAnchor.BOTTOM,
-            iconOffset: const [0.0, 0.0],
-          )),
-          _annotMgr!.create(mapbox.PointAnnotationOptions(
-            geometry: dropoffPoint,
-            image: dropoffPinBytes, iconSize: 0.86, iconAnchor: mapbox.IconAnchor.BOTTOM,
-            iconOffset: const [0.0, 0.0],
-          )),
-        ]);
-        _pinAnnots.addAll(pins);
-      }
-      if (_polyMgr != null && _routePoints.length >= 2) {
-        final safeGeom = safeLineString(_routePoints);
-        if (safeGeom != null) {
-          try {
-            _routeAnnot = await _polyMgr!.create(mapbox.PolylineAnnotationOptions(
-              geometry: safeGeom,
-              lineColor: const Color(0xFFFFD700).toARGB32(),
-              lineWidth: 5.0,
-              lineJoin: mapbox.LineJoin.ROUND,
-            ));
-          } catch (_) {}
-        }
-      }
-      return;
-    }
-
-    // ── First visit: animated sequence ──
-
-    // STEP 1: Fit bounds at pitch 0 (top-down) so everything is visible flat
-    final camFlat = await ctrl.cameraForCoordinateBounds(
-      bounds,
-      mapbox.MbxEdgeInsets(top: 60, left: 50, bottom: 70, right: 50),
-      prettBearing,
-      0, // pitch 0 for flat fit
-      null, null,
-    );
-    if (!mounted) return;
-    // Reduce zoom to ensure full route is visible with generous padding
-    final targetZoom = ((camFlat.zoom ?? 13) - 0.5).clamp(9.0, 14.0);
-    ctrl.setCamera(mapbox.CameraOptions(
-      center: camFlat.center, zoom: targetZoom, bearing: prettBearing, pitch: 0.0,
-    ));
-
-    // STEP 2: Pins pop in (scale 0 → 1.0 with spring)
-    final pickupPoint = safePoint(widget.pickupLatLng.longitude, widget.pickupLatLng.latitude);
-    final dropoffPoint = safePoint(widget.dropoffLatLng.longitude, widget.dropoffLatLng.latitude);
-    _pinAnnots.clear();
-    if (_annotMgr != null && pickupPoint != null && dropoffPoint != null) {
-      final pins = await Future.wait([
-        _annotMgr!.create(mapbox.PointAnnotationOptions(
-          geometry: pickupPoint,
-          image: pickupPinBytes, iconSize: 0.01, iconAnchor: mapbox.IconAnchor.BOTTOM,
-          iconOffset: const [0.0, 0.0],
-        )),
-        _annotMgr!.create(mapbox.PointAnnotationOptions(
-          geometry: dropoffPoint,
-          image: dropoffPinBytes, iconSize: 0.01, iconAnchor: mapbox.IconAnchor.BOTTOM,
-          iconOffset: const [0.0, 0.0],
-        )),
-      ]);
-      _pinAnnots.addAll(pins);
-    }
-    // Animate pins: 0.01 → 1.15 → 1.0 over 400ms
-    const pinMs = 400;
-    final pinSw = Stopwatch()..start();
-    await Future.doWhile(() async {
-      await Future.delayed(const Duration(milliseconds: 16));
-      if (!mounted) return false;
-      final t = (pinSw.elapsedMilliseconds / pinMs).clamp(0.0, 1.0);
-      double scale;
-      if (t < 0.6) {
-        scale = Curves.easeOutCubic.transform(t / 0.6) * 0.98;
-      } else if (t < 0.85) {
-        scale = 0.98 - 0.12 * Curves.easeInOut.transform((t - 0.6) / 0.25);
-      } else {
-        scale = 0.86;
-      }
-      for (final pin in _pinAnnots) {
-        pin.iconSize = scale;
-        try { await _annotMgr?.update(pin); } catch (_) {}
-      }
-      return t < 1.0;
-    });
-    if (!mounted) return;
-
-    // STEP 3: Animated route draw (use robust ticker-based method)
-    if (_polyMgr != null && _routePoints.length >= 2) {
-      try {
-        // Filter out any invalid coordinates before drawing
-        final validPts = _routePoints.where((p) =>
-          p.latitude.isFinite && p.longitude.isFinite &&
-          p.latitude.abs() <= 90 && p.longitude.abs() <= 180
-        ).toList();
-        if (validPts.length >= 2) {
-          await _animateGoldRoute(points: validPts)
-              .timeout(const Duration(seconds: 8));
-        }
-      } catch (_) {
-        // Fallback: draw full route instantly if animation fails/times out
-        if (_polyMgr != null && _routePoints.length >= 2 && mounted) {
-          final safeGeom = safeLineString(_routePoints);
-          if (safeGeom != null) {
-            try {
-              _routeAnnot ??= await _polyMgr!.create(mapbox.PolylineAnnotationOptions(
-                geometry: safeGeom,
-                lineColor: const Color(0xFFFFD700).toARGB32(),
-                lineWidth: 5.0,
-                lineJoin: mapbox.LineJoin.ROUND,
-              ));
-            } catch (_) {}
-          }
-        }
-      }
-    }
-    if (!mounted) return;
-
-    // STEP 4: Camera tilt 0° → 55° (always fires even if route draw failed)
-    await Future.delayed(const Duration(milliseconds: 200));
-    if (mounted) _tiltCtrl.forward(from: 0);
-
-    _miniMapAnimDone = true;
-    _startCameraCycle();
-  }
-
-  void _startCameraCycle() {
-    _camCycleTimer?.cancel();
-    _camCycleIdx = 0;
-    _camCycleTimer = Timer.periodic(const Duration(seconds: 10), (_) {
-      _camCycleIdx++;
-      _animateCameraToAngle(_camCycleIdx);
-    });
-  }
-
-  void _animateCameraToAngle(int idx) {
-    if (_map == null || !mounted) return;
-    final ai = idx % _cameraAngles.length;
-    final (targetPitch, targetBearing) = _cameraAngles[ai];
-
-    final prevPitch = _camPitchAnim?.value ?? _tiltAnim.value;
-    final prevBearing = _camBearingAnim?.value ?? 0.0;
-
-    // Reuse existing controller instead of disposing & re-creating each cycle
-    _camCycleCtrl?.removeListener(_applyCamCycle);
-    _camCycleCtrl ??= AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1800),
-    );
-    _camCycleCtrl!.reset();
-    _camPitchAnim = Tween<double>(begin: prevPitch, end: targetPitch).animate(
-      CurvedAnimation(parent: _camCycleCtrl!, curve: Curves.easeInOutCubic),
-    );
-    _camBearingAnim = Tween<double>(begin: prevBearing, end: targetBearing).animate(
-      CurvedAnimation(parent: _camCycleCtrl!, curve: Curves.easeInOutCubic),
-    );
-    _camCycleCtrl!.addListener(_applyCamCycle);
-    _camCycleCtrl!.forward();
-  }
-
-  void _applyCamCycle() {
-    if (_map == null || !mounted) return;
-    _map!.setCamera(mapbox.CameraOptions(
-      pitch: _camPitchAnim?.value,
-      bearing: _camBearingAnim?.value,
-    ));
-  }
-
-  void _updatePinScale() {
-    if (_annotMgr == null || _pinAnnots.isEmpty) return;
-    final s = _pinPopAnim.value;
-    for (final pin in _pinAnnots) {
-      pin.iconSize = s;
-      _annotMgr!.update(pin);
-    }
-  }
-
-  void _applyMapTilt() {
-    if (_map == null || !mounted) return;
-    _map!.setCamera(mapbox.CameraOptions(pitch: _tiltAnim.value));
-  }
-
-  /// Compute overall bearing of the route (start → end) for camera orientation.
-  double _routeBearing(List<LatLng> pts) {
-    if (pts.length < 2) return 0;
-    final a = pts.first;
-    final b = pts.last;
-    final dLng = (b.longitude - a.longitude) * math.pi / 180;
-    final lat1 = a.latitude * math.pi / 180;
-    final lat2 = b.latitude * math.pi / 180;
-    final y = math.sin(dLng) * math.cos(lat2);
-    final x = math.cos(lat1) * math.sin(lat2) -
-        math.sin(lat1) * math.cos(lat2) * math.cos(dLng);
-    return (math.atan2(y, x) * 180 / math.pi + 360) % 360;
-  }
+  // The preview map, its two annotation managers, the tilt and camera-
+  // cycle animations and the route-bearing helper all lived here. They
+  // went with the live MapWidget — see the StaticRoutePreview in build().
+  // None of it had a second caller: it existed to drive a 190-point card
+  // that is now an image.
 
   /// Fetch route points: Google Directions → OSRM → straight line
   Future<List<LatLng>> _fetchRoutePoints(LatLng o, LatLng d) async {
@@ -2790,106 +2449,6 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     return [o, d];
   }
 
-  /// Smooth 60fps gold route draw with distance-based interpolation.
-  /// The line tip smoothly glides along the road geometry instead of jumping
-  /// between discrete polyline vertices.
-  Future<void> _animateGoldRoute({
-    required List<LatLng> points,
-    Duration? duration,
-  }) async {
-    final polyMgr = _polyMgr;
-    if (polyMgr == null || points.length < 2) return;
-
-    // Pre-create annotation before ticker to avoid async frame skipping
-    if (_routeAnnot != null) { try { await polyMgr.delete(_routeAnnot!); } catch (_) {} _routeAnnot = null; }
-    final initSafe = safeLineString(points.sublist(0, 2));
-    if (initSafe == null) return;
-    _routeAnnot = await polyMgr.create(mapbox.PolylineAnnotationOptions(
-      geometry: initSafe,
-      lineColor: const Color(0xFFFFD700).toARGB32(),
-      lineWidth: 5.0,
-      lineJoin: mapbox.LineJoin.ROUND,
-    ));
-    if (!mounted || _routeAnnot == null) return;
-
-    // Pre-compute cumulative distances for distance-based interpolation
-    final cumDist = <double>[0.0];
-    for (int i = 1; i < points.length; i++) {
-      final dx = points[i].longitude - points[i - 1].longitude;
-      final dy = points[i].latitude - points[i - 1].latitude;
-      cumDist.add(cumDist.last + math.sqrt(dx * dx + dy * dy));
-    }
-    final totalDist = cumDist.last;
-    if (totalDist <= 0) return;
-
-    final totalMs = duration?.inMilliseconds ?? (points.length * 10).clamp(1800, 3500);
-    final completer = Completer<void>();
-    final stopwatch = Stopwatch()..start();
-    bool updating = false;
-    double lastFrac = -1;
-
-    _routeDrawTicker?.stop();
-    _routeDrawTicker?.dispose();
-    _routeDrawTicker = createTicker((_) {
-      if (!mounted) {
-        _routeDrawTicker?.stop();
-        if (!completer.isCompleted) completer.complete();
-        return;
-      }
-      if (updating) return;
-      final elapsed = stopwatch.elapsedMilliseconds;
-      final progress = (elapsed / totalMs).clamp(0.0, 1.0);
-      // S-curve easing for fluid acceleration/deceleration
-      final eased = progress < 0.5
-          ? 4 * progress * progress * progress
-          : 1 - math.pow(-2 * progress + 2, 3) / 2;
-      final targetDist = eased * totalDist;
-
-      // Find which segment the tip falls in
-      int seg = 0;
-      for (int i = 1; i < cumDist.length; i++) {
-        if (cumDist[i] >= targetDist) { seg = i - 1; break; }
-        if (i == cumDist.length - 1) seg = i - 1;
-      }
-
-      // Fractional position within segment for smooth interpolation
-      final segLen = cumDist[seg + 1] - cumDist[seg];
-      final frac = segLen > 0 ? (targetDist - cumDist[seg]) / segLen : 1.0;
-      final quantized = (seg * 1000 + (frac * 100).round()).toDouble();
-      if (quantized == lastFrac) return;
-      lastFrac = quantized;
-
-      // Build coords: all points up to seg + interpolated tip
-      final coords = <mapbox.Position>[];
-      for (int i = 0; i <= seg; i++) {
-        coords.add(mapbox.Position(points[i].longitude, points[i].latitude));
-      }
-      // Interpolated tip point
-      final tipLat = points[seg].latitude + frac * (points[seg + 1].latitude - points[seg].latitude);
-      final tipLng = points[seg].longitude + frac * (points[seg + 1].longitude - points[seg].longitude);
-      if (!isValidLatLng(tipLat, tipLng)) return;
-      coords.add(mapbox.Position(tipLng, tipLat));
-
-      final safeCoords = coords.where((p) => isValidLatLng(p.lat.toDouble(), p.lng.toDouble())).toList();
-      if (safeCoords.length >= 2) {
-        _routeAnnot!.geometry = mapbox.LineString(coordinates: safeCoords);
-        updating = true;
-        polyMgr.update(_routeAnnot!).then((_) => updating = false).catchError((_) => updating = false);
-      }
-
-      if (progress >= 1.0) {
-        _routeDrawTicker?.stop();
-        final fullSafe = safeLineString(points);
-        if (fullSafe != null) {
-          _routeAnnot?.geometry = fullSafe;
-          if (_routeAnnot != null) polyMgr.update(_routeAnnot!);
-        }
-        if (!completer.isCompleted) completer.complete();
-      }
-    });
-    _routeDrawTicker!.start();
-    return completer.future;
-  }
 
   // ── Hanging instruction card ────────────────────────────────────────────
   Widget _buildHangingInstruction(String text) {
@@ -3113,29 +2672,28 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
                     height: Responsive.h(190),
                     child: Stack(
                       children: [
-                        if (_previewMapMounted)
-                          RepaintBoundary(
-                            child: mapbox.MapWidget(
-                              styleUri: MapboxConfig.styleDark,
-                              cameraOptions: mapbox.CameraOptions(
-                                center: mapbox.Point(coordinates: mapbox.Position(
-                                  widget.pickupLatLng.longitude,
-                                  widget.pickupLatLng.latitude,
-                                )),
-                                zoom: 12.0,
-                                pitch: 0.0,
-                                bearing: 0.0,
-                              ),
-                              onMapCreated: _onMapReady,
-                              onStyleLoadedListener: _onStyleLoaded,
-                            ),
-                          )
-                        else
-                          // Dark stand-in while the previous screen's map
-                          // surface is still being torn down (see
-                          // _previewMapMounted). The vignettes and chips
-                          // below draw over it, so nothing looks missing.
-                          const ColoredBox(color: Color(0xFF0B0E14)),
+                        // An image, not a live map.
+                        //
+                        // This card is 190 points tall and every gesture on
+                        // it was disabled — it is a picture of the route and
+                        // was only ever a picture of the route. But it was a
+                        // native Mapbox surface, and there can be one of
+                        // those in the whole app, so mounting it took the
+                        // surface away from the online screen underneath.
+                        // That screen stays mounted for the entire trip, so
+                        // its map was destroyed on accept and rebuilt on
+                        // return, with everything that goes wrong in between.
+                        //
+                        // Mapbox's Static Images API draws the same style,
+                        // the same gold route and the same two pins, and an
+                        // image cannot take a surface from anyone.
+                        StaticRoutePreview(
+                          pickupLat: widget.pickupLatLng.latitude,
+                          pickupLng: widget.pickupLatLng.longitude,
+                          dropoffLat: widget.dropoffLatLng.latitude,
+                          dropoffLng: widget.dropoffLatLng.longitude,
+                          route: _routePoints,
+                        ),
                         // 3D fade vignette — top edge
                         Positioned(
                           top: 0, left: 0, right: 0,

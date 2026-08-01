@@ -28,7 +28,40 @@ _logger = logging.getLogger(__name__)
 
 
 async def _migrate_postgres(conn):
-    """Create performance indexes if they don't already exist."""
+    """Bring the schema up to what the models expect: columns, then indexes."""
+
+    # ── Columns ────────────────────────────────────────────────────────
+    #
+    # This block did not exist, and that is how payout_methods.created_at
+    # came to be declared on the model and absent from the table for as long
+    # as it was: migrate.py holds a MIGRATIONS list of columns, nothing runs
+    # migrate.py, and this — the script the docstring tells you to run —
+    # only ever created indexes. Every SELECT of a payout method answered
+    # "UndefinedColumn" and a 500, so no driver could see or add a payout
+    # destination.
+    #
+    # Columns belong here, next to the indexes, in the one script that is
+    # actually run after a deploy.
+    _columns = [
+        # (table, column, type). ADD COLUMN IF NOT EXISTS, so re-running is
+        # free. A new column with a default does not rewrite the table on
+        # modern Postgres — the default lives in the catalogue.
+        ("payout_methods", "created_at", "TIMESTAMPTZ DEFAULT NOW()"),
+    ]
+    for table, col, col_type in _columns:
+        try:
+            async with conn.begin_nested():
+                await conn.execute(
+                    text(
+                        f"ALTER TABLE {table} "
+                        f"ADD COLUMN IF NOT EXISTS {col} {col_type}"
+                    )
+                )
+            _logger.info("Column ok: %s.%s", table, col)
+        except Exception as _e:
+            _logger.warning("Column migration skip for %s.%s: %s", table, col, _e)
+
+    # ── Indexes ────────────────────────────────────────────────────────
     _indexes = [
         "CREATE INDEX IF NOT EXISTS idx_users_role_online ON users (role, is_online) WHERE is_online = true",
         "CREATE INDEX IF NOT EXISTS idx_users_online_location ON users (is_online, lat, lng) WHERE is_online = true AND lat IS NOT NULL",

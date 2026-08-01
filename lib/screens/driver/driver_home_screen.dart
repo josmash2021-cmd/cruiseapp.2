@@ -1224,10 +1224,20 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     final cachedEarnings = prefs.getDouble('driver_cached_earnings');
     final cachedTrips = prefs.getInt('driver_cached_trips');
     final cachedUserId = prefs.getString('driver_cached_user_id');
+    final cachedDay = prefs.getString('driver_cached_earnings_day');
     final currentUserId = (await ApiService.getCurrentUserId().timeout(const Duration(seconds: 15)))?.toString();
     // Only use cache if it belongs to the current driver (prevents
-    // showing another driver's earnings after logout/login).
-    final cacheValid = currentUserId != null && currentUserId == cachedUserId;
+    // showing another driver's earnings after logout/login) *and* to the
+    // current day.
+    //
+    // The day was not checked. The cache holds a figure captioned "Today",
+    // so the first thing the driver saw every morning was yesterday's total
+    // wearing today's label — and it stayed there until a network round trip
+    // came back to correct it, which on a bad signal is a long time and on
+    // no signal is forever.
+    final cacheValid = currentUserId != null &&
+        currentUserId == cachedUserId &&
+        cachedDay == _localDayKey();
     if (cachedName != null && mounted && cacheValid) {
       setState(() {
         _driverName = cachedName;
@@ -1269,9 +1279,20 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
           }
         }
       }
-      _todayEarnings = (earnings['total'] as num?)?.toDouble() ?? 0.0;
-      _todayTrips = (earnings['trips_count'] as num?)?.toInt() ?? 0;
-      _todayHours = (earnings['online_hours'] as num?)?.toDouble() ?? 0.0;
+      // Today's figures do not come from here.
+      //
+      // /auth/dashboard has no idea what day it is for this driver — it takes
+      // no timezone — and what it calls `earnings.total` is
+      // `user.total_earnings`, the driver's lifetime figure, falling back to
+      // a seven-day sum. `trips_count` is the length of a seven-day query
+      // capped at twenty rows, and `online_hours` is not in the response at
+      // all. All three were being written into fields labelled "Today" on
+      // screen, which is why the card kept showing work from days ago and
+      // never reset at midnight.
+      //
+      // _refreshStats below asks /drivers/earnings?period=today with the
+      // phone's tz_offset, which is the endpoint that actually computes a
+      // driver's local day. It is the only thing that writes these now.
       _unreadCount = notifs.where((n) => n['is_read'] != true).length;
     });
 
@@ -1293,9 +1314,21 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     prefs.setString('driver_cached_name', _driverName);
     prefs.setDouble('driver_cached_earnings', _todayEarnings);
     prefs.setInt('driver_cached_trips', _todayTrips);
+    // Stamped with the day it describes, so tomorrow cannot read it as its
+    // own. Local date, because "today" is the driver's day, not UTC's.
+    prefs.setString('driver_cached_earnings_day', _localDayKey());
     if (currentUserId != null) {
       prefs.setString('driver_cached_user_id', currentUserId);
     }
+  }
+
+  /// The driver's current local date, as a key the cache can be compared
+  /// against. Local rather than UTC: a driver in Miami starts a new day five
+  /// hours before UTC does, and it is their midnight the card resets at.
+  String _localDayKey() {
+    final d = DateTime.now();
+    return '${d.year}-${d.month.toString().padLeft(2, '0')}'
+        '-${d.day.toString().padLeft(2, '0')}';
   }
 
   /// Lightweight periodic refresh for the 3 stats chips (no name/photo reload).
@@ -2110,14 +2143,42 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   /// Bars for the selected period. Hand-drawn rather than pulling in a chart
   /// package: it is a row of rectangles, and a dependency for that would cost
   /// a native rebuild to ship.
+  /// Which hourly columns get their amount printed above the bar.
+  ///
+  /// All of them will not fit. Twenty-four columns across a phone panel are
+  /// about ten points wide and a dollar amount is nearer thirty, so two on
+  /// neighbouring hours overlap into something unreadable — which is why the
+  /// hourly view carried no figures at all.
+  ///
+  /// So they are placed rather than skipped: biggest amount first, and one
+  /// is only taken if nothing within three columns has been taken already.
+  /// What survives is the hours that earned most, which is what a driver
+  /// reads the figures for. The rest are still there as bars.
+  Set<int> _tipColumns(List<double> values) {
+    final order = <int>[
+      for (var i = 0; i < values.length; i++)
+        if (values[i] > 0) i,
+    ]..sort((a, b) => values[b].compareTo(values[a]));
+    final taken = <int>{};
+    for (final i in order) {
+      if (taken.any((j) => (j - i).abs() < 3)) continue;
+      taken.add(i);
+    }
+    return taken;
+  }
+
   Widget _earningsChart(DriverColors dc) {
     final week = _earningsWeekTab;
     final values = week ? _daySeries : _hourlySeries;
     final barH = Responsive.h(84);
-    // The band above the bars where the week's amounts sit. Reserved in the
-    // empty state too, or the chart grows by a line the moment data lands —
-    // which is the jump the empty axis below exists to avoid.
-    final tipH = week ? Responsive.sp(13) : 0.0;
+    // The band above the bars where the amounts sit. Reserved in the empty
+    // state too, and on both tabs, or the chart grows by a line the moment
+    // data lands — which is the jump the empty axis below exists to avoid.
+    final tipH = Responsive.sp(13);
+    // Every day on the week tab; a spaced subset of the hours on today's.
+    final tips = week
+        ? <int>{for (var i = 0; i < values.length; i++) i}
+        : _tipColumns(values);
 
     if (values.isEmpty) {
       // Draw the axis immediately, empty.
@@ -2182,20 +2243,25 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                     children: [
                       // The amount, riding on the tip of its own bar.
                       //
-                      // Only on the week, and only where there is money: a
-                      // row of $0.00 under every empty day is noise standing
-                      // exactly where the eye goes to compare the days that
-                      // earned, and twenty-four hourly columns have no room
-                      // for a figure at all.
+                      // Never where there is no money: a row of $0.00 under
+                      // every empty column is noise standing exactly where
+                      // the eye goes to compare the ones that earned.
                       //
-                      // Scaled down rather than clipped — seven columns on a
-                      // narrow phone leave about 40 px each, and a good
-                      // Saturday is wider than that.
-                      if (week)
-                        SizedBox(
-                          height: tipH,
-                          child: values[i] > 0
-                              ? FittedBox(
+                      // The hourly view lets its figure spill past the column
+                      // it belongs to. Twenty-four columns leave about ten
+                      // points each and an amount needs thirty, so a label
+                      // confined to its own width would be scaled down to
+                      // something unreadable. _tipColumns has already made
+                      // room by only labelling hours three columns apart, so
+                      // there is nothing beside it to collide with.
+                      SizedBox(
+                        height: tipH,
+                        child: tips.contains(i) && values[i] > 0
+                            ? OverflowBox(
+                                maxWidth: week
+                                    ? double.infinity
+                                    : Responsive.w(46),
+                                child: FittedBox(
                                   fit: BoxFit.scaleDown,
                                   child: Text(
                                     '\$${values[i].toStringAsFixed(2)}',
@@ -2209,9 +2275,10 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                                       ],
                                     ),
                                   ),
-                                )
-                              : null,
-                        ),
+                                ),
+                              )
+                            : null,
+                      ),
                       // A floor of 3%, so an hour that earned nothing still
                       // draws a baseline tick. Without it the axis has holes
                       // in it and reads as broken rather than as empty.

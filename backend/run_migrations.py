@@ -47,6 +47,8 @@ async def _migrate_postgres(conn):
         # free. A new column with a default does not rewrite the table on
         # modern Postgres — the default lives in the catalogue.
         ("payout_methods", "created_at", "TIMESTAMPTZ DEFAULT NOW()"),
+        ("users", "rating_suspended_until", "TIMESTAMPTZ"),
+        ("password_reset_tokens", "attempts", "INTEGER DEFAULT 0 NOT NULL"),
     ]
     for table, col, col_type in _columns:
         try:
@@ -60,6 +62,37 @@ async def _migrate_postgres(conn):
             _logger.info("Column ok: %s.%s", table, col)
         except Exception as _e:
             _logger.warning("Column migration skip for %s.%s: %s", table, col, _e)
+
+    # ── Column widenings ───────────────────────────────────────────────
+    #
+    # password_reset_tokens.code was VARCHAR(10) while the code stored in
+    # it is a sha256 hex digest — 64 characters. Every "forgot password"
+    # request therefore died on the INSERT with a string-truncation error,
+    # which is why that table was still empty. Widening is safe: the
+    # column has no data to lose and nothing reads a fixed length.
+    _widen = [
+        ("password_reset_tokens", "code", "VARCHAR(64)", 64),
+    ]
+    for table, col, col_type, want_len in _widen:
+        try:
+            cur = await conn.execute(
+                text(
+                    "SELECT character_maximum_length FROM information_schema.columns "
+                    "WHERE table_name = :t AND column_name = :c"
+                ),
+                {"t": table, "c": col},
+            )
+            row = cur.fetchone()
+            if row and row[0] is not None and row[0] >= want_len:
+                _logger.info("Width ok: %s.%s already >= %d", table, col, want_len)
+                continue
+            async with conn.begin_nested():
+                await conn.execute(
+                    text(f"ALTER TABLE {table} ALTER COLUMN {col} TYPE {col_type}")
+                )
+            _logger.info("Widened %s.%s to %s", table, col, col_type)
+        except Exception as _e:
+            _logger.warning("Widen skip for %s.%s: %s", table, col, _e)
 
     # ── Indexes ────────────────────────────────────────────────────────
     _indexes = [

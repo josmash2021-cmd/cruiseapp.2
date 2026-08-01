@@ -198,7 +198,14 @@ class User(Base):
     background_recheck_suspended = Column(Boolean, default=False)
     active_session_id = Column(String(64), nullable=True)
     cruise_level = Column(String(20), default="bronze")
+    # Step score, not an average of stars — see services/rating_engine.py.
+    # Stored rather than derived because the steps depend on the previous
+    # value, so it cannot be recomputed from the ratings table alone.
     average_rating = Column(Float, nullable=True, default=None)
+    # When a rating suspension lifts. NULL whenever the driver is not
+    # serving one; a suspension with no end could never be released,
+    # because a suspended driver takes no trips and so earns no ratings.
+    rating_suspended_until = Column(DateTime(timezone=True), nullable=True)
     # Set on signup if the new user redeemed someone else's referral code.
     referred_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
     # Stripe Customer ID — created lazily the first time the rider tries
@@ -532,7 +539,14 @@ class PromoCode(Base):
 class PasswordResetToken(Base):
     __tablename__ = "password_reset_tokens"
     id = Column(Integer, primary_key=True, index=True)
-    code = Column(String(10), unique=True, nullable=False, index=True)
+    # A sha256 hex digest — 64 characters. This was String(10), so every
+    # insert failed with a string-truncation error and no password reset
+    # ever completed. Do not narrow it again to match the code a user
+    # types: what is stored is the hash, never the code.
+    code = Column(String(64), unique=True, nullable=False, index=True)
+    # Wrong guesses so far. A six-digit code is small enough to be worth
+    # guessing, so it gets a strike count and dies at the limit.
+    attempts = Column(Integer, default=0, nullable=False)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     expires_at = Column(Float, nullable=False)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))

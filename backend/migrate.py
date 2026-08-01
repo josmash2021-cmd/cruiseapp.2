@@ -129,6 +129,7 @@ MIGRATIONS = [
     ("users", "cruise_level", "VARCHAR(20) DEFAULT 'bronze'"),
     ("users", "active_session_id", "VARCHAR(64)"),
     ("users", "average_rating", "FLOAT"),
+    ("users", "rating_suspended_until", "TIMESTAMPTZ"),
     ("trips", "guest_first_name", "VARCHAR(100)"),
     ("trips", "guest_last_name", "VARCHAR(100)"),
     ("trips", "guest_phone", "VARCHAR(30)"),

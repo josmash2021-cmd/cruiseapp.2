@@ -27,6 +27,7 @@ import '../../widgets/neu_style.dart';
 import '../../widgets/map/circular_pin_renderer.dart';
 import '../../services/gps_service.dart';
 import '../../services/heading_service.dart';
+import '../../services/earnings_privacy.dart';
 import '../../services/trip_firestore_service.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -552,6 +553,10 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     super.initState();
     _enforceDriverRole();
     WidgetsBinding.instance.addObserver(this);
+    // Once, here — not in the resume branch, which would stack another
+    // listener on every return from the background.
+    EarningsPrivacy.load();
+    EarningsPrivacy.hidden.addListener(_onEarningsPrivacyChanged);
     // Apply initial position from home screen (avoids white flash)
     if (widget.initialPos != null) {
       _pos = widget.initialPos!;
@@ -839,6 +844,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     _goldDot.dispose();
     _headingSub?.cancel();
     _headingSource.dispose();
+    EarningsPrivacy.hidden.removeListener(_onEarningsPrivacyChanged);
     _driverPhotoImage?.dispose();
     _markerFrame.dispose();
     MapSurfaceCoordinator.instance.release(_kMapSurfaceOwner);

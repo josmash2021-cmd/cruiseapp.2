@@ -1209,6 +1209,13 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
   /// makes sure the ticker is awake to animate it — a driver turning the
   /// phone in their hand produces headings and no fixes at all, and the
   /// ticker used to be started only by a fix arriving.
+  /// The hide-earnings switch is on the Earnings screen and this one is
+  /// already mounted underneath it, so the chip repaints from a listener
+  /// rather than on the way back from a route.
+  void _onEarningsPrivacyChanged() {
+    _setState(() {});
+  }
+
   void _startHeadingSource() {
     _headingSource.start();
     // Called from boot and again on every resume, so it has to be safe to

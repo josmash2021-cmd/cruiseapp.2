@@ -25,6 +25,7 @@ import '../../config/driver_colors.dart';
 import '../../services/api_service.dart';
 import '../../services/gps_service.dart';
 import '../../services/heading_service.dart';
+import '../../services/earnings_privacy.dart';
 import '../../services/local_data_service.dart';
 import '../../services/notification_service.dart';
 import '../../services/user_session.dart';
@@ -427,6 +428,8 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     });
     _startDotCreateWatchdog();
     _startHeadingSource();
+    EarningsPrivacy.load();
+    EarningsPrivacy.hidden.addListener(_onEarningsPrivacyChanged);
     _initLocation();
     _loadDriverData();
     _checkVerification().then((_) => _checkVehicleDocStatus());
@@ -633,6 +636,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     _posStream?.cancel();
     _headingSub?.cancel();
     _headingSource.dispose();
+    EarningsPrivacy.hidden.removeListener(_onEarningsPrivacyChanged);
     _accountStatusTimer?.cancel();
     _tripPollTimer?.cancel();
     _statsRefreshTimer?.cancel();
@@ -728,6 +732,13 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       if (!mounted) return;
       _goldDot.setBearing(deg);
     });
+  }
+
+  /// The switch lives on another screen, and this one is already mounted
+  /// underneath it when it is flipped — so the chip is repainted from a
+  /// listener rather than on the way back from a route.
+  void _onEarningsPrivacyChanged() {
+    if (mounted) setState(() {});
   }
 
   double? _usableHeading(Position p) {
@@ -2623,8 +2634,14 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                   duration: const Duration(milliseconds: 900),
                   curve: Curves.easeOutCubic,
                   tween: Tween<double>(begin: prevAmount, end: amount),
+                  // The figure, or a bare $ standing in for it.
+                  //
+                  // This chip sits at the top of the map and is the most
+                  // legible thing on the screen from a back seat, which is
+                  // why the switch in Earnings exists and why this is what
+                  // it covers.
                   builder: (_, val, __) => Text(
-                    '\$${val.toStringAsFixed(2)}',
+                    EarningsPrivacy.format(val),
                     style: const TextStyle(
                       color: pillText,
                       fontSize: 17,

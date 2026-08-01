@@ -1,5 +1,5 @@
 import os, time, math, secrets, logging, json, re, base64, asyncio, collections, hashlib, hmac
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException, Header, Request, Query, Body, UploadFile, File, Form
 from fastapi.responses import JSONResponse, FileResponse, Response
@@ -437,6 +437,18 @@ async def get_driver_earnings(
         ) if tz_offset else utc_today_start()
     elif period == "month":
         since = utc_days_ago(30)
+    elif period == "year":
+        # The driver's own year, for the same reason "today" is their own
+        # day: 1 January arrives five hours earlier in Alabama than it does
+        # in UTC, and a driver checking their annual total on New Year's Eve
+        # should not already be looking at next year.
+        local_now = now + timedelta(minutes=tz_offset)
+        since = (
+            local_now.replace(
+                month=1, day=1, hour=0, minute=0, second=0, microsecond=0
+            )
+            - timedelta(minutes=tz_offset)
+        )
     else:
         since = utc_days_ago(7)
 
@@ -476,14 +488,33 @@ async def get_driver_earnings(
         )
         tips_total = float(tips_r.scalar() or 0)
 
-    # Daily earnings breakdown (last 7 days) — from limited trips
+    # The chart's buckets. Twelve months for a year, seven days otherwise.
+    #
+    # Same two keys either way — daily_earnings and day_labels — because the
+    # chart draws whatever it is handed and labels the columns underneath.
+    # Calling them "daily" for a year is the one wart; renaming them would
+    # break every client already reading them.
     day_labels = []
     daily_earnings = []
-    for i in range(6, -1, -1):
-        day = (now - timedelta(days=i)).date()
-        day_labels.append(day.strftime("%a"))
-        day_total = sum(_driver_trip_amounts(t)[0] for t in trips if t.created_at and t.created_at.date() == day)
-        daily_earnings.append(round(day_total, 2))
+    if period == "year":
+        local_now = now + timedelta(minutes=tz_offset)
+        for m in range(1, 13):
+            day_labels.append(date(local_now.year, m, 1).strftime("%b"))
+            month_total = sum(
+                _driver_trip_amounts(t)[0]
+                for t in trips
+                if t.created_at
+                and (t.created_at + timedelta(minutes=tz_offset)).year
+                == local_now.year
+                and (t.created_at + timedelta(minutes=tz_offset)).month == m
+            )
+            daily_earnings.append(round(month_total, 2))
+    else:
+        for i in range(6, -1, -1):
+            day = (now - timedelta(days=i)).date()
+            day_labels.append(day.strftime("%a"))
+            day_total = sum(_driver_trip_amounts(t)[0] for t in trips if t.created_at and t.created_at.date() == day)
+            daily_earnings.append(round(day_total, 2))
 
     # Recent transactions (from limited trips)
     transactions = []
@@ -518,9 +549,28 @@ async def get_driver_earnings(
             hourly_earnings[local_dt.hour] += _driver_trip_amounts(t)[0]
         hourly_earnings = [round(v, 2) for v in hourly_earnings]
 
+    # Offers this driver turned down inside the period.
+    #
+    # Counted from dispatch_offers rather than trips, because a rejection
+    # never becomes a trip — there is nothing in the trips table to count.
+    # Its own query and not a join: the trip query above is capped at 50 rows
+    # for speed, so counting off it would report "50 rejected" for anyone
+    # busy enough to hit the cap.
+    rejected_r = await db.execute(
+        select(func.count(DispatchOffer.id)).where(
+            and_(
+                DispatchOffer.driver_id == user.id,
+                DispatchOffer.status == "rejected",
+                DispatchOffer.created_at >= since,
+            )
+        )
+    )
+    rides_rejected = int(rejected_r.scalar() or 0)
+
     return {
         "total": total,
         "trips_count": len(trips),
+        "rides_rejected": rides_rejected,
         "online_hours": len(trips) * 0.5,
         "tips_total": round(tips_total, 2),
         "daily_earnings": daily_earnings,

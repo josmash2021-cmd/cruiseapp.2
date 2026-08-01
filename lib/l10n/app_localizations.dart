@@ -1288,9 +1288,10 @@ class S {
           'account numbers never pass through Cruise.';
 
   // ── Earnings screen, rebuilt layout ──
-  String get earningsPeriodDay => _es ? 'Día' : 'Day';
+  String get earningsPeriodDay => _es ? 'Hoy' : 'Today';
   String get earningsPeriodWeek => _es ? 'Semana' : 'Week';
   String get earningsPeriodMonth => _es ? 'Mes' : 'Month';
+  String get earningsPeriodYear => _es ? 'Año' : 'Year';
   String get earningsNoneYet =>
       _es ? 'Aún no hay ganancias' : 'No earnings yet';
   String get earningsYourStats =>
@@ -1302,15 +1303,18 @@ class S {
   String get earningsExcludingTips =>
       _es ? 'sin propinas' : 'excluding tips';
   String get earningsDrivingCard => _es ? 'Conducción' : 'Driving';
-  String get earningsCompleted => _es ? 'Completados' : 'Completed';
+  String get earningsRidesCompleted =>
+      _es ? 'Viajes completados' : 'Rides completed';
+  String get earningsRidesRejected =>
+      _es ? 'Viajes rechazados' : 'Rides rejected';
   String get earningsTipsCard => _es ? 'Propinas' : 'Tips';
   String earningsFromTrips(int n) =>
       _es ? 'de $n viajes' : 'from $n trips';
   String get earningsHideMine =>
       _es ? 'Ocultar mis ganancias' : 'Hide my earnings';
   String get earningsHideMineDesc => _es
-      ? 'Cubre las cifras de esta pantalla'
-      : 'Covers the figures on this screen';
+      ? 'Tapa el importe del mapa; deja solo el \$'
+      : 'Covers the amount on the map, leaving just the \$';
   String get earningsPayoutHistory =>
       _es ? 'Historial de pagos' : 'Payout history';
   String get earningsPayoutMethods =>

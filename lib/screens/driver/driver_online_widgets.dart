@@ -383,8 +383,14 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                   duration: const Duration(milliseconds: 900),
                   curve: Curves.easeOutCubic,
                   tween: Tween<double>(begin: prevAmount, end: amount),
+                  // The figure, or a bare $ standing in for it.
+                  //
+                  // This chip sits at the top of the map and is the most
+                  // legible thing on the screen from a back seat, which is
+                  // why the switch in Earnings exists and why this is what
+                  // it covers.
                   builder: (_, val, __) => Text(
-                    '\$${val.toStringAsFixed(2)}',
+                    EarningsPrivacy.format(val),
                     style: TextStyle(
                       color: pillText,
                       fontSize: 17,

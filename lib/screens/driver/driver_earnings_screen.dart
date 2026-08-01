@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../../services/haptic_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../services/api_service.dart';
+import '../../services/earnings_privacy.dart';
 import '../../services/user_session.dart';
 import '../../config/app_config.dart';
 import '../../l10n/app_localizations.dart';
@@ -25,7 +26,7 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
   static const _gold = Color(0xFFE8C547);
 
   int _selectedPeriod = 1; // 0=Today, 1=This Week, 2=This Month
-  final _periodKeys = ['today', 'week', 'month'];
+  final _periodKeys = ['today', 'week', 'month', 'year'];
 
   late AnimationController _chartCtrl;
   late Animation<double> _chartAnim;
@@ -35,6 +36,9 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
   int _tripsCount = 0;
   double _onlineHours = 0.0;
   double _tipsTotal = 0.0;
+  /// Offers turned down in the period. Counted from
+  /// dispatch_offers, because a rejection never becomes a trip.
+  int _ridesRejected = 0;
   List<double> _dailyEarnings = [0, 0, 0, 0, 0, 0, 0];
   List<String> _dayLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
@@ -50,29 +54,24 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
   // Payout methods
   bool _hasPayoutMethod = false;
 
-  /// Covers every figure on this screen with dots.
+  /// Mirrors [EarningsPrivacy.hidden] so the switch can be drawn.
   ///
-  /// A driver reads their earnings in a car with a passenger behind them.
-  /// Kept on the device — it is a preference about this phone's screen, not
-  /// something the server needs to know.
+  /// What it covers is the earnings chip on Home and Online, not the figures
+  /// on this page. This is where a driver comes to read their earnings, on
+  /// purpose; the chip is what sits at the top of the map in front of a
+  /// passenger.
   bool _hideEarnings = false;
-  static const _kHideEarningsKey = 'driver_hide_earnings';
 
   Future<void> _loadHideEarnings() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final v = prefs.getBool(_kHideEarningsKey) ?? false;
-      if (mounted && v != _hideEarnings) setState(() => _hideEarnings = v);
-    } catch (_) {}
+    await EarningsPrivacy.load();
+    if (mounted) setState(() => _hideEarnings = EarningsPrivacy.hidden.value);
   }
 
   Future<void> _toggleHideEarnings() async {
     HapticService.selectionClick();
-    setState(() => _hideEarnings = !_hideEarnings);
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setBool(_kHideEarningsKey, _hideEarnings);
-    } catch (_) {}
+    final next = !_hideEarnings;
+    setState(() => _hideEarnings = next);
+    await EarningsPrivacy.set(next);
   }
 
   /// Payout history, on request rather than always on the page.
@@ -225,6 +224,7 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
       _tripsCount = _toInt(data['trips_count']);
       _onlineHours = _toDouble(data['online_hours']);
       _tipsTotal = _toDouble(data['tips_total']);
+      _ridesRejected = _toInt(data['rides_rejected']);
 
       final rawDaily = data['daily_earnings'];
       _dailyEarnings = rawDaily is List
@@ -413,17 +413,20 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
   //  THE REBUILT BODY
   // ═══════════════════════════════════════════════════════════════════
 
-  /// Day / Week / Month, in a sunken track with the live one raised in gold.
+  /// Today / Week / Month / Year, in a sunken track with the live one
+  /// raised in gold.
   ///
-  /// Year is not here. The earnings endpoint understands today, week and
-  /// month and nothing else, so a fourth tab would be a control that cannot
-  /// answer — better absent than dead.
+  /// Year draws twelve months rather than seven days. The chart takes
+  /// whatever list it is handed and labels the columns underneath, so the
+  /// two shapes need no branch here — see the backend, which fills the same
+  /// two keys with months when the period is a year.
   Widget _periodPill() {
     final s = S.of(context);
     final labels = [
       s.earningsPeriodDay,
       s.earningsPeriodWeek,
       s.earningsPeriodMonth,
+      s.earningsPeriodYear,
     ];
     return Container(
       padding: const EdgeInsets.all(4),
@@ -498,8 +501,11 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
         text = '${months[from.month - 1]} ${from.day} — '
             '${months[now.month - 1]} ${now.day}';
         break;
-      default:
+      case 2:
         text = '${months[now.month - 1]} ${now.year}';
+        break;
+      default:
+        text = '${now.year}';
     }
     return Center(
       child: Text(
@@ -532,19 +538,9 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
     final cents = ((_total - whole) * 100).round().toString().padLeft(2, '0');
     return Column(
       children: [
-        if (_hideEarnings)
-          Text(
-            '••••',
-            style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.35),
-              fontSize: 46,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 6,
-            ),
-          )
-        else
-          // The cents a shade quieter, so the eye lands on the dollars.
-          RichText(
+        // Always shown. The switch below covers the chip on the map, not
+        // the page the driver opened to read this number.
+        RichText(
             text: TextSpan(
               children: [
                 TextSpan(
@@ -621,9 +617,7 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _statBig(_hideEarnings
-                    ? '•••'
-                    : '\$${perHour.toStringAsFixed(2)}'),
+                _statBig('\$${perHour.toStringAsFixed(2)}'),
                 const SizedBox(height: 3),
                 _statNote('${s.earningsPerOnlineHour}\n${s.earningsExcludingTips}'),
               ],
@@ -636,7 +630,8 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _statRow(s.earningsCompleted, '$_tripsCount'),
+                _statRow(s.earningsRidesCompleted, '$_tripsCount'),
+                _statRow(s.earningsRidesRejected, '$_ridesRejected'),
                 _statRow(
                   s.online,
                   s.earningsOnlineTime(
@@ -654,9 +649,7 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _statBig(_hideEarnings
-                    ? '•••'
-                    : '\$${_tipsTotal.toStringAsFixed(2)}'),
+                _statBig('\$${_tipsTotal.toStringAsFixed(2)}'),
                 const SizedBox(height: 3),
                 _statNote(s.earningsFromTrips(_tripsCount)),
               ],
@@ -913,7 +906,22 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
   /// down a page that grows with every trip they take.
   Widget _stickyFooter() {
     final s = S.of(context);
-    final canCash = _hasPayoutMethod && _pendingBalance > 0;
+    // Two buttons in one place, and only one of them can ever be dim.
+    //
+    // Which one it is comes from whether a payout destination exists, not
+    // from the balance: a driver who has not set one up is asked to, and a
+    // driver who has is offered the cash-out. Before this, both states were
+    // folded into a single `hasMethod && balance > 0`, so a driver with no
+    // card at all saw "Configure Payments" drawn in the dimmed style of a
+    // disabled control — an instruction that looked like it could not be
+    // followed, on the one screen where following it is the whole point.
+    //
+    // Configure is always live, because it always leads somewhere. Cash out
+    // dims only at a zero balance, which is the one case where the button
+    // genuinely has nothing to do.
+    final hasDestination = _hasPayoutMethod;
+    final canCash = hasDestination && _pendingBalance > 0;
+    final enabled = !hasDestination || canCash;
     return Positioned(
       left: 0,
       right: 0,
@@ -938,9 +946,7 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
-                  _hideEarnings
-                      ? '•••'
-                      : '\$${_pendingBalance.toStringAsFixed(2)}',
+                  '\$${_pendingBalance.toStringAsFixed(2)}',
                   style: const TextStyle(
                     color: Colors.white,
                     fontSize: 16,
@@ -958,22 +964,25 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
             ),
             const Spacer(),
             GestureDetector(
-              onTap: canCash
-                  ? () {
-                      HapticService.mediumImpact();
-                      _showCashOutSheet();
-                    }
-                  : () {
-                      HapticService.mediumImpact();
-                      _openPayoutMethodsScreen();
-                    },
+              onTap: () {
+                HapticService.mediumImpact();
+                // No destination: send them to set one up. With one, and
+                // money behind it: cash out. With one and nothing behind
+                // it there is nowhere useful to go, so the tap does not
+                // pretend otherwise.
+                if (!hasDestination) {
+                  _openPayoutMethodsScreen();
+                } else if (canCash) {
+                  _showCashOutSheet();
+                }
+              },
               child: Container(
                 padding:
                     const EdgeInsets.symmetric(horizontal: 26, vertical: 14),
                 decoration: BoxDecoration(
-                  color: canCash ? _gold : _gold.withValues(alpha: 0.18),
+                  color: enabled ? _gold : _gold.withValues(alpha: 0.18),
                   borderRadius: BorderRadius.circular(18),
-                  boxShadow: canCash
+                  boxShadow: enabled
                       ? [
                           BoxShadow(
                             color: _gold.withValues(alpha: 0.25),
@@ -984,9 +993,9 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
                       : null,
                 ),
                 child: Text(
-                  canCash ? s.cashOut : s.configurePayments,
+                  hasDestination ? s.cashOut : s.configurePayments,
                   style: TextStyle(
-                    color: canCash
+                    color: enabled
                         ? neuBase
                         : Colors.white.withValues(alpha: 0.55),
                     fontSize: 14,
@@ -1205,7 +1214,7 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
                   fit: BoxFit.scaleDown,
                   child: Text(
                     val > 0
-                        ? (_hideEarnings ? '•••' : '\$${val.toStringAsFixed(2)}')
+                        ? '\$${val.toStringAsFixed(2)}'
                         : '\$0',
                     maxLines: 1,
                     style: TextStyle(

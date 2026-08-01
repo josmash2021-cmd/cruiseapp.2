@@ -1,6 +1,31 @@
 import 'package:flutter/physics.dart';
 import 'package:flutter/widgets.dart';
 
+/// The spring the panel settles on.
+///
+/// Read it as two numbers rather than four. Stiffness 180 against mass 1 is
+/// a natural frequency of about 13.4 rad/s, which puts the whole travel at
+/// roughly a third of a second. Damping 24 against a critical value of
+/// 2·√180 = 26.8 is a ratio of 0.89 — just under critical, so the sheet
+/// arrives with a little life in it and no bounce anyone can see.
+///
+/// It was 600 / 32, and that is what made the sheet snap open rather than
+/// move: a frequency of 24.5 rad/s covers most of the travel inside a tenth
+/// of a second, and a damping ratio of 0.65 overshoots and comes back. On a
+/// drag the finger hides both — the sheet is already where the thumb put it
+/// and the spring only finishes the last of the journey. On a *tap* there is
+/// no finger and no initial velocity, so the spring does the whole distance
+/// on its own and every bit of that abruptness is on show.
+///
+/// Top-level rather than a member: a mixin cannot declare static state, and
+/// a `const` used inside another `const` from a part file is the iOS build
+/// failure in rule 16 of CLAUDE.md.
+const SpringDescription _kPanelSpring = SpringDescription(
+  mass: 1.0,
+  stiffness: 180.0,
+  damping: 24.0,
+);
+
 /// Mixin providing velocity-aware spring animation for custom draggable panels.
 ///
 /// Usage:
@@ -99,7 +124,7 @@ mixin VelocityAwarePanelMixin<T extends StatefulWidget>
 
   void _springTo(double target, double normalizedVelocity) {
     final sim = SpringSimulation(
-      const SpringDescription(mass: 1.0, stiffness: 600.0, damping: 32.0),
+      _kPanelSpring,
       _panelExtent,
       target,
       normalizedVelocity,

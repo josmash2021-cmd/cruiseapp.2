@@ -25,12 +25,18 @@ class OfferCountdownRing extends StatefulWidget {
     this.size = 54,
     this.color = const Color(0xFFE8C547),
     this.child,
+    this.active = true,
   });
 
   final VoidCallback onExpired;
   final int seconds;
   final double size;
   final Color color;
+
+  /// Whether the clock is running. A PageView builds the page next to the
+  /// visible one, so without this the second offer's countdown starts
+  /// before the driver has ever seen it — and expires it for them.
+  final bool active;
 
   /// What sits inside the ring. The arc is the countdown; a number would
   /// only say the same thing twice, in the one spot the brand mark has.
@@ -60,7 +66,19 @@ class _OfferCountdownRingState extends State<OfferCountdownRing>
           widget.onExpired();
         }
       });
-    _ctrl.forward();
+    if (widget.active) _ctrl.forward();
+  }
+
+  @override
+  void didUpdateWidget(OfferCountdownRing old) {
+    super.didUpdateWidget(old);
+    if (widget.active && !_ctrl.isAnimating && !_fired) {
+      // Starts from where it is, not from zero: swiping away and back
+      // must not hand the driver a fresh twenty seconds.
+      _ctrl.forward();
+    } else if (!widget.active && _ctrl.isAnimating) {
+      _ctrl.stop();
+    }
   }
 
   @override

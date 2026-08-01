@@ -82,9 +82,27 @@ CROSSINGS = [
 ]
 
 
+SAFETY = [
+    # A suspension has to be reachable from the top in a plausible number
+    # of bad trips, and unreachable by accident.
+    ("two 1-star trips from the top reach the line",
+     eng.band(driver(5.0, 1, 1)), "suspend"),
+    ("one 1-star trip does not",
+     eng.band(driver(5.0, 1)), "danger"),
+    ("a suspended driver comes back above the line",
+     eng.band(eng.RATING_AFTER_SUSPENSION), "danger"),
+    ("and one good trip lifts them out of danger",
+     eng.band(driver(eng.RATING_AFTER_SUSPENSION, 5)), "warning"),
+    ("the release value is above the suspend line",
+     eng.RATING_AFTER_SUSPENSION > eng.SUSPEND_AT, True),
+    ("a new driver is not one bad night from suspension",
+     eng.MIN_RATINGS_BEFORE_SUSPEND > 0, True),
+]
+
+
 def main() -> int:
     failures = 0
-    for label, got, want in CASES + BANDS + CROSSINGS:
+    for label, got, want in CASES + BANDS + CROSSINGS + SAFETY:
         ok = (abs(got - want) < 1e-9) if isinstance(want, float) else got == want
         if not ok:
             failures += 1
@@ -105,8 +123,8 @@ def main() -> int:
     else:
         print("ok    every band is reachable")
 
-    print(f"\n{len(CASES) + len(BANDS) + len(CROSSINGS) + 1} checks, "
-          f"{failures} failed")
+    total = len(CASES) + len(BANDS) + len(CROSSINGS) + len(SAFETY) + 1
+    print(f"\n{total} checks, {failures} failed")
     return 1 if failures else 0
 
 

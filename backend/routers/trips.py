@@ -2144,27 +2144,37 @@ async def rate_trip(trip_id: int, request: Request, user: User = Depends(_get_cu
     db.add(notif)
     await db.commit()
 
-    # Re-evaluate driver tier if a driver was rated (Premium ↔ Comfort based on rating)
     if to_user_id == trip.driver_id and trip.driver_id:
-        try:
-            await reevaluate_driver_tier(db, trip.driver_id)
-        except Exception as e:
-            logging.warning("[Tier] Re-evaluation failed for driver %s: %s", trip.driver_id, e)
-        # Also re-evaluate cruise level (Bronze → Silver → Gold etc.)
-        try:
-            await evaluate_driver_level(db, trip.driver_id)
-        except Exception as e:
-            logging.warning("[CruiseLevel] Post-rating evaluation failed for driver %s: %s", trip.driver_id, e)
-
-        # Move the driver's score by one step and act on the band it lands
-        # in — warning, danger, or a temporary deactivation. The score is
-        # NOT an average of stars; see services/rating_engine.py.
+        # ── Order matters ────────────────────────────────────────────
+        # The score moves FIRST, and only then do the tier and the cruise
+        # level get re-evaluated against it. Both of them read
+        # users.average_rating, so running them before the step is applied
+        # judged the driver on the rating before this one — every
+        # promotion would arrive one trip late.
+        #
+        # This was not a problem while they averaged the ratings table:
+        # that query saw the row inserted a few lines above. It is a
+        # problem now, and the fix is the ordering, not a second read.
         try:
             driver_result = await db.execute(select(User).where(User.id == trip.driver_id))
             driver = driver_result.scalar_one_or_none()
             if driver:
                 avg_rating = await rating_actions.apply_driver_rating(db, driver, stars)
                 await db.commit()
+
+                # Premium ↔ Comfort, then Bronze → Silver → Gold.
+                try:
+                    await reevaluate_driver_tier(db, trip.driver_id)
+                except Exception as e:
+                    logging.warning("[Tier] Re-evaluation failed for driver %s: %s", trip.driver_id, e)
+                try:
+                    await evaluate_driver_level(db, trip.driver_id)
+                except Exception as e:
+                    logging.warning("[CruiseLevel] Post-rating evaluation failed for driver %s: %s", trip.driver_id, e)
+                # Both may have written; re-read so what goes to Firestore
+                # is what the database now holds.
+                await db.refresh(driver)
+
                 # Sync updated rating + cruise level to Firestore
                 if _HAS_FIRESTORE:
                     try:

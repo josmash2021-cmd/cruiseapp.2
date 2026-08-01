@@ -153,7 +153,12 @@ async def apply_driver_rating(db, driver: User, stars: int) -> float:
                           {"score": new})
             return new
 
-        driver.status = "suspended"
+        # Not for an account that is already gone: "deactivated" is below
+        # "suspended", and writing over it would quietly reinstate a driver
+        # who was removed for good. zero_tolerance_service guards the same
+        # way for the same reason.
+        if (driver.status or "active") != "deactivated":
+            driver.status = "suspended"
         driver.is_online = False
         driver.rating_suspended_until = (
             datetime.now(timezone.utc)
@@ -198,39 +203,61 @@ async def deliver_due_followups(db, now: datetime | None = None) -> int:
     window_end = now - timedelta(minutes=FOLLOWUP_DELAY_MINUTES)
     window_start = window_end - timedelta(hours=6)
 
+    # Drivers only, joined rather than fetched one at a time: a busy window
+    # would otherwise be one SELECT per rating, every minute, forever.
     rows = await db.execute(
-        select(Rating).where(
+        select(Rating, User)
+        .join(User, User.id == Rating.to_user_id)
+        .where(
             Rating.stars <= 3,
             Rating.created_at >= window_start,
             Rating.created_at <= window_end,
+            User.role == "driver",
         )
+        .order_by(Rating.created_at)
     )
-    sent = 0
-    for rating in rows.scalars().all():
-        # Role first, dedup second. Drivers rate riders too, and a rider's
-        # poor rating would otherwise be re-checked every minute for six
-        # hours to reach the same answer — it never earns the notification
-        # that would mark it as handled.
-        user = (await db.execute(
-            select(User).where(User.id == rating.to_user_id)
-        )).scalar_one_or_none()
-        if user is None or user.role != "driver":
-            continue
 
+    # At most one notice per driver per pass. The message says "one of your
+    # last trips"; three copies of it would both spam the driver and tell
+    # them how many of their riders were unhappy, which is the one thing
+    # the half-hour delay exists to keep vague.
+    first_per_driver: dict[int, Rating] = {}
+    for rating, _user in rows.all():
+        first_per_driver.setdefault(rating.to_user_id, rating)
+
+    sent = 0
+    for driver_id, rating in first_per_driver.items():
         marker = json.dumps({"rating_id": rating.id})
         dupe = await db.execute(
             select(Notification.id).where(
-                Notification.user_id == rating.to_user_id,
+                Notification.user_id == driver_id,
                 Notification.notif_type == TYPE_FOLLOWUP,
                 Notification.data == marker,
             ).limit(1)
         )
         if dupe.scalar_one_or_none() is not None:
             continue
+        # A driver already told about a poor trip in this window is not
+        # told again about a second one inside it.
+        recent = await db.execute(
+            select(Notification.id).where(
+                Notification.user_id == driver_id,
+                Notification.notif_type == TYPE_FOLLOWUP,
+                Notification.created_at >= window_start,
+            ).limit(1)
+        )
+        if recent.scalar_one_or_none() is not None:
+            continue
+
+        user = (await db.execute(
+            select(User).where(User.id == driver_id)
+        )).scalar_one_or_none()
+        if user is None:
+            continue
 
         title, body = _followup_copy()
         await notify(db, user, TYPE_FOLLOWUP, title, body,
-                      {"rating_id": rating.id})
+                     {"rating_id": rating.id})
         sent += 1
 
     if sent:
@@ -256,16 +283,63 @@ async def release_expired_suspensions(db, now: datetime | None = None) -> int:
     )
     released = 0
     for driver in rows.scalars().all():
-        driver.status = "active"
+        # A rating suspension is not the only thing that sets status to
+        # "suspended" — so do the background re-check agent, the document
+        # expiry agent and zero tolerance. Lifting this one blind would put
+        # a driver under a safety investigation back on the road. When
+        # something else is also holding them, the rating hold is cleared
+        # and the suspension is left exactly where it is.
+        blocked = await _other_suspension_reason(db, driver)
         driver.rating_suspended_until = None
         driver.average_rating = eng.RATING_AFTER_SUSPENSION
+        released += 1
+
+        if blocked is not None:
+            logger.warning(
+                "[Rating] driver %s stays suspended after the rating hold "
+                "expired — %s", driver.id, blocked,
+            )
+            continue
+
+        driver.status = "active"
         title, body = _restored_copy(eng.RATING_AFTER_SUSPENSION)
         await notify(db, driver, TYPE_RESTORED, title, body,
-                      {"score": eng.RATING_AFTER_SUSPENSION})
-        released += 1
+                     {"score": eng.RATING_AFTER_SUSPENSION})
         logger.info("[Rating] driver %s released from rating suspension",
                     driver.id)
 
     if released:
         await db.commit()
     return released
+
+
+async def _other_suspension_reason(db, driver: User) -> str | None:
+    """Why this driver must stay suspended, beyond their rating.
+
+    Returns None when the rating hold is the only thing left. Anything this
+    cannot rule out counts as a reason to stay suspended: holding a driver
+    one scan longer is an inconvenience, releasing one wrongly puts a rider
+    in a car with someone who should not be driving.
+    """
+    if getattr(driver, "background_recheck_suspended", False):
+        return "background re-check outstanding"
+
+    try:
+        from models.database import ZeroToleranceComplaint
+        open_case = await db.execute(
+            select(ZeroToleranceComplaint.id).where(
+                ZeroToleranceComplaint.driver_id == driver.id,
+                ZeroToleranceComplaint.status == "under_investigation",
+            ).limit(1)
+        )
+        if open_case.scalar_one_or_none() is not None:
+            return "zero-tolerance complaint under investigation"
+    except Exception as e:
+        # Cannot prove it is clear, so treat it as not clear.
+        logger.warning(
+            "[Rating] zero-tolerance check failed for driver %s: %s",
+            driver.id, e,
+        )
+        return "zero-tolerance status unknown"
+
+    return None

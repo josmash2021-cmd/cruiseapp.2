@@ -785,6 +785,10 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                   cRejectText,
                   acceptBg,
                   cBorderC,
+                  // Only the page the driver is on runs its countdown. The
+                  // PageView builds its neighbour too, and a clock ticking
+                  // on an offer nobody has seen expires it for them.
+                  isVisible: i == _currentOfferIndex,
                 );
                 // Pulse scale on tap-down/tap-up
                 if (isAnimating && _pulseAnim != null) {
@@ -1284,8 +1288,9 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
     Color rejectBg,
     Color rejectText,
     Color acceptBg,
-    Color borderC,
-  ) {
+    Color borderC, {
+    required bool isVisible,
+  }) {
     const luxGold = Color(0xFFD4AF37);
 
     // Parse offer data with NaN/Infinity guards — backend can send malformed
@@ -1401,6 +1406,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                 tripDistMi: tripDistMi,
                 dropoffAddr: dropoffAddr,
                 isExpanded: isExpanded,
+                isVisible: isVisible,
               ),
             ),
           ),
@@ -1425,6 +1431,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
     required double tripDistMi,
     required String dropoffAddr,
     required bool isExpanded,
+    required bool isVisible,
   }) {
     const goldAccent = Color(0xFFE8C547);
     const rejectRed = Color(0xFFE53935);
@@ -1609,6 +1616,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
             // one starts fresh and a rebuild of this one does not.
             OfferCountdownRing(
               key: ValueKey('countdown_$offerId'),
+              active: isVisible,
               onExpired: () {
                 if (!mounted) return;
                 _rejectOffer(offer);

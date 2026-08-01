@@ -2899,13 +2899,20 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     // Closed: floating clear of the sheet's rounded top. Open: resting on the
     // sheet's floor, above the home indicator.
     //
-    // 20, not 8. The disc is drawn with a gold glow that reaches roughly
-    // eight points past its edge, so a gap measured to the edge is not the
-    // gap anyone sees — at 8 the glow landed on the sheet's top edge and the
-    // two read as one object stuck together. 20 leaves about twelve points of
-    // clear map between the glow and the sheet, which is what "floating clear
-    // of it" was supposed to mean in the first place.
-    final bottomClosed = _panelCollapsedH + 20;
+    // 34, up from 20 and 8 before that.
+    //
+    // The disc carries a gold glow that reaches roughly eight points past its
+    // edge, so a gap measured to the edge is not the gap anyone sees: at 8
+    // the glow landed on the sheet and the two read as one object. 20 pulled
+    // the glow clear but left the disc close enough to still look attached —
+    // the eye reads the space between two round things as a gap only once it
+    // is wider than the glow by a clear margin.
+    //
+    // 34 leaves about twenty-six points of visible map under the disc, which
+    // is where it stops belonging to the sheet and starts floating over the
+    // map. There is room: the button ends up 128 points off the bottom of an
+    // 850-point screen, still well inside thumb reach.
+    final bottomClosed = _panelCollapsedH + 34;
     final bottom = ui.lerpDouble(bottomClosed, 0, t)!;
 
     // Inset on both sides and centred inside whatever that leaves, rather

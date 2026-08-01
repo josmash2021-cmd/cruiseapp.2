@@ -1679,14 +1679,24 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       }
     }
 
-    _setState(() {
-      _pendingOffers = filtered;
-      if (filtered.isNotEmpty) {
-        _currentOfferIndex = _currentOfferIndex.clamp(0, filtered.length - 1);
-      }
-      if (filtered.isNotEmpty && !hadOffers) _hideFindingBar = true;
-      if (filtered.isEmpty && hadOffers) _hideFindingBar = false;
-    });
+    // SSE and the 5-second poll both land here, and usually with the very
+    // same offers. Reassigning the list every time rebuilt the PageView
+    // and the card under the driver — the card blinking out and back in
+    // was this, not an offer being dropped and re-sent.
+    String idsOf(List<Map<String, dynamic>> l) =>
+        l.map((o) => (o['offer_id'] ?? o['id'] ?? '').toString()).join(',');
+    final sameOffers = idsOf(filtered) == idsOf(_pendingOffers);
+
+    if (!sameOffers) {
+      _setState(() {
+        _pendingOffers = filtered;
+        if (filtered.isNotEmpty) {
+          _currentOfferIndex = _currentOfferIndex.clamp(0, filtered.length - 1);
+        }
+        if (filtered.isNotEmpty && !hadOffers) _hideFindingBar = true;
+        if (filtered.isEmpty && hadOffers) _hideFindingBar = false;
+      });
+    }
     _preFetchOfferRoutes(filtered);
 
     // The route draws itself as the card arrives: camera to fit, then the

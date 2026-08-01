@@ -519,8 +519,10 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     final botPad = MediaQuery.of(context).padding.bottom;
     final topPad = MediaQuery.of(context).padding.top;
     final hasCard = _pendingOffers.isNotEmpty || _previewingOffer != null;
-    // Card height (~280) + bottom safe area + 60px breathing room
-    final cardArea = hasCard ? 340.0 + botPad : 60.0;
+    // The card's real height plus its header, so the route is framed in
+    // the strip of map that is actually visible above it. 340 was a guess
+    // from when the card was shorter.
+    final cardArea = hasCard ? _offerCardHeight(context) + 56.0 + botPad : 60.0;
     // Top: status bar + earnings bar (~56) + breathing room
     final topArea = topPad + 80.0;
     // Preserve current tilt/bearing if cinematic is active
@@ -660,34 +662,24 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
       ));
     }
 
-    // ── PHASE 3: Tilt camera 0° → 55° ──
-    if (!mounted || _previewingOffer == null) {
-      _isCardAnimating = false;
-      return;
-    }
-
-    final rng = math.Random();
-    final degrees = 5.0 + rng.nextDouble() * 10.0;
-    _offerRandomBearing = degrees * (rng.nextBool() ? 1.0 : -1.0);
-
+    // ── PHASE 3: none ──
+    //
+    // This used to tilt to 55° and swing to a random bearing over 1.05s,
+    // right after the fit had framed the route flat. The result was a
+    // camera that settled and then tipped over on its own, which is what
+    // the driver saw as the view "restarting". A route is read as a shape
+    // between two points; a tilt turns the far half into a smear.
+    //
+    // Top-down, no rotation, and the fit above already leaves the card's
+    // height clear at the bottom so the whole route sits above it.
     _offerTiltAnim?.removeListener(_applyOfferCamera);
+    _offerTiltAnim = null;
+    _offerBearingAnim = null;
     _offerTiltCtrl?.dispose();
-    _offerTiltCtrl = AnimationController(
-        vsync: this, duration: const Duration(milliseconds: 1050));
-    _offerTiltAnim = Tween<double>(begin: 0.0, end: 55.0).animate(
-      CurvedAnimation(parent: _offerTiltCtrl!, curve: Curves.easeInOutCubic),
-    );
+    _offerTiltCtrl = null;
     _offerBearingCtrl?.dispose();
-    _offerBearingCtrl = AnimationController(
-        vsync: this, duration: const Duration(milliseconds: 1050));
-    _offerBearingAnim =
-        Tween<double>(begin: 0.0, end: _offerRandomBearing).animate(
-      CurvedAnimation(parent: _offerBearingCtrl!, curve: Curves.easeInOutCubic),
-    );
-    _offerTiltAnim!.addListener(_applyOfferCamera);
-    _offerTiltCtrl!.forward(from: 0);
-    _offerBearingCtrl!.forward(from: 0);
-    await Future.delayed(const Duration(milliseconds: 1100));
+    _offerBearingCtrl = null;
+    _offerRandomBearing = 0;
     if (!mounted || _previewingOffer == null) {
       _isCardAnimating = false;
       return;
@@ -696,8 +688,14 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     // ── PHASE 4: Draw segment 1 (driver → pickup) ──
     if (_fullSegOne.length >= 2) {
       try {
-        await _drawGoldGlossRoute(_fullSegOne)
-            .timeout(const Duration(seconds: 8));
+        await _drawGoldGlossRoute(
+          _fullSegOne,
+          // The draw takes time. Without this it finishes after the
+          // offer was dismissed and paints a route onto an empty map —
+          // which is how a yellow line was left over the "You're
+          // online" screen with no card to explain it.
+          stillWanted: () => mounted && _previewingOffer != null,
+        ).timeout(const Duration(seconds: 8));
       } catch (_) {}
     }
     if (!mounted || _previewingOffer == null) {
@@ -716,8 +714,10 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     // ── PHASE 6: Draw segment 2 (pickup → dropoff) ──
     if (_fullSegTwo.length >= 2) {
       try {
-        await _drawGoldGlossRouteAppend(_fullSegTwo)
-            .timeout(const Duration(seconds: 8));
+        await _drawGoldGlossRouteAppend(
+          _fullSegTwo,
+          stillWanted: () => mounted && _previewingOffer != null,
+        ).timeout(const Duration(seconds: 8));
       } catch (_) {}
     }
     if (!mounted || _previewingOffer == null) {
@@ -944,7 +944,15 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
         lineJoin: mapbox.LineJoin.ROUND,
       ));
     } catch (_) {}
-    if (!mounted || mainLine == null) return;
+    if (mainLine == null) return;
+    if (!mounted || !wanted()) {
+      // Dismissed while create() was in flight: the clear has already run,
+      // so this line would outlive the offer that asked for it.
+      try {
+        await polyMgr.delete(mainLine);
+      } catch (_) {}
+      return;
+    }
 
     final totalMs = (points.length * 10).clamp(1800, 3500);
     final completer = Completer<void>();
@@ -1024,9 +1032,14 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
 
   /// Draw a second gold route segment (appended as new polyline annotation).
   /// Used for the pickup→dropoff leg after the driver→pickup leg is drawn.
-  Future<void> _drawGoldGlossRouteAppend(List<LatLng> points) async {
+  Future<void> _drawGoldGlossRouteAppend(
+    List<LatLng> points, {
+    bool Function()? stillWanted,
+  }) async {
     final polyMgr = _polylineAnnotMgr;
     if (polyMgr == null || points.length < 2) return;
+    bool wanted() =>
+        stillWanted != null ? stillWanted() : _previewingOffer != null;
 
     final cumDist = <double>[0.0];
     for (int i = 1; i < points.length; i++) {
@@ -1056,9 +1069,14 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     _routeDrawTicker?.stop();
     _routeDrawTicker?.dispose();
     _routeDrawTicker = createTicker((_) {
-      if (!mounted || _previewingOffer == null) {
+      if (!mounted || !wanted()) {
         _routeDrawTicker?.stop();
         if (!completer.isCompleted) completer.complete();
+        // Take the half-drawn line back with it.
+        final stale = seg2Line;
+        if (stale != null) {
+          polyMgr.delete(stale).catchError((_) {});
+        }
         return;
       }
       if (updating) return;

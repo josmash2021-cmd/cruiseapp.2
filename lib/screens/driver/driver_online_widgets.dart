@@ -723,7 +723,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
     final isCardExpanded = _expandedOfferIds.contains(currentOid);
 
     return Padding(
-      padding: EdgeInsets.only(bottom: bot > 0 ? bot : 10),
+      padding: EdgeInsets.only(bottom: bot > 0 ? bot * 0.5 : 6),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -822,10 +822,11 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                     _setState(() => _animatingOfferId = oid);
                     _pulseCtrl?.forward();
                   },
-                  onTap: () {
-                    _pulseCtrl?.reverse();
-                    _onOfferCardTap(offer);
-                  },
+                  // A tap does nothing but release the press animation.
+                  // The route draws itself when the card arrives; making
+                  // the tap draw it again meant a driver reading the
+                  // addresses restarted the camera under their own finger.
+                  onTap: () => _pulseCtrl?.reverse(),
                   onTapCancel: () {
                     _pulseCtrl?.reverse();
                   },
@@ -1899,10 +1900,9 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
     const double divider = 16 + 1 + 16;
     const double riderRow = 17.6;
     const double accept = 48;
-    // Slack, and a lot of it. Spare space below Accept sits on the card's
-    // own background and cannot be seen; one px too little clips the only
-    // button on the card, which has happened twice.
-    const double slack = 34;
+    // Enough that Accept is never clipped, no more. Every px here is dead
+    // space under the button that pushes the whole card up the screen.
+    const double slack = 12;
     const double base = pad +
         fareBlock +
         18 +

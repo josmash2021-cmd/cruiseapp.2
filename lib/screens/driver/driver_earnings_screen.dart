@@ -3,7 +3,6 @@ import 'dart:math';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import '../../services/haptic_service.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../services/api_service.dart';
 import '../../services/user_session.dart';
@@ -30,8 +29,6 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
 
   late AnimationController _chartCtrl;
   late Animation<double> _chartAnim;
-  late AnimationController _listCtrl;
-  late Animation<double> _listAnim;
 
   bool _loading = true;
   double _total = 0.0;
@@ -40,7 +37,6 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
   double _tipsTotal = 0.0;
   List<double> _dailyEarnings = [0, 0, 0, 0, 0, 0, 0];
   List<String> _dayLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-  List<Map<String, dynamic>> _transactions = [];
 
   // Error state — surfaced under the headline figure.
   String? _earningsError;
@@ -182,11 +178,6 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
       parent: _chartCtrl,
       curve: Curves.easeOutCubic,
     );
-    _listCtrl = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 600),
-    );
-    _listAnim = CurvedAnimation(parent: _listCtrl, curve: Curves.easeOutCubic);
     _loadHideEarnings();
     _fetchEarnings();
     _fetchPayoutData();
@@ -216,9 +207,6 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
       if (!mounted) return;
       _applyEarningsData(data);
       _chartCtrl.forward(from: 0);
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _listCtrl.forward(from: 0);
-      });
       // Update cache
       prefs.setString(cacheKey, jsonEncode(data));
     } catch (e) {
@@ -251,24 +239,8 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
         ? rawLabels.map((e) => _toStr(e, fallback: '-')).toList()
         : ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
-      final rawTx = data['transactions'];
-      _transactions = rawTx is List
-        ? rawTx
-          .whereType<Map>()
-          .map((e) {
-            final txType = _toStr(e['type'], fallback: 'trip');
-            return <String, dynamic>{
-            'type': txType,
-            'desc': _toStr(e['desc'],
-              fallback: txType == 'cancellation_fee'
-                ? 'Cancellation fee'
-                : _toStr(e['dropoff'], fallback: 'Trip')),
-            'time': _toStr(e['time'], fallback: _toStr(e['date'], fallback: 'Now')),
-            'amount': _toDouble(e['amount'] ?? e['fare']),
-            };
-          })
-          .toList()
-        : [];
+      // The transactions list is not parsed any more — the Recent
+      // Activity section it fed has been removed from this screen.
       _loading = false;
     });
   }
@@ -314,10 +286,8 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.paused) {
       _chartCtrl.stop();
-      _listCtrl.stop();
     } else if (state == AppLifecycleState.resumed) {
       _chartCtrl.forward();
-      _listCtrl.forward();
     }
   }
 
@@ -325,7 +295,6 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _chartCtrl.dispose();
-    _listCtrl.dispose();
     super.dispose();
   }
 
@@ -417,71 +386,14 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
                   const SizedBox(height: 28),
 
 
-                  // ── Recent transactions ──
-                  Text(
-                    S.of(context).recentActivity,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 18,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                  const SizedBox(height: 14),
-                  FadeTransition(
-                    opacity: _listAnim,
-                    child: Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 6,
-                      ),
-                      decoration: neuBox(radius: 20),
-                      child: Column(
-                        children: [
-                          for (var i = 0; i < _transactions.length; i++) ...[
-                            _transactionTile(_transactions[i]),
-                            if (i < _transactions.length - 1)
-                              Divider(
-                                height: 1,
-                                color: Colors.white.withValues(alpha: 0.05),
-                              ),
-                          ],
-                          if (_transactions.isEmpty && !_loading)
-                            Padding(
-                              padding: const EdgeInsets.symmetric(
-                                vertical: 28,
-                              ),
-                              child: Column(
-                                children: [
-                                  Container(
-                                    width: 56,
-                                    height: 56,
-                                    decoration:
-                                        neuBox(radius: 28, pressed: true),
-                                    child: Icon(
-                                      Icons.receipt_long_rounded,
-                                      color:
-                                          Colors.white.withValues(alpha: 0.3),
-                                      size: 26,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 12),
-                                  Text(
-                                    S.of(context).noTripsYet,
-                                    style: TextStyle(
-                                      color:
-                                          Colors.white.withValues(alpha: 0.4),
-                                      fontSize: 13,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                        ],
-                      ),
-                    ),
-                  ),
+                  // The Recent Activity list is gone from this screen.
+                  //
+                  // It was a scroll of every fare, each one a street
+                  // address and a UTC timestamp printed raw, under a
+                  // page whose job is to answer how much and when it
+                  // arrives. The figures above say the how much; the
+                  // per-trip detail belongs with the trips.
+
                   // Room for the pinned balance bar, so the last row is
                   // reachable rather than parked underneath it.
                   const SizedBox(height: 104),
@@ -887,13 +799,13 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
               _openPayoutMethodsScreen();
             },
           ),
-          // Stripe Connect, which is only reachable from this screen.
-          //
-          // It manages its own visibility — it draws nothing once the
-          // account is linked — and PayoutMethodsScreen does not offer it,
-          // so dropping it here would leave a driver with no way to set up
-          // payouts at all.
-          _StripeConnectButton(onMethodsChanged: _fetchPayoutMethods),
+          // The Stripe Connect onboarding button used to sit here, and the
+          // reason it can go is that it was never the only way in.
+          // PayoutMethodsScreen adds a bank account and a debit card itself
+          // through the native SDK — collectBankAccountToken and createToken
+          // — so the row above is a complete path to getting paid. Two
+          // buttons a line apart, both captioned about configuring payments,
+          // were describing one thing.
         ],
       ),
     );
@@ -1355,80 +1267,6 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
   }
 
 
-  Widget _transactionTile(Map<String, dynamic> t) {
-    final type = _toStr(t['type'], fallback: 'trip');
-    final desc = _toStr(t['desc'], fallback: 'Trip');
-    final time = _toStr(t['time'], fallback: 'Now');
-    final amount = _toDouble(t['amount']);
-
-    IconData icon;
-    Color iconColor;
-    switch (type) {
-      case 'cancellation_fee':
-        icon = Icons.cancel_rounded;
-        iconColor = const Color(0xFFFF8A80);
-        break;
-      case 'bonus':
-        icon = Icons.bolt_rounded;
-        iconColor = const Color(0xFFF5D990);
-        break;
-      case 'tip':
-        icon = Icons.volunteer_activism_rounded;
-        iconColor = const Color(0xFFE8C547);
-        break;
-      default:
-        icon = Icons.directions_car_rounded;
-        iconColor = _gold;
-    }
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 12),
-      child: Row(
-        children: [
-          Container(
-            width: 42,
-            height: 42,
-            decoration: neuBox(radius: 13, pressed: true),
-            child: Icon(icon, color: iconColor, size: 20),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  desc,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: 3),
-                Text(
-                  time,
-                  style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.35),
-                    fontSize: 12,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Text(
-            '+\$${amount.toStringAsFixed(2)}',
-            style: const TextStyle(
-              color: Color(0xFFE8C547),
-              fontSize: 16,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 
   void _showCashOutSheet() {
     showModalBottomSheet(
@@ -2009,201 +1847,6 @@ class _OptionCard extends StatelessWidget {
   }
 }
 
-// ── Stripe Connect Setup Payouts Button ──────────────────────────────────────
-class _StripeConnectButton extends StatefulWidget {
-  final VoidCallback? onMethodsChanged;
-  const _StripeConnectButton({this.onMethodsChanged});
-
-  @override
-  State<_StripeConnectButton> createState() => _StripeConnectButtonState();
-}
-
-class _StripeConnectButtonState extends State<_StripeConnectButton> {
-  bool _loading = false;
-  bool? _connected;
-  String? _error;
-
-  @override
-  void initState() {
-    super.initState();
-    _checkStatus();
-  }
-
-  Future<void> _checkStatus() async {
-    try {
-      final s = await ApiService.getStripeConnectStatus();
-      if (mounted) {
-        setState(() {
-          _connected = s['connected'] == true;
-          _error = null;
-        });
-      }
-    } catch (e) {
-      debugPrint('[StripeConnectButton] _checkStatus error: $e');
-      if (mounted) {
-        setState(() => _error = S.of(context).payoutSetupFailed);
-      }
-    }
-  }
-
-  Future<void> _startOnboarding() async {
-    setState(() => _loading = true);
-    try {
-      final url = await ApiService.getStripeConnectLink();
-      if (url.isEmpty) {
-        if (mounted) {
-          setState(() => _error = S.of(context).payoutSetupUnavailable);
-        }
-        return;
-      }
-      final uri = Uri.parse(url);
-      if (await canLaunchUrl(uri)) {
-        await launchUrl(uri, mode: LaunchMode.externalApplication);
-      }
-      // Also notify parent to refresh payout methods status
-      widget.onMethodsChanged?.call();
-    } on ApiException catch (e) {
-      debugPrint('[StripeConnectButton] API error: ${e.message}');
-      if (mounted) {
-        final msg = e.statusCode == 503
-            ? S.of(context).payoutSetupUnavailable
-            : S.of(context).payoutSetupFailed;
-        setState(() => _error = msg);
-      }
-    } catch (e) {
-      debugPrint('[StripeConnectButton] error: $e');
-      if (mounted) {
-        setState(() => _error = S.of(context).payoutSetupFailed);
-      }
-    } finally {
-      if (mounted) {
-        setState(() => _loading = false);
-        _checkStatus();
-      }
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final s = S.of(context);
-    // Error state: show red banner with retry
-    if (_error != null && _connected != true) {
-      return Container(
-        width: double.infinity,
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-        decoration: BoxDecoration(
-          color: Colors.redAccent.withValues(alpha: 0.1),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: Colors.redAccent.withValues(alpha: 0.3)),
-        ),
-        child: Row(
-          children: [
-            Icon(Icons.error_outline_rounded,
-                color: Colors.redAccent.withValues(alpha: 0.8), size: 20),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                _error!,
-                style: TextStyle(
-                  color: Colors.redAccent.withValues(alpha: 0.9),
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-            GestureDetector(
-              onTap: _startOnboarding,
-              child: const Icon(Icons.refresh_rounded, color: Color(0xFFE8C547), size: 20),
-            ),
-          ],
-        ),
-      );
-    }
-    if (_connected == true) {
-      return Column(
-        children: [
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(vertical: 14),
-            decoration: BoxDecoration(
-              color: const Color(0xFF1A3A2A),
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: const Color(0xFF34A853).withValues(alpha: 0.4)),
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const Icon(Icons.check_circle_rounded, color: Color(0xFF34A853), size: 20),
-                const SizedBox(width: 10),
-                Text(s.payoutsConnected,
-                    style: const TextStyle(
-                        color: Color(0xFF34A853),
-                        fontWeight: FontWeight.w700,
-                        fontSize: 15)),
-              ],
-            ),
-          ),
-          const SizedBox(height: 8),
-          // Manage payout methods link
-          GestureDetector(
-            onTap: () => _openPayoutMethodsFromContext(context),
-            child: Text(
-              'Manage payout methods',
-              style: TextStyle(
-                color: const Color(0xFFE8C547).withValues(alpha: 0.7),
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-        ],
-      );
-    }
-    return Column(
-      children: [
-        SizedBox(
-          width: double.infinity,
-          height: 52,
-          child: OutlinedButton.icon(
-            onPressed: _loading ? null : _startOnboarding,
-            icon: _loading
-                ? const SizedBox(
-                    width: 16,
-                    height: 16,
-                    child: CircularProgressIndicator(strokeWidth: 2))
-                : const Icon(Icons.account_balance_wallet_rounded, size: 20),
-            label: Text(_loading ? s.openingLabel : s.configurePayments,
-                style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
-            style: OutlinedButton.styleFrom(
-              foregroundColor: Colors.white,
-              side: BorderSide(color: Colors.white.withValues(alpha: 0.2)),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-            ),
-          ),
-        ),
-        const SizedBox(height: 8),
-        // Alternative: go to Payout Methods screen
-        GestureDetector(
-          onTap: () => _openPayoutMethodsFromContext(context),
-          child: Text(
-            'Or manage payout methods',
-            style: TextStyle(
-              color: const Color(0xFFE8C547).withValues(alpha: 0.6),
-              fontSize: 12,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  void _openPayoutMethodsFromContext(BuildContext context) {
-    Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => const PayoutMethodsScreen()),
-    ).then((_) => widget.onMethodsChanged?.call());
-  }
-}
 
 // ═══════════════════════════════════════════════════════════════════
 //  CASHOUT SUCCESS — Lyft-style full screen, Cruise gold theme

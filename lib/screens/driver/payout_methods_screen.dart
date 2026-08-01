@@ -73,9 +73,6 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
     });
   }
 
-  bool get _hasDebitCard =>
-      _methods.any((m) => m['method_type'] == 'debit_card');
-
   /// Strip the hidden ``[ext:xxx]`` Stripe-id suffix from a display name
   /// so the UI shows just "Visa ····1234".
   String _cleanDisplay(String raw) {
@@ -117,151 +114,57 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
             // ── Header ──
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
-              child: Stack(
-                alignment: Alignment.center,
-                children: [
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: GestureDetector(
-                      onTap: () => Navigator.pop(context),
-                      child: Container(
-                        width: 40,
-                        height: 40,
-                        alignment: Alignment.center,
-                        decoration: neuBox(radius: 14, pressed: true),
-                        child: const Icon(
-                          Icons.arrow_back_rounded,
-                          color: _text,
-                          size: 20,
-                        ),
-                      ),
-                    ),
-                  ),
-                  Text(
-                    s.payoutMethodsTitle,
-                    style: const TextStyle(
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: GestureDetector(
+                  onTap: () => Navigator.pop(context),
+                  child: Container(
+                    width: 40,
+                    height: 40,
+                    alignment: Alignment.center,
+                    decoration: neuBox(radius: 14, pressed: true),
+                    child: const Icon(
+                      Icons.arrow_back_rounded,
                       color: _text,
-                      fontSize: 20,
-                      fontWeight: FontWeight.w900,
+                      size: 20,
                     ),
                   ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 24),
-
-            // ── Instant cashout explainer — raised neu card ──
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              child: Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(18),
-                decoration: neuBox(radius: 22),
-                child: Row(
-                  children: [
-                    Container(
-                      width: 48,
-                      height: 48,
-                      alignment: Alignment.center,
-                      decoration: neuBox(radius: 15, pressed: true),
-                      child: const Icon(
-                        Icons.flash_on_rounded,
-                        color: _gold,
-                        size: 24,
-                      ),
-                    ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            s.instantCashout,
-                            style: const TextStyle(
-                              color: _text,
-                              fontSize: 16,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            s.plaidLinkDescription,
-                            style: TextStyle(
-                              color: Colors.white.withValues(alpha: 0.45),
-                              fontSize: 12,
-                              height: 1.4,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
                 ),
               ),
             ),
-            const SizedBox(height: 24),
+            const SizedBox(height: 18),
 
-            // ── Section header ──
+            // Title on the left at reading size, with the sentence that
+            // explains the two rows underneath it — rather than a centred
+            // page title over a card explaining only one of them.
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20),
-              child: Row(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    s.linkedAccounts,
+                    s.payoutYourMethods,
                     style: const TextStyle(
                       color: _text,
-                      fontSize: 18,
+                      fontSize: 26,
                       fontWeight: FontWeight.w800,
+                      letterSpacing: -0.6,
                     ),
                   ),
-                  const Spacer(),
+                  const SizedBox(height: 8),
                   Text(
-                    '${_methods.length}',
+                    s.payoutMethodsIntro,
                     style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.3),
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
+                      color: Colors.white.withValues(alpha: 0.45),
+                      fontSize: 13.5,
+                      height: 1.4,
                     ),
                   ),
                 ],
               ),
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: 22),
 
-            // ── Security note — sunken strip ──
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 14,
-                  vertical: 10,
-                ),
-                decoration: neuBox(radius: 14, pressed: true),
-                child: Row(
-                  children: [
-                    Icon(
-                      Icons.lock_rounded,
-                      color: _green.withValues(alpha: 0.7),
-                      size: 16,
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        s.plaidSecurityNote,
-                        style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.35),
-                          fontSize: 11,
-                          height: 1.3,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(height: 14),
-
-            // ── List / empty / error ──
             Expanded(
               child: _loading
                   ? const Center(
@@ -271,46 +174,100 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
                       ),
                     )
                   : _loadError != null
-                  ? _buildError(_loadError!)
-                  : _methods.isEmpty
-                  ? _buildEmpty()
-                  : RefreshIndicator(
-                      color: _gold,
-                      backgroundColor: neuSurface,
-                      onRefresh: _loadMethods,
-                      child: ListView.separated(
-                        physics: const AlwaysScrollableScrollPhysics(
-                          parent: BouncingScrollPhysics(),
-                        ),
-                        padding: const EdgeInsets.symmetric(horizontal: 20),
-                        itemCount: _methods.length,
-                        separatorBuilder: (_, __) => const SizedBox(height: 10),
-                        itemBuilder: (_, i) => _buildMethodCard(_methods[i]),
-                      ),
-                    ),
-            ),
+                      ? _buildError(_loadError!)
+                      : RefreshIndicator(
+                          color: _gold,
+                          backgroundColor: neuSurface,
+                          onRefresh: _loadMethods,
+                          child: ListView(
+                            physics: const AlwaysScrollableScrollPhysics(
+                              parent: BouncingScrollPhysics(),
+                            ),
+                            padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+                            children: [
+                              // Two destinations, always both shown.
+                              //
+                              // The old screen listed whatever happened to be
+                              // linked and hid the rest behind two buttons at
+                              // the foot of the page, so a driver with no card
+                              // had no way to learn that instant cashout
+                              // existed. A row that is not set up says so and
+                              // offers to be — the absence is information too.
+                              Container(
+                                decoration: neuBox(radius: 20),
+                                padding:
+                                    const EdgeInsets.symmetric(horizontal: 16),
+                                child: Column(
+                                  children: [
+                                    _destinationRow(
+                                      icon: Icons.flash_on_rounded,
+                                      title: s.payoutExpressPay,
+                                      emptyDesc: s.payoutExpressPayDesc,
+                                      method: _methodOfType('debit_card'),
+                                      statusLabel: s.payoutOnRequest,
+                                      onTap: _connectDebitCard,
+                                    ),
+                                    Divider(
+                                      height: 1,
+                                      color:
+                                          Colors.white.withValues(alpha: 0.05),
+                                    ),
+                                    _destinationRow(
+                                      icon: Icons.calendar_month_rounded,
+                                      title: s.payoutWeekly,
+                                      emptyDesc: s.payoutWeeklyDesc,
+                                      method: _methodOfType('bank_account'),
+                                      statusLabel: s.payoutActive,
+                                      onTap: _connectBankAccount,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(height: 16),
 
-            // ── Actions ──
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 12, 20, 16),
-              child: Column(
-                children: [
-                  _primaryButton(
-                    icon: Icons.account_balance_rounded,
-                    label: s.connectBankAccount,
-                    busyLabel: s.connectingLabel,
-                    onTap: _connectBankAccount,
-                  ),
-                  if (!_hasDebitCard) ...[
-                    const SizedBox(height: 10),
-                    _secondaryButton(
-                      icon: Icons.credit_card_rounded,
-                      label: s.addDebitCard,
-                      onTap: _connectDebitCard,
-                    ),
-                  ],
-                ],
-              ),
+                              // ── Security note — sunken strip ──
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 14,
+                                  vertical: 10,
+                                ),
+                                decoration: neuBox(radius: 14, pressed: true),
+                                child: Row(
+                                  children: [
+                                    Icon(
+                                      Icons.lock_rounded,
+                                      color: _green.withValues(alpha: 0.7),
+                                      size: 16,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Text(
+                                        s.plaidSecurityNote,
+                                        style: TextStyle(
+                                          color: Colors.white
+                                              .withValues(alpha: 0.35),
+                                          fontSize: 11,
+                                          height: 1.3,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+
+                              // Anything the two rows are not already showing
+                              // — a driver who linked a second card — still
+                              // gets a card of its own, so nothing they
+                              // attached is invisible.
+                              ..._extraMethods().map(
+                                (m) => Padding(
+                                  padding: const EdgeInsets.only(top: 10),
+                                  child: _buildMethodCard(m),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
             ),
           ],
         ),
@@ -318,168 +275,133 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
     );
   }
 
-  /// Gold filled primary action, raised.
-  Widget _primaryButton({
-    required IconData icon,
-    required String label,
-    required String busyLabel,
-    required VoidCallback onTap,
-  }) {
-    return GestureDetector(
-      onTap: _busy ? null : onTap,
-      child: AnimatedOpacity(
-        duration: const Duration(milliseconds: 150),
-        opacity: _busy ? 0.6 : 1,
-        child: Container(
-          width: double.infinity,
-          height: 56,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            color: _gold,
-            borderRadius: BorderRadius.circular(18),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.55),
-                offset: const Offset(5, 5),
-                blurRadius: 12,
-              ),
-              BoxShadow(
-                color: Colors.white.withValues(alpha: 0.05),
-                offset: const Offset(-4, -4),
-                blurRadius: 10,
-              ),
-            ],
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              if (_busy)
-                const SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: CircularProgressIndicator(
-                    color: Colors.black,
-                    strokeWidth: 2,
-                  ),
-                )
-              else
-                Icon(icon, size: 20, color: Colors.black),
-              const SizedBox(width: 10),
-              Text(
-                _busy ? busyLabel : label,
-                style: const TextStyle(
-                  color: Colors.black,
-                  fontSize: 15,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
+  /// The default destination of [type], or the first one, or null.
+  Map<String, dynamic>? _methodOfType(String type) {
+    final of = _methods.where((m) => m['method_type'] == type).toList();
+    if (of.isEmpty) return null;
+    return of.firstWhere(
+      (m) => m['is_default'] == true,
+      orElse: () => of.first,
     );
   }
 
-  /// Raised neu surface with gold label.
-  Widget _secondaryButton({
-    required IconData icon,
-    required String label,
-    required VoidCallback onTap,
-  }) {
-    return GestureDetector(
-      onTap: _busy ? null : onTap,
-      child: AnimatedOpacity(
-        duration: const Duration(milliseconds: 150),
-        opacity: _busy ? 0.5 : 1,
-        child: Container(
-          width: double.infinity,
-          height: 52,
-          alignment: Alignment.center,
-          decoration: neuBox(radius: 18),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(icon, size: 20, color: _gold),
-              const SizedBox(width: 10),
-              Text(
-                label,
-                style: const TextStyle(
-                  color: _gold,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
+  /// Everything the two rows above are not already showing.
+  List<Map<String, dynamic>> _extraMethods() {
+    final shown = <Object?>{
+      _methodOfType('debit_card')?['id'],
+      _methodOfType('bank_account')?['id'],
+    }..remove(null);
+    return _methods.where((m) => !shown.contains(m['id'])).toList();
   }
 
-  Widget _buildEmpty() {
+  /// One payout destination: what it is, what is attached, and its state.
+  Widget _destinationRow({
+    required IconData icon,
+    required String title,
+    required String emptyDesc,
+    required Map<String, dynamic>? method,
+    required String statusLabel,
+    required VoidCallback onTap,
+  }) {
     final s = S.of(context);
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 80,
-            height: 80,
-            alignment: Alignment.center,
-            decoration: neuBox(radius: 26, pressed: true),
-            child: Icon(
-              Icons.account_balance_rounded,
-              color: _gold.withValues(alpha: 0.45),
-              size: 36,
+    final linked = method != null;
+    final sub = linked
+        ? _cleanDisplay((method['display_name'] ?? '').toString())
+        : emptyDesc;
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      // Deaf while a Stripe call is in flight. Two taps on "Set up" opens
+      // two sheets, and the second one lands on a Connect account the first
+      // is halfway through changing.
+      onTap: _busy
+          ? null
+          : () {
+              HapticService.mediumImpact();
+              onTap();
+            },
+      child: Opacity(
+        opacity: _busy ? 0.5 : 1,
+        child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 16),
+        child: Row(
+          children: [
+            Icon(
+              icon,
+              size: 20,
+              color: linked ? _gold : Colors.white.withValues(alpha: 0.45),
             ),
-          ),
-          const SizedBox(height: 16),
-          Text(
-            s.noPayoutMethods,
-            style: const TextStyle(
-              color: _text,
-              fontSize: 17,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            s.connectBankForCashouts,
-            style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.4),
-              fontSize: 13,
-              height: 1.4,
-            ),
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: 24),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            decoration: neuBox(radius: 20, pressed: true),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  Icons.shield_rounded,
-                  color: _gold.withValues(alpha: 0.6),
-                  size: 16,
-                ),
-                const SizedBox(width: 6),
-                Text(
-                  s.poweredByPlaid,
-                  style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.35),
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      color: _text,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
-                ),
-              ],
+                  const SizedBox(height: 3),
+                  Text(
+                    sub,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.4),
+                      fontSize: 12.5,
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ),
-        ],
+            const SizedBox(width: 10),
+            if (_busy)
+              const SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(color: _gold, strokeWidth: 2),
+              )
+            else
+              _statusPill(linked ? statusLabel : s.payoutSetUp,
+                  linked: linked),
+            const SizedBox(width: 6),
+            Icon(
+              Icons.chevron_right_rounded,
+              color: Colors.white.withValues(alpha: 0.3),
+              size: 20,
+            ),
+          ],
+        ),
+        ),
       ),
     );
   }
+
+  /// Green for a destination that is working, gold for one still to set up.
+  Widget _statusPill(String label, {required bool linked}) {
+    final c = linked ? _green : _gold;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: c.withValues(alpha: 0.16),
+        borderRadius: BorderRadius.circular(11),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: c,
+          fontSize: 11,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+    );
+  }
+
+
+
+
 
   Widget _buildError(String message) {
     return Center(

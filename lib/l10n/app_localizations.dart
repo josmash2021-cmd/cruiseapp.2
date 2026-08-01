@@ -1230,6 +1230,28 @@ class S {
   String get thisWeek => _es ? 'Esta Semana' : 'This Week';
   String get thisMonth => _es ? 'Este Mes' : 'This Month';
 
+  // ── Payout methods, rebuilt layout ──
+  String get payoutYourMethods =>
+      _es ? 'Tus métodos de cobro' : 'Your payout methods';
+  String get payoutMethodsIntro => _es
+      ? 'Tus ganancias se depositan cada martes, salvo que pidas retirarlas '
+          'antes con Retiro exprés.'
+      : 'Your earnings are deposited every Tuesday, unless you ask to cash '
+          'out sooner with Express Pay.';
+  String get payoutExpressPay => _es ? 'Retiro exprés' : 'Express Pay';
+  String get payoutWeekly => _es ? 'Pago semanal' : 'Weekly payouts';
+  String get payoutOnRequest => _es ? 'A petición' : 'On request';
+  String get payoutActive => _es ? 'Activo' : 'Active';
+  String get payoutSetUp => _es ? 'Configurar' : 'Set up';
+  String get payoutExpressPayDesc => _es
+      ? 'Cobra cuando quieras, con una comisión'
+      : 'Cash out whenever you like, for a fee';
+  String get payoutWeeklyDesc => _es
+      ? 'Cada martes, sin comisión'
+      : 'Every Tuesday, no fee';
+  String payoutEndingIn(String last4) =>
+      _es ? 'Terminada en •$last4' : 'Ending in •$last4';
+
   // ── Earnings screen, rebuilt layout ──
   String get earningsPeriodDay => _es ? 'Día' : 'Day';
   String get earningsPeriodWeek => _es ? 'Semana' : 'Week';

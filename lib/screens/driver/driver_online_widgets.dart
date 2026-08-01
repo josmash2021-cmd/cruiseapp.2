@@ -205,6 +205,26 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
           Future.microtask(() async {
             bool stale() => !mounted || _mapGeneration != gen || _map == null;
             try {
+              // Pan and zoom, but the driver never turns the map by hand.
+              //
+              // The camera does still rotate on its own while navigating —
+              // that is the map facing the direction of travel, the same as
+              // every turn-by-turn app. What is gone is the two-finger twist,
+              // which could leave the map at an angle nothing would ever
+              // correct, with the arrow pointing somewhere that no longer
+              // matched the streets under it.
+              await ctrl.gestures.updateSettings(mapbox.GesturesSettings(
+                scrollEnabled: true,
+                pinchToZoomEnabled: true,
+                doubleTapToZoomInEnabled: true,
+                doubleTouchToZoomOutEnabled: true,
+                quickZoomEnabled: true,
+                rotateEnabled: false,
+                pitchEnabled: false,
+                simultaneousRotateAndPinchToZoomEnabled: false,
+              ));
+              if (stale()) return;
+
               // Polyline manager with no 'below' constraint — avoids silent failure
               // when the layer name doesn't exist in the style.
               final poly = await ctrl.annotations.createPolylineAnnotationManager(

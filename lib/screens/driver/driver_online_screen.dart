@@ -26,6 +26,7 @@ import '../../widgets/verified_avatar.dart';
 import '../../widgets/neu_style.dart';
 import '../../widgets/map/circular_pin_renderer.dart';
 import '../../services/gps_service.dart';
+import '../../services/heading_service.dart';
 import '../../services/trip_firestore_service.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -360,6 +361,13 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   final SmoothMotion _motion = SmoothMotion();
   double _heading = 0;
   double _smoothedBearing = 0;
+
+  /// Where the phone is pointing, from the compass — see [HeadingService].
+  ///
+  /// _smoothedBearing above is fed from this now instead of straight from
+  /// the GPS course, so the arrow keeps turning while the car is stopped.
+  final HeadingService _headingSource = HeadingService();
+  StreamSubscription<double>? _headingSub;
   Uint8List? _arrowIconBytes;
 
   // -- 3D nav car bytes --
@@ -759,6 +767,10 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
       _earningsRefreshTimer?.cancel();
       _dotWatchdog?.cancel();
       _goldDot.dispose();
+      // The compass goes with it. There is no marker to turn behind a locked
+      // screen, and the magnetometer is not free. _boot's _startHeadingSource
+      // runs again on resume.
+      _headingSource.stop();
       // Start background heartbeat to keep driver "online" in backend
       _startBackgroundHeartbeat();
       // Start Android foreground service so the OS doesn't kill us
@@ -777,6 +789,9 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
       _startPolling(); // _startPolling already calls _connectSse()
       _startClock();
       _startEarningsRefresh();
+      // Re-attach the compass dropped on pause, so the arrow is already
+      // pointing the right way by the time the driver has looked at it.
+      _startHeadingSource();
       // On Android the PlatformView is destroyed in background and recreated
       // on resume. onMapCreated resets annotation managers, but if the map
       // was NOT recreated (warm resume), old annotations may still exist.
@@ -817,6 +832,8 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     _navTimer?.cancel();
     _dotWatchdog?.cancel();
     _goldDot.dispose();
+    _headingSub?.cancel();
+    _headingSource.dispose();
     _driverPhotoImage?.dispose();
     _markerFrame.dispose();
     MapSurfaceCoordinator.instance.release(_kMapSurfaceOwner);

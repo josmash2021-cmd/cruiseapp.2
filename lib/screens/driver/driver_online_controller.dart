@@ -400,6 +400,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     _goldPinBytes = results[4] as Uint8List?;
     await _goldDot.build(this, () { if (mounted) _updateDriverAnnotation(); });
     if (!mounted) return;
+    _startHeadingSource();
     // The dot image is what _updateDriverAnnotation() gates on — every call
     // before this point bailed out with no bytes. Draw it now instead of
     // waiting for the next GPS tick: a driver who goes online standing still
@@ -987,24 +988,21 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       onPosition: (pos) {
           if (!mounted) return;
           final newLL = LatLng(pos.latitude, pos.longitude);
-          // Only turn the arrow when the course is worth believing.
+          // Where the arrow points is decided by _headingSource, not here.
           //
-          // Position.heading is -1 when the platform has none to give, and
-          // at a crawl it is noise: standing at a light, the reported course
-          // wanders or drops to zero. Fed straight into the filter that
-          // swung the arrow round to face north while the driver sat still,
-          // and again on the first fix of every shift.
+          // This used to read pos.heading directly and throw it away below
+          // ~5 km/h, because the GPS course at a crawl is noise — a parked
+          // car has no direction of travel, so the platform reports −1 or a
+          // wandering value, and feeding that in swung the arrow to north
+          // while the driver sat still.
           //
-          // Below ~5 km/h the last good bearing is a better answer than a
-          // fresh bad one — a parked car is still pointing where it was.
-          final gpsHeading = pos.heading;
-          final courseIsReal = gpsHeading >= 0 &&
-              gpsHeading <= 360 &&
-              !gpsHeading.isNaN &&
-              pos.speed >= 1.4;
-          if (courseIsReal) {
-            _smoothedBearing = _lerpAngle(_smoothedBearing, gpsHeading, 0.25);
-          }
+          // Discarding it was right; having nothing to put in its place was
+          // the problem. The compass answers the question the GPS cannot:
+          // a stationary car is still pointing somewhere. The service takes
+          // this fix, works out whether the car is moving fast enough for
+          // the course to be the better source, and publishes the winner on
+          // the stream _startHeadingSource listens to.
+          _headingSource.onFix(pos);
           _currentSpeedMph = (pos.speed * 2.23694).clamp(0.0, 200.0);
           // Snap to route polyline — prevents GPS drift off-road
           final snappedLL = _snapToRoute(newLL);
@@ -1192,6 +1190,40 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     _setState(() {});
   }
 
+  /// Turn the arrow from the compass, whether or not the car is moving.
+  ///
+  /// Feeds [_motion] the bearing on its own, separately from position, and
+  /// makes sure the ticker is awake to animate it — a driver turning the
+  /// phone in their hand produces headings and no fixes at all, and the
+  /// ticker used to be started only by a fix arriving.
+  void _startHeadingSource() {
+    _headingSource.start();
+    // Called from boot and again on every resume, so it has to be safe to
+    // call twice — two subscriptions would apply the low-pass twice per
+    // reading and turn the arrow at double speed.
+    _headingSub?.cancel();
+    _headingSub = _headingSource.stream.listen((deg) {
+      if (!mounted) return;
+      // Same low-pass the GPS course got, so the arrow's feel does not
+      // change with the source. A magnetometer at rest wanders about a
+      // degree; this absorbs it before SmoothMotion's own filter sees it.
+      _smoothedBearing = _lerpAngle(_smoothedBearing, deg, 0.25);
+      _motion.setBearing(_smoothedBearing);
+      // Only wake the ticker while there is a map for it to draw on.
+      //
+      // _releaseMapSurface stops it precisely because the surface is going
+      // away, and compass readings keep arriving afterwards — so without
+      // this the sensor would restart the ticker a few milliseconds later
+      // and _onSmoothTick would run camera writes and annotation updates
+      // against a map that has just been handed to another screen.
+      if (_mapMounted &&
+          _motion.hasPosition &&
+          !(_smoothTicker?.isTicking ?? false)) {
+        _smoothTicker?.start();
+      }
+    });
+  }
+
   void _smoothMoveTo(LatLng target, double heading) {
     _motion.setTarget(target.latitude, target.longitude, bearing: heading);
     // Seed _pos on the very first fix so the first render doesn't start
@@ -1326,12 +1358,23 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     // (cheap), then flush to Mapbox. The annotation follows the dot exactly.
     _updateDriverAnnotation();
 
-    // Stop ticker when parked on the target — saves CPU when idle/stationary.
-    // The ticker restarts automatically on the next _smoothMoveTo().
-    if (_motion.isAtTarget) {
-      _smoothTicker?.stop();
-    }
-
+    // The ticker used to park itself here, on `_motion.isAtTarget`, and
+    // restart on the next fix. That was a fair trade when the only thing it
+    // animated was position: a stationary car has nothing to move, so a
+    // sleeping ticker cost nothing.
+    //
+    // It is not true any more. The compass reports while the car is parked,
+    // and turning the arrow is this ticker's job — so parking it froze the
+    // arrow mid-rotation and left it pointing wherever the last frame caught
+    // it. Nothing would wake it until the driver drove off, which is exactly
+    // the case the compass was added for.
+    //
+    // isAtTarget now accounts for bearing as well, so the old condition
+    // would no longer fire while the arrow is turning. Keeping the ticker
+    // running outright is simpler and one less thing to be subtly wrong: it
+    // stops on screen teardown and when the map surface is released, and
+    // _onSmoothTick returns on its first line while there is no position.
+    //
     // Throttle widget-tree rebuilds to ~15fps — map annotation updates every frame
     // but Flutter setState only fires 4x/sec so buttons stay responsive.
     final nowMs = DateTime.now().millisecondsSinceEpoch;

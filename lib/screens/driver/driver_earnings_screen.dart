@@ -187,10 +187,21 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
     final period = _periodKeys[_selectedPeriod];
     final cacheKey = 'driver_earnings_$period';
 
-    // Cache-first: show last-known earnings instantly
+    // Cache-first, but only from the stretch of time it describes.
+    //
+    // The cache was written with no date on it. A figure captioned "Today"
+    // survived into the next day, and the next week's into the week after —
+    // so the first thing a driver saw every morning was yesterday's total
+    // under today's label, and it stayed there until a round trip came back
+    // to correct it. On no signal it never did.
+    //
+    // The day is enough of a key for all four periods: a week, a month and a
+    // year all roll over on some day, and a cache that is refused a day
+    // early costs one fetch.
     final prefs = await SharedPreferences.getInstance();
     final cached = prefs.getString(cacheKey);
-    if (cached != null && _loading) {
+    final cachedDay = prefs.getString('${cacheKey}_day');
+    if (cached != null && cachedDay == _localDayKey() && _loading) {
       try {
         final data = jsonDecode(cached) as Map<String, dynamic>;
         _applyEarningsData(data);
@@ -208,6 +219,9 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
       _chartCtrl.forward(from: 0);
       // Update cache
       prefs.setString(cacheKey, jsonEncode(data));
+      // Stamped with the day it describes, so tomorrow cannot read
+      // it as its own.
+      prefs.setString('${cacheKey}_day', _localDayKey());
     } catch (e) {
       debugPrint('[Earnings] _fetchEarnings error: $e');
       if (!mounted) return;
@@ -216,6 +230,15 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
         _earningsError = S.of(context).couldNotLoadEarnings;
       });
     }
+  }
+
+  /// The driver's current local date, as a key the cache is compared
+  /// against. Local rather than UTC: their day turns over at their
+  /// midnight, which is when the figure captioned "Today" should reset.
+  String _localDayKey() {
+    final d = DateTime.now();
+    return '${d.year}-${d.month.toString().padLeft(2, '0')}'
+        '-${d.day.toString().padLeft(2, '0')}';
   }
 
   void _applyEarningsData(Map<String, dynamic> data) {

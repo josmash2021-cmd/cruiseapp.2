@@ -792,14 +792,6 @@ app.add_middleware(GZipMiddleware, minimum_size=1000, compresslevel=4)
 # the reviewer's own machine to match, which is the same trust boundary the
 # existing localhost:8080 entry already assumed.
 _CORS_LOCALHOST_RE = r"http://(localhost|127\.0\.0\.1)(:\d+)?"
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=_CORS_ORIGINS,
-    allow_origin_regex=_CORS_LOCALHOST_RE,
-    allow_credentials=True,
-    allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type", "X-Api-Key", "X-Timestamp", "X-Nonce", "X-Signature", "X-Device-FP", "X-Client-Version"],
-)
 
 # -- LAYER 2: Security Headers -------------------------
 # Paths served to browsers (dispatch dashboard, photos, uploads)
@@ -944,6 +936,34 @@ async def crash_protection_middleware(request: Request, call_next):
             {"detail": "Internal server error"},
             status_code=500,
         )
+
+
+# -- CORS, registered LAST so it is the OUTERMOST middleware --------------
+#
+# Starlette builds the stack so the last-added middleware runs outermost.
+# CORS used to be added before the four @app.middleware("http") handlers
+# above, which put it *inside* them — so every response those return
+# without calling call_next (403 blacklist, 429 rate limit, 413 body too
+# large, 500 crash) went to the browser with no Access-Control-Allow-Origin
+# on it.
+#
+# A browser rejects such a response outright. The client never sees the
+# status, so a 500 and a dead server are indistinguishable to it, and the
+# app reports both as "Connection error — is the server running?". A real
+# 500 on /auth/login was invisible for exactly this reason: the server was
+# answering, the answer was just unreadable.
+#
+# Registered here, every response leaves through CORS, including the ones
+# that never reached a route.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_CORS_ORIGINS,
+    allow_origin_regex=_CORS_LOCALHOST_RE,
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "X-Api-Key", "X-Timestamp", "X-Nonce", "X-Signature", "X-Device-FP", "X-Client-Version"],
+)
+
 
 @app.get("/ping")
 async def ping():

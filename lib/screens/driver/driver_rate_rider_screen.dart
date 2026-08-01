@@ -65,6 +65,14 @@ class _DriverRateRiderScreenState extends State<DriverRateRiderScreen>
   final Set<String> _selectedTags = {};
   bool _submitting = false;
 
+  /// True once a departure from this screen has been started.
+  ///
+  /// Three separate things call [_goOnline] — Enviar, Omitir, and the back
+  /// gesture — and none of them knew about the others. Two firing together
+  /// pushes two DriverOnlineScreens, and each one claims a map surface on
+  /// its own timer.
+  bool _leaving = false;
+
   late final AnimationController _fadeCtrl;
   late final Animation<double> _fadeAnim;
 
@@ -159,8 +167,32 @@ class _DriverRateRiderScreenState extends State<DriverRateRiderScreen>
   }
 
   Future<void> _goOnline() async {
-    // Smooth fade-out of this screen's content first
-    await _fadeCtrl.reverse();
+    if (_leaving) return;
+    _leaving = true;
+
+    // Fade the content out and tear the map down at the same time — the map
+    // is behind a 5-pixel blur and a 45% scrim, so its removal is invisible
+    // and there is no reason to pay for it twice.
+    final fade = _fadeCtrl.reverse();
+
+    // The surface is gone before the next screen is pushed, and we wait for
+    // it to really be gone.
+    //
+    // DriverOnlineScreen mounts a Mapbox surface of its own roughly half a
+    // second after the push, and two live surfaces close the app on iOS.
+    // Releasing in dispose() did not prevent that: release() only clears the
+    // coordinator's bookkeeping, it does not wait for the PlatformView to be
+    // torn down — so the incoming screen was told the surface was free while
+    // ours was still attached. Every other screen in this flow drops its map
+    // before navigating (see DriverHomeScreen._suspendMap); this one was the
+    // exception, and it is the last screen of every ride.
+    if (_mapMounted) {
+      setState(() => _mapMounted = false);
+      await surfaceRemoved();
+    }
+    MapSurfaceCoordinator.instance.release(_mapSurfaceOwner);
+
+    await fade;
     if (!mounted) return;
     Navigator.of(context).pushAndRemoveUntil(
       PageRouteBuilder(
@@ -274,7 +306,8 @@ class _DriverRateRiderScreenState extends State<DriverRateRiderScreen>
                     width: double.infinity,
                     height: Responsive.h(52),
                     child: ElevatedButton(
-                      onPressed: _stars > 0 && !_submitting ? _submit : null,
+                      onPressed:
+                          _stars > 0 && !_submitting && !_leaving ? _submit : null,
                       style: ElevatedButton.styleFrom(
                         backgroundColor: _stars > 0 ? _gold : _gold.withValues(alpha: 0.3),
                         disabledBackgroundColor: _gold.withValues(alpha: 0.3),
@@ -302,7 +335,7 @@ class _DriverRateRiderScreenState extends State<DriverRateRiderScreen>
                   const SizedBox(height: 12),
                   // Skip
                   TextButton(
-                    onPressed: _submitting ? null : _goOnline,
+                    onPressed: _submitting || _leaving ? null : _goOnline,
                     child: Text(
                       'Omitir',
                       style: TextStyle(

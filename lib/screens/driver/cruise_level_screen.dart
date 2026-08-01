@@ -83,7 +83,9 @@ class _CruiseLevelScreenState extends State<CruiseLevelScreen>
       _Tier(
         name: 'Platinum',
         color: const Color(0xFF90CAF9),
-        icon: Icons.diamond_rounded,
+        // Swapped with Diamond below. The gem belongs on the tier named
+        // after it; Platinum takes the sparkles, so the five stay distinct.
+        icon: Icons.auto_awesome_rounded,
         minTrips: 300,
         minRating: 4.8,
         rewards: [
@@ -95,7 +97,7 @@ class _CruiseLevelScreenState extends State<CruiseLevelScreen>
       _Tier(
         name: 'Diamond',
         color: const Color(0xFF80DEEA),
-        icon: Icons.auto_awesome_rounded,
+        icon: Icons.diamond_rounded,
         minTrips: 500,
         minRating: 4.9,
         rewards: [

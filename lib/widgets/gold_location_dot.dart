@@ -5,6 +5,7 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
+import 'package:flutter/services.dart' show rootBundle;
 
 import '../utils/smooth_motion.dart';
 
@@ -94,6 +95,43 @@ class GoldLocationDot {
   /// once per launch instead of once per screen.
   static final Map<bool, Uint8List> _frameCache = <bool, Uint8List>{};
 
+  // ── The driver badge artwork ──────────────────────────────────────────
+  //
+  // The badge used to be drawn with three circles and a four-point path.
+  // It is a supplied PNG now, decoded once and stamped into the same
+  // 40-unit circle those shapes filled — so every size downstream
+  // (driverIconSize, driverOverlaySize, the overlay's canvas scale) keeps
+  // working off the numbers it already had. Nothing about the marker's
+  // dimensions changed; only what is inside the circle.
+
+  /// Decoded once per process. Null until the load finishes, or forever if
+  /// it fails — [_paintHeadingBadge] draws the old vector badge in that case.
+  static ui.Image? _badgeImage;
+
+  /// Memoises the load, including a failed one. Retrying per frame would
+  /// hammer the asset bundle for a file that is not going to appear.
+  static Future<void>? _badgeLoad;
+
+  /// Bumped when the artwork lands, so a painter that already drew the
+  /// fallback has something to compare and knows to draw again.
+  static int _artworkGeneration = 0;
+
+  static Future<void> _ensureBadgeImage() {
+    if (_badgeImage != null) return Future<void>.value();
+    return _badgeLoad ??= () async {
+      try {
+        final data = await rootBundle.load('assets/markers/driver_arrow.png');
+        final codec = await ui.instantiateImageCodec(data.buffer.asUint8List());
+        _badgeImage = (await codec.getNextFrame()).image;
+        _artworkGeneration++;
+      } catch (e) {
+        // Not fatal. The vector badge below is a complete marker on its own,
+        // and a driver with no arrow at all is the failure that matters.
+        debugPrint('[GoldLocationDot] badge artwork failed to load: $e');
+      }
+    }();
+  }
+
   Uint8List? _frame;
   Ticker? _ticker;
   Duration _lastElapsed = Duration.zero;
@@ -130,6 +168,13 @@ class GoldLocationDot {
   void setTarget(double lat, double lng, {double? bearing}) =>
       _motion.setTarget(lat, lng, bearing: bearing);
 
+  /// Aim the marker without moving it.
+  ///
+  /// The compass reports far more often than the GPS, and while the driver
+  /// is parked it reports when the GPS has nothing at all to say — so where
+  /// the arrow points arrives on its own channel. See HeadingService.
+  void setBearing(double bearing) => _motion.setBearing(bearing);
+
   /// Hard-reset the rendered position (e.g. resuming from background).
   void snapTo(double lat, double lng, {double? bearing}) =>
       _motion.snapTo(lat, lng, bearing: bearing);
@@ -162,6 +207,13 @@ class GoldLocationDot {
     // the pause could never come back — the arrow was simply gone for the
     // life of the screen. Calling build() is a request to run again.
     _isDisposing = false;
+
+    // The artwork before anything else, because the raster below bakes it in.
+    // A badge rasterised while the PNG was still loading would be cached as
+    // the vector fallback and stay that way for the rest of the process.
+    // Only the heading badge uses it; the plain dot is still all vectors.
+    if (heading) await _ensureBadgeImage();
+
     // Already rasterised once in this process — reuse it. This is the path
     // every screen after the first takes, and it cannot fail: no canvas, no
     // GPU, no await before the marker is ready.
@@ -296,6 +348,32 @@ class GoldLocationDot {
         ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 7),
     );
 
+    // The supplied badge, stamped into exactly the circle the vector one
+    // filled: a 40-unit square centred on the same point, which is what
+    // `drawCircle(center, _dotR)` covered. The asset is cropped to its own
+    // artwork and squared around its centre (see the marker build script),
+    // so its disc lands edge to edge in that square — same diameter, same
+    // centre of rotation.
+    final img = _badgeImage;
+    if (img != null) {
+      canvas.drawImageRect(
+        img,
+        Rect.fromLTWH(0, 0, img.width.toDouble(), img.height.toDouble()),
+        Rect.fromCircle(center: center, radius: _dotR),
+        Paint()
+          ..isAntiAlias = true
+          // The source is 512 px landing in a 40-unit box that is itself
+          // drawn at a few different scales — a 12:1 reduction, where
+          // anything below `high` shows the ring aliasing into a dashed
+          // line as the marker turns.
+          ..filterQuality = FilterQuality.high,
+      );
+      return;
+    }
+
+    // ── Fallback: the badge drawn by hand ──────────────────────────────
+    // Reached only when the asset fails to decode. Same shape, same sizes.
+
     // Black body.
     canvas.drawCircle(center, _dotR, Paint()..color = _body);
 
@@ -405,10 +483,19 @@ class GoldLocationDotOverlay extends StatelessWidget {
 }
 
 class _GoldDotOverlayPainter extends CustomPainter {
-  const _GoldDotOverlayPainter({required this.bearing, required this.heading});
+  _GoldDotOverlayPainter({required this.bearing, required this.heading})
+      : _badgeGeneration = GoldLocationDot._artworkGeneration;
 
   final double bearing;
   final bool heading;
+
+  /// What the badge artwork looked like when this painter was made.
+  ///
+  /// The overlay is a static drawing whenever the driver is stopped, so
+  /// without this a marker painted during the frame or two before the PNG
+  /// finished decoding would keep showing the fallback until something else
+  /// moved.
+  final int _badgeGeneration;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -437,5 +524,7 @@ class _GoldDotOverlayPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_GoldDotOverlayPainter old) =>
-      old.bearing != bearing || old.heading != heading;
+      old.bearing != bearing ||
+      old.heading != heading ||
+      old._badgeGeneration != _badgeGeneration;
 }

@@ -46,6 +46,33 @@ class SmoothMotion {
   /// is truly lost.
   static const double _maxExtrapolationSec = 3.5;
 
+  /// The fraction of the remaining gap to close in [dtSec], for a filter that
+  /// closes [ratePerSec] of it per second, at any frame rate.
+  ///
+  /// This used to be written `1 - pow(1 - ratePerSec, dtSec)`, which is only
+  /// defined while the rate is below 1. Both rates above are over 1, so the
+  /// base was negative — and Dart's `pow` returns NaN for a negative base
+  /// raised to a fractional power, which every frame delta is. So the factor
+  /// was NaN on every single tick.
+  ///
+  /// NaN does not announce itself. It multiplies into the step, adds into
+  /// the position, and the overshoot clamps in [tick] wave it through because
+  /// every comparison against NaN is false. Downstream, `safePoint` drops
+  /// the annotation update and the overlay's `canvas.rotate(NaN)` draws
+  /// nothing — which is the arrow that "disappears and comes back", and the
+  /// dot that has to be nudged by watchdogs to move at all. The marker only
+  /// ever looked alive because `snapTo` and first-fix seeding kept resetting
+  /// it to a real number between ticks.
+  ///
+  /// `1 - exp(-rate * dt)` is the continuous form of the same idea and is
+  /// defined for every positive rate. Clamped because a huge dt should mean
+  /// "close all of it", never more.
+  static double _lerpFactor(double ratePerSec, double dtSec) {
+    final f = 1.0 - math.exp(-ratePerSec * dtSec);
+    if (f.isNaN) return 0.0;
+    return f < 0.0 ? 0.0 : (f > 1.0 ? 1.0 : f);
+  }
+
   double? get lat => _lat;
   double? get lng => _lng;
   double get bearing => _bearing;
@@ -54,9 +81,17 @@ class SmoothMotion {
   /// Provide a new GPS target. Measures velocity from the delta to the
   /// previous target. [bearing] is optional (degrees, 0 = north).
   void setTarget(double lat, double lng, {double? bearing}) {
-    if (bearing != null && !bearing.isNaN && !bearing.isInfinite) {
-      _targetBearing = bearing;
-    }
+    // The busiest entry point, and the one that was not checking.
+    //
+    // snapTo guards its input and setBearing guards its own, but this runs on
+    // every GPS fix — and a fix with a NaN coordinate is not hypothetical:
+    // iOS emits them while the location manager is warming up. One of those
+    // set _targetLat to NaN, and on the first fix of a session that is copied
+    // straight into the rendered position, from where it reaches the native
+    // map. Dropping the fix costs one update out of the one per second the
+    // platform sends.
+    if (!lat.isFinite || !lng.isFinite) return;
+    if (bearing != null) setBearing(bearing);
 
     final now = DateTime.now();
     if (_targetLat != null && _lastTargetAt != null) {
@@ -117,6 +152,22 @@ class SmoothMotion {
     }
   }
 
+  /// Aim the marker at [bearing] without touching its position.
+  ///
+  /// The compass and the GPS run at different rates and answer different
+  /// questions — where the phone is pointing versus where the car is going —
+  /// so where the marker points is now fed separately from where it is. A
+  /// parked driver turning the phone in their hand produces a stream of these
+  /// and no position updates at all.
+  ///
+  /// [tick] still does the actual turning, at the same rate and through the
+  /// same shortest-arc filter as a bearing that arrived with a fix.
+  void setBearing(double bearing) {
+    if (bearing.isNaN || bearing.isInfinite) return;
+    _targetBearing = bearing % 360;
+    if (_targetBearing < 0) _targetBearing += 360;
+  }
+
   /// Advance the rendered position by [dtSec] seconds. Returns true if the
   /// position or bearing changed noticeably — caller can skip redraws when
   /// false.
@@ -148,8 +199,7 @@ class SmoothMotion {
     // turns, and GPS jumps without a visible snap.
     final residualLat = _targetLat! - _lat!;
     final residualLng = _targetLng! - _lng!;
-    final corrFactor =
-        1.0 - math.pow(1.0 - _correctionPerSec, dtSec).toDouble();
+    final corrFactor = _lerpFactor(_correctionPerSec, dtSec);
     stepLat += residualLat * corrFactor;
     stepLng += residualLng * corrFactor;
 
@@ -171,6 +221,27 @@ class SmoothMotion {
 
     final newLat = _lat! + stepLat;
     final newLng = _lng! + stepLng;
+
+    // Nothing non-finite leaves this class.
+    //
+    // Everything computed above reaches the native map — as annotation
+    // geometry, as a camera centre, as a rotation. NaN there is not a Dart
+    // exception anyone can catch: it is a Swift precondition that closes the
+    // app on the spot ("latitude must not be NaN", MapboxMaps/Projection).
+    //
+    // The clamps above cannot be the guard, because every comparison against
+    // NaN is false and so every one of them is skipped. So it is checked
+    // here, once, at the only place the value is committed. Falling back to
+    // the raw target keeps the marker where the GPS last said it was, which
+    // is a lost frame of smoothing rather than a lost session.
+    if (!newLat.isFinite || !newLng.isFinite) {
+      _lat = _targetLat;
+      _lng = _targetLng;
+      _vLat = 0;
+      _vLng = 0;
+      return true;
+    }
+
     final movedPos =
         (newLat - _lat!).abs() > 1e-9 || (newLng - _lng!).abs() > 1e-9;
     _lat = newLat;
@@ -184,33 +255,54 @@ class SmoothMotion {
     while (dBrg < -180) {
       dBrg += 360;
     }
-    final brgFactor =
-        1.0 - math.pow(1.0 - _bearingLerpPerSec, dtSec).toDouble();
+    final brgFactor = _lerpFactor(_bearingLerpPerSec, dtSec);
     final newBearing = (_bearing + dBrg * brgFactor) % 360;
+    // Same reason as the position guard above: this goes out as iconRotate,
+    // and as the camera bearing while navigating.
+    if (!newBearing.isFinite) {
+      _bearing = _targetBearing.isFinite ? _targetBearing : 0;
+      return true;
+    }
     final movedBrg = (newBearing - _bearing).abs() > 0.05;
     _bearing = newBearing < 0 ? newBearing + 360 : newBearing;
 
     return movedPos || movedBrg;
   }
 
-  /// True when the smoother is close enough to the target that the caller
-  /// can park its ticker to save CPU.
+  /// True when the smoother has nothing left to animate.
+  ///
+  /// Position *and* bearing. It used to be position alone, which was a fair
+  /// description of the marker back when the only bearing it had came bundled
+  /// with a fix — no new position meant no new heading either. The compass
+  /// broke that: a driver standing still and turning the phone produces a
+  /// steady stream of bearings and not one position update, so a caller that
+  /// parked its ticker here would freeze the arrow mid-turn and leave it
+  /// pointing at wherever the last frame caught it.
   bool get isAtTarget {
     if (_lat == null || _targetLat == null) return true;
     final latGap = (_targetLat! - _lat!).abs();
     final lngGap = (_targetLng! - _lng!).abs();
-    // ~1 cm resolution.
-    return latGap < 1e-7 && lngGap < 1e-7;
+    // Same threshold tick() uses to call a turn visible, so the two agree on
+    // what "settled" means.
+    double brgGap = (_targetBearing - _bearing).abs();
+    if (brgGap > 180) brgGap = 360 - brgGap;
+    // ~1 cm of position, a twentieth of a degree of heading.
+    return latGap < 1e-7 && lngGap < 1e-7 && brgGap < 0.05;
   }
 
   /// Force-set position (e.g., resuming from background, camera recenter).
   /// Velocity is zeroed so the next [tick] doesn't drift.
   void snapTo(double lat, double lng, {double? bearing}) {
+    // The one entry point that wrote straight through to the rendered
+    // position without checking. A single NaN fix from the platform — iOS
+    // reports them briefly while the location manager is starting — put NaN
+    // on the map with nothing in between.
+    if (!lat.isFinite || !lng.isFinite) return;
     _lat = lat;
     _lng = lng;
     _targetLat = lat;
     _targetLng = lng;
-    if (bearing != null) {
+    if (bearing != null && bearing.isFinite) {
       _bearing = bearing;
       _targetBearing = bearing;
     }

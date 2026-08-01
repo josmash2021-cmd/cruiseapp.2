@@ -1,10 +1,14 @@
+import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_stripe/flutter_stripe.dart' as stripe;
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../l10n/app_localizations.dart';
 import '../../services/api_service.dart';
 import '../../services/haptic_service.dart';
+import '../../services/user_session.dart';
 import '../../widgets/neu_style.dart';
 
 /// Payout Methods screen — Stripe Connect-powered, real end-to-end.
@@ -47,10 +51,59 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
   bool _busy = false; // any Stripe/back-end call in flight
   String? _loadError;
 
+  /// The last answer the server gave, kept on the device.
+  ///
+  /// What is attached to a payout destination changes when the driver
+  /// changes it and at no other time — there is no reason to make them
+  /// watch it be fetched every time they open the screen. Keyed by driver
+  /// so two people on one phone never see each other's accounts.
+  static const _kCacheKey = 'driver_payout_methods_cache';
+
   @override
   void initState() {
     super.initState();
+    _loadCached();
     _loadMethods();
+  }
+
+  Future<String?> _driverKey() async =>
+      (await UserSession.getUser())?['userId']?.toString();
+
+  Future<void> _loadCached() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_kCacheKey);
+      if (raw == null || !mounted) return;
+      final card = jsonDecode(raw) as Map<String, dynamic>;
+      if (card['id']?.toString() != await _driverKey()) return;
+      final list = (card['methods'] as List?)
+          ?.whereType<Map>()
+          .map((e) => Map<String, dynamic>.from(e))
+          .toList();
+      // Only if the network has not already answered — a fresh list must
+      // never be overwritten by a stale one that lost the race.
+      if (list == null || !mounted || !_loading) return;
+      setState(() {
+        _methods = list;
+        _loading = false;
+      });
+    } catch (e) {
+      debugPrint('[PayoutMethods] cached list unavailable: $e');
+    }
+  }
+
+  Future<void> _cacheMethods() async {
+    try {
+      final id = await _driverKey();
+      if (id == null || id.isEmpty) return;
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(
+        _kCacheKey,
+        jsonEncode(<String, dynamic>{'id': id, 'methods': _methods}),
+      );
+    } catch (e) {
+      debugPrint('[PayoutMethods] could not cache the list: $e');
+    }
   }
 
   Future<void> _loadMethods() async {
@@ -71,6 +124,7 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
       _loading = false;
       _loadError = failed ? S.of(context).couldNotLoadPaymentMethods : null;
     });
+    if (loaded != null) unawaited(_cacheMethods());
   }
 
   /// Strip the hidden ``[ext:xxx]`` Stripe-id suffix from a display name
@@ -287,14 +341,21 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
       // Deaf while a Stripe call is in flight. Two taps on "Set up" opens
       // two sheets, and the second one lands on a Connect account the first
       // is halfway through changing.
-      onTap: _busy || _loading
+      // Live while the list is still arriving. Only a Stripe call in flight
+      // closes the row.
+      //
+      // Dimming it and turning taps off during the fetch made the whole card
+      // read as disabled for as long as the request took — and the tap is
+      // harmless either way: it opens the sheet that attaches an account,
+      // which is the right thing whether one is already attached or not.
+      onTap: _busy
           ? null
           : () {
               HapticService.mediumImpact();
               onTap();
             },
       child: Opacity(
-        opacity: _busy || _loading ? 0.5 : 1,
+        opacity: _busy ? 0.5 : 1,
         child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 16),
         child: Row(
@@ -331,16 +392,18 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
               ),
             ),
             const SizedBox(width: 10),
-            // Pending while the list is still being fetched, so the row does
-            // not claim "Set up" for a destination that may already have an
-            // account on it.
-            if (_busy || _loading)
+            // The pill is the one thing that genuinely has to wait: until
+            // the list arrives, the row cannot honestly say either "Active"
+            // or "Set up". So it says nothing, rather than putting a
+            // spinner where an answer will be — a small turning circle in a
+            // row is read as the row working, not as one field pending.
+            if (_busy)
               const SizedBox(
                 width: 16,
                 height: 16,
                 child: CircularProgressIndicator(color: _gold, strokeWidth: 2),
               )
-            else
+            else if (!_loading)
               _statusPill(linked ? statusLabel : s.payoutSetUp,
                   linked: linked),
             const SizedBox(width: 6),

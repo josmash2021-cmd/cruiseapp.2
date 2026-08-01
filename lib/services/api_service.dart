@@ -2379,22 +2379,42 @@ class ApiService {
   }
 
   /// Get driver's payout methods.
+  /// The driver's payout destinations.
+  ///
+  /// Throws on anything that is not a successful answer, rather than
+  /// returning an empty list. An empty list is a claim — "you have no
+  /// accounts linked" — and this used to make that claim for a 401, a 500,
+  /// and a Cloudflare error page alike. A driver whose session had expired
+  /// was told their bank was gone, and the screen showed a confident
+  /// "Linked accounts 0" over it. Both callers already catch.
   static Future<List<Map<String, dynamic>>> getPayoutMethods() async {
     final token = await getToken();
     if (token == null) return [];
 
-    final res = await _client
-        .get(
-          Uri.parse('$_baseUrl/drivers/payout-methods'),
-          headers: _jsonHeaders(token),
-        )
-        .timeout(const Duration(seconds: 8));
+    // Retried, and given longer than eight seconds.
+    //
+    // Railway cold-starts a sleeping container, and the first request after
+    // that regularly takes more than eight. This is the only screen that
+    // asked for its data once and gave up — everything else goes through
+    // _withRetry — and a timeout here is what puts "could not load payment
+    // methods" in front of a driver whose methods are perfectly fine.
+    final res = await _withRetry(
+      () => _client
+          .get(
+            Uri.parse('$_baseUrl/drivers/payout-methods'),
+            headers: _jsonHeaders(token),
+          )
+          .timeout(const Duration(seconds: 15)),
+    );
 
     if (res.statusCode >= 200 && res.statusCode < 300) {
-      final list = jsonDecode(res.body) as List;
-      return list.cast<Map<String, dynamic>>();
+      final body = jsonDecode(res.body);
+      if (body is! List) {
+        throw ApiException(res.statusCode, 'Unexpected payout-methods body');
+      }
+      return body.cast<Map<String, dynamic>>();
     }
-    return [];
+    throw ApiException(res.statusCode, 'Could not load payout methods');
   }
 
   /// Add a payout method for the driver.

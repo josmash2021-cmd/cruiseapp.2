@@ -424,15 +424,26 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     _dotWatchdog?.cancel();
     _dotWatchdog = Timer.periodic(const Duration(seconds: 2), (_) async {
       if (!mounted) return;
-      if (_smoothTicker?.isTicking ?? false) return; // ticker has it covered
-      // The dot bitmap is rasterised once. That can fail (GPU context lost
-      // while backgrounded, OOM), and GoldLocationDot then leaves
-      // currentBytes null — which makes every draw below a silent no-op
-      // forever, since nothing else calls build() again on this screen.
+      // The bitmap is checked BEFORE handing off to the ticker.
+      //
+      // It is rasterised once, and that can fail — GPU context lost while
+      // backgrounded, OOM — leaving GoldLocationDot with currentBytes null,
+      // which makes every draw a silent no-op for the rest of the screen's
+      // life because nothing else calls build() again.
+      //
+      // The ticker cannot rescue that: it redraws, and a redraw with no
+      // bitmap draws nothing. So skipping this check whenever the ticker
+      // happened to be running left exactly one way for the arrow to vanish
+      // for good — lose the bitmap while moving, and the watchdog steps
+      // aside for a ticker that has nothing to paint.
       if (!_goldDot.isReady) {
         await _goldDot.build(this, () { if (mounted) _updateDriverAnnotation(); });
         if (!mounted) return;
+        _updateDriverAnnotation();
+        return;
       }
+      // Bitmap is fine and the ticker is animating — it owns the redraws.
+      if (_smoothTicker?.isTicking ?? false) return;
       _updateDriverAnnotation();
     });
   }

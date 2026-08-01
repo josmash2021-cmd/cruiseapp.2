@@ -117,6 +117,21 @@ extension type _JSElement._(JSObject _) implements JSObject {
   external set src(String value); // only meaningful for <img>
 }
 
+/// Watches an element's box and reports every change.
+///
+/// GL JS measures its container once, in the Map constructor. Flutter creates
+/// that container and hands it to the platform-view registry, which attaches
+/// and sizes it afterwards — so the measurement happens against a box that has
+/// no size yet, and nothing ever tells the map otherwise. The canvas keeps the
+/// size it guessed, which is how a full-screen map ends up drawn into one
+/// corner of its own view.
+@JS('ResizeObserver')
+extension type _JSResizeObserver._(JSObject _) implements JSObject {
+  external _JSResizeObserver(JSFunction callback);
+  external void observe(JSObject target);
+  external void disconnect();
+}
+
 @JS('document')
 extension type _JSDocument._(JSObject _) implements JSObject {
   external _JSElement createElement(String tag);
@@ -762,6 +777,35 @@ class _WebMapViewState extends State<WebMapView> {
     controller.attachEvents();
     _controller = controller;
 
+    // Tell the map its real size, now and whenever it changes.
+    //
+    // Without this the canvas keeps whatever it measured at construction —
+    // before Flutter had attached the container — and the map renders into a
+    // fraction of its own view with the rest left black. resize() is cheap and
+    // idempotent, so an extra call costs nothing; a missing one costs the map.
+    try {
+      final ro = _JSResizeObserver(((JSAny? _, JSAny? __) {
+        try {
+          map.resize();
+        } catch (_) {
+          // The map can be disposed between the observation and this call.
+        }
+      }).toJS);
+      ro.observe(container);
+      _resizeObserver = ro;
+    } catch (e) {
+      // No ResizeObserver (very old browser): fall back to a few nudges over
+      // the first second, which covers the attach that matters.
+      debugPrint('[WebMap] ResizeObserver unavailable ($e) — nudging instead');
+      for (final ms in const [0, 120, 400, 1000]) {
+        Future<void>.delayed(Duration(milliseconds: ms), () {
+          try {
+            map.resize();
+          } catch (_) {}
+        });
+      }
+    }
+
     final viewType = _viewType;
     ui_web.platformViewRegistry.registerViewFactory(
       viewType,
@@ -771,8 +815,16 @@ class _WebMapViewState extends State<WebMapView> {
     widget.onControllerCreated?.call(controller);
   }
 
+  _JSResizeObserver? _resizeObserver;
+
   @override
   void dispose() {
+    // Before the controller: the observer's callback touches the map, and
+    // disposing the map first leaves it firing into a removed object.
+    try {
+      _resizeObserver?.disconnect();
+    } catch (_) {}
+    _resizeObserver = null;
     _controller?.dispose();
     super.dispose();
   }

@@ -77,6 +77,14 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
             // driver — same _heading the nav car uses, already smoothed by
             // _motion (shortest-arc, low-passed).
             iconRotate: _heading,
+            // Born hidden if the Flutter overlay is already drawing the
+            // marker. Creation set no opacity, so a fresh annotation arrived
+            // fully visible under an overlay painting the same arrow — two
+            // arrows until something called this method again. The update
+            // path below writes the opacity every time, so it did correct
+            // itself, but only on the next tick: up to two seconds while the
+            // driver is standing still and the watchdog is the only caller.
+            iconOpacity: _dotOverlayOwnsMarker ? 0.0 : 1.0,
           ));
           _goldDotAnnotGen = _mapGeneration;
           if (!_dotPopDone) _animateDotPop();

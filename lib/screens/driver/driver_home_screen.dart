@@ -678,6 +678,21 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     }
   }
 
+  /// Drop the annotation handle and the flag that described it, together.
+  ///
+  /// [_dotHiddenFlushed] means "the annotation currently on the map has been
+  /// flushed to invisible". Nulling the handle without clearing it left that
+  /// sentence describing an annotation that no longer existed, and the next
+  /// one created inherited the claim — so the hide was never sent and the
+  /// native arrow sat visible under the Flutter one. Two arrows.
+  ///
+  /// The two always move together now, so there is no way to drop one and
+  /// forget the other.
+  void _dropLocAnnot() {
+    _myLocAnnot = null;
+    _dotHiddenFlushed = false;
+  }
+
   bool _updatingLocAnnot = false;
 
   /// Write-then-flush update of the driver's gold-dot annotation.
@@ -740,6 +755,20 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     if (_myLocAnnot == null) {
       if (_updatingLocAnnot) return;
       _updatingLocAnnot = true;
+      // Born hidden if the overlay is already drawing the arrow.
+      //
+      // This is the double arrow the driver sees coming back from online.
+      // Creation set no opacity at all, so a fresh annotation arrived fully
+      // visible underneath an overlay that was already painting the same
+      // marker — and the only thing that would have hidden it, the update
+      // path below, is skipped on the very frame that creates it.
+      //
+      // It never recovered on a later frame either, because
+      // _dotHiddenFlushed outlived the annotation it described: it was still
+      // true from before the map was rebuilt, so the "flush the hide once"
+      // branch decided the hide had already been sent for an annotation that
+      // did not exist when it was.
+      final bornHidden = _dotOverlayOwnsMarker;
       try {
         _myLocAnnot = await mgr.create(mapbox.PointAnnotationOptions(
           geometry: point,
@@ -751,7 +780,10 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
           iconOffset: [0, 0],
           // The badge is drawn pointing north; the heading is applied here.
           iconRotate: _goldDot.bearing,
+          iconOpacity: bornHidden ? 0.0 : 1.0,
         ));
+        // The flag describes *this* annotation, so it is set with it.
+        _dotHiddenFlushed = bornHidden;
       } catch (_) {
         // creation failed — leave null so we retry next frame
       } finally {
@@ -777,11 +809,11 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       if (!overlayOwns || !_dotHiddenFlushed) {
         _dotHiddenFlushed = overlayOwns;
         mgr.update(_myLocAnnot!).catchError((_) {
-          _myLocAnnot = null;
+          _dropLocAnnot();
         });
       }
     } catch (_) {
-      _myLocAnnot = null;
+      _dropLocAnnot();
     }
 
   }
@@ -1976,7 +2008,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
             // and can never be updated again. Drop it, draw the dot on the
             // new map right away, and re-arm the watchdog in case this ran
             // before the first GPS fix.
-            _myLocAnnot = null;
+            _dropLocAnnot();
             _updateMyLocAnnotation();
             _startDotCreateWatchdog();
           } catch (e) {
@@ -3895,7 +3927,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     });
     _mapController = null;
     _pointAnnotMgr = null;
-    _myLocAnnot = null;
+    _dropLocAnnot();
   }
 
   /// Bring the map back once the screen above us is gone.

@@ -69,12 +69,13 @@ async def evaluate_driver_level(db, driver_id: int) -> Optional[str]:
     )
     completed_trips = trip_count_r.scalar() or 0
 
-    # Average rating
-    avg_r = await db.execute(
-        select(func.avg(Rating.stars)).where(Rating.to_user_id == driver_id)
-    )
-    avg_val = avg_r.scalar()
-    avg_rating = round(float(avg_val), 2) if avg_val is not None else None
+    # The driver's rating score. Read from the users row, NOT averaged out
+    # of the ratings table: the score moves in fixed steps and is clamped
+    # at 5.0 (services/rating_engine.py), so an AVG() over the same rows
+    # is a different number — and gating a tier on a number the driver is
+    # never shown is how a level silently refuses to move.
+    avg_val = driver.average_rating
+    avg_rating = round(float(avg_val), 1) if avg_val is not None else None
 
     # Compute correct tier (use 0.0 for new drivers with no ratings)
     new_tier = compute_tier(completed_trips, avg_rating if avg_rating is not None else 0.0)

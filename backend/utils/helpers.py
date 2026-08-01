@@ -275,28 +275,31 @@ def _trip_dict(t) -> dict:
 
 
 async def _compute_user_rating(db, user_id: int) -> tuple[float | None, int]:
-    """Calculate a user's average rating and ratings count.
+    """Read a user's rating score and how many ratings they have.
 
-    Returns (average_rating, ratings_count).
-    average_rating is None if the user has no ratings.
-    ratings_count is always >= 0.
+    Returns (score, ratings_count). The score is None until somebody has
+    rated them; the count is always >= 0.
+
+    This used to average the stars in the ratings table. It no longer can:
+    a score now moves by a fixed step per rating and is clamped at both
+    ends (services/rating_engine.py), so it depends on the order ratings
+    arrived in and on how often it hit the ceiling — none of which an
+    AVG() can reconstruct. The stored column is the only truth, and every
+    screen must read the same number the rules act on.
     """
     from sqlalchemy import select, func
-    from models.database import Rating
+    from models.database import Rating, User
 
     cnt_q = await db.execute(
         select(func.count(Rating.id)).where(Rating.to_user_id == user_id)
     )
-    cnt = cnt_q.scalar() or 0
-    if cnt:
-        avg_q = await db.execute(
-            select(func.avg(Rating.stars)).where(Rating.to_user_id == user_id)
-        )
-        avg = avg_q.scalar()
-        avg_rating = round(float(avg), 2) if avg is not None else None
-    else:
-        avg_rating = None
-    return avg_rating, int(cnt)
+    cnt = int(cnt_q.scalar() or 0)
+
+    score_q = await db.execute(
+        select(User.average_rating).where(User.id == user_id)
+    )
+    score = score_q.scalar_one_or_none()
+    return (round(float(score), 1) if score is not None else None), cnt
 
 
 def _vehicle_dict(v) -> dict:

@@ -474,6 +474,7 @@ async def lifespan(app: FastAPI):
         asyncio.create_task(_audit_retention_loop())
         asyncio.create_task(_scheduled_ride_dispatcher())
         asyncio.create_task(_scheduled_ride_reminder_loop())
+        asyncio.create_task(_rating_aftermath_loop())
         logging.info("[Lifespan] Phase 4 periodic tasks started")
 
         # Re-enabled agents with longer intervals to reduce PgBouncer churn
@@ -547,6 +548,33 @@ async def _audit_flush_loop():
             await flush_audit_logs_to_db()
         except Exception:
             pass
+
+
+async def _rating_aftermath_loop():
+    """Two rating chores that have to happen on a clock, not on a request.
+
+    One: the delayed word to a driver whose trip earned 3 stars or fewer.
+    It waits half an hour on purpose — sent on the spot it would point
+    straight at the rider who just got out of the car.
+
+    Two: releasing drivers whose temporary deactivation has run out. This
+    is the only way back: a suspended driver takes no trips, so no rating
+    will ever arrive to lift them.
+
+    A minute of granularity is plenty for both, and both are idempotent —
+    they dedup against what they have already written, so a redeploy in
+    the middle of either costs nothing.
+    """
+    from services import rating_actions
+
+    while True:
+        await asyncio.sleep(60)
+        try:
+            async with SessionLocal() as db:
+                await rating_actions.deliver_due_followups(db)
+                await rating_actions.release_expired_suspensions(db)
+        except Exception as e:
+            logging.warning("[RatingAftermath] loop iteration failed: %s", e)
 
 
 # Days of audit history kept in Postgres. Older entries are archived to

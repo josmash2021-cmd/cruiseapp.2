@@ -16,6 +16,7 @@ from utils.security import (
 )
 from utils.helpers import utc_now, _haversine, _trip_dict, _abs_photo_url, _resolve_rider_display, _safe_create_task, _compute_user_rating, MAX_DISPATCH_RADIUS_KM
 from services.fcm_service import _send_fcm_push_async, send_to_topic_async
+from services import rating_actions
 from services.sms_service import (
     notify_guest_driver_assigned,
     notify_guest_driver_en_route,
@@ -2155,13 +2156,14 @@ async def rate_trip(trip_id: int, request: Request, user: User = Depends(_get_cu
         except Exception as e:
             logging.warning("[CruiseLevel] Post-rating evaluation failed for driver %s: %s", trip.driver_id, e)
 
-        # Update driver's average_rating in users table and sync to Firestore
+        # Move the driver's score by one step and act on the band it lands
+        # in — warning, danger, or a temporary deactivation. The score is
+        # NOT an average of stars; see services/rating_engine.py.
         try:
-            avg_rating, _ = await _compute_user_rating(db, trip.driver_id)
             driver_result = await db.execute(select(User).where(User.id == trip.driver_id))
             driver = driver_result.scalar_one_or_none()
             if driver:
-                driver.average_rating = avg_rating
+                avg_rating = await rating_actions.apply_driver_rating(db, driver, stars)
                 await db.commit()
                 # Sync updated rating + cruise level to Firestore
                 if _HAS_FIRESTORE:
@@ -2183,14 +2185,14 @@ async def rate_trip(trip_id: int, request: Request, user: User = Depends(_get_cu
         except Exception as e:
             logging.warning("[Rating] avg_rating update failed for driver %s: %s", trip.driver_id, e)
 
-    # Mirror: if a driver rated the rider, recompute the rider's average_rating
+    # Mirror: a driver rating the rider moves the rider's score, by its own
+    # steps (+1.0 for 4-5 stars, -0.3 for anything lower).
     if to_user_id == trip.rider_id and trip.rider_id:
         try:
-            avg_rating, _ = await _compute_user_rating(db, trip.rider_id)
             rider_result = await db.execute(select(User).where(User.id == trip.rider_id))
             rider = rider_result.scalar_one_or_none()
             if rider:
-                rider.average_rating = avg_rating
+                await rating_actions.apply_rider_rating(db, rider, stars)
                 await db.commit()
         except Exception as e:
             logging.warning("[Rating] avg_rating update failed for rider %s: %s", trip.rider_id, e)
@@ -2206,9 +2208,12 @@ async def get_user_ratings(user_id: int, user: User = Depends(_get_current_user)
         select(Rating).where(Rating.to_user_id == user_id).order_by(Rating.created_at.desc())
     )
     ratings = result.scalars().all()
-    avg = sum(r.stars for r in ratings) / len(ratings) if ratings else 0.0
+    # The headline figure is the stored score, not the mean of the list
+    # below it — two different numbers under one word would be worse than
+    # either. The list is still every rating, newest first.
+    score, _ = await _compute_user_rating(db, user_id)
     return {
-        "average": round(avg, 2),
+        "average": score if score is not None else 0.0,
         "count": len(ratings),
         "ratings": [
             {"id": r.id, "trip_id": r.trip_id, "stars": r.stars, "comment": r.comment,

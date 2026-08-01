@@ -1787,12 +1787,16 @@ def _classify_vehicle_tier(make: str, model: str, year: int) -> str:
 
 
 async def _get_driver_avg_rating(db: AsyncSession, driver_id: int) -> float:
-    """Get driver's average star rating. Returns 5.0 if no ratings yet."""
+    """Get a driver's rating score. Returns 5.0 if nobody has rated them.
+
+    The stored score, not an average of the stars in the ratings table —
+    see services/rating_engine.py for why those are two different numbers.
+    """
     result = await db.execute(
-        select(func.avg(Rating.stars)).where(Rating.to_user_id == driver_id)
+        select(User.average_rating).where(User.id == driver_id)
     )
-    avg = result.scalar()
-    return round(avg, 2) if avg else 5.0
+    score = result.scalar_one_or_none()
+    return round(float(score), 1) if score else 5.0
 
 
 async def reevaluate_driver_tier(db: AsyncSession, driver_id: int):

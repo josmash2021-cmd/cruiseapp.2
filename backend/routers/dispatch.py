@@ -309,12 +309,17 @@ async def _find_nearest_drivers(
         if comfort_drivers:
             # Check ratings for comfort candidates (single batch query)
             comfort_ids = [d.id for d in comfort_drivers]
+            # The stored score, not an average of stars — the two are
+            # different numbers under the step system (rating_engine.py),
+            # and gating on the one the driver never sees is invisible.
             rating_result = await db.execute(
-                select(Rating.to_user_id, func.avg(Rating.stars))
-                .where(Rating.to_user_id.in_(comfort_ids))
-                .group_by(Rating.to_user_id)
+                select(User.id, User.average_rating)
+                .where(User.id.in_(comfort_ids))
             )
-            avg_ratings = {uid: float(avg) for uid, avg in rating_result.all()}
+            avg_ratings = {
+                uid: float(sc) for uid, sc in rating_result.all()
+                if sc is not None
+            }
             
             # Filter comfort drivers with rating >= 4.7
             eligible_comfort = [d for d in comfort_drivers if avg_ratings.get(d.id, 0) >= 4.7]
@@ -985,11 +990,13 @@ async def _filter_drivers_by_vehicle_tier(
         if comfort_candidates:
             # Get average ratings for comfort candidates
             rating_result = await db.execute(
-                select(Rating.to_user_id, func.avg(Rating.stars))
-                .where(Rating.to_user_id.in_(comfort_candidates))
-                .group_by(Rating.to_user_id)
+                select(User.id, User.average_rating)
+                .where(User.id.in_(comfort_candidates))
             )
-            avg_ratings = {uid: float(avg) for uid, avg in rating_result.all()}
+            avg_ratings = {
+                uid: float(sc) for uid, sc in rating_result.all()
+                if sc is not None
+            }
 
             # Get completed trip counts for comfort candidates
             trips_result = await db.execute(
@@ -1306,14 +1313,17 @@ async def get_driver_pending(driver_id: int = Query(...), user: User = Depends(_
     _rider_rep: dict[int, tuple[float, int]] = {}
     if _rider_ids:
         try:
+            # Score from the users row, count from the ratings rows: the
+            # count is still an honest count, the average is not.
             _rep_r = await db.execute(
                 select(
-                    Rating.to_user_id,
-                    func.avg(Rating.stars),
-                    func.count(Rating.id),
+                    User.id,
+                    User.average_rating,
+                    select(func.count(Rating.id))
+                    .where(Rating.to_user_id == User.id)
+                    .scalar_subquery(),
                 )
-                .where(Rating.to_user_id.in_(_rider_ids))
-                .group_by(Rating.to_user_id)
+                .where(User.id.in_(_rider_ids))
             )
             for _uid, _avg, _cnt in _rep_r.all():
                 _rider_rep[_uid] = (
@@ -1559,7 +1569,9 @@ async def accept_offer(offer_id: int = Query(...), driver_id: int = Query(...), 
                 _stats_r = await _db2.execute(
                     select(
                         func.count(Rating.id).label("trip_count"),
-                        func.avg(Rating.stars).label("avg_rating"),
+                        select(User.average_rating)
+                        .where(User.id == driver_id)
+                        .scalar_subquery().label("avg_rating"),
                     ).where(Rating.to_user_id == driver_id)
                 )
                 _stats_row = _stats_r.first()
@@ -1951,7 +1963,9 @@ async def get_dispatch_status(trip_id: int = Query(...), user: User = Depends(_g
         _drv_stats_r = await db.execute(
             select(
                 func.count(Rating.id).label("trip_count"),
-                func.avg(Rating.stars).label("avg_rating"),
+                select(User.average_rating)
+                .where(User.id == driver.id)
+                .scalar_subquery().label("avg_rating"),
             ).where(Rating.to_user_id == driver.id)
         )
         _drv_stats = _drv_stats_r.first()
@@ -1990,7 +2004,9 @@ async def get_dispatch_status(trip_id: int = Query(...), user: User = Depends(_g
                 _fb_stats_r = await db.execute(
                     select(
                         func.count(Rating.id).label("trip_count"),
-                        func.avg(Rating.stars).label("avg_rating"),
+                        select(User.average_rating)
+                        .where(User.id == trip.driver_id)
+                        .scalar_subquery().label("avg_rating"),
                     ).where(Rating.to_user_id == trip.driver_id)
                 )
                 _fb_stats = _fb_stats_r.first()

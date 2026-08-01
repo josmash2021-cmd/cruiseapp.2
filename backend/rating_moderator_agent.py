@@ -3,20 +3,32 @@ Rating Auto-Moderator Agent — THE QUALITY ENFORCER
 
 Monitors driver ratings and takes automated action to maintain service quality.
 
-Rules:
-1. WARNING    — Rating drops below 4.2 → push notification + admin alert
-2. PROBATION  — Rating drops below 4.0 → push + SMS + admin alert + flag
-3. SUSPENSION — Rating drops below 3.8 → auto-suspend + push + SMS + admin
-4. REVIEW BOMB — 3+ one-star ratings in 24h → flag for manual review (protect driver)
-5. EXCELLENCE — Rating above 4.9 with 50+ trips → mark as "top_driver"
+The bands, the thresholds and the arithmetic all live in
+services/rating_engine.py. This agent owns none of them — it is the safety
+net behind the rules that already ran inline when the rating came in
+(services/rating_actions.py), plus the two jobs that only make sense with
+the whole population in view.
 
-Anti-abuse:
-- Requires minimum 10 rated trips before any action (avoid penalizing new drivers)
-- Detects review bombing (3+ one-star in 24h = suspicious, hold action)
-- Uses rolling 30-day average (not all-time) for fairer assessment
-- Considers trip volume: busier drivers get slight tolerance (more exposure = more variance)
+What it does:
+1. SUSPENSION — a driver sitting at or below the suspend line who is still
+   active. Normally impossible: the rating that took them there suspends
+   them on the spot. It happens when a score was set some other way, or
+   when the inline path failed after the score was already saved.
+2. REVIEW BOMB — 3+ one-star ratings in 24h → hold action, alert an admin.
+   A driver can be pushed under the line by a handful of riders in one
+   night, and that is worth a human looking at it.
+3. EXCELLENCE — a high score with enough trips behind it → "top driver".
 
-Runs every 30 minutes.
+What it deliberately does NOT do:
+- Probation. It used to move drivers to status "probation" below 4.0,
+  which blocks going online (see drivers.py, the go-online guard). Under
+  the current rules the danger band is a warning, not a work ban, so the
+  only status this agent ever sets is "suspended".
+- Averages. The score is a step counter with a ceiling, so the mean of the
+  stars in a 30-day window is a different number than the one the driver
+  is judged on. It reads users.average_rating like everything else.
+
+Runs hourly.
 """
 
 import asyncio
@@ -29,15 +41,20 @@ from sqlalchemy import select, and_, func
 
 logger = logging.getLogger(__name__)
 
+from services import rating_actions as ra
+from services import rating_engine as eng
+
 # ── Configuration ─────────────────────────────────────────────────────
 SCAN_INTERVAL_MINUTES = 60      # Was 30m — reduced for NullPool/PgBouncer efficiency
-MIN_RATED_TRIPS = 10           # Minimum trips before actions apply
-ROLLING_WINDOW_DAYS = 30       # Use last 30 days for rating calculation
+ROLLING_WINDOW_DAYS = 30       # Window for review-bomb detection only
 
-# Rating thresholds
-SUSPEND_THRESHOLD = 3.8
-PROBATION_THRESHOLD = 4.0
-WARNING_THRESHOLD = 4.2
+# Every threshold comes from the engine. Re-declaring any of them here is
+# how the app ends up judging a driver on one number and telling them
+# another.
+SUSPEND_THRESHOLD = eng.SUSPEND_AT
+PROBATION_THRESHOLD = eng.DANGER_AT
+WARNING_THRESHOLD = eng.WARNING_AT
+MIN_RATED_TRIPS = eng.MIN_RATINGS_BEFORE_SUSPEND
 EXCELLENCE_THRESHOLD = 4.9
 EXCELLENCE_MIN_TRIPS = 50
 
@@ -141,7 +158,13 @@ class RatingModeratorAgent:
             self._stats["drivers_analyzed"] = len(drivers)
 
             for driver in drivers:
-                # ── Get rolling 30-day ratings ────────────────
+                # The score the driver is judged on — the same one their
+                # app shows them. Not derived from the rows below; those
+                # are only read to spot a review bomb.
+                avg_rating = driver.average_rating
+                if avg_rating is None:
+                    continue  # Nobody has rated them yet.
+
                 ratings_result = await db.execute(
                     select(Rating).where(
                         and_(
@@ -151,12 +174,10 @@ class RatingModeratorAgent:
                     )
                 )
                 ratings = ratings_result.scalars().all()
-
-                if len(ratings) < MIN_RATED_TRIPS:
-                    continue  # Not enough data to judge
-
-                avg_rating = sum(r.stars for r in ratings) / len(ratings)
                 total_ratings = len(ratings)
+
+                if total_ratings < MIN_RATED_TRIPS:
+                    continue  # Too little history to act on.
 
                 # ── CHECK: Review bomb detection ──────────────
                 recent_ones = [
@@ -185,21 +206,29 @@ class RatingModeratorAgent:
                         )
                     continue  # Skip automatic actions — needs manual review
 
-                # ── CHECK: Suspension (below 3.8) ─────────────
-                if avg_rating < SUSPEND_THRESHOLD:
+                # ── CHECK: Suspension ─────────────────────────
+                if eng.band(avg_rating) == "suspend":
                     if driver.status != "suspended" and self._can_act(f"{driver.id}_suspend"):
                         driver.status = "suspended"
                         driver.is_online = False
+                        # Without an end date the release loop can never
+                        # find them, and a "temporary" deactivation
+                        # becomes permanent.
+                        driver.rating_suspended_until = (
+                            now + timedelta(hours=eng.SUSPENSION_HOURS)
+                        )
                         self._stats["suspensions_issued"] += 1
 
                         logger.warning(
                             "[RatingMod] SUSPENDED driver #%d (%s %s) — "
-                            "rating %.2f < %.1f (%d ratings in 30d)",
+                            "score %.1f <= %.1f (%d ratings in 30d)",
                             driver.id, driver.first_name, driver.last_name,
                             avg_rating, SUSPEND_THRESHOLD, total_ratings,
                         )
 
-                        self._send_suspension_push(driver, avg_rating, total_ratings)
+                        title, body = ra._suspended_copy(avg_rating)
+                        await ra.notify(db, driver, ra.TYPE_SUSPENDED,
+                                        title, body, {"score": avg_rating})
                         await self._send_suspension_sms(driver, avg_rating)
                         await self._sync_driver_status(driver, "suspended", avg_rating)
                         await self._alert_admin(
@@ -211,32 +240,33 @@ class RatingModeratorAgent:
                             severity="critical",
                         )
 
-                # ── CHECK: Probation (below 4.0) ──────────────
-                elif avg_rating < PROBATION_THRESHOLD:
-                    if driver.status != "probation" and self._can_act(f"{driver.id}_probation"):
-                        driver.status = "probation"
+                # ── CHECK: In the danger band ─────────────────
+                # A notice, never a status change. The driver keeps
+                # working; that is the whole difference between this band
+                # and the one above it.
+                elif eng.band(avg_rating) == "danger":
+                    if self._can_act(f"{driver.id}_danger"):
                         self._stats["probations_issued"] += 1
-
-                        logger.info(
-                            "[RatingMod] PROBATION driver #%d — rating %.2f",
-                            driver.id, avg_rating,
-                        )
-
-                        self._send_probation_push(driver, avg_rating, total_ratings)
+                        title, body = ra._danger_copy(avg_rating)
+                        await ra.notify(db, driver, ra.TYPE_DANGER,
+                                        title, body, {"score": avg_rating})
                         await self._alert_admin(
                             driver,
-                            "rating_probation",
-                            f"Driver en probatoria: rating {avg_rating:.2f} "
-                            f"(umbral: {PROBATION_THRESHOLD}). "
+                            "rating_danger",
+                            f"Driver en riesgo de desactivación: "
+                            f"calificación {avg_rating:.1f} "
+                            f"(se desactiva en {SUSPEND_THRESHOLD:.1f}). "
                             f"{total_ratings} calificaciones en 30 días.",
                             severity="high",
                         )
 
-                # ── CHECK: Warning (below 4.2) ────────────────
-                elif avg_rating < WARNING_THRESHOLD:
+                # ── CHECK: Slipping ───────────────────────────
+                elif eng.band(avg_rating) == "warning":
                     if self._can_act(f"{driver.id}_warning"):
                         self._stats["warnings_sent"] += 1
-                        self._send_warning_push(driver, avg_rating, total_ratings)
+                        title, body = ra._warning_copy(avg_rating)
+                        await ra.notify(db, driver, ra.TYPE_WARNING,
+                                        title, body, {"score": avg_rating})
 
                 # ── CHECK: Excellence (above 4.9) ─────────────
                 elif avg_rating >= EXCELLENCE_THRESHOLD and total_ratings >= EXCELLENCE_MIN_TRIPS:
@@ -248,14 +278,15 @@ class RatingModeratorAgent:
                         )
                         self._send_excellence_push(driver, avg_rating, total_ratings)
 
-                # ── Recovery: if driver improved, restore from probation ──
-                if (driver.status == "probation"
-                        and avg_rating >= PROBATION_THRESHOLD + 0.1):
+                # ── Recovery: clear a probation left by the old rules ──
+                # "probation" is no longer set by anything. Drivers still
+                # carrying it from before are stuck offline, because the
+                # go-online guard only lets "active" through.
+                if driver.status == "probation":
                     driver.status = "active"
                     logger.info(
-                        "[RatingMod] RESTORED driver #%d from probation — "
-                        "rating improved to %.2f",
-                        driver.id, avg_rating,
+                        "[RatingMod] cleared legacy probation on driver #%d "
+                        "— score %.1f", driver.id, avg_rating,
                     )
                     self._send_recovery_push(driver, avg_rating)
                     await self._sync_driver_status(driver, "active", avg_rating)
@@ -296,11 +327,11 @@ class RatingModeratorAgent:
             from services.fcm_service import _send_fcm_push
             _send_fcm_push(
                 driver.fcm_token,
-                title="📉 Tu calificación está bajando",
+                title="📉 Tu calificación bajó",
                 body=(
-                    f"Tu rating promedio es {avg_rating:.1f}. "
-                    f"Si baja de {PROBATION_THRESHOLD:.1f}, tu cuenta entrará en probatoria. "
-                    "Mejora tu servicio para mantener tu cuenta activa."
+                    f"Tu calificación es {avg_rating:.1f}. "
+                    "Cuida los detalles del viaje para que vuelva a subir: "
+                    "cada viaje con 4 o 5 estrellas te suma."
                 ),
                 data={
                     "type": "rating_warning",
@@ -318,14 +349,14 @@ class RatingModeratorAgent:
             from services.fcm_service import _send_fcm_push
             _send_fcm_push(
                 driver.fcm_token,
-                title="🟠 Cuenta en probatoria",
+                title="🟠 Riesgo de desactivación",
                 body=(
-                    f"Tu rating promedio es {avg_rating:.1f} (mínimo: {PROBATION_THRESHOLD:.1f}). "
-                    f"Tienes {ROLLING_WINDOW_DAYS} días para mejorar. "
-                    f"Si baja de {SUSPEND_THRESHOLD:.1f}, tu cuenta será suspendida."
+                    f"Tu calificación es {avg_rating:.1f}. Si baja a "
+                    f"{SUSPEND_THRESHOLD:.1f} tu cuenta será desactivada "
+                    "temporalmente. Mejora tu servicio y cuida cada viaje."
                 ),
                 data={
-                    "type": "rating_probation",
+                    "type": "rating_danger",
                     "avg_rating": f"{avg_rating:.2f}",
                     "driver_id": str(driver.id),
                 },
@@ -340,12 +371,12 @@ class RatingModeratorAgent:
             from services.fcm_service import _send_fcm_push
             _send_fcm_push(
                 driver.fcm_token,
-                title="🔴 Cuenta suspendida por calificación baja",
+                title="🔴 Cuenta desactivada temporalmente",
                 body=(
-                    f"Tu rating promedio es {avg_rating:.1f} "
-                    f"(mínimo permitido: {SUSPEND_THRESHOLD:.1f}). "
-                    "Tu cuenta ha sido suspendida. "
-                    "Contacta soporte para un plan de mejora."
+                    f"Tu calificación bajó a {avg_rating:.1f}. Tu cuenta "
+                    f"queda desactivada por {eng.SUSPENSION_HOURS} horas. "
+                    "Al volver podrás conducir de nuevo; cuida tu servicio "
+                    "para no perder el acceso."
                 ),
                 data={
                     "type": "rating_suspended",

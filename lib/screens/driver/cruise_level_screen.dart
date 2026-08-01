@@ -466,6 +466,104 @@ class _CruiseLevelScreenState extends State<CruiseLevelScreen>
   }
 
 
+  /// A tier emblem with weight to it.
+  ///
+  /// A Material glyph is a flat silhouette in one colour, which on a trophy
+  /// reads as a sticker. Three passes give it a body: a cast shadow on the
+  /// ground beneath, a darkened copy offset down behind — the thickness you
+  /// would see from slightly above — and the face itself filled with a
+  /// metal gradient, lit from the top left and falling to shadow at the
+  /// bottom right.
+  ///
+  /// The three tones are derived from the tier's own colour rather than
+  /// written down, so silver stays silver and diamond stays blue without a
+  /// palette per tier. Bronze becomes a warm highlight over #CD7F32 into a
+  /// deep brown, which is what makes it look struck rather than printed.
+  Widget _tierEmblem(_Tier tier, {double size = 40}) {
+    final light = Color.lerp(tier.color, Colors.white, 0.5)!;
+    final dark = Color.lerp(tier.color, Colors.black, 0.55)!;
+    final box = size * 1.4;
+    return SizedBox(
+      width: box,
+      height: box,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          // The glow the metal throws onto whatever is behind it.
+          Container(
+            width: size * 1.1,
+            height: size * 1.1,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              boxShadow: [
+                BoxShadow(
+                  color: tier.color.withValues(alpha: 0.28),
+                  blurRadius: size * 0.5,
+                  spreadRadius: size * 0.04,
+                ),
+              ],
+            ),
+          ),
+          // Ground shadow: an ellipse, because a trophy standing on a
+          // surface does not cast a circle.
+          Positioned(
+            bottom: box * 0.06,
+            child: Container(
+              width: size * 0.68,
+              height: size * 0.16,
+              decoration: BoxDecoration(
+                color: Colors.black.withValues(alpha: 0.55),
+                borderRadius: BorderRadius.all(
+                  Radius.elliptical(size * 0.34, size * 0.08),
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.5),
+                    blurRadius: size * 0.18,
+                  ),
+                ],
+              ),
+            ),
+          ),
+          // The thickness, sitting a little below and behind the face.
+          Transform.translate(
+            offset: Offset(size * 0.045, size * 0.06),
+            child: Icon(tier.icon, size: size, color: dark),
+          ),
+          // The lit face.
+          ShaderMask(
+            blendMode: BlendMode.srcIn,
+            shaderCallback: (rect) => LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [light, tier.color, dark],
+              stops: const [0.0, 0.52, 1.0],
+            ).createShader(rect),
+            child: Icon(tier.icon, size: size, color: Colors.white),
+          ),
+          // A specular catch on the upper left, where the light is.
+          Positioned(
+            left: box * 0.24,
+            top: box * 0.2,
+            child: Container(
+              width: size * 0.16,
+              height: size * 0.16,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: RadialGradient(
+                  colors: [
+                    Colors.white.withValues(alpha: 0.45),
+                    Colors.white.withValues(alpha: 0.0),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   /// The tier the driver is in, as a full-bleed band of its own colour.
   ///
   /// The reference opens on the tier and nothing else: a wash of its colour,
@@ -503,7 +601,7 @@ class _CruiseLevelScreenState extends State<CruiseLevelScreen>
               color: Colors.black.withValues(alpha: 0.28),
               borderRadius: BorderRadius.circular(24),
             ),
-            child: Icon(tier.icon, color: tier.color, size: 40),
+            child: _tierEmblem(tier, size: 42),
           ),
           const SizedBox(height: 16),
           Text(
@@ -1024,7 +1122,7 @@ class _CruiseLevelScreenState extends State<CruiseLevelScreen>
                 color: tier.color.withValues(alpha: 0.15),
                 borderRadius: BorderRadius.circular(18),
               ),
-              child: Icon(tier.icon, color: tier.color, size: 32),
+              child: _tierEmblem(tier, size: 30),
             ),
             const SizedBox(height: 14),
             Text(

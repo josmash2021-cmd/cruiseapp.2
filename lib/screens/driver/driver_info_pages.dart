@@ -4,6 +4,7 @@ import '../../services/haptic_service.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../l10n/app_localizations.dart';
 import '../../config/page_transitions.dart';
+import '../../widgets/neu_style.dart';
 import 'driver_profile_photo_screen.dart';
 
 // ═══════════════════════════════════════════════════════════════
@@ -26,7 +27,7 @@ class _InfoPageShell extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF0A0A0A),
+      backgroundColor: neuBase,
       body: SafeArea(
         child: Column(
           children: [
@@ -43,10 +44,7 @@ class _InfoPageShell extends StatelessWidget {
                       child: Container(
                         width: 40,
                         height: 40,
-                        decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.06),
-                          shape: BoxShape.circle,
-                        ),
+                        decoration: neuBox(radius: 20),
                         child: const Icon(
                           Icons.arrow_back_rounded,
                           color: Colors.white,
@@ -73,15 +71,15 @@ class _InfoPageShell extends StatelessWidget {
                 physics: const BouncingScrollPhysics(),
                 padding: const EdgeInsets.symmetric(horizontal: 20),
                 children: [
+                  // The page's icon sits in a sunken well rather than a
+                  // tinted disc — the same treatment icons get everywhere
+                  // else in the neu system.
                   Center(
                     child: Container(
                       width: 64,
                       height: 64,
-                      decoration: BoxDecoration(
-                        color: iconColor.withValues(alpha: 0.12),
-                        shape: BoxShape.circle,
-                      ),
-                      child: Icon(icon, color: iconColor, size: 32),
+                      decoration: neuBox(radius: 32, pressed: true),
+                      child: Icon(icon, color: iconColor, size: 30),
                     ),
                   ),
                   const SizedBox(height: 24),
@@ -99,18 +97,20 @@ class _InfoPageShell extends StatelessWidget {
 
 Widget _card(String title, String body, {IconData? icon}) {
   return Container(
-    margin: const EdgeInsets.only(bottom: 12),
+    margin: const EdgeInsets.only(bottom: 14),
     padding: const EdgeInsets.all(16),
-    decoration: BoxDecoration(
-      color: const Color(0xFF1C1C1E),
-      borderRadius: BorderRadius.circular(16),
-    ),
+    decoration: neuBox(radius: 18),
     child: Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         if (icon != null) ...[
-          Icon(icon, color: const Color(0xFFE8C547), size: 20),
-          const SizedBox(width: 12),
+          Container(
+            width: 38,
+            height: 38,
+            decoration: neuBox(radius: 12, pressed: true),
+            child: Icon(icon, color: const Color(0xFFE8C547), size: 19),
+          ),
+          const SizedBox(width: 13),
         ],
         Expanded(
           child: Column(
@@ -141,23 +141,32 @@ Widget _card(String title, String body, {IconData? icon}) {
   );
 }
 
-Widget _comingSoonCard(BuildContext context, String title, String body, {IconData? icon}) {
+Widget _comingSoonCard(BuildContext context, String title, String body,
+    {IconData? icon}) {
   return Container(
-    margin: const EdgeInsets.only(bottom: 12),
+    margin: const EdgeInsets.only(bottom: 14),
     padding: const EdgeInsets.all(16),
-    decoration: BoxDecoration(
-      color: const Color(0xFF1C1C1E),
-      borderRadius: BorderRadius.circular(16),
-      border: Border.all(
-        color: const Color(0xFFE8C547).withValues(alpha: 0.15),
-      ),
+    // Same card, one step quieter: a card that is not tappable yet should
+    // not sit as proud as the ones that are.
+    decoration: neuBox(
+      radius: 18,
+      borderColor: const Color(0xFFE8C547).withValues(alpha: 0.15),
     ),
     child: Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         if (icon != null) ...[
-          Icon(icon, color: const Color(0xFFE8C547).withValues(alpha: 0.4), size: 20),
-          const SizedBox(width: 12),
+          Container(
+            width: 38,
+            height: 38,
+            decoration: neuBox(radius: 12, pressed: true),
+            child: Icon(
+              icon,
+              color: const Color(0xFFE8C547).withValues(alpha: 0.4),
+              size: 19,
+            ),
+          ),
+          const SizedBox(width: 13),
         ],
         Expanded(
           child: Column(
@@ -175,7 +184,8 @@ Widget _comingSoonCard(BuildContext context, String title, String body, {IconDat
                   ),
                   const SizedBox(width: 8),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                     decoration: BoxDecoration(
                       color: const Color(0xFFE8C547).withValues(alpha: 0.12),
                       borderRadius: BorderRadius.circular(8),
@@ -272,10 +282,18 @@ class WorkHubScreen extends StatelessWidget {
       icon: Icons.work_outline_rounded,
       iconColor: const Color(0xFF2196F3),
       children: [
+        // What a driver can do today first, what is still coming after.
+        // The two live services were split by the two placeholders, so the
+        // list read as if half of it were unavailable.
         _card(
           S.of(context).rideServicesTitle,
           S.of(context).rideServicesDesc,
           icon: Icons.local_taxi_rounded,
+        ),
+        _card(
+          S.of(context).scheduledRidesWorkHubTitle,
+          S.of(context).scheduledRidesWorkHubDesc,
+          icon: Icons.schedule_rounded,
         ),
         _comingSoonCard(
           context,
@@ -288,11 +306,6 @@ class WorkHubScreen extends StatelessWidget {
           S.of(context).groceryDeliveryTitle,
           S.of(context).groceryDeliveryDesc,
           icon: Icons.shopping_cart_rounded,
-        ),
-        _card(
-          S.of(context).scheduledRidesWorkHubTitle,
-          S.of(context).scheduledRidesWorkHubDesc,
-          icon: Icons.schedule_rounded,
         ),
       ],
     );
@@ -625,7 +638,8 @@ class LearningCenterScreen extends StatelessWidget {
             Expanded(
               child: ListView.builder(
                 physics: const BouncingScrollPhysics(),
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
                 itemCount: topics.length,
                 itemBuilder: (context, i) {
                   final topic = topics[i];
@@ -654,7 +668,8 @@ class LearningCenterScreen extends StatelessWidget {
                               color: topic.color.withValues(alpha: 0.15),
                               borderRadius: BorderRadius.circular(16),
                             ),
-                            child: Icon(topic.icon, color: topic.color, size: 22),
+                            child:
+                                Icon(topic.icon, color: topic.color, size: 22),
                           ),
                           const SizedBox(width: 14),
                           Expanded(
@@ -950,9 +965,8 @@ class _NewDriverInstructionsScreenState
                   width: isActive ? 28 : 8,
                   height: 8,
                   decoration: BoxDecoration(
-                    color: isActive
-                        ? _gold
-                        : Colors.white.withValues(alpha: 0.15),
+                    color:
+                        isActive ? _gold : Colors.white.withValues(alpha: 0.15),
                     borderRadius: BorderRadius.circular(4),
                   ),
                 );
@@ -1000,8 +1014,7 @@ class _NewDriverInstructionsScreenState
                       onPressed: () {
                         HapticService.mediumImpact();
                         Navigator.of(context).pushAndRemoveUntil(
-                          slideFromRightRoute(
-                              const DriverProfilePhotoScreen()),
+                          slideFromRightRoute(const DriverProfilePhotoScreen()),
                           (_) => false,
                         );
                       },
@@ -1127,7 +1140,8 @@ class _NewDriverInstructionsScreenState
             child: SingleChildScrollView(
               physics: const NeverScrollableScrollPhysics(),
               child: Column(
-                children: items.map((item) => _buildInstructionCard(item)).toList(),
+                children:
+                    items.map((item) => _buildInstructionCard(item)).toList(),
               ),
             ),
           ),
@@ -1199,7 +1213,8 @@ class _Page0 extends StatefulWidget {
   State<_Page0> createState() => _Page0State();
 }
 
-class _Page0State extends State<_Page0> with SingleTickerProviderStateMixin, WidgetsBindingObserver {
+class _Page0State extends State<_Page0>
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   static const _gold = Color(0xFFD4AF37);
   late final AnimationController _animCtrl;
 
@@ -1357,7 +1372,8 @@ class _Page0State extends State<_Page0> with SingleTickerProviderStateMixin, Wid
                     scale: Tween<double>(begin: 0.8, end: 1.0).animate(
                       CurvedAnimation(
                         parent: _animCtrl,
-                        curve: const Interval(0.0, 0.2, curve: Curves.easeOutBack),
+                        curve:
+                            const Interval(0.0, 0.2, curve: Curves.easeOutBack),
                       ),
                     ),
                     child: Container(
@@ -1381,7 +1397,8 @@ class _Page0State extends State<_Page0> with SingleTickerProviderStateMixin, Wid
                 FadeTransition(
                   opacity: _fade(0.0, 0.3),
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 24, vertical: 12),
                     decoration: BoxDecoration(
                       color: Colors.black.withValues(alpha: 0.6),
                       borderRadius: BorderRadius.circular(30),
@@ -1424,29 +1441,40 @@ class _Page0State extends State<_Page0> with SingleTickerProviderStateMixin, Wid
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       _animatedCard(
-                        fadeBegin: 0.2, fadeEnd: 0.5,
-                        slideBegin: 0.2, slideEnd: 0.5,
+                        fadeBegin: 0.2,
+                        fadeEnd: 0.5,
+                        slideBegin: 0.2,
+                        slideEnd: 0.5,
                         icon: Icons.auto_fix_high_rounded,
                         title: 'CLEAN INSIDE & OUT',
-                        description: 'WASH YOUR CAR REGULARLY AND KEEP THE INTERIOR CLEAN',
+                        description:
+                            'WASH YOUR CAR REGULARLY AND KEEP THE INTERIOR CLEAN',
                       ),
                       _animatedCard(
-                        fadeBegin: 0.35, fadeEnd: 0.65,
-                        slideBegin: 0.35, slideEnd: 0.65,
+                        fadeBegin: 0.35,
+                        fadeEnd: 0.65,
+                        slideBegin: 0.35,
+                        slideEnd: 0.65,
                         icon: Icons.ac_unit_rounded,
                         title: 'FRESH & COMFORTABLE',
-                        description: 'KEEP THE CABIN FRESH WITH A PLEASANT SCENT',
+                        description:
+                            'KEEP THE CABIN FRESH WITH A PLEASANT SCENT',
                       ),
                       _animatedCard(
-                        fadeBegin: 0.5, fadeEnd: 0.8,
-                        slideBegin: 0.5, slideEnd: 0.8,
+                        fadeBegin: 0.5,
+                        fadeEnd: 0.8,
+                        slideBegin: 0.5,
+                        slideEnd: 0.8,
                         icon: Icons.phone_iphone_rounded,
                         title: 'PHONE MOUNT & CHARGER',
-                        description: 'USE A SECURE PHONE MOUNT AND OFFER A CHARGER',
+                        description:
+                            'USE A SECURE PHONE MOUNT AND OFFER A CHARGER',
                       ),
                       _animatedCard(
-                        fadeBegin: 0.65, fadeEnd: 0.95,
-                        slideBegin: 0.65, slideEnd: 0.95,
+                        fadeBegin: 0.65,
+                        fadeEnd: 0.95,
+                        slideBegin: 0.65,
+                        slideEnd: 0.95,
                         icon: Icons.checkroom_rounded,
                         title: 'PROFESSIONAL APPEARANCE',
                         description: 'DRESS NEATLY AND PROFESSIONALLY',
@@ -1562,7 +1590,8 @@ class _Page1 extends StatefulWidget {
   State<_Page1> createState() => _Page1State();
 }
 
-class _Page1State extends State<_Page1> with SingleTickerProviderStateMixin, WidgetsBindingObserver {
+class _Page1State extends State<_Page1>
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   static const _gold = Color(0xFFD4AF37);
   late final AnimationController _animCtrl;
 
@@ -1717,7 +1746,8 @@ class _Page1State extends State<_Page1> with SingleTickerProviderStateMixin, Wid
                     scale: Tween<double>(begin: 0.8, end: 1.0).animate(
                       CurvedAnimation(
                         parent: _animCtrl,
-                        curve: const Interval(0.0, 0.2, curve: Curves.easeOutBack),
+                        curve:
+                            const Interval(0.0, 0.2, curve: Curves.easeOutBack),
                       ),
                     ),
                     child: Container(
@@ -1741,7 +1771,8 @@ class _Page1State extends State<_Page1> with SingleTickerProviderStateMixin, Wid
                 FadeTransition(
                   opacity: _fade(0.0, 0.3),
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 24, vertical: 12),
                     decoration: BoxDecoration(
                       color: Colors.black.withValues(alpha: 0.6),
                       borderRadius: BorderRadius.circular(30),
@@ -1784,32 +1815,42 @@ class _Page1State extends State<_Page1> with SingleTickerProviderStateMixin, Wid
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       _animatedCard(
-                        fadeBegin: 0.2, fadeEnd: 0.5,
-                        slideBegin: 0.2, slideEnd: 0.5,
+                        fadeBegin: 0.2,
+                        fadeEnd: 0.5,
+                        slideBegin: 0.2,
+                        slideEnd: 0.5,
                         icon: Icons.speed_rounded,
                         title: 'OBEY TRAFFIC LAWS',
                         description: 'FOLLOW SPEED LIMIT AND TRAFFIC SIGNS',
                       ),
                       _animatedCard(
-                        fadeBegin: 0.35, fadeEnd: 0.65,
-                        slideBegin: 0.35, slideEnd: 0.65,
+                        fadeBegin: 0.35,
+                        fadeEnd: 0.65,
+                        slideBegin: 0.35,
+                        slideEnd: 0.65,
                         icon: Icons.no_drinks_rounded,
                         title: 'ZERO TOLERANCE POLICY',
-                        description: 'NEVER DRIVE UNDER THE INFLUENCE OF ALCOHOL OR DRUGS',
+                        description:
+                            'NEVER DRIVE UNDER THE INFLUENCE OF ALCOHOL OR DRUGS',
                       ),
                       _animatedCard(
-                        fadeBegin: 0.5, fadeEnd: 0.8,
-                        slideBegin: 0.5, slideEnd: 0.8,
+                        fadeBegin: 0.5,
+                        fadeEnd: 0.8,
+                        slideBegin: 0.5,
+                        slideEnd: 0.8,
                         icon: Icons.visibility_rounded,
                         title: 'STAY FOCUSED',
                         description: 'NO TEXTING WHILE DRIVING',
                       ),
                       _animatedCard(
-                        fadeBegin: 0.65, fadeEnd: 0.95,
-                        slideBegin: 0.65, slideEnd: 0.95,
+                        fadeBegin: 0.65,
+                        fadeEnd: 0.95,
+                        slideBegin: 0.65,
+                        slideEnd: 0.95,
                         icon: Icons.health_and_safety_rounded,
                         title: 'SEATBELT REQUIRED',
-                        description: 'ENSURE ALL PASSENGERS WEAR THEIR SEATBELT',
+                        description:
+                            'ENSURE ALL PASSENGERS WEAR THEIR SEATBELT',
                       ),
                     ],
                   ),
@@ -1879,7 +1920,8 @@ class _Page2 extends StatefulWidget {
   State<_Page2> createState() => _Page2State();
 }
 
-class _Page2State extends State<_Page2> with SingleTickerProviderStateMixin, WidgetsBindingObserver {
+class _Page2State extends State<_Page2>
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   static const _gold = Color(0xFFD4AF37);
   static const _goldDark = Color(0xFFB8960C);
   late final AnimationController _animCtrl;
@@ -2038,7 +2080,8 @@ class _Page2State extends State<_Page2> with SingleTickerProviderStateMixin, Wid
                     scale: Tween<double>(begin: 0.8, end: 1.0).animate(
                       CurvedAnimation(
                         parent: _animCtrl,
-                        curve: const Interval(0.0, 0.2, curve: Curves.easeOutBack),
+                        curve:
+                            const Interval(0.0, 0.2, curve: Curves.easeOutBack),
                       ),
                     ),
                     child: Container(
@@ -2062,7 +2105,8 @@ class _Page2State extends State<_Page2> with SingleTickerProviderStateMixin, Wid
                 FadeTransition(
                   opacity: _fade(0.0, 0.3),
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 24, vertical: 12),
                     decoration: BoxDecoration(
                       color: Colors.black.withValues(alpha: 0.6),
                       borderRadius: BorderRadius.circular(30),
@@ -2105,32 +2149,42 @@ class _Page2State extends State<_Page2> with SingleTickerProviderStateMixin, Wid
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       _animatedCard(
-                        fadeBegin: 0.2, fadeEnd: 0.5,
-                        slideBegin: 0.2, slideEnd: 0.5,
+                        fadeBegin: 0.2,
+                        fadeEnd: 0.5,
+                        slideBegin: 0.2,
+                        slideEnd: 0.5,
                         icon: Icons.waving_hand_rounded,
                         title: 'GREET EVERY RIDER',
                         description: 'WELCOME RIDERS BY NAME',
                       ),
                       _animatedCard(
-                        fadeBegin: 0.35, fadeEnd: 0.65,
-                        slideBegin: 0.35, slideEnd: 0.65,
+                        fadeBegin: 0.35,
+                        fadeEnd: 0.65,
+                        slideBegin: 0.35,
+                        slideEnd: 0.65,
                         icon: Icons.location_on_rounded,
                         title: 'EFFICIENT ROUTES',
-                        description: 'FOLLOW GPS NAVIGATION AND TAKE THE FASTEST ROUTE',
+                        description:
+                            'FOLLOW GPS NAVIGATION AND TAKE THE FASTEST ROUTE',
                       ),
                       _animatedCard(
-                        fadeBegin: 0.5, fadeEnd: 0.8,
-                        slideBegin: 0.5, slideEnd: 0.8,
+                        fadeBegin: 0.5,
+                        fadeEnd: 0.8,
+                        slideBegin: 0.5,
+                        slideEnd: 0.8,
                         icon: Icons.volume_up_rounded,
                         title: 'RESPECT PREFERENCES',
                         description: 'KEEP MUSIC LOW AND ASK FOR PREFERENCES',
                       ),
                       _animatedCard(
-                        fadeBegin: 0.65, fadeEnd: 0.95,
-                        slideBegin: 0.65, slideEnd: 0.95,
+                        fadeBegin: 0.65,
+                        fadeEnd: 0.95,
+                        slideBegin: 0.65,
+                        slideEnd: 0.95,
                         icon: Icons.star_rounded,
                         title: 'GO THE EXTRA MILE',
-                        description: 'HELP WITH LUGGAGE AND OFFER A PREMIUM EXPERIENCE',
+                        description:
+                            'HELP WITH LUGGAGE AND OFFER A PREMIUM EXPERIENCE',
                       ),
                     ],
                   ),
@@ -2232,8 +2286,6 @@ class _InstructionItem {
     required this.body,
   });
 }
-
-
 
 // ═══════════════════════════════════════════════════════════════
 //  BUG REPORTER SCREEN

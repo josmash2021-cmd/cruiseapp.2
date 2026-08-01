@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../l10n/app_localizations.dart';
 import '../../widgets/neu_style.dart';
 import '../../services/api_service.dart';
+import 'cruise_level_info_screen.dart';
 import 'dart:math' as math;
 
 /// Cruise Level – Bronze → Silver → Gold → Platinum → Diamond
@@ -17,9 +18,7 @@ class CruiseLevelScreen extends StatefulWidget {
 class _CruiseLevelScreenState extends State<CruiseLevelScreen>
     with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   static const _gold = Color(0xFFE8C547);
-  /// A requirement already met. Green because it is done, not
-  /// because it is good — the tier colours already carry the mood.
-  static const _green = Color(0xFF4CAF50);
+
   static const _card = Color(0xFF1C1C1E);
 
   bool _loading = true;
@@ -174,15 +173,18 @@ class _CruiseLevelScreenState extends State<CruiseLevelScreen>
       final prefs = await _getPrefs();
       _previousTierIndex = prefs.getInt('cruise_tier_index') ?? -1;
 
-      final userId = await ApiService.getCurrentUserId().timeout(const Duration(seconds: 15));
+      final userId = await ApiService.getCurrentUserId()
+          .timeout(const Duration(seconds: 15));
       if (userId != null) {
-        final stats = await ApiService.getDriverStats(userId).timeout(const Duration(seconds: 15));
+        final stats = await ApiService.getDriverStats(userId)
+            .timeout(const Duration(seconds: 15));
         final completed = (stats['completed_trips'] as num?)?.toInt() ?? 0;
         final canceled = (stats['canceled_trips'] as num?)?.toInt() ?? 0;
         final total = (stats['total_trips'] as num?)?.toInt() ?? 0;
         // New drivers have no trips → no rating. Don't show fake 5.0 stars.
         final rawRating = stats['avg_rating'];
-        final avgRating = rawRating == null ? 0.0 : (rawRating as num).toDouble();
+        final avgRating =
+            rawRating == null ? 0.0 : (rawRating as num).toDouble();
 
         _completedTrips = completed;
         _avgRating = avgRating;
@@ -195,7 +197,13 @@ class _CruiseLevelScreenState extends State<CruiseLevelScreen>
         // otherwise fall back to client-side computation
         final backendLevel = stats['cruise_level'] as String?;
         if (backendLevel != null && backendLevel.isNotEmpty) {
-          const tierMap = {'bronze': 0, 'silver': 1, 'gold': 2, 'platinum': 3, 'diamond': 4};
+          const tierMap = {
+            'bronze': 0,
+            'silver': 1,
+            'gold': 2,
+            'platinum': 3,
+            'diamond': 4
+          };
           _currentTierIndex = tierMap[backendLevel.toLowerCase()] ?? 0;
         } else {
           // Fallback: compute client-side
@@ -231,94 +239,57 @@ class _CruiseLevelScreenState extends State<CruiseLevelScreen>
       body: Stack(
         children: [
           _loading
-          ? const Center(
-              child: CircularProgressIndicator(color: _gold, strokeWidth: 2),
-            )
-          : CustomScrollView(
-              physics: const BouncingScrollPhysics(),
-              slivers: [
-                SliverToBoxAdapter(
-                  child: SafeArea(
-                    bottom: false,
-                    child: Padding(
-                      padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
-                      child: Stack(
-                        alignment: Alignment.center,
-                        children: [
-                          Align(
-                            alignment: Alignment.centerLeft,
-                            child: GestureDetector(
-                              onTap: () => Navigator.pop(context),
-                              child: Container(
-                                width: 40,
-                                height: 40,
-                                decoration: BoxDecoration(
-                                  color: Colors.white.withValues(alpha: 0.06),
-                                  shape: BoxShape.circle,
-                                ),
-                                child: const Icon(
-                                  Icons.arrow_back_rounded,
-                                  color: Colors.white,
-                                  size: 20,
-                                ),
+              ? const Center(
+                  child:
+                      CircularProgressIndicator(color: _gold, strokeWidth: 2),
+                )
+              : CustomScrollView(
+                  physics: const BouncingScrollPhysics(),
+                  slivers: [
+                    // The band starts at the top of the screen and the header
+                    // sits inside it, so the tier's colour is behind the title
+                    // rather than beginning under it. A coloured strip that
+                    // starts halfway down reads as a card; one that starts at
+                    // the top reads as the page.
+                    SliverToBoxAdapter(child: _buildTierBanner()),
+
+                    SliverToBoxAdapter(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 20),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const SizedBox(height: 8),
+
+                            _buildNextTierPitch(),
+                            const SizedBox(height: 26),
+
+                            // ── Progress requirements ──
+                            _buildUnlockSection(),
+                            const SizedBox(height: 26),
+                            _buildMetricsSection(),
+                            const SizedBox(height: 28),
+
+                            // ── All tiers ──
+                            Text(
+                              S.of(context).allLevels,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 20,
+                                fontWeight: FontWeight.w800,
                               ),
                             ),
-                          ),
-                          Text(
-                            S.of(context).cruiseLevel,
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 20,
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ),
-                        ],
+                            const SizedBox(height: 14),
+                            ..._buildTiers().asMap().entries.map(
+                                  (e) => _buildTierCard(e.key, e.value),
+                                ),
+                            const SizedBox(height: 40),
+                          ],
+                        ),
                       ),
                     ),
-                  ),
+                  ],
                 ),
-
-                // The tier band runs edge to edge, so it reads as the page's
-                // own colour rather than a card that happens to be coloured.
-                SliverToBoxAdapter(child: _buildTierBanner()),
-
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 20),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const SizedBox(height: 8),
-
-                        _buildNextTierPitch(),
-                        const SizedBox(height: 26),
-
-                        // ── Progress requirements ──
-                        _buildUnlockSection(),
-                        const SizedBox(height: 26),
-                        _buildMetricsSection(),
-                        const SizedBox(height: 28),
-
-                        // ── All tiers ──
-                        Text(
-                          S.of(context).allLevels,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 20,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                        const SizedBox(height: 14),
-                        ..._buildTiers().asMap().entries.map(
-                          (e) => _buildTierCard(e.key, e.value),
-                        ),
-                        const SizedBox(height: 40),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-            ),
           // Level-up celebration overlay
           if (_showLevelUp) _buildCelebrationOverlay(),
         ],
@@ -431,8 +402,6 @@ class _CruiseLevelScreenState extends State<CruiseLevelScreen>
     );
   }
 
-
-
   Widget _metricRow(IconData icon, String label, String value) {
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
@@ -466,7 +435,6 @@ class _CruiseLevelScreenState extends State<CruiseLevelScreen>
       ),
     );
   }
-
 
   /// A tier emblem with weight to it.
   ///
@@ -581,7 +549,7 @@ class _CruiseLevelScreenState extends State<CruiseLevelScreen>
     final tier = _buildTiers()[_currentTierIndex];
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(20, 6, 20, 28),
+      padding: const EdgeInsets.fromLTRB(20, 0, 20, 28),
       decoration: BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.topCenter,
@@ -594,74 +562,121 @@ class _CruiseLevelScreenState extends State<CruiseLevelScreen>
           stops: const [0.0, 0.55, 1.0],
         ),
       ),
-      child: Column(
-        children: [
-          Container(
-            width: 76,
-            height: 76,
-            decoration: BoxDecoration(
-              color: Colors.black.withValues(alpha: 0.28),
-              borderRadius: BorderRadius.circular(24),
-            ),
-            child: _tierEmblem(tier, size: 42),
-          ),
-          const SizedBox(height: 16),
-          Text(
-            S.of(context).cruiseLevel,
-            style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.55),
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          const SizedBox(height: 2),
-          Text(
-            tier.name,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 28,
-              fontWeight: FontWeight.w800,
-              letterSpacing: -0.6,
-            ),
-          ),
-          const SizedBox(height: 16),
-          // The rewards this tier already pays, one tap away. It is the
-          // answer to "so what?", which a level with no reward attached
-          // never gives.
-          GestureDetector(
-            onTap: () {
-              HapticService.selectionClick();
-              _showRewardsSheet(tier);
-            },
-            child: Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 18, vertical: 11),
-              decoration: BoxDecoration(
-                color: Colors.black.withValues(alpha: 0.3),
-                borderRadius: BorderRadius.circular(22),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.card_giftcard_rounded,
-                      color: tier.color, size: 17),
-                  const SizedBox(width: 9),
-                  Text(
-                    S.of(context).cruiseYourRewards(tier.name),
+      child: SafeArea(
+        bottom: false,
+        child: Column(
+          children: [
+            // Back on the left, Learn more on the right, both over the band.
+            Row(
+              children: [
+                GestureDetector(
+                  onTap: () => Navigator.pop(context),
+                  child: Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.28),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.arrow_back_rounded,
+                      color: Colors.white,
+                      size: 20,
+                    ),
+                  ),
+                ),
+                const Spacer(),
+                GestureDetector(
+                  onTap: () {
+                    HapticService.selectionClick();
+                    Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => CruiseLevelInfoScreen(
+                          completedTrips: _completedTrips,
+                          avgRating: _avgRating,
+                        ),
+                      ),
+                    );
+                  },
+                  child: Text(
+                    S.of(context).cruiseLearnMore,
                     style: const TextStyle(
                       color: Colors.white,
-                      fontSize: 13.5,
+                      fontSize: 14,
                       fontWeight: FontWeight.w600,
                     ),
                   ),
-                  const SizedBox(width: 6),
-                  const Icon(Icons.arrow_forward_rounded,
-                      color: Colors.white, size: 15),
-                ],
+                ),
+              ],
+            ),
+            const SizedBox(height: 14),
+            Container(
+              width: 76,
+              height: 76,
+              decoration: BoxDecoration(
+                color: Colors.black.withValues(alpha: 0.28),
+                borderRadius: BorderRadius.circular(24),
+              ),
+              child: _tierEmblem(tier, size: 42),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              S.of(context).cruiseLevel,
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.55),
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
               ),
             ),
-          ),
-        ],
+            const SizedBox(height: 2),
+            Text(
+              tier.name,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 28,
+                fontWeight: FontWeight.w800,
+                letterSpacing: -0.6,
+              ),
+            ),
+            const SizedBox(height: 16),
+            // The rewards this tier already pays, one tap away. It is the
+            // answer to "so what?", which a level with no reward attached
+            // never gives.
+            GestureDetector(
+              onTap: () {
+                HapticService.selectionClick();
+                _showRewardsSheet(tier);
+              },
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 18, vertical: 11),
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.3),
+                  borderRadius: BorderRadius.circular(22),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.card_giftcard_rounded,
+                        color: tier.color, size: 17),
+                    const SizedBox(width: 9),
+                    Text(
+                      S.of(context).cruiseYourRewards(tier.name),
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    const Icon(Icons.arrow_forward_rounded,
+                        color: Colors.white, size: 15),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -746,7 +761,7 @@ class _CruiseLevelScreenState extends State<CruiseLevelScreen>
       _Requirement(
         icon: Icons.star_rounded,
         label: s.cruiseAverageRating,
-        value: _avgRating.toStringAsFixed(2),
+        value: _avgRating.toStringAsFixed(1),
         goal: '≥ ${next.minRating}',
         met: _avgRating >= next.minRating,
       ),
@@ -789,6 +804,8 @@ class _CruiseLevelScreenState extends State<CruiseLevelScreen>
                   ),
                 _unlockRow(reqs[i]),
               ],
+              Divider(height: 1, color: Colors.white.withValues(alpha: 0.05)),
+              _buildLevelTrack(),
             ],
           ),
         ),
@@ -803,18 +820,16 @@ class _CruiseLevelScreenState extends State<CruiseLevelScreen>
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            width: 32,
-            height: 32,
-            alignment: Alignment.center,
-            decoration: neuBox(radius: 11, pressed: true),
-            child: Icon(
-              r.icon,
-              size: 15,
-              color: r.met ? _green : Colors.white.withValues(alpha: 0.45),
-            ),
+          Icon(
+            r.icon,
+            size: 20,
+            color: r.met ? _gold : Colors.white.withValues(alpha: 0.45),
           ),
-          const SizedBox(width: 13),
+          const SizedBox(width: 14),
+          // Name over its chip on the left, figure over its goal on the
+          // right. Two columns, so the eye reads down the values without
+          // stepping over the labels — and the goal sits directly beneath
+          // the number it judges.
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -823,44 +838,212 @@ class _CruiseLevelScreenState extends State<CruiseLevelScreen>
                   r.label,
                   style: const TextStyle(
                     color: Colors.white,
-                    fontSize: 14.5,
+                    fontSize: 15,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
-                const SizedBox(height: 5),
-                // The goal under the name, not tucked beside the figure.
-                // It is what the figure is being measured against, and a
-                // number with nothing to compare it to says nothing.
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 3,
-                  ),
-                  decoration: BoxDecoration(
-                    color: (r.met ? _green : _gold).withValues(alpha: 0.14),
-                    borderRadius: BorderRadius.circular(7),
-                  ),
-                  child: Text(
-                    r.met
-                        ? s.cruiseGoalMet
-                        : s.cruiseGoal(r.goal),
-                    style: TextStyle(
-                      color: r.met ? _green : _gold,
-                      fontSize: 10.5,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
+                const SizedBox(height: 6),
+                _chip(
+                  r.met ? s.cruiseGoalMet : s.cruiseFocusArea,
+                  _gold,
                 ),
               ],
             ),
           ),
           const SizedBox(width: 12),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text(
+                r.value,
+                style: TextStyle(
+                  color: r.met ? _gold : Colors.white,
+                  fontSize: 19,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                s.cruiseGoal(r.goal),
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.45),
+                  fontSize: 12,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _chip(String label, Color c) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        decoration: BoxDecoration(
+          color: c.withValues(alpha: 0.14),
+          borderRadius: BorderRadius.circular(7),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: c,
+            fontSize: 10.5,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      );
+
+  /// The whole ladder on one rail, with the driver's place on it.
+  ///
+  /// The five emblems sit at even intervals rather than at their true trip
+  /// counts. Spaced truthfully — 0, 50, 150, 300, 500 — Bronze and Silver
+  /// would huddle in the first tenth of the rail and Diamond would own half
+  /// of it, which says more about the shape of the thresholds than about
+  /// the driver. Even stops make each tier one step, and the marker moves
+  /// across a step in proportion to the trips that step actually takes.
+  Widget _buildLevelTrack() {
+    final tiers = _buildTiers();
+    final s = S.of(context);
+
+    // Where the driver sits, as a fraction of the whole rail.
+    double progress;
+    if (_currentTierIndex >= tiers.length - 1) {
+      progress = 1.0;
+    } else {
+      final here = tiers[_currentTierIndex];
+      final next = tiers[_currentTierIndex + 1];
+      final span = (next.minTrips - here.minTrips).clamp(1, 1 << 30);
+      final within = ((_completedTrips - here.minTrips) / span).clamp(0.0, 1.0);
+      progress = (_currentTierIndex + within) / (tiers.length - 1);
+    }
+    progress = progress.clamp(0.0, 1.0);
+
+    final nextGoal = _currentTierIndex >= tiers.length - 1
+        ? tiers.last.minTrips
+        : tiers[_currentTierIndex + 1].minTrips;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                Icons.military_tech_rounded,
+                size: 20,
+                color: Colors.white.withValues(alpha: 0.45),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Text(
+                  s.completedTrips,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              Text(
+                '$_completedTrips',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 19,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          LayoutBuilder(
+            builder: (context, box) {
+              final w = box.maxWidth;
+              const emblem = 26.0;
+              // The rail runs between the centres of the first and last
+              // emblems, so a marker at 0 sits under Bronze and one at 1
+              // sits under Diamond rather than off the ends.
+              final inset = emblem / 2;
+              final railW = (w - emblem).clamp(1.0, double.infinity);
+              return SizedBox(
+                height: emblem + 8,
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    Positioned(
+                      left: inset,
+                      right: inset,
+                      top: emblem / 2 - 2,
+                      child: Container(
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.08),
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                    ),
+                    // The travelled part, in the tier the driver is in.
+                    Positioned(
+                      left: inset,
+                      top: emblem / 2 - 2,
+                      child: Container(
+                        height: 4,
+                        width: railW * progress,
+                        decoration: BoxDecoration(
+                          color: tiers[_currentTierIndex].color,
+                          borderRadius: BorderRadius.circular(2),
+                          boxShadow: [
+                            BoxShadow(
+                              color: tiers[_currentTierIndex]
+                                  .color
+                                  .withValues(alpha: 0.4),
+                              blurRadius: 8,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    for (var i = 0; i < tiers.length; i++)
+                      Positioned(
+                        left: railW * (i / (tiers.length - 1)),
+                        top: 0,
+                        child: Opacity(
+                          // Tiers still ahead are dimmed rather than hidden:
+                          // the ladder is the point, and a driver should see
+                          // where it goes.
+                          opacity: i <= _currentTierIndex ? 1.0 : 0.4,
+                          child: _tierEmblem(tiers[i], size: emblem * 0.72),
+                        ),
+                      ),
+                  ],
+                ),
+              );
+            },
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              _chip(s.cruiseFocusArea, _gold),
+              const Spacer(),
+              Text(
+                s.cruiseGoal('≥ $nextGoal'),
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.45),
+                  fontSize: 12,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          // No date range under this one, unlike the reference. Cruise
+          // levels are cumulative — nothing resets on the first of the
+          // month — so a period here would be a promise the ladder does not
+          // make.
           Text(
-            r.value,
+            s.cruiseAllTime,
             style: TextStyle(
-              color: r.met ? _green : Colors.white,
-              fontSize: 17,
-              fontWeight: FontWeight.w800,
+              color: Colors.white.withValues(alpha: 0.3),
+              fontSize: 12,
             ),
           ),
         ],
@@ -1014,9 +1197,8 @@ class _CruiseLevelScreenState extends State<CruiseLevelScreen>
               ),
               child: Icon(
                 tier.icon,
-                color: isLocked
-                    ? tier.color.withValues(alpha: 0.4)
-                    : tier.color,
+                color:
+                    isLocked ? tier.color.withValues(alpha: 0.4) : tier.color,
                 size: 26,
               ),
             ),
@@ -1170,7 +1352,8 @@ class _CruiseLevelScreenState extends State<CruiseLevelScreen>
                     const SizedBox(height: 8),
                     _reqLine('${tier.minTrips}+ completed trips'),
                     if (tier.minRating > 0)
-                      _reqLine('Average rating ≥ ${tier.minRating.toStringAsFixed(1)}'),
+                      _reqLine(
+                          'Average rating ≥ ${tier.minRating.toStringAsFixed(1)}'),
                   ],
                 ),
               ),
@@ -1248,8 +1431,8 @@ class _CruiseLevelScreenState extends State<CruiseLevelScreen>
                   isCurrent
                       ? S.of(context).gotIt
                       : (isLocked
-                            ? S.of(context).keepGoing
-                            : S.of(context).viewRewards),
+                          ? S.of(context).keepGoing
+                          : S.of(context).viewRewards),
                   style: const TextStyle(
                     fontWeight: FontWeight.w700,
                     fontSize: 15,

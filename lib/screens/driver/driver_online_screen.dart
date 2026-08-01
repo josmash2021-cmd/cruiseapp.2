@@ -1454,7 +1454,10 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
 
             if (_phase == _Phase.searching && _pendingOffers.isEmpty) ...[
               Positioned(
-                bottom: 54 + bot + 60,
+                // Just clear of the panel. The gap was 60, which left the
+                // two clusters floating in the middle of the map with
+                // nothing to belong to.
+                bottom: 54 + bot + 14,
                 left: 16,
                 child: Column(
                   children: [
@@ -1476,7 +1479,10 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                 ),
               ),
               Positioned(
-                bottom: 54 + bot + 60,
+                // Just clear of the panel. The gap was 60, which left the
+                // two clusters floating in the middle of the map with
+                // nothing to belong to.
+                bottom: 54 + bot + 14,
                 right: 16,
                 child: Column(
                   children: [

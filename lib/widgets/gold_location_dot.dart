@@ -68,8 +68,10 @@ class GoldLocationDot {
 
   /// `iconSize` for the Mapbox annotation, so it lands at the same size.
   static const double driverIconSize = driverScale;
+
   /// Outer edge of the marker.
   static const double _dotR = 20.0;
+
   /// The plain dot is smaller than the badge — it has no arrow to hold.
   static const double _plainDotR = 18.0;
 
@@ -167,7 +169,8 @@ class GoldLocationDot {
   /// rather than forward them.
   /// [accuracyM] is the fix's own reported uncertainty, which sizes the
   /// standstill jitter hold — see SmoothMotion.setTarget.
-  void setTarget(double lat, double lng, {double? bearing, double? accuracyM}) =>
+  void setTarget(double lat, double lng,
+          {double? bearing, double? accuracyM}) =>
       _motion.setTarget(lat, lng, bearing: bearing, accuracyM: accuracyM);
 
   /// Aim the marker without moving it.
@@ -225,7 +228,6 @@ class GoldLocationDot {
       _startTicker(vsync, onTick);
       return;
     }
-
 
     // Render a single static frame — no sprite atlas, no 90-frame loop.
     final recorder = ui.PictureRecorder();
@@ -386,16 +388,9 @@ class GoldLocationDot {
 
   /// The driver badge: black disc, gold ring, white arrow pointing north.
   static void _paintHeadingBadge(Canvas canvas, Offset center) {
-    // Gold halo — the only thing holding the badge off a dark map. Kept
-    // faint: this sits under the driver's own car at all times.
-    canvas.drawCircle(
-      center,
-      _dotR * 1.7,
-      Paint()
-        ..color = _gold.withValues(alpha: 0.16)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 7),
-    );
-
+    // No halo. A gold glow around the badge read as a light source under
+    // the car; the black shadow in paintHeadingShadow is what lifts it off
+    // the street, and two competing treatments cancelled each other out.
     // The supplied badge, stamped into exactly the circle the vector one
     // filled: a 40-unit square centred on the same point, which is what
     // `drawCircle(center, _dotR)` covered. The asset is cropped to its own
@@ -440,9 +435,9 @@ class GoldLocationDot {
     // The notch in the base is what makes it read as a direction arrow
     // rather than a triangle; it is the shape every navigation app uses,
     // and the one the driver already knows from Google Maps.
-    const tipY = -11.5;      // apex, relative to centre
-    const baseY = 9.5;       // outer corners
-    const notchY = 4.0;      // centre of the base, pulled up
+    const tipY = -11.5; // apex, relative to centre
+    const baseY = 9.5; // outer corners
+    const notchY = 4.0; // centre of the base, pulled up
     const halfW = 8.6;
     final arrow = Path()
       ..moveTo(center.dx, center.dy + tipY)

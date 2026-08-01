@@ -653,6 +653,7 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     if (!mounted || !_mapMounted) return;
     final map = _map;
     if (map == null) return;
+    if (!_cameraIsFinite(options)) return;
     try {
       final Future<void> f = animateMs == null
           ? map.setCamera(options)
@@ -665,6 +666,38 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     } catch (e) {
       debugPrint('[DriverOnline] camera write failed: $e');
     }
+  }
+
+  /// True when every number in [options] is one Mapbox can use.
+  ///
+  /// NaN reaches the native SDK and throws there, not here:
+  ///
+  ///   specialized FlyToInterpolator.init(from:to:cameraBounds:size:)
+  ///   MapboxMaps/Projection.swift:59 — "latitude must not be NaN"
+  ///
+  /// A Swift precondition is not a Dart exception. Nothing catches it and the
+  /// app closes on the spot, which is what a driver tapping recenter saw.
+  /// Crashlytics has it on every version from 1.0.3 to 1.0.9.
+  ///
+  /// NaN gets in easily. lerpDouble with a null end returns it, a heading
+  /// divided by a zero-length vector returns it, and a location fix that has
+  /// not arrived leaves the field it was going to fill as double.nan rather
+  /// than null — so the usual null check waves it through.
+  ///
+  /// Dropping the write is the right failure: the camera stays where it is,
+  /// which is a frame of staleness against a crash that ends the shift.
+  static bool _cameraIsFinite(mapbox.CameraOptions o) {
+    bool ok(num? v) => v == null || v.isFinite;
+    final c = o.center?.coordinates;
+    if (c != null && !(c.lat.isFinite && c.lng.isFinite)) {
+      debugPrint('[DriverOnline] camera write dropped — centre is not finite');
+      return false;
+    }
+    if (!ok(o.zoom) || !ok(o.bearing) || !ok(o.pitch)) {
+      debugPrint('[DriverOnline] camera write dropped — zoom/bearing/pitch NaN');
+      return false;
+    }
+    return true;
   }
 
   void _applyOfferCamera() {

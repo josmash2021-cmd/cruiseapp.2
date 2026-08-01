@@ -2554,6 +2554,18 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
 
   Future<void> _runAcceptCameraSequence() async {
     if (_map == null || !mounted) return;
+    // Both ends have to be real before either reaches the native SDK.
+    //
+    // cameraForCoordinatesPadding serialises these points to JSON on the way
+    // across, and NaN there throws in Objective-C — "Invalid number value
+    // (NaN) in JSON write" — which closes the app rather than raising
+    // something the catch below could hold. The try/catch around it only ever
+    // covered Dart-side failures.
+    if (!isValidLatLng(_pickupLL.latitude, _pickupLL.longitude) ||
+        !isValidLatLng(_dropoffLL.latitude, _dropoffLL.longitude)) {
+      debugPrint('[DriverOnline] accept camera skipped — endpoint not finite');
+      return;
+    }
 
     // Phase 1: Fit route bounds with padding for bottom card
     try {

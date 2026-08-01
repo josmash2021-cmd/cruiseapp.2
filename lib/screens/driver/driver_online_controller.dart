@@ -16,6 +16,18 @@ final _htmlTagRe = RegExp(r'<[^>]*>');
 /// Identifies this screen to [MapSurfaceCoordinator].
 const String _kMapSurfaceOwner = 'DriverOnline';
 
+/// How long the camera takes to glide back to the driver on a recentre.
+///
+/// Top-level rather than a class static because it is used inside a `const
+/// Duration(...)` from a part file, and the iOS compiler rejects that as
+/// "not a constant expression" — see rule 16 in CLAUDE.md.
+///
+/// Shared by the flight itself and by the timer that hands the overlay back
+/// to centred mode when it lands. The two must not drift: if the flight
+/// outlives the timer, the arrow snaps to the middle before the map gets
+/// there, which is the jump this pair exists to remove.
+const int _kRecenterFlightMs = 600;
+
 extension _DriverOnlineController on _DriverOnlineScreenState {
 
   String _normalizePhotoUrl(dynamic rawUrl) {

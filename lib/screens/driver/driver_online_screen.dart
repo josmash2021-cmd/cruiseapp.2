@@ -194,7 +194,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
               bearing: bearing,
               pitch: tilt,
             ),
-            mapbox.MapAnimationOptions(duration: 600),
+            mapbox.MapAnimationOptions(duration: _kRecenterFlightMs),
           )
           // The native side rejects asynchronously when the view is torn
           // down mid-animation; the try/catch only sees synchronous throws.
@@ -463,6 +463,11 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
 
   // -- Camera follow mode --
   bool _cameraFollowing = true;
+
+  /// Hands the overlay back to centred mode once a recentre has landed.
+  /// See _recenterCamera — set while the camera is in flight, cancelled if
+  /// the driver takes hold of the map again.
+  Timer? _followResumeTimer;
 
   /// When the driver last dragged the map. The auto-recentre is scheduled
   /// from this, so it lands ten seconds after they stop, not ten seconds
@@ -848,6 +853,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     // to look at your home screen is not going off shift.
     if (_leavingOffline) _gpsService.stopTracking();
     _reFollowTimer?.cancel();
+    _followResumeTimer?.cancel();
     _earningsRefreshTimer?.cancel();
     _bgHeartbeatTimer?.cancel();
     _panelAnimCtrl?.dispose();

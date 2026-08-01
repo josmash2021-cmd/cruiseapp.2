@@ -234,6 +234,12 @@ class GoldLocationDot {
     const center = Offset(_canvasSize / 2, _canvasSize / 2);
 
     if (heading) {
+      // Baked into the bitmap because Mapbox rotates the whole image and
+      // there is nowhere else to put it. The overlay draws its own outside
+      // the rotation — see _GoldDotOverlayPainter — so on a turning driver
+      // the two differ, and the annotation is only on screen when they have
+      // panned away from themselves and are looking at where they were.
+      paintHeadingShadow(canvas, center);
       _paintHeadingBadge(canvas, center);
     } else {
       _paintPlainDot(canvas, center);
@@ -305,6 +311,42 @@ class GoldLocationDot {
 
   static void paintHeadingBadge(Canvas canvas, Offset center) =>
       _paintHeadingBadge(canvas, center);
+
+  /// The ground shadow that lifts the badge off the map.
+  ///
+  /// Separate from the badge on purpose. The badge is rotated — by Mapbox
+  /// through `iconRotate`, by the overlay through `canvas.rotate` — and a
+  /// shadow that turns with it would swing around the disc as the driver
+  /// drives, which reads as the sun orbiting them. Drawn on its own, before
+  /// the rotation is applied, it stays where a shadow belongs.
+  ///
+  /// Two passes: a wide soft one for the ambient darkening under the disc,
+  /// and a tighter darker one just below it for the contact edge. That pair
+  /// is what makes a flat circle read as a disc standing above the street
+  /// rather than printed on it.
+  static void paintHeadingShadow(Canvas canvas, Offset center) {
+    canvas.drawOval(
+      Rect.fromCenter(
+        center: center + const Offset(0, _shadowDrop * 1.6),
+        width: _dotR * 2.05,
+        height: _dotR * 1.5,
+      ),
+      Paint()
+        ..color = Colors.black.withValues(alpha: 0.38)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 7),
+    );
+    canvas.drawCircle(
+      center + const Offset(0, _shadowDrop),
+      _dotR * 0.96,
+      Paint()
+        ..color = Colors.black.withValues(alpha: 0.55)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3),
+    );
+  }
+
+  /// How far below the badge the shadow sits, in canvas units. Small: the
+  /// badge is meant to hover a little, not float.
+  static const double _shadowDrop = 3.0;
 
   static void _paintPlainDot(Canvas canvas, Offset center) {
     canvas.drawCircle(
@@ -510,6 +552,9 @@ class _GoldDotOverlayPainter extends CustomPainter {
       GoldLocationDot.canvasSize / 2,
     );
     if (heading) {
+      // Shadow first and unrotated, so it stays under the badge instead of
+      // orbiting it as the driver turns. Then the badge, rotated.
+      GoldLocationDot.paintHeadingShadow(canvas, center);
       // The bitmap is rotated by Mapbox via iconRotate; here we rotate the
       // canvas ourselves, around the same centre.
       canvas.translate(center.dx, center.dy);

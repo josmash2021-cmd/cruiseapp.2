@@ -1133,6 +1133,11 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
   void _onCameraMoveStarted() {
     _lastMapPanAt = DateTime.now();
     _reFollowTimer?.cancel();
+    // A recentre in flight is abandoned the moment the driver grabs the map
+    // again — otherwise its resume would fire mid-gesture and snap the view
+    // out from under their finger. Only a finger reaches this method: it is
+    // wired to onScrollListener, which a programmatic flyTo does not trip.
+    _followResumeTimer?.cancel();
     // Auto-resume ten seconds after the last drag, not ten seconds after the
     // first: a driver still moving the map around should not have it yanked
     // out from under them mid-gesture.
@@ -1142,13 +1147,28 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
   }
 
   /// Resume camera follow mode and glide back to the driver.
+  ///
+  /// The follow flag is set when the glide *lands*, not when it starts.
+  ///
+  /// It used to be set first, and that flag is what tells the overlay to
+  /// stop projecting the driver's real pixel and draw itself in the middle
+  /// of the screen instead. So the arrow teleported to the centre on the tap
+  /// and the map spent the next 600 ms flying to meet it — the driver
+  /// watched their own position let go of the street it was on. Holding the
+  /// flag until the camera has arrived keeps the arrow on the ground the
+  /// whole way: the map slides under it and it ends up centred because it
+  /// really is, not because it was told to be.
   void _recenterCamera() {
     if (!mounted) return;
     _reFollowTimer?.cancel();
-    _setState(() => _cameraFollowing = true);
+    _followResumeTimer?.cancel();
     final bearing = _smoothedBearing;
     _cameraBearing = bearing; // sync for sprite selection
-    if (_pos == null) return;
+    if (_pos == null) {
+      // No position to fly to, so there is no flight to wait out.
+      _setState(() => _cameraFollowing = true);
+      return;
+    }
     final isNav = _phase == _Phase.enRouteToPickup ||
         _phase == _Phase.inTrip ||
         _phase == _Phase.routeSummary;
@@ -1159,6 +1179,23 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
       // Recentring into a tilted nav view here would be a different screen.
       _animateToPosition(_pos!, zoom: 15.5, bearing: 0, tilt: 0);
     }
+
+    // The flyTo above runs for _kRecenterFlightMs. A little past that, the
+    // camera is where the marker already is and handing the overlay back to
+    // its centred mode changes nothing on screen.
+    //
+    // Not awaited: flyTo's future resolves on the native side and is
+    // rejected outright if the view goes away mid-flight, so the resume
+    // would be lost exactly when the driver most needs the camera to come
+    // back. A timer always fires, and _onCameraMoveStarted cancels it if
+    // they grab the map again.
+    _followResumeTimer = Timer(
+      const Duration(milliseconds: _kRecenterFlightMs + 40),
+      () {
+        if (!mounted) return;
+        _setState(() => _cameraFollowing = true);
+      },
+    );
   }
 
   /// True while the marker is the Flutter overlay rather than the Mapbox

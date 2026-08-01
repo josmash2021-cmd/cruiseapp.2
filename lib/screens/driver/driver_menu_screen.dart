@@ -1,5 +1,8 @@
+import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../services/haptic_service.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../config/page_transitions.dart';
@@ -102,8 +105,23 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
     UserSession.photoUrlNotifier.addListener(_onPhotoChanged);
   }
 
-  /// Instant cache-first: populate name & photo from SharedPreferences
-  /// so the UI never shows a blank skeleton on revisit.
+  /// Where the card's own values live between visits.
+  ///
+  /// Keyed by driver id: two drivers sharing a phone must not see each
+  /// other's tier, and a stale badge after a logout is worse than a blank
+  /// one. Written whenever the server answers, read before it is asked.
+  static const _kCardKey = 'driver_menu_card';
+
+  /// Instant cache-first: populate the whole card from SharedPreferences so
+  /// it is already drawn when the menu opens.
+  ///
+  /// It used to restore the name and the photo only. The tier badge and the
+  /// stars came from two sequential network calls — getMe, then
+  /// getDriverStats with the id it returns — so on every single visit the
+  /// driver watched an empty badge and an em dash turn into "Bronze" and
+  /// "5.0" a moment later. None of that changes between one menu open and
+  /// the next; it changes when they level up, are rated, or set a new
+  /// photo.
   Future<void> _loadCachedProfile() async {
     final user = await UserSession.getUser();
     if (user != null && mounted && !_profileLoaded) {
@@ -118,6 +136,60 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
           if (url.isNotEmpty) _photoUrl = url;
         });
       }
+    }
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_kCardKey);
+      if (raw == null || !mounted || _profileLoaded) return;
+      final card = jsonDecode(raw) as Map<String, dynamic>;
+      // Only this driver's card, checked against the session on disk.
+      //
+      // Not ApiService.getCurrentUserId(): that falls through to getMe()
+      // when its in-memory cache is cold, which is a network round trip —
+      // and waiting on the network is the exact thing this method exists to
+      // avoid. The session record is already in hand from the read above.
+      final cachedId = card['id']?.toString();
+      final myId = user?['userId']?.toString();
+      if (cachedId == null || myId == null || cachedId != myId) return;
+      if (!mounted || _profileLoaded) return;
+      setState(() {
+        _tierName = (card['tier'] ?? '').toString();
+        _avgRating = (card['avgRating'] as num?)?.toDouble() ?? 0;
+        _rating = _avgRating <= 0 ? '—' : _avgRating.toStringAsFixed(1);
+        _ratingsCount = (card['ratingsCount'] as num?)?.toInt() ?? 0;
+        _completedTrips = (card['completed'] as num?)?.toInt() ?? 0;
+        _totalTrips = (card['total'] as num?)?.toInt() ?? 0;
+      });
+    } catch (e) {
+      // A malformed or missing card is not worth a blank menu.
+      debugPrint('[DriverMenu] cached card unavailable: $e');
+    }
+  }
+
+  /// Keep what the card is showing, so the next visit opens on it.
+  ///
+  /// Stamped with the same id the reader checks — the session's own
+  /// `userId`, not the one the API returned, so both sides are comparing
+  /// the same thing.
+  Future<void> _cacheCard() async {
+    try {
+      final id = (await UserSession.getUser())?['userId']?.toString();
+      if (id == null || id.isEmpty) return;
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(
+        _kCardKey,
+        jsonEncode(<String, dynamic>{
+          'id': id,
+          'tier': _tierName,
+          'avgRating': _avgRating,
+          'ratingsCount': _ratingsCount,
+          'completed': _completedTrips,
+          'total': _totalTrips,
+        }),
+      );
+    } catch (e) {
+      debugPrint('[DriverMenu] could not cache the card: $e');
     }
   }
 
@@ -214,6 +286,9 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
                 _tierName = 'Bronze';
               }
             });
+            // Written after the server has spoken, so the next open starts
+            // where this one ended.
+            unawaited(_cacheCard());
           }
         }
       }

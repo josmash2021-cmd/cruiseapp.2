@@ -2619,6 +2619,162 @@ async def forgot_password(request: Request, db: AsyncSession = Depends(get_db)):
     return {"status": "reset_sent", "method": "email"}
 
 
+# ═══════════════════════════════════════════════════════════════════════
+#  In-app password reset — six digits, typed into the app
+# ═══════════════════════════════════════════════════════════════════════
+#
+# Separate from /auth/forgot-password, which mails a 32-byte link for the
+# web page and is left alone. This pair is for a driver who is already
+# signed in and wants a new password without knowing the old one.
+#
+# Being signed in is what makes a six-digit code safe here. The token is
+# looked up by user, never by code alone, so a guess has to be aimed at
+# one specific account; wrong guesses are counted and burn the code at
+# _RESET_CODE_MAX_ATTEMPTS. Neither is true of a code that any account
+# could match.
+
+_RESET_CODE_TTL_SECONDS = 15 * 60
+_RESET_CODE_MAX_ATTEMPTS = 5
+
+
+def _mask_email(addr: str) -> str:
+    """j•••h@gmail.com — enough to recognise, not enough to read out."""
+    name, _, domain = addr.partition("@")
+    if not domain:
+        return addr
+    if len(name) <= 2:
+        return f"{name[:1]}•••@{domain}"
+    return f"{name[0]}•••{name[-1]}@{domain}"
+
+
+@router.post("/auth/password-reset/send-code", dependencies=[Depends(_verify_api_key)])
+async def send_password_reset_code(
+    user: User = Depends(_get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Mail a six-digit code to the signed-in user's own address."""
+    if not user.email:
+        raise HTTPException(400, "No email on file for this account")
+
+    if _check_password_reset_rate(user.email):
+        raise HTTPException(429, "Too many attempts. Try again in 1 hour.")
+    _record_password_reset(user.email)
+
+    code = f"{secrets.randbelow(1000000):06d}"
+    hashed = hashlib.sha256(code.encode()).hexdigest()
+
+    # One live code per user: issuing a second must retire the first, or
+    # an old mail keeps working after the driver asked for a new one.
+    await db.execute(
+        PasswordResetToken.__table__.delete().where(
+            PasswordResetToken.user_id == user.id
+        )
+    )
+    db.add(PasswordResetToken(
+        code=hashed,
+        user_id=user.id,
+        expires_at=time.time() + _RESET_CODE_TTL_SECONDS,
+        attempts=0,
+    ))
+    await db.commit()
+
+    _logo_url = "https://raw.githubusercontent.com/josmash2021-cmd/cruiseapp.2/main/assets/images/cruise_logo_email.png"
+    _name = user.first_name or "there"
+    _minutes = _RESET_CODE_TTL_SECONDS // 60
+    html = f"""
+    <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;max-width:560px;margin:0 auto;background:#050505;border-radius:16px;overflow:hidden;border:1px solid #1a1a1a;">
+      <div style="background:linear-gradient(90deg,transparent,#D4AF37,#E8C547,#D4AF37,transparent);height:2px;"></div>
+      <div style="padding:48px 40px 40px;">
+        <div style="text-align:center;margin-bottom:36px;">
+          <img src="{_logo_url}" alt="Cruise" width="64" height="64" style="display:block;margin:0 auto 14px;border-radius:16px;">
+          <h2 style="font-family:Georgia,'Times New Roman',serif;font-size:24px;font-weight:700;color:#E8C547;letter-spacing:8px;margin:0;text-indent:8px;">CRUISE</h2>
+        </div>
+        <h1 style="text-align:center;color:#FFFFFF;font-size:23px;font-weight:300;margin:0 0 6px;">Your verification <strong>code</strong></h1>
+        <p style="text-align:center;color:#666;font-size:14px;margin:10px 0 28px;line-height:1.6;">Hi {_name}, enter this code in the app to set a new password.</p>
+        <div style="text-align:center;margin-bottom:28px;">
+          <span style="display:inline-block;background:#111;border:1px solid #2a2a1a;border-radius:12px;padding:18px 30px;color:#E8C547;font-size:34px;font-weight:700;letter-spacing:12px;text-indent:12px;">{code}</span>
+        </div>
+        <div style="background:#111;border-radius:10px;padding:20px;border:1px solid #1a1a1a;">
+          <p style="color:#555;font-size:12px;margin:0;line-height:1.6;text-align:center;">This code expires in <strong style="color:#D4AF37;">{_minutes} minutes</strong>.<br>If you didn't request it, ignore this email and your password stays as it is.</p>
+        </div>
+      </div>
+      <div style="border-top:1px solid #111;padding:24px 40px;text-align:center;">
+        <p style="color:#333;font-size:11px;letter-spacing:3px;margin:0 0 4px;">CRUISE</p>
+        <p style="color:#252525;font-size:10px;margin:0;">Premium Rides &mdash; cruiseinride.com</p>
+      </div>
+    </div>
+    """
+    # _send_email is blocking. Called directly it stalls the event loop for
+    # the length of an SMTP round trip, which every other request in this
+    # worker pays for.
+    try:
+        await asyncio.get_event_loop().run_in_executor(
+            None,
+            lambda: _send_email(user.email, "Cruise — Your verification code", html),
+        )
+    except Exception as e:
+        logging.error("[PasswordReset] send failed for user %s: %s", user.id, e)
+        raise HTTPException(502, "Could not send the email. Try again.")
+
+    return {
+        "status": "sent",
+        "email": _mask_email(user.email),
+        "expires_in": _RESET_CODE_TTL_SECONDS,
+    }
+
+
+@router.post("/auth/password-reset/confirm", dependencies=[Depends(_verify_api_key)])
+async def confirm_password_reset(
+    request: Request,
+    user: User = Depends(_get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Check the code and set the new password."""
+    body = await request.json()
+    code = str(body.get("code", "")).strip()
+    new_password = body.get("new_password", "")
+
+    import re as _re
+    if (len(new_password) < 8
+            or not _re.search(r'[0-9]', new_password)
+            or not _re.search(r'[A-Z]', new_password)
+            or not _re.search(r'[!@#$%^&*(),.?":{}|<>_\-+=\[\]\\/~`]', new_password)):
+        raise HTTPException(
+            400,
+            "Password must be at least 8 characters with a number, "
+            "uppercase letter, and special character",
+        )
+
+    result = await db.execute(
+        select(PasswordResetToken).where(PasswordResetToken.user_id == user.id)
+    )
+    token_row = result.scalars().first()
+    if not token_row:
+        raise HTTPException(400, "Request a code first")
+    if time.time() > token_row.expires_at:
+        await db.delete(token_row)
+        await db.commit()
+        raise HTTPException(400, "That code expired. Request a new one.")
+
+    if hashlib.sha256(code.encode()).hexdigest() != token_row.code:
+        token_row.attempts = (token_row.attempts or 0) + 1
+        burned = token_row.attempts >= _RESET_CODE_MAX_ATTEMPTS
+        if burned:
+            await db.delete(token_row)
+        await db.commit()
+        raise HTTPException(
+            400,
+            "Too many wrong codes. Request a new one." if burned
+            else "That code is not right",
+        )
+
+    user.password_hash = pwd.hash(new_password)
+    await db.delete(token_row)
+    await db.commit()
+    logging.info("[PasswordReset] user %s changed their password", user.id)
+    return {"status": "password_reset"}
+
+
 @router.get("/auth/reset-page")
 async def reset_page():
     """Serve a simple HTML page where the user can enter a new password."""

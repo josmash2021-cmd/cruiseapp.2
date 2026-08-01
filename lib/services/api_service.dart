@@ -1235,6 +1235,45 @@ class ApiService {
     return data;
   }
 
+  /// Mail a six-digit code to the signed-in user's own address.
+  ///
+  /// Returns the masked address it went to, so the screen can say where to
+  /// look without the app having to trust its own cached copy of the email.
+  static Future<String> sendPasswordResetCode() async {
+    final token = await getToken();
+    if (token == null) throw ApiException(401, 'Not logged in');
+    final res = await _client
+        .post(
+          Uri.parse('$_baseUrl/auth/password-reset/send-code'),
+          headers: _jsonHeaders(token),
+        )
+        // Longer than the usual 10s: this waits on an SMTP round trip.
+        .timeout(const Duration(seconds: 25));
+    final data = _parse(res);
+    return (data['email'] as String?) ?? '';
+  }
+
+  /// Set a new password using the code that was mailed.
+  ///
+  /// Throws [ApiException] with the server's own message for a wrong or
+  /// expired code, and for a password that fails the strength rules — all
+  /// of those are worth showing verbatim.
+  static Future<void> confirmPasswordReset({
+    required String code,
+    required String newPassword,
+  }) async {
+    final token = await getToken();
+    if (token == null) throw ApiException(401, 'Not logged in');
+    final res = await _client
+        .post(
+          Uri.parse('$_baseUrl/auth/password-reset/confirm'),
+          headers: _jsonHeaders(token),
+          body: jsonEncode({'code': code, 'new_password': newPassword}),
+        )
+        .timeout(const Duration(seconds: 15));
+    _parse(res);
+  }
+
   /// Delete the current user's account.
   static Future<void> deleteAccount() async {
     final token = await getToken();

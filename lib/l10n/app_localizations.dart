@@ -1230,6 +1230,25 @@ class S {
   String get thisWeek => _es ? 'Esta Semana' : 'This Week';
   String get thisMonth => _es ? 'Este Mes' : 'This Month';
 
+  // ── Cruise Level, rebuilt layout ──
+  String get cruiseAverageRating => _es ? 'Calificación media' : 'Average rating';
+  String get cruisePerformanceMetrics =>
+      _es ? 'RENDIMIENTO' : 'PERFORMANCE';
+  String cruiseYourRewards(String tier) =>
+      _es ? 'Tus recompensas $tier' : 'Your $tier rewards';
+  String get cruiseEarnMore => _es ? 'Gana más' : 'Get more earnings';
+  String get cruiseKeepDriving =>
+      _es ? 'Sigue conduciendo para desbloquearlo' : 'Keep driving to unlock it';
+  String cruiseUnlock(String tier) =>
+      _es ? 'Desbloquear $tier' : 'Unlock $tier';
+  String cruiseFocusOn(int remaining, int total) => _es
+      ? 'Te faltan $remaining de $total requisitos'
+      : 'Focus on $remaining of $total requirements';
+  String get cruiseAllRequirementsMet =>
+      _es ? 'Cumples todos los requisitos' : 'You meet every requirement';
+  String cruiseGoal(String goal) => _es ? 'Meta: $goal' : 'Goal: $goal';
+  String get cruiseGoalMet => _es ? 'Cumplido' : 'Met';
+
   // ── Payout methods, rebuilt layout ──
   String get payoutYourMethods =>
       _es ? 'Tus métodos de cobro' : 'Your payout methods';

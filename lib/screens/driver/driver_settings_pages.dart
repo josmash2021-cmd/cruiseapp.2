@@ -5,173 +5,131 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../l10n/app_localizations.dart';
 import '../../services/notification_service.dart';
+import '../../widgets/neu_style.dart';
 
 // ═══════════════════════════════════════════════════════
-//  EDIT ADDRESS SCREEN
+//  SHARED ROWS
 // ═══════════════════════════════════════════════════════
+//
+// One toggle row, one label, one read-only row, used by every page in
+// this file. There were three near-identical private copies before, which
+// is how Navigation's rows ended up a different height from
+// Communication's on the same screen.
 
-class DriverEditAddressScreen extends StatefulWidget {
-  const DriverEditAddressScreen({super.key});
-  @override
-  State<DriverEditAddressScreen> createState() =>
-      _DriverEditAddressScreenState();
-}
+const _gold = Color(0xFFE8C547);
 
-class _DriverEditAddressScreenState extends State<DriverEditAddressScreen> {
-  static const _gold = Color(0xFFE8C547);
-  static const _bg = Color(0xFF0A0A0A);
-  static const _surface = Color(0xFF1A1A1F);
+Widget _neuLabel(String text) => Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Text(
+        text,
+        style: const TextStyle(
+          color: Colors.white70,
+          fontSize: 13,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
 
-  final _homeCtrl = TextEditingController();
-  final _workCtrl = TextEditingController();
-  bool _saving = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _load();
-  }
-
-  @override
-  void dispose() {
-    _homeCtrl.dispose();
-    _workCtrl.dispose();
-    super.dispose();
-  }
-
-  Future<void> _load() async {
-    final prefs = await SharedPreferences.getInstance();
-    _homeCtrl.text = prefs.getString('driver_home_address') ?? '';
-    _workCtrl.text = prefs.getString('driver_work_address') ?? '';
-  }
-
-  Future<void> _save() async {
-    setState(() => _saving = true);
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('driver_home_address', _homeCtrl.text.trim());
-    await prefs.setString('driver_work_address', _workCtrl.text.trim());
-    if (!mounted) return;
-    setState(() => _saving = false);
-    _snack(S.of(context).addressSaved);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final top = MediaQuery.of(context).padding.top;
-    return Scaffold(
-      backgroundColor: _bg,
-      body: Column(
-        children: [
-          _topBar(top, S.of(context).editAddress),
-          Expanded(
-            child: ListView(
-              padding: const EdgeInsets.all(20),
-              children: [
-                _label(S.of(context).homeAddress),
-                const SizedBox(height: 8),
-                _field(
-                  _homeCtrl,
-                  Icons.home_rounded,
-                  S.of(context).enterHomeAddress,
+/// Icon in a sunken well, title, optional subtitle, switch on the right.
+Widget _neuToggleRow(
+  IconData icon,
+  String title,
+  String? sub,
+  bool val,
+  ValueChanged<bool> onChanged,
+) {
+  return Container(
+    margin: const EdgeInsets.only(bottom: 12),
+    padding: const EdgeInsets.all(14),
+    decoration: neuBox(radius: 18),
+    child: Row(
+      children: [
+        Container(
+          width: 38,
+          height: 38,
+          decoration: neuBox(radius: 12, pressed: true),
+          child: Icon(icon, color: _gold, size: 19),
+        ),
+        const SizedBox(width: 13),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
                 ),
-                const SizedBox(height: 24),
-                _label(S.of(context).workAddress),
-                const SizedBox(height: 8),
-                _field(
-                  _workCtrl,
-                  Icons.work_rounded,
-                  S.of(context).enterWorkAddress,
-                ),
-                const SizedBox(height: 32),
-                SizedBox(
-                  width: double.infinity,
-                  height: 52,
-                  child: ElevatedButton(
-                    onPressed: _saving ? null : _save,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: _gold,
-                      foregroundColor: Colors.black,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                    ),
-                    child: _saving
-                        ? const SizedBox(
-                            width: 22,
-                            height: 22,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: Colors.black,
-                            ),
-                          )
-                        : Text(
-                            S.of(context).saveChanges,
-                            style: const TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ),
+              ),
+              if (sub != null) ...[
+                const SizedBox(height: 2),
+                Text(
+                  sub,
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.4),
+                    fontSize: 12,
                   ),
                 ),
               ],
-            ),
+            ],
           ),
-        ],
-      ),
-    );
-  }
-
-  Widget _topBar(double top, String title) =>
-      _SettingsTopBar(top: top, title: title);
-  Widget _label(String t) => Text(
-    t,
-    style: const TextStyle(
-      color: Colors.white70,
-      fontSize: 13,
-      fontWeight: FontWeight.w600,
+        ),
+        Switch.adaptive(
+          value: val,
+          onChanged: onChanged,
+          activeThumbColor: _gold,
+          activeTrackColor: _gold.withValues(alpha: 0.3),
+          inactiveThumbColor: Colors.white30,
+          inactiveTrackColor: Colors.white.withValues(alpha: 0.08),
+        ),
+      ],
     ),
   );
+}
 
-  Widget _field(TextEditingController ctrl, IconData icon, String hint) {
-    return TextField(
-      controller: ctrl,
-      style: const TextStyle(color: Colors.white, fontSize: 15),
-      cursorColor: _gold,
-      decoration: InputDecoration(
-        hintText: hint,
-        hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.25)),
-        prefixIcon: Icon(icon, color: _gold, size: 20),
-        filled: true,
-        fillColor: Colors.white.withValues(alpha: 0.06),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.08)),
+/// A row that states something rather than changing it.
+Widget _neuInfoRow(IconData icon, String title, String sub) {
+  return Container(
+    margin: const EdgeInsets.only(bottom: 12),
+    padding: const EdgeInsets.all(14),
+    decoration: neuBox(radius: 18),
+    child: Row(
+      children: [
+        Container(
+          width: 38,
+          height: 38,
+          decoration: neuBox(radius: 12, pressed: true),
+          child: Icon(icon, color: _gold, size: 19),
         ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: _gold, width: 1.2),
-        ),
-        contentPadding: const EdgeInsets.symmetric(vertical: 14),
-      ),
-    );
-  }
-
-  void _snack(String msg) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          msg,
-          style: const TextStyle(
-            color: Colors.black,
-            fontWeight: FontWeight.w700,
+        const SizedBox(width: 13),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                sub,
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.4),
+                  fontSize: 12,
+                ),
+              ),
+            ],
           ),
         ),
-        backgroundColor: _gold,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      ),
-    );
-  }
+      ],
+    ),
+  );
 }
 
 // ═══════════════════════════════════════════════════════
@@ -306,13 +264,15 @@ class DriverCommunicationScreen extends StatefulWidget {
 }
 
 class _DriverCommunicationScreenState extends State<DriverCommunicationScreen> {
-  static const _gold = Color(0xFFE8C547);
-  static const _bg = Color(0xFF0A0A0A);
-
   bool _pushNotifications = true;
   bool _emailNotifications = true;
   bool _smsNotifications = false;
   bool _promotions = false;
+  // Moved here from the Sounds & Voice page, which no longer exists. The
+  // keys are unchanged, so a driver who had already turned one off keeps
+  // it off.
+  bool _tripSounds = true;
+  bool _messageSounds = true;
 
   @override
   void initState() {
@@ -328,6 +288,8 @@ class _DriverCommunicationScreenState extends State<DriverCommunicationScreen> {
       _emailNotifications = prefs.getBool('comm_email') ?? true;
       _smsNotifications = prefs.getBool('comm_sms') ?? false;
       _promotions = prefs.getBool('comm_promos') ?? false;
+      _tripSounds = prefs.getBool('sound_trips') ?? true;
+      _messageSounds = prefs.getBool('sound_messages') ?? true;
     });
   }
 
@@ -340,15 +302,17 @@ class _DriverCommunicationScreenState extends State<DriverCommunicationScreen> {
   Widget build(BuildContext context) {
     final top = MediaQuery.of(context).padding.top;
     return Scaffold(
-      backgroundColor: _bg,
+      backgroundColor: neuBase,
       body: Column(
         children: [
           _SettingsTopBar(top: top, title: S.of(context).communicationLabel),
           Expanded(
             child: ListView(
+              physics: const BouncingScrollPhysics(),
               padding: const EdgeInsets.all(20),
               children: [
-                _toggleRow(
+                _neuLabel(S.of(context).messagePreferences),
+                _neuToggleRow(
                   Icons.notifications_active_rounded,
                   S.of(context).pushNotifications,
                   S.of(context).pushNotificationsDesc,
@@ -356,7 +320,8 @@ class _DriverCommunicationScreenState extends State<DriverCommunicationScreen> {
                   (v) async {
                     if (v) {
                       // Request system notification permission when enabling
-                      final granted = await NotificationService.requestPermission();
+                      final granted =
+                          await NotificationService.requestPermission();
                       if (!granted) {
                         // Open system settings if denied
                         NotificationService.openSystemSettings();
@@ -367,7 +332,7 @@ class _DriverCommunicationScreenState extends State<DriverCommunicationScreen> {
                     _set('comm_push', v);
                   },
                 ),
-                _toggleRow(
+                _neuToggleRow(
                   Icons.email_rounded,
                   S.of(context).emailNotifications,
                   S.of(context).emailNotificationsDesc,
@@ -377,7 +342,7 @@ class _DriverCommunicationScreenState extends State<DriverCommunicationScreen> {
                     _set('comm_email', v);
                   },
                 ),
-                _toggleRow(
+                _neuToggleRow(
                   Icons.sms_rounded,
                   S.of(context).smsNotifications,
                   S.of(context).smsNotificationsDesc,
@@ -387,7 +352,7 @@ class _DriverCommunicationScreenState extends State<DriverCommunicationScreen> {
                     _set('comm_sms', v);
                   },
                 ),
-                _toggleRow(
+                _neuToggleRow(
                   Icons.local_offer_rounded,
                   S.of(context).promotions,
                   S.of(context).promotionsDesc,
@@ -397,61 +362,35 @@ class _DriverCommunicationScreenState extends State<DriverCommunicationScreen> {
                     _set('comm_promos', v);
                   },
                 ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _toggleRow(
-    IconData icon,
-    String title,
-    String sub,
-    bool val,
-    ValueChanged<bool> onChanged,
-  ) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.05),
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Row(
-        children: [
-          Icon(icon, color: _gold, size: 22),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 15,
-                    fontWeight: FontWeight.w700,
-                  ),
+                const SizedBox(height: 14),
+                _neuLabel(S.of(context).soundsAndVoice),
+                _neuInfoRow(
+                  Icons.volume_up_rounded,
+                  S.of(context).syncedWithDeviceVolume,
+                  S.of(context).adjustWithPhoneVolumeButtons,
                 ),
-                Text(
-                  sub,
-                  style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.4),
-                    fontSize: 12,
-                  ),
+                _neuToggleRow(
+                  Icons.local_taxi_rounded,
+                  S.of(context).tripRequestSounds,
+                  S.of(context).tripRequestSoundsDesc,
+                  _tripSounds,
+                  (v) {
+                    setState(() => _tripSounds = v);
+                    _set('sound_trips', v);
+                  },
+                ),
+                _neuToggleRow(
+                  Icons.message_rounded,
+                  S.of(context).messageSounds,
+                  S.of(context).messageSoundsDesc,
+                  _messageSounds,
+                  (v) {
+                    setState(() => _messageSounds = v);
+                    _set('sound_messages', v);
+                  },
                 ),
               ],
             ),
-          ),
-          Switch.adaptive(
-            value: val,
-            onChanged: onChanged,
-            activeThumbColor: _gold,
-            activeTrackColor: _gold.withValues(alpha: 0.3),
-            inactiveThumbColor: Colors.white30,
-            inactiveTrackColor: Colors.white.withValues(alpha: 0.08),
           ),
         ],
       ),
@@ -470,9 +409,6 @@ class DriverNavigationScreen extends StatefulWidget {
 }
 
 class _DriverNavigationScreenState extends State<DriverNavigationScreen> {
-  static const _gold = Color(0xFFE8C547);
-  static const _bg = Color(0xFF0A0A0A);
-
   String _defaultMap = 'cruise';
   bool _avoidTolls = false;
   bool _avoidHighways = false;
@@ -515,23 +451,16 @@ class _DriverNavigationScreenState extends State<DriverNavigationScreen> {
   Widget build(BuildContext context) {
     final top = MediaQuery.of(context).padding.top;
     return Scaffold(
-      backgroundColor: _bg,
+      backgroundColor: neuBase,
       body: Column(
         children: [
           _SettingsTopBar(top: top, title: S.of(context).navigationLabel),
           Expanded(
             child: ListView(
+              physics: const BouncingScrollPhysics(),
               padding: const EdgeInsets.all(20),
               children: [
-                Text(
-                  S.of(context).defaultMapApp,
-                  style: const TextStyle(
-                    color: Colors.white70,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(height: 12),
+                _neuLabel(S.of(context).defaultMapApp),
                 _mapOption('cruise', 'Cruise Maps', Icons.map_rounded),
                 _mapOption(
                   'google',
@@ -540,19 +469,12 @@ class _DriverNavigationScreenState extends State<DriverNavigationScreen> {
                 ),
                 _mapOption('apple', 'Apple Maps', Icons.explore_rounded),
                 _mapOption('waze', 'Waze', Icons.directions_car_rounded),
-                const SizedBox(height: 24),
-                Text(
-                  S.of(context).routePreferences,
-                  style: const TextStyle(
-                    color: Colors.white70,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                _toggleTile(
+                const SizedBox(height: 14),
+                _neuLabel(S.of(context).routePreferences),
+                _neuToggleRow(
                   Icons.toll_rounded,
                   S.of(context).avoidTolls,
+                  null,
                   _avoidTolls,
                   (v) async {
                     setState(() => _avoidTolls = v);
@@ -562,9 +484,10 @@ class _DriverNavigationScreenState extends State<DriverNavigationScreen> {
                     );
                   },
                 ),
-                _toggleTile(
+                _neuToggleRow(
                   Icons.alt_route_rounded,
                   S.of(context).avoidHighways,
+                  null,
                   _avoidHighways,
                   (v) async {
                     setState(() => _avoidHighways = v);
@@ -611,19 +534,22 @@ class _DriverNavigationScreenState extends State<DriverNavigationScreen> {
         );
       },
       child: Container(
-        margin: const EdgeInsets.only(bottom: 8),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-        decoration: BoxDecoration(
-          color: sel
-              ? _gold.withValues(alpha: 0.1)
-              : Colors.white.withValues(alpha: 0.05),
-          borderRadius: BorderRadius.circular(14),
-          border: sel ? Border.all(color: _gold, width: 1.2) : null,
+        margin: const EdgeInsets.only(bottom: 10),
+        padding: const EdgeInsets.all(14),
+        decoration: neuBox(
+          radius: 18,
+          borderColor: sel ? _gold.withValues(alpha: 0.55) : null,
+          borderWidth: sel ? 1.2 : 1,
         ),
         child: Row(
           children: [
-            Icon(icon, color: sel ? _gold : Colors.white54, size: 22),
-            const SizedBox(width: 14),
+            Container(
+              width: 38,
+              height: 38,
+              decoration: neuBox(radius: 12, pressed: true),
+              child: Icon(icon, color: sel ? _gold : Colors.white54, size: 19),
+            ),
+            const SizedBox(width: 13),
             Expanded(
               child: Text(
                 label,
@@ -637,229 +563,6 @@ class _DriverNavigationScreenState extends State<DriverNavigationScreen> {
             if (sel) const Icon(Icons.check_rounded, color: _gold, size: 20),
           ],
         ),
-      ),
-    );
-  }
-
-  Widget _toggleTile(
-    IconData icon,
-    String title,
-    bool val,
-    ValueChanged<bool> onChanged,
-  ) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.05),
-        borderRadius: BorderRadius.circular(14),
-      ),
-      child: Row(
-        children: [
-          Icon(icon, color: _gold, size: 22),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Text(
-              title,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 15,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-          Switch.adaptive(
-            value: val,
-            onChanged: onChanged,
-            activeThumbColor: _gold,
-            activeTrackColor: _gold.withValues(alpha: 0.3),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// ═══════════════════════════════════════════════════════
-//  SOUNDS & VOICE SCREEN
-// ═══════════════════════════════════════════════════════
-
-class DriverSoundsVoiceScreen extends StatefulWidget {
-  const DriverSoundsVoiceScreen({super.key});
-  @override
-  State<DriverSoundsVoiceScreen> createState() =>
-      _DriverSoundsVoiceScreenState();
-}
-
-class _DriverSoundsVoiceScreenState extends State<DriverSoundsVoiceScreen> {
-  static const _gold = Color(0xFFE8C547);
-  static const _bg = Color(0xFF0A0A0A);
-
-  bool _tripSounds = true;
-  bool _messageSounds = true;
-
-  @override
-  void initState() {
-    super.initState();
-    _load();
-  }
-
-  Future<void> _load() async {
-    final prefs = await SharedPreferences.getInstance();
-    if (!mounted) return;
-    setState(() {
-      _tripSounds = prefs.getBool('sound_trips') ?? true;
-      _messageSounds = prefs.getBool('sound_messages') ?? true;
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final top = MediaQuery.of(context).padding.top;
-    return Scaffold(
-      backgroundColor: _bg,
-      body: Column(
-        children: [
-          _SettingsTopBar(top: top, title: S.of(context).soundsAndVoice),
-          Expanded(
-            child: ListView(
-              padding: const EdgeInsets.all(20),
-              children: [
-                // Volume: synced with device
-                Text(
-                  S.of(context).volumeLevel,
-                  style: const TextStyle(
-                    color: Colors.white70,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 14,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.05),
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(
-                        Icons.volume_up_rounded,
-                        color: _gold,
-                        size: 22,
-                      ),
-                      const SizedBox(width: 14),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              S.of(context).syncedWithDeviceVolume,
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 14,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              S.of(context).adjustWithPhoneVolumeButtons,
-                              style: TextStyle(
-                                color: Colors.white.withValues(alpha: 0.4),
-                                fontSize: 12,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 24),
-                _toggleTile(
-                  Icons.local_taxi_rounded,
-                  S.of(context).tripRequestSounds,
-                  S.of(context).tripRequestSoundsDesc,
-                  _tripSounds,
-                  (v) async {
-                    setState(() => _tripSounds = v);
-                    (await SharedPreferences.getInstance()).setBool(
-                      'sound_trips',
-                      v,
-                    );
-                  },
-                ),
-                _toggleTile(
-                  Icons.message_rounded,
-                  S.of(context).messageSounds,
-                  S.of(context).messageSoundsDesc,
-                  _messageSounds,
-                  (v) async {
-                    setState(() => _messageSounds = v);
-                    (await SharedPreferences.getInstance()).setBool(
-                      'sound_messages',
-                      v,
-                    );
-                  },
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _toggleTile(
-    IconData icon,
-    String title,
-    String sub,
-    bool val,
-    ValueChanged<bool> onChanged,
-  ) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.05),
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Row(
-        children: [
-          Icon(icon, color: _gold, size: 22),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 15,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                Text(
-                  sub,
-                  style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.4),
-                    fontSize: 12,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Switch.adaptive(
-            value: val,
-            onChanged: onChanged,
-            activeThumbColor: _gold,
-            activeTrackColor: _gold.withValues(alpha: 0.3),
-          ),
-        ],
       ),
     );
   }
@@ -877,7 +580,7 @@ class _SettingsTopBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      color: const Color(0xFF1A1A1F),
+      color: neuBase,
       padding: EdgeInsets.only(top: top + 8, bottom: 12, left: 16, right: 16),
       child: Row(
         children: [
@@ -886,14 +589,11 @@ class _SettingsTopBar extends StatelessWidget {
             child: Container(
               width: 40,
               height: 40,
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.06),
-                shape: BoxShape.circle,
-              ),
+              decoration: neuBox(radius: 20),
               child: const Icon(
                 Icons.arrow_back_rounded,
                 color: Colors.white,
-                size: 22,
+                size: 20,
               ),
             ),
           ),
@@ -903,7 +603,7 @@ class _SettingsTopBar extends StatelessWidget {
             style: const TextStyle(
               color: Colors.white,
               fontSize: 20,
-              fontWeight: FontWeight.w900,
+              fontWeight: FontWeight.w800,
             ),
           ),
         ],

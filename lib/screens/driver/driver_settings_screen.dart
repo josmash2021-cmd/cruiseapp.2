@@ -1,13 +1,12 @@
 import '../../utils/app_platform.dart';
 import 'package:flutter/material.dart';
 import '../../services/haptic_service.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import '../../l10n/app_localizations.dart';
 import '../../config/page_transitions.dart';
 import '../../config/driver_colors.dart';
 import '../../services/user_session.dart';
 import '../home_screen.dart';
-import '../../main.dart' show themeNotifier, accessibilityNotifier;
+import '../../main.dart' show accessibilityNotifier;
 import '../privacy_screen.dart';
 import '../accessibility_screen.dart';
 import 'driver_manage_account_screen.dart';
@@ -23,20 +22,13 @@ class DriverSettingsScreen extends StatefulWidget {
 }
 
 class _DriverSettingsScreenState extends State<DriverSettingsScreen> {
-  static const _gold = Color(0xFFE8C547);
-  static const _bg = Color(0xFF0A0A0A);
-  static const _surface = Color(0xFF1A1A1F);
   // ignore: unused_field
   static const _card = Color(0xFF1C1C1E);
-
-  // Toggles
-  bool _nightMode = true;
 
   @override
   void initState() {
     super.initState();
     _enforceDriverRole();
-    _loadSettings();
   }
 
   void _enforceDriverRole() {
@@ -48,19 +40,6 @@ class _DriverSettingsScreenState extends State<DriverSettingsScreen> {
         );
       }
     });
-  }
-
-  Future<void> _loadSettings() async {
-    final prefs = await SharedPreferences.getInstance();
-    if (!mounted) return;
-    setState(() {
-      _nightMode = prefs.getBool('driver_night_mode') ?? true;
-    });
-  }
-
-  Future<void> _setNightMode(bool v) async {
-    setState(() => _nightMode = v);
-    themeNotifier.setNightMode(v);
   }
 
   /// Whether any accessibility feature is currently enabled.
@@ -147,15 +126,6 @@ class _DriverSettingsScreenState extends State<DriverSettingsScreen> {
                     slideFromRightRoute(const PrivacyScreen()),
                   ),
                 ),
-                _navItem(
-                  Icons.edit_location_alt_outlined,
-                  S.of(context).editAddress,
-                  S.of(context).homeWorkAddresses,
-                  () => Navigator.push(
-                    context,
-                    slideFromRightRoute(const DriverEditAddressScreen()),
-                  ),
-                ),
 
                 const SizedBox(height: 28),
 
@@ -171,13 +141,6 @@ class _DriverSettingsScreenState extends State<DriverSettingsScreen> {
                     context,
                     slideFromRightRoute(const AccessibilityScreen()),
                   ),
-                ),
-                _toggleItem(
-                  Icons.dark_mode_rounded,
-                  S.of(context).nightMode,
-                  S.of(context).appAppearance,
-                  _nightMode,
-                  _setNightMode,
                 ),
                 if (AppPlatform.isIOS)
                 _navItem(
@@ -205,15 +168,6 @@ class _DriverSettingsScreenState extends State<DriverSettingsScreen> {
                   () => Navigator.push(
                     context,
                     slideFromRightRoute(const DriverNavigationScreen()),
-                  ),
-                ),
-                _navItem(
-                  Icons.volume_up_rounded,
-                  S.of(context).soundsAndVoice,
-                  S.of(context).audioVoiceSettings,
-                  () => Navigator.push(
-                    context,
-                    slideFromRightRoute(const DriverSoundsVoiceScreen()),
                   ),
                 ),
               ],
@@ -281,70 +235,5 @@ class _DriverSettingsScreenState extends State<DriverSettingsScreen> {
     );
   }
 
-  Widget _toggleItem(
-    IconData icon,
-    String title,
-    String sub,
-    bool value,
-    ValueChanged<bool> onChanged,
-  ) {
-    final dc = DriverColors.of(context);
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 5),
-      child: Container(
-        decoration: neuBox(radius: 16),
-        child: ListTile(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-        leading: Container(
-          width: 42,
-          height: 42,
-          decoration: neuBox(radius: 13, pressed: true),
-          child: Icon(icon, color: dc.icon, size: 20),
-        ),
-        title: Text(
-          title,
-          style: TextStyle(
-            color: dc.text,
-            fontSize: 15,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-        subtitle: Text(
-          sub,
-          style: TextStyle(color: dc.textSecondary, fontSize: 12),
-        ),
-        trailing: Switch.adaptive(
-          value: value,
-          onChanged: (v) {
-            HapticService.selectionClick();
-            onChanged(v);
-          },
-          activeThumbColor: _gold,
-          activeTrackColor: _gold.withValues(alpha: 0.3),
-          inactiveThumbColor: Colors.white30,
-          inactiveTrackColor: Colors.white.withValues(alpha: 0.08),
-        ),
-        ),
-      ),
-    );
-  }
 
-  void _snack(String msg) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          msg,
-          style: const TextStyle(
-            color: Colors.black,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-        backgroundColor: _gold,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        duration: const Duration(seconds: 2),
-      ),
-    );
-  }
 }

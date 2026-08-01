@@ -28,6 +28,19 @@ except Exception as _e:
     sys.exit(0)
 
 MIGRATIONS = [
+    # payout_methods.created_at exists on the SQLAlchemy model and never
+    # existed on the table, so every SELECT of a payout method — which means
+    # every load of the Payout Methods screen — came back
+    # "UndefinedColumn: payout_methods.created_at does not exist" and a 500.
+    # No driver could see or add a payout destination, which is to say no
+    # driver could arrange to be paid.
+    #
+    # DEFAULT NOW() rather than NULL: the column gates the seven-day cooldown
+    # before a debit card is allowed instant cashout, and a NULL there would
+    # have to be read as either "brand new" or "ancient" by every caller.
+    # Stamping existing rows with the migration's own time is the safe one —
+    # it starts their cooldown today rather than retroactively clearing it.
+    ("payout_methods", "created_at", "TIMESTAMPTZ DEFAULT NOW()"),
     ("users", "id_photo_url", "TEXT"),
     ("users", "selfie_url", "TEXT"),
     ("users", "ssn", "VARCHAR(255)"),

@@ -452,33 +452,58 @@ async def get_driver_earnings(
     else:
         since = utc_days_ago(7)
 
-    # Use cached total_earnings for instant total (updated on every trip completion)
-    # Only query recent trips for breakdown/transactions (limited to 50 for speed)
-    # Cancelled trips with driver_earnings carry a charged cancellation fee —
-    # the driver's 60% share must appear in earnings like a completed fare.
-    result = await db.execute(
+    
+    # The total for THIS period, summed from this period's trips.
+    #
+    # It was `user.total_earnings or 0.0` — the driver's lifetime figure,
+    # returned unchanged for today, week, month and year alike. The period
+    # filter above only ever reached the chart and the transaction list, so
+    # the number at the top of the screen was the same all-time total under
+    # every tab, and "Today" showed money earned weeks ago. Only when the
+    # lifetime figure happened to be zero did it fall through to a real sum.
+    #
+    # Its own query, not a sum over `trips`: that list is capped at fifty
+    # rows for speed, which is fine for a chart and wrong for a total — a
+    # driver with sixty rides in a month would have been shown the sum of
+    # fifty of them.
+    # One query for the period, used for everything on this screen.
+    #
+    # There were two: this one, and a copy above it capped at fifty rows that
+    # fed the chart, the tips and the transaction list. Fifty is fine for a
+    # list of recent fares and wrong for anything summed — a driver with
+    # sixty rides in a month had ten of them missing from the chart and from
+    # the tips, silently.
+    #
+    # Cancelled trips carrying driver_earnings are a charged cancellation
+    # fee: the driver's share of it is earnings like any fare.
+    total_result = await db.execute(
         select(Trip).where(
             and_(
                 Trip.driver_id == user.id,
                 or_(
                     Trip.status == "completed",
-                    and_(Trip.status == "cancelled", Trip.driver_earnings.isnot(None), Trip.driver_earnings > 0),
+                    and_(
+                        Trip.status == "cancelled",
+                        Trip.driver_earnings.isnot(None),
+                        Trip.driver_earnings > 0,
+                    ),
                 ),
                 Trip.created_at >= since,
             )
-        ).order_by(Trip.created_at.desc())
-        .limit(50)  # Limit for speed — driver rarely needs more than 50 recent trips
+        )
     )
-    trips = result.scalars().all()
-    
-    # Use cached total from user profile (updated on trip completion)
-    # Fallback to sum if cache is somehow stale
-    total = user.total_earnings or 0.0
-    if not total and trips:
-        total = round(sum(_driver_trip_amounts(t)[0] for t in trips), 2)
+    period_trips = total_result.scalars().all()
+    total = round(sum(_driver_trip_amounts(t)[0] for t in period_trips), 2)
+
+    # Newest first, for the transaction list further down.
+    trips = sorted(
+        period_trips,
+        key=lambda t: t.created_at or datetime.min.replace(tzinfo=timezone.utc),
+        reverse=True,
+    )
 
     # Compute tips from ratings for these trips (single query)
-    trip_ids = [t.id for t in trips]
+    trip_ids = [t.id for t in period_trips]
     tips_total = 0.0
     if trip_ids:
         tips_r = await db.execute(
@@ -502,7 +527,7 @@ async def get_driver_earnings(
             day_labels.append(date(local_now.year, m, 1).strftime("%b"))
             month_total = sum(
                 _driver_trip_amounts(t)[0]
-                for t in trips
+                for t in period_trips
                 if t.created_at
                 and (t.created_at + timedelta(minutes=tz_offset)).year
                 == local_now.year
@@ -513,7 +538,7 @@ async def get_driver_earnings(
         for i in range(6, -1, -1):
             day = (now - timedelta(days=i)).date()
             day_labels.append(day.strftime("%a"))
-            day_total = sum(_driver_trip_amounts(t)[0] for t in trips if t.created_at and t.created_at.date() == day)
+            day_total = sum(_driver_trip_amounts(t)[0] for t in period_trips if t.created_at and t.created_at.date() == day)
             daily_earnings.append(round(day_total, 2))
 
     # Recent transactions (from limited trips)
@@ -542,7 +567,7 @@ async def get_driver_earnings(
     # would put an Alabama driver's 6pm rush in the 11pm–midnight column.
     hourly_earnings = [0.0] * 24
     if period == "today":
-        for t in trips:
+        for t in period_trips:
             if not t.created_at:
                 continue
             local_dt = t.created_at + timedelta(minutes=tz_offset)
@@ -569,9 +594,13 @@ async def get_driver_earnings(
 
     return {
         "total": total,
-        "trips_count": len(trips),
+        # Every trip in the period, not the fifty the chart query kept.
+        "trips_count": len(period_trips),
         "rides_rejected": rides_rejected,
-        "online_hours": len(trips) * 0.5,
+        # Still an estimate — half an hour a trip. There is no
+        # measurement of time online anywhere in the schema, so this
+        # is a stand-in wearing the face of a statistic.
+        "online_hours": len(period_trips) * 0.5,
         "tips_total": round(tips_total, 2),
         "daily_earnings": daily_earnings,
         "day_labels": day_labels,

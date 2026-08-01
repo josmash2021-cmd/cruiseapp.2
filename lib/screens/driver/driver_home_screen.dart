@@ -179,6 +179,14 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   double _monthEarnings = 0.0;
   double _prevMonthEarnings = 0.0;
 
+  /// True once a real figure — cached or fetched — has landed.
+  ///
+  /// Before it, every amount on this screen is the zero a double is born
+  /// with, and the pill was printing it as \$0.00. That is a claim, and for
+  /// a driver who worked yesterday it is a false one; the week and month
+  /// figures were not even cached, so they made it on every single open.
+  bool _statsEverLoaded = false;
+
   // ── Earnings panel ──
   double _weekEarnings = 0.0;
   /// Index = local hour 0..23, from the backend's hourly_earnings.
@@ -1233,9 +1241,11 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     final prefs = PrefsCache.instanceSync ?? await PrefsCache.instance;
     final cachedName = prefs.getString('driver_cached_name');
     final cachedEarnings = prefs.getDouble('driver_cached_earnings');
+    final cachedWeek = prefs.getDouble('driver_cached_earnings_week');
+    final cachedMonth = prefs.getDouble('driver_cached_earnings_month');
     final cachedTrips = prefs.getInt('driver_cached_trips');
     final cachedUserId = prefs.getString('driver_cached_user_id');
-    final cachedDay = prefs.getString('driver_cached_earnings_day');
+    final cachedDay = prefs.getInt('driver_cached_earnings_day');
     final currentUserId = (await ApiService.getCurrentUserId().timeout(const Duration(seconds: 15)))?.toString();
     // Only use cache if it belongs to the current driver (prevents
     // showing another driver's earnings after logout/login) *and* to the
@@ -1248,17 +1258,23 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     // no signal is forever.
     final cacheValid = currentUserId != null &&
         currentUserId == cachedUserId &&
-        cachedDay == _localDayKey();
+        cachedDay == _localDayStamp();
     if (cachedName != null && mounted && cacheValid) {
       setState(() {
         _driverName = cachedName;
         _todayEarnings = cachedEarnings ?? 0.0;
+        _weekEarnings = cachedWeek ?? 0.0;
+        _monthEarnings = cachedMonth ?? 0.0;
         _todayTrips = cachedTrips ?? 0;
+        // The pill has something true to show, so it may stop hedging.
+        _statsEverLoaded = true;
       });
     } else if (!cacheValid && mounted) {
       // Reset to zero when switching drivers
       setState(() {
         _todayEarnings = 0.0;
+        _weekEarnings = 0.0;
+        _monthEarnings = 0.0;
         _todayTrips = 0;
       });
     }
@@ -1324,22 +1340,35 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     // Update local cache
     prefs.setString('driver_cached_name', _driverName);
     prefs.setDouble('driver_cached_earnings', _todayEarnings);
+    // Week and month too. The pill swipes between all three, and only
+    // today's was ever kept — so the other two opened at zero every time
+    // and printed it as a figure.
+    prefs.setDouble('driver_cached_earnings_week', _weekEarnings);
+    prefs.setDouble('driver_cached_earnings_month', _monthEarnings);
     prefs.setInt('driver_cached_trips', _todayTrips);
     // Stamped with the day it describes, so tomorrow cannot read it as its
     // own. Local date, because "today" is the driver's day, not UTC's.
-    prefs.setString('driver_cached_earnings_day', _localDayKey());
+    prefs.setInt('driver_cached_earnings_day', _localDayStamp());
     if (currentUserId != null) {
       prefs.setString('driver_cached_user_id', currentUserId);
     }
   }
 
-  /// The driver's current local date, as a key the cache can be compared
-  /// against. Local rather than UTC: a driver in Miami starts a new day five
-  /// hours before UTC does, and it is their midnight the card resets at.
-  String _localDayKey() {
+  /// The driver's current local day, as yyyymmdd.
+  ///
+  /// The same shape and the same key the online screen already used, on
+  /// purpose. Both screens cache today's earnings under
+  /// `driver_cached_earnings` and stamp it with
+  /// `driver_cached_earnings_day`, and a first pass at this wrote a String
+  /// where the other wrote an int — same key, different type, so each one's
+  /// read of the other's write came back null and the cache silently
+  /// stopped working on whichever screen was opened second.
+  ///
+  /// Local rather than UTC: a driver in Miami starts a new day five hours
+  /// before UTC does, and it is their midnight the card resets at.
+  int _localDayStamp() {
     final d = DateTime.now();
-    return '${d.year}-${d.month.toString().padLeft(2, '0')}'
-        '-${d.day.toString().padLeft(2, '0')}';
+    return d.year * 10000 + d.month * 100 + d.day;
   }
 
   /// Lightweight periodic refresh for the 3 stats chips (no name/photo reload).
@@ -1386,6 +1415,9 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
         _todayHours = dbl(today['online_hours'], _todayHours);
         _weekEarnings = dbl(week['total'], _weekEarnings);
         _monthEarnings = dbl(month['total'], _monthEarnings);
+        if (today.isNotEmpty || week.isNotEmpty || month.isNotEmpty) {
+          _statsEverLoaded = true;
+        }
 
         // Keep the last good series when a response arrives without one —
         // an empty chart reads as "you earned nothing", which is a lie the
@@ -2641,7 +2673,14 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                   // why the switch in Earnings exists and why this is what
                   // it covers.
                   builder: (_, val, __) => Text(
-                    EarningsPrivacy.format(val),
+                    // "$—" until a real figure has landed.
+                    //
+                    // A double starts at zero, and printing that as $0.00 is
+                    // a claim: it tells a driver who worked yesterday that
+                    // they earned nothing. Week and month were not cached at
+                    // all, so they made that claim on every open, for as
+                    // long as the request took.
+                    _statsEverLoaded ? EarningsPrivacy.format(val) : '\$—',
                     style: const TextStyle(
                       color: pillText,
                       fontSize: 17,

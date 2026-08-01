@@ -165,17 +165,19 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
             ),
             const SizedBox(height: 22),
 
+            // The page does not wait on the network to exist.
+            //
+            // It used to hand the whole body to a spinner until the request
+            // came back, and with the retry that request can take most of a
+            // minute on a bad signal — a driver staring at a turning circle
+            // under a title, with nothing to read and nothing to press.
+            //
+            // Both rows are structural: Express Pay and Weekly payouts are
+            // there whatever the server says. Only what is *attached* to
+            // them is unknown, so only that waits — see the row's own
+            // pending state.
             Expanded(
-              child: _loading
-                  ? const Center(
-                      child: CircularProgressIndicator(
-                        color: _gold,
-                        strokeWidth: 2,
-                      ),
-                    )
-                  : _loadError != null
-                      ? _buildError(_loadError!)
-                      : RefreshIndicator(
+              child: RefreshIndicator(
                           color: _gold,
                           backgroundColor: neuSurface,
                           onRefresh: _loadMethods,
@@ -185,6 +187,10 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
                             ),
                             padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
                             children: [
+                              if (_loadError != null) ...[
+                                _errorStrip(_loadError!),
+                                const SizedBox(height: 14),
+                              ],
                               // Two destinations, always both shown.
                               //
                               // The old screen listed whatever happened to be
@@ -223,38 +229,6 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
                                   ],
                                 ),
                               ),
-                              const SizedBox(height: 16),
-
-                              // ── Security note — sunken strip ──
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 14,
-                                  vertical: 10,
-                                ),
-                                decoration: neuBox(radius: 14, pressed: true),
-                                child: Row(
-                                  children: [
-                                    Icon(
-                                      Icons.lock_rounded,
-                                      color: _green.withValues(alpha: 0.7),
-                                      size: 16,
-                                    ),
-                                    const SizedBox(width: 8),
-                                    Expanded(
-                                      child: Text(
-                                        s.plaidSecurityNote,
-                                        style: TextStyle(
-                                          color: Colors.white
-                                              .withValues(alpha: 0.35),
-                                          fontSize: 11,
-                                          height: 1.3,
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-
                               // Anything the two rows are not already showing
                               // — a driver who linked a second card — still
                               // gets a card of its own, so nothing they
@@ -267,7 +241,7 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
                               ),
                             ],
                           ),
-                        ),
+              ),
             ),
           ],
         ),
@@ -313,14 +287,14 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
       // Deaf while a Stripe call is in flight. Two taps on "Set up" opens
       // two sheets, and the second one lands on a Connect account the first
       // is halfway through changing.
-      onTap: _busy
+      onTap: _busy || _loading
           ? null
           : () {
               HapticService.mediumImpact();
               onTap();
             },
       child: Opacity(
-        opacity: _busy ? 0.5 : 1,
+        opacity: _busy || _loading ? 0.5 : 1,
         child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 16),
         child: Row(
@@ -357,7 +331,10 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
               ),
             ),
             const SizedBox(width: 10),
-            if (_busy)
+            // Pending while the list is still being fetched, so the row does
+            // not claim "Set up" for a destination that may already have an
+            // account on it.
+            if (_busy || _loading)
               const SizedBox(
                 width: 16,
                 height: 16,
@@ -375,6 +352,57 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
           ],
         ),
         ),
+      ),
+    );
+  }
+
+  /// The load failed, said inline, above rows that still work.
+  ///
+  /// Replacing the page with an error and a Retry button was the old
+  /// behaviour, and it threw away two controls that do not depend on the
+  /// answer: a driver can still attach a card or a bank while we do not yet
+  /// know what they had.
+  Widget _errorStrip(String message) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: neuBox(
+        radius: 14,
+        borderColor: _danger.withValues(alpha: 0.35),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.error_outline_rounded, color: _danger, size: 18),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              message,
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.7),
+                fontSize: 12.5,
+                height: 1.3,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          GestureDetector(
+            onTap: () {
+              HapticService.selectionClick();
+              setState(() {
+                _loading = true;
+                _loadError = null;
+              });
+              _loadMethods();
+            },
+            child: Text(
+              S.of(context).retry,
+              style: const TextStyle(
+                color: _gold,
+                fontSize: 12.5,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -403,67 +431,6 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
 
 
 
-  Widget _buildError(String message) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 40),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 72,
-              height: 72,
-              alignment: Alignment.center,
-              decoration: neuBox(radius: 24, pressed: true),
-              child: Icon(
-                Icons.error_outline_rounded,
-                color: _danger.withValues(alpha: 0.8),
-                size: 34,
-              ),
-            ),
-            const SizedBox(height: 16),
-            Text(
-              message,
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                color: Colors.white70,
-                fontSize: 15,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            const SizedBox(height: 20),
-            GestureDetector(
-              onTap: () {
-                setState(() => _loading = true);
-                _loadMethods();
-              },
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 20,
-                  vertical: 12,
-                ),
-                decoration: neuBox(radius: 16),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(Icons.refresh_rounded, color: _gold, size: 18),
-                    const SizedBox(width: 8),
-                    Text(
-                      S.of(context).retry,
-                      style: const TextStyle(
-                        color: _gold,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 
   // ── Card brand: parse from display_name (e.g. "Visa ····1234") ──
   static _CardBrand _brandFromDisplay(String display) {

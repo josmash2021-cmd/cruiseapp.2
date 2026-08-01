@@ -7,12 +7,15 @@ part of 'driver_online_screen.dart';
 /// reported as undefined in a const expression.
 const double _kBarTipH = 13.0;
 
+/// The height of one stop block on the offer card — its meta line, the gap
+/// and the address. Fixed so the marker beside it can be centred exactly.
+const double _kOfferStopH = 34.0;
+
 // ══════════════════════════════════════════════════════════════
 //  WIDGETS — UI builders, panels, overlays, cards, sheets
 // ══════════════════════════════════════════════════════════════
 
 extension _DriverOnlineWidgets on _DriverOnlineScreenState {
-
   Widget _mapW(bool isDark) {
     // Show a rich skeleton loader when position isn't ready yet.
     // Never show a blank dark blue screen — always have visible feedback.
@@ -100,7 +103,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
               // panned or zoomed away. The Mapbox annotation takes back over
               // only where neither applies — see _dotOverlayOwnsMarker.
               Positioned.fill(
-                child: ListenableBuilder(
+                  child: ListenableBuilder(
                 listenable: _markerFrame,
                 builder: (context, _) {
                   if (!_dotOverlayOwnsMarker) return const SizedBox.shrink();
@@ -141,8 +144,10 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
         textureView: true,
         styleUri: MapboxConfig.styleDark,
         cameraOptions: mapbox.CameraOptions(
-          center: mapbox.Point(coordinates: mapbox.Position(pos.longitude, pos.latitude)),
-          zoom: 16.0, // match home screen zoom — glides to 15.5 via _onSmoothTick
+          center: mapbox.Point(
+              coordinates: mapbox.Position(pos.longitude, pos.latitude)),
+          zoom:
+              16.0, // match home screen zoom — glides to 15.5 via _onSmoothTick
           bearing: 0,
           pitch: 0,
         ),
@@ -227,39 +232,69 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
 
               // Polyline manager with no 'below' constraint — avoids silent failure
               // when the layer name doesn't exist in the style.
-              final poly = await ctrl.annotations.createPolylineAnnotationManager(
+              final poly =
+                  await ctrl.annotations.createPolylineAnnotationManager(
                 below: "road-label",
               );
               if (stale()) return;
               _polylineAnnotMgr = poly;
 
-              final point = await ctrl.annotations.createPointAnnotationManager();
+              final point =
+                  await ctrl.annotations.createPointAnnotationManager();
               if (stale()) return;
               _pointAnnotMgr = point;
-              try { await ctrl.style.setStyleLayerProperty(point.id, 'icon-pitch-alignment', 'viewport'); } catch (_) {}
-              try { await ctrl.style.setStyleLayerProperty(point.id, 'icon-allow-overlap', true); } catch (_) {}
-              try { await ctrl.style.setStyleLayerProperty(point.id, 'icon-ignore-placement', true); } catch (_) {}
+              try {
+                await ctrl.style.setStyleLayerProperty(
+                    point.id, 'icon-pitch-alignment', 'viewport');
+              } catch (_) {}
+              try {
+                await ctrl.style.setStyleLayerProperty(
+                    point.id, 'icon-allow-overlap', true);
+              } catch (_) {}
+              try {
+                await ctrl.style.setStyleLayerProperty(
+                    point.id, 'icon-ignore-placement', true);
+              } catch (_) {}
               if (stale()) return;
 
               // Separate pin manager for teardrop pins — anchored at tip (bottom), upright (viewport)
               final pin = await ctrl.annotations.createPointAnnotationManager();
               if (stale()) return;
               _pinAnnotMgr = pin;
-              try { await ctrl.style.setStyleLayerProperty(pin.id, 'icon-pitch-alignment', 'viewport'); } catch (_) {}
-              try { await ctrl.style.setStyleLayerProperty(pin.id, 'icon-rotation-alignment', 'viewport'); } catch (_) {}
-              try { await ctrl.style.setStyleLayerProperty(pin.id, 'icon-allow-overlap', true); } catch (_) {}
-              try { await ctrl.style.setStyleLayerProperty(pin.id, 'icon-ignore-placement', true); } catch (_) {}
-              try { await ctrl.style.setStyleLayerProperty(pin.id, 'icon-anchor', 'bottom'); } catch (_) {}
+              try {
+                await ctrl.style.setStyleLayerProperty(
+                    pin.id, 'icon-pitch-alignment', 'viewport');
+              } catch (_) {}
+              try {
+                await ctrl.style.setStyleLayerProperty(
+                    pin.id, 'icon-rotation-alignment', 'viewport');
+              } catch (_) {}
+              try {
+                await ctrl.style
+                    .setStyleLayerProperty(pin.id, 'icon-allow-overlap', true);
+              } catch (_) {}
+              try {
+                await ctrl.style.setStyleLayerProperty(
+                    pin.id, 'icon-ignore-placement', true);
+              } catch (_) {}
+              try {
+                await ctrl.style
+                    .setStyleLayerProperty(pin.id, 'icon-anchor', 'bottom');
+              } catch (_) {}
               if (stale()) return;
 
               // Use already-known position from home screen — no blocking GPS call needed
               final here = _pos;
-              if (here != null) _animateToPosition(here, zoom: 16.0, bearing: _heading, tilt: 0);
+              if (here != null) {
+                _animateToPosition(here,
+                    zoom: 16.0, bearing: _heading, tilt: 0);
+              }
               _updateDriverAnnotation();
               // Re-draw route if map initialised after _drawRoute already ran
               if (_routePts.length > 1) {
                 _setRouteAnnotation(_routePts, _navyRoute);
-                final dest = (_phase == _Phase.enRouteToPickup || _phase == _Phase.routeSummary)
+                final dest = (_phase == _Phase.enRouteToPickup ||
+                        _phase == _Phase.routeSummary)
                     ? _pickupLL
                     : _dropoffLL;
                 if (here != null) _fitBounds(here, dest);
@@ -292,14 +327,32 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
             // Re-apply pin layer properties after style reload —
             // applyNavyGold resets them so they must be re-set here.
             if (_pinAnnotMgr != null) {
-              try { await _map!.style.setStyleLayerProperty(_pinAnnotMgr!.id, 'icon-rotation-alignment', 'viewport'); } catch (_) {}
-              try { await _map!.style.setStyleLayerProperty(_pinAnnotMgr!.id, 'icon-pitch-alignment', 'viewport'); } catch (_) {}
-              try { await _map!.style.setStyleLayerProperty(_pinAnnotMgr!.id, 'icon-anchor', 'bottom'); } catch (_) {}
-              try { await _map!.style.setStyleLayerProperty(_pinAnnotMgr!.id, 'icon-allow-overlap', true); } catch (_) {}
+              try {
+                await _map!.style.setStyleLayerProperty(
+                    _pinAnnotMgr!.id, 'icon-rotation-alignment', 'viewport');
+              } catch (_) {}
+              try {
+                await _map!.style.setStyleLayerProperty(
+                    _pinAnnotMgr!.id, 'icon-pitch-alignment', 'viewport');
+              } catch (_) {}
+              try {
+                await _map!.style.setStyleLayerProperty(
+                    _pinAnnotMgr!.id, 'icon-anchor', 'bottom');
+              } catch (_) {}
+              try {
+                await _map!.style.setStyleLayerProperty(
+                    _pinAnnotMgr!.id, 'icon-allow-overlap', true);
+              } catch (_) {}
             }
             if (_pointAnnotMgr != null) {
-              try { await _map!.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-pitch-alignment', 'viewport'); } catch (_) {}
-              try { await _map!.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-allow-overlap', true); } catch (_) {}
+              try {
+                await _map!.style.setStyleLayerProperty(
+                    _pointAnnotMgr!.id, 'icon-pitch-alignment', 'viewport');
+              } catch (_) {}
+              try {
+                await _map!.style.setStyleLayerProperty(
+                    _pointAnnotMgr!.id, 'icon-allow-overlap', true);
+              } catch (_) {}
             }
           }
         },
@@ -318,14 +371,11 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
     );
   }
 
-
   // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   //  EARNINGS PILL (top center — Uber style)
   // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   Widget _earningsPill(bool isDark) {
-    final pillBg = isDark
-        ? Colors.black
-        : Colors.white.withValues(alpha: 0.9);
+    final pillBg = isDark ? Colors.black : Colors.white.withValues(alpha: 0.9);
     final pillBorder = isDark
         ? Colors.white.withValues(alpha: 0.06)
         : Colors.black.withValues(alpha: 0.06);
@@ -530,7 +580,8 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
               // spec — particles only on Searching + Waiting screens).
               // The animated gold border above is the searching pulse.
               color: neuBase,
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(18)),
+              borderRadius:
+                  const BorderRadius.vertical(top: Radius.circular(18)),
               border: Border(top: BorderSide(color: borderC)),
             ),
             child: SafeArea(
@@ -551,52 +602,57 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                       ),
                     ),
                   ),
-              // Status bar — swipe on parent opens panel
-              SizedBox(
-                height: 50,
-                child: Row(
-                  children: [
-                    // Closed, the bar carries the status and nothing else.
-                    //
-                    // The avatar and the list button sat either side of it
-                    // and neither did anything the driver needed while
-                    // waiting — the avatar is not a control at all, and the
-                    // list duplicates what opening the panel gives. Safety
-                    // and Reserved appear in their place, but only once the
-                    // panel is open and there is room to label them.
-                    const SizedBox(width: 16),
-                    const Spacer(),
-                    // Connection status dot: green = SSE real-time, amber = polling fallback
-                    Container(
-                      width: 8,
-                      height: 8,
-                      decoration: BoxDecoration(
-                        color: _sseActive ? const Color(0xFF4CAF50) : const Color(0xFFFFA000),
-                        shape: BoxShape.circle,
-                        boxShadow: [
-                          BoxShadow(
-                            color: (_sseActive ? const Color(0xFF4CAF50) : const Color(0xFFFFA000)).withValues(alpha: 0.4),
-                            blurRadius: 6,
-                            spreadRadius: 1,
+                  // Status bar — swipe on parent opens panel
+                  SizedBox(
+                    height: 50,
+                    child: Row(
+                      children: [
+                        // Closed, the bar carries the status and nothing else.
+                        //
+                        // The avatar and the list button sat either side of it
+                        // and neither did anything the driver needed while
+                        // waiting — the avatar is not a control at all, and the
+                        // list duplicates what opening the panel gives. Safety
+                        // and Reserved appear in their place, but only once the
+                        // panel is open and there is room to label them.
+                        const SizedBox(width: 16),
+                        const Spacer(),
+                        // Connection status dot: green = SSE real-time, amber = polling fallback
+                        Container(
+                          width: 8,
+                          height: 8,
+                          decoration: BoxDecoration(
+                            color: _sseActive
+                                ? const Color(0xFF4CAF50)
+                                : const Color(0xFFFFA000),
+                            shape: BoxShape.circle,
+                            boxShadow: [
+                              BoxShadow(
+                                color: (_sseActive
+                                        ? const Color(0xFF4CAF50)
+                                        : const Color(0xFFFFA000))
+                                    .withValues(alpha: 0.4),
+                                blurRadius: 6,
+                                spreadRadius: 1,
+                              ),
+                            ],
                           ),
-                        ],
-                      ),
+                        ),
+                        const SizedBox(width: 8),
+                        // Centred: a Spacer either side, so the dot and the label
+                        // sit together in the middle of the bar whatever the
+                        // label's width does as it swaps between the two lines.
+                        _searchingLabel(textMuted),
+                        const Spacer(),
+                        const SizedBox(width: 16),
+                      ],
                     ),
-                    const SizedBox(width: 8),
-                    // Centred: a Spacer either side, so the dot and the label
-                    // sit together in the middle of the bar whatever the
-                    // label's width does as it swaps between the two lines.
-                    _searchingLabel(textMuted),
-                    const Spacer(),
-                    const SizedBox(width: 16),
-                  ],
-                ),
+                  ),
+                  const SizedBox(height: 6),
+                ],
               ),
-              const SizedBox(height: 6),
-            ],
+            ),
           ),
-        ),
-      ),
         ),
       ),
     ));
@@ -643,6 +699,8 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
     Color borderC,
     Color shadowC,
   ) {
+    // Clears the home indicator. Was computed here and never used,
+    // while the panel was pulled 30 px off screen instead.
     final bot = MediaQuery.of(context).padding.bottom;
     // ── Always use dark styling for offer cards ──
     const cCardBg = neuSurface;
@@ -654,207 +712,219 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
     final cBorderC = Colors.white.withValues(alpha: 0.06);
     final acceptBg = _gold;
 
-    final safeIdx = _currentOfferIndex.clamp(0, (_pendingOffers.length - 1).clamp(0, 999));
+    final safeIdx =
+        _currentOfferIndex.clamp(0, (_pendingOffers.length - 1).clamp(0, 999));
     final currentOid = _pendingOffers.isNotEmpty
-        ? (_pendingOffers[safeIdx]['offer_id'] ?? _pendingOffers[safeIdx]['id'] ?? '').toString()
+        ? (_pendingOffers[safeIdx]['offer_id'] ??
+                _pendingOffers[safeIdx]['id'] ??
+                '')
+            .toString()
         : '';
     final isCardExpanded = _expandedOfferIds.contains(currentOid);
 
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-              // â”€â”€ Tappable header: handle + title + chevron â”€â”€
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Column(
-                children: [
-                  const SizedBox(height: 10),
-                  Container(
-                    width: 36,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.15),
-                      borderRadius: BorderRadius.circular(2),
-                    ),
+    return Padding(
+      padding: EdgeInsets.only(bottom: bot > 0 ? bot : 10),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // â”€â”€ Tappable header: handle + title + chevron â”€â”€
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Column(
+              children: [
+                const SizedBox(height: 10),
+                Container(
+                  width: 36,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(2),
                   ),
-                  const SizedBox(height: 8),
-                  Text(
-                    S.of(context).ridesAvailable(_pendingOffers.length),
-                    style: const TextStyle(
-                      color: _gold,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: 0.5,
-                    ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  S.of(context).ridesAvailable(_pendingOffers.length),
+                  style: const TextStyle(
+                    color: _gold,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0.5,
                   ),
-                  const SizedBox(height: 8),
-                ],
-              ),
+                ),
+                const SizedBox(height: 8),
+              ],
             ),
-            // ── Horizontal swipeable offer cards (responsive) ──
-            AnimatedContainer(
-              duration: const Duration(milliseconds: 300),
-              curve: Curves.easeOutCubic,
-              height: _offerCardHeight(context),
-              child: PageView.builder(
-                controller: _offerPageCtrl,
-                onPageChanged: (index) {
-                  _setState(() => _currentOfferIndex = index);
-                  HapticService.selectionClick();
-                  // Swiping between offers browses them; it does not draw.
-                  // Only an explicit tap on a card builds its route and pins.
-                },
-                itemCount: _pendingOffers.length,
-                itemBuilder: (ctx, i) {
-                  final offer = _pendingOffers[i];
-                  final oid = (offer['offer_id'] ?? offer['id'] ?? '').toString();
-                  final isAnimating = _animatingOfferId == oid;
-                  final isRejecting = _rejectingOfferId == oid;
-                  Widget card = _offerCard(
-                    offer,
-                    true,
-                    cCardBg,
-                    cCardBorder,
-                    cTextPrimary,
-                    cTextMuted,
-                    cRejectBg,
-                    cRejectText,
-                    acceptBg,
-                    cBorderC,
+          ),
+          // ── Horizontal swipeable offer cards (responsive) ──
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeOutCubic,
+            height: _offerCardHeight(context),
+            child: PageView.builder(
+              controller: _offerPageCtrl,
+              onPageChanged: (index) {
+                _setState(() => _currentOfferIndex = index);
+                HapticService.selectionClick();
+                // Swiping between offers browses them; it does not draw.
+                // Only an explicit tap on a card builds its route and pins.
+              },
+              itemCount: _pendingOffers.length,
+              itemBuilder: (ctx, i) {
+                final offer = _pendingOffers[i];
+                final oid = (offer['offer_id'] ?? offer['id'] ?? '').toString();
+                final isAnimating = _animatingOfferId == oid;
+                final isRejecting = _rejectingOfferId == oid;
+                Widget card = _offerCard(
+                  offer,
+                  true,
+                  cCardBg,
+                  cCardBorder,
+                  cTextPrimary,
+                  cTextMuted,
+                  cRejectBg,
+                  cRejectText,
+                  acceptBg,
+                  cBorderC,
+                );
+                // Pulse scale on tap-down/tap-up
+                if (isAnimating && _pulseAnim != null) {
+                  card = AnimatedBuilder(
+                    animation: _pulseAnim!,
+                    builder: (_, child) => Transform.scale(
+                      scale: _pulseAnim!.value,
+                      child: child,
+                    ),
+                    child: card,
                   );
-                  // Pulse scale on tap-down/tap-up
-                  if (isAnimating && _pulseAnim != null) {
-                    card = AnimatedBuilder(
-                      animation: _pulseAnim!,
-                      builder: (_, child) => Transform.scale(
-                        scale: _pulseAnim!.value,
+                }
+                // Reject slide-down animation
+                if (isRejecting && _rejectSlideCtrl != null) {
+                  card = AnimatedBuilder(
+                    animation: _rejectSlideCtrl!,
+                    builder: (_, child) => Transform.translate(
+                      offset: Offset(0, _rejectSlideCtrl!.value * 400),
+                      child: Opacity(
+                        opacity:
+                            (1.0 - _rejectSlideCtrl!.value).clamp(0.0, 1.0),
                         child: child,
                       ),
-                      child: card,
-                    );
-                  }
-                  // Reject slide-down animation
-                  if (isRejecting && _rejectSlideCtrl != null) {
-                    card = AnimatedBuilder(
-                      animation: _rejectSlideCtrl!,
-                      builder: (_, child) => Transform.translate(
-                        offset: Offset(0, _rejectSlideCtrl!.value * 400),
-                        child: Opacity(
-                          opacity: (1.0 - _rejectSlideCtrl!.value).clamp(0.0, 1.0),
-                          child: child,
-                        ),
-                      ),
-                      child: card,
-                    );
-                  }
-                  return GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    onTapDown: (_) {
-                      _setState(() => _animatingOfferId = oid);
-                      _pulseCtrl?.forward();
-                    },
-                    onTap: () {
-                      _pulseCtrl?.reverse();
-                      _onOfferCardTap(offer);
-                    },
-                    onTapCancel: () {
-                      _pulseCtrl?.reverse();
-                    },
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-                      child: card,
+                    ),
+                    child: card,
+                  );
+                }
+                return GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTapDown: (_) {
+                    _setState(() => _animatingOfferId = oid);
+                    _pulseCtrl?.forward();
+                  },
+                  onTap: () {
+                    _pulseCtrl?.reverse();
+                    _onOfferCardTap(offer);
+                  },
+                  onTapCancel: () {
+                    _pulseCtrl?.reverse();
+                  },
+                  child: Padding(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+                    child: card,
+                  ),
+                );
+              },
+            ),
+          ),
+          // ── Page indicator dots ──
+          if (_pendingOffers.length > 1)
+            Padding(
+              padding: const EdgeInsets.only(top: 8, bottom: 4),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: List.generate(_pendingOffers.length, (i) {
+                  final active = i == _currentOfferIndex;
+                  return AnimatedContainer(
+                    duration: const Duration(milliseconds: 200),
+                    margin: const EdgeInsets.symmetric(horizontal: 3),
+                    width: active ? 18 : 6,
+                    height: 6,
+                    decoration: BoxDecoration(
+                      color:
+                          active ? _gold : Colors.white.withValues(alpha: 0.25),
+                      borderRadius: BorderRadius.circular(3),
                     ),
                   );
-                },
+                }),
               ),
             ),
-            // ── Page indicator dots ──
-            if (_pendingOffers.length > 1)
-              Padding(
-                padding: const EdgeInsets.only(top: 8, bottom: 4),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: List.generate(_pendingOffers.length, (i) {
-                    final active = i == _currentOfferIndex;
-                    return AnimatedContainer(
-                      duration: const Duration(milliseconds: 200),
-                      margin: const EdgeInsets.symmetric(horizontal: 3),
-                      width: active ? 18 : 6,
-                      height: 6,
-                      decoration: BoxDecoration(
-                        color: active ? _gold : Colors.white.withValues(alpha: 0.25),
-                        borderRadius: BorderRadius.circular(3),
-                      ),
-                    );
-                  }),
-                ),
-              ),
-              // â”€â”€ Scrollable card list (hidden when collapsed) â”€â”€
+          // â”€â”€ Scrollable card list (hidden when collapsed) â”€â”€
 
-              // â”€â”€ "Finding trips" bar at the bottom â”€â”€
-              ClipRect(
-                child: AnimatedSlide(
-                  offset: _hideFindingBar ? const Offset(0, 1) : Offset.zero,
-                  duration: const Duration(milliseconds: 350),
-                  curve: Curves.easeInOut,
-                  child: AnimatedOpacity(
-                    opacity: _hideFindingBar ? 0.0 : 1.0,
-                    duration: const Duration(milliseconds: 300),
-                    child: GestureDetector(
-                      onTap: _hideFindingBar ? null : _showGoOfflineSheet,
-                      onVerticalDragUpdate: _hideFindingBar ? null : (details) {
-                        if (details.delta.dy < -5) {
-                          _showGoOfflineSheet();
-                        }
-                      },
-                      behavior: HitTestBehavior.opaque,
-                      child: Container(
-                        decoration: BoxDecoration(
-                          color: neuBase,
-                          border: Border(
-                            top: BorderSide(
-                              color: Colors.white.withValues(alpha: 0.06),
-                            ),
-                          ),
+          // â”€â”€ "Finding trips" bar at the bottom â”€â”€
+          ClipRect(
+            child: AnimatedSlide(
+              offset: _hideFindingBar ? const Offset(0, 1) : Offset.zero,
+              duration: const Duration(milliseconds: 350),
+              curve: Curves.easeInOut,
+              child: AnimatedOpacity(
+                opacity: _hideFindingBar ? 0.0 : 1.0,
+                duration: const Duration(milliseconds: 300),
+                child: GestureDetector(
+                  onTap: _hideFindingBar ? null : _showGoOfflineSheet,
+                  onVerticalDragUpdate: _hideFindingBar
+                      ? null
+                      : (details) {
+                          if (details.delta.dy < -5) {
+                            _showGoOfflineSheet();
+                          }
+                        },
+                  behavior: HitTestBehavior.opaque,
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: neuBase,
+                      border: Border(
+                        top: BorderSide(
+                          color: Colors.white.withValues(alpha: 0.06),
                         ),
-                        child: SafeArea(
-                          top: false,
-                          child: SizedBox(
-                            height: 62,
-                            child: Row(
-                              children: [
-                                const SizedBox(width: 16),
-                                Icon(
-                                  Icons.tune_rounded,
-                                  color: Colors.white.withValues(alpha: 0.5),
-                                  size: 22,
-                                ),
-                                const Spacer(),
-                                Text(
-                                  S.of(context).findingTrips,
-                                  style: TextStyle(
-                                    color: Colors.white.withValues(alpha: 0.5),
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                                const Spacer(),
-                                Icon(
-                                  Icons.format_list_bulleted_rounded,
-                                  color: Colors.white.withValues(alpha: 0.5),
-                                  size: 22,
-                                ),
-                                const SizedBox(width: 16),
-                              ],
+                      ),
+                    ),
+                    child: SafeArea(
+                      top: false,
+                      child: SizedBox(
+                        height: 62,
+                        child: Row(
+                          children: [
+                            const SizedBox(width: 16),
+                            Icon(
+                              Icons.tune_rounded,
+                              color: Colors.white.withValues(alpha: 0.5),
+                              size: 22,
                             ),
-                          ),
+                            const Spacer(),
+                            Text(
+                              S.of(context).findingTrips,
+                              style: TextStyle(
+                                color: Colors.white.withValues(alpha: 0.5),
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            const Spacer(),
+                            Icon(
+                              Icons.format_list_bulleted_rounded,
+                              color: Colors.white.withValues(alpha: 0.5),
+                              size: 22,
+                            ),
+                            const SizedBox(width: 16),
+                          ],
                         ),
                       ),
                     ),
                   ),
                 ),
               ),
-            ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -891,8 +961,10 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
           child: Container(
             decoration: BoxDecoration(
               color: surface,
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-              border: Border(top: BorderSide(color: _gold.withValues(alpha: 0.08))),
+              borderRadius:
+                  const BorderRadius.vertical(top: Radius.circular(24)),
+              border:
+                  Border(top: BorderSide(color: _gold.withValues(alpha: 0.08))),
             ),
             child: SafeArea(
               top: false,
@@ -901,184 +973,186 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-              const SizedBox(height: 10),
-              Container(
-                width: 36,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: textMuted.withValues(alpha: 0.3),
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-              const SizedBox(height: 12),
-              SizedBox(
-                height: 40,
-                child: Row(
-                  children: [
-                    const SizedBox(width: 16),
-                    Icon(Icons.tune_rounded, color: textMuted, size: 22),
-                    const Spacer(),
-                    Text(
-                      S.of(context).findingTrips,
-                      style: TextStyle(
-                        color: textMuted,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
+                    const SizedBox(height: 10),
+                    Container(
+                      width: 36,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: textMuted.withValues(alpha: 0.3),
+                        borderRadius: BorderRadius.circular(2),
                       ),
                     ),
-                    const Spacer(),
-                    Icon(
-                      Icons.format_list_bulleted_rounded,
-                      color: textMuted,
-                      size: 22,
-                    ),
-                    const SizedBox(width: 16),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 12),
-              Divider(height: 1, color: borderC),
-              const SizedBox(height: 12),
-              const SizedBox(height: 16),
-              Divider(height: 1, color: borderC),
-              const SizedBox(height: 16),
-              Text(
-                S.of(context).recommendedForYou,
-                style: TextStyle(
-                  color: textPrimary,
-                  fontSize: 17,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-              const SizedBox(height: 16),
-              _panelItem(
-                Icons.bar_chart_rounded,
-                S.of(context).seeEarningsTrends,
-                panelItemIcon,
-                panelItemText,
-                panelItemChevron,
-                () {
-                  Navigator.pop(context);
-                  Navigator.push(
-                    context,
-                    slideFromRightRoute(const DriverEarningsScreen()),
-                  );
-                },
-              ),
-              _panelItem(
-                Icons.star_outline_rounded,
-                S.of(context).seeUpcomingPromotions,
-                panelItemIcon,
-                panelItemText,
-                panelItemChevron,
-                () {
-                  Navigator.pop(context);
-                  Navigator.push(
-                    context,
-                    slideFromRightRoute(const DriverPromosScreen()),
-                  );
-                },
-              ),
-              _panelItem(
-                Icons.access_time_rounded,
-                S.of(context).seeDrivingTime,
-                panelItemIcon,
-                panelItemText,
-                panelItemChevron,
-                () {
-                  Navigator.pop(context);
-                  Navigator.push(
-                    context,
-                    slideFromRightRoute(const DriverAnalyticsScreen()),
-                  );
-                },
-              ),
-              const SizedBox(height: 20),
-              // PAUSE and GO OFFLINE buttons row
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: [
-                  // PAUSE button
-                  GestureDetector(
-                    onTap: () {
-                      Navigator.pop(context);
-                      _pauseAvailability();
-                    },
-                    child: Column(
-                      children: [
-                        Container(
-                          width: 62,
-                          height: 62,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: const Color(0xFFFFA500).withValues(alpha: 0.15),
-                            border: Border.all(
-                              color: const Color(0xFFFFA500).withValues(alpha: 0.3),
-                              width: 2,
+                    const SizedBox(height: 12),
+                    SizedBox(
+                      height: 40,
+                      child: Row(
+                        children: [
+                          const SizedBox(width: 16),
+                          Icon(Icons.tune_rounded, color: textMuted, size: 22),
+                          const Spacer(),
+                          Text(
+                            S.of(context).findingTrips,
+                            style: TextStyle(
+                              color: textMuted,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
                             ),
                           ),
-                          child: const Icon(
-                            Icons.pause_circle_filled_rounded,
-                            color: Color(0xFFFFA500),
-                            size: 26,
+                          const Spacer(),
+                          Icon(
+                            Icons.format_list_bulleted_rounded,
+                            color: textMuted,
+                            size: 22,
+                          ),
+                          const SizedBox(width: 16),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Divider(height: 1, color: borderC),
+                    const SizedBox(height: 12),
+                    const SizedBox(height: 16),
+                    Divider(height: 1, color: borderC),
+                    const SizedBox(height: 16),
+                    Text(
+                      S.of(context).recommendedForYou,
+                      style: TextStyle(
+                        color: textPrimary,
+                        fontSize: 17,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    _panelItem(
+                      Icons.bar_chart_rounded,
+                      S.of(context).seeEarningsTrends,
+                      panelItemIcon,
+                      panelItemText,
+                      panelItemChevron,
+                      () {
+                        Navigator.pop(context);
+                        Navigator.push(
+                          context,
+                          slideFromRightRoute(const DriverEarningsScreen()),
+                        );
+                      },
+                    ),
+                    _panelItem(
+                      Icons.star_outline_rounded,
+                      S.of(context).seeUpcomingPromotions,
+                      panelItemIcon,
+                      panelItemText,
+                      panelItemChevron,
+                      () {
+                        Navigator.pop(context);
+                        Navigator.push(
+                          context,
+                          slideFromRightRoute(const DriverPromosScreen()),
+                        );
+                      },
+                    ),
+                    _panelItem(
+                      Icons.access_time_rounded,
+                      S.of(context).seeDrivingTime,
+                      panelItemIcon,
+                      panelItemText,
+                      panelItemChevron,
+                      () {
+                        Navigator.pop(context);
+                        Navigator.push(
+                          context,
+                          slideFromRightRoute(const DriverAnalyticsScreen()),
+                        );
+                      },
+                    ),
+                    const SizedBox(height: 20),
+                    // PAUSE and GO OFFLINE buttons row
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                      children: [
+                        // PAUSE button
+                        GestureDetector(
+                          onTap: () {
+                            Navigator.pop(context);
+                            _pauseAvailability();
+                          },
+                          child: Column(
+                            children: [
+                              Container(
+                                width: 62,
+                                height: 62,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color: const Color(0xFFFFA500)
+                                      .withValues(alpha: 0.15),
+                                  border: Border.all(
+                                    color: const Color(0xFFFFA500)
+                                        .withValues(alpha: 0.3),
+                                    width: 2,
+                                  ),
+                                ),
+                                child: const Icon(
+                                  Icons.pause_circle_filled_rounded,
+                                  color: Color(0xFFFFA500),
+                                  size: 26,
+                                ),
+                              ),
+                              const SizedBox(height: 6),
+                              Text(
+                                'PAUSE'.toUpperCase(),
+                                style: const TextStyle(
+                                  color: Color(0xFFFFA500),
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
-                        const SizedBox(height: 6),
-                        Text(
-                          'PAUSE'.toUpperCase(),
-                          style: const TextStyle(
-                            color: Color(0xFFFFA500),
-                            fontSize: 12,
-                            fontWeight: FontWeight.w800,
+                        // GO OFFLINE button
+                        GestureDetector(
+                          onTap: () {
+                            Navigator.pop(context);
+                            _goOffline();
+                          },
+                          child: Column(
+                            children: [
+                              Container(
+                                width: 62,
+                                height: 62,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color: const Color(
+                                    0xFFCC3333,
+                                  ).withValues(alpha: 0.15),
+                                  border: Border.all(
+                                    color: const Color(
+                                      0xFFCC3333,
+                                    ).withValues(alpha: 0.3),
+                                    width: 2,
+                                  ),
+                                ),
+                                child: const Icon(
+                                  Icons.pan_tool_rounded,
+                                  color: Color(0xFFCC3333),
+                                  size: 26,
+                                ),
+                              ),
+                              const SizedBox(height: 6),
+                              Text(
+                                S.of(context).goOffline.toUpperCase(),
+                                style: const TextStyle(
+                                  color: Color(0xFFCC3333),
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                       ],
                     ),
-                  ),
-                  // GO OFFLINE button
-                  GestureDetector(
-                    onTap: () {
-                      Navigator.pop(context);
-                      _goOffline();
-                    },
-                    child: Column(
-                      children: [
-                        Container(
-                          width: 62,
-                          height: 62,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: const Color(
-                              0xFFCC3333,
-                            ).withValues(alpha: 0.15),
-                            border: Border.all(
-                              color: const Color(
-                                0xFFCC3333,
-                              ).withValues(alpha: 0.3),
-                              width: 2,
-                            ),
-                          ),
-                          child: const Icon(
-                            Icons.pan_tool_rounded,
-                            color: Color(0xFFCC3333),
-                            size: 26,
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        Text(
-                          S.of(context).goOffline.toUpperCase(),
-                          style: const TextStyle(
-                            color: Color(0xFFCC3333),
-                            fontSize: 12,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 20),
+                    const SizedBox(height: 20),
                   ],
                 ),
               ),
@@ -1110,7 +1184,8 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
         s += 5;
       } while (b >= 0x20);
       lat += (r & 1) != 0 ? ~(r >> 1) : (r >> 1);
-      s = 0; r = 0;
+      s = 0;
+      r = 0;
       do {
         b = encoded.codeUnitAt(i++) - 63;
         r |= (b & 0x1F) << s;
@@ -1173,7 +1248,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
 
     // Pins
     final driverPin = 'pin-s-car+1a73e8($dLng,$dLat)';
-    final pickupPin  = 'pin-s+00c853($pLng,$pLat)';
+    final pickupPin = 'pin-s+00c853($pLng,$pLat)';
     final dropoffPin = 'pin-s+333333($oLng,$oLat)';
 
     String pathOverlay;
@@ -1185,7 +1260,9 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
         sampled.add(allPts[k]);
       }
       if (sampled.last != allPts.last) sampled.add(allPts.last);
-      final coords = sampled.map((p) => '${p[0].toStringAsFixed(5)},${p[1].toStringAsFixed(5)}').join(';');
+      final coords = sampled
+          .map((p) => '${p[0].toStringAsFixed(5)},${p[1].toStringAsFixed(5)}')
+          .join(';');
       pathOverlay = 'path-4+3b82f6-1($coords)';
     } else {
       // Fallback: straight line
@@ -1210,8 +1287,6 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
     Color borderC,
   ) {
     const luxGold = Color(0xFFD4AF37);
-    const deepBlack = Color(0xFF0F0F0F);
-    const mutedGray = Color(0xFF9A9A9A);
 
     // Parse offer data with NaN/Infinity guards — backend can send malformed
     // coordinates that crash distance calculations (ceil/toStringAsFixed on NaN).
@@ -1232,7 +1307,8 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
     final pickupLng = _safeDouble(offer['pickup_lng']);
     final dropoffLat = _safeDouble(offer['dropoff_lat']);
     final dropoffLng = _safeDouble(offer['dropoff_lng']);
-    final vehicleType = _mapRideType((offer['vehicle_type'] ?? 'Comfort') as String);
+    final vehicleType =
+        _mapRideType((offer['vehicle_type'] ?? 'Comfort') as String);
     final pickupLL = LatLng(pickupLat, pickupLng);
     final dropoffLL = LatLng(dropoffLat, dropoffLng);
     final pickupAddr = _isGenericAddress(rawPickupAddr)
@@ -1240,7 +1316,9 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
         : rawPickupAddr;
 
     // Cache per offer so we don't re-fetch on every rebuild
-    final offerId = (offer['offer_id'] ?? offer['id'] ?? '${pickupLat}_$pickupLng').toString();
+    final offerId =
+        (offer['offer_id'] ?? offer['id'] ?? '${pickupLat}_$pickupLng')
+            .toString();
 
     // Use real Directions API metrics from route cache when available,
     // fall back to haversine estimate.
@@ -1278,7 +1356,11 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
       tripDistMi = td * 0.621371;
     }
 
-    if (_pos != null && pickupLat != 0 && pickupLng != 0 && dropoffLat != 0 && dropoffLng != 0) {
+    if (_pos != null &&
+        pickupLat != 0 &&
+        pickupLng != 0 &&
+        dropoffLat != 0 &&
+        dropoffLng != 0) {
       _offerMapUrlCache.putIfAbsent(
         offerId,
         () => _buildOfferMapUrl(_pos!, pickupLL, dropoffLL),
@@ -1289,33 +1371,15 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
 
     return Container(
       clipBehavior: Clip.antiAlias,
-      decoration: BoxDecoration(
-        color: deepBlack,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: const Color(0xFFE8C547).withValues(alpha: 0.25),
-          width: 1,
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.45),
-            blurRadius: 24,
-            spreadRadius: 2,
-            offset: const Offset(0, 8),
-          ),
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.20),
-            blurRadius: 48,
-            spreadRadius: 0,
-            offset: const Offset(0, 16),
-          ),
-        ],
-      ),
+      // The card is the app's raised surface, not a black panel with a gold
+      // outline. The gold now lives on the fare, the metrics and the
+      // countdown, where it means something.
+      decoration: neuBox(radius: 20),
       child: Stack(
         clipBehavior: Clip.none,
         children: [
           Padding(
-            padding: EdgeInsets.fromLTRB(12, isExpanded ? 8 : 6, 12, isExpanded ? 8 : 6),
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 14),
             child: AnimatedSwitcher(
               duration: const Duration(milliseconds: 350),
               switchInCurve: Curves.easeOutCubic,
@@ -1323,50 +1387,20 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
               transitionBuilder: (child, anim) =>
                   FadeTransition(opacity: anim, child: child),
               child: _buildNormalCardContent(
-                          offer: offer,
-                          offerId: offerId,
-                          fare: fare,
-                          rating: rating,
-                          riderIsNew: riderIsNew,
-                          hasRating: hasRating,
-                          vehicleType: vehicleType,
-                          etaToPickup: etaToPickup,
-                          distToPickupMi: distToPickupMi,
-                          pickupAddr: pickupAddr,
-                          tripEta: tripEta,
-                          tripDistMi: tripDistMi,
-                          dropoffAddr: dropoffAddr,
-                          isExpanded: isExpanded,
-                        ),
-            ),
-          ),
-          // X Reject button — top-right corner of the card
-          Positioned(
-            right: 6,
-            top: 6,
-            child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: () {
-                HapticService.lightImpact();
-                _rejectOffer(offer);
-              },
-              child: Container(
-                width: 36,
-                height: 36,
-                alignment: Alignment.center,
-                child: Container(
-                  width: 24,
-                  height: 24,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF1A1A1F),
-                    shape: BoxShape.circle,
-                    border: Border.all(
-                      color: const Color(0xFFE53935).withValues(alpha: 0.4),
-                      width: 1,
-                    ),
-                  ),
-                  child: const Icon(Icons.close, color: Color(0xFFE53935), size: 14),
-                ),
+                offer: offer,
+                offerId: offerId,
+                fare: fare,
+                rating: rating,
+                riderIsNew: riderIsNew,
+                hasRating: hasRating,
+                vehicleType: vehicleType,
+                etaToPickup: etaToPickup,
+                distToPickupMi: distToPickupMi,
+                pickupAddr: pickupAddr,
+                tripEta: tripEta,
+                tripDistMi: tripDistMi,
+                dropoffAddr: dropoffAddr,
+                isExpanded: isExpanded,
               ),
             ),
           ),
@@ -1418,8 +1452,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
             '')
         .toString()
         .toLowerCase();
-    final bool isCashRide =
-        paymentMethod == 'cash' || offer['is_cash'] == true;
+    final bool isCashRide = paymentMethod == 'cash' || offer['is_cash'] == true;
 
     // ── Badge policy (2026-04-11, stack-of-badges) ──────────────────
     // Immediate trips paid by card → NO badges (the card is clean).
@@ -1469,15 +1502,21 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
     }
     // Immediate, card-paid trips fall through with no badges at all.
 
+    // What the trip pays per hour of the driver's time — drive-to-pickup
+    // included, because that time is spent whether or not it is paid.
+    // Shown next to the fare so a short expensive trip and a long cheap one
+    // stop looking the same.
+    final totalMin = (etaToPickup + tripEta).clamp(1, 999);
+    final hourly = fare / (totalMin / 60.0);
+
     return Column(
       key: const ValueKey('compact'),
       mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.center,
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         // ── Badges (scheduled / airport / cash) ─────────────────────
         if (badges.isNotEmpty) ...[
           Wrap(
-            alignment: WrapAlignment.center,
             spacing: 6,
             runSpacing: 6,
             children: [
@@ -1486,9 +1525,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
           ),
           const SizedBox(height: 4),
           if (isScheduled) ...[
-            // Scheduled time display — only when VIAJE RESERVADO is on.
             Row(
-              mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 const Icon(Icons.access_time_rounded,
                     size: 14, color: Color(0xFFE8C547)),
@@ -1507,202 +1544,297 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
           ],
         ],
 
-        // ── ROW 2: Price + Tips (centered) ──
+        // ── Fare, hourly rate, and the clock, on one line ───────────
+        // Top-aligned: the clock belongs beside the fare, not floating in
+        // the middle of the three lines under it.
         Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          crossAxisAlignment: CrossAxisAlignment.baseline,
-          textBaseline: TextBaseline.alphabetic,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              '\$${fare.toStringAsFixed(2)}',
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 32,
-                fontWeight: FontWeight.bold,
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.baseline,
+                    textBaseline: TextBaseline.alphabetic,
+                    children: [
+                      Text(
+                        '\$${fare.toStringAsFixed(2)}',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 30,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: -0.5,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        S.of(context).plusTips,
+                        style: const TextStyle(
+                          color: goldAccent,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    S.of(context).offerHourlyRate(hourly.toStringAsFixed(2)),
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.45),
+                      fontSize: 12.5,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      _offerMetric(
+                        Icons.access_time_rounded,
+                        S.of(context).offerDuration(totalMin),
+                      ),
+                      const SizedBox(width: 8),
+                      _offerMetric(
+                        Icons.straighten_rounded,
+                        '${(distToPickupMi + tripDistMi).toStringAsFixed(1)} mi',
+                      ),
+                    ],
+                  ),
+                ],
               ),
             ),
-            const SizedBox(width: 8),
-            Text(
-              '+ Tips',
-              style: const TextStyle(
-                color: goldAccent,
-                fontSize: 14,
-                fontWeight: FontWeight.w500,
+            const SizedBox(width: 10),
+            // The clock, level with the fare. Keyed on the offer so a new
+            // one starts fresh and a rebuild of this one does not.
+            OfferCountdownRing(
+              key: ValueKey('countdown_$offerId'),
+              onExpired: () {
+                if (!mounted) return;
+                _rejectOffer(offer);
+              },
+              // cruise_logo.png, not logoapp.png: the latter is the same
+              // mark baked onto a black square, which inside the ring
+              // showed up as a black box around the car.
+              child: Image.asset(
+                'assets/images/cruise_logo.png',
+                fit: BoxFit.contain,
               ),
             ),
           ],
         ),
-        const SizedBox(height: 2),
-        // ── Rating + Total trip time & distance (centered, gold metrics) ──
+
+        const SizedBox(height: 18),
+
+        // ── Pickup, then dropoff ────────────────────────────────────
+        _offerRoute(
+          pickupMeta: S.of(context).offerAway(
+                etaToPickup,
+                distToPickupMi.toStringAsFixed(1),
+              ),
+          pickupAddr: pickupAddr,
+          dropoffMeta: S.of(context).offerTrip(
+                tripEta,
+                tripDistMi.toStringAsFixed(1),
+              ),
+          dropoffAddr: dropoffAddr,
+        ),
+
+        const SizedBox(height: 16),
+        _offerDivider(),
+        const SizedBox(height: 16),
+
+        // ── Who is riding ───────────────────────────────────────────
         Row(
-          mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            if (riderIsNew)
+            Expanded(
+              child: Text(
+                (offer['rider_name'] as String?) ?? S.of(context).riderFallback,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            // A rider with no rating yet is a new rider — say so. The old
+            // rule showed nothing at all in that case, which is how the
+            // name ended up alone on the row with no way to tell whether
+            // the rating was missing or the rider was.
+            if (riderIsNew || !hasRating)
               Text(
                 S.of(context).newRiderLabel,
-                style: TextStyle(
+                style: const TextStyle(
                   color: goldAccent,
-                  fontSize: 12,
+                  fontSize: 12.5,
                   fontWeight: FontWeight.w600,
                 ),
               )
-            else if (hasRating) ...[
-              Icon(Icons.star_rounded, color: goldAccent, size: 13),
+            else ...[
+              const Icon(Icons.star_rounded, color: goldAccent, size: 15),
               const SizedBox(width: 3),
               Text(
                 rating.toStringAsFixed(1),
                 style: const TextStyle(
                   color: Colors.white,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
                 ),
               ),
             ],
-            if (riderIsNew || hasRating) const SizedBox(width: 12),
-            Icon(Icons.access_time_rounded, color: goldAccent, size: 12),
-            const SizedBox(width: 3),
-            Text(
-              '${etaToPickup + tripEta} min',
-              style: const TextStyle(
-                color: goldAccent,
-                fontSize: 12,
-                fontWeight: FontWeight.w500,
+          ],
+        ),
+
+        const SizedBox(height: 16),
+        _offerDivider(),
+        const SizedBox(height: 16),
+
+        // ── Accept ──────────────────────────────────────────────────
+        _buildAcceptButton(offer, offerId),
+      ],
+    );
+  }
+
+  /// The two stops on one rail, joined by a live gradient line.
+  ///
+  /// No panel behind them: the card is already a raised surface, and a
+  /// second one inside it made the addresses read as a separate widget
+  /// rather than as the trip the fare above is for. The line between the
+  /// markers is what carries "these two are one journey" now that no box
+  /// groups them.
+  Widget _offerRoute({
+    required String pickupMeta,
+    required String pickupAddr,
+    required String dropoffMeta,
+    required String dropoffAddr,
+  }) {
+    const goldAccent = Color(0xFFE8C547);
+    // Both stop blocks are given the same fixed height, so the markers can
+    // be centred on them by arithmetic instead of by eye: half the block,
+    // minus half the marker. Left to the text's natural height the two
+    // would only line up by luck, and drift the moment a font changed.
+    const halfPad = (_kOfferStopH - 11) / 2;
+    // One box around the pair, not one around each. The two stops are a
+    // single journey; a box each said they were two unrelated rows.
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: neuBox(radius: 16),
+      child: IntrinsicHeight(
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            SizedBox(
+              width: 16,
+              child: Column(
+                children: [
+                  const SizedBox(height: halfPad),
+                  Container(
+                    width: 11,
+                    height: 11,
+                    decoration: const BoxDecoration(
+                      color: goldAccent,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                  // Expanded, so the rule runs to whatever height the
+                  // addresses beside it actually take — a fixed height would
+                  // break the moment one of them wrapped to two lines.
+                  const Expanded(
+                    child: Padding(
+                      padding: EdgeInsets.symmetric(vertical: 4),
+                      child: RouteConnectorLine(),
+                    ),
+                  ),
+                  Container(
+                    width: 11,
+                    height: 11,
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(2.5),
+                    ),
+                  ),
+                  const SizedBox(height: halfPad),
+                ],
               ),
             ),
-            const SizedBox(width: 10),
-            Icon(Icons.straighten_rounded, color: goldAccent, size: 12),
-            const SizedBox(width: 3),
-            Text(
-              '${(distToPickupMi + tripDistMi).toStringAsFixed(1)} mi',
-              style: const TextStyle(
-                color: goldAccent,
-                fontSize: 12,
-                fontWeight: FontWeight.w500,
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _offerStopText(pickupMeta, pickupAddr),
+                  const SizedBox(height: 22),
+                  _offerStopText(dropoffMeta, dropoffAddr),
+                ],
               ),
             ),
           ],
         ),
+      ),
+    );
+  }
 
-        const SizedBox(height: 8),
+  Widget _offerDivider() => Container(
+        height: 1,
+        color: Colors.white.withValues(alpha: 0.05),
+      );
 
-        // ── ROW 3: Route indicator (gold ● line ■ with addresses + inline metrics) ──
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-          decoration: BoxDecoration(
-            color: const Color(0xFF1A1A1F),
-            borderRadius: BorderRadius.circular(12),
+  Widget _offerStopText(String meta, String address) {
+    return SizedBox(
+      height: _kOfferStopH,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.center,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            meta,
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.4),
+              fontSize: 11,
+            ),
           ),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Gold ● | ■ indicator column
-              Padding(
-                padding: const EdgeInsets.only(top: 18),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    // Gold filled circle (pickup)
-                    Container(
-                      width: 10,
-                      height: 10,
-                      decoration: const BoxDecoration(
-                        color: Color(0xFFD4A843),
-                        shape: BoxShape.circle,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    // Gold vertical line
-                    Container(
-                      width: 2,
-                      height: 28,
-                      color: const Color(0xFFD4A843).withValues(alpha: 0.4),
-                    ),
-                    const SizedBox(height: 4),
-                    // Black square with gold shadow (dropoff)
-                    Container(
-                      width: 10,
-                      height: 10,
-                      decoration: BoxDecoration(
-                        color: Colors.black,
-                        borderRadius: BorderRadius.circular(2),
-                        boxShadow: const [
-                          BoxShadow(
-                            color: Color(0x55D4A843),
-                            blurRadius: 6,
-                            spreadRadius: 1,
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 10),
-              // Address details
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    // Pickup info
-                    Text(
-                      '$etaToPickup min (${distToPickupMi.toStringAsFixed(1)} mi) away',
-                      style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.4),
-                        fontSize: 11,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      pickupAddr,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w500,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    const SizedBox(height: 10),
-                    // Dropoff info
-                    Text(
-                      '$tripEta min (${tripDistMi.toStringAsFixed(1)} mi) trip',
-                      style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.4),
-                        fontSize: 11,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      dropoffAddr,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w500,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ],
-                ),
-              ),
-            ],
+          const SizedBox(height: 2),
+          Text(
+            address,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+            ),
           ),
-        ),
+        ],
+      ),
+    );
+  }
 
-        const SizedBox(height: 6),
-
-        // ── Divider ──
-        Container(
-          height: 0.5,
-          color: const Color(0xFF333333),
-        ),
-
-        const SizedBox(height: 4),
-
-        // ── ROW 5: Accept button — GOLD — ALWAYS VISIBLE ──
-        _buildAcceptButton(offer, offerId),
-      ],
+  /// A metric in its own raised pill.
+  Widget _offerMetric(IconData icon, String value) {
+    const goldAccent = Color(0xFFE8C547);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: neuBox(radius: 10),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: goldAccent, size: 12),
+          const SizedBox(width: 5),
+          Text(
+            value,
+            style: const TextStyle(
+              color: goldAccent,
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -1718,11 +1850,10 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
     //   scheduled          → 1+ badges (RESERVED [+ AIRPORT] [+ CASH])
     // The Wrap row stays at one line as long as the total stays under
     // ~3 badges, so a single 32-px allowance is enough.
-    final botPad = MediaQuery.of(context).padding.bottom;
     double extra = 0;
     if (_pendingOffers.isNotEmpty) {
       final safeIdx = _currentOfferIndex.clamp(
-        0, (_pendingOffers.length - 1).clamp(0, 999));
+          0, (_pendingOffers.length - 1).clamp(0, 999));
       final offer = _pendingOffers[safeIdx];
 
       final raw = offer['scheduled_at'];
@@ -1748,17 +1879,40 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
       if (hasBadgeRow) extra += 32;
       if (isScheduled) extra += 24; // scheduled time sublabel
     }
-    // Base 253 = old 275 minus 22 for the removed _ShimmerBadge row.
-    return 253 + extra + (botPad > 20 ? botPad - 10 : 0);
+    // Every term of the card's height, so this stops drifting away from
+    // the layout every time a gap changes. Text rows use Roboto's own
+    // line height (~1.17 x the font size), which is what Flutter lays out
+    // with — guessing "about 20" for a 15 px line is what left the Accept
+    // button cut off once already.
+    const double pad = 16 + 14;
+    const double fareBlock = 35.2 + 4 + 14.6 + 10 + 26.1; // fare, rate, pills
+    // + 24 for the box's own vertical padding.
+    const double routeBlock = _kOfferStopH + 22 + _kOfferStopH + 24;
+    const double divider = 16 + 1 + 16;
+    const double riderRow = 17.6;
+    const double accept = 48;
+    // Slack, and a lot of it. Spare space below Accept sits on the card's
+    // own background and cannot be seen; one px too little clips the only
+    // button on the card, which has happened twice.
+    const double slack = 34;
+    const double base = pad +
+        fareBlock +
+        18 +
+        routeBlock +
+        divider +
+        riderRow +
+        divider +
+        accept +
+        slack;
+    return base + extra;
   }
 
   Widget _buildAcceptButton(Map<String, dynamic> offer, String offerId) {
     final bool isAccepting = _offerAcceptState == _OfferAcceptState.routing &&
         _acceptingCardId == offerId;
     return GestureDetector(
-      onTapDown: isAccepting
-          ? null
-          : (_) => _setState(() => _isAcceptPressed = true),
+      onTapDown:
+          isAccepting ? null : (_) => _setState(() => _isAcceptPressed = true),
       onTapUp: isAccepting
           ? null
           : (_) {
@@ -1815,8 +1969,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
     } else if (diff.inMinutes <= 60) {
       return s.schedTimeInMinutes(timeStr, diff.inMinutes);
     } else if (diff.inHours <= 24) {
-      return s.schedTimeInHours(
-          timeStr, diff.inHours, diff.inMinutes % 60);
+      return s.schedTimeInHours(timeStr, diff.inHours, diff.inMinutes % 60);
     } else {
       return s.schedTimeFutureDay(dt.day, dt.month - 1, timeStr);
     }
@@ -1977,7 +2130,8 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
   // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   Widget _routePreviewPanel(bool isDark) {
     final offer = _previewingOffer!;
-    final name = (offer['rider_name'] as String?) ?? S.of(context).riderFallback;
+    final name =
+        (offer['rider_name'] as String?) ?? S.of(context).riderFallback;
     final init = name.isNotEmpty ? name[0].toUpperCase() : '?';
     final rating = _safeDouble(offer['rider_rating']);
     final ratingsCount = _safeDouble(offer['rider_ratings_count']).toInt();
@@ -1994,17 +2148,21 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
     final dropoffLng = _safeDouble(offer['dropoff_lng']);
     final pickupLL = LatLng(pickupLat, pickupLng);
     final dropoffLL = LatLng(dropoffLat, dropoffLng);
-    final vehicleType = _mapRideType((offer['vehicle_type'] ?? 'Comfort') as String);
+    final vehicleType =
+        _mapRideType((offer['vehicle_type'] ?? 'Comfort') as String);
     final pickupAddr = _isGenericAddress(rawPickupAddr2)
         ? (_resolvedAddressCache['${pickupLat}_$pickupLng'] ?? rawPickupAddr2)
         : rawPickupAddr2;
-    final previewOfferId = (offer['offer_id'] ?? offer['id'] ?? '${pickupLat}_$pickupLng').toString();
+    final previewOfferId =
+        (offer['offer_id'] ?? offer['id'] ?? '${pickupLat}_$pickupLng')
+            .toString();
     final cachedPreview = _routeCache[previewOfferId];
     final int etaToPickup;
     final int tripEta;
     final double distToPickupMi;
     final double tripDistMi;
-    if (cachedPreview?.driverToPickupKm != null && cachedPreview?.pickupToDropoffKm != null) {
+    if (cachedPreview?.driverToPickupKm != null &&
+        cachedPreview?.pickupToDropoffKm != null) {
       etaToPickup = (cachedPreview!.driverToPickupMin ?? 1).ceil().clamp(1, 99);
       distToPickupMi = cachedPreview.driverToPickupKm! * 0.621371;
       tripEta = (cachedPreview.pickupToDropoffMin ?? 1).ceil().clamp(1, 99);
@@ -2103,19 +2261,22 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                               Text(
                                 S.of(context).newRiderLabel,
                                 style: const TextStyle(
-                                  color: _gold, fontSize: 12,
+                                  color: _gold,
+                                  fontSize: 12,
                                   fontWeight: FontWeight.w700,
                                 ),
                               )
                             else if (hasRating)
                               Row(
                                 children: [
-                                  const Icon(Icons.star_rounded, color: _gold, size: 13),
+                                  const Icon(Icons.star_rounded,
+                                      color: _gold, size: 13),
                                   const SizedBox(width: 3),
                                   Text(
                                     rating.toStringAsFixed(1),
                                     style: const TextStyle(
-                                      color: _gold, fontSize: 12,
+                                      color: _gold,
+                                      fontSize: 12,
                                       fontWeight: FontWeight.w700,
                                     ),
                                   ),
@@ -2496,9 +2657,6 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
     );
   }
 
-
-
-
   // â”€â”€ IN-TRIP PANEL â”€â”€
   // NAV STAT CHIP (icon + label, used in Google Maps-style ETA strip)
   Widget _navStat(IconData icon, String value, Color color) {
@@ -2518,7 +2676,6 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
       ],
     );
   }
-
 
   // â”€â”€ COMPLETED OVERLAY â”€â”€
   Widget _completedOverlay(
@@ -2830,272 +2987,275 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
             child: child,
           ),
           child: Container(
-          // Raised neumorphic sheet. neuBox() can't be used directly here —
-          // the corner radius animates with the drag fraction — so the neu
-          // tokens and its shadow pair are applied by hand.
-          decoration: BoxDecoration(
-            color: isDark ? neuSurface : surface,
-            borderRadius: radius,
-            border: isDark
-                ? Border.all(color: Colors.white.withValues(alpha: 0.04))
-                : null,
-            boxShadow: isDark
-                ? [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.55),
-                      offset: const Offset(6, 6),
-                      blurRadius: 14,
-                    ),
-                    BoxShadow(
-                      color: Colors.white.withValues(alpha: 0.045),
-                      offset: const Offset(-4, -4),
-                      blurRadius: 10,
-                    ),
-                  ]
-                : [
-                    BoxShadow(
-                      color: shadowC,
-                      blurRadius: 20,
-                      offset: const Offset(0, -4),
-                    ),
-                  ],
-          ),
-          clipBehavior: Clip.antiAlias,
-          child: Column(
-            children: [
-              const SizedBox(height: 8),
-              _handle(isDark),
-              // Arrow icon: up when collapsed, down when expanded
-              Icon(
-                t > 0.5 ? Icons.keyboard_arrow_down_rounded : Icons.keyboard_arrow_up_rounded,
-                color: textMuted.withValues(alpha: 0.5),
-                size: 16,
-              ),
-              // Header row — icons sit in sunken neu wells
-              SizedBox(
-                height: 34,
-                child: Row(
-                  children: [
-                    const SizedBox(width: 14),
-                    // Safety on the left, Reserved on the right — only here,
-                    // in the open panel, where each has room for a word.
-                    _panelAction(
-                      Icons.health_and_safety_outlined,
-                      isDark,
-                      textMuted,
-                      active: false,
-                      semanticLabel: S.of(context).safetyHub,
-                      onTap: () {
-                        HapticService.selectionClick();
-                        Navigator.push(
-                          context,
-                          slideFromRightRoute(const SafetyScreen()),
-                        );
-                      },
-                    ),
-                    const Spacer(),
-                    // The alternating status, not a fixed word.
-                    //
-                    // This is the header the driver reads while waiting —
-                    // _floatingPanel is what the searching phase renders.
-                    // The label had been written into _searchingBar and into
-                    // the offers sheet, neither of which is on screen here.
-                    _searchingLabel(textMuted),
-                    const Spacer(),
-                    _panelAction(
-                      Icons.event_available_rounded,
-                      isDark,
-                      textMuted,
-                      active: _panelShowsReserve,
-                      badge: _scheduledAvailCount,
-                      semanticLabel: S.of(context).reservedLabel,
-                      onTap: () {
-                        HapticService.selectionClick();
-                        // Swaps the body below, in place. Reserved rides are
-                        // a different answer to the same question the panel
-                        // is already answering — not another screen.
-                        _setState(
-                            () => _panelShowsReserve = !_panelShowsReserve);
-                        if (_panelShowsReserve) _fetchScheduledCount();
-                      },
-                    ),
-                    const SizedBox(width: 14),
-                  ],
-                ),
-              ),
-              // The divider, and the travelling light that now lives on it.
-              //
-              // Fixed here in the Column rather than scrolled with the list.
-              // It is the rule between the header and the content, so it
-              // belongs to the header — and a light that slides off the top
-              // of the screen the moment the driver scrolls is not an
-              // indicator of anything.
-              //
-              // Its own ListenableBuilder: the pulse ticks sixty times a
-              // second, and the builder above deliberately passes the whole
-              // sheet through as `child` so none of it rebuilds at that
-              // rate. This is the one part that has to.
-              if (t > 0.05) ...[
-                const SizedBox(height: 12),
-                Opacity(
-                  opacity: t.clamp(0.0, 1.0),
-                  child: ListenableBuilder(
-                    listenable: _searchPulseVal,
-                    builder: (_, __) => _SearchingDividerLine(
-                      progress: _searchPulseVal.value,
-                      baseColor: borderC,
-                    ),
-                  ),
-                ),
-              ],
-              // Expanded content fades in
-              if (t > 0.05)
-                Expanded(
-                  child: Opacity(
-                    opacity: t.clamp(0.0, 1.0),
-                    child: ListView(
-                      padding: EdgeInsets.zero,
-                      physics: t > 0.8
-                          ? const ClampingScrollPhysics()
-                          : const NeverScrollableScrollPhysics(),
-                      children: [
-                        const SizedBox(height: 18),
-                        // "Earnings", not "Recommended for you".
-                        //
-                        // The old heading introduced three links to other
-                        // screens. What follows it now is the figures
-                        // themselves, and a heading that promises
-                        // recommendations above a bar chart is just wrong.
-                        // Left-aligned and small, the same label the home
-                        // sheet puts over the same card.
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 18),
-                          child: Text(
-                            S.of(context).earningsTitle.toUpperCase(),
-                            style: TextStyle(
-                              fontFamily: 'Poppins',
-                              color: Colors.white.withValues(alpha: 0.45),
-                              fontSize: 11,
-                              fontWeight: FontWeight.w700,
-                              letterSpacing: 1.4,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 10),
-                        // Earnings, or the reserved rides — the same slot,
-                        // crossed over rather than swapped, and the height
-                        // eased so the button below never jumps.
-                        AnimatedSize(
-                          duration: const Duration(milliseconds: 420),
-                          curve: Curves.easeInOutCubicEmphasized,
-                          alignment: Alignment.topCenter,
-                          child: AnimatedSwitcher(
-                            duration: const Duration(milliseconds: 340),
-                            switchInCurve: Curves.easeOutCubic,
-                            switchOutCurve: Curves.easeIn,
-                            layoutBuilder: (current, previous) => Stack(
-                              alignment: Alignment.topCenter,
-                              children: [
-                                ...previous,
-                                if (current != null) current,
-                              ],
-                            ),
-                            child: _panelShowsReserve
-                                ? KeyedSubtree(
-                                    key: const ValueKey('reserve'),
-                                    child: _panelReserveBody(isDark),
-                                  )
-                                : KeyedSubtree(
-                                    key: const ValueKey('earnings'),
-                                    child: _panelEarningsBody(isDark, borderC),
-                                  ),
-                          ),
-                        ),
-                        // Reserved by the pinned button below now.
-                        const SizedBox(height: 8),
-                      ],
-                    ),
-                  ),
-                )
-              else
-                const Spacer(),
-              // Pinned, not scrolled.
-              //
-              // This is the one control that ends the shift, and it was
-              // the last row of the list — so on a short panel it sat
-              // wherever the content happened to stop, and on a long one
-              // the driver had to scroll to reach it. A button that ends
-              // the working day belongs in the same place every time it
-              // is looked for.
-              if (t > 0.05)
-                Opacity(
-                  opacity: t.clamp(0.0, 1.0),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                    // A clear gap before the one button that ends the
-                    // shift, so it never reads as another row in the list
-                    // above it.
-                    const SizedBox(height: 26),
-                    // GO OFFLINE button — raised neu disc, red accent
-                    Center(
-                      child: GestureDetector(
-                        onTap: _goOffline,
-                        child: Column(
-                          children: [
-                            Container(
-                              width: 62,
-                              height: 62,
-                              alignment: Alignment.center,
-                              decoration: isDark
-                                  ? neuBox(
-                                      radius: 31,
-                                      borderColor: const Color(
-                                        0xFFCC3333,
-                                      ).withValues(alpha: 0.35),
-                                      borderWidth: 1.5,
-                                    )
-                                  : BoxDecoration(
-                                      shape: BoxShape.circle,
-                                      color: const Color(
-                                        0xFFCC3333,
-                                      ).withValues(alpha: 0.15),
-                                      border: Border.all(
-                                        color: const Color(
-                                          0xFFCC3333,
-                                        ).withValues(alpha: 0.3),
-                                        width: 2,
-                                      ),
-                                    ),
-                              child: const Icon(
-                                Icons.pan_tool_rounded,
-                                color: Color(0xFFCC3333),
-                                size: 26,
-                              ),
-                            ),
-                            const SizedBox(height: 6),
-                            Text(
-                              S.of(context).goOffline.toUpperCase(),
-                              style: const TextStyle(
-                                color: Color(0xFFCC3333),
-                                fontSize: 12,
-                                fontWeight: FontWeight.w800,
-                              ),
-                            ),
-                          ],
-                        ),
+            // Raised neumorphic sheet. neuBox() can't be used directly here —
+            // the corner radius animates with the drag fraction — so the neu
+            // tokens and its shadow pair are applied by hand.
+            decoration: BoxDecoration(
+              color: isDark ? neuSurface : surface,
+              borderRadius: radius,
+              border: isDark
+                  ? Border.all(color: Colors.white.withValues(alpha: 0.04))
+                  : null,
+              boxShadow: isDark
+                  ? [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.55),
+                        offset: const Offset(6, 6),
+                        blurRadius: 14,
                       ),
-                    ),
-                    // Just the home indicator's own space. The 20 px
-                    // on top of it left the button floating above a
-                    // band of nothing at the foot of the panel.
-                      SizedBox(height: botPad),
+                      BoxShadow(
+                        color: Colors.white.withValues(alpha: 0.045),
+                        offset: const Offset(-4, -4),
+                        blurRadius: 10,
+                      ),
+                    ]
+                  : [
+                      BoxShadow(
+                        color: shadowC,
+                        blurRadius: 20,
+                        offset: const Offset(0, -4),
+                      ),
+                    ],
+            ),
+            clipBehavior: Clip.antiAlias,
+            child: Column(
+              children: [
+                const SizedBox(height: 8),
+                _handle(isDark),
+                // Arrow icon: up when collapsed, down when expanded
+                Icon(
+                  t > 0.5
+                      ? Icons.keyboard_arrow_down_rounded
+                      : Icons.keyboard_arrow_up_rounded,
+                  color: textMuted.withValues(alpha: 0.5),
+                  size: 16,
+                ),
+                // Header row — icons sit in sunken neu wells
+                SizedBox(
+                  height: 34,
+                  child: Row(
+                    children: [
+                      const SizedBox(width: 14),
+                      // Safety on the left, Reserved on the right — only here,
+                      // in the open panel, where each has room for a word.
+                      _panelAction(
+                        Icons.health_and_safety_outlined,
+                        isDark,
+                        textMuted,
+                        active: false,
+                        semanticLabel: S.of(context).safetyHub,
+                        onTap: () {
+                          HapticService.selectionClick();
+                          Navigator.push(
+                            context,
+                            slideFromRightRoute(const SafetyScreen()),
+                          );
+                        },
+                      ),
+                      const Spacer(),
+                      // The alternating status, not a fixed word.
+                      //
+                      // This is the header the driver reads while waiting —
+                      // _floatingPanel is what the searching phase renders.
+                      // The label had been written into _searchingBar and into
+                      // the offers sheet, neither of which is on screen here.
+                      _searchingLabel(textMuted),
+                      const Spacer(),
+                      _panelAction(
+                        Icons.event_available_rounded,
+                        isDark,
+                        textMuted,
+                        active: _panelShowsReserve,
+                        badge: _scheduledAvailCount,
+                        semanticLabel: S.of(context).reservedLabel,
+                        onTap: () {
+                          HapticService.selectionClick();
+                          // Swaps the body below, in place. Reserved rides are
+                          // a different answer to the same question the panel
+                          // is already answering — not another screen.
+                          _setState(
+                              () => _panelShowsReserve = !_panelShowsReserve);
+                          if (_panelShowsReserve) _fetchScheduledCount();
+                        },
+                      ),
+                      const SizedBox(width: 14),
                     ],
                   ),
                 ),
-            ],
+                // The divider, and the travelling light that now lives on it.
+                //
+                // Fixed here in the Column rather than scrolled with the list.
+                // It is the rule between the header and the content, so it
+                // belongs to the header — and a light that slides off the top
+                // of the screen the moment the driver scrolls is not an
+                // indicator of anything.
+                //
+                // Its own ListenableBuilder: the pulse ticks sixty times a
+                // second, and the builder above deliberately passes the whole
+                // sheet through as `child` so none of it rebuilds at that
+                // rate. This is the one part that has to.
+                if (t > 0.05) ...[
+                  const SizedBox(height: 12),
+                  Opacity(
+                    opacity: t.clamp(0.0, 1.0),
+                    child: ListenableBuilder(
+                      listenable: _searchPulseVal,
+                      builder: (_, __) => _SearchingDividerLine(
+                        progress: _searchPulseVal.value,
+                        baseColor: borderC,
+                      ),
+                    ),
+                  ),
+                ],
+                // Expanded content fades in
+                if (t > 0.05)
+                  Expanded(
+                    child: Opacity(
+                      opacity: t.clamp(0.0, 1.0),
+                      child: ListView(
+                        padding: EdgeInsets.zero,
+                        physics: t > 0.8
+                            ? const ClampingScrollPhysics()
+                            : const NeverScrollableScrollPhysics(),
+                        children: [
+                          const SizedBox(height: 18),
+                          // "Earnings", not "Recommended for you".
+                          //
+                          // The old heading introduced three links to other
+                          // screens. What follows it now is the figures
+                          // themselves, and a heading that promises
+                          // recommendations above a bar chart is just wrong.
+                          // Left-aligned and small, the same label the home
+                          // sheet puts over the same card.
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 18),
+                            child: Text(
+                              S.of(context).earningsTitle.toUpperCase(),
+                              style: TextStyle(
+                                fontFamily: 'Poppins',
+                                color: Colors.white.withValues(alpha: 0.45),
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: 1.4,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 10),
+                          // Earnings, or the reserved rides — the same slot,
+                          // crossed over rather than swapped, and the height
+                          // eased so the button below never jumps.
+                          AnimatedSize(
+                            duration: const Duration(milliseconds: 420),
+                            curve: Curves.easeInOutCubicEmphasized,
+                            alignment: Alignment.topCenter,
+                            child: AnimatedSwitcher(
+                              duration: const Duration(milliseconds: 340),
+                              switchInCurve: Curves.easeOutCubic,
+                              switchOutCurve: Curves.easeIn,
+                              layoutBuilder: (current, previous) => Stack(
+                                alignment: Alignment.topCenter,
+                                children: [
+                                  ...previous,
+                                  if (current != null) current,
+                                ],
+                              ),
+                              child: _panelShowsReserve
+                                  ? KeyedSubtree(
+                                      key: const ValueKey('reserve'),
+                                      child: _panelReserveBody(isDark),
+                                    )
+                                  : KeyedSubtree(
+                                      key: const ValueKey('earnings'),
+                                      child:
+                                          _panelEarningsBody(isDark, borderC),
+                                    ),
+                            ),
+                          ),
+                          // Reserved by the pinned button below now.
+                          const SizedBox(height: 8),
+                        ],
+                      ),
+                    ),
+                  )
+                else
+                  const Spacer(),
+                // Pinned, not scrolled.
+                //
+                // This is the one control that ends the shift, and it was
+                // the last row of the list — so on a short panel it sat
+                // wherever the content happened to stop, and on a long one
+                // the driver had to scroll to reach it. A button that ends
+                // the working day belongs in the same place every time it
+                // is looked for.
+                if (t > 0.05)
+                  Opacity(
+                    opacity: t.clamp(0.0, 1.0),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        // A clear gap before the one button that ends the
+                        // shift, so it never reads as another row in the list
+                        // above it.
+                        const SizedBox(height: 26),
+                        // GO OFFLINE button — raised neu disc, red accent
+                        Center(
+                          child: GestureDetector(
+                            onTap: _goOffline,
+                            child: Column(
+                              children: [
+                                Container(
+                                  width: 62,
+                                  height: 62,
+                                  alignment: Alignment.center,
+                                  decoration: isDark
+                                      ? neuBox(
+                                          radius: 31,
+                                          borderColor: const Color(
+                                            0xFFCC3333,
+                                          ).withValues(alpha: 0.35),
+                                          borderWidth: 1.5,
+                                        )
+                                      : BoxDecoration(
+                                          shape: BoxShape.circle,
+                                          color: const Color(
+                                            0xFFCC3333,
+                                          ).withValues(alpha: 0.15),
+                                          border: Border.all(
+                                            color: const Color(
+                                              0xFFCC3333,
+                                            ).withValues(alpha: 0.3),
+                                            width: 2,
+                                          ),
+                                        ),
+                                  child: const Icon(
+                                    Icons.pan_tool_rounded,
+                                    color: Color(0xFFCC3333),
+                                    size: 26,
+                                  ),
+                                ),
+                                const SizedBox(height: 6),
+                                Text(
+                                  S.of(context).goOffline.toUpperCase(),
+                                  style: const TextStyle(
+                                    color: Color(0xFFCC3333),
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        // Just the home indicator's own space. The 20 px
+                        // on top of it left the button floating above a
+                        // band of nothing at the foot of the panel.
+                        SizedBox(height: botPad),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
           ),
-        ),
         ),
       ),
     );
@@ -3172,8 +3332,32 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
     final peak = values.fold<double>(0, math.max);
     final labels = week
         ? _daySeriesLabels
-        : const ['12AM', '', '', '', '', '', '6AM', '', '', '', '', '',
-                 '12PM', '', '', '', '', '', '6PM', '', '', '', '', ''];
+        : const [
+            '12AM',
+            '',
+            '',
+            '',
+            '',
+            '',
+            '6AM',
+            '',
+            '',
+            '',
+            '',
+            '',
+            '12PM',
+            '',
+            '',
+            '',
+            '',
+            '',
+            '6PM',
+            '',
+            '',
+            '',
+            '',
+            ''
+          ];
 
     Widget tab(String text, bool on, VoidCallback onTap) {
       return GestureDetector(
@@ -3361,61 +3545,61 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
           curve: Curves.easeInOutCubicEmphasized,
           alignment: Alignment.centerLeft,
           child: AnimatedSwitcher(
-          duration: const Duration(milliseconds: 520),
-          // Material's emphasized easing, the same one the rider's vehicle
-          // row uses: leaves slowly, arrives slowly. A short slide, because
-          // a long one on two words reads as a card being dealt.
-          switchInCurve: Curves.easeInOutCubicEmphasized,
-          switchOutCurve: Curves.easeInOutCubicEmphasized,
-          // Stacked and centred, so the outgoing line holds its place while
-          // it fades instead of collapsing and shoving the incoming one.
-          layoutBuilder: (current, previous) => Stack(
-            alignment: Alignment.centerLeft,
-            children: [
-              ...previous,
-              if (current != null) current,
-            ],
-          ),
-          transitionBuilder: (child, anim) => FadeTransition(
-            opacity: anim,
-            child: SlideTransition(
-              position: Tween<Offset>(
-                begin: const Offset(0, 0.18),
-                end: Offset.zero,
-              ).animate(anim),
-              child: child,
-            ),
-          ),
-          child: IntrinsicWidth(
-            key: ValueKey<int>(_statusLine),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
+            duration: const Duration(milliseconds: 520),
+            // Material's emphasized easing, the same one the rider's vehicle
+            // row uses: leaves slowly, arrives slowly. A short slide, because
+            // a long one on two words reads as a card being dealt.
+            switchInCurve: Curves.easeInOutCubicEmphasized,
+            switchOutCurve: Curves.easeInOutCubicEmphasized,
+            // Stacked and centred, so the outgoing line holds its place while
+            // it fades instead of collapsing and shoving the incoming one.
+            layoutBuilder: (current, previous) => Stack(
+              alignment: Alignment.centerLeft,
               children: [
-                Text(
-                  '$text${'.' * dots}',
-                  maxLines: 1,
-                  overflow: TextOverflow.clip,
-                  // Read as loudly as "You're offline" does on the home
-                  // sheet, which is the same sentence about the same driver
-                  // in the opposite state. It was drawn in the muted grey
-                  // the icons beside it use, so the one line saying what the
-                  // app is doing was dimmer than the furniture around it.
-                  style: const TextStyle(
-                    fontFamily: 'Poppins',
-                    color: Colors.white,
-                    fontSize: 15,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                // The sweep bar that used to sit under these words is
-                // gone. The same travelling light runs the divider below
-                // the header now — one indicator on a longer track,
-                // instead of a second one three pixels under the text.
+                ...previous,
+                if (current != null) current,
               ],
             ),
+            transitionBuilder: (child, anim) => FadeTransition(
+              opacity: anim,
+              child: SlideTransition(
+                position: Tween<Offset>(
+                  begin: const Offset(0, 0.18),
+                  end: Offset.zero,
+                ).animate(anim),
+                child: child,
+              ),
+            ),
+            child: IntrinsicWidth(
+              key: ValueKey<int>(_statusLine),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '$text${'.' * dots}',
+                    maxLines: 1,
+                    overflow: TextOverflow.clip,
+                    // Read as loudly as "You're offline" does on the home
+                    // sheet, which is the same sentence about the same driver
+                    // in the opposite state. It was drawn in the muted grey
+                    // the icons beside it use, so the one line saying what the
+                    // app is doing was dimmer than the furniture around it.
+                    style: const TextStyle(
+                      fontFamily: 'Poppins',
+                      color: Colors.white,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  // The sweep bar that used to sit under these words is
+                  // gone. The same travelling light runs the divider below
+                  // the header now — one indicator on a longer track,
+                  // instead of a second one three pixels under the text.
+                ],
+              ),
+            ),
           ),
-        ),
         );
       },
     );
@@ -3440,58 +3624,58 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
       button: true,
       label: badge > 0 ? '$semanticLabel, $badge' : semanticLabel,
       child: GestureDetector(
-      onTap: onTap,
-      behavior: HitTestBehavior.opaque,
-      child: Container(
-        width: 38,
-        height: 34,
-        alignment: Alignment.center,
-        decoration: isDark
-            ? neuBox(
-                radius: 14,
-                pressed: true,
-                borderColor: active ? _gold.withValues(alpha: 0.45) : null,
-                borderWidth: active ? 1 : 0,
-              )
-            : BoxDecoration(
-                color: Colors.black.withValues(alpha: 0.04),
-                borderRadius: BorderRadius.circular(14),
-              ),
-        // The icon alone. Two words in a 34 px header crowded the status
-        // out of the middle, and both symbols are ones the driver already
-        // knows from the buttons on the map behind this panel.
-        child: Stack(
-          clipBehavior: Clip.none,
+        onTap: onTap,
+        behavior: HitTestBehavior.opaque,
+        child: Container(
+          width: 38,
+          height: 34,
           alignment: Alignment.center,
-          children: [
-            Icon(icon, size: 19, color: tint),
-            if (badge > 0)
-              Positioned(
-                top: -3,
-                right: -5,
-                child: Container(
-                  constraints: const BoxConstraints(minWidth: 15),
-                  height: 15,
-                  padding: const EdgeInsets.symmetric(horizontal: 4),
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                    color: _gold,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(
-                    '$badge',
-                    style: const TextStyle(
-                      fontFamily: 'Poppins',
-                      color: Color(0xFF0B0B0F),
-                      fontSize: 9.5,
-                      fontWeight: FontWeight.w800,
+          decoration: isDark
+              ? neuBox(
+                  radius: 14,
+                  pressed: true,
+                  borderColor: active ? _gold.withValues(alpha: 0.45) : null,
+                  borderWidth: active ? 1 : 0,
+                )
+              : BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.04),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+          // The icon alone. Two words in a 34 px header crowded the status
+          // out of the middle, and both symbols are ones the driver already
+          // knows from the buttons on the map behind this panel.
+          child: Stack(
+            clipBehavior: Clip.none,
+            alignment: Alignment.center,
+            children: [
+              Icon(icon, size: 19, color: tint),
+              if (badge > 0)
+                Positioned(
+                  top: -3,
+                  right: -5,
+                  child: Container(
+                    constraints: const BoxConstraints(minWidth: 15),
+                    height: 15,
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: _gold,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      '$badge',
+                      style: const TextStyle(
+                        fontFamily: 'Poppins',
+                        color: Color(0xFF0B0B0F),
+                        fontSize: 9.5,
+                        fontWeight: FontWeight.w800,
+                      ),
                     ),
                   ),
                 ),
-              ),
-          ],
+            ],
+          ),
         ),
-      ),
       ),
     );
   }
@@ -3590,9 +3774,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
               decoration: neuBox(radius: 15, pressed: true),
               alignment: Alignment.center,
               child: Icon(
-                none
-                    ? Icons.event_busy_rounded
-                    : Icons.event_available_rounded,
+                none ? Icons.event_busy_rounded : Icons.event_available_rounded,
                 size: 21,
                 color: none ? Colors.white.withValues(alpha: 0.35) : _gold,
               ),
@@ -3635,7 +3817,8 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                   HapticService.selectionClick();
                   Navigator.push(
                     context,
-                    slideFromRightRoute(const ScheduledRidesScreen(initialTab: 0)),
+                    slideFromRightRoute(
+                        const ScheduledRidesScreen(initialTab: 0)),
                   ).then((_) => _fetchScheduledCount());
                 },
                 behavior: HitTestBehavior.opaque,
@@ -3876,7 +4059,8 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
           return Container(
             decoration: BoxDecoration(
               color: surface,
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+              borderRadius:
+                  const BorderRadius.vertical(top: Radius.circular(24)),
               border: Border(
                 top: BorderSide(color: _gold.withValues(alpha: 0.08)),
               ),
@@ -3909,17 +4093,17 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
   }
 
   Widget _handle(bool isDark) => Center(
-    child: Container(
-      width: 40,
-      height: 5,
-      decoration: BoxDecoration(
-        color: isDark
-            ? Colors.white.withValues(alpha: 0.25)
-            : Colors.black.withValues(alpha: 0.2),
-        borderRadius: BorderRadius.circular(3),
-      ),
-    ),
-  );
+        child: Container(
+          width: 40,
+          height: 5,
+          decoration: BoxDecoration(
+            color: isDark
+                ? Colors.white.withValues(alpha: 0.25)
+                : Colors.black.withValues(alpha: 0.2),
+            borderRadius: BorderRadius.circular(3),
+          ),
+        ),
+      );
 
   Widget _fab(
     IconData ic,
@@ -4025,18 +4209,18 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
   // _cancelRow removed 2026-04-11 — driver cancel policy.
 
   Widget _sumStat(String v, String l, Color vColor, Color lColor) => Column(
-    children: [
-      Text(
-        v,
-        style: TextStyle(
-          color: vColor,
-          fontSize: 13,
-          fontWeight: FontWeight.w800,
-        ),
-      ),
-      Text(l, style: TextStyle(color: lColor, fontSize: 10)),
-    ],
-  );
+        children: [
+          Text(
+            v,
+            style: TextStyle(
+              color: vColor,
+              fontSize: 13,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          Text(l, style: TextStyle(color: lColor, fontSize: 10)),
+        ],
+      );
 }
 
 /// Data for a single offer-card badge (scheduled / airport / cash).
@@ -4136,7 +4320,8 @@ class _ShimmerBadgeState extends State<_ShimmerBadge>
             ),
             boxShadow: [
               BoxShadow(
-                color: _gold.withValues(alpha: 0.08 + _shimmerIntensity(sweep) * 0.15),
+                color: _gold.withValues(
+                    alpha: 0.08 + _shimmerIntensity(sweep) * 0.15),
                 blurRadius: 8 + _shimmerIntensity(sweep) * 6,
                 spreadRadius: _shimmerIntensity(sweep) * 2,
               ),

@@ -29,12 +29,13 @@ const String _kMapSurfaceOwner = 'DriverOnline';
 const int _kRecenterFlightMs = 600;
 
 extension _DriverOnlineController on _DriverOnlineScreenState {
-
   String _normalizePhotoUrl(dynamic rawUrl) {
     final raw = (rawUrl ?? '').toString().replaceAll('"', '').trim();
     if (raw.isEmpty) return '';
     // Filter Python/JS sentinel strings that backend may send
-    if (raw == 'null' || raw == 'None' || raw == 'undefined' || raw == 'none') return '';
+    if (raw == 'null' || raw == 'None' || raw == 'undefined' || raw == 'none') {
+      return '';
+    }
     if (raw.startsWith('http://') || raw.startsWith('https://')) return raw;
     if (raw.startsWith('/')) return '${ApiService.publicBaseUrl}$raw';
     return '${ApiService.publicBaseUrl}/$raw';
@@ -89,7 +90,8 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       if (!mounted) return;
       final online = NetworkService().isOnline;
       if (online && _phase == _Phase.searching && !_sseActive) {
-        debugPrint('[DriverOnline] Network recovered — reconnecting SSE + re-registering online');
+        debugPrint(
+            '[DriverOnline] Network recovered — reconnecting SSE + re-registering online');
         _connectSse();
         _goOnlineBackend();
       }
@@ -202,13 +204,18 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
           cachedToday != null &&
           cachedToday > 0 &&
           cachedDay == _localDayStamp()) {
-        newEarnings = cachedToday; changed = true;
+        newEarnings = cachedToday;
+        changed = true;
       }
       if (_weeklyEarnings == 0 && cachedWeekly != null && cachedWeekly > 0) {
-        newWeekly = cachedWeekly; changed = true;
+        newWeekly = cachedWeekly;
+        changed = true;
       }
-      if (_lastTripEarnings == 0 && cachedLastTrip != null && cachedLastTrip > 0) {
-        newLastTrip = cachedLastTrip; changed = true;
+      if (_lastTripEarnings == 0 &&
+          cachedLastTrip != null &&
+          cachedLastTrip > 0) {
+        newLastTrip = cachedLastTrip;
+        changed = true;
       }
       if (mounted && changed) {
         _setState(() {
@@ -279,8 +286,9 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
               dayLabels is List &&
               dayLabels.length == daily.length) {
             _daySeries = daily;
-            _daySeriesLabels =
-                dayLabels.map((e) => e?.toString() ?? '').toList(growable: false);
+            _daySeriesLabels = dayLabels
+                .map((e) => e?.toString() ?? '')
+                .toList(growable: false);
           }
           // A new local day replaces the figure; the same day only raises it.
           //
@@ -401,7 +409,8 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       CarIconLoader.loadForRideBytes('Camry'),
       CarIconLoader.loadUberBytes(),
       _loadDriverPhoto(),
-      renderCircularPinBytes(icon: CircularPinIcon.person, isPickup: true, radius: 32),
+      renderCircularPinBytes(
+          icon: CircularPinIcon.person, isPickup: true, radius: 32),
     ]);
     _suvIconBytes = results[0] as Uint8List?;
     _sedanIconBytes = results[1] as Uint8List?;
@@ -410,7 +419,9 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     _navCarIconBytes = results[2] as Uint8List?;
     // results[3] is void (_loadDriverPhoto sets _driverPhotoImage internally)
     _goldPinBytes = results[4] as Uint8List?;
-    await _goldDot.build(this, () { if (mounted) _updateDriverAnnotation(); });
+    await _goldDot.build(this, () {
+      if (mounted) _updateDriverAnnotation();
+    });
     if (!mounted) return;
     _startHeadingSource();
     // The dot image is what _updateDriverAnnotation() gates on — every call
@@ -450,7 +461,9 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       // for good — lose the bitmap while moving, and the watchdog steps
       // aside for a ticker that has nothing to paint.
       if (!_goldDot.isReady) {
-        await _goldDot.build(this, () { if (mounted) _updateDriverAnnotation(); });
+        await _goldDot.build(this, () {
+          if (mounted) _updateDriverAnnotation();
+        });
         if (!mounted) return;
         _updateDriverAnnotation();
         return;
@@ -469,9 +482,8 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       // Hard timeout: this download sits inside the Future.wait() that gates
       // _goldDot.build(), so a stalled request would keep the driver dot off
       // the map for as long as the socket hangs.
-      final resp = await http
-          .get(Uri.parse(url))
-          .timeout(const Duration(seconds: 6));
+      final resp =
+          await http.get(Uri.parse(url)).timeout(const Duration(seconds: 6));
       if (resp.statusCode == 200) {
         final codec = await ui.instantiateImageCodec(resp.bodyBytes);
         final frame = await codec.getNextFrame();
@@ -507,7 +519,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
 
     final double cx = cW / 2;
     final double cy = cH / 2;
-    final double bW = 60.0 * widthRatio;   // half-width at widest
+    final double bW = 60.0 * widthRatio; // half-width at widest
     final double bH = 100.0 * heightRatio; // half-height
     final double depth = 20.0 * heightRatio;
 
@@ -531,7 +543,8 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       ..lineTo(cx - bW * 0.92 - depth * 0.3, cy + bH * 0.75 + depth * 0.4)
       ..lineTo(cx - bW * 0.78, cy + bH * 0.85)
       ..close();
-    canvas.drawPath(sideL, Paint()..color = Color.lerp(bodyColor, Colors.black, 0.38)!);
+    canvas.drawPath(
+        sideL, Paint()..color = Color.lerp(bodyColor, Colors.black, 0.38)!);
     // Right side depth strip
     final sideR = Path()
       ..moveTo(cx + bW * 0.92, cy - bH * 0.55)
@@ -539,7 +552,8 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       ..lineTo(cx + bW * 0.92 + depth * 0.3, cy + bH * 0.75 + depth * 0.4)
       ..lineTo(cx + bW * 0.78, cy + bH * 0.85)
       ..close();
-    canvas.drawPath(sideR, Paint()..color = Color.lerp(bodyColor, Colors.black, 0.28)!);
+    canvas.drawPath(
+        sideR, Paint()..color = Color.lerp(bodyColor, Colors.black, 0.28)!);
 
     // ── 3. WHEELS ────────────────────────────────────────────────────────
     final double wW = 16.0 * widthRatio;
@@ -619,7 +633,8 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       ..lineTo(cx - bW * 0.30, cy - bH * 0.16)
       ..lineTo(cx - bW * 0.38, cy - bH * 0.35)
       ..close();
-    canvas.drawPath(sheenPath, Paint()..color = windowShine.withValues(alpha: 0.22));
+    canvas.drawPath(
+        sheenPath, Paint()..color = windowShine.withValues(alpha: 0.22));
 
     // ── 7. ROOF PANEL (between windows) ──────────────────────────────────
     canvas.drawRRect(
@@ -651,7 +666,8 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
         ..lineTo(cx + sign * bW * 0.82, cy + bH * 0.12)
         ..lineTo(cx + sign * bW * 0.54, cy + bH * 0.12)
         ..close();
-      canvas.drawPath(swPath, Paint()..color = windowColor.withValues(alpha: 0.7));
+      canvas.drawPath(
+          swPath, Paint()..color = windowColor.withValues(alpha: 0.7));
     }
 
     // ── 10. HEADLIGHTS (wraparound at front corners) ─────────────────────
@@ -659,8 +675,10 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       final hlPath = Path()
         ..moveTo(cx + sign * bW * 0.50, cy - bH * 0.88)
         ..quadraticBezierTo(
-          cx + sign * bW * 0.82, cy - bH * 0.84,
-          cx + sign * bW * 0.78, cy - bH * 0.72,
+          cx + sign * bW * 0.82,
+          cy - bH * 0.84,
+          cx + sign * bW * 0.78,
+          cy - bH * 0.72,
         )
         ..lineTo(cx + sign * bW * 0.58, cy - bH * 0.74)
         ..close();
@@ -732,20 +750,26 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       // Start at front-center (nose)
       ..moveTo(cx, cy - bH * 0.95)
       // Front bumper curve (rounded nose)
-      ..quadraticBezierTo(cx + bW * 0.55, cy - bH * 0.94, cx + bW * 0.72, cy - bH * 0.78)
+      ..quadraticBezierTo(
+          cx + bW * 0.55, cy - bH * 0.94, cx + bW * 0.72, cy - bH * 0.78)
       // Front fender flare
-      ..quadraticBezierTo(cx + bW * 0.92, cy - bH * 0.62, cx + bW * 0.92, cy - bH * 0.40)
+      ..quadraticBezierTo(
+          cx + bW * 0.92, cy - bH * 0.62, cx + bW * 0.92, cy - bH * 0.40)
       // Straight body sides (widest point at doors)
       ..lineTo(cx + bW * 0.88, cy + bH * 0.30)
       // Rear fender taper
-      ..quadraticBezierTo(cx + bW * 0.86, cy + bH * 0.68, cx + bW * 0.68, cy + bH * 0.85)
+      ..quadraticBezierTo(
+          cx + bW * 0.86, cy + bH * 0.68, cx + bW * 0.68, cy + bH * 0.85)
       // Rear bumper curve
       ..quadraticBezierTo(cx + bW * 0.40, cy + bH * 0.95, cx, cy + bH * 0.96)
       // Mirror left side
-      ..quadraticBezierTo(cx - bW * 0.40, cy + bH * 0.95, cx - bW * 0.68, cy + bH * 0.85)
-      ..quadraticBezierTo(cx - bW * 0.86, cy + bH * 0.68, cx - bW * 0.88, cy + bH * 0.30)
+      ..quadraticBezierTo(
+          cx - bW * 0.40, cy + bH * 0.95, cx - bW * 0.68, cy + bH * 0.85)
+      ..quadraticBezierTo(
+          cx - bW * 0.86, cy + bH * 0.68, cx - bW * 0.88, cy + bH * 0.30)
       ..lineTo(cx - bW * 0.92, cy - bH * 0.40)
-      ..quadraticBezierTo(cx - bW * 0.92, cy - bH * 0.62, cx - bW * 0.72, cy - bH * 0.78)
+      ..quadraticBezierTo(
+          cx - bW * 0.92, cy - bH * 0.62, cx - bW * 0.72, cy - bH * 0.78)
       ..quadraticBezierTo(cx - bW * 0.55, cy - bH * 0.94, cx, cy - bH * 0.95)
       ..close();
   }
@@ -758,9 +782,12 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       final verStatus = me['verification_status'] as String? ?? 'none';
 
       // Check profile photo — mandatory for drivers
-      final photoUrl = (me['photo_url'] ?? me['profile_photo_url'] ?? '').toString();
+      final photoUrl =
+          (me['photo_url'] ?? me['profile_photo_url'] ?? '').toString();
       final hasPhoto = photoUrl.isNotEmpty &&
-          photoUrl != 'null' && photoUrl != 'None' && photoUrl != 'none';
+          photoUrl != 'null' &&
+          photoUrl != 'None' &&
+          photoUrl != 'none';
 
       // Check user-level approval
       final userApproved = (bgStatus == 'clear' || bgStatus == 'none') &&
@@ -796,7 +823,8 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
               final dt = DateTime.tryParse(expiryStr);
               if (dt != null && dt.isBefore(now)) {
                 vehicleDocsOk = false;
-                vehicleBlockReason = 'One or more documents have expired. Please upload updated documents.';
+                vehicleBlockReason =
+                    'One or more documents have expired. Please upload updated documents.';
                 break;
               }
             }
@@ -816,21 +844,26 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
 
       if (!hasPhoto) {
         title = 'Profile Photo Required';
-        message = 'You must add a profile photo before going online. Riders need to recognize you.\n\nGo to Profile > add your photo.';
+        message =
+            'You must add a profile photo before going online. Riders need to recognize you.\n\nGo to Profile > add your photo.';
       } else if (!userApproved) {
         if (bgStatus == 'pending' || bgStatus == 'processing') {
           title = 'Background Check In Progress';
-          message = 'Your background check is still being processed. You\'ll be notified when it\'s complete.';
+          message =
+              'Your background check is still being processed. You\'ll be notified when it\'s complete.';
         } else if (bgStatus == 'consider' || bgStatus == 'suspended') {
           title = 'Background Check Issue';
-          message = 'There is an issue with your background check. Please contact support.';
+          message =
+              'There is an issue with your background check. Please contact support.';
         } else {
           title = 'Verification Required';
-          message = 'Please complete your documents and background check before going online.';
+          message =
+              'Please complete your documents and background check before going online.';
         }
       } else {
         title = 'Vehicle Documents Required';
-        message = 'You need to upload your vehicle documents before going online.\n\n${vehicleBlockReason ?? ''}\n\nGo to Vehicle > upload the missing documents.';
+        message =
+            'You need to upload your vehicle documents before going online.\n\n${vehicleBlockReason ?? ''}\n\nGo to Vehicle > upload the missing documents.';
       }
 
       await showDialog(
@@ -838,11 +871,13 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
         builder: (ctx) => AlertDialog(
           backgroundColor: const Color(0xFF1C1C1E),
           title: Text(title, style: const TextStyle(color: Colors.white)),
-          content: Text(message, style: TextStyle(color: Colors.white.withValues(alpha: 0.7))),
+          content: Text(message,
+              style: TextStyle(color: Colors.white.withValues(alpha: 0.7))),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx),
-              child: Text(S.of(context).ok, style: const TextStyle(color: Color(0xFFE8C547))),
+              child: Text(S.of(context).ok,
+                  style: const TextStyle(color: Color(0xFFE8C547))),
             ),
           ],
         ),
@@ -871,7 +906,8 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       return;
     }
     if (_driverId == null || _pos == null) {
-      debugPrint('⚠️ _goOnlineBackend: ${_driverId == null ? "driverId" : "GPS"} not ready yet, retrying in 3s');
+      debugPrint(
+          '⚠️ _goOnlineBackend: ${_driverId == null ? "driverId" : "GPS"} not ready yet, retrying in 3s');
       Future.delayed(const Duration(seconds: 3), () {
         if (mounted && _phase == _Phase.searching) _goOnlineBackend();
       });
@@ -882,34 +918,35 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     LocalCache.set('last_driver_lat', _pos!.latitude);
     LocalCache.set('last_driver_lng', _pos!.longitude);
     ApiService.updateDriverLocation(
-          driverId: _driverId!,
-          lat: _pos!.latitude,
-          lng: _pos!.longitude,
-          isOnline: true,
-        )
-        .then((_) {
-          _isGoingOnline = false;
-          debugPrint('âœ… Driver online successfully');
-          AnalyticsService.instance.logDriverOnline();
-          // Show persistent notification (fire-and-forget, non-blocking)
-          NotificationService.showDriverOnlineNotification();
-          // Subscribe to scheduled rides topic — receives FCM when new
-          // scheduled trips enter the marketplace.
-          FirebaseMessaging.instance.subscribeToTopic('drivers_available').catchError(
-            (e) => debugPrint('FCM subscribeToTopic drivers_available failed: $e'),
+      driverId: _driverId!,
+      lat: _pos!.latitude,
+      lng: _pos!.longitude,
+      isOnline: true,
+    ).then((_) {
+      _isGoingOnline = false;
+      debugPrint('âœ… Driver online successfully');
+      AnalyticsService.instance.logDriverOnline();
+      // Show persistent notification (fire-and-forget, non-blocking)
+      NotificationService.showDriverOnlineNotification();
+      // Subscribe to scheduled rides topic — receives FCM when new
+      // scheduled trips enter the marketplace.
+      FirebaseMessaging.instance
+          .subscribeToTopic('drivers_available')
+          .catchError(
+            (e) =>
+                debugPrint('FCM subscribeToTopic drivers_available failed: $e'),
           );
-        })
-        .catchError((e) {
-          _isGoingOnline = false;
-          debugPrint('âŒ Failed to go online: $e');
-          // Retry after 5s so driver doesn't stay silently offline
-          Future.delayed(const Duration(seconds: 5), () {
-            if (mounted && _phase == _Phase.searching) {
-              debugPrint('[DriverOnline] Retrying _goOnlineBackend after failure');
-              _goOnlineBackend();
-            }
-          });
-        });
+    }).catchError((e) {
+      _isGoingOnline = false;
+      debugPrint('âŒ Failed to go online: $e');
+      // Retry after 5s so driver doesn't stay silently offline
+      Future.delayed(const Duration(seconds: 5), () {
+        if (mounted && _phase == _Phase.searching) {
+          debugPrint('[DriverOnline] Retrying _goOnlineBackend after failure');
+          _goOnlineBackend();
+        }
+      });
+    });
   }
 
   void _goOfflineBackend() {
@@ -918,9 +955,12 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     NotificationService.cancelDriverOnlineNotification();
     NotificationService.cancelOfferNotifications();
     // Unsubscribe from scheduled rides topic when going offline.
-    FirebaseMessaging.instance.unsubscribeFromTopic('drivers_available').catchError(
-      (e) => debugPrint('FCM unsubscribeFromTopic drivers_available failed: $e'),
-    );
+    FirebaseMessaging.instance
+        .unsubscribeFromTopic('drivers_available')
+        .catchError(
+          (e) => debugPrint(
+              'FCM unsubscribeFromTopic drivers_available failed: $e'),
+        );
     ApiService.updateDriverLocation(
       driverId: _driverId!,
       lat: _pos!.latitude,
@@ -998,103 +1038,102 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
         if (_driverId != null) _gpsService.startTracking(_driverId.toString());
       },
       onPosition: (pos) {
-          if (!mounted) return;
-          final newLL = LatLng(pos.latitude, pos.longitude);
-          // Where the arrow points is decided by _headingSource, not here.
-          //
-          // This used to read pos.heading directly and throw it away below
-          // ~5 km/h, because the GPS course at a crawl is noise — a parked
-          // car has no direction of travel, so the platform reports −1 or a
-          // wandering value, and feeding that in swung the arrow to north
-          // while the driver sat still.
-          //
-          // Discarding it was right; having nothing to put in its place was
-          // the problem. The compass answers the question the GPS cannot:
-          // a stationary car is still pointing somewhere. The service takes
-          // this fix, works out whether the car is moving fast enough for
-          // the course to be the better source, and publishes the winner on
-          // the stream _startHeadingSource listens to.
-          _headingSource.onFix(pos);
-          _currentSpeedMph = (pos.speed * 2.23694).clamp(0.0, 200.0);
-          // Snap to route polyline — prevents GPS drift off-road
-          final snappedLL = _snapToRoute(newLL);
-          _smoothMoveTo(snappedLL, _smoothedBearing,
-              accuracyM: pos.accuracy);
+        if (!mounted) return;
+        final newLL = LatLng(pos.latitude, pos.longitude);
+        // Where the arrow points is decided by _headingSource, not here.
+        //
+        // This used to read pos.heading directly and throw it away below
+        // ~5 km/h, because the GPS course at a crawl is noise — a parked
+        // car has no direction of travel, so the platform reports −1 or a
+        // wandering value, and feeding that in swung the arrow to north
+        // while the driver sat still.
+        //
+        // Discarding it was right; having nothing to put in its place was
+        // the problem. The compass answers the question the GPS cannot:
+        // a stationary car is still pointing somewhere. The service takes
+        // this fix, works out whether the car is moving fast enough for
+        // the course to be the better source, and publishes the winner on
+        // the stream _startHeadingSource listens to.
+        _headingSource.onFix(pos);
+        _currentSpeedMph = (pos.speed * 2.23694).clamp(0.0, 200.0);
+        // Snap to route polyline — prevents GPS drift off-road
+        final snappedLL = _snapToRoute(newLL);
+        _smoothMoveTo(snappedLL, _smoothedBearing, accuracyM: pos.accuracy);
 
-          // Feed GpsService for RTDB upload (800ms throttled)
-          _gpsService.updatePosition(newLL, pos.heading, pos.speed);
+        // Feed GpsService for RTDB upload (800ms throttled)
+        _gpsService.updatePosition(newLL, pos.heading, pos.speed);
 
-          _trimRouteBehindDriver(snappedLL);
+        _trimRouteBehindDriver(snappedLL);
 
-          // Phase-specific nav stats (camera handled by _onDriverAnimTick)
-          if (_phase == _Phase.routeSummary) {
-            final dist = _hav(newLL, _dropoffLL);
-            final eta = (dist * 1000 / 17.88 / 60).ceil().clamp(0, 99);
-            _navDist = dist;
-            _navEta = eta;
-            final now = DateTime.now();
-            if (now.difference(_lastNavSetState).inMilliseconds > 500) {
-              _lastNavSetState = now;
-              _setState(() {});
-            }
-          } else if (_phase == _Phase.enRouteToPickup) {
-            _updateNavState(newLL);
-            final dist = _hav(newLL, _pickupLL);
-            final eta = (dist * 1000 / 17.88 / 60).ceil().clamp(0, 99);
-            final progress = _distToPickup > 0
-                ? (1.0 - dist / _distToPickup).clamp(0.0, 1.0)
-                : 0.0;
-            _navDist = dist;
-            _navEta = eta;
-            _navProgress = progress;
-            final now1 = DateTime.now();
-            if (now1.difference(_lastNavSetState).inMilliseconds > 500) {
-              _lastNavSetState = now1;
-              _setState(() {});
-            }
-            if (dist < 0.05) {
-              _onNearPickup();
-            }
-          } else if (_phase == _Phase.inTrip) {
-            _updateNavState(newLL);
-            final dist = _hav(newLL, _dropoffLL);
-            final eta = (dist * 1000 / 17.88 / 60).ceil().clamp(0, 99);
-            final progress = _tripDist > 0
-                ? (1.0 - dist / _tripDist).clamp(0.0, 1.0)
-                : 0.0;
-            _navDist = dist;
-            _navEta = eta;
-            _navProgress = progress;
-            final now2 = DateTime.now();
-            if (now2.difference(_lastNavSetState).inMilliseconds > 500) {
-              _lastNavSetState = now2;
-              _setState(() {});
-            }
-            if (dist < 0.05) {
-              _onNearDropoff();
-            }
-          }
-
-          // Throttle backend location updates to max once per 5 seconds
+        // Phase-specific nav stats (camera handled by _onDriverAnimTick)
+        if (_phase == _Phase.routeSummary) {
+          final dist = _hav(newLL, _dropoffLL);
+          final eta = (dist * 1000 / 17.88 / 60).ceil().clamp(0, 99);
+          _navDist = dist;
+          _navEta = eta;
           final now = DateTime.now();
-          if (_driverId != null && now.difference(_lastBackendLocSend).inSeconds >= 5) {
-            _lastBackendLocSend = now;
-            ApiService.updateDriverLocation(
-              driverId: _driverId!,
-              lat: pos.latitude,
-              lng: pos.longitude,
-            ).catchError((_) => <String, dynamic>{});
+          if (now.difference(_lastNavSetState).inMilliseconds > 500) {
+            _lastNavSetState = now;
+            _setState(() {});
           }
-          // Sync driver GPS to Firestore so rider tracking gets real position
-          if (_tripId != null) {
-            TripFirestoreService.syncDriverLocation(
-              'sql_$_tripId',
-              pos.latitude,
-              pos.longitude,
-              _smoothedBearing,
-            );
+        } else if (_phase == _Phase.enRouteToPickup) {
+          _updateNavState(newLL);
+          final dist = _hav(newLL, _pickupLL);
+          final eta = (dist * 1000 / 17.88 / 60).ceil().clamp(0, 99);
+          final progress = _distToPickup > 0
+              ? (1.0 - dist / _distToPickup).clamp(0.0, 1.0)
+              : 0.0;
+          _navDist = dist;
+          _navEta = eta;
+          _navProgress = progress;
+          final now1 = DateTime.now();
+          if (now1.difference(_lastNavSetState).inMilliseconds > 500) {
+            _lastNavSetState = now1;
+            _setState(() {});
           }
-        },
+          if (dist < 0.05) {
+            _onNearPickup();
+          }
+        } else if (_phase == _Phase.inTrip) {
+          _updateNavState(newLL);
+          final dist = _hav(newLL, _dropoffLL);
+          final eta = (dist * 1000 / 17.88 / 60).ceil().clamp(0, 99);
+          final progress =
+              _tripDist > 0 ? (1.0 - dist / _tripDist).clamp(0.0, 1.0) : 0.0;
+          _navDist = dist;
+          _navEta = eta;
+          _navProgress = progress;
+          final now2 = DateTime.now();
+          if (now2.difference(_lastNavSetState).inMilliseconds > 500) {
+            _lastNavSetState = now2;
+            _setState(() {});
+          }
+          if (dist < 0.05) {
+            _onNearDropoff();
+          }
+        }
+
+        // Throttle backend location updates to max once per 5 seconds
+        final now = DateTime.now();
+        if (_driverId != null &&
+            now.difference(_lastBackendLocSend).inSeconds >= 5) {
+          _lastBackendLocSend = now;
+          ApiService.updateDriverLocation(
+            driverId: _driverId!,
+            lat: pos.latitude,
+            lng: pos.longitude,
+          ).catchError((_) => <String, dynamic>{});
+        }
+        // Sync driver GPS to Firestore so rider tracking gets real position
+        if (_tripId != null) {
+          TripFirestoreService.syncDriverLocation(
+            'sql_$_tripId',
+            pos.latitude,
+            pos.longitude,
+            _smoothedBearing,
+          );
+        }
+      },
     )..start();
   }
 
@@ -1147,8 +1186,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     // Off-route detection & auto-reroute
     if (state.isOffRoute && !_isRerouting) {
       final now = DateTime.now();
-      final canReroute =
-          _lastRerouteTime == null ||
+      final canReroute = _lastRerouteTime == null ||
           now.difference(_lastRerouteTime!).inSeconds > 10;
       if (canReroute && _rerouteCount < 5) {
         _triggerReroute(pos);
@@ -1454,7 +1492,8 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       if (!mounted || _phase != _Phase.searching) return;
       if (_sseActive) return; // SSE handles it — skip polling entirely
       if (myGen != _driverOnlinePollingGen) {
-        debugPrint('[DriverOnline] stale poll timer skipped (gen $myGen != $_driverOnlinePollingGen)');
+        debugPrint(
+            '[DriverOnline] stale poll timer skipped (gen $myGen != $_driverOnlinePollingGen)');
         return;
       }
       debugPrint('[DriverOnline] SSE down — polling /dispatch/driver/pending');
@@ -1528,10 +1567,12 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       // Only the CURRENT generation is allowed to schedule the next reconnect.
       // Events from stale generations are dropped silently.
       if (myGeneration != _currentSseGeneration) return;
-      debugPrint('[DriverOnline] SSE $reason — falling back to polling, reconnecting in 500ms');
+      debugPrint(
+          '[DriverOnline] SSE $reason — falling back to polling, reconnecting in 500ms');
       _sseActive = false;
       if (mounted && _phase == _Phase.searching) {
-        _sseReconnectTimer = Timer(const Duration(milliseconds: 500), _connectSse);
+        _sseReconnectTimer =
+            Timer(const Duration(milliseconds: 500), _connectSse);
       }
     }
 
@@ -1546,7 +1587,8 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
           return;
         }
         if (!_sseActive) {
-          debugPrint('[DriverOnline] SSE reconnected — stopping polling fallback');
+          debugPrint(
+              '[DriverOnline] SSE reconnected — stopping polling fallback');
         }
         _sseActive = true;
         debugPrint('SSE offers: ${offers.length}');
@@ -1598,7 +1640,8 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     // Detect whether the leading offer has changed — covers both the 0→N transition
     // and the case where a new offer replaces an existing one while cards are visible.
     final prevFirstId = _pendingOffers.isNotEmpty
-        ? (_pendingOffers.first['offer_id'] ?? _pendingOffers.first['id'])?.toString()
+        ? (_pendingOffers.first['offer_id'] ?? _pendingOffers.first['id'])
+            ?.toString()
         : null;
     final nextFirstId = filtered.isNotEmpty
         ? (filtered.first['offer_id'] ?? filtered.first['id'])?.toString()
@@ -1644,13 +1687,24 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       if (filtered.isNotEmpty && !hadOffers) _hideFindingBar = true;
       if (filtered.isEmpty && hadOffers) _hideFindingBar = false;
     });
-    // Routes are still pre-fetched so a tap draws instantly, but nothing is
-    // drawn on arrival: an incoming offer shows the card and only the card.
-    // Drawing the route unasked hijacked the map the moment an offer landed,
-    // animating a line and pins over whatever the driver was looking at. The
-    // route now appears when the driver taps the card — see _onOfferCardTap,
-    // already wired at driver_online_widgets.dart:638.
     _preFetchOfferRoutes(filtered);
+
+    // The route draws itself as the card arrives: camera to fit, then the
+    // line from the driver to the pickup, the gold dot, the line on to the
+    // dropoff, the white square.
+    //
+    // This reverses an earlier decision to draw only on tap, which was
+    // made because drawing on arrival "hijacked the map". It still does —
+    // that is now the intent. It runs only on the first offer of a batch,
+    // so a poll that returns the same offer again does not restart the
+    // animation under the driver.
+    if (filtered.isNotEmpty) {
+      // _autoTriggerRoutePreview already existed for exactly this and was
+      // left unreferenced when drawing moved to tap-only. It dedups on the
+      // offer id, so the SSE push and the poll that follows it cannot both
+      // start the animation.
+      _autoTriggerRoutePreview(filtered.first);
+    }
   }
 
   Future<void> _poll() async {
@@ -1676,7 +1730,9 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     // Heartbeat: keep last_active_at fresh so dispatch doesn't skip us.
     // Only send if GPS stream hasn't already sent recently (avoid duplicates).
     final now = DateTime.now();
-    if (_driverId != null && _pos != null && now.difference(_lastBackendLocSend).inSeconds >= 2) {
+    if (_driverId != null &&
+        _pos != null &&
+        now.difference(_lastBackendLocSend).inSeconds >= 2) {
       _lastBackendLocSend = now;
       ApiService.updateDriverLocation(
         driverId: _driverId!,
@@ -1707,7 +1763,8 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     // Prevent double-tap
     final oid = (r['offer_id'] ?? r['id'] ?? '').toString();
     if (_offerAcceptState != _OfferAcceptState.normal) {
-      debugPrint('[DriverOnline] _acceptOffer blocked — state=$_offerAcceptState');
+      debugPrint(
+          '[DriverOnline] _acceptOffer blocked — state=$_offerAcceptState');
       return;
     }
 
@@ -1736,7 +1793,8 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
         debugPrint('[DriverOnline] Failed to recover driverId: $e');
       }
       if (_driverId == null) {
-        debugPrint('[DriverOnline] _driverId still null after recovery — aborting accept');
+        debugPrint(
+            '[DriverOnline] _driverId still null after recovery — aborting accept');
         _setState(() {
           _offerAcceptState = _OfferAcceptState.normal;
           _acceptingCardId = null;
@@ -1753,7 +1811,8 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     // accept request.
     if (offerId != null) {
       if (_acceptedOfferIds.contains(offerId)) {
-        debugPrint('[DriverOnline] duplicate accept dropped for offer=$offerId');
+        debugPrint(
+            '[DriverOnline] duplicate accept dropped for offer=$offerId');
         return;
       }
       _acceptedOfferIds.add(offerId);
@@ -1775,7 +1834,8 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       debugPrint('[DriverOnline] ▶ STEP 1: creating acceptFuture');
       final acceptFuture = (() async {
         if (offerId != null && _driverId != null) {
-          debugPrint('[DriverOnline] ▶ STEP 1a: calling acceptRideOffer(offerId=$offerId)');
+          debugPrint(
+              '[DriverOnline] ▶ STEP 1a: calling acceptRideOffer(offerId=$offerId)');
           await ApiService.acceptRideOffer(
             offerId: offerId,
             driverId: _driverId!,
@@ -1784,12 +1844,14 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
           return true;
         }
         if (tripId != null && _driverId != null) {
-          debugPrint('[DriverOnline] ▶ STEP 1a: calling acceptTrip(tripId=$tripId)');
+          debugPrint(
+              '[DriverOnline] ▶ STEP 1a: calling acceptTrip(tripId=$tripId)');
           await ApiService.acceptTrip(tripId: tripId, driverId: _driverId!);
           debugPrint('[DriverOnline] ▶ STEP 1b: acceptTrip SUCCESS');
           return true;
         }
-        debugPrint('[DriverOnline] ▶ STEP 1a: NO offerId or tripId — returning false');
+        debugPrint(
+            '[DriverOnline] ▶ STEP 1a: NO offerId or tripId — returning false');
         return false;
       })();
 
@@ -1865,7 +1927,8 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       }
       _riderName = name;
       _riderInit = name.isNotEmpty ? name[0].toUpperCase() : '?';
-      _riderPhotoUrl = _normalizePhotoUrl(r['rider_photo_url'] ?? r['photo_url'] ?? '');
+      _riderPhotoUrl =
+          _normalizePhotoUrl(r['rider_photo_url'] ?? r['photo_url'] ?? '');
       _riderPhone = str(r['rider_phone'], '');
       _riderId = (r['rider_id'] ?? '').toString();
       // Already in the offer payload — _trip_dict() has always included
@@ -1909,13 +1972,15 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       try {
         await _clearAllAnnotations();
       } catch (e) {
-        debugPrint('[DriverOnline] _clearAllAnnotations failed during accept: $e');
+        debugPrint(
+            '[DriverOnline] _clearAllAnnotations failed during accept: $e');
       }
       if (_pos != null) {
         try {
           _animateToPosition(_pos!, zoom: 15.5, bearing: 0, tilt: 0);
         } catch (e) {
-          debugPrint('[DriverOnline] _animateToPosition failed during accept: $e');
+          debugPrint(
+              '[DriverOnline] _animateToPosition failed during accept: $e');
         }
       }
 
@@ -1942,9 +2007,11 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
           driverLastName = driverUser?['lastName']?.toString();
           driverPhone = driverUser?['phone']?.toString();
         } catch (e) {
-          debugPrint('[DriverOnline] UserSession.getUser() failed during accept: $e');
+          debugPrint(
+              '[DriverOnline] UserSession.getUser() failed during accept: $e');
         }
-        final fullName = '${driverFirstName ?? ''} ${driverLastName ?? ''}'.trim();
+        final fullName =
+            '${driverFirstName ?? ''} ${driverLastName ?? ''}'.trim();
         final fsDocId = 'sql_$tripId';
         // This write is an accelerator, not a requirement: the backend
         // mirrors the same status a couple of seconds later. `.catchError`
@@ -1955,10 +2022,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
         // assigned the trip. Never let it kill the accept.
         try {
           unawaited(
-            FirebaseFirestore.instance
-                .collection('trips')
-                .doc(fsDocId)
-                .set({
+            FirebaseFirestore.instance.collection('trips').doc(fsDocId).set({
               'status': 'driver_en_route',
               'driver_id': _driverId ?? 0,
               'driverId': _driverId?.toString() ?? '',
@@ -1977,18 +2041,21 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       }
 
       if (!mounted) {
-        debugPrint('[DriverOnline] _acceptOffer: widget unmounted before nav — aborting');
+        debugPrint(
+            '[DriverOnline] _acceptOffer: widget unmounted before nav — aborting');
         return;
       }
-      debugPrint('[DriverOnline] ▶ STEP 6: showing accepted celebration — tripId=$tripId, offerId=$offerId');
+      debugPrint(
+          '[DriverOnline] ▶ STEP 6: showing accepted celebration — tripId=$tripId, offerId=$offerId');
       final acceptedTripId = tripId ?? offerId ?? 0;
-      final riderPhotoUrl = _normalizePhotoUrl(r['rider_photo_url'] ?? r['photo_url'] ?? '');
-      final riderRating   = dbl(r['rider_rating']);
+      final riderPhotoUrl =
+          _normalizePhotoUrl(r['rider_photo_url'] ?? r['photo_url'] ?? '');
+      final riderRating = dbl(r['rider_rating']);
       // Use the backend's rider_is_new flag as the source of truth — it now
       // reflects rider_rides_count == 0 (first request ever), not just
       // "has never been rated".
       final riderIsNew = r['rider_is_new'] == true;
-      final riderInit     = name.isNotEmpty ? name[0].toUpperCase() : '?';
+      final riderInit = name.isNotEmpty ? name[0].toUpperCase() : '?';
 
       // ── SINGLE CANVAS ──
       // The celebration is an overlay on the map this screen already owns.
@@ -1999,15 +2066,15 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       // rider flow was rebuilt around one shared canvas.
       _setState(() {
         _acceptedOverlay = _AcceptedOverlayData(
-          riderName:      name,
-          riderInitials:  riderInit,
-          riderPhotoUrl:  riderPhotoUrl.isNotEmpty ? riderPhotoUrl : null,
-          riderRating:    riderRating,
-          riderIsNew:     riderIsNew,
-          riderId:        int.tryParse(_riderId),
-          pickupAddress:  _pickupAddr,
+          riderName: name,
+          riderInitials: riderInit,
+          riderPhotoUrl: riderPhotoUrl.isNotEmpty ? riderPhotoUrl : null,
+          riderRating: riderRating,
+          riderIsNew: riderIsNew,
+          riderId: int.tryParse(_riderId),
+          pickupAddress: _pickupAddr,
           distToPickupKm: _distToPickup,
-          etaMinutes:     _etaToPickup,
+          etaMinutes: _etaToPickup,
         );
       });
       // Camera + route paint onto the existing canvas. Not awaited: the
@@ -2018,168 +2085,178 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       debugPrint('[DriverOnline] ▶ STEP 7: awaiting acceptFuture');
       try {
         await acceptFuture;
-        debugPrint('[DriverOnline] ▶ STEP 7a: acceptFuture completed successfully');
+        debugPrint(
+            '[DriverOnline] ▶ STEP 7a: acceptFuture completed successfully');
       } catch (e) {
-      // ⚠️ CRITICAL phantom-cancel fix:
-      //
-      // Previously this catch fired _cancel() unconditionally, which sent
-      // a PATCH /trips/{id}/status?status=canceled to the server. The
-      // problem: the acceptFuture failing doesn't mean the server failed
-      // — the 8s HTTP timeout on _client can fire even when the backend
-      // successfully processed the accept and marked the trip
-      // driver_en_route; only the response got lost / was slow. The
-      // driver kept driving to pickup while the rider saw a mysterious
-      // "cancelled by operator" dialog because our own client had
-      // force-cancelled the trip in the background.
-      //
-      // Fix: verify the trip's real state server-side before cancelling.
-      // If the server says the trip has a driver assigned OR is in
-      // driver_en_route/arrived/in_trip, the accept WAS successful —
-      // just log the timeout and continue. Only cancel if the server
-      // confirms the accept actually did not stick.
-      if (!mounted) return;
-      debugPrint('[DriverOnline] acceptFuture failed: $e — verifying server state before cancelling');
-      bool serverHasTrip = false;
-      bool verifyFailed = false;
-      final verifyTripId = tripId ?? offerId;
-      if (verifyTripId != null) {
-        try {
-          final serverTrip = await ApiService.getTrip(verifyTripId)
-              .timeout(const Duration(seconds: 6));
-          final srvStatus = (serverTrip['status'] ?? '').toString().toLowerCase();
-          final srvDriver = serverTrip['driver_id'];
-          // Accept is "good" if the backend has us as driver OR the trip
-          // has already progressed past 'requested'.
-          const liveStatuses = {
-            'accepted', 'driver_en_route', 'driver_arriving',
-            'arrived', 'driver_arrived', 'in_trip', 'in_progress',
-          };
-          if (liveStatuses.contains(srvStatus) ||
-              (srvDriver != null && srvDriver.toString() == _driverId.toString())) {
-            serverHasTrip = true;
-            debugPrint(
-              '[DriverOnline] accept verified on server (status=$srvStatus driver=$srvDriver) — keeping trip alive',
+        // ⚠️ CRITICAL phantom-cancel fix:
+        //
+        // Previously this catch fired _cancel() unconditionally, which sent
+        // a PATCH /trips/{id}/status?status=canceled to the server. The
+        // problem: the acceptFuture failing doesn't mean the server failed
+        // — the 8s HTTP timeout on _client can fire even when the backend
+        // successfully processed the accept and marked the trip
+        // driver_en_route; only the response got lost / was slow. The
+        // driver kept driving to pickup while the rider saw a mysterious
+        // "cancelled by operator" dialog because our own client had
+        // force-cancelled the trip in the background.
+        //
+        // Fix: verify the trip's real state server-side before cancelling.
+        // If the server says the trip has a driver assigned OR is in
+        // driver_en_route/arrived/in_trip, the accept WAS successful —
+        // just log the timeout and continue. Only cancel if the server
+        // confirms the accept actually did not stick.
+        if (!mounted) return;
+        debugPrint(
+            '[DriverOnline] acceptFuture failed: $e — verifying server state before cancelling');
+        bool serverHasTrip = false;
+        bool verifyFailed = false;
+        final verifyTripId = tripId ?? offerId;
+        if (verifyTripId != null) {
+          try {
+            final serverTrip = await ApiService.getTrip(verifyTripId)
+                .timeout(const Duration(seconds: 6));
+            final srvStatus =
+                (serverTrip['status'] ?? '').toString().toLowerCase();
+            final srvDriver = serverTrip['driver_id'];
+            // Accept is "good" if the backend has us as driver OR the trip
+            // has already progressed past 'requested'.
+            const liveStatuses = {
+              'accepted',
+              'driver_en_route',
+              'driver_arriving',
+              'arrived',
+              'driver_arrived',
+              'in_trip',
+              'in_progress',
+            };
+            if (liveStatuses.contains(srvStatus) ||
+                (srvDriver != null &&
+                    srvDriver.toString() == _driverId.toString())) {
+              serverHasTrip = true;
+              debugPrint(
+                '[DriverOnline] accept verified on server (status=$srvStatus driver=$srvDriver) — keeping trip alive',
+              );
+            }
+          } catch (verifyErr) {
+            debugPrint('[DriverOnline] getTrip verify failed: $verifyErr');
+            verifyFailed = true;
+          }
+        }
+        if (serverHasTrip) {
+          // The client lost the accept response but the server is
+          // happily running the trip. Swallow the error, stay on the
+          // trip screen, let the driver continue.
+          // Fall through to the normal result handling below.
+        } else if (verifyFailed) {
+          // getTrip itself failed (timeout/network). We cannot confirm the
+          // accept failed — the original timeout was likely just the response
+          // being slow. Be optimistic: assume the accept succeeded and let
+          // the driver continue to the trip screen. If the accept really
+          // failed, the trip screen will handle that gracefully.
+          debugPrint(
+            '[DriverOnline] verify failed — assuming accept succeeded optimistically',
+          );
+          serverHasTrip = true;
+          // Fall through to normal handling.
+        } else {
+          // Accept genuinely failed — offer is gone. Do NOT cancel the trip
+          // (the driver never owned it anyway), but DO undo the optimistic
+          // Firestore write from STEP 5: it already told the rider a driver
+          // was en route. Left as-is, the rider watches a driver who was
+          // never dispatched while the trip is locked to this app.
+          _hideAcceptedOverlay();
+          if (tripId != null) {
+            // notify: false — the driver already gets the clearer
+            // "trip no longer available" message just below.
+            await _returnTripToDispatch(
+              tripId,
+              reason: 'accept_failed',
+              notify: false,
             );
           }
-        } catch (verifyErr) {
-          debugPrint('[DriverOnline] getTrip verify failed: $verifyErr');
-          verifyFailed = true;
+          // mounted guard required: previous awaits (getTrip, release) mean
+          // context may be defunct if the driver navigated away mid-verify.
+          if (mounted) {
+            _setState(() {
+              _offerAcceptState = _OfferAcceptState.normal;
+              _acceptingCardId = null;
+            });
+            _snack(S.of(context).tripNoLongerAvailable);
+          }
+          _resetToSearchingOnRemoteCancel();
+          return;
         }
       }
-      if (serverHasTrip) {
-        // The client lost the accept response but the server is
-        // happily running the trip. Swallow the error, stay on the
-        // trip screen, let the driver continue.
-        // Fall through to the normal result handling below.
-      } else if (verifyFailed) {
-        // getTrip itself failed (timeout/network). We cannot confirm the
-        // accept failed — the original timeout was likely just the response
-        // being slow. Be optimistic: assume the accept succeeded and let
-        // the driver continue to the trip screen. If the accept really
-        // failed, the trip screen will handle that gracefully.
-        debugPrint(
-          '[DriverOnline] verify failed — assuming accept succeeded optimistically',
-        );
-        serverHasTrip = true;
-        // Fall through to normal handling.
-      } else {
-        // Accept genuinely failed — offer is gone. Do NOT cancel the trip
-        // (the driver never owned it anyway), but DO undo the optimistic
-        // Firestore write from STEP 5: it already told the rider a driver
-        // was en route. Left as-is, the rider watches a driver who was
-        // never dispatched while the trip is locked to this app.
-        _hideAcceptedOverlay();
-        if (tripId != null) {
-          // notify: false — the driver already gets the clearer
-          // "trip no longer available" message just below.
-          await _returnTripToDispatch(
-            tripId,
-            reason: 'accept_failed',
-            notify: false,
-          );
-        }
-        // mounted guard required: previous awaits (getTrip, release) mean
-        // context may be defunct if the driver navigated away mid-verify.
-        if (mounted) {
-          _setState(() {
-            _offerAcceptState = _OfferAcceptState.normal;
-            _acceptingCardId = null;
-          });
-          _snack(S.of(context).tripNoLongerAvailable);
-        }
-        _resetToSearchingOnRemoteCancel();
-        return;
-      }
-    }
-    // ── STEP 8: let the celebration play out, then hand the trip over ──
-    // The 30s navFuture timeout that used to live here was a bandage for
-    // TripAcceptedScreen crashing on its own map. There is no second route
-    // to time out anymore — the overlay is ours and the handoff below is
-    // a plain push we own end to end.
-    await celebration;
-    if (!mounted) return;
+      // ── STEP 8: let the celebration play out, then hand the trip over ──
+      // The 30s navFuture timeout that used to live here was a bandage for
+      // TripAcceptedScreen crashing on its own map. There is no second route
+      // to time out anymore — the overlay is ours and the handoff below is
+      // a plain push we own end to end.
+      await celebration;
+      if (!mounted) return;
 
-    // Hand off with the celebration still up: it covers the canvas through
-    // the route fade, and _pushTripScreen drops both it and our map once
-    // the trip screen is actually on top.
-    handedOff = true;
-    final String? result = await _pushTripScreen(
-      tripId:         acceptedTripId,
-      riderName:      name,
-      riderPhotoUrl:  riderPhotoUrl,
-      riderRating:    riderRating,
-      riderIsNew:     riderIsNew,
-      routePoints:    preRoutePoints,
-    );
-    if (!mounted) return;
-    _hideAcceptedOverlay();
-    if (result == 'completed') {
-      // Back on this screen for the earnings overlay — bring the map back.
-      _remountMapSurface();
-      // Show the earnings / completed overlay (mirrors _complete())
-      _setState(() {
-        _trips++;
-        _prevEarnings = _earnings;
-        _earnings += _fare;
-        _prevLastTripEarnings = _lastTripEarnings;
-        _lastTripEarnings = _fare;
-        _phase = _Phase.completed;
-        _stars = 5;
-      });
-      _syncSearchPulse();
-      _cacheEarnings();
-      _doneCtrl?.forward(from: 0);
-    } else if (result == 'back_to_home') {
-      // Driver pressed back to go home — trip is still active.
-      // Navigate to DriverHomeScreen with returnFromTrip so the Resume
-      // button appears.  Do NOT call _cancel() — the trip must survive.
-      _goBackToHomeWithTrip();
-    } else if (result == 'cancelled') {
-      // Trip screen reports a remote cancellation (dispatch or auto-cancel).
-      // The driver cannot cancel trips directly anymore — this branch is
-      // only reached when the trip was ended from outside the driver app.
-      // Just reset local state and return to searching with a gold toast.
-      debugPrint('[DriverOnline] trip screen popped with result=cancelled — remote cancel, resetting');
-      _resetToSearchingOnRemoteCancel();
-    } else {
-      // result == null — DriverTripAcceptScreen left via pushAndRemoveUntil
-      // (rating screen, home) rather than popping a result, so nothing was
-      // handed back. It owns the trip lifecycle from `arrived` onward and
-      // its own exit navigation; touching trip state from here would race
-      // its transitions. Never cancel here — that was the v293 phantom
-      // cancel that showed the rider "Ride Cancelled by operator" while
-      // the driver was still driving.
-      debugPrint(
-        '[DriverOnline] trip screen returned null — it navigated away on its '
-        'own. Leaving the trip alone.',
+      // Hand off with the celebration still up: it covers the canvas through
+      // the route fade, and _pushTripScreen drops both it and our map once
+      // the trip screen is actually on top.
+      handedOff = true;
+      final String? result = await _pushTripScreen(
+        tripId: acceptedTripId,
+        riderName: name,
+        riderPhotoUrl: riderPhotoUrl,
+        riderRating: riderRating,
+        riderIsNew: riderIsNew,
+        routePoints: preRoutePoints,
       );
-      // If we somehow survived underneath, bring the canvas back.
-      _remountMapSurface();
-      // Clear local offer/trip refs so a later back_to_home pop doesn't
-      // make the controller think a ghost trip is still in progress.
-      _tripId = null;
-      _currentOfferId = null;
-    }
+      if (!mounted) return;
+      _hideAcceptedOverlay();
+      if (result == 'completed') {
+        // Back on this screen for the earnings overlay — bring the map back.
+        _remountMapSurface();
+        // Show the earnings / completed overlay (mirrors _complete())
+        _setState(() {
+          _trips++;
+          _prevEarnings = _earnings;
+          _earnings += _fare;
+          _prevLastTripEarnings = _lastTripEarnings;
+          _lastTripEarnings = _fare;
+          _phase = _Phase.completed;
+          _stars = 5;
+        });
+        _syncSearchPulse();
+        _cacheEarnings();
+        _doneCtrl?.forward(from: 0);
+      } else if (result == 'back_to_home') {
+        // Driver pressed back to go home — trip is still active.
+        // Navigate to DriverHomeScreen with returnFromTrip so the Resume
+        // button appears.  Do NOT call _cancel() — the trip must survive.
+        _goBackToHomeWithTrip();
+      } else if (result == 'cancelled') {
+        // Trip screen reports a remote cancellation (dispatch or auto-cancel).
+        // The driver cannot cancel trips directly anymore — this branch is
+        // only reached when the trip was ended from outside the driver app.
+        // Just reset local state and return to searching with a gold toast.
+        debugPrint(
+            '[DriverOnline] trip screen popped with result=cancelled — remote cancel, resetting');
+        _resetToSearchingOnRemoteCancel();
+      } else {
+        // result == null — DriverTripAcceptScreen left via pushAndRemoveUntil
+        // (rating screen, home) rather than popping a result, so nothing was
+        // handed back. It owns the trip lifecycle from `arrived` onward and
+        // its own exit navigation; touching trip state from here would race
+        // its transitions. Never cancel here — that was the v293 phantom
+        // cancel that showed the rider "Ride Cancelled by operator" while
+        // the driver was still driving.
+        debugPrint(
+          '[DriverOnline] trip screen returned null — it navigated away on its '
+          'own. Leaving the trip alone.',
+        );
+        // If we somehow survived underneath, bring the canvas back.
+        _remountMapSurface();
+        // Clear local offer/trip refs so a later back_to_home pop doesn't
+        // make the controller think a ghost trip is still in progress.
+        _tripId = null;
+        _currentOfferId = null;
+      }
     } catch (e, stack) {
       debugPrint('[DriverOnline] ═══════════════════════════════════════');
       debugPrint('[DriverOnline] _acceptOffer unexpected error: $e');
@@ -2242,6 +2319,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
               final s = v.toString().trim();
               return s.isEmpty ? fallback : s;
             }
+
             await _pushTripScreen(
               tripId: tripId,
               riderName: text(r['rider_name'], 'Rider'),
@@ -2373,23 +2451,23 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     final future = Navigator.of(context).push<String>(
       tripHandoffRoute(
         DriverTripAcceptScreen(
-          tripId:         tripId,
-          riderName:      riderName,
-          riderPhotoUrl:  riderPhotoUrl,
-          riderRating:    riderRating,
-          riderIsNew:     riderIsNew,
-          riderId:        int.tryParse(_riderId),
-          pickupLatLng:   _pickupLL,
-          dropoffLatLng:  _dropoffLL,
-          pickupAddress:  _pickupAddr,
+          tripId: tripId,
+          riderName: riderName,
+          riderPhotoUrl: riderPhotoUrl,
+          riderRating: riderRating,
+          riderIsNew: riderIsNew,
+          riderId: int.tryParse(_riderId),
+          pickupLatLng: _pickupLL,
+          dropoffLatLng: _dropoffLL,
+          pickupAddress: _pickupAddr,
           dropoffAddress: _dropoffAddr,
-          fare:           _fare,
-          vehicleType:    _vehicleType,
-          driverPos:      _pos ?? _pickupLL,
+          fare: _fare,
+          vehicleType: _vehicleType,
+          driverPos: _pos ?? _pickupLL,
           distToPickupKm: _distToPickup,
-          etaMinutes:     _etaToPickup,
-          riderPhone:     _riderPhone,
-          routePoints:    routePoints,
+          etaMinutes: _etaToPickup,
+          riderPhone: _riderPhone,
+          routePoints: routePoints,
           pickupInstructions: _riderNotes,
         ),
       ),
@@ -2510,8 +2588,12 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       final assigned = (trip['driver_id'] as num?)?.toInt();
       final status = (trip['status'] ?? '').toString().toLowerCase().trim();
       const live = {
-        'accepted', 'driver_en_route', 'driver_arriving', 'arrived',
-        'in_trip', 'in_progress',
+        'accepted',
+        'driver_en_route',
+        'driver_arriving',
+        'arrived',
+        'in_trip',
+        'in_progress',
       };
       return assigned != null && assigned == _driverId && live.contains(status);
     } catch (e) {
@@ -2598,7 +2680,9 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       // Guard: don't reset a disposed controller (can throw)
       if (_rejectSlideCtrl != null &&
           (_rejectSlideCtrl!.isAnimating || _rejectSlideCtrl!.isCompleted)) {
-        try { _rejectSlideCtrl!.reset(); } catch (_) {}
+        try {
+          _rejectSlideCtrl!.reset();
+        } catch (_) {}
       }
 
       // CRASH FIX: Defer annotation clearing to next frame so the widget
@@ -2657,12 +2741,17 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     try {
       final cam = await _map!.cameraForCoordinatesPadding(
         [
-          mapbox.Point(coordinates: mapbox.Position(_pickupLL.longitude, _pickupLL.latitude)),
-          mapbox.Point(coordinates: mapbox.Position(_dropoffLL.longitude, _dropoffLL.latitude)),
+          mapbox.Point(
+              coordinates:
+                  mapbox.Position(_pickupLL.longitude, _pickupLL.latitude)),
+          mapbox.Point(
+              coordinates:
+                  mapbox.Position(_dropoffLL.longitude, _dropoffLL.latitude)),
         ],
         mapbox.CameraOptions(),
         mapbox.MbxEdgeInsets(top: 80, left: 60, bottom: 280, right: 60),
-        null, null,
+        null,
+        null,
       );
       if (!mounted) return;
       await _map?.flyTo(cam, mapbox.MapAnimationOptions(duration: 300));
@@ -2679,11 +2768,6 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     // Phase 3: Rotate 20
     _camera(mapbox.CameraOptions(bearing: 20), animateMs: 600);
   }
-
-
-
-
-
 
   void _decline() {
     int? toInt(dynamic v) {
@@ -2722,7 +2806,9 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     });
     _syncSearchPulse();
     _clearAllAnnotations();
-    if (_pos != null) _animateToPosition(_pos!, zoom: 15.5, bearing: 0, tilt: 0);
+    if (_pos != null) {
+      _animateToPosition(_pos!, zoom: 15.5, bearing: 0, tilt: 0);
+    }
     _startPolling();
   }
 
@@ -2779,7 +2865,9 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     });
     _syncSearchPulse();
     _clearAllAnnotations();
-    if (_pos != null) _animateToPosition(_pos!, zoom: 15.5, bearing: 0, tilt: 0);
+    if (_pos != null) {
+      _animateToPosition(_pos!, zoom: 15.5, bearing: 0, tilt: 0);
+    }
     _startPolling();
     // Refresh earnings from API so weekly total stays in sync
     _loadAllEarnings();
@@ -2794,7 +2882,8 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
         context: context,
         builder: (ctx) => AlertDialog(
           backgroundColor: const Color(0xFF1A1A1F),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           title: const Text(
             'Active Offer',
             style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
@@ -2806,7 +2895,8 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx),
-              child: const Text('OK', style: TextStyle(color: Color(0xFFE8C547))),
+              child:
+                  const Text('OK', style: TextStyle(color: Color(0xFFE8C547))),
             ),
           ],
         ),
@@ -2845,14 +2935,14 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       (_) => false,
     );
   }
-  
+
   void _pauseAvailability() {
     HapticService.mediumImpact();
     _setState(() => _isPaused = true);
-    
+
     // Stop polling for offers while paused
     _pollT?.cancel();
-    
+
     // Show pause dialog with timer options
     showDialog(
       context: context,
@@ -2892,14 +2982,14 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       },
     );
   }
-  
+
   void _resumeFromPause() {
     _setState(() => _isPaused = false);
     _pauseTimer?.cancel();
     _startPolling(); // Resume polling
     _snack('▶️ Back online - receiving trip requests');
   }
-  
+
   void _scheduleResume({required int minutes}) {
     _pauseTimer?.cancel();
     _pauseTimer = Timer(Duration(minutes: minutes), () {
@@ -3002,7 +3092,9 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     if (!mounted) return;
     _syncSearchPulse();
     _clearAllAnnotations();
-    if (_pos != null) _animateToPosition(_pos!, zoom: 15.5, bearing: 0, tilt: 0);
+    if (_pos != null) {
+      _animateToPosition(_pos!, zoom: 15.5, bearing: 0, tilt: 0);
+    }
     _startPolling();
     if (mounted) {
       // Use maybeOf — if the screen has no Scaffold ancestor (e.g. mid
@@ -3078,7 +3170,8 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       },
       onError: (e) {
         debugPrint('[DriverOnline] cancel watcher error for $tripId: $e');
-        final isPermDenied = e is FirebaseException && e.code == 'permission-denied';
+        final isPermDenied =
+            e is FirebaseException && e.code == 'permission-denied';
         if (isPermDenied || e.toString().contains('permission-denied')) {
           FirebaseAuth.instance.signInAnonymously().ignore();
         }
@@ -3282,11 +3375,13 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
               } else if (type == 'merge') {
                 instrText = 'Merge${sName.isNotEmpty ? ' onto $sName' : ''}';
               } else if (type == 'fork') {
-                instrText = 'Keep $mod at fork${sName.isNotEmpty ? ' onto $sName' : ''}';
+                instrText =
+                    'Keep $mod at fork${sName.isNotEmpty ? ' onto $sName' : ''}';
               } else if (type == 'ramp') {
                 instrText = 'Take ramp${sName.isNotEmpty ? ' to $sName' : ''}';
               } else {
-                instrText = sName.isNotEmpty ? 'Continue on $sName' : 'Continue';
+                instrText =
+                    sName.isNotEmpty ? 'Continue on $sName' : 'Continue';
               }
               List<LatLng> stepPoly = [stepLoc, nextLoc];
               final stepGeo = step['geometry'];

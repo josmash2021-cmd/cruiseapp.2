@@ -24,7 +24,10 @@ import '../../services/api_service.dart';
 import '../../services/navigation_service.dart';
 import '../../widgets/verified_avatar.dart';
 import '../../widgets/neu_style.dart';
+import '../../widgets/offer_countdown_ring.dart';
+import '../../widgets/route_connector_line.dart';
 import '../../widgets/map/circular_pin_renderer.dart';
+import '../../widgets/map/route_endpoint_markers.dart';
 import '../../services/gps_service.dart';
 import '../../services/heading_service.dart';
 import '../../services/earnings_privacy.dart';
@@ -118,11 +121,13 @@ const Duration _acceptedOverlayDuration = Duration(seconds: 3);
 const _gold = Color(0xFFD4A843);
 const _goldLight = Color(0xFFF5D990);
 const _navyRoute = Color(0xFF5BA3F5);
-const _navyGlow  = Color(0x405BA3F5);
+const _navyGlow = Color(0x405BA3F5);
 
 class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     with TickerProviderStateMixin, WidgetsBindingObserver {
-  void _setState(VoidCallback fn) { if (mounted) setState(fn); }
+  void _setState(VoidCallback fn) {
+    if (mounted) setState(fn);
+  }
 
   static final _usSuffixRe = RegExp(r',\s*United States$');
   static final _prSuffixRe = RegExp(r',\s*Puerto Rico$');
@@ -141,7 +146,8 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   final _mapKey = GlobalKey();
   mapbox.MapboxMap? _map;
   mapbox.PointAnnotationManager? _pointAnnotMgr;
-  mapbox.PointAnnotationManager? _pinAnnotMgr;   // teardrop pins (icon-anchor: bottom)
+  mapbox.PointAnnotationManager?
+      _pinAnnotMgr; // teardrop pins (icon-anchor: bottom)
   mapbox.PolylineAnnotationManager? _polylineAnnotMgr;
   // Active annotations
   mapbox.PointAnnotation? _carAnnot;
@@ -188,15 +194,15 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     try {
       map
           .flyTo(
-            mapbox.CameraOptions(
-              center: mapbox.Point(
-                  coordinates: mapbox.Position(pos.longitude, pos.latitude)),
-              zoom: zoom,
-              bearing: bearing,
-              pitch: tilt,
-            ),
-            mapbox.MapAnimationOptions(duration: _kRecenterFlightMs),
-          )
+        mapbox.CameraOptions(
+          center: mapbox.Point(
+              coordinates: mapbox.Position(pos.longitude, pos.latitude)),
+          zoom: zoom,
+          bearing: bearing,
+          pitch: tilt,
+        ),
+        mapbox.MapAnimationOptions(duration: _kRecenterFlightMs),
+      )
           // The native side rejects asynchronously when the view is torn
           // down mid-animation; the try/catch only sees synchronous throws.
           .catchError((Object e) {
@@ -221,9 +227,14 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   List<Map<String, dynamic>> _pendingOffers = [];
   // _offersExpanded removed — cards always visible via PageView
 
-
   // ── Route preview for a tapped offer ──
   Map<String, dynamic>? _previewingOffer;
+
+  /// True while a ride offer card is on screen. The top row hides behind
+  /// this, and the X that replaces it appears on the same condition, so
+  /// the two can never both be showing or both be gone.
+  bool get _offerOnScreen =>
+      _phase == _Phase.searching && _pendingOffers.isNotEmpty;
   bool _offerRouteShown = false; // true after route draw completes
   AnimationController? _routePulseCtrl;
   bool _isPollingOffers = false;
@@ -313,6 +324,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   String _riderId = '';
   String _pickupAddr = '';
   String _dropoffAddr = '';
+
   /// Free text the passenger left when booking (Trip.notes). Carried through
   /// the accept so DriverTripAcceptScreen can show it — it used to stop here,
   /// so the instructions card on that screen could never appear on this path.
@@ -387,14 +399,15 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   // -- Golden animated dot --
   final GoldLocationDot _goldDot = GoldLocationDot(heading: true);
   Uint8List? _goldPinBytes;
-  bool _dotPopDone = false;   // true after first-appearance pop completes
-  double _dotPopScale = 0.0;  // 0→1.15→1.0 during pop, then 1.0
+  bool _dotPopDone = false; // true after first-appearance pop completes
+  double _dotPopScale = 0.0; // 0→1.15→1.0 during pop, then 1.0
   // Re-asserts the dot annotation while the smooth ticker is parked (driver
   // stationary). Without it a dot that failed to appear — or whose final
   // pop-scale flush was dropped mid-IPC — stays wrong until the driver moves.
   Timer? _dotWatchdog;
   bool _smoothTickerStarted = false; // first start is deferred, restarts aren't
-  bool _annotUpdateBusy = false; // prevents overlapping annotation update() IPC calls
+  bool _annotUpdateBusy =
+      false; // prevents overlapping annotation update() IPC calls
 
   /// True once the native gold dot has been flushed to invisible, so the
   /// per-frame path can stop re-sending the same hide.
@@ -419,7 +432,8 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   /// panels responsive — right for panels, far too slow for an arrow
   /// turning through a bend. This repaints only the marker.
   final ValueNotifier<int> _markerFrame = ValueNotifier<int>(0);
-  bool _annotCreateBusy = false; // prevents parallel create/delete (stricter than update)
+  bool _annotCreateBusy =
+      false; // prevents parallel create/delete (stricter than update)
   bool _isClearingAnnotations = false; // prevents create during clear
   // Monotonically incremented generation counter captured when each
   // annotation is created. If _mapGeneration has moved on, the annotation
@@ -460,7 +474,6 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   double _slideVal = 0;
   bool _slid = false;
   int _stars = 5;
-
 
   // -- Camera follow mode --
   bool _cameraFollowing = true;
@@ -510,8 +523,10 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   // ── What the expanded panel shows, same figures as the home sheet ──
   int _tripsToday = 0;
   double _hoursToday = 0;
+
   /// 24 buckets, local hours. Empty until the first fetch lands.
   List<double> _hourlySeries = const [];
+
   /// Seven days, oldest first, paired with [_daySeriesLabels].
   List<double> _daySeries = const [];
   List<String> _daySeriesLabels = const [];
@@ -676,10 +691,22 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
         duration: const Duration(milliseconds: 600),
       );
       _scheduledBounceAnim = TweenSequence<double>([
-        TweenSequenceItem(tween: Tween(begin: 1.0, end: 1.25).chain(CurveTween(curve: Curves.easeOut)), weight: 30),
-        TweenSequenceItem(tween: Tween(begin: 1.25, end: 0.9).chain(CurveTween(curve: Curves.easeInOut)), weight: 25),
-        TweenSequenceItem(tween: Tween(begin: 0.9, end: 1.1).chain(CurveTween(curve: Curves.easeInOut)), weight: 25),
-        TweenSequenceItem(tween: Tween(begin: 1.1, end: 1.0).chain(CurveTween(curve: Curves.easeOut)), weight: 20),
+        TweenSequenceItem(
+            tween: Tween(begin: 1.0, end: 1.25)
+                .chain(CurveTween(curve: Curves.easeOut)),
+            weight: 30),
+        TweenSequenceItem(
+            tween: Tween(begin: 1.25, end: 0.9)
+                .chain(CurveTween(curve: Curves.easeInOut)),
+            weight: 25),
+        TweenSequenceItem(
+            tween: Tween(begin: 0.9, end: 1.1)
+                .chain(CurveTween(curve: Curves.easeInOut)),
+            weight: 25),
+        TweenSequenceItem(
+            tween: Tween(begin: 1.1, end: 1.0)
+                .chain(CurveTween(curve: Curves.easeOut)),
+            weight: 20),
       ]).animate(_scheduledBounceCtrl!);
     });
 
@@ -889,7 +916,9 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   Uint8List? get _vehicleIconBytes {
     final vt = _vehicleType.trim().toLowerCase();
     if (vt.contains('suburban') || vt.contains('suv')) return _suvIconBytes;
-    if (vt.contains('fusion') || vt.contains('camry') || vt.contains('sedan')) return _sedanIconBytes;
+    if (vt.contains('fusion') || vt.contains('camry') || vt.contains('sedan')) {
+      return _sedanIconBytes;
+    }
     if (vt.contains('cruisex') || vt.contains('cruise')) return _sedanIconBytes;
     return _suvIconBytes;
   }
@@ -907,12 +936,15 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     if (_pos == null) return;
     // Auto-evict entries older than 10 minutes
     final now = DateTime.now();
-    _routeCache.removeWhere((_, v) => now.difference(v.cachedAt).inMinutes > 10);
+    _routeCache
+        .removeWhere((_, v) => now.difference(v.cachedAt).inMinutes > 10);
     for (final offer in offers) {
       // Pre-warm rider photo so it's instant when card shows
-      final photoUrl = (offer['rider_photo_url'] ?? offer['photo_url'] ?? '') as String;
+      final photoUrl =
+          (offer['rider_photo_url'] ?? offer['photo_url'] ?? '') as String;
       if (photoUrl.isNotEmpty) {
-        CachedNetworkImageProvider(photoUrl).resolve(const ImageConfiguration());
+        CachedNetworkImageProvider(photoUrl)
+            .resolve(const ImageConfiguration());
       }
       final oid = (offer['offer_id'] ?? offer['id'] ?? '').toString();
       if (oid.isEmpty || _routeCache.containsKey(oid)) continue;
@@ -921,7 +953,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
       final dLat = _safeDouble(offer['dropoff_lat']);
       final dLng = _safeDouble(offer['dropoff_lng']);
       if (pLat == 0 || pLng == 0 || dLat == 0 || dLng == 0) continue;
-      final pickupLL  = LatLng(pLat, pLng);
+      final pickupLL = LatLng(pLat, pLng);
       final dropoffLL = LatLng(dLat, dLng);
       // Pre-cache map tiles for pickup + dropoff areas (silent background)
       MapCacheService().precacheRoute(
@@ -938,14 +970,22 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
 
       // Pre-build unified gold pins + fetch routes in parallel
       Future.wait<Object?>([
-        _fetchRouteWithMetrics(_pos!, pickupLL),                                    // [0] segOne + metrics
-        _fetchRouteWithMetrics(pickupLL, dropoffLL),                                // [1] segTwo + metrics
-        renderCircularPinBytes(icon: CircularPinIcon.person, isPickup: true, radius: 32),  // [2] pickup pin
-        renderCircularPinBytes(icon: _goldPinIconFor(placeType), isPickup: false, radius: 32), // [3] dropoff pin
+        _fetchRouteWithMetrics(_pos!, pickupLL), // [0] segOne + metrics
+        _fetchRouteWithMetrics(pickupLL, dropoffLL), // [1] segTwo + metrics
+        renderCircularPinBytes(
+            icon: CircularPinIcon.person,
+            isPickup: true,
+            radius: 32), // [2] pickup pin
+        renderCircularPinBytes(
+            icon: _goldPinIconFor(placeType),
+            isPickup: false,
+            radius: 32), // [3] dropoff pin
       ]).then((results) {
         if (!mounted) return;
-        final seg1 = results[0] as ({List<LatLng> pts, double? durSec, double? distM});
-        final seg2 = results[1] as ({List<LatLng> pts, double? durSec, double? distM});
+        final seg1 =
+            results[0] as ({List<LatLng> pts, double? durSec, double? distM});
+        final seg2 =
+            results[1] as ({List<LatLng> pts, double? durSec, double? distM});
         _routeCache[oid] = _CachedOfferRoute(
           segOne: seg1.pts,
           segTwo: seg2.pts,
@@ -1009,10 +1049,12 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
 
   /// Fetch route points + duration/distance from Directions APIs.
   /// Returns (points, durationSeconds, distanceMeters).
-  Future<({List<LatLng> pts, double? durSec, double? distM})> _fetchRouteWithMetrics(LatLng o, LatLng d) async {
+  Future<({List<LatLng> pts, double? durSec, double? distM})>
+      _fetchRouteWithMetrics(LatLng o, LatLng d) async {
     // Google Directions API
     try {
-      final uri = Uri.https('maps.googleapis.com', '/maps/api/directions/json', {
+      final uri =
+          Uri.https('maps.googleapis.com', '/maps/api/directions/json', {
         'origin': '${o.latitude},${o.longitude}',
         'destination': '${d.latitude},${d.longitude}',
         'key': ApiKeys.webServices,
@@ -1023,7 +1065,8 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
         final data = jsonDecode(res.body);
         if (data['status'] == 'OK' && (data['routes'] as List).isNotEmpty) {
           final route = data['routes'][0];
-          final pts = _decodePoly(route['overview_polyline']['points'] as String);
+          final pts =
+              _decodePoly(route['overview_polyline']['points'] as String);
           final leg = (route['legs'] as List?)?.firstOrNull;
           final dur = (leg?['duration']?['value'] as num?)?.toDouble();
           final dist = (leg?['distance']?['value'] as num?)?.toDouble();
@@ -1033,13 +1076,16 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     } catch (_) {}
     // OSRM fallback
     try {
-      final path = '/route/v1/driving/${o.longitude},${o.latitude};${d.longitude},${d.latitude}';
+      final path =
+          '/route/v1/driving/${o.longitude},${o.latitude};${d.longitude},${d.latitude}';
       final uri = Uri.https('router.project-osrm.org', path, {
-        'overview': 'full', 'geometries': 'polyline',
+        'overview': 'full',
+        'geometries': 'polyline',
       });
       final res = await http.get(uri).timeout(const Duration(seconds: 10));
       final data = jsonDecode(res.body);
-      if (data is Map<String, dynamic> && data['code']?.toString().toUpperCase() == 'OK') {
+      if (data is Map<String, dynamic> &&
+          data['code']?.toString().toUpperCase() == 'OK') {
         final routes = data['routes'] as List?;
         if (routes != null && routes.isNotEmpty) {
           final r = routes[0];
@@ -1067,7 +1113,8 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
           final coords = r['geometry']?['coordinates'] as List?;
           if (coords != null && coords.isNotEmpty) {
             final pts = coords
-                .map((c) => LatLng((c[1] as num).toDouble(), (c[0] as num).toDouble()))
+                .map((c) =>
+                    LatLng((c[1] as num).toDouble(), (c[0] as num).toDouble()))
                 .toList();
             final dur = (r['duration'] as num?)?.toDouble();
             final dist = (r['distance'] as num?)?.toDouble();
@@ -1106,7 +1153,9 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   double get _mapBottomPadding {
     final screenH = MediaQuery.of(context).size.height;
     if (_previewingOffer != null) return screenH * 0.48;
-    if (_phase == _Phase.searching && _pendingOffers.isNotEmpty) return screenH * 0.48;
+    if (_phase == _Phase.searching && _pendingOffers.isNotEmpty) {
+      return screenH * 0.48;
+    }
     if (_phase == _Phase.enRouteToPickup) return 270;
     if (_phase == _Phase.arrivedAtPickup) return 290;
     if (_phase == _Phase.routeSummary) return 330;
@@ -1129,8 +1178,9 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
         _phase == _Phase.routeSummary;
     SystemChrome.setSystemUIOverlayStyle(
       SystemUiOverlayStyle(
-        statusBarIconBrightness:
-            isNav ? Brightness.light : (isDark ? Brightness.light : Brightness.dark),
+        statusBarIconBrightness: isNav
+            ? Brightness.light
+            : (isDark ? Brightness.light : Brightness.dark),
       ),
     );
 
@@ -1156,9 +1206,8 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     // with the things that actually mean something in gold: the driver's
     // own arrow, the route, the GO button, an offer arriving. Controls are
     // not events. Neutral here, gold reserved for what is happening.
-    final fabIcon = isDark
-        ? Colors.white
-        : Colors.black.withValues(alpha: 0.65);
+    final fabIcon =
+        isDark ? Colors.white : Colors.black.withValues(alpha: 0.65);
     final textPrimary = isDark ? Colors.white : const Color(0xFF1C1C1E);
     final textMuted = isDark
         ? Colors.white.withValues(alpha: 0.45)
@@ -1181,15 +1230,21 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
         body: Stack(
           clipBehavior: Clip.none,
           children: [
-        // Offline connectivity banner
-        const Positioned(
-          top: 0, left: 0, right: 0,
-          child: SafeArea(child: OfflineBanner()),
-        ),
+            // Offline connectivity banner
+            const Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: SafeArea(child: OfflineBanner()),
+            ),
 
-        // â”€â”€ Map â”€â”€
-        _mapW(isDark),
+            // â”€â”€ Map â”€â”€
+            _mapW(isDark),
 
+            // While an offer is up, the three top buttons step aside and
+            // the X takes the notification slot: the only two answers to a
+            // ride offer are Accept and dismiss, and Home / Earnings /
+            // Notifications beside them are three ways to lose it.
             // â”€â”€ Nav header (during navigation phases) â”€â”€
             if (isNav)
               Positioned(
@@ -1200,7 +1255,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
               ),
 
             // â”€â”€ Top-left: Home button (hidden during nav — nav header has its own back) â”€â”€
-            if (!isNav)
+            if (!isNav && !_offerOnScreen)
               Positioned(
                 top: top + 10,
                 left: 16,
@@ -1222,7 +1277,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
               ),
 
             // â”€â”€ Top-center: Earnings pill + TODAY (hidden during nav) â”€â”€
-            if (!isNav)
+            if (!isNav && !_offerOnScreen)
               Positioned(
                 top: top + 10,
                 left: 0,
@@ -1238,83 +1293,87 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
 
             // â”€â”€ Side floating buttons (only when searching with no offers) â”€â”€
             // ── Scheduled rides badge (top-right, always visible, hidden during nav) ──
-            if (!isNav)
+            if (!isNav && !_offerOnScreen)
               Positioned(
                 top: top + 10,
                 right: 16,
                 child: _enterTopWrap(
                   ScaleTransition(
-                  scale: _scheduledBounceAnim ?? const AlwaysStoppedAnimation(1.0),
-                  child: GestureDetector(
-                    onTap: () {
-                      HapticService.mediumImpact();
-                      _setState(() => _showScheduledToast = false);
-                      Navigator.push(
-                        context,
-                        slideFromRightRoute(const DriverInboxScreen()),
-                      );
-                    },
-                    child: Container(
-                      width: 48,
-                      height: 48,
-                      decoration: isDark && _scheduledAvailCount == 0
-                          ? neuBox(radius: 24, borderColor: fabBorder)
-                          : BoxDecoration(
-                        color: fabBg,
-                        shape: BoxShape.circle,
-                        border: Border.all(
-                          color: _scheduledAvailCount > 0
-                              ? const Color(0xFFE8C547).withValues(alpha: 0.6)
-                              : fabBorder,
-                          width: 1,
-                        ),
-                        boxShadow: _scheduledAvailCount > 0
-                            ? [
-                                BoxShadow(
-                                  color: const Color(0xFFE8C547).withValues(alpha: 0.25),
-                                  blurRadius: 10,
-                                  spreadRadius: 1,
+                    scale: _scheduledBounceAnim ??
+                        const AlwaysStoppedAnimation(1.0),
+                    child: GestureDetector(
+                      onTap: () {
+                        HapticService.mediumImpact();
+                        _setState(() => _showScheduledToast = false);
+                        Navigator.push(
+                          context,
+                          slideFromRightRoute(const DriverInboxScreen()),
+                        );
+                      },
+                      child: Container(
+                        width: 48,
+                        height: 48,
+                        decoration: isDark && _scheduledAvailCount == 0
+                            ? neuBox(radius: 24, borderColor: fabBorder)
+                            : BoxDecoration(
+                                color: fabBg,
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                  color: _scheduledAvailCount > 0
+                                      ? const Color(0xFFE8C547)
+                                          .withValues(alpha: 0.6)
+                                      : fabBorder,
+                                  width: 1,
                                 ),
-                              ]
-                            : null,
-                      ),
-                      child: Stack(
-                        clipBehavior: Clip.none,
-                        children: [
-                          Center(
-                            child: Icon(
-                              Icons.notifications_none_rounded,
-                              size: 22,
-                              color: fabIcon,
+                                boxShadow: _scheduledAvailCount > 0
+                                    ? [
+                                        BoxShadow(
+                                          color: const Color(0xFFE8C547)
+                                              .withValues(alpha: 0.25),
+                                          blurRadius: 10,
+                                          spreadRadius: 1,
+                                        ),
+                                      ]
+                                    : null,
+                              ),
+                        child: Stack(
+                          clipBehavior: Clip.none,
+                          children: [
+                            Center(
+                              child: Icon(
+                                Icons.notifications_none_rounded,
+                                size: 22,
+                                color: fabIcon,
+                              ),
                             ),
-                          ),
-                          if (_scheduledAvailCount > 0)
-                            Positioned(
-                              top: -4,
-                              right: -4,
-                              child: Container(
-                                padding: const EdgeInsets.all(4),
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFFE8C547),
-                                  shape: BoxShape.circle,
-                                  border: Border.all(color: Colors.black, width: 1.5),
-                                ),
-                                child: Text(
-                                  '$_scheduledAvailCount',
-                                  style: const TextStyle(
-                                    color: Colors.black,
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.w800,
+                            if (_scheduledAvailCount > 0)
+                              Positioned(
+                                top: -4,
+                                right: -4,
+                                child: Container(
+                                  padding: const EdgeInsets.all(4),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFE8C547),
+                                    shape: BoxShape.circle,
+                                    border: Border.all(
+                                        color: Colors.black, width: 1.5),
+                                  ),
+                                  child: Text(
+                                    '$_scheduledAvailCount',
+                                    style: const TextStyle(
+                                      color: Colors.black,
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w800,
+                                    ),
                                   ),
                                 ),
                               ),
-                            ),
-                        ],
+                          ],
+                        ),
                       ),
                     ),
                   ),
                 ),
-                  ),
               ),
 
             // ── Scheduled rides toast notification ──
@@ -1329,7 +1388,8 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                   builder: (context, value, child) => Transform.scale(
                     scale: value,
                     alignment: Alignment.topRight,
-                    child: Opacity(opacity: value.clamp(0.0, 1.0), child: child),
+                    child:
+                        Opacity(opacity: value.clamp(0.0, 1.0), child: child),
                   ),
                   child: GestureDetector(
                     onTap: () {
@@ -1337,11 +1397,13 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                       _setState(() => _showScheduledToast = false);
                       Navigator.push(
                         context,
-                        slideFromRightRoute(const ScheduledRidesScreen(initialTab: 0)),
+                        slideFromRightRoute(
+                            const ScheduledRidesScreen(initialTab: 0)),
                       ).then((_) => _fetchScheduledCount());
                     },
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 14, vertical: 10),
                       decoration: BoxDecoration(
                         color: const Color(0xFF1A1D24),
                         borderRadius: BorderRadius.circular(14),
@@ -1351,7 +1413,8 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                         ),
                         boxShadow: [
                           BoxShadow(
-                            color: const Color(0xFFE8C547).withValues(alpha: 0.15),
+                            color:
+                                const Color(0xFFE8C547).withValues(alpha: 0.15),
                             blurRadius: 12,
                             spreadRadius: 1,
                           ),
@@ -1493,10 +1556,12 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
               ),
 
             // â”€â”€ Stacked Ride Offer Cards (Spark-style) â”€â”€
-            if (_phase == _Phase.searching &&
-                _pendingOffers.isNotEmpty)
+            if (_phase == _Phase.searching && _pendingOffers.isNotEmpty)
               Positioned(
-                bottom: -30,
+                // Flush with the bottom edge. This was -30, which hid the
+                // dead space under the old shorter card and now eats the
+                // real one — the card's own padding does that job.
+                bottom: 0,
                 left: 0,
                 right: 0,
                 child: _rideOfferCards(
@@ -1509,9 +1574,8 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                 ),
               ),
 
-
-            // â”€â”€ X button to close preview (top-right) â”€â”€
-            if (_previewingOffer != null)
+            // â”€â”€ Dismiss the offer — top-right, where the bell was â”€â”€
+            if (_offerOnScreen || _previewingOffer != null)
               Positioned(
                 top: top + 10,
                 right: 16,
@@ -1519,9 +1583,20 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                   Icons.close_rounded,
                   48,
                   fabBg,
-                  fabBorder,
-                  fabIcon,
-                  () => _closePreview(),
+                  const Color(0x66E8C547),
+                  const Color(0xFFE8C547),
+                  () {
+                    HapticService.lightImpact();
+                    // With an offer up this rejects it; with only a preview
+                    // left there is nothing to reject, so it just closes.
+                    if (_pendingOffers.isEmpty) {
+                      _closePreview();
+                      return;
+                    }
+                    final idx =
+                        _currentOfferIndex.clamp(0, _pendingOffers.length - 1);
+                    _rejectOffer(_pendingOffers[idx]);
+                  },
                 ),
               ),
 
@@ -1529,7 +1604,9 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
             if (_phase == _Phase.searching)
               Positioned.fill(
                 child: AnimatedSlide(
-                  offset: _pendingOffers.isNotEmpty ? const Offset(0, 1) : Offset.zero,
+                  offset: _pendingOffers.isNotEmpty
+                      ? const Offset(0, 1)
+                      : Offset.zero,
                   duration: const Duration(milliseconds: 300),
                   curve: Curves.easeInOut,
                   child: AnimatedOpacity(
@@ -1600,171 +1677,173 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 //  NAV HEADER (Google Maps–style full-width turn bar)
 // ═══════════════════════════════════════════════════════════════════════════════
-Widget _navHeader() {
-  final toPickup = _phase == _Phase.enRouteToPickup;
-  final maneuverStr = _navState?.currentManeuver ?? 'straight';
-  final maneuverInfo = NavigationService.getManeuverIcon(maneuverStr);
-  final distToTurn = _navState?.distanceToTurnText ?? '';
-  final isOffRoute = _navState?.isOffRoute ?? false;
-  final topPad = MediaQuery.of(context).padding.top;
+  Widget _navHeader() {
+    final toPickup = _phase == _Phase.enRouteToPickup;
+    final maneuverStr = _navState?.currentManeuver ?? 'straight';
+    final maneuverInfo = NavigationService.getManeuverIcon(maneuverStr);
+    final distToTurn = _navState?.distanceToTurnText ?? '';
+    final isOffRoute = _navState?.isOffRoute ?? false;
+    final topPad = MediaQuery.of(context).padding.top;
 
-  // Google Maps–style dark teal (matches Google nav header closely)
-  const Color navBg = Color(0xFF1C3F5E);
-  const Color navBgSub = Color(0xFF162F46);
-  final Color bg = isOffRoute ? const Color(0xFFC0392B) : navBg;
-  final Color bgSub = isOffRoute ? const Color(0xFFA93226) : navBgSub;
+    // Google Maps–style dark teal (matches Google nav header closely)
+    const Color navBg = Color(0xFF1C3F5E);
+    const Color navBgSub = Color(0xFF162F46);
+    final Color bg = isOffRoute ? const Color(0xFFC0392B) : navBg;
+    final Color bgSub = isOffRoute ? const Color(0xFFA93226) : navBgSub;
 
-  return Material(
-    color: Colors.transparent,
-    child: Container(
-      color: bg,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          // Status bar safe area — same dark colour
-          SizedBox(height: topPad),
-          // ── Main turn instruction row ──────────────────────────
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                // Turn arrow box
-                Container(
-                  width: 58,
-                  height: 58,
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.18),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Icon(
-                    maneuverInfo.icon,
-                    color: Colors.white,
-                    size: 36,
-                  ),
-                ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      if (!isOffRoute && distToTurn.isNotEmpty)
-                        Text(
-                          distToTurn,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 30,
-                            fontWeight: FontWeight.w900,
-                            height: 1.0,
-                          ),
-                        ),
-                      if (isOffRoute)
-                        Text(
-                          S.of(context).rerouting,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 22,
-                            fontWeight: FontWeight.w900,
-                            height: 1.1,
-                          ),
-                        ),
-                      const SizedBox(height: 2),
-                      Text(
-                        isOffRoute ? S.of(context).offRoute : _navInstruct,
-                        style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.9),
-                          fontSize: 15,
-                          fontWeight: FontWeight.w600,
-                        ),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ],
-                  ),
-                ),
-                // Cancel policy 2026-04-11: the driver can no longer
-                // directly cancel an active trip. The close button on
-                // the pickup-nav row is removed; if the driver needs
-                // to abort they must contact support (or the trip will
-                // eventually be dispatch-cancelled which resets the
-                // controller via _resetToSearchingOnRemoteCancel).
-              ],
-            ),
-          ),
-          // ── "Then" next-maneuver sub-row ───────────────────────
-          if (_navState?.nextStep != null && !isOffRoute)
-            Container(
-              color: bgSub,
-              padding: const EdgeInsets.fromLTRB(16, 7, 16, 7),
+    return Material(
+      color: Colors.transparent,
+      child: Container(
+        color: bg,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // Status bar safe area — same dark colour
+            SizedBox(height: topPad),
+            // ── Main turn instruction row ──────────────────────────
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
               child: Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
-                  Text(
-                    S.of(context).thenLabel,
-                    style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.55),
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 0.8,
+                  // Turn arrow box
+                  Container(
+                    width: 58,
+                    height: 58,
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.18),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Icon(
+                      maneuverInfo.icon,
+                      color: Colors.white,
+                      size: 36,
                     ),
                   ),
-                  const SizedBox(width: 8),
-                  Icon(
-                    NavigationService.getManeuverIcon(
-                      _navState!.nextStep!.maneuver,
-                    ).icon,
-                    color: Colors.white.withValues(alpha: 0.75),
-                    size: 17,
-                  ),
-                  const SizedBox(width: 6),
+                  const SizedBox(width: 14),
                   Expanded(
-                    child: Text(
-                      _navState!.nextStep!.instruction,
-                      style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.85),
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (!isOffRoute && distToTurn.isNotEmpty)
+                          Text(
+                            distToTurn,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 30,
+                              fontWeight: FontWeight.w900,
+                              height: 1.0,
+                            ),
+                          ),
+                        if (isOffRoute)
+                          Text(
+                            S.of(context).rerouting,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 22,
+                              fontWeight: FontWeight.w900,
+                              height: 1.1,
+                            ),
+                          ),
+                        const SizedBox(height: 2),
+                        Text(
+                          isOffRoute ? S.of(context).offRoute : _navInstruct,
+                          style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.9),
+                            fontSize: 15,
+                            fontWeight: FontWeight.w600,
+                          ),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
                     ),
                   ),
-                  // Progress + ETA compact row
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        '$_navEta min  ·  ${(_navDist * 0.621371).toStringAsFixed(1)} mi',
-                        style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.6),
-                          fontSize: 11,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      SizedBox(
-                        width: 40,
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(2),
-                          child: LinearProgressIndicator(
-                            value: _navProgress,
-                            backgroundColor: Colors.white.withValues(alpha: 0.15),
-                            valueColor: const AlwaysStoppedAnimation(Colors.white),
-                            minHeight: 3,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
+                  // Cancel policy 2026-04-11: the driver can no longer
+                  // directly cancel an active trip. The close button on
+                  // the pickup-nav row is removed; if the driver needs
+                  // to abort they must contact support (or the trip will
+                  // eventually be dispatch-cancelled which resets the
+                  // controller via _resetToSearchingOnRemoteCancel).
                 ],
               ),
             ),
-        ],
+            // ── "Then" next-maneuver sub-row ───────────────────────
+            if (_navState?.nextStep != null && !isOffRoute)
+              Container(
+                color: bgSub,
+                padding: const EdgeInsets.fromLTRB(16, 7, 16, 7),
+                child: Row(
+                  children: [
+                    Text(
+                      S.of(context).thenLabel,
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.55),
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 0.8,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Icon(
+                      NavigationService.getManeuverIcon(
+                        _navState!.nextStep!.maneuver,
+                      ).icon,
+                      color: Colors.white.withValues(alpha: 0.75),
+                      size: 17,
+                    ),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        _navState!.nextStep!.instruction,
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.85),
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    // Progress + ETA compact row
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          '$_navEta min  ·  ${(_navDist * 0.621371).toStringAsFixed(1)} mi',
+                          style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.6),
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        SizedBox(
+                          width: 40,
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(2),
+                            child: LinearProgressIndicator(
+                              value: _navProgress,
+                              backgroundColor:
+                                  Colors.white.withValues(alpha: 0.15),
+                              valueColor:
+                                  const AlwaysStoppedAnimation(Colors.white),
+                              minHeight: 3,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+          ],
+        ),
       ),
-    ),
-  );
-}
+    );
+  }
 }
 
 // ──────────────────────────────────────────────────
@@ -1843,7 +1922,6 @@ class _DriverRadarPainter extends CustomPainter {
   bool shouldRepaint(_DriverRadarPainter old) => old.progress != progress;
 }
 
-
 /// Cached route segments for a pending offer.
 class _CachedOfferRoute {
   final List<LatLng> segOne;
@@ -1904,13 +1982,39 @@ _PlaceType _detectPlaceType(String address) {
   if (has(['airport', 'aeropuerto', 'intl', 'international', 'terminal'])) {
     return _PlaceType.airport;
   }
-  if (has(['hotel', 'inn', 'suites', 'resort', 'marriott', 'hilton',
-           'hyatt', 'holiday', 'motel', 'lodge'])) {
+  if (has([
+    'hotel',
+    'inn',
+    'suites',
+    'resort',
+    'marriott',
+    'hilton',
+    'hyatt',
+    'holiday',
+    'motel',
+    'lodge'
+  ])) {
     return _PlaceType.hotel;
   }
-  if (has(['mall', 'plaza', 'center', 'centre', 'walmart', 'target',
-           'store', 'market', 'shop', 'restaurant', 'cafe', 'bar',
-           'gym', 'clinic', 'hospital', 'school', 'university'])) {
+  if (has([
+    'mall',
+    'plaza',
+    'center',
+    'centre',
+    'walmart',
+    'target',
+    'store',
+    'market',
+    'shop',
+    'restaurant',
+    'cafe',
+    'bar',
+    'gym',
+    'clinic',
+    'hospital',
+    'school',
+    'university'
+  ])) {
     return _PlaceType.commerce;
   }
   return _PlaceType.home;
@@ -1918,20 +2022,28 @@ _PlaceType _detectPlaceType(String address) {
 
 IconData _dropoffIconFor(_PlaceType type) {
   switch (type) {
-    case _PlaceType.airport:  return Icons.local_airport_rounded;
-    case _PlaceType.hotel:    return Icons.apartment_rounded;
-    case _PlaceType.commerce: return Icons.storefront_rounded;
-    case _PlaceType.home:     return Icons.home_rounded;
+    case _PlaceType.airport:
+      return Icons.local_airport_rounded;
+    case _PlaceType.hotel:
+      return Icons.apartment_rounded;
+    case _PlaceType.commerce:
+      return Icons.storefront_rounded;
+    case _PlaceType.home:
+      return Icons.home_rounded;
   }
 }
 
 /// Map _PlaceType to CircularPinIcon for unified circular pins.
 CircularPinIcon _goldPinIconFor(_PlaceType type) {
   switch (type) {
-    case _PlaceType.airport:  return CircularPinIcon.airplane;
-    case _PlaceType.hotel:    return CircularPinIcon.home;
-    case _PlaceType.commerce: return CircularPinIcon.store;
-    case _PlaceType.home:     return CircularPinIcon.home;
+    case _PlaceType.airport:
+      return CircularPinIcon.airplane;
+    case _PlaceType.hotel:
+      return CircularPinIcon.home;
+    case _PlaceType.commerce:
+      return CircularPinIcon.store;
+    case _PlaceType.home:
+      return CircularPinIcon.home;
   }
 }
 

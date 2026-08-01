@@ -2818,6 +2818,8 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
           builder: (_, child) => CustomPaint(
             foregroundPainter: _SearchingBorderPainter(
               progress: _searchPulseVal.value,
+              // Hands the light over to the divider as the sheet opens.
+              expansion: t,
             ),
             child: child,
           ),
@@ -2915,6 +2917,31 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                   ],
                 ),
               ),
+              // The divider, and the travelling light that now lives on it.
+              //
+              // Fixed here in the Column rather than scrolled with the list.
+              // It is the rule between the header and the content, so it
+              // belongs to the header — and a light that slides off the top
+              // of the screen the moment the driver scrolls is not an
+              // indicator of anything.
+              //
+              // Its own ListenableBuilder: the pulse ticks sixty times a
+              // second, and the builder above deliberately passes the whole
+              // sheet through as `child` so none of it rebuilds at that
+              // rate. This is the one part that has to.
+              if (t > 0.05) ...[
+                const SizedBox(height: 12),
+                Opacity(
+                  opacity: t.clamp(0.0, 1.0),
+                  child: ListenableBuilder(
+                    listenable: _searchPulseVal,
+                    builder: (_, __) => _SearchingDividerLine(
+                      progress: _searchPulseVal.value,
+                      baseColor: borderC,
+                    ),
+                  ),
+                ),
+              ],
               // Expanded content fades in
               if (t > 0.05)
                 Expanded(
@@ -2926,8 +2953,6 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                           ? const ClampingScrollPhysics()
                           : const NeverScrollableScrollPhysics(),
                       children: [
-                        const SizedBox(height: 12),
-                        Divider(height: 1, color: borderC),
                         const SizedBox(height: 18),
                         // "Earnings", not "Recommended for you".
                         //
@@ -2980,69 +3005,88 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                                   ),
                           ),
                         ),
-                        // A clear gap before the one button that ends the
-                        // shift, so it never reads as another row in the list
-                        // above it.
-                        const SizedBox(height: 26),
-                        // GO OFFLINE button — raised neu disc, red accent
-                        Center(
-                          child: GestureDetector(
-                            onTap: _goOffline,
-                            child: Column(
-                              children: [
-                                Container(
-                                  width: 62,
-                                  height: 62,
-                                  alignment: Alignment.center,
-                                  decoration: isDark
-                                      ? neuBox(
-                                          radius: 31,
-                                          borderColor: const Color(
-                                            0xFFCC3333,
-                                          ).withValues(alpha: 0.35),
-                                          borderWidth: 1.5,
-                                        )
-                                      : BoxDecoration(
-                                          shape: BoxShape.circle,
-                                          color: const Color(
-                                            0xFFCC3333,
-                                          ).withValues(alpha: 0.15),
-                                          border: Border.all(
-                                            color: const Color(
-                                              0xFFCC3333,
-                                            ).withValues(alpha: 0.3),
-                                            width: 2,
-                                          ),
-                                        ),
-                                  child: const Icon(
-                                    Icons.pan_tool_rounded,
-                                    color: Color(0xFFCC3333),
-                                    size: 26,
-                                  ),
-                                ),
-                                const SizedBox(height: 6),
-                                Text(
-                                  S.of(context).goOffline.toUpperCase(),
-                                  style: const TextStyle(
-                                    color: Color(0xFFCC3333),
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w800,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                        // Just the home indicator's own space. The 20 px
-                        // on top of it left the button floating above a
-                        // band of nothing at the foot of the panel.
-                        SizedBox(height: botPad),
+                        // Reserved by the pinned button below now.
+                        const SizedBox(height: 8),
                       ],
                     ),
                   ),
                 )
               else
                 const Spacer(),
+              // Pinned, not scrolled.
+              //
+              // This is the one control that ends the shift, and it was
+              // the last row of the list — so on a short panel it sat
+              // wherever the content happened to stop, and on a long one
+              // the driver had to scroll to reach it. A button that ends
+              // the working day belongs in the same place every time it
+              // is looked for.
+              if (t > 0.05)
+                Opacity(
+                  opacity: t.clamp(0.0, 1.0),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                    // A clear gap before the one button that ends the
+                    // shift, so it never reads as another row in the list
+                    // above it.
+                    const SizedBox(height: 26),
+                    // GO OFFLINE button — raised neu disc, red accent
+                    Center(
+                      child: GestureDetector(
+                        onTap: _goOffline,
+                        child: Column(
+                          children: [
+                            Container(
+                              width: 62,
+                              height: 62,
+                              alignment: Alignment.center,
+                              decoration: isDark
+                                  ? neuBox(
+                                      radius: 31,
+                                      borderColor: const Color(
+                                        0xFFCC3333,
+                                      ).withValues(alpha: 0.35),
+                                      borderWidth: 1.5,
+                                    )
+                                  : BoxDecoration(
+                                      shape: BoxShape.circle,
+                                      color: const Color(
+                                        0xFFCC3333,
+                                      ).withValues(alpha: 0.15),
+                                      border: Border.all(
+                                        color: const Color(
+                                          0xFFCC3333,
+                                        ).withValues(alpha: 0.3),
+                                        width: 2,
+                                      ),
+                                    ),
+                              child: const Icon(
+                                Icons.pan_tool_rounded,
+                                color: Color(0xFFCC3333),
+                                size: 26,
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              S.of(context).goOffline.toUpperCase(),
+                              style: const TextStyle(
+                                color: Color(0xFFCC3333),
+                                fontSize: 12,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    // Just the home indicator's own space. The 20 px
+                    // on top of it left the button floating above a
+                    // band of nothing at the foot of the panel.
+                      SizedBox(height: botPad),
+                    ],
+                  ),
+                ),
             ],
           ),
         ),
@@ -3336,8 +3380,6 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
               child: child,
             ),
           ),
-          // Sized to the words, so the sweep below runs from the first
-          // letter to the last dot and stops — not across the whole bar.
           child: IntrinsicWidth(
             key: ValueKey<int>(_statusLine),
             child: Column(
@@ -3348,75 +3390,22 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                   '$text${'.' * dots}',
                   maxLines: 1,
                   overflow: TextOverflow.clip,
-                  style: TextStyle(
+                  // Read as loudly as "You're offline" does on the home
+                  // sheet, which is the same sentence about the same driver
+                  // in the opposite state. It was drawn in the muted grey
+                  // the icons beside it use, so the one line saying what the
+                  // app is doing was dimmer than the furniture around it.
+                  style: const TextStyle(
                     fontFamily: 'Poppins',
-                    color: textMuted,
+                    color: Colors.white,
                     fontSize: 15,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
-                const SizedBox(height: 3),
-                // The sweep. A short gold segment travelling left to right
-                // on a hairline, once per lap of the pulse.
-                SizedBox(
-                  height: 1.5,
-                  child: LayoutBuilder(
-                    builder: (context, box) {
-                      final w = box.maxWidth;
-                      const segFrac = 0.34;
-                      final segW = w * segFrac;
-                      // Eased travel, and a fade at both ends.
-                      //
-                      // Linear, the segment arrived at the right edge and
-                      // reappeared at the left in the same frame — a visible
-                      // snap once every lap. Easing gives it weight; the
-                      // opacity envelope means it is already invisible when
-                      // it wraps, so the reset cannot be seen at all.
-                      final eased = Curves.easeInOutSine.transform(p);
-                      final x = -segW + (w + segW) * eased;
-                      final fade = p < 0.15
-                          ? p / 0.15
-                          : p > 0.85
-                              ? (1 - p) / 0.15
-                              : 1.0;
-                      return Stack(
-                        clipBehavior: Clip.hardEdge,
-                        children: [
-                          Positioned.fill(
-                            child: DecoratedBox(
-                              decoration: BoxDecoration(
-                                color: Colors.white.withValues(alpha: 0.07),
-                                borderRadius: BorderRadius.circular(1),
-                              ),
-                            ),
-                          ),
-                          Positioned(
-                            left: x,
-                            width: segW,
-                            top: 0,
-                            bottom: 0,
-                            child: Opacity(
-                              opacity: fade.clamp(0.0, 1.0),
-                              child: DecoratedBox(
-                              decoration: BoxDecoration(
-                                borderRadius: BorderRadius.circular(1),
-                                gradient: LinearGradient(
-                                  colors: [
-                                    _gold.withValues(alpha: 0.0),
-                                    _gold.withValues(alpha: 0.85),
-                                    _gold.withValues(alpha: 0.0),
-                                  ],
-                                  stops: const [0.0, 0.5, 1.0],
-                                ),
-                              ),
-                            ),
-                          ),
-                          ),
-                        ],
-                      );
-                    },
-                  ),
-                ),
+                // The sweep bar that used to sit under these words is
+                // gone. The same travelling light runs the divider below
+                // the header now — one indicator on a longer track,
+                // instead of a second one three pixels under the text.
               ],
             ),
           ),

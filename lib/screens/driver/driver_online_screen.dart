@@ -1935,13 +1935,42 @@ CircularPinIcon _goldPinIconFor(_PlaceType type) {
 /// and to the bottom, so the shape is the same open or shut.
 class _SearchingBorderPainter extends CustomPainter {
   final double progress; // 0.0 → 1.0, loops continuously
+
+  /// How far the panel is open, 0 shut to 1 wide.
+  ///
+  /// The travelling light hands over as the sheet opens. Around the outline
+  /// of a collapsed sheet it is a small bright circuit and reads as one
+  /// object working; stretched around a sheet that fills most of the screen
+  /// it is a light crawling the edge of the display, far from anything it
+  /// could be describing. Open, the same light runs the divider under the
+  /// header instead — see _SearchingDividerLine — which is short, straight,
+  /// and next to the words it belongs to.
+  final double expansion;
+
   static const Color _gold = Color(0xFFE8C547);
   static const Color _goldLight = Color(0xFFFBE47A);
 
-  _SearchingBorderPainter({required this.progress});
+  _SearchingBorderPainter({required this.progress, this.expansion = 0.0});
 
   @override
   void paint(Canvas canvas, Size size) {
+    // Faded out well before the sheet is open, so the two never both run.
+    final outlineAlpha = (1.0 - expansion / 0.35).clamp(0.0, 1.0);
+    if (outlineAlpha <= 0.01) return;
+    // One layer, so the whole circuit dims as a unit instead of the halo and
+    // the line fading against each other.
+    final rect = Offset.zero & size;
+    if (outlineAlpha < 1.0) {
+      canvas.saveLayer(
+        rect.inflate(16),
+        Paint()..color = Color.fromRGBO(0, 0, 0, outlineAlpha),
+      );
+    }
+    _paintOutline(canvas, size);
+    if (outlineAlpha < 1.0) canvas.restore();
+  }
+
+  void _paintOutline(Canvas canvas, Size size) {
     final rect = Offset.zero & size;
     // Fixed shape: the sheet is welded to both sides and to the bottom
     // whether it is open or shut, so only the top corners are round. There
@@ -1974,56 +2003,177 @@ class _SearchingBorderPainter extends CustomPainter {
     final glowLen = total * glowFraction;
     final headDist = (progress * total) % total;
 
-    // 48 micro-segments with smoothstep fade — identical to rider Where-to panel
-    const steps = 48;
-    final stepLen = glowLen / steps;
+    // One stroke, faded by a shader — not forty-eight strokes faded by hand.
+    //
+    // The old loop cut the arc into 48 pieces and drew each at its own alpha
+    // with a round cap on both ends. That is what read as a string of beads:
+    // every piece put a rounded bulge where the next one began, and the
+    // semi-transparent ends overlapped, so each seam composited twice and
+    // came out darker than the segment either side of it. More steps would
+    // not have fixed it — it makes the beads smaller and the seams more
+    // numerous.
+    //
+    // Drawn as a single path with a gradient along the head-to-tail vector,
+    // there are no seams to see: the fade is one smooth ramp and the only
+    // round cap in the picture is the head, where it belongs.
+    final tailDist = (headDist - glowLen + total) % total;
+    final headPt = pm.getTangentForOffset(headDist)?.position;
+    final tailPt = pm.getTangentForOffset(tailDist)?.position;
+    if (headPt == null || tailPt == null) return;
+    // Degenerate on a shape too small to hold the arc: the two ends land on
+    // the same pixel and a gradient between them has no direction.
+    if ((headPt - tailPt).distance < 1.0) return;
 
-    for (int k = 0; k < steps; k++) {
-      final t = 1.0 - k / steps; // 1.0 at head → 0.0 at tail
-      final fadeAlpha = t * t * (3 - 2 * t); // smoothstep
-      if (fadeAlpha < 0.02) continue;
-
-      final segEnd   = (headDist - k * stepLen + total) % total;
-      final segStart = (segEnd - stepLen + total) % total;
-
-      final Path seg;
-      if (segStart <= segEnd) {
-        seg = pm.extractPath(segStart, segEnd);
-      } else {
-        seg = pm.extractPath(segStart, total)
-          ..addPath(pm.extractPath(0, segEnd), Offset.zero);
-      }
-
-      // Bright stroke
-      canvas.drawPath(
-        seg,
-        Paint()
-          ..style      = PaintingStyle.stroke
-          ..strokeWidth = 2.5
-          ..strokeCap  = StrokeCap.round
-          ..strokeJoin = StrokeJoin.round
-          ..isAntiAlias = true
-          ..color = Color.lerp(_gold, _goldLight, t)!
-              .withValues(alpha: fadeAlpha * 0.95),
-      );
-
-      // Soft outer glow halo (every other step for perf)
-      if (k % 2 == 0) {
-        canvas.drawPath(
-          seg,
-          Paint()
-            ..style      = PaintingStyle.stroke
-            ..strokeWidth = 12
-            ..strokeCap  = StrokeCap.round
-            ..strokeJoin = StrokeJoin.round
-            ..isAntiAlias = true
-            ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8)
-            ..color = _goldLight.withValues(alpha: fadeAlpha * 0.30),
-        );
-      }
+    final Path arc;
+    if (tailDist <= headDist) {
+      arc = pm.extractPath(tailDist, headDist);
+    } else {
+      arc = pm.extractPath(tailDist, total)
+        ..addPath(pm.extractPath(0, headDist), Offset.zero);
     }
+
+    // Transparent at the tail, brightest at the head. The middle stop keeps
+    // most of the light in the leading third, so the trail reads as
+    // something moving rather than as a bar that happens to be lit.
+    List<Color> ramp(double peak) => <Color>[
+          _gold.withValues(alpha: 0.0),
+          _gold.withValues(alpha: peak * 0.35),
+          _goldLight.withValues(alpha: peak),
+        ];
+    const stops = <double>[0.0, 0.62, 1.0];
+
+    // Soft halo under the line, so the glow spills onto the sheet.
+    canvas.drawPath(
+      arc,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 11
+        ..strokeCap = StrokeCap.round
+        ..strokeJoin = StrokeJoin.round
+        ..isAntiAlias = true
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8)
+        ..shader = ui.Gradient.linear(tailPt, headPt, ramp(0.34), stops),
+    );
+
+    canvas.drawPath(
+      arc,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2.5
+        ..strokeCap = StrokeCap.round
+        ..strokeJoin = StrokeJoin.round
+        ..isAntiAlias = true
+        ..shader = ui.Gradient.linear(tailPt, headPt, ramp(0.95), stops),
+    );
   }
 
   @override
-  bool shouldRepaint(_SearchingBorderPainter old) => old.progress != progress;
+  bool shouldRepaint(_SearchingBorderPainter old) =>
+      old.progress != progress || old.expansion != expansion;
+}
+
+/// The travelling light, on a straight rule instead of around a box.
+///
+/// This is what the searching pulse becomes once the panel is open: the
+/// hairline that separates the header from the content, with the same gold
+/// segment sliding along it. Same pulse, same colours, same fade at the
+/// tail — a shorter track, next to the words it is about.
+///
+/// Drawn rather than composed out of widgets because the fade has to run
+/// along the segment, and a gradient inside a Positioned box would fade
+/// against the box rather than along the travel.
+class _SearchingDividerLine extends StatelessWidget {
+  const _SearchingDividerLine({
+    required this.progress,
+    required this.baseColor,
+    this.height = 1.0,
+  });
+
+  /// 0 → 1, loops. The same pulse the border used.
+  final double progress;
+
+  /// The rule itself, under the moving light.
+  final Color baseColor;
+
+  final double height;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: height,
+      width: double.infinity,
+      child: CustomPaint(
+        painter: _DividerLinePainter(progress: progress, base: baseColor),
+      ),
+    );
+  }
+}
+
+class _DividerLinePainter extends CustomPainter {
+  _DividerLinePainter({required this.progress, required this.base});
+
+  final double progress;
+  final Color base;
+
+  static const Color _gold = Color(0xFFE8C547);
+  static const Color _goldLight = Color(0xFFFBE47A);
+
+  /// The lit run, as a fraction of the width.
+  static const double _glowFraction = 0.28;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final y = size.height / 2;
+    canvas.drawLine(
+      Offset(0, y),
+      Offset(size.width, y),
+      Paint()
+        ..color = base
+        ..strokeWidth = size.height,
+    );
+
+    final glowW = size.width * _glowFraction;
+    // Eased, and travelling from off one edge to off the other.
+    //
+    // Linear travel with a hard wrap put the head back at the left in the
+    // same frame it left the right — a snap once per lap. Starting and
+    // ending outside the rule means the segment is already gone before it
+    // restarts, so there is nothing to see at the seam.
+    final eased = Curves.easeInOutSine.transform(progress);
+    final head = -glowW + (size.width + glowW * 2) * eased;
+    final tail = head - glowW;
+    if (head <= 0 || tail >= size.width) return;
+
+    final from = Offset(tail, y);
+    final to = Offset(head, y);
+    if ((to - from).distance < 1.0) return;
+
+    void run(double width, double peak, double? blur) {
+      final p = Paint()
+        ..strokeWidth = width
+        ..strokeCap = StrokeCap.round
+        ..isAntiAlias = true
+        ..shader = ui.Gradient.linear(
+          from,
+          to,
+          <Color>[
+            _gold.withValues(alpha: 0.0),
+            _gold.withValues(alpha: peak * 0.35),
+            _goldLight.withValues(alpha: peak),
+          ],
+          const <double>[0.0, 0.62, 1.0],
+        );
+      if (blur != null) {
+        p.maskFilter = MaskFilter.blur(BlurStyle.normal, blur);
+      }
+      canvas.drawLine(from, to, p);
+    }
+
+    run(7, 0.30, 5); // halo
+    run(size.height * 1.6, 0.95, null); // the line
+  }
+
+  @override
+  bool shouldRepaint(_DividerLinePainter old) =>
+      old.progress != progress || old.base != base;
 }

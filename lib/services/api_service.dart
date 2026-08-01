@@ -2593,7 +2593,6 @@ class ApiService {
   /// the retry loop stops — preventing connection leaks in production.
   static Stream<List<Map<String, dynamic>>> streamDriverOffers(int driverId) {
     final controller = StreamController<List<Map<String, dynamic>>>();
-    http.StreamedResponse? activeResponse;
     bool cancelled = false;
 
     Future<void> doConnect() async {
@@ -2610,7 +2609,6 @@ class ApiService {
           );
           request.headers.addAll(h);
           final response = await _client.send(request);
-          activeResponse = response;
 
           if (response.statusCode != 200) {
             debugPrint('[SSE] Driver stream HTTP ${response.statusCode}');
@@ -2674,7 +2672,21 @@ class ApiService {
 
     controller.onCancel = () {
       cancelled = true;
-      activeResponse?.stream.drain().catchError((_) {});
+      // No drain() here. That is the crash.
+      //
+      // The response stream is already being consumed by the `await for`
+      // above, and it is single-subscription — so draining it opened a second
+      // listen and threw "Bad state: Stream has already been listened to".
+      // Crashlytics has it under ApiService.streamDriverOffers, across every
+      // version from 1.0.3 to 1.0.9: the driver goes online, leaves, and the
+      // cancel path throws on the way out.
+      //
+      // The loop already stops on `cancelled`, and closing the HTTP client's
+      // connection is the client's job once nothing is reading it. Cancelling
+      // a subscription that does not belong to us was never the way to end
+      // this, and the drain was doing nothing useful even when it did not
+      // throw — the bytes it discarded were the ones the loop had stopped
+      // reading anyway.
     };
 
     doConnect();
@@ -2687,7 +2699,6 @@ class ApiService {
   /// CANCELABLE: when the consumer unsubscribes, the HTTP connection is closed.
   static Stream<Map<String, dynamic>> streamTripStatus(int tripId) {
     final controller = StreamController<Map<String, dynamic>>();
-    http.StreamedResponse? activeResponse;
     bool cancelled = false;
 
     Future<void> doConnect() async {
@@ -2704,7 +2715,6 @@ class ApiService {
           );
           request.headers.addAll(h);
           final response = await _client.send(request);
-          activeResponse = response;
 
           if (response.statusCode != 200) {
             debugPrint('[SSE] Trip stream HTTP ${response.statusCode}');
@@ -2770,7 +2780,21 @@ class ApiService {
 
     controller.onCancel = () {
       cancelled = true;
-      activeResponse?.stream.drain().catchError((_) {});
+      // No drain() here. That is the crash.
+      //
+      // The response stream is already being consumed by the `await for`
+      // above, and it is single-subscription — so draining it opened a second
+      // listen and threw "Bad state: Stream has already been listened to".
+      // Crashlytics has it under ApiService.streamDriverOffers, across every
+      // version from 1.0.3 to 1.0.9: the driver goes online, leaves, and the
+      // cancel path throws on the way out.
+      //
+      // The loop already stops on `cancelled`, and closing the HTTP client's
+      // connection is the client's job once nothing is reading it. Cancelling
+      // a subscription that does not belong to us was never the way to end
+      // this, and the drain was doing nothing useful even when it did not
+      // throw — the bytes it discarded were the ones the loop had stopped
+      // reading anyway.
     };
 
     doConnect();

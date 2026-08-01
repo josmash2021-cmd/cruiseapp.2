@@ -1,18 +1,15 @@
 import 'dart:async';
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
-import '../../map/map_surface_coordinator.dart';
 import '../../services/haptic_service.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_database/firebase_database.dart';
-import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' as mapbox;
 
-import '../../config/mapbox_config.dart';
-import '../../config/map_theme.dart';
 import '../../config/page_transitions.dart';
 import '../../models/lat_lng.dart';
 import '../../services/api_service.dart';
 import '../../widgets/verified_avatar.dart';
+import '../../widgets/static_route_preview.dart';
 import 'driver_online_screen.dart';
 import '../../utils/responsive.dart';
 
@@ -50,16 +47,6 @@ class _DriverRateRiderScreenState extends State<DriverRateRiderScreen>
   static const _gold = Color(0xFFD4A843);
   static const _bg   = Color(0xFF0A0D1A);
 
-  /// Identifies this screen to [MapSurfaceCoordinator].
-  static const String _mapSurfaceOwner = 'DriverRateRider';
-
-  /// The backdrop map waits its turn. This screen is pushed straight off
-  /// the trip screen, which is still holding a live surface — mounting
-  /// unconditionally, as this did, put two up at the end of every ride.
-  /// It is a blurred decorative backdrop, so arriving a few frames late
-  /// costs nothing visible.
-  bool _mapMounted = false;
-
 
   int _stars = 0;
   final Set<String> _selectedTags = {};
@@ -93,30 +80,14 @@ class _DriverRateRiderScreenState extends State<DriverRateRiderScreen>
       duration: const Duration(milliseconds: 500),
     )..forward();
     _fadeAnim = CurvedAnimation(parent: _fadeCtrl, curve: Curves.easeOut);
-    unawaited(_acquireMapSurface());
+    // No map surface is claimed or released on this screen. The backdrop is
+    // an image, so there is nothing here that another screen has to wait for.
   }
 
   @override
   void dispose() {
-    MapSurfaceCoordinator.instance.release(_mapSurfaceOwner);
     _fadeCtrl.dispose();
     super.dispose();
-  }
-
-  Future<void> _acquireMapSurface() async {
-    await MapSurfaceCoordinator.instance.acquire(
-      owner: _mapSurfaceOwner,
-      onRevoke: () async {
-        if (!mounted || !_mapMounted) return;
-        setState(() => _mapMounted = false);
-        await surfaceRemoved();
-      },
-    );
-    if (!mounted) {
-      MapSurfaceCoordinator.instance.release(_mapSurfaceOwner);
-      return;
-    }
-    setState(() => _mapMounted = true);
   }
 
   String get _firstName => widget.riderName.split(' ').first;
@@ -170,29 +141,14 @@ class _DriverRateRiderScreenState extends State<DriverRateRiderScreen>
     if (_leaving) return;
     _leaving = true;
 
-    // Fade the content out and tear the map down at the same time — the map
-    // is behind a 5-pixel blur and a 45% scrim, so its removal is invisible
-    // and there is no reason to pay for it twice.
-    final fade = _fadeCtrl.reverse();
-
-    // The surface is gone before the next screen is pushed, and we wait for
-    // it to really be gone.
+    // Nothing to hand over any more.
     //
-    // DriverOnlineScreen mounts a Mapbox surface of its own roughly half a
-    // second after the push, and two live surfaces close the app on iOS.
-    // Releasing in dispose() did not prevent that: release() only clears the
-    // coordinator's bookkeeping, it does not wait for the PlatformView to be
-    // torn down — so the incoming screen was told the surface was free while
-    // ours was still attached. Every other screen in this flow drops its map
-    // before navigating (see DriverHomeScreen._suspendMap); this one was the
-    // exception, and it is the last screen of every ride.
-    if (_mapMounted) {
-      setState(() => _mapMounted = false);
-      await surfaceRemoved();
-    }
-    MapSurfaceCoordinator.instance.release(_mapSurfaceOwner);
-
-    await fade;
+    // This used to drop a live Mapbox surface here and wait for the teardown
+    // to be confirmed, because DriverOnlineScreen mounts one of its own
+    // about half a second after the push and two live surfaces close the app
+    // on iOS. The backdrop is an image now, so there is no surface, no
+    // handoff, and no wait: the online screen's map is simply already there.
+    await _fadeCtrl.reverse();
     if (!mounted) return;
     Navigator.of(context).pushAndRemoveUntil(
       PageRouteBuilder(
@@ -226,42 +182,27 @@ class _DriverRateRiderScreenState extends State<DriverRateRiderScreen>
       backgroundColor: _bg,
       body: Stack(
         children: [
-          // ── Blurred dark Mapbox map background ──
-          if (_mapMounted)
+          // ── Blurred dark map backdrop ──
+          //
+          // An image, not a live map. What sits here is covered by a
+          // five-pixel blur and a 45% black scrim, at zoom 14 — an abstract
+          // dark texture that nobody can read a street off. It was a native
+          // Mapbox surface, and there is one of those in the whole app.
+          //
+          // Taking it here cost a full handoff at the end of every ride:
+          // this screen is pushed with pushAndRemoveUntil, so it was pulling
+          // the surface away from a trip screen on its way out and handing
+          // it to the online screen a second and a half later. Two of the
+          // three crashes in this flow lived in those two handoffs.
+          //
+          // No pins: a marker under that blur is a gold smudge that looks
+          // like it was meant to say something.
           Positioned.fill(
             child: IgnorePointer(
-              child: mapbox.MapWidget(
-                styleUri: MapboxConfig.styleDark,
-                cameraOptions: mapbox.CameraOptions(
-                  center: mapbox.Point(
-                    coordinates: mapbox.Position(
-                      widget.dropoffLng ?? -80.1918,
-                      widget.dropoffLat ?? 25.7617,
-                    ),
-                  ),
-                  zoom: 14.0,
-                  pitch: 0,
-                ),
-                onMapCreated: (ctrl) async {
-                  await MapTheme.applyNavyGold(ctrl);
-                  await ctrl.gestures.updateSettings(
-                    mapbox.GesturesSettings(
-                      scrollEnabled: false,
-                      rotateEnabled: false,
-                      pitchEnabled: false,
-                      doubleTapToZoomInEnabled: false,
-                      doubleTouchToZoomOutEnabled: false,
-                      quickZoomEnabled: false,
-                      pinchToZoomEnabled: false,
-                    ),
-                  );
-                  await ctrl.compass.updateSettings(
-                    mapbox.CompassSettings(enabled: false),
-                  );
-                  await ctrl.scaleBar.updateSettings(
-                    mapbox.ScaleBarSettings(enabled: false),
-                  );
-                },
+              child: StaticRoutePreview(
+                pickupLat: widget.dropoffLat ?? 25.7617,
+                pickupLng: widget.dropoffLng ?? -80.1918,
+                pins: false,
               ),
             ),
           ),

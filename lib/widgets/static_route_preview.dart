@@ -23,6 +23,7 @@ class StaticRoutePreview extends StatelessWidget {
     this.dropoffLng,
     this.route = const <LatLng>[],
     this.borderRadius = 0,
+    this.pins = true,
   });
 
   final double pickupLat;
@@ -35,6 +36,12 @@ class StaticRoutePreview extends StatelessWidget {
   final List<LatLng> route;
 
   final double borderRadius;
+
+  /// Draw the pickup and dropoff markers. Off for a backdrop, where the
+  /// image is a texture rather than information — a pin under a five-pixel
+  /// blur is a gold smudge nobody can read, and a smudge that looks like it
+  /// was meant to say something.
+  final bool pins;
 
   bool get _hasDropoff => dropoffLat != null && dropoffLng != null;
 
@@ -145,20 +152,25 @@ class StaticRoutePreview extends StatelessWidget {
       final encoded = Uri.encodeComponent(_encodePolyline(line));
       parts.add('path-4+E8C547-0.9($encoded)');
     }
-    parts.add('pin-s+E8C547(${f(pickupLng)},${f(pickupLat)})');
-    if (_hasDropoff) {
-      parts.add('pin-s+FFFFFF(${f(dropoffLng!)},${f(dropoffLat!)})');
+    if (pins) {
+      parts.add('pin-s+E8C547(${f(pickupLng)},${f(pickupLat)})');
+      if (_hasDropoff) {
+        parts.add('pin-s+FFFFFF(${f(dropoffLng!)},${f(dropoffLat!)})');
+      }
     }
 
-    // "auto" frames everything in the overlay. With a single pin it has
-    // nothing to frame, so an explicit centre and zoom are required or
-    // Mapbox returns a 422.
-    final view = (_hasDropoff || line.isNotEmpty)
-        ? 'auto'
-        : '${f(pickupLng)},${f(pickupLat)},13,0';
+    // "auto" frames everything in the overlay, so it needs an overlay to
+    // frame. With one pin, or none at all, an explicit centre and zoom are
+    // required or Mapbox answers 422.
+    final canAutoFrame = line.isNotEmpty || (pins && _hasDropoff);
+    final view =
+        canAutoFrame ? 'auto' : '${f(pickupLng)},${f(pickupLat)},13,0';
+
+    // An empty overlay list would leave a double slash, which is a 404.
+    final overlay = parts.isEmpty ? '' : '${parts.join(",")}/';
 
     return 'https://api.mapbox.com/styles/v1/mapbox/dark-v11/static/'
-        '${parts.join(",")}/$view/${w}x$h@2x'
+        '$overlay$view/${w}x$h@2x'
         '?padding=30&logo=false&attribution=false&access_token=$token';
   }
 

@@ -763,6 +763,27 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
       _snack(S.of(context).bankLinkMobileOnly, error: true);
       return;
     }
+
+    // Our page first, Stripe's window second.
+    //
+    // The bank flow used to drop the driver straight into Stripe's sheet
+    // from a row labelled "Weekly payouts", with nothing in between saying
+    // what the account will be used for or warning them off attaching
+    // someone else's. This is that missing page — the heading, the terms
+    // and the security note — and the button on it is what opens Stripe.
+    //
+    // The routing and account numbers are still typed into Stripe's own
+    // window and never touch this app. That is not a shortcut: taking them
+    // in our own fields would put the app inside the compliance scope those
+    // numbers carry, for no gain the driver would ever see.
+    final go = await showModalBottomSheet<bool>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (_) => const _AddBankIntroSheet(),
+    );
+    if (go != true || !mounted) return;
+
     setState(() => _busy = true);
     try {
       final session = await ApiService.createDriverFinancialConnectionsSession();
@@ -997,6 +1018,187 @@ class _AddDebitCardSheet extends StatefulWidget {
   State<_AddDebitCardSheet> createState() => _AddDebitCardSheetState();
 }
 
+/// What Weekly payouts is, before Stripe's window opens over it.
+///
+/// The bank half of the reference design: heading, the terms in a sentence,
+/// the security note, and one button. What it does not have is fields for a
+/// routing and account number, because those are typed into Stripe's own
+/// window — see the comment in _connectBankAccount for why that is a
+/// deliberate line and not a missing feature.
+class _AddBankIntroSheet extends StatelessWidget {
+  const _AddBankIntroSheet();
+
+  static const _gold = Color(0xFFD4A843);
+
+  @override
+  Widget build(BuildContext context) {
+    final s = S.of(context);
+    return Container(
+      padding: const EdgeInsets.fromLTRB(24, 12, 24, 24),
+      decoration: const BoxDecoration(
+        color: neuBase,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+      child: SafeArea(
+        top: false,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 36,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.white12,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            const SizedBox(height: 18),
+            Center(
+              child: Text(
+                s.payoutWeekly.toUpperCase(),
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.35),
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 1.4,
+                ),
+              ),
+            ),
+            const SizedBox(height: 14),
+            Text(
+              s.payoutUpdateBank,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 24,
+                fontWeight: FontWeight.w800,
+                letterSpacing: -0.5,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              s.payoutUpdateBankDesc,
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.45),
+                fontSize: 13,
+                height: 1.45,
+              ),
+            ),
+            const SizedBox(height: 16),
+            _keepSecureNote(s.payoutKeepSecureBank),
+            const SizedBox(height: 14),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(
+                  Icons.lock_rounded,
+                  size: 14,
+                  color: Colors.white.withValues(alpha: 0.3),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    s.payoutBankHandledByStripe,
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.32),
+                      fontSize: 11.5,
+                      height: 1.35,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 22),
+            GestureDetector(
+              onTap: () {
+                HapticService.mediumImpact();
+                Navigator.pop(context, true);
+              },
+              child: Container(
+                width: double.infinity,
+                height: 54,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: _gold,
+                  borderRadius: BorderRadius.circular(16),
+                  boxShadow: [
+                    BoxShadow(
+                      color: _gold.withValues(alpha: 0.25),
+                      blurRadius: 16,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+                ),
+                child: Text(
+                  s.payoutOpenBankSheet,
+                  style: const TextStyle(
+                    color: neuBase,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// The "keep your earnings secure" panel both payout sheets carry.
+///
+/// It is here rather than inside either one because the two warnings are
+/// the same warning about the same fraud: someone talks a driver into
+/// attaching an account that is not theirs, and the earnings go somewhere
+/// else every week until they notice.
+///
+/// Amber, not red. Nothing has gone wrong — this is a caution being read
+/// before anything is typed, and a red panel over a form the driver opened
+/// deliberately reads as an error they have already made.
+Widget _keepSecureNote(String body) {
+  const amber = Color(0xFFD4A843);
+  return Builder(
+    builder: (context) => Container(
+      padding: const EdgeInsets.all(14),
+      decoration: neuBox(radius: 16, pressed: true),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.shield_outlined, color: amber, size: 18),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  S.of(context).payoutKeepSecure,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  body,
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.5),
+                    fontSize: 12,
+                    height: 1.4,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
 class _AddDebitCardSheetState extends State<_AddDebitCardSheet> {
   static const _gold = Color(0xFFD4A843);
 
@@ -1088,25 +1290,43 @@ class _AddDebitCardSheetState extends State<_AddDebitCardSheet> {
                   ),
                 ),
               ),
-              const SizedBox(height: 22),
-              Text(
-                s.addDebitCardTitle,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 20,
-                  fontWeight: FontWeight.w800,
+              const SizedBox(height: 18),
+              // Which destination this is, then what is being done to it —
+              // the same two-line header the row that opened this sheet
+              // uses, so the driver can see they are where they aimed.
+              Center(
+                child: Text(
+                  s.payoutExpressPay.toUpperCase(),
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.35),
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 1.4,
+                  ),
                 ),
               ),
-              const SizedBox(height: 6),
+              const SizedBox(height: 14),
               Text(
-                s.addDebitForCashouts,
+                s.payoutUpdateCard,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 24,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: -0.5,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                s.payoutUpdateCardDesc,
                 style: TextStyle(
                   color: Colors.white.withValues(alpha: 0.45),
                   fontSize: 13,
-                  height: 1.4,
+                  height: 1.45,
                 ),
               ),
-              const SizedBox(height: 20),
+              const SizedBox(height: 16),
+              _keepSecureNote(s.payoutKeepSecureCard),
+              const SizedBox(height: 18),
 
               // ── Stripe secure card field ──
               Container(

@@ -1252,6 +1252,41 @@ class S {
   String payoutEndingIn(String last4) =>
       _es ? 'Terminada en •$last4' : 'Ending in •$last4';
 
+  String get payoutUpdateCard =>
+      _es ? 'Actualizar tarjeta' : 'Update debit card';
+  String get payoutUpdateCardDesc => _es
+      ? 'Con Retiro exprés puedes cobrar tus ganancias cuando quieras, '
+          'con una pequeña comisión cada vez.'
+      : 'With Express Pay you can cash out your earnings whenever you want, '
+          'for a small fee each time.';
+  String get payoutUpdateBank =>
+      _es ? 'Actualizar cuenta bancaria' : 'Update bank account';
+  String get payoutUpdateBankDesc => _es
+      ? 'Con el Pago semanal enviamos tus ganancias a esta cuenta cada '
+          'martes, sin comisión de retiro.'
+      : 'With Weekly payouts we send your earnings to this bank account '
+          'every Tuesday, with no cashout fee.';
+  String get payoutKeepSecure =>
+      _es ? 'Protege tus ganancias' : 'Keep your earnings secure';
+  String get payoutKeepSecureCard => _es
+      ? 'Nunca pongas la tarjeta de otra persona para tus ganancias. '
+          'Cruise jamás te pedirá que añadas una tarjeta concreta.'
+      : "Never enter someone else's card for your earnings. Cruise will "
+          'never ask you to add a specific card.'
+      ;
+  String get payoutKeepSecureBank => _es
+      ? 'Esta cuenta se usará solo para tus ganancias. Nunca pongas la '
+          'cuenta de otra persona.'
+      : 'This account will only be used for your earnings. Never enter '
+          "someone else's bank.";
+  String get payoutOpenBankSheet =>
+      _es ? 'Elegir mi banco' : 'Choose my bank';
+  String get payoutBankHandledByStripe => _es
+      ? 'Tu banco se elige en la ventana segura de Stripe. Los números de '
+          'ruta y cuenta nunca pasan por Cruise.'
+      : 'Your bank is chosen in Stripe\'s secure window. Routing and '
+          'account numbers never pass through Cruise.';
+
   // ── Earnings screen, rebuilt layout ──
   String get earningsPeriodDay => _es ? 'Día' : 'Day';
   String get earningsPeriodWeek => _es ? 'Semana' : 'Week';

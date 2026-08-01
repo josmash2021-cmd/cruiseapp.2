@@ -25,6 +25,11 @@ dependencies:
   mapbox_maps_flutter: ^2.5.0
   flutter_typeahead: ^5.2.0
   geolocator: ^14.0.2
+  # The device compass, for the driver's arrow. geolocator only reports course
+  # over ground, which a parked car does not have — so the arrow could not turn
+  # when the driver turned the phone. Android and iOS only; every call site is
+  # behind a kIsWeb guard.
+  flutter_compass: ^0.8.1
   geocoding: ^3.0.0
   flutter_background_service: ^5.1.0
   flutter_background_service_android: ^6.3.0

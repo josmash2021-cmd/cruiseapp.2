@@ -24,6 +24,7 @@ import '../../map/map_surface_coordinator.dart';
 import '../../config/driver_colors.dart';
 import '../../services/api_service.dart';
 import '../../services/gps_service.dart';
+import '../../services/heading_service.dart';
 import '../../services/local_data_service.dart';
 import '../../services/notification_service.dart';
 import '../../services/user_session.dart';
@@ -54,6 +55,22 @@ import '../../widgets/user_profile_photo.dart';
 import '../../widgets/velocity_aware_panel.dart';
 import '../../utils/responsive.dart';
 import '../../utils/name_helper.dart' as nh;
+
+/// Statuses the backend treats as the end of a trip.
+///
+/// Both spellings of cancelled are here on purpose. The canonical one is the
+/// double-l (see CLAUDE.md), but rows written before that was settled still
+/// carry the single-l form and a resume loop is not the place to be strict
+/// about it.
+const Set<String> _kFinishedTripStatuses = {
+  'completed',
+  'cancelled',
+  'canceled',
+  'expired',
+  'no_show',
+  'rejected',
+  'failed',
+};
 
 /// ═══════════════════════════════════════════════════════════════
 ///  CRUISE DRIVER HOME — Premium dashboard with map, stats, go-online
@@ -136,6 +153,11 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   // Self-cancels as soon as the annotation exists.
   Timer? _dotCreateWatchdog;
   StreamSubscription<Position>? _posStream;
+
+  /// Which way the arrow points, from the compass or the GPS course
+  /// depending on whether the car is moving. See [HeadingService].
+  final HeadingService _headingSource = HeadingService();
+  StreamSubscription<double>? _headingSub;
   StreamSubscription<String>? _fcmTokenRefreshSub;
 
   // ── Stats ──
@@ -213,18 +235,24 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   /// about seventy pixels of nothing under "You're offline" — a sheet that
   /// looked like it had content it was refusing to show.
   ///
-  /// 68, down from 82. The parts listed above come to 66, so the old number
-  /// carried sixteen pixels that nothing occupied: a band of dead space under
-  /// the status row, and the same sixteen pixels pushing the panel's top edge
-  /// higher up the map than it needed to be. Trimming it does both things the
-  /// panel needed — the row sits on the floor of the sheet, and the sheet
-  /// starts lower.
+  /// 60, down from 68 and 82 before that. The sheet has no slack left to
+  /// give — its two rows come to 58 — so this last eight points came out of
+  /// the padding around them instead: the grab handle's 10/6 is now 8/4 and
+  /// the status row's 10 is now 8. Nothing was removed and nothing shrank;
+  /// the sheet is simply drawn as tightly as its contents allow, which puts
+  /// its top edge eight points further down the map.
   ///
-  /// The home indicator's inset is still added on top, so this is 68 on the
-  /// web and about 102 on a phone that reserves 34 for it. Do not fold that
+  /// This is the floor. Anything below 58 clips the status row, and a
+  /// fixed-height Column that overflows throws a visible RenderFlex error
+  /// rather than clipping quietly — so if the text ever grows (a longer
+  /// translation, a larger accessibility size), this number has to grow with
+  /// it. It cannot be trimmed again.
+  ///
+  /// The home indicator's inset is still added on top, so this is 60 on the
+  /// web and about 94 on a phone that reserves 34 for it. Do not fold that
   /// allowance into this constant: it is a different thing, it varies by
   /// device, and adding it here would put it back on devices that have none.
-  static const double _panelBaseMinH = 68.0;
+  static const double _panelBaseMinH = 60.0;
   double get _panelBaseH =>
       _panelBaseMinH + (MediaQuery.maybeOf(context)?.padding.bottom ?? 0);
   // Extra height reserved while the scheduled-rides banner is shown above the
@@ -398,6 +426,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       if (mounted) _syncDotAnnotation();
     });
     _startDotCreateWatchdog();
+    _startHeadingSource();
     _initLocation();
     _loadDriverData();
     _checkVerification().then((_) => _checkVehicleDocStatus());
@@ -602,6 +631,8 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     _homeReFollowTimer?.cancel();
     _markerFrame.dispose();
     _posStream?.cancel();
+    _headingSub?.cancel();
+    _headingSource.dispose();
     _accountStatusTimer?.cancel();
     _tripPollTimer?.cancel();
     _statsRefreshTimer?.cancel();
@@ -615,6 +646,13 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    // The magnetometer is not free, and there is no arrow to turn behind a
+    // locked screen. Dropped on the way out, picked up on the way back.
+    if (state == AppLifecycleState.paused) {
+      _headingSource.stop();
+    } else if (state == AppLifecycleState.resumed && mounted) {
+      _startHeadingSource();
+    }
     if (state == AppLifecycleState.resumed && mounted) {
       // Safety net for the suspended map: routes removed with
       // removeRoute/pushAndRemoveUntil never fire didPopNext, so a stack
@@ -656,6 +694,27 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   /// to north every time the driver stops at a light, so a fix without a
   /// heading leaves the last good one on screen. Speed gate for the same
   /// reason: a course computed from GPS noise at walking pace spins.
+  /// Point the arrow with the compass, continuously.
+  ///
+  /// Nothing here waits for movement. The compass reports while the phone is
+  /// sitting on a cradle, so the arrow turns with the car at a red light and
+  /// turns in the driver's hand when they pick the phone up — which is the
+  /// only time the arrow's direction is actually being read.
+  ///
+  /// setBearing rather than setTarget: this changes where the marker points,
+  /// not where it is. SmoothMotion turns it at its own rate, so a compass
+  /// that jumps two degrees does not make the arrow jump two degrees.
+  void _startHeadingSource() {
+    _headingSource.start();
+    // Runs from initState and again on every resume — two subscriptions
+    // would each call setBearing for the same reading.
+    _headingSub?.cancel();
+    _headingSub = _headingSource.stream.listen((deg) {
+      if (!mounted) return;
+      _goldDot.setBearing(deg);
+    });
+  }
+
   double? _usableHeading(Position p) {
     final h = p.heading;
     if (h.isNaN || h.isInfinite || h < 0) return null;
@@ -818,20 +877,48 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   bool get _dotOverlayOwnsMarker {
     if (_mapSuspended || _goldDot.lat == null) return false;
     if (_homeCameraFollowing) return true;
-    return _homeDotOffset != null;
+
+    // Order matters here, and it did not before.
+    //
+    // This used to end at `return _homeDotOffset != null`, and that offset
+    // was null for two situations that have nothing in common: the marker is
+    // off screen, and we cannot work out where the marker is. Both handed
+    // the job to the Mapbox annotation — which is a fine answer for the
+    // first and a bad one for the second, because the moments when the
+    // projection has no answer are exactly the moments the annotation does
+    // not exist either. A map that has just been rebuilt has no annotation
+    // and has not sent a camera event yet, and in that window nothing at all
+    // drew the arrow.
+    final spot = _homeDotSpot;
+    if (spot.at != null) return true; // we know the pixel — draw there
+    if (!spot.known) return true; // we do not know — draw centred, never nothing
+    // Known, and outside the viewport. The driver has panned away from
+    // themselves, so there is genuinely nothing to draw. The annotation is
+    // anchored in map space and is just as absent from the view, so this is
+    // not a case of handing the marker to something that might drop it.
+    return false;
   }
 
-  /// Where to draw the marker, or null if we cannot say.
+  /// The marker's pixel, and whether that answer can be trusted.
   ///
-  /// While following, the camera centres on the driver every frame, so it is
-  /// the middle of the viewport by definition and no projection is needed.
-  Offset? get _homeDotOffset {
-    if (_homeCameraFollowing) return null; // centred
+  /// `known: false` means the projection could not be computed at all — no
+  /// camera event has arrived yet, the viewport has not been measured, or
+  /// [FlatMapProjection] refused a tilted view. That is a different thing
+  /// from a computed answer that lands off screen, and the two used to be
+  /// the same `null`. Telling them apart is what lets the overlay draw
+  /// through the gaps instead of standing aside in them.
+  ///
+  /// While following, the camera centres on the driver every frame, so the
+  /// marker is the middle of the viewport by definition and no projection is
+  /// needed: `at: null, known: true`.
+  ({Offset? at, bool known}) get _homeDotSpot {
+    if (_homeCameraFollowing) return (at: null, known: true); // centred
     final cam = _homeCamState;
     final lat = _goldDot.lat, lng = _goldDot.lng;
-    if (cam == null || lat == null || lng == null) return null;
     final size = _homeMapSize;
-    if (size == null) return null;
+    if (cam == null || lat == null || lng == null || size == null) {
+      return (at: null, known: false);
+    }
     final c = cam.center.coordinates;
     final off = FlatMapProjection.screenOffsetFlat(
       target: LatLng(lat, lng),
@@ -841,11 +928,15 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       pitchDeg: cam.pitch,
       viewport: size,
     );
-    if (off == null) return null;
-    // Off screen: nothing to draw, and the marker is genuinely not in view.
-    if (!FlatMapProjection.isOnScreen(off, size)) return null;
-    return off;
+    if (off == null) return (at: null, known: false);
+    if (!FlatMapProjection.isOnScreen(off, size)) {
+      return (at: null, known: true); // off screen, and we are sure of it
+    }
+    return (at: off, known: true);
   }
+
+  /// Where to draw the marker, or null for "centre it".
+  Offset? get _homeDotOffset => _homeDotSpot.at;
 
   /// Size of the map box, measured from its own layout rather than assumed.
   Size? _homeMapSize;
@@ -873,15 +964,28 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   void _startDotCreateWatchdog() {
     _dotCreateWatchdog?.cancel();
     _dotCreateWatchdog = Timer.periodic(const Duration(seconds: 2), (t) async {
-      if (!mounted || _myLocAnnot != null) {
+      if (!mounted) {
         t.cancel();
         _dotCreateWatchdog = null;
         return;
       }
+      // Runs for the life of the screen, not until the marker first appears.
+      //
+      // It used to cancel itself the moment `_myLocAnnot` was non-null, which
+      // made it a create watchdog and nothing else — so every way the marker
+      // could be lost *after* that first success had no one watching. The
+      // bitmap can be dropped later (the GPU context goes while backgrounded,
+      // memory pressure), the annotation can be destroyed with the platform
+      // view on any Android resume, and by then the only thing that would
+      // have rebuilt either had already retired.
+      //
+      // The online screen's watchdog never stopped, and that is the one that
+      // did not have this problem. Two seconds of a null check costs nothing.
+      //
       // Rasterising the dot bitmap can fail (GPU context lost, OOM) and
       // GoldLocationDot leaves currentBytes null when it does — every draw
-      // is then a silent no-op, and nothing else rebuilds it on this
-      // screen. Same retry the rider home does in _scheduleHomeDotRetry.
+      // is then a silent no-op. Same retry the rider home does in
+      // _scheduleHomeDotRetry.
       if (!_goldDot.isReady) {
         await _goldDot.build(this, onFrame: () {
           if (!mounted) return;
@@ -892,7 +996,18 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
         });
         if (!mounted) return;
       }
-      _updateMyLocAnnotation();
+      // Nothing to write into yet, or the handle died with its map: either
+      // way _updateMyLocAnnotation creates a fresh one.
+      if (_myLocAnnot == null) {
+        _updateMyLocAnnotation();
+        return;
+      }
+      // Otherwise nudge the Flutter overlay. The ticker only fires on frames
+      // where the marker moved, so a driver standing still produces none —
+      // and this is then the only thing keeping the arrow repainted. It does
+      // not need the bitmap: the overlay paints shapes, and falls back to
+      // the hand-drawn badge if even the artwork is missing.
+      _markerFrame.value++;
     });
   }
 
@@ -989,8 +1104,9 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       final last = kIsWeb ? null : await Geolocator.getLastKnownPosition();
       if (last != null && mounted) {
         _currentLatLng = LatLng(last.latitude, last.longitude);
-        _goldDot.setTarget(last.latitude, last.longitude,
-            bearing: _usableHeading(last));
+        // Last-known fix: position only. Its heading is whatever the phone
+        // was doing whenever this was recorded, which may be yesterday.
+        _goldDot.setTarget(last.latitude, last.longitude);
         setState(() {});
       }
 
@@ -1002,8 +1118,8 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       );
       if (!mounted) return;
       _currentLatLng = LatLng(pos.latitude, pos.longitude);
-      _goldDot.setTarget(pos.latitude, pos.longitude,
-          bearing: _usableHeading(pos));
+      _goldDot.setTarget(pos.latitude, pos.longitude);
+      _headingSource.onFix(pos);
       setState(() {});
       _updateMyLocAnnotation();
       _mapController?.flyTo(
@@ -1028,11 +1144,27 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
         if (!mounted) return;
         final ll = LatLng(p.latitude, p.longitude);
         _currentLatLng = ll;
-        _goldDot.setTarget(ll.latitude, ll.longitude,
-            bearing: _usableHeading(p));
+        // Position here, direction separately.
+        //
+        // The bearing used to ride along with the fix, which meant the arrow
+        // could only turn when the driver moved. It comes from the compass
+        // now — see the _headingSource subscription in initState — and this
+        // hands the fix over so the service can decide whether the car is
+        // going fast enough for the GPS course to be the better answer.
+        _goldDot.setTarget(ll.latitude, ll.longitude);
+        _headingSource.onFix(p);
         // Keep publishing while online — the driver can be on this screen
         // mid-shift now. See _feedGpsUploads.
-        _feedGpsUploads(ll, _usableHeading(p) ?? 0, p.speed);
+        //
+        // The rider watches this to see which way the car is pointing, so it
+        // gets the compass too: a driver waiting at the pickup used to be
+        // published as heading 0 — facing north whichever way they had
+        // actually parked.
+        _feedGpsUploads(
+          ll,
+          _headingSource.value ?? _usableHeading(p) ?? 0,
+          p.speed,
+        );
         debugPrint('[DriverHome] GPS update: ${ll.latitude.toStringAsFixed(5)},${ll.longitude.toStringAsFixed(5)} '
             'speed=${p.speed.toStringAsFixed(1)}m/s accuracy=${p.accuracy.toStringAsFixed(1)}m');
         // Camera follow is handled per dot-tick in _updateMyLocAnnotation
@@ -1797,6 +1929,28 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                 debugPrint('[DriverMap] initial camera correction failed: $e');
               }
             }
+            // Pan and zoom, but the map never turns.
+            //
+            // Nothing set gestures here at all, so every default applied and
+            // a two-finger twist rotated the map. That is the one gesture
+            // this screen cannot afford: north stays up, so the arrow's
+            // rotation is the whole of what tells the driver which way they
+            // are pointing. Turn the map and the arrow still points north-
+            // relative while everything under it has moved, and the two
+            // disagree with no way to tell which is right.
+            //
+            // Pitch goes with it — it is the same two-finger gesture, and a
+            // tilted map has the same problem in the other axis.
+            await ctrl.gestures.updateSettings(mapbox.GesturesSettings(
+              scrollEnabled: true,
+              pinchToZoomEnabled: true,
+              doubleTapToZoomInEnabled: true,
+              doubleTouchToZoomOutEnabled: true,
+              quickZoomEnabled: true,
+              rotateEnabled: false,
+              pitchEnabled: false,
+              simultaneousRotateAndPinchToZoomEnabled: false,
+            ));
             // Disable Mapbox native puck IMMEDIATELY before any annotation creation
             await ctrl.location.updateSettings(mapbox.LocationComponentSettings(enabled: false));
             
@@ -2712,9 +2866,14 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
 
     // Closed: floating clear of the sheet's rounded top. Open: resting on the
     // sheet's floor, above the home indicator.
-    // Lower: close enough to the sheet to belong to it, not floating in
-    // the middle of the map.
-    final bottomClosed = _panelCollapsedH + 8;
+    //
+    // 20, not 8. The disc is drawn with a gold glow that reaches roughly
+    // eight points past its edge, so a gap measured to the edge is not the
+    // gap anyone sees — at 8 the glow landed on the sheet's top edge and the
+    // two read as one object stuck together. 20 leaves about twelve points of
+    // clear map between the glow and the sheet, which is what "floating clear
+    // of it" was supposed to mean in the first place.
+    final bottomClosed = _panelCollapsedH + 20;
     final bottom = ui.lerpDouble(bottomClosed, 0, t)!;
 
     // Inset on both sides and centred inside whatever that leaves, rather
@@ -3147,7 +3306,11 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
               endPanelDrag(d.primaryVelocity ?? 0);
             },
             child: Padding(
-              padding: const EdgeInsets.only(top: 10, bottom: 6),
+              // 8/4, trimmed from 10/6 — see _panelBaseMinH. The handle keeps
+              // its 36×4 bar and its drag target is the whole row above, so
+              // the four points come off the air around it, not off anything
+              // the thumb has to hit.
+              padding: const EdgeInsets.only(top: 8, bottom: 4),
               child: Container(
                 width: 36,
                 height: 4,
@@ -3175,7 +3338,10 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                 endPanelDrag(d.primaryVelocity ?? 0);
               },
               child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+              // vertical 8, trimmed from 10 — see _panelBaseMinH. The row is
+              // 26 points of text between these two, so 8/26/8 is 42 and the
+              // sheet's 60 has two points spare over the handle's 16.
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
               child: Row(
                 children: [
                   // Status text
@@ -3562,16 +3728,78 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       }
 
       if (!mounted) return;
-      setState(() {
-        // Only overwrite if Firestore found a trip, OR if backend hasn't set one.
-        // This prevents Firestore (empty cache) from erasing backend-found trip data.
-        if (active != null) {
+
+      // Firestore is a mirror of the trips table, not the table. Confirm
+      // with the server before acting on it.
+      //
+      // The mirror goes stale in one direction only — it keeps trips open
+      // that the backend has already closed — because the app's own
+      // `completed` write is the last step of the finish path and is the one
+      // most likely to be dropped: rejected while the Firebase session is
+      // invalid, or lost when the driver closes the app during the 1.5 s
+      // hand-off to the rating screen. Two of driver 44's rides have sat at
+      // `arrived` since 29 and 30 July for exactly that reason.
+      //
+      // Left untrusted-but-unchecked, a stale doc is permanent. It sends the
+      // driver back into the trip screen on every launch, and the only way
+      // out of that screen is to finish the trip again — which writes the
+      // same doc that is already failing to be written. This check is what
+      // breaks the loop.
+      bool confirmedOver = false;
+      if (active != null && await _serverSaysTripIsOver(_tripSqlId(active))) {
+        debugPrint('[DriverHome] ignoring stale Firestore trip ${active['_docId']}');
+        active = null;
+        confirmedOver = true;
+      }
+      if (!mounted) return;
+
+      if (active != null) {
+        setState(() {
           _activeTripData = active;
           _isStillOnline = true;
-        }
-      });
+        });
+        return;
+      }
+
+      // Only a confirmed ending clears what we are holding.
+      //
+      // Firestore finding nothing is not proof — an empty local cache and a
+      // rules rejection both look exactly like this, and clearing on either
+      // would erase a trip _checkBackendActiveTrip had just fetched from the
+      // server. But this method is also what _resumeActiveTripBody calls to
+      // decide whether the ride is over and polling should start again, and
+      // before this it had no path that could ever set _activeTripData back
+      // to null. So it always decided the ride was still on.
+      if (confirmedOver && _activeTripData != null) {
+        setState(() => _activeTripData = null);
+      }
     } catch (_) {
       // Keep current UI state if this lookup fails.
+    }
+  }
+
+  /// True only when the server has confirmed this trip is finished.
+  ///
+  /// The distinction that matters is "closed" versus "could not tell". A
+  /// driver mid-ride in a parking garage gets timeouts, and Railway answers
+  /// 502 for a few seconds during every redeploy — neither is a reason to
+  /// take their trip screen away, so anything inconclusive returns false and
+  /// the trip stays. Only a definite answer clears it: a status the state
+  /// machine treats as terminal, or a 404 saying the trip is not there at
+  /// all. Same tri-state rule as ApiService.isTokenValid, and for the same
+  /// reason — see rule 21 in CLAUDE.md.
+  Future<bool> _serverSaysTripIsOver(int tripId) async {
+    if (tripId <= 0) return true; // no id to check; never resumable
+    try {
+      final trip = await ApiService.getTrip(tripId)
+          .timeout(const Duration(seconds: 8));
+      final status = (trip['status'] ?? '').toString().trim().toLowerCase();
+      return _kFinishedTripStatuses.contains(status);
+    } on ApiException catch (e) {
+      // 404 is an answer: the trip is gone. 401/500/502 are not.
+      return e.statusCode == 404;
+    } catch (_) {
+      return false; // offline or timed out — assume the ride is still on
     }
   }
 
@@ -3831,7 +4059,16 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     final pickup = LatLng(pickupLat, pickupLng);
     final dropoff = LatLng(dropoffLat, dropoffLng);
     final driverPos = _currentLatLng ?? pickup;
-    final tripId = _pickInt(trip, ['id', 'tripId', 'trip_id']) ?? int.tryParse((trip['_docId'] ?? '').toString()) ?? 0;
+    final tripId = _tripSqlId(trip);
+    if (tripId <= 0) {
+      // Nothing downstream works without the real id — the trip screen would
+      // PATCH /trips/0, the rating screen would rate trip 0, and every one of
+      // those calls comes back 404. The driver ends up on a screen whose
+      // buttons do nothing, which is how a finished trip turned into a trap.
+      debugPrint('[DriverHome] active trip has no usable id: ${trip.keys.toList()}');
+      if (mounted) setState(() => _activeTripData = null);
+      return;
+    }
     final riderName = _pickString(trip, ['riderName', 'rider_name', 'passengerName', 'passenger_name'], fallback: 'Rider');
     final riderPhone = _pickString(trip, ['rider_phone', 'passengerPhone', 'passenger_phone']);
     final pickupAddress = _pickString(trip, ['pickupAddress', 'pickup_address'], fallback: 'Pickup');
@@ -3899,6 +4136,30 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     if (_activeTripData == null && _isStillOnline) {
       _startTripPolling();
     }
+  }
+
+  /// The SQL trip id, whatever shape the record arrived in. 0 when there
+  /// isn't one.
+  ///
+  /// Backend JSON carries `id`. The Firestore mirror does not — its fields
+  /// are `sqliteId` plus a document named `sql_<id>`, and nothing in it is
+  /// called `id` at all. So the old lookup (`id`/`tripId`/`trip_id`, then
+  /// `int.tryParse('sql_405')`) missed on every Firestore-sourced trip and
+  /// fell through to its `?? 0` default.
+  ///
+  /// Zero is the worst possible failure here because it is a valid-looking
+  /// int: it sails into DriverTripAcceptScreen, and from there every status
+  /// PATCH, the fare lookup and the rating submit all address trip 0 and come
+  /// back 404. The screen keeps working, the buttons keep responding, and
+  /// nothing they do reaches the server — which is exactly what a driver
+  /// stuck on the rating screen was looking at.
+  int _tripSqlId(Map<String, dynamic> data) {
+    final direct = _pickInt(data, const [
+      'id', 'tripId', 'trip_id', 'sqliteId', 'sqlite_id',
+    ]);
+    if (direct != null && direct > 0) return direct;
+    final docId = (data['_docId'] ?? '').toString();
+    return int.tryParse(docId.replaceFirst(_sqlPrefixRe, '')) ?? 0;
   }
 
   double? _pickDouble(Map<String, dynamic> data, List<String> keys) {

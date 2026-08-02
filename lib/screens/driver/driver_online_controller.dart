@@ -1544,6 +1544,15 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       }
       _prevScheduledCount = newCount;
     } catch (_) {}
+
+    // The bell's badge is a different number from the bounce above: what
+    // is waiting to be read, not what is up for grabs.
+    try {
+      final notifs = await ApiService.getNotifications();
+      if (!mounted) return;
+      final unread = notifs.where((n) => n['is_read'] != true).length;
+      if (unread != _unreadCount) _setState(() => _unreadCount = unread);
+    } catch (_) {}
   }
 
   /// Connect (or reconnect) the SSE offer stream.

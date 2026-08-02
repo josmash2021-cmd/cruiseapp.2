@@ -246,6 +246,12 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
 
   // ── Scheduled rides badge ──
   int _scheduledAvailCount = 0;
+
+  /// Notifications the driver has not opened. This is what the bell's
+  /// badge counts — it used to show _scheduledAvailCount, so the number on
+  /// the bell was how many reservations were up for grabs, not how many
+  /// things were waiting to be read. Home already counted it this way.
+  int _unreadCount = 0;
   int _prevScheduledCount = 0;
   Timer? _scheduledPollTimer;
   AnimationController? _scheduledBounceCtrl;
@@ -1321,19 +1327,19 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                       child: Container(
                         width: 48,
                         height: 48,
-                        decoration: isDark && _scheduledAvailCount == 0
+                        decoration: isDark && _unreadCount == 0
                             ? neuBox(radius: 24, borderColor: fabBorder)
                             : BoxDecoration(
                                 color: fabBg,
                                 shape: BoxShape.circle,
                                 border: Border.all(
-                                  color: _scheduledAvailCount > 0
+                                  color: _unreadCount > 0
                                       ? const Color(0xFFE8C547)
                                           .withValues(alpha: 0.6)
                                       : fabBorder,
                                   width: 1,
                                 ),
-                                boxShadow: _scheduledAvailCount > 0
+                                boxShadow: _unreadCount > 0
                                     ? [
                                         BoxShadow(
                                           color: const Color(0xFFE8C547)
@@ -1354,7 +1360,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                                 color: fabIcon,
                               ),
                             ),
-                            if (_scheduledAvailCount > 0)
+                            if (_unreadCount > 0)
                               Positioned(
                                 top: -4,
                                 right: -4,
@@ -1367,7 +1373,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                                         color: Colors.black, width: 1.5),
                                   ),
                                   child: Text(
-                                    '$_scheduledAvailCount',
+                                    '$_unreadCount',
                                     style: const TextStyle(
                                       color: Colors.black,
                                       fontSize: 10,

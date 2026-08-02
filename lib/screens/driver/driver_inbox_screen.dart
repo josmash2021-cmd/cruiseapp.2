@@ -96,15 +96,29 @@ class _DriverInboxScreenState extends State<DriverInboxScreen>
     }
   }
 
+  /// How long ago, in the phone's language.
+  ///
+  /// Past the hour it carries the minutes with it — "1 h 5 min", not
+  /// "1h". A driver reading why their rating moved is trying to match the
+  /// notice to a trip they remember, and an hour rounded off matches
+  /// nothing. Every string was also hardcoded English until now.
   String _formatTime(String raw) {
     final dt = DateTime.tryParse(raw);
     if (dt == null) return raw;
+    final s = S.of(context);
     final diff = DateTime.now().difference(dt);
-    if (diff.inMinutes < 60) return '${diff.inMinutes} min ago';
-    if (diff.inHours < 24) return '${diff.inHours}h ago';
-    if (diff.inDays == 1) return 'Yesterday';
-    if (diff.inDays < 7) return '${diff.inDays} days ago';
-    return 'Last week';
+    if (diff.isNegative || diff.inMinutes < 1) return s.agoJustNow;
+    if (diff.inMinutes < 60) return s.agoMinutes(diff.inMinutes);
+    if (diff.inHours < 24) {
+      final mins = diff.inMinutes % 60;
+      return mins == 0
+          ? s.agoHours(diff.inHours)
+          : s.agoHoursMinutes(diff.inHours, mins);
+    }
+    if (diff.inDays == 1) return s.agoYesterday;
+    if (diff.inDays < 7) return s.agoDays(diff.inDays);
+    // "Last week" stayed on screen for a notice from four months back.
+    return s.agoWeeks((diff.inDays / 7).floor());
   }
 
   @override
@@ -391,9 +405,8 @@ class _DriverInboxScreenState extends State<DriverInboxScreen>
                           style: TextStyle(
                             color: Colors.white,
                             fontSize: 14,
-                            fontWeight: item.unread
-                                ? FontWeight.w800
-                                : FontWeight.w600,
+                            fontWeight:
+                                item.unread ? FontWeight.w800 : FontWeight.w600,
                           ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,

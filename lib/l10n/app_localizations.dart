@@ -866,6 +866,23 @@ class S {
   /// The backend sends this reason in English; the driver reads it here.
   /// Somebody else claimed it first. Not an error the driver caused, and
   /// not something they can retry — the ride is simply gone.
+  // ── How long ago a notification arrived ──
+  //
+  // Past an hour it reads "1 h 5 min", not "1h". A driver checking why
+  // their rating moved wants to line the notice up against a trip they
+  // remember, and an hour rounded off cannot be lined up against
+  // anything.
+  String get agoJustNow => _es ? 'Ahora mismo' : 'Just now';
+  String agoMinutes(int m) => _es ? 'Hace $m min' : '$m min ago';
+  String agoHours(int h) => _es ? 'Hace $h h' : '$h h ago';
+  String agoHoursMinutes(int h, int m) =>
+      _es ? 'Hace $h h $m min' : '$h h $m min ago';
+  String get agoYesterday => _es ? 'Ayer' : 'Yesterday';
+  String agoDays(int d) => _es ? 'Hace $d días' : '$d days ago';
+  String agoWeeks(int w) => _es
+      ? (w == 1 ? 'Hace una semana' : 'Hace $w semanas')
+      : (w == 1 ? 'A week ago' : '$w weeks ago');
+
   String get scheduledRideTaken => _es
       ? 'Ese viaje programado ya no está disponible — otro conductor lo tomó primero.'
       : 'That scheduled ride is no longer available — another driver took it first.';

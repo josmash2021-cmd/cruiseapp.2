@@ -112,7 +112,9 @@ class NotificationService {
         // MediaPlayer / AVAudioPlayer instance does not keep the audio
         // session held.
         _offerPlayer.onPlayerComplete.listen((_) {
-          unawaited(_offerPlayer.stop());
+          // `unawaited` marks a future as intentionally not awaited. It
+          // does not handle its errors.
+          _quietly(_offerPlayer.stop(), 'stop');
         });
         // Pre-warm the iOS audio session: play silently so the first real
         // offer sound is instant. This used to run on the go-online player;
@@ -429,6 +431,15 @@ class NotificationService {
 
   /// Play the trip offer sound inside the app (when app is in foreground).
   /// Plays 3 times with 2-second intervals to grab driver's attention.
+  /// Let a deliberately-unawaited platform call fail without taking the
+  /// app with it. Nothing here is worth a crash — it is a notification
+  /// sound.
+  static void _quietly(Future<void> f, String what) {
+    f.catchError((Object e) {
+      debugPrint('[NotificationService] $what failed: $e');
+    });
+  }
+
   static void playOfferSound() {
     if (_offerSoundPlaying) return; // prevent double-play
     _offerSoundPlaying = true;
@@ -441,9 +452,17 @@ class NotificationService {
         }
         // Fire-and-forget seek+resume — never await platform channel calls
         // to avoid blocking the UI thread / causing 1-second freezes.
+        //
+        // Fire-and-forget is not the same as error-free. These two were
+        // bare, and the `catch` below never saw them: an unawaited future
+        // reports to the zone, not to the enclosing try. When the audio
+        // session wedges, seek() never gets its reply and throws
+        // "TimeoutException after 0:00:30 — Future not completed" half a
+        // minute later, with no context left. Crashlytics has 15 of them,
+        // new in 1.0.9.
         for (int i = 0; i < 3; i++) {
-          _offerPlayer.seek(Duration.zero);
-          _offerPlayer.resume();
+          _quietly(_offerPlayer.seek(Duration.zero), 'seek');
+          _quietly(_offerPlayer.resume(), 'resume');
           if (i < 2) await Future.delayed(const Duration(seconds: 2));
         }
         // Reset guard after last sound finishes (~2s)

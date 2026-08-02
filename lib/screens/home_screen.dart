@@ -475,7 +475,11 @@ class _HomeScreenState extends State<HomeScreen>
     _verificationRetryTimer?.cancel();
     _verificationSub?.cancel();
     for (final player in _soundPlayers.values) {
-      player.dispose();
+      // dispose() is a platform call and can time out like any other. In
+      // dispose() there is nobody left to catch it, so it catches itself.
+      player.dispose().catchError((Object e) {
+        debugPrint('[HomeScreen] sound player dispose failed: $e');
+      });
     }
     super.dispose();
   }

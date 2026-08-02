@@ -56,14 +56,33 @@ class UnifiedMapService extends ChangeNotifier {
     }
     _controller = ctrl;
 
-    // Ocultar ornamentos nativos
-    await ctrl.scaleBar.updateSettings(mapbox.ScaleBarSettings(enabled: false));
-    await ctrl.compass.updateSettings(mapbox.CompassSettings(enabled: false));
-    await ctrl.attribution.updateSettings(mapbox.AttributionSettings(enabled: false));
-    await ctrl.logo.updateSettings(mapbox.LogoSettings(enabled: false));
+    // Ocultar ornamentos nativos.
+    //
+    // Every line here is a platform call, and initialize() can be reached
+    // while the platform view is still coming up or already going away —
+    // then the channel answers with PlatformException(channel-error,
+    // Unable to establish connection). Crashlytics has it under
+    // _LocationComponentSettingsInterface.updateSettings, new in 1.0.9.
+    //
+    // A hidden compass is cosmetic; it is not worth the app. If the
+    // channel is genuinely dead the controller is released so a later
+    // attempt can start clean, rather than this instance holding a
+    // reference nothing can talk to.
+    try {
+      await ctrl.scaleBar.updateSettings(mapbox.ScaleBarSettings(enabled: false));
+      await ctrl.compass.updateSettings(mapbox.CompassSettings(enabled: false));
+      await ctrl.attribution.updateSettings(mapbox.AttributionSettings(enabled: false));
+      await ctrl.logo.updateSettings(mapbox.LogoSettings(enabled: false));
 
-    // Desactivar puck nativo (usamos anotaciones custom)
-    await ctrl.location.updateSettings(mapbox.LocationComponentSettings(enabled: false));
+      // Desactivar puck nativo (usamos anotaciones custom)
+      await ctrl.location.updateSettings(mapbox.LocationComponentSettings(enabled: false));
+    } catch (e) {
+      debugPrint('[UnifiedMap] ornament setup failed: $e');
+      if (e.toString().contains('channel-error')) {
+        _controller = null;
+        return;
+      }
+    }
 
     // Crear annotation managers
     _polylineAnnotMgr = await ctrl.annotations.createPolylineAnnotationManager(
@@ -183,15 +202,21 @@ class UnifiedMapService extends ChangeNotifier {
       debugPrint('[UnifiedMap] flyTo skipped — non-finite camera');
       return;
     }
-    await ctrl.flyTo(
-      mapbox.CameraOptions(
-        center: center,
-        zoom: zoom,
-        bearing: bearing,
-        pitch: pitch,
-      ),
-      mapbox.MapAnimationOptions(duration: durationMs),
-    );
+    try {
+      await ctrl.flyTo(
+        mapbox.CameraOptions(
+          center: center,
+          zoom: zoom,
+          bearing: bearing,
+          pitch: pitch,
+        ),
+        mapbox.MapAnimationOptions(duration: durationMs),
+      );
+    } catch (e) {
+      // The view can go away mid-animation; a camera move is not worth a
+      // crash on the way out.
+      debugPrint('[UnifiedMap] flyTo failed: $e');
+    }
   }
 
   /// Ajusta la cámara para mostrar todos los [points] con [padding].
@@ -221,21 +246,25 @@ class UnifiedMapService extends ChangeNotifier {
     }
     if (!_cameraIsFinite(null, null, bearing, pitch)) return;
 
-    final cam = await ctrl.cameraForCoordinatesPadding(
-      clean,
-      mapbox.CameraOptions(
-        bearing: bearing,
-        pitch: pitch,
-      ),
-      mapbox.MbxEdgeInsets(top: top, left: left, bottom: bottom, right: right),
-      null,
-      null,
-    );
-    if (!_cameraIsFinite(cam.center, cam.zoom, cam.bearing, cam.pitch)) {
-      debugPrint('[UnifiedMap] fitToPoints skipped — padding returned NaN');
-      return;
+    try {
+      final cam = await ctrl.cameraForCoordinatesPadding(
+        clean,
+        mapbox.CameraOptions(
+          bearing: bearing,
+          pitch: pitch,
+        ),
+        mapbox.MbxEdgeInsets(top: top, left: left, bottom: bottom, right: right),
+        null,
+        null,
+      );
+      if (!_cameraIsFinite(cam.center, cam.zoom, cam.bearing, cam.pitch)) {
+        debugPrint('[UnifiedMap] fitToPoints skipped — padding returned NaN');
+        return;
+      }
+      await ctrl.flyTo(cam, mapbox.MapAnimationOptions(duration: durationMs));
+    } catch (e) {
+      debugPrint('[UnifiedMap] fitToPoints failed: $e');
     }
-    await ctrl.flyTo(cam, mapbox.MapAnimationOptions(duration: durationMs));
   }
 
   /// Centra la cámara en una posición.

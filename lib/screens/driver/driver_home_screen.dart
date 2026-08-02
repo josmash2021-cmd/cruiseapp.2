@@ -1582,9 +1582,12 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   //  GO ONLINE — navigate to DriverOnlineScreen
   // ═══════════════════════════════════════════════════
   void _goOnline() async {
+    // The trip poll can be mid-push into the same screen; two of us would
+    // stack it.
+    if (_isNavigatingToOnline) return;
     // Show immediate feedback — button will display loading state
     setState(() => _isNavigatingToOnline = true);
-
+    try {
     // _ensureVerified is always synchronous — inline the check
     if (!_isVerified) setState(() => _isVerified = true);
 
@@ -1699,7 +1702,6 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     });
     final result = await pushFuture;
     if (!mounted) return;
-    setState(() => _isNavigatingToOnline = false);
     final stillOnline = result?['stillOnline'] == true;
     setState(() => _isStillOnline = stillOnline);
     PrefsCache.instance
@@ -1712,6 +1714,17 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       unawaited(_refreshActiveTripStatus());
     } else {
       _stopTripPolling();
+    }
+    } finally {
+      // This reset used to live only on the happy path below the push —
+      // every early exit above (documents, resume, unmount) left the
+      // button stuck on "loading" and, with the guard now at the top,
+      // would have blocked going online for good.
+      if (mounted) {
+        setState(() => _isNavigatingToOnline = false);
+      } else {
+        _isNavigatingToOnline = false;
+      }
     }
   }
 
@@ -1779,50 +1792,76 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   }
 
   void _navigateToOnlineScreen() async {
-    if (_driverId == null) {
-      await _resolveDriverId();
-    }
-
-    await _refreshActiveTripStatus();
-    if (!mounted) return;
-    if (_activeTripData != null) {
-      await _resumeActiveTrip();
+    // The same two guards _resumeActiveTrip has, for the same reason: the
+    // 5-second trip poll, the app-resume handler and the GO button all end
+    // up here, and any two of them firing together stacked a second
+    // DriverOnlineScreen — fresh-loading map and all — on top of the one
+    // already up. That was the "page after page" the driver had to pop
+    // through before Home answered, and every stacked page restarted the
+    // map when it surfaced.
+    if (_isNavigatingToOnline) {
+      debugPrint('[DriverHome] navigate-to-online skipped — in progress');
       return;
     }
-    if (!mounted) return;
-    final result = await Navigator.of(context).push<Map<String, dynamic>>(
-      PageRouteBuilder(
-        opaque: true,
-        pageBuilder: (ctx, anim1, anim2) =>
-            DriverOnlineScreen(photoUrl: _photoUrl, initialPos: _currentLatLng),
-        transitionDuration: const Duration(milliseconds: 400),
-        reverseTransitionDuration: const Duration(milliseconds: 350),
-        transitionsBuilder: (ctx2, anim, anim2b, child) {
-          final curved =
-              CurvedAnimation(parent: anim, curve: Curves.easeOutCubic);
-          return FadeTransition(
-            opacity: curved,
-            child: ScaleTransition(
-              scale: Tween<double>(begin: 0.97, end: 1.0).animate(curved),
-              child: child,
-            ),
-          );
-        },
-      ),
-    );
-    if (!mounted) return;
-    final stillOnline = result?['stillOnline'] == true;
-    setState(() => _isStillOnline = stillOnline);
-    PrefsCache.instance
-        .then((p) => p.setBool('driver_was_online', stillOnline));
-    _refreshStats();
-    if (stillOnline) {
-      _startTripPolling();
-      // Immediately check for an active trip so the Resume button appears
-      // without waiting for the 15-second poll interval.
-      unawaited(_refreshActiveTripStatus());
-    } else {
-      _stopTripPolling();
+    // Don't push when this screen is not the topmost route: an online (or
+    // trip) screen is already on the stack, and another one on top of it
+    // buys nothing but a map rebuild.
+    final topRoute = ModalRoute.of(context);
+    if (topRoute != null && !topRoute.isCurrent) {
+      debugPrint('[DriverHome] navigate-to-online skipped — not on top');
+      return;
+    }
+    // Plain assignment — the GO button's loading spinner is driven by
+    // _goOnline's own setState; the poll path should not flash it.
+    _isNavigatingToOnline = true;
+    try {
+      if (_driverId == null) {
+        await _resolveDriverId();
+      }
+
+      await _refreshActiveTripStatus();
+      if (!mounted) return;
+      if (_activeTripData != null) {
+        await _resumeActiveTrip();
+        return;
+      }
+      if (!mounted) return;
+      final result = await Navigator.of(context).push<Map<String, dynamic>>(
+        PageRouteBuilder(
+          opaque: true,
+          pageBuilder: (ctx, anim1, anim2) => DriverOnlineScreen(
+              photoUrl: _photoUrl, initialPos: _currentLatLng),
+          transitionDuration: const Duration(milliseconds: 400),
+          reverseTransitionDuration: const Duration(milliseconds: 350),
+          transitionsBuilder: (ctx2, anim, anim2b, child) {
+            final curved =
+                CurvedAnimation(parent: anim, curve: Curves.easeOutCubic);
+            return FadeTransition(
+              opacity: curved,
+              child: ScaleTransition(
+                scale: Tween<double>(begin: 0.97, end: 1.0).animate(curved),
+                child: child,
+              ),
+            );
+          },
+        ),
+      );
+      if (!mounted) return;
+      final stillOnline = result?['stillOnline'] == true;
+      setState(() => _isStillOnline = stillOnline);
+      PrefsCache.instance
+          .then((p) => p.setBool('driver_was_online', stillOnline));
+      _refreshStats();
+      if (stillOnline) {
+        _startTripPolling();
+        // Immediately check for an active trip so the Resume button appears
+        // without waiting for the 15-second poll interval.
+        unawaited(_refreshActiveTripStatus());
+      } else {
+        _stopTripPolling();
+      }
+    } finally {
+      _isNavigatingToOnline = false;
     }
   }
 

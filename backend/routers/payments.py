@@ -19,6 +19,7 @@ from utils.security import (
 )
 from utils.helpers import _safe_create_task, _haversine, _abs_photo_url, _user_dict, _resolve_rider_display
 from services.fcm_service import _send_fcm_push
+from services import vehicle_tiers
 from services.sms_service import notify_guest_welcome
 from services.email_service import email_guest_welcome, email_vip_drink_menu
 from routers.vip import generate_vip_menu_token
@@ -1762,8 +1763,11 @@ async def web_create_booking(request: Request, db: AsyncSession = Depends(get_db
     except Exception as _email_err:
         logging.warning("[EMAIL] email_guest_welcome failed for trip %s: %s", trip.id, _email_err)
 
-    # Send VIP drink menu email for VIP rides
-    if trip.vehicle_type and trip.vehicle_type.lower() == "vip":
+    # The drink menu goes to the top tier, whatever it is called this
+    # month. A literal == "vip" here stops firing the day the rider app
+    # starts sending "black", and silently: nobody gets an email and no
+    # log line says why.
+    if vehicle_tiers.normalize_tier(trip.vehicle_type) == vehicle_tiers.TIER_BLACK:
         try:
             from config import PUBLIC_URL
             trip.vip_menu_token = generate_vip_menu_token()

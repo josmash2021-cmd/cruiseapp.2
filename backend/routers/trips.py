@@ -16,7 +16,7 @@ from utils.security import (
 )
 from utils.helpers import utc_now, _haversine, _trip_dict, _abs_photo_url, _resolve_rider_display, _safe_create_task, _compute_user_rating, MAX_DISPATCH_RADIUS_KM
 from services.fcm_service import _send_fcm_push_async, send_to_topic_async
-from services import rating_actions
+from services import rating_actions, vehicle_tiers
 from services.sms_service import (
     notify_guest_driver_assigned,
     notify_guest_driver_en_route,
@@ -41,18 +41,14 @@ from config import (
 
 router = APIRouter()
 
-# Commission splits by vehicle type
-# Comfort: driver 60% / platform 40%
-# Premium: driver 65% / platform 35%
-# VIP:     driver 70% / platform 30%
-_COMMISSION_BY_TYPE = {
-    "sedan":    (0.40, 0.60),  # (platform_rate, driver_rate)
-    "comfort":  (0.40, 0.60),
-    "premium":  (0.35, 0.65),
-    "suv_xl":   (0.32, 0.68),
-    "vip":      (0.30, 0.70),
-}
-_DEFAULT_COMMISSION = (0.40, 0.60)  # fallback = comfort rates
+# Commission splits live in services/vehicle_tiers.py, which is the one
+# place that knows both the four tiers and the strings they replaced:
+#   Standard 60% · Compact 62% · Premium 65% · Black 70%
+# and, for rows the migration has not reached, comfort 60% / suv_xl 68%
+# / vip 70%. Duplicating the table here is how the offer card ended up
+# quoting a rate the payout did not use.
+_COMMISSION_BY_TYPE = vehicle_tiers.COMMISSION
+_DEFAULT_COMMISSION = vehicle_tiers.DEFAULT_COMMISSION
 
 # Alias map: Flutter driver app sends variant status names that must be
 # normalised to canonical values before transition checks or DB storage.
@@ -119,7 +115,7 @@ _DEDUP_CACHE_MAX = 2000
 
 def _get_commission(vehicle_type: str | None) -> tuple[float, float]:
     """Return (platform_rate, driver_rate) for the given vehicle type."""
-    return _COMMISSION_BY_TYPE.get(_vehicle_key(vehicle_type), _DEFAULT_COMMISSION)
+    return vehicle_tiers.commission(vehicle_type)
 
 
 # ── Wait time fee policy (Uber/Lyft inspired) ──
@@ -127,12 +123,19 @@ def _get_commission(vehicle_type: str | None) -> tuple[float, float]:
 # tier with a longer 10-min free window and the standard $0.40/min.
 # Mirrors lib/screens/rider_confirm_pickup_screen.dart so the rider
 # UI and the backend charge agree on the numbers.
+#
+# Compact is deliberately absent and falls to the default, which is the
+# same window Standard gets. Wait fees come out of the rider's pocket,
+# and nobody has agreed a number for the new tier — inheriting the
+# cheapest existing one invents no charge.
 _WAIT_POLICY_BY_TYPE = {
-    "sedan":   (2, 0.40),
-    "comfort": (2, 0.40),
-    "premium": (3, 0.60),
-    "suv_xl":  (5, 1.00),
-    "vip":     (5, 1.00),
+    "sedan":    (2, 0.40),
+    "comfort":  (2, 0.40),   # legacy name for standard
+    "standard": (2, 0.40),
+    "premium":  (3, 0.60),
+    "suv_xl":   (5, 1.00),
+    "vip":      (5, 1.00),   # legacy name for black
+    "black":    (5, 1.00),
 }
 _DEFAULT_WAIT_POLICY = (2, 0.40)
 _AIRPORT_WAIT_POLICY = (10, 0.40)

@@ -30,6 +30,7 @@ from config import (
     GOOGLE_MAPS_API_KEY,
 )
 from services.event_bus import event_bus
+from services import vehicle_tiers
 from routers.admin import _pricing_config
 from utils.bounded_cache import TTLCache, BoundedDict
 
@@ -263,32 +264,15 @@ async def _find_nearest_drivers(
         )
     )
 
-    # Vehicle tier filtering in SQL — single JOIN query
-    # The rider app sends the tier's display name ("SUV XL"), so spaces and
-    # hyphens have to be folded away or the tier lands in the else branch and
-    # gets offered to sedans.
-    requested_type = (
-        (vehicle_type or "comfort").strip().lower().replace(" ", "_").replace("-", "_")
-    )
-
-    # Build vehicle tier condition
-    if requested_type == "vip":
-        # VIP: only VIP vehicles
-        vehicle_condition = func.coalesce(func.lower(Vehicle.vehicle_type), "comfort") == "vip"
-    elif requested_type == "suv_xl":
-        # SUV XL: any driver with an SUV on file. 'vip' is the luxury SUV
-        # already in the fleet; 'suv'/'suv_xl' are the tags for a plain
-        # full-size SUV, so a Traverse or Tahoe becomes eligible by setting
-        # the vehicle's type — no schema change, it is a free-text column.
-        vehicle_condition = func.coalesce(
-            func.lower(Vehicle.vehicle_type), "comfort"
-        ).in_(["suv", "suv_xl", "vip"])
-    elif requested_type == "premium":
-        # Premium: premium or VIP vehicles (comfort with high rating handled separately)
-        vehicle_condition = func.coalesce(func.lower(Vehicle.vehicle_type), "comfort").in_(["premium", "vip"])
-    else:
-        # Comfort: comfort or premium (NOT VIP)
-        vehicle_condition = func.coalesce(func.lower(Vehicle.vehicle_type), "comfort").in_(["comfort", "premium"])
+    # Vehicle tier filtering in SQL — single JOIN query.
+    # A request goes to its own tier or the one directly above it, never
+    # higher — the rule vehicle_tiers.eligible_tiers() spells out. The
+    # list it returns holds both the four new names and the strings rows
+    # carried before them, so this query is correct on either side of the
+    # data migration.
+    vehicle_condition = func.coalesce(
+        func.lower(Vehicle.vehicle_type), "comfort"
+    ).in_(list(vehicle_tiers.eligible_tiers(vehicle_type)))
 
     # Single JOIN query: User + Vehicle with haversine sort
     result = await db.execute(
@@ -301,41 +285,13 @@ async def _find_nearest_drivers(
     )
     drivers = list(result.scalars().all())
 
-    # For premium: also include comfort drivers with high rating (Silver+ logic)
-    # This requires ratings/trips data, so we do a second query only if needed
-    if requested_type == "premium" and len(drivers) < limit:
-        remaining = limit - len(drivers)
-        existing_ids = {d.id for d in drivers}
-        excluded_with_existing = exclude_driver_ids | existing_ids
-        
-        comfort_result = await db.execute(
-            select(User)
-            .join(Vehicle, User.id == Vehicle.user_id, isouter=True)
-            .where(and_(*conditions))
-            .where(func.coalesce(func.lower(Vehicle.vehicle_type), "comfort") == "comfort")
-            .order_by(haversine_expr.asc())
-            .limit(remaining * 2)  # Fetch more to filter by rating
-        )
-        comfort_drivers = list(comfort_result.scalars().all())
-        
-        if comfort_drivers:
-            # Check ratings for comfort candidates (single batch query)
-            comfort_ids = [d.id for d in comfort_drivers]
-            # The stored score, not an average of stars — the two are
-            # different numbers under the step system (rating_engine.py),
-            # and gating on the one the driver never sees is invisible.
-            rating_result = await db.execute(
-                select(User.id, User.average_rating)
-                .where(User.id.in_(comfort_ids))
-            )
-            avg_ratings = {
-                uid: float(sc) for uid, sc in rating_result.all()
-                if sc is not None
-            }
-            
-            # Filter comfort drivers with rating >= 4.7
-            eligible_comfort = [d for d in comfort_drivers if avg_ratings.get(d.id, 0) >= 4.7]
-            drivers.extend(eligible_comfort[:remaining])
+    # A second pass used to top up Premium requests with `comfort` cars
+    # whose driver was rated 4.7+. That made sense when Premium meant "a
+    # good sedan" and the upgrade was in the service, not the car. It now
+    # means a six-seat SUV, and no rating puts a sixth seat in a Camry —
+    # the rider would be standing on the kerb next to a full car. Supply
+    # for the tier comes from the tier above it instead, which the
+    # eligibility list already covers.
 
     # The box is a rectangle and the limit is a circle: its corners reach
     # about 1.41 x the radius, so without this a "500 mile" search hands back
@@ -409,8 +365,8 @@ async def _find_nearest_drivers(
 
     if drivers:
         logging.info(
-            "[NearbySearch] Found %d %s-tier drivers",
-            len(drivers), requested_type,
+            "[NearbySearch] Found %d drivers for a %s request",
+            len(drivers), vehicle_tiers.normalize_tier(vehicle_type),
         )
 
     return drivers
@@ -1048,84 +1004,28 @@ def _compute_driver_level(completed_trips: int, avg_rating: float) -> str:
 async def _filter_drivers_by_vehicle_tier(
     db: AsyncSession, driver_ids: list[int], requested_type: str
 ) -> set[int]:
-    """Return driver IDs whose vehicle matches the requested tier.
+    """Of these drivers, the ones whose car may take this request.
 
-    VIP requests     -> VIP vehicles ONLY
-    Premium requests -> Premium or VIP vehicles
-    Comfort requests -> Comfort or Premium vehicles (NOT VIP)
+    Same rule as the SQL filter in `_find_nearest_drivers` — own tier or
+    one rung up — read from the same list, so the two cannot drift.
+    A driver with no vehicle row is not eligible for anything.
     """
-    requested = (requested_type or "comfort").lower().strip()
     if not driver_ids:
         return set()
 
-    # Fetch vehicle tiers
+    allowed = set(vehicle_tiers.eligible_tiers(requested_type))
+
     veh_result = await db.execute(
         select(Vehicle.user_id, Vehicle.vehicle_type).where(
             Vehicle.user_id.in_(driver_ids)
         )
     )
-    veh_rows = veh_result.all()
-    veh_map = {uid: (vtype or "comfort").lower() for uid, vtype in veh_rows}
-
-    eligible = set()
-
-    if requested == "vip":
-        # VIP rides go to VIP drivers only
-        for uid, vt in veh_map.items():
-            if vt == "vip":
-                eligible.add(uid)
-        return eligible
-
-    if requested == "comfort":
-        # Comfort rides go to Comfort and Premium drivers (NOT VIP)
-        for uid, vt in veh_map.items():
-            if vt in ("comfort", "premium"):
-                eligible.add(uid)
-        return eligible
-
-    if requested == "premium":
-        # Native premium/vip vehicles are always eligible
-        comfort_candidates = []
-        for uid, vt in veh_map.items():
-            if vt in ("premium", "vip"):
-                eligible.add(uid)
-            elif vt == "comfort":
-                comfort_candidates.append(uid)
-
-        # Comfort cars (2016-2019) can receive premium offers if rating >= 4.7 AND Silver+
-        if comfort_candidates:
-            # Get average ratings for comfort candidates
-            rating_result = await db.execute(
-                select(User.id, User.average_rating)
-                .where(User.id.in_(comfort_candidates))
-            )
-            avg_ratings = {
-                uid: float(sc) for uid, sc in rating_result.all()
-                if sc is not None
-            }
-
-            # Get completed trip counts for comfort candidates
-            trips_result = await db.execute(
-                select(Trip.driver_id, func.count(Trip.id))
-                .where(
-                    Trip.driver_id.in_(comfort_candidates),
-                    Trip.status == "completed",
-                )
-                .group_by(Trip.driver_id)
-            )
-            trip_counts = {uid: count for uid, count in trips_result.all()}
-
-            for uid in comfort_candidates:
-                avg = avg_ratings.get(uid, 5.0)
-                trips = trip_counts.get(uid, 0)
-                level = _compute_driver_level(trips, avg)
-                # Silver+ means silver, gold, platinum, or diamond
-                if avg >= 4.7 and level in ("silver", "gold", "platinum", "diamond"):
-                    eligible.add(uid)
-
-        return eligible
-
-    return set(driver_ids)
+    return {
+        uid
+        for uid, vtype in veh_result.all()
+        if (vtype or "comfort").strip().lower().replace(" ", "_").replace("-", "_")
+        in allowed
+    }
 
 
 @router.post("/dispatch/request", dependencies=[Depends(_verify_api_key)])

@@ -36,21 +36,35 @@ class _ScheduledRidesMarketplaceScreenState
   }
 
   Future<void> _load() async {
-    setState(() { _loading = true; _error = null; });
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
     try {
       double lat = 0, lng = 0;
       try {
         final pos = await Geolocator.getLastKnownPosition();
-        if (pos != null) { lat = pos.latitude; lng = pos.longitude; }
+        if (pos != null) {
+          lat = pos.latitude;
+          lng = pos.longitude;
+        }
       } catch (_) {}
       final trips = await ApiService.getAvailableScheduledTrips(
-        lat: lat, lng: lng, radiusKm: 50,
+        lat: lat,
+        lng: lng,
+        radiusKm: 50,
       );
       if (!mounted) return;
-      setState(() { _trips = trips; _loading = false; });
+      setState(() {
+        _trips = trips;
+        _loading = false;
+      });
     } catch (e) {
       if (!mounted) return;
-      setState(() { _error = e.toString(); _loading = false; });
+      setState(() {
+        _error = e.toString();
+        _loading = false;
+      });
     }
   }
 
@@ -78,11 +92,20 @@ class _ScheduledRidesMarketplaceScreenState
           content: Text(
             e is ApiException && e.statusCode == 403
                 ? S.of(context).scheduledOutOfState
-                : 'Error: $e',
+                // 409: the row lock on the backend gave it to whoever
+                // asked first. The loser was seeing the raw exception
+                // string for what is an ordinary outcome of two drivers
+                // wanting the same ride.
+                : e is ApiException && e.statusCode == 409
+                    ? S.of(context).scheduledRideTaken
+                    : 'Error: $e',
           ),
           backgroundColor: Colors.red,
         ),
       );
+      // Whatever the refusal was, the list is out of date — the ride
+      // that just went to someone else is still sitting on screen.
+      if (mounted) _load();
     } finally {
       if (mounted) setState(() => _claimingId = null);
     }
@@ -114,11 +137,14 @@ class _ScheduledRidesMarketplaceScreenState
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Icon(Icons.error_outline, color: Colors.red, size: 48),
+                      const Icon(Icons.error_outline,
+                          color: Colors.red, size: 48),
                       const SizedBox(height: 12),
-                      Text(_error!, style: const TextStyle(color: Colors.white70)),
+                      Text(_error!,
+                          style: const TextStyle(color: Colors.white70)),
                       const SizedBox(height: 16),
-                      ElevatedButton(onPressed: debounce(_load), child: Text(s.retry)),
+                      ElevatedButton(
+                          onPressed: debounce(_load), child: Text(s.retry)),
                     ],
                   ),
                 )
@@ -127,16 +153,19 @@ class _ScheduledRidesMarketplaceScreenState
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(Icons.event_busy, color: _gold.withValues(alpha:0.5), size: 64),
+                          Icon(Icons.event_busy,
+                              color: _gold.withValues(alpha: 0.5), size: 64),
                           const SizedBox(height: 16),
                           Text(
                             s.noScheduledTrips,
-                            style: const TextStyle(color: Colors.white70, fontSize: 16),
+                            style: const TextStyle(
+                                color: Colors.white70, fontSize: 16),
                           ),
                           const SizedBox(height: 8),
                           Text(
                             s.scheduledTripsHint,
-                            style: const TextStyle(color: Colors.white38, fontSize: 13),
+                            style: const TextStyle(
+                                color: Colors.white38, fontSize: 13),
                           ),
                         ],
                       ),
@@ -147,7 +176,8 @@ class _ScheduledRidesMarketplaceScreenState
                       child: ListView.builder(
                         padding: const EdgeInsets.all(16),
                         itemCount: _trips.length,
-                        itemBuilder: (context, index) => _buildCard(context, _trips[index]),
+                        itemBuilder: (context, index) =>
+                            _buildCard(context, _trips[index]),
                       ),
                     ),
     );
@@ -166,9 +196,8 @@ class _ScheduledRidesMarketplaceScreenState
         : null;
 
     final now = DateTime.now().toUtc();
-    final minutesUntil = scheduledAt != null
-        ? scheduledAt.difference(now).inMinutes
-        : 0;
+    final minutesUntil =
+        scheduledAt != null ? scheduledAt.difference(now).inMinutes : 0;
     final hoursUntil = (minutesUntil / 60).floor();
 
     String timeLabel;
@@ -191,7 +220,7 @@ class _ScheduledRidesMarketplaceScreenState
       decoration: BoxDecoration(
         color: _cardBg,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: _gold.withValues(alpha:0.2)),
+        border: Border.all(color: _gold.withValues(alpha: 0.2)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -200,8 +229,9 @@ class _ScheduledRidesMarketplaceScreenState
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             decoration: BoxDecoration(
-              color: _gold.withValues(alpha:0.1),
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+              color: _gold.withValues(alpha: 0.1),
+              borderRadius:
+                  const BorderRadius.vertical(top: Radius.circular(16)),
             ),
             child: Row(
               children: [
@@ -210,12 +240,15 @@ class _ScheduledRidesMarketplaceScreenState
                 Text(
                   dateStr,
                   style: const TextStyle(
-                    color: Colors.white, fontWeight: FontWeight.w600, fontSize: 14,
+                    color: Colors.white,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 14,
                   ),
                 ),
                 const Spacer(),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                   decoration: BoxDecoration(
                     color: _gold,
                     borderRadius: BorderRadius.circular(20),
@@ -223,7 +256,9 @@ class _ScheduledRidesMarketplaceScreenState
                   child: Text(
                     '\$${fare.toStringAsFixed(2)}',
                     style: const TextStyle(
-                      color: Colors.black, fontWeight: FontWeight.w800, fontSize: 15,
+                      color: Colors.black,
+                      fontWeight: FontWeight.w800,
+                      fontSize: 15,
                     ),
                   ),
                 ),
@@ -241,9 +276,12 @@ class _ScheduledRidesMarketplaceScreenState
                   children: [
                     _chip('${s.pickupInLabel} $timeLabel', Icons.timer, _gold),
                     const SizedBox(width: 8),
-                    if (distKm > 0) _chip('${distKm.toStringAsFixed(1)} km', Icons.near_me, Colors.blue),
+                    if (distKm > 0)
+                      _chip('${distKm.toStringAsFixed(1)} km', Icons.near_me,
+                          Colors.blue),
                     const Spacer(),
-                    _chip(vehicleType.toUpperCase(), Icons.directions_car, Colors.white54),
+                    _chip(vehicleType.toUpperCase(), Icons.directions_car,
+                        Colors.white54),
                   ],
                 ),
                 const SizedBox(height: 14),
@@ -256,7 +294,8 @@ class _ScheduledRidesMarketplaceScreenState
                     Expanded(
                       child: Text(
                         pickup,
-                        style: const TextStyle(color: Colors.white, fontSize: 13),
+                        style:
+                            const TextStyle(color: Colors.white, fontSize: 13),
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                       ),
@@ -265,7 +304,8 @@ class _ScheduledRidesMarketplaceScreenState
                 ),
                 Padding(
                   padding: const EdgeInsets.only(left: 4),
-                  child: Container(width: 1.5, height: 16, color: Colors.white24),
+                  child:
+                      Container(width: 1.5, height: 16, color: Colors.white24),
                 ),
                 // Dropoff
                 Row(
@@ -276,7 +316,8 @@ class _ScheduledRidesMarketplaceScreenState
                     Expanded(
                       child: Text(
                         dropoff,
-                        style: const TextStyle(color: Colors.white70, fontSize: 13),
+                        style: const TextStyle(
+                            color: Colors.white70, fontSize: 13),
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                       ),
@@ -299,12 +340,15 @@ class _ScheduledRidesMarketplaceScreenState
                     ),
                     child: isClaiming
                         ? const SizedBox(
-                            width: 20, height: 20,
-                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black),
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(
+                                strokeWidth: 2, color: Colors.black),
                           )
                         : Text(
                             s.acceptRideButton,
-                            style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15),
+                            style: const TextStyle(
+                                fontWeight: FontWeight.w800, fontSize: 15),
                           ),
                   ),
                 ),
@@ -320,7 +364,7 @@ class _ScheduledRidesMarketplaceScreenState
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
-        color: color.withValues(alpha:0.15),
+        color: color.withValues(alpha: 0.15),
         borderRadius: BorderRadius.circular(20),
       ),
       child: Row(
@@ -330,7 +374,8 @@ class _ScheduledRidesMarketplaceScreenState
           const SizedBox(width: 4),
           Text(
             label,
-            style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.w600),
+            style: TextStyle(
+                color: color, fontSize: 11, fontWeight: FontWeight.w600),
           ),
         ],
       ),

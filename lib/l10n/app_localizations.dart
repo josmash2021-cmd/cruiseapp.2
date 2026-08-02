@@ -864,6 +864,12 @@ class S {
 
   /// Shown when the claim is refused because the pickup is in another state.
   /// The backend sends this reason in English; the driver reads it here.
+  /// Somebody else claimed it first. Not an error the driver caused, and
+  /// not something they can retry — the ride is simply gone.
+  String get scheduledRideTaken => _es
+      ? 'Ese viaje programado ya no está disponible — otro conductor lo tomó primero.'
+      : 'That scheduled ride is no longer available — another driver took it first.';
+
   String get scheduledOutOfState => _es
       ? 'Esta reserva es de otro estado. Solo puedes aceptar reservas del estado donde estás activo.'
       : 'This reservation is in another state. You can only take reservations in the state you are active in.';

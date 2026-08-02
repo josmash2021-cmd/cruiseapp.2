@@ -1776,9 +1776,11 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                   Container(
                     width: 11,
                     height: 11,
-                    decoration: BoxDecoration(
+                    decoration: const BoxDecoration(
                       color: Colors.white,
-                      borderRadius: BorderRadius.circular(2.5),
+                      // A disc now, matching the map marker — the square was
+                      // retired everywhere in the same pass.
+                      shape: BoxShape.circle,
                     ),
                   ),
                   const SizedBox(height: halfPad),

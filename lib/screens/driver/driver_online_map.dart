@@ -349,6 +349,8 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
       _routeAnnot = await polyMgr.create(mapbox.PolylineAnnotationOptions(
         geometry: safeGeom,
         lineColor: c.toARGB32(),
+        // The active-trip line keeps its old weight — only the offer
+        // preview was asked to go finer.
         lineWidth: 5.0,
         lineJoin: mapbox.LineJoin.ROUND,
       ));
@@ -629,6 +631,78 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     }
   }
 
+  /// Keep the offer preview honest while the driver rolls: refetch the
+  /// driver→pickup leg once the driver is 30 m from the last anchor, at
+  /// most every 10 seconds. The line shortens behind them, a different
+  /// road choice comes back as a fresh routed line, and the card's
+  /// min/miles drop from the same fetch. The camera is NOT reframed —
+  /// the driver moving is not a reason to move their map.
+  Future<void> _maybeRefreshOfferRoutePreview(LatLng newLL) async {
+    final offer = _previewingOffer;
+    if (offer == null || _offerRouteFetchBusy) return;
+    final anchor = _offerRouteAnchor;
+    if (anchor != null && _hav(anchor, newLL) < 0.03) return;
+    if (DateTime.now().difference(_lastOfferRouteFetch).inSeconds < 10) {
+      return;
+    }
+    _offerRouteFetchBusy = true;
+    _lastOfferRouteFetch = DateTime.now();
+    try {
+      final pickupLL = LatLng(
+        _safeDouble(offer['pickup_lat']),
+        _safeDouble(offer['pickup_lng']),
+      );
+      final seg = await _fetchRouteWithMetrics(newLL, pickupLL);
+      if (!mounted || _previewingOffer == null || seg.pts.length < 2) return;
+      _offerRouteAnchor = newLL;
+      _fullSegOne = seg.pts;
+
+      // The card reads its "X min (Y mi) away" from this cache — refresh
+      // the driver leg's metrics in place so the numbers drop as the
+      // driver rolls. The pickup→dropoff leg does not change.
+      final oid = (offer['offer_id'] ?? offer['id'] ?? '').toString();
+      final cached = _routeCache[oid];
+      if (cached != null) {
+        _routeCache[oid] = _CachedOfferRoute(
+          segOne: seg.pts,
+          segTwo: cached.segTwo,
+          cachedAt: cached.cachedAt,
+          dropoffPlaceType: cached.dropoffPlaceType,
+          pickupPin: cached.pickupPin,
+          dropoffPin: cached.dropoffPin,
+          driverToPickupMin: seg.durSec != null ? seg.durSec! / 60.0 : null,
+          driverToPickupKm: seg.distM != null ? seg.distM! / 1000.0 : null,
+          pickupToDropoffMin: cached.pickupToDropoffMin,
+          pickupToDropoffKm: cached.pickupToDropoffKm,
+        );
+      }
+
+      if (kIsWeb) {
+        _webMap?.setPolyline(
+          'offerSegOne',
+          [for (final p in seg.pts) (lng: p.longitude, lat: p.latitude)],
+          color: '#FFD700',
+          width: 4,
+        );
+      } else {
+        // Instant geometry swap — the cinematic draw is for the offer's
+        // arrival, not for every GPS fix.
+        final annot = _previewPickupAnnot;
+        final polyMgr = _polylineAnnotMgr;
+        final safeGeom = safeLineString(seg.pts);
+        if (annot != null && polyMgr != null && safeGeom != null) {
+          annot.geometry = safeGeom;
+          try {
+            await polyMgr.update(annot);
+          } catch (_) {}
+        }
+      }
+      _setState(() {});
+    } finally {
+      _offerRouteFetchBusy = false;
+    }
+  }
+
   /// Auto-trigger cinematic route preview when first offer arrives.
   /// Guards against duplicate triggers from SSE + polling overlap.
   void _autoTriggerRoutePreview(Map<String, dynamic> offer) {
@@ -675,6 +749,10 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
       _animatingOfferId = oid;
       _tappedCardIds.add(oid);
     });
+    // Live-refresh baseline: the driver leg refetches only once the driver
+    // has rolled 30 m from here, and no more than every 10 seconds.
+    _offerRouteAnchor = driverPos;
+    _lastOfferRouteFetch = DateTime.now();
 
     // Clear old annotations
     await _clearAllAnnotations();
@@ -732,7 +810,7 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     // different marker depending on whether the route had been fetched.
     final pinResults = await Future.wait([
       renderPickupDotBytes(),
-      renderDropoffSquareBytes(),
+      renderDropoffCircleBytes(),
     ]);
     final Uint8List pickupPinImg = pinResults[0];
     final Uint8List dropoffPinImg = pinResults[1];
@@ -861,11 +939,11 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     void drawSegments(WebMapController w) {
       if (_fullSegOne.length >= 2) {
         w.setPolyline('offerSegOne', lngLats(_fullSegOne),
-            color: '#FFD700', width: 5);
+            color: '#FFD700', width: 4);
       }
       if (_fullSegTwo.length >= 2) {
         w.setPolyline('offerSegTwo', lngLats(_fullSegTwo),
-            color: '#FFD700', width: 5);
+            color: '#FFD700', width: 4);
       }
     }
 
@@ -892,7 +970,7 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     // square for the dropoff.
     final pinResults = await Future.wait([
       renderPickupDotBytes(),
-      renderDropoffSquareBytes(),
+      renderDropoffCircleBytes(),
     ]);
     if (!mounted || _previewingOffer == null) return;
     web.addMarker('offerPickup', pickupLL.longitude, pickupLL.latitude,
@@ -1101,7 +1179,7 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
       mainLine = await polyMgr.create(mapbox.PolylineAnnotationOptions(
         geometry: initSafe,
         lineColor: const Color(0xFFFFD700).toARGB32(),
-        lineWidth: 5.0,
+        lineWidth: 4.0,
         lineJoin: mapbox.LineJoin.ROUND,
       ));
     } catch (_) {}
@@ -1216,7 +1294,7 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
       seg2Line = await polyMgr.create(mapbox.PolylineAnnotationOptions(
         geometry: initSafe,
         lineColor: const Color(0xFFFFD700).toARGB32(),
-        lineWidth: 5.0,
+        lineWidth: 4.0,
         lineJoin: mapbox.LineJoin.ROUND,
       ));
     } catch (_) {}
@@ -1541,14 +1619,16 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     // surface and takes a moment to be rebuilt, and if the driver looked in
     // that window the arrow was simply gone.
     if (_goldDotAnnot == null) return true;
-    // An offer preview flies the camera around the route. The overlay is
-    // positioned from camera-change events, which arrive over the same
-    // channel we are avoiding — during an animation they lag, and a marker
-    // that lags a moving camera slides across the map. The annotation is
-    // anchored in map space and rides the animation correctly, so it wins
-    // here.
-    if (_isCardAnimating || _previewingOffer != null) return false;
-    if (_cameraFollowing) return true;
+    // An offer preview flies the camera around the route, and while it is
+    // flying the annotation wins: the overlay is positioned from
+    // camera-change events, which arrive over the same channel we are
+    // avoiding — during an animation they lag, and a marker that lags a
+    // moving camera slides across the map. Once the camera lands the
+    // trade flips: the overlay draws the very same arrow as a vector,
+    // where the annotation was its 160-px bitmap scaled up ~2.4× — the
+    // pixelated photo the driver reported.
+    if (_isCardAnimating) return false;
+    if (_cameraFollowing && _previewingOffer == null) return true;
     return _dotScreenOffset != null;
   }
 
@@ -1572,7 +1652,10 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
       }
       return off;
     }
-    if (_cameraFollowing) return null; // centred, no projection needed
+    // Centred while the camera follows — except during the offer preview,
+    // where the driver is an endpoint of the framed route, not the centre
+    // of the screen, so the arrow needs its real projected pixel.
+    if (_cameraFollowing && _previewingOffer == null) return null;
     final cam = _onlineCamState;
     final p = _pos;
     final size = _onlineMapSize;

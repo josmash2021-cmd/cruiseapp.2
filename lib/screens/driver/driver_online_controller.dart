@@ -1065,6 +1065,15 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
 
         _trimRouteBehindDriver(snappedLL);
 
+        // A driver who starts rolling while an offer is up watches the
+        // preview keep up: the driver leg refetches from where they
+        // actually are, the line shortens behind them, and the card's
+        // min/miles drop — the same live behaviour the trip phases below
+        // get from their own blocks.
+        if (_previewingOffer != null) {
+          unawaited(_maybeRefreshOfferRoutePreview(snappedLL));
+        }
+
         // Phase-specific nav stats (camera handled by _onDriverAnimTick)
         if (_phase == _Phase.routeSummary) {
           final dist = _hav(newLL, _dropoffLL);

@@ -296,6 +296,14 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   final Set<int> _rejectedOfferIds = {}; // locally rejected — filter from polls
   String? _lastAutoTriggeredOfferId; // prevent duplicate auto-trigger
 
+  /// Where the previewed offer's driver leg was last fetched from, and
+  /// when. The baseline is set when the preview opens; the refresh lives
+  /// in driver_online_map.dart but fields cannot, because these files are
+  /// extensions of the State, not mixins.
+  LatLng? _offerRouteAnchor;
+  DateTime _lastOfferRouteFetch = DateTime(0);
+  bool _offerRouteFetchBusy = false;
+
   /// When each on-screen offer was first shown.
   ///
   /// SSE and the poll do not always agree for a moment: one of them answers

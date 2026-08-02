@@ -461,14 +461,22 @@ class _DriverNavigationScreenState extends State<DriverNavigationScreen> {
               padding: const EdgeInsets.all(20),
               children: [
                 _neuLabel(S.of(context).defaultMapApp),
-                _mapOption('cruise', 'Cruise Maps', Icons.map_rounded),
+                // Each app shown by its own mark. The icon stays as the
+                // fallback: a missing file falls back to it rather than
+                // leaving a hole, so dropping a logo into assets/images
+                // is all it takes to light one up.
+                _mapOption('cruise', 'Cruise Maps', Icons.map_rounded,
+                    asset: 'assets/images/cruise_logo.png'),
                 _mapOption(
                   'google',
                   'Google Maps',
                   Icons.travel_explore_rounded,
+                  asset: 'assets/images/google_maps_logo.png',
                 ),
-                _mapOption('apple', 'Apple Maps', Icons.explore_rounded),
-                _mapOption('waze', 'Waze', Icons.directions_car_rounded),
+                _mapOption('apple', 'Apple Maps', Icons.explore_rounded,
+                    asset: 'assets/images/apple_maps_logo.png'),
+                _mapOption('waze', 'Waze', Icons.directions_car_rounded,
+                    asset: 'assets/images/waze_logo.png'),
                 const SizedBox(height: 14),
                 _neuLabel(S.of(context).routePreferences),
                 _neuToggleRow(
@@ -505,7 +513,8 @@ class _DriverNavigationScreenState extends State<DriverNavigationScreen> {
     );
   }
 
-  Widget _mapOption(String key, String label, IconData icon) {
+  Widget _mapOption(String key, String label, IconData icon,
+      {String? asset}) {
     final sel = _defaultMap == key;
     return GestureDetector(
       onTap: () async {
@@ -547,7 +556,22 @@ class _DriverNavigationScreenState extends State<DriverNavigationScreen> {
               width: 38,
               height: 38,
               decoration: neuBox(radius: 12, pressed: true),
-              child: Icon(icon, color: sel ? _gold : Colors.white54, size: 19),
+              clipBehavior: Clip.antiAlias,
+              padding: const EdgeInsets.all(7),
+              child: asset == null
+                  ? Icon(icon, color: sel ? _gold : Colors.white54, size: 19)
+                  : Image.asset(
+                      asset,
+                      fit: BoxFit.contain,
+                      // These are other companies' marks, so they are never
+                      // tinted — a recoloured Waze logo is not a Waze logo.
+                      // Only the fallback icon follows the selected state.
+                      errorBuilder: (_, __, ___) => Icon(
+                        icon,
+                        color: sel ? _gold : Colors.white54,
+                        size: 19,
+                      ),
+                    ),
             ),
             const SizedBox(width: 13),
             Expanded(

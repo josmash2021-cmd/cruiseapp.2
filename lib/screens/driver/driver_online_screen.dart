@@ -145,6 +145,11 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   // ── Map ──
   final _mapKey = GlobalKey();
   mapbox.MapboxMap? _map;
+  // Web only: GL JS controller handed over by WebMapView. Every camera,
+  // route and pin call on this screen targets `_map`, which stays null in
+  // the browser — without this handle the offer preview silently drew
+  // nothing on localhost:8080.
+  WebMapController? _webMap;
   mapbox.PointAnnotationManager? _pointAnnotMgr;
   mapbox.PointAnnotationManager?
       _pinAnnotMgr; // teardrop pins (icon-anchor: bottom)
@@ -188,6 +193,19 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     // going away. Recentring in that window called into a dead Mapbox
     // object, which is not a Dart exception to be caught: it takes the
     // process down. Tapping recenter closed the app.
+    if (kIsWeb) {
+      // GL JS has no dead-native-view hazard; a stale handle simply draws
+      // on the map that is still on screen.
+      _webMap?.flyTo(
+        lng: pos.longitude,
+        lat: pos.latitude,
+        zoom: zoom,
+        bearing: bearing,
+        pitch: tilt,
+        durationMs: _kRecenterFlightMs,
+      );
+      return;
+    }
     if (!mounted || !_mapMounted) return;
     final map = _map;
     if (map == null) return;
@@ -278,13 +296,15 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   final Set<int> _rejectedOfferIds = {}; // locally rejected — filter from polls
   String? _lastAutoTriggeredOfferId; // prevent duplicate auto-trigger
 
-  /// How many consecutive updates an on-screen offer has been missing from.
+  /// When each on-screen offer was first shown.
   ///
   /// SSE and the poll do not always agree for a moment: one of them answers
   /// without an offer the other has already sent, and taking the card away
-  /// on that single answer is what made it flash up and vanish. An offer
-  /// has to be absent twice running before it goes.
-  final Map<String, int> _offerMisses = {};
+  /// on that single answer is what made it flash up and vanish — then come
+  /// back with a fresh twenty-second ring, so it never timed out. An offer
+  /// is held through those disagreements until its countdown window closes;
+  /// what removes it at the end is the ring firing, a real reject.
+  final Map<String, DateTime> _offerFirstSeenAt = {};
   bool _isAcceptPressed = false;
 
   // ── Smooth route draw ──

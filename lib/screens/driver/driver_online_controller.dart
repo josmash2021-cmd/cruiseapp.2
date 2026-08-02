@@ -1688,43 +1688,73 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       }
     }
 
-    // ── Hold an offer through a single disagreeing update ─────────────
+    // ── Hold an offer through stream disagreements ─────────────────────
     //
     // SSE and the 5-second poll do not always answer with the same list.
     // One of them returning without an offer the other just sent took the
     // card off screen, and the next update put it back — the card flashing
     // up, vanishing, and then returning to run its countdown from the
-    // start, because being removed from the tree disposes the ring.
+    // start, because being removed from the tree disposes the ring. That
+    // is why the card used to flicker and never time out.
     //
-    // An offer the driver can see has to be missing from two updates in a
-    // row before it goes. One poll cycle is the whole delay that adds, and
-    // an offer another driver took still disappears well inside its own
-    // twenty seconds.
+    // So an offer the driver can see is held until its countdown window
+    // closes, however the streams disagree in between. The ring gets one
+    // uninterrupted twenty-second run, and what removes the visible card
+    // is the ring firing — a real reject — never a source losing a race.
+    // The grace seconds exist so the ring always fires before the hold
+    // lets go: the card outlives its own clock, not the other way round.
     String idOf(Map<String, dynamic> o) =>
         (o['offer_id'] ?? o['id'] ?? '').toString();
 
+    final now = DateTime.now();
     final arrivedIds = filtered.map(idOf).toSet();
     for (final id in arrivedIds) {
-      _offerMisses.remove(id);
+      _offerFirstSeenAt.putIfAbsent(id, () => now);
     }
+    const holdWindow = Duration(seconds: kOfferCountdownSeconds + 3);
     final reprieved = <Map<String, dynamic>>[];
+    final expired = <Map<String, dynamic>>[];
     for (final shown in _pendingOffers) {
       final id = idOf(shown);
       if (arrivedIds.contains(id)) continue;
       // Rejected and accepted offers were already filtered out above, so
       // anything still here left for a reason we did not ask for.
-      final misses = (_offerMisses[id] ?? 0) + 1;
-      if (misses < 2) {
-        _offerMisses[id] = misses;
+      final firstSeen = _offerFirstSeenAt[id];
+      if (firstSeen != null && now.difference(firstSeen) < holdWindow) {
         reprieved.add(shown);
       } else {
-        _offerMisses.remove(id);
+        expired.add(shown);
       }
     }
     if (reprieved.isNotEmpty) {
       filtered = [...filtered, ...reprieved];
       debugPrint('[Offers] held ${reprieved.length} through a '
           'disagreeing update');
+    }
+    // An offer that outlives the hold without its ring firing (its card
+    // was not the visible page, so its clock never ran) is rejected here
+    // the same way the ring would have — otherwise the next update that
+    // mentions it again would resurrect the card with a fresh countdown.
+    for (final o in expired) {
+      final id = idOf(o);
+      _offerFirstSeenAt.remove(id);
+      final oid = toInt(o['offer_id']);
+      if (oid != null) {
+        _rejectedOfferIds.add(oid);
+        if (_driverId != null) {
+          ApiService.rejectRideOffer(
+            offerId: oid,
+            driverId: _driverId!,
+          ).catchError((_) => <String, dynamic>{});
+        }
+      }
+      if (_previewingOffer != null && idOf(_previewingOffer!) == id) {
+        _previewingOffer = null;
+        _offerRouteShown = false;
+        _fullSegOne = [];
+        _fullSegTwo = [];
+        unawaited(_clearAllAnnotations().catchError((_) {}));
+      }
     }
 
     String idsOf(List<Map<String, dynamic>> l) => l.map(idOf).join(',');
@@ -2014,6 +2044,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       _setState(() => _pendingOffers = []);
       _routeCache.clear();
       _expandedOfferIds.clear();
+      _offerFirstSeenAt.clear();
       _pollT?.cancel();
       _previewingOffer = null;
       _offerRouteShown = false;
@@ -2709,6 +2740,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       HapticService.lightImpact();
       final offerId = toInt(r['offer_id']);
       if (offerId != null) _rejectedOfferIds.add(offerId);
+      _offerFirstSeenAt.remove((r['offer_id'] ?? r['id'] ?? '').toString());
 
       // INSTANT dismiss — remove card + clear map in the same frame
       if (mounted) {
@@ -2857,6 +2889,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       _currentOfferId = null;
       _pendingOffers = [];
     });
+    _offerFirstSeenAt.clear();
     _syncSearchPulse();
     _clearAllAnnotations();
     if (_pos != null) {
@@ -2916,6 +2949,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       _routePts = [];
       _pendingOffers = [];
     });
+    _offerFirstSeenAt.clear();
     _syncSearchPulse();
     _clearAllAnnotations();
     if (_pos != null) {
@@ -3133,6 +3167,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     // with the same ID. Previously this was never cleared, causing the
     // idempotent guard in _acceptOffer to permanently block re-acceptance.
     _acceptedOfferIds.clear();
+    _offerFirstSeenAt.clear();
     _setState(() {
       _phase = _Phase.searching;
       _tripId = null;

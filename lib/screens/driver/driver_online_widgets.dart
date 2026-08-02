@@ -136,6 +136,10 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
         initialLat: pos.latitude,
         initialZoom: 15.5,
         styleUri: MapboxConfig.styleDark,
+        // Without this handle every route/camera/pin call below aimed at the
+        // native `_map`, which is always null in the browser — the offer
+        // preview ran its phases against nothing and the map never moved.
+        onControllerCreated: (controller) => _webMap = controller,
       );
     }
     return RepaintBoundary(
@@ -726,8 +730,10 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
       // A minimal gap from the screen edge — down from half the home
       // indicator's inset, which put 17 points of air under the card on a
       // phone reporting 34, on top of whatever the dots row adds. Enough
-      // that the card does not look glued to the edge, and no more.
-      padding: EdgeInsets.only(bottom: bot > 0 ? bot * 0.3 : 4),
+      // that the card does not look glued to the edge, and no more. On
+      // screens with no gesture inset (web, desktop) a fixed 10 does the
+      // same job — close to the bottom, never flush with it.
+      padding: EdgeInsets.only(bottom: bot > 0 ? bot * 0.3 : 10),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -881,8 +887,15 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
 
           // â”€â”€ "Finding trips" bar at the bottom â”€â”€
           ClipRect(
-            child: AnimatedSlide(
-              offset: _hideFindingBar ? const Offset(0, 1) : Offset.zero,
+            // Hidden while an offer is up — and now collapsed, not just slid
+            // away. AnimatedSlide moved the bar off its box but left the box
+            // itself in the column, so the card floated ~62 pt of invisible
+            // bar above the screen edge instead of sitting near the bottom.
+            // Animating the height factor to zero gives that space back; the
+            // clip keeps the shrinking frame from showing a sliver of bar.
+            child: AnimatedAlign(
+              alignment: Alignment.topCenter,
+              heightFactor: _hideFindingBar ? 0.0 : 1.0,
               duration: const Duration(milliseconds: 350),
               curve: Curves.easeInOut,
               child: AnimatedOpacity(

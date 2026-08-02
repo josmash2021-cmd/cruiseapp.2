@@ -453,6 +453,18 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
   Future<void> _clearAllAnnotations() async {
     _isClearingAnnotations = true;
     try {
+      // Web overlays live in the GL JS controller, not in annotation
+      // managers — clear them by the ids the preview draws with.
+      if (kIsWeb) {
+        final web = _webMap;
+        if (web != null) {
+          web.removePolyline('offerSegOne');
+          web.removePolyline('offerSegTwo');
+          web.removeMarker('offerPickup');
+          web.removeMarker('offerDropoff');
+          web.removeCircle('driverPos');
+        }
+      }
       // Clear route polylines first
       await _clearRouteAnnotation();
       // Clear pickup/dropoff/preview pins
@@ -542,11 +554,7 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
   }
 
   Future<void> _fitBoundsMulti(List<LatLng> points) async {
-    if (points.isEmpty || _map == null) return;
-    final coords = points
-        .map((p) =>
-            mapbox.Point(coordinates: mapbox.Position(p.longitude, p.latitude)))
-        .toList();
+    if (points.isEmpty) return;
     final botPad = MediaQuery.of(context).padding.bottom;
     final topPad = MediaQuery.of(context).padding.top;
     final hasCard = _pendingOffers.isNotEmpty || _previewingOffer != null;
@@ -579,6 +587,24 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
       debugPrint('[OfferRoute] insets trimmed to fit a ${screenH.round()}pt '
           'screen: top=${topArea.round()} bottom=${cardArea.round()}');
     }
+    // Web: the same frame, one GL JS call. No tilt/bearing to preserve —
+    // the browser preview never tips the camera.
+    if (kIsWeb) {
+      _webMap?.fitBounds(
+        [for (final p in points) (lng: p.longitude, lat: p.latitude)],
+        paddingTop: topArea,
+        paddingLeft: 60,
+        paddingBottom: cardArea,
+        paddingRight: 60,
+        durationMs: 700,
+      );
+      return;
+    }
+    if (_map == null) return;
+    final coords = points
+        .map((p) =>
+            mapbox.Point(coordinates: mapbox.Position(p.longitude, p.latitude)))
+        .toList();
     // Preserve current tilt/bearing if cinematic is active
     final currentPitch = _offerTiltAnim?.value ?? 0.0;
     final currentBearing = _offerBearingAnim?.value ?? 0.0;
@@ -669,6 +695,15 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
         '${_fullSegOne.length} + ${_fullSegTwo.length} points'
         '${cached != null ? " (cached)" : ""}');
     if (!mounted || _previewingOffer == null) {
+      _isCardAnimating = false;
+      return;
+    }
+
+    // Web: no annotation managers exist on GL JS — the cinematic phases
+    // below would run against null managers and draw nothing. The browser
+    // gets the same result in one pass: frame, both segments, both pins.
+    if (kIsWeb) {
+      await _previewOfferRouteWeb(driverPos, pickupLL, dropoffLL);
       _isCardAnimating = false;
       return;
     }
@@ -802,6 +837,53 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
       _setState(() => _offerRouteShown = true);
     }
     _isCardAnimating = false;
+  }
+
+  /// Web route preview: GL JS draws the whole thing in one pass — there
+  /// are no annotation managers to feed progressively, so the cinematic
+  /// phases of the native path collapse into frame → draw → pins.
+  Future<void> _previewOfferRouteWeb(
+    LatLng driverPos,
+    LatLng pickupLL,
+    LatLng dropoffLL,
+  ) async {
+    final web = _webMap;
+    if (web == null) {
+      debugPrint('[OfferRoute] web preview skipped — no controller yet');
+      return;
+    }
+    await _fitBoundsMulti(_routeFramePoints(driverPos, pickupLL, dropoffLL));
+    if (!mounted || _previewingOffer == null) return;
+
+    List<LngLatPoint> lngLats(List<LatLng> seg) =>
+        [for (final p in seg) (lng: p.longitude, lat: p.latitude)];
+    if (_fullSegOne.length >= 2) {
+      web.setPolyline('offerSegOne', lngLats(_fullSegOne),
+          color: '#FFD700', width: 5);
+    }
+    if (_fullSegTwo.length >= 2) {
+      web.setPolyline('offerSegTwo', lngLats(_fullSegTwo),
+          color: '#FFD700', width: 5);
+    }
+
+    // The driver is one end of this route — mark it. The Flutter overlay
+    // dot sits this phase out (it only knows how to draw centred), so the
+    // map itself shows where the drive starts.
+    web.setCircle('driverPos', driverPos.longitude, driverPos.latitude,
+        radiusPx: 9, color: '#D4AF37', opacity: 0.95);
+
+    // The same two shapes the card shows: gold disc for the pickup, white
+    // square for the dropoff.
+    final pinResults = await Future.wait([
+      renderPickupDotBytes(),
+      renderDropoffSquareBytes(),
+    ]);
+    if (!mounted || _previewingOffer == null) return;
+    web.addMarker('offerPickup', pickupLL.longitude, pickupLL.latitude,
+        iconBytes: pinResults[0]);
+    web.addMarker('offerDropoff', dropoffLL.longitude, dropoffLL.latitude,
+        iconBytes: pinResults[1]);
+    _setState(() => _offerRouteShown = true);
   }
 
   /// Apply cinematic camera tilt + bearing per animation frame.
@@ -1426,6 +1508,11 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
   /// returning null, so there is no phase check here to keep in sync.
   bool get _dotOverlayOwnsMarker {
     if (_pos == null) return false;
+    // Web: there is no Mapbox annotation to hand the marker to, and while
+    // the offer preview has flown the camera to the route a centred dot
+    // would sit on the wrong place — GL JS draws the driver's circle at
+    // the route's start instead.
+    if (kIsWeb && _previewingOffer != null) return false;
     // Nothing else is drawing it, so we do — whatever the rules below say.
     //
     // Every branch here hands the marker to the Mapbox annotation, which is

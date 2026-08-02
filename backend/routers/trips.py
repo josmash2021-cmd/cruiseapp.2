@@ -1434,17 +1434,15 @@ async def cancel_trip(trip_id: int, request: Request, user: User = Depends(_get_
             "Only the rider or dispatch can cancel a trip. "
             "Drivers must contact dispatch to request a cancellation.",
         )
-    # Rider can only cancel BEFORE a driver has been assigned.
-    if is_owner_rider and not is_privileged and trip.driver_id is not None:
-        logging.warning(
-            "[Guard] BLOCKED rider cancel_trip trip=%d by user=%d — driver %d "
-            "already assigned, rider must go through /request-cancel",
-            trip_id, user.id, trip.driver_id,
-        )
-        raise HTTPException(
-            403,
-            "A driver is already assigned. Please contact support to request cancellation.",
-        )
+    # Rider may cancel instantly at any point BEFORE pickup — even with a
+    # driver assigned. The old policy forced the rider through
+    # /request-cancel (dispatch approval), and their app treated the 403 as
+    # "cancelled anyway": the rider walked away while the trip stayed alive
+    # for the driver, who kept driving to a pickup that no longer existed.
+    # The in-progress and terminal-state guards below are the real gate,
+    # and the $5 fee + refund logic further down covers the en-route cases.
+    # (Drivers still cannot cancel here — they use /driver-cancel, or
+    # /request-cancel for dispatch review.)
     # Terminal-state guards stay the same.
     if trip.status in ("in_trip", "in_progress"):
         raise HTTPException(409, "Cannot cancel a trip that is currently in progress")

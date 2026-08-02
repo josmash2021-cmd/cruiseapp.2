@@ -927,12 +927,15 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
         // Navigate back to DriverOnlineScreen. pushAndRemoveUntil (rather
         // than pop) because this screen is also reached from entry points
         // that leave nothing sensible underneath — resume-from-home, a
-        // push notification — so popping is not always an option.
+        // push notification — so popping is not always an option. The
+        // notice flag tells it to open with the "Viaje cancelado" overlay
+        // already up, since that notice lives on the online screen.
         if (!mounted) return;
         try {
           Navigator.of(context).pushAndRemoveUntil(
             PageRouteBuilder(
-              pageBuilder: (_, __, ___) => const DriverOnlineScreen(),
+              pageBuilder: (_, __, ___) =>
+                  const DriverOnlineScreen(showCancelledNotice: true),
               transitionsBuilder: (_, anim, __, child) =>
                   FadeTransition(opacity: anim, child: child),
               transitionDuration: const Duration(milliseconds: 400),
@@ -1022,7 +1025,8 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
           try {
             Navigator.of(context).pushAndRemoveUntil(
               PageRouteBuilder(
-                pageBuilder: (_, __, ___) => const DriverOnlineScreen(),
+                pageBuilder: (_, __, ___) =>
+                    const DriverOnlineScreen(showCancelledNotice: true),
                 transitionsBuilder: (_, anim, __, child) =>
                     FadeTransition(opacity: anim, child: child),
                 transitionDuration: const Duration(milliseconds: 400),

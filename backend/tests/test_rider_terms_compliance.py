@@ -51,33 +51,49 @@ async def test_receipt_includes_driver_first_name(
     assert data.get("driver_first_name") == "Test"
 
 
-# ── 2. Cancellation flow: support required after driver assignment ─────────
+# ── 2. Cancellation flow: instant rider cancel, even with a driver ──────
 
 
-async def test_rider_cancel_blocked_after_driver_assignment(
-    client: AsyncClient, test_rider, test_trip
+async def test_rider_cancel_instant_pre_pickup_with_driver(
+    client: AsyncClient, test_rider, test_trip, db
 ):
-    """Riders cannot self-cancel via /cancel once a driver is assigned;
-    the backend directs them to support (request-cancel flow)."""
+    """A rider may cancel instantly at any point before pickup, even with a
+    driver assigned. The old policy sent them through /request-cancel
+    (dispatch approval), which left the trip alive for the driver after the
+    rider had already walked away. The in-progress guard is the real gate,
+    and the driver is notified immediately."""
+    from sqlalchemy import select
+    from models.database import Notification
     from tests.conftest import _make_auth_headers
 
     _, token = test_rider
     headers = {**_make_auth_headers(), "Authorization": f"Bearer {token}"}
 
-    # test_trip has a driver assigned, so direct cancel must be rejected.
-    resp = await client.post(f"/trips/{test_trip.id}/cancel", headers=headers)
-    assert resp.status_code == 403
-    assert "contact support" in resp.json()["detail"].lower()
+    # Put the fixture trip in a pre-pickup state with the driver assigned.
+    test_trip.status = "driver_en_route"
+    await db.commit()
 
-    # The support-mediated path must be available instead.
-    fresh = {**_make_auth_headers(), "Authorization": f"Bearer {token}"}
-    resp2 = await client.post(
-        f"/trips/{test_trip.id}/request-cancel",
-        json={"reason": "compliance test"},
-        headers=fresh,
+    resp = await client.post(f"/trips/{test_trip.id}/cancel", headers=headers)
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "cancelled"
+
+    # The assigned driver is told about it — that was the point of the
+    # change: before it, nothing reached them.
+    res = await db.execute(
+        select(Notification).where(
+            Notification.user_id == test_trip.driver_id,
+            Notification.notif_type == "trip_cancelled",
+        )
     )
-    assert resp2.status_code == 200
-    assert resp2.json().get("ok") is True
+    assert res.scalars().first() is not None
+
+    # A trip already in progress stays uncancellable. Fresh headers each
+    # call — the API's nonce anti-replay rejects a reused set with a 401.
+    test_trip.status = "in_trip"
+    await db.commit()
+    fresh = {**_make_auth_headers(), "Authorization": f"Bearer {token}"}
+    resp3 = await client.post(f"/trips/{test_trip.id}/cancel", headers=fresh)
+    assert resp3.status_code == 409
 
 
 # ── 3. No-show / wait fee figures: UI matches backend policy ───────────────

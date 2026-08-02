@@ -89,11 +89,18 @@ class DriverOnlineScreen extends StatefulWidget {
   final LatLng? initialPos;
   final double initialHeading;
   final String? photoUrl;
+
+  /// When true, the screen opens already showing the centred "Viaje
+  /// cancelado" notice: the trip screen hands back a cancelled trip this
+  /// way, because the notice lives here and a pushAndRemoveUntil cannot
+  /// carry state over.
+  final bool showCancelledNotice;
   const DriverOnlineScreen({
     super.key,
     this.initialPos,
     this.initialHeading = 0,
     this.photoUrl,
+    this.showCancelledNotice = false,
   });
   @override
   State<DriverOnlineScreen> createState() => _DriverOnlineScreenState();
@@ -288,6 +295,14 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   // meant every accept briefly held two native Mapbox surfaces alive at
   // once. Non-null while the celebration is on screen.
   _AcceptedOverlayData? _acceptedOverlay;
+
+  // ── "Viaje cancelado" notice ──
+  // Centred, semi-dark, never tappable: the driver is already back to
+  // searching the moment it appears. ~5 s up, then a fluid fade.
+  bool _cancelledNoticeVisible = false;
+  Timer? _cancelledNoticeTimer;
+  AnimationController? _cancelledNoticeCtrl;
+  Animation<double>? _cancelledNoticeFade;
 
   // ── Accept card animation state ──
   _OfferAcceptState _offerAcceptState = _OfferAcceptState.normal;
@@ -619,6 +634,13 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     super.initState();
     _enforceDriverRole();
     WidgetsBinding.instance.addObserver(this);
+    // The trip screen handed us a cancelled trip: show the notice as soon
+    // as the first frame is down, not from inside initState.
+    if (widget.showCancelledNotice) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _showCancelledNotice();
+      });
+    }
     // Once, here — not in the resume branch, which would stack another
     // listener on every return from the background.
     EarningsPrivacy.load();
@@ -925,6 +947,8 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     EarningsPrivacy.hidden.removeListener(_onEarningsPrivacyChanged);
     _driverPhotoImage?.dispose();
     _markerFrame.dispose();
+    _cancelledNoticeTimer?.cancel();
+    _cancelledNoticeCtrl?.dispose();
     MapSurfaceCoordinator.instance.release(_kMapSurfaceOwner);
     unawaited(_posStream?.stop());
     // Only when the driver actually went offline.
@@ -1306,7 +1330,10 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
               ),
 
             // â”€â”€ Top-left: Home button (hidden during nav — nav header has its own back) â”€â”€
-            if (!isNav && !_offerOnScreen)
+            // Also hidden while the accepted celebration is up: with a trip
+            // taken, Home / Earnings / Notifications are three ways to walk
+            // away from it, same as with an offer.
+            if (!isNav && !_offerOnScreen && _acceptedOverlay == null)
               Positioned(
                 top: top + 10,
                 left: 16,
@@ -1328,7 +1355,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
               ),
 
             // â”€â”€ Top-center: Earnings pill + TODAY (hidden during nav) â”€â”€
-            if (!isNav && !_offerOnScreen)
+            if (!isNav && !_offerOnScreen && _acceptedOverlay == null)
               Positioned(
                 top: top + 10,
                 left: 0,
@@ -1344,7 +1371,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
 
             // â”€â”€ Side floating buttons (only when searching with no offers) â”€â”€
             // ── Scheduled rides badge (top-right, always visible, hidden during nav) ──
-            if (!isNav && !_offerOnScreen)
+            if (!isNav && !_offerOnScreen && _acceptedOverlay == null)
               Positioned(
                 top: top + 10,
                 right: 16,
@@ -1702,6 +1729,86 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                   textMuted,
                   borderC,
                   shadowC,
+                ),
+              ),
+
+            // ── "Viaje cancelado" notice ──
+            // Centred on a semi-dark wash, ~5 s, fluid fade both ways. It
+            // never absorbs a tap: the driver is already back to searching
+            // the moment it shows.
+            if (_cancelledNoticeVisible && _cancelledNoticeFade != null)
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: FadeTransition(
+                    opacity: _cancelledNoticeFade!,
+                    child: ColoredBox(
+                      color: Colors.black.withValues(alpha: 0.55),
+                      child: Center(
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 28, vertical: 20),
+                          decoration: BoxDecoration(
+                            color: neuSurface,
+                            borderRadius: BorderRadius.circular(20),
+                            border: Border.all(
+                              color: const Color(0xFFE8C547)
+                                  .withValues(alpha: 0.35),
+                            ),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.5),
+                                blurRadius: 24,
+                                offset: const Offset(0, 10),
+                                spreadRadius: -6,
+                              ),
+                            ],
+                          ),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Container(
+                                width: 56,
+                                height: 56,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color: const Color(0xFFE8C547)
+                                      .withValues(alpha: 0.12),
+                                  border: Border.all(
+                                    color: const Color(0xFFE8C547),
+                                    width: 1.5,
+                                  ),
+                                ),
+                                child: const Icon(
+                                  Icons.cancel_outlined,
+                                  color: Color(0xFFE8C547),
+                                  size: 30,
+                                ),
+                              ),
+                              const SizedBox(height: 14),
+                              Text(
+                                S.of(context).tripCancelled,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              const SizedBox(height: 6),
+                              Text(
+                                S.of(context).driverTripCancelledReturning,
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  color:
+                                      Colors.white.withValues(alpha: 0.55),
+                                  fontSize: 13,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
                 ),
               ),
 

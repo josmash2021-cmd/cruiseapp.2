@@ -3164,6 +3164,30 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
   ///
   /// This method now ONLY resets the local controller state and returns
   /// the screen to the searching phase. It never PATCHes the backend.
+  /// Show the centred "Viaje cancelado" notice: fade in over a semi-dark
+  /// wash, hold ~5 s, fade back out fluidly. It never takes a pointer —
+  /// the driver is already back to searching the moment it appears.
+  void _showCancelledNotice() {
+    if (!mounted) return;
+    _cancelledNoticeTimer?.cancel();
+    _cancelledNoticeCtrl ??= AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 450),
+    );
+    _cancelledNoticeFade ??= CurvedAnimation(
+      parent: _cancelledNoticeCtrl!,
+      curve: Curves.easeInOut,
+    );
+    _setState(() => _cancelledNoticeVisible = true);
+    _cancelledNoticeCtrl!.forward(from: 0);
+    _cancelledNoticeTimer = Timer(const Duration(seconds: 5), () async {
+      if (!mounted) return;
+      await _cancelledNoticeCtrl!.reverse();
+      if (!mounted) return;
+      _setState(() => _cancelledNoticeVisible = false);
+    });
+  }
+
   void _resetToSearchingOnRemoteCancel() {
     // All callers are async-after-await, so the State may already be
     // disposed by the time we land here.
@@ -3199,39 +3223,10 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       _animateToPosition(_pos!, zoom: 15.5, bearing: 0, tilt: 0);
     }
     _startPolling();
-    if (mounted) {
-      // Use maybeOf — if the screen has no Scaffold ancestor (e.g. mid
-      // teardown) we silently skip the toast instead of crashing.
-      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-        SnackBar(
-          behavior: SnackBarBehavior.floating,
-          backgroundColor: const Color(0xFF1a1a1a),
-          content: Row(
-            children: [
-              const Icon(Icons.info_outline,
-                  color: Color(0xFFE8C547), size: 22),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  S.of(context).driverTripCancelledReturning,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          duration: const Duration(seconds: 4),
-          margin: const EdgeInsets.all(16),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-            side: const BorderSide(color: Color(0xFFE8C547), width: 1),
-          ),
-        ),
-      );
-    }
+    // The notice replaces the old corner snackbar: a rider cancel is the
+    // one event the driver must not miss in their periphery, so it lands
+    // centred on a semi-dark wash for ~5 s and then fades out of the way.
+    _showCancelledNotice();
   }
 
   // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•

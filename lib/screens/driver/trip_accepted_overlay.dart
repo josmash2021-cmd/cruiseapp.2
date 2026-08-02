@@ -56,7 +56,6 @@ class TripAcceptedOverlay extends StatefulWidget {
 class _TripAcceptedOverlayState extends State<TripAcceptedOverlay>
     with TickerProviderStateMixin {
   static const _gold = Color(0xFFD4AF37);
-  static const _card = Color(0xFF1A1A1F);
 
   late final AnimationController _fadeCtrl;
   late final Animation<double> _fadeAnim;
@@ -211,23 +210,11 @@ class _TripAcceptedOverlayState extends State<TripAcceptedOverlay>
 
                         const SizedBox(height: 20),
 
-                        // ── Rider info card ──
-                        Container(
-                          decoration: BoxDecoration(
-                            color: _card,
-                            borderRadius: BorderRadius.circular(20),
-                            border: Border.all(
-                              color: _gold.withValues(alpha: 0.2),
-                              width: 1,
-                            ),
-                            boxShadow: [
-                              BoxShadow(
-                                color: _gold.withValues(alpha: 0.08),
-                                blurRadius: 20,
-                                spreadRadius: 2,
-                              ),
-                            ],
-                          ),
+                        // ── Rider info — no box any more ──
+                        // The card background is gone by request: avatar,
+                        // name and stats sit straight on the dark wash over
+                        // the map, same as the title above them.
+                        Padding(
                           padding: const EdgeInsets.all(16),
                           child: Column(
                             children: [

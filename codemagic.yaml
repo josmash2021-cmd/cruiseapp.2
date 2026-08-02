@@ -345,7 +345,8 @@ workflows:
       - *patch_no_codesign
       - name: Flutter build iOS (unsigned)
         script: |
-          flutter build ios --release --no-codesign --no-tree-shake-icons
+          flutter build ios --release --no-codesign --no-tree-shake-icons \
+            --dart-define=MAPBOX_TOKEN=$MAPBOX_ACCESS_TOKEN
           APP="build/ios/iphoneos/Runner.app"
           [ -d "$APP" ] || { find build/ios -type d -name "*.app"; exit 1; }
           APP_SIZE=$(du -sm "$APP" | cut -f1)
@@ -472,6 +473,7 @@ workflows:
       - name: Flutter build IPA (Ad Hoc)
         script: |
           flutter build ipa --release --no-tree-shake-icons \
+            --dart-define=MAPBOX_TOKEN=$MAPBOX_ACCESS_TOKEN \
             --export-options-plist=$HOME/export_options.plist
     artifacts:
       - build/ios/ipa/*.ipa
@@ -655,6 +657,7 @@ workflows:
           PUBSPEC_BUILD=$(grep '^version:' pubspec.yaml | sed 's/.*+//')
           echo "Build number from pubspec: $PUBSPEC_BUILD"
           flutter build ipa \
+            --dart-define=MAPBOX_TOKEN=$MAPBOX_ACCESS_TOKEN \
             --release \
             --no-tree-shake-icons \
             --build-number=${PUBSPEC_BUILD:-$BUILD_NUMBER} \
@@ -748,6 +751,7 @@ workflows:
           # Same source as the AAB and the IPA — see android-release below.
           PUBSPEC_BUILD=$(grep '^version:' pubspec.yaml | sed 's/.*+//')
           flutter build apk --release --no-tree-shake-icons \
+            --dart-define=MAPBOX_TOKEN=$MAPBOX_ACCESS_TOKEN \
             --build-number=${PUBSPEC_BUILD:-$BUILD_NUMBER}
           APK=$(find build/app/outputs -name "*.apk" | head -1)
           echo "APK: $APK  ($(du -sh "$APK" | cut -f1))"
@@ -821,6 +825,7 @@ workflows:
           PUBSPEC_BUILD=$(grep '^version:' pubspec.yaml | sed 's/.*+//')
           echo "Build number from pubspec: $PUBSPEC_BUILD"
           flutter build appbundle --release --no-tree-shake-icons \
+            --dart-define=MAPBOX_TOKEN=$MAPBOX_ACCESS_TOKEN \
             --build-number=${PUBSPEC_BUILD:-$BUILD_NUMBER}
     artifacts:
       - build/app/outputs/**/*.aab

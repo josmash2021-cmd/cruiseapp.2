@@ -3,13 +3,18 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException, Header, Request, Query, Body
 from fastapi.responses import JSONResponse, FileResponse, Response
-from sqlalchemy import select, func, and_, or_, text, case, cast, Date
+from sqlalchemy import select, func, and_, or_, text, case, cast, Date, delete, update
 from sqlalchemy.orm import aliased
 from sqlalchemy.ext.asyncio import AsyncSession
 from models.database import (
     get_db, SessionLocal, User, Trip, Vehicle, Document, Rating,
-    SupportChat, RiderPaymentMethod, SurgeZone, DispatchOffer, DriverIncentive,
-    AuditLog, Cashout,
+    SupportChat, SupportMessage, ActionRequest, RiderPaymentMethod, SurgeZone,
+    DispatchOffer, DriverIncentive, AuditLog, Cashout,
+    FareSplit, PayoutMethod, Wallet, ChatMessage, Notification,
+    PasswordResetToken, Referral, CruiseCashBalance, CruiseCashTransaction,
+    DriverReferral, FavoriteLocation, RevokedToken, DriverLocationHistory,
+    SmsLog, EmailLog, ZeroToleranceComplaint, ConsentLog,
+    SummaryOfRightsDelivery,
 )
 
 # Process uptime anchor — set once at module import
@@ -551,14 +556,101 @@ async def admin_accept_trip(trip_id: int, request: Request, db: AsyncSession = D
     }
 
 
+# ── Cascade deletes ───────────────────────────────────────────
+# Postgres enforces every ForeignKey with NO ACTION, so deleting a trip or
+# a user that anything points at died with an IntegrityError and the panel
+# showed a bare 500. These helpers remove the children first, inside the
+# caller's transaction.
+
+_ACTIVE_TRIP_STATES = ("requested", "driver_en_route", "arrived", "in_trip")
+
+
+async def _purge_trips_cascade(db: AsyncSession, trip_ids: list) -> None:
+    """Delete trips and every row that references them (children first)."""
+    if not trip_ids:
+        return
+    # The cruise-cash ledger keeps its history — just unlink the trip.
+    await db.execute(
+        update(CruiseCashTransaction)
+        .where(CruiseCashTransaction.ref_trip_id.in_(trip_ids))
+        .values(ref_trip_id=None)
+    )
+    for model in (FareSplit, DispatchOffer, Rating, ChatMessage,
+                  SmsLog, EmailLog, ZeroToleranceComplaint):
+        await db.execute(delete(model).where(model.trip_id.in_(trip_ids)))
+    await db.execute(delete(Trip).where(Trip.id.in_(trip_ids)))
+
+
+async def _purge_user_cascade(db: AsyncSession, user_id: int) -> None:
+    """Delete every row that references this user, then their trips' rows."""
+    # Other users may point at this one through the referral self-FKs.
+    await db.execute(
+        update(User).where(User.referred_by == user_id).values(referred_by=None)
+    )
+    await db.execute(
+        update(User)
+        .where(User.referred_by_user_id == user_id)
+        .values(referred_by_user_id=None)
+    )
+    # Support threads: messages and action requests hang off the chat.
+    chat_ids = select(SupportChat.id).where(
+        SupportChat.user_id == user_id).scalar_subquery()
+    await db.execute(delete(SupportMessage).where(
+        or_(SupportMessage.chat_id.in_(chat_ids),
+            SupportMessage.sender_id == user_id)))
+    await db.execute(delete(ActionRequest).where(
+        or_(ActionRequest.chat_id.in_(chat_ids),
+            ActionRequest.user_id == user_id)))
+    await db.execute(delete(SupportChat).where(SupportChat.user_id == user_id))
+    # Rows that reference the user on either side of a relationship.
+    await db.execute(delete(FareSplit).where(
+        or_(FareSplit.requester_id == user_id, FareSplit.invitee_id == user_id)))
+    await db.execute(delete(DispatchOffer).where(DispatchOffer.driver_id == user_id))
+    await db.execute(delete(Rating).where(
+        or_(Rating.from_user_id == user_id, Rating.to_user_id == user_id)))
+    await db.execute(delete(ChatMessage).where(
+        or_(ChatMessage.sender_id == user_id, ChatMessage.receiver_id == user_id)))
+    await db.execute(delete(Referral).where(
+        or_(Referral.referrer_id == user_id, Referral.referee_id == user_id)))
+    await db.execute(delete(DriverReferral).where(
+        or_(DriverReferral.referrer_driver_id == user_id,
+            DriverReferral.referred_driver_id == user_id)))
+    await db.execute(delete(CruiseCashTransaction).where(
+        or_(CruiseCashTransaction.user_id == user_id,
+            CruiseCashTransaction.counterparty_user_id == user_id)))
+    await db.execute(delete(ZeroToleranceComplaint).where(
+        or_(ZeroToleranceComplaint.driver_id == user_id,
+            ZeroToleranceComplaint.rider_id == user_id)))
+    await db.execute(delete(DriverIncentive).where(
+        DriverIncentive.driver_id == user_id))
+    await db.execute(delete(DriverLocationHistory).where(
+        DriverLocationHistory.driver_id == user_id))
+    # Plain user_id children.
+    for model in (ConsentLog, SummaryOfRightsDelivery, PayoutMethod,
+                  RiderPaymentMethod, Wallet, Cashout, Vehicle, Document,
+                  Notification, PasswordResetToken, FavoriteLocation,
+                  RevokedToken, CruiseCashBalance):
+        await db.execute(delete(model).where(model.user_id == user_id))
+    # Trips they rode or drove, and everything hanging off those trips
+    # (counterparty ratings, chat messages, offers to other drivers…).
+    trip_ids = (await db.execute(
+        select(Trip.id).where(
+            or_(Trip.rider_id == user_id, Trip.driver_id == user_id))
+    )).scalars().all()
+    await _purge_trips_cascade(db, trip_ids)
+
+
 @router.delete("/admin/trips/{trip_id}", dependencies=[Depends(_require_dispatch_auth)])
 async def admin_delete_trip(trip_id: int, db: AsyncSession = Depends(get_db)):
-    """Delete a trip from the dispatch panel."""
+    """Delete a trip from the dispatch panel, with all its dependent rows."""
     result = await db.execute(select(Trip).where(Trip.id == trip_id))
     trip = result.scalar_one_or_none()
     if not trip:
         raise HTTPException(404, "Trip not found")
-    await db.delete(trip)
+    if trip.status in _ACTIVE_TRIP_STATES:
+        raise HTTPException(
+            400, f"Trip is '{trip.status}' — cancel it before deleting")
+    await _purge_trips_cascade(db, [trip_id])
     await db.commit()
     _security_audit_log("ADMIN_TRIP_DELETED", "admin", f"trip_id={trip_id}")
     return {"deleted": True}
@@ -947,32 +1039,32 @@ async def admin_update_user(user_id: int, request: Request, db: AsyncSession = D
 
 @router.delete("/admin/users/{user_id}", dependencies=[Depends(_require_dispatch_auth)])
 async def admin_delete_user(user_id: int, db: AsyncSession = Depends(get_db)):
-    """Permanently delete a user and their documents. Syncs to Firestore."""
+    """Permanently delete a user, their documents and every row that
+    references them (trips, ratings, chats, wallets…). Syncs to Firestore."""
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
     if not user:
         raise HTTPException(404, "User not found")
-    # Delete documents
-    await db.execute(select(Document).where(Document.user_id == user_id))
-    docs_result = await db.execute(select(Document).where(Document.user_id == user_id))
+    role = user.role
+    # Remove uploaded files from disk before their rows go.
+    docs_result = await db.execute(
+        select(Document).where(Document.user_id == user_id))
     for doc in docs_result.scalars().all():
-        # Delete file from disk
         if doc.file_path:
             fpath = os.path.join(os.path.dirname(os.path.abspath(__file__)), doc.file_path.lstrip("/"))
             if os.path.exists(fpath):
                 os.remove(fpath)
-        await db.delete(doc)
-    # Delete photo from disk
     if user.photo_url:
         photo_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), user.photo_url.lstrip("/"))
         if os.path.exists(photo_path):
             os.remove(photo_path)
-    collection = "drivers" if user.role == "driver" else "clients"
-    await db.delete(user)
+    await _purge_user_cascade(db, user_id)
+    await db.execute(delete(User).where(User.id == user_id))
     await db.commit()
     # Sync to Firestore
     if _HAS_FIRESTORE:
         try:
+            collection = "drivers" if role == "driver" else "clients"
             firestore_sync.delete_user(user_id, collection)
         except Exception as e:
             logging.warning("Firestore delete sync failed: %s", e)

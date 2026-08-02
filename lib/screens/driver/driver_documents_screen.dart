@@ -6,8 +6,8 @@ import 'package:image_picker/image_picker.dart';
 import '../../config/page_transitions.dart';
 import '../../services/api_service.dart';
 import '../../services/firebase_storage_service.dart';
-import '../../config/driver_colors.dart';
 import '../../l10n/app_localizations.dart';
+import '../../widgets/neu_style.dart';
 import 'background_check_consent_screen.dart';
 
 enum _ExpiryStatus { ok, expiringSoon, expired }
@@ -22,12 +22,15 @@ class DriverDocumentsScreen extends StatefulWidget {
 
 class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
   static const _gold = Color(0xFFE8C547);
-  static const _card = Color(0xFF1C1C1E);
-  static const _surface = Color(0xFF141414);
 
   bool _loading = true;
   bool _uploading = false;
   List<Map<String, dynamic>> _documents = [];
+  String _vehicleLabel = '';
+  // Anything still owed is open on arrival; what is already done starts
+  // collapsed. The driver came here for the first list, not the second.
+  bool _actionOpen = true;
+  bool _submittedOpen = false;
   final _picker = ImagePicker();
 
   // All required doc types for drivers
@@ -164,6 +167,7 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
       }
       setState(() {
         _documents = merged;
+        _vehicleLabel = _describeVehicle(vehicle);
         _loading = false;
       });
     } catch (_) {
@@ -171,11 +175,28 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
     }
   }
 
+  /// "2013 Jeep Grand Cherokee (A0D044Y)", skipping whatever is missing.
+  ///
+  /// Empty when there is no car on file, which is the signal the header
+  /// card uses to stay off the screen entirely rather than render a row
+  /// of blanks.
+  String _describeVehicle(Map<String, dynamic>? v) {
+    if (v == null) return '';
+    final parts = [
+      (v['year'] ?? '').toString(),
+      (v['make'] ?? '').toString(),
+      (v['model'] ?? '').toString(),
+    ].where((p) => p.trim().isNotEmpty).join(' ');
+    final plate = (v['plate'] ?? '').toString().trim();
+    if (parts.isEmpty) return plate;
+    return plate.isEmpty ? parts : '$parts (${plate.toUpperCase()})';
+  }
+
   /// Upload a new document photo (for expired or rejected docs)
   Future<void> _uploadDocument(String docType, String title) async {
     final source = await showModalBottomSheet<ImageSource>(
       context: context,
-      backgroundColor: _card,
+      backgroundColor: neuSurface,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
@@ -295,268 +316,347 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
     }
   }
 
+  /// The only four records a driver may ever touch themselves.
+  ///
+  /// Everything else — background check, registration, the inspection
+  /// form — is issued or verified by someone other than the driver, so
+  /// the card is inert. A tap that does nothing is worse than a card
+  /// that plainly cannot be tapped.
+  static const _editableDocTypes = {
+    'license_plate',
+    'drivers_license',
+    'profile_photo',
+    'insurance',
+  };
+
+  /// How early the update window opens, in days before expiry.
+  ///
+  /// Twenty, not zero: insurance and a licence have to be renewed while
+  /// the old one is still valid. Waiting for the expiry to land means
+  /// the driver is already offline by the time the app lets them fix it.
+  static const _reuploadWindowDays = 20;
+
+  /// Whether the card can be tapped at all.
+  bool _isEditable(Map<String, dynamic> doc) =>
+      _editableDocTypes.contains(doc['doc_type'] as String?);
+
+  /// Whether the driver may replace this document right now.
+  ///
+  /// Editable type, and something to act on: never uploaded, rejected,
+  /// expired, or inside the twenty-day window.
+  ///
+  /// The details sheet has to ask this too. It carries an "Update"
+  /// button and was unreachable until this pass, so nothing was
+  /// enforcing the rule there.
+  bool _canReupload(Map<String, dynamic> doc) {
+    if (!_isEditable(doc)) return false;
+    final status = (doc['status'] ?? 'not_uploaded') as String;
+    if (status == 'coming_soon') return false;
+    if (status == 'not_uploaded' || status == 'rejected') return true;
+    final expiry = (doc['expiry_date'] ?? doc['expiry'] ?? '') as String;
+    if (expiry.isEmpty) return false;
+    final dt = DateTime.tryParse(expiry);
+    if (dt == null) return false;
+    return dt.difference(DateTime.now()).inDays <= _reuploadWindowDays;
+  }
+
+  /// True when this document still asks something of the driver.
+  ///
+  /// Expiry counts: an approved insurance that lapses next week is not
+  /// "done", however green it looked yesterday.
+  bool _needsAction(Map<String, dynamic> doc) {
+    final status = (doc['status'] ?? 'not_uploaded') as String;
+    if (status == 'coming_soon') return false;
+    if (status == 'not_uploaded' || status == 'rejected') return true;
+    final expiry = (doc['expiry_date'] ?? doc['expiry'] ?? '') as String;
+    return _checkExpiry(expiry) != _ExpiryStatus.ok;
+  }
+
   @override
   Widget build(BuildContext context) {
     final s = S.of(context);
-    final approvedCount = _documents
-        .where((d) => d['status'] == 'approved')
-        .length;
-    final total = _documents.length;
-    final progress = total > 0 ? approvedCount / total : 0.0;
-    final allComplete = approvedCount == total && total > 0;
 
-    // Check for expiry issues
-    final expiryIssues = _documents.where((d) {
-      final expiry = (d['expiry_date'] ?? d['expiry'] ?? '') as String;
-      final st = _checkExpiry(expiry);
-      return d['status'] == 'approved' &&
-          (st == _ExpiryStatus.expired || st == _ExpiryStatus.expiringSoon);
-    }).length;
-    final rejectedCount = _documents
-        .where((d) => d['status'] == 'rejected')
-        .length;
-    final needsAttention = expiryIssues + rejectedCount;
+    final action = _documents.where(_needsAction).toList();
+    final submitted = _documents.where((d) => !_needsAction(d)).toList();
+    final pendingCount =
+        submitted.where((d) => d['status'] == 'pending').length;
+    final approvedCount =
+        submitted.where((d) => d['status'] == 'approved').length;
 
-    final dc = DriverColors.of(context);
     return Scaffold(
-      backgroundColor: dc.bg,
+      backgroundColor: neuBase,
       body: _loading
           ? const Center(
               child: CircularProgressIndicator(color: _gold, strokeWidth: 2),
             )
           : Stack(
               children: [
-              CustomScrollView(
-              physics: const BouncingScrollPhysics(),
-              slivers: [
-                SliverAppBar(
-                  backgroundColor: dc.surface,
-                  pinned: true,
-                  expandedHeight: 110,
-                  leading: IconButton(
-                    icon: Container(
-                      width: 38,
-                      height: 38,
-                      decoration: BoxDecoration(
-                        color: dc.glassBg,
-                        shape: BoxShape.circle,
-                      ),
-                      child: Icon(
-                        Icons.arrow_back_rounded,
-                        color: dc.text,
-                        size: 20,
-                      ),
-                    ),
-                    onPressed: () => Navigator.pop(context),
-                  ),
-                  centerTitle: true,
-                  title: Text(
-                    s.documentsTitle,
-                    style: TextStyle(
-                      color: dc.text,
-                      fontSize: 20,
-                      fontWeight: FontWeight.w900,
-                    ),
+                SafeArea(
+                  bottom: false,
+                  child: ListView(
+                    physics: const BouncingScrollPhysics(),
+                    padding: const EdgeInsets.fromLTRB(20, 8, 20, 40),
+                    children: [
+                      _closeRow(s),
+                      const SizedBox(height: 18),
+                      if (_vehicleLabel.isNotEmpty) ...[
+                        _vehicleCard(s),
+                        const SizedBox(height: 22),
+                      ],
+                      if (action.isNotEmpty) ...[
+                        _section(
+                          title: s.docsActionNeeded,
+                          open: _actionOpen,
+                          onToggle: () =>
+                              setState(() => _actionOpen = !_actionOpen),
+                          chips: [
+                            _countChip(
+                              Icons.error_outline_rounded,
+                              action.length,
+                              const Color(0xFFE8A33D),
+                            ),
+                          ],
+                          children: action.map(_documentCard).toList(),
+                        ),
+                        const SizedBox(height: 18),
+                      ],
+                      if (submitted.isNotEmpty)
+                        _section(
+                          title: s.docsSubmitted,
+                          open: _submittedOpen,
+                          onToggle: () =>
+                              setState(() => _submittedOpen = !_submittedOpen),
+                          chips: [
+                            if (pendingCount > 0)
+                              _countChip(
+                                Icons.schedule_rounded,
+                                pendingCount,
+                                Colors.white.withValues(alpha: 0.55),
+                              ),
+                            if (approvedCount > 0)
+                              _countChip(
+                                Icons.check_circle_rounded,
+                                approvedCount,
+                                const Color(0xFF4CAF50),
+                              ),
+                          ],
+                          children: submitted.map(_documentCard).toList(),
+                        ),
+                      const SizedBox(height: 20),
+                      _lockedNote(s),
+                    ],
                   ),
                 ),
-
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.all(20),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        // ── Progress card ──
-                        Container(
-                          padding: const EdgeInsets.all(20),
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              colors: allComplete && needsAttention == 0
-                                  ? [
-                                      const Color(
-                                        0xFF4CAF50,
-                                      ).withValues(alpha: 0.15),
-                                      Colors.transparent,
-                                    ]
-                                  : needsAttention > 0
-                                  ? [
-                                      Colors.orange.withValues(alpha: 0.12),
-                                      Colors.transparent,
-                                    ]
-                                  : [
-                                      _gold.withValues(alpha: 0.15),
-                                      Colors.transparent,
-                                    ],
-                              begin: Alignment.topLeft,
-                              end: Alignment.bottomRight,
-                            ),
-                            borderRadius: BorderRadius.circular(22),
-                            border: Border.all(
-                              color: allComplete && needsAttention == 0
-                                  ? const Color(
-                                      0xFF4CAF50,
-                                    ).withValues(alpha: 0.3)
-                                  : needsAttention > 0
-                                  ? Colors.orange.withValues(alpha: 0.25)
-                                  : _gold.withValues(alpha: 0.2),
+                if (_uploading)
+                  Container(
+                    color: Colors.black54,
+                    child: Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const CircularProgressIndicator(
+                              color: _gold, strokeWidth: 2),
+                          const SizedBox(height: 16),
+                          Text(
+                            S.of(context).uploadingDocument,
+                            style: const TextStyle(
+                              color: Colors.white70,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
                             ),
                           ),
-                          child: Column(
-                            children: [
-                              Row(
-                                children: [
-                                  if (allComplete && needsAttention == 0)
-                                    Container(
-                                      width: 56,
-                                      height: 56,
-                                      decoration: BoxDecoration(
-                                        color: const Color(
-                                          0xFF4CAF50,
-                                        ).withValues(alpha: 0.15),
-                                        shape: BoxShape.circle,
-                                      ),
-                                      child: const Icon(
-                                        Icons.check_circle_rounded,
-                                        color: Color(0xFF4CAF50),
-                                        size: 32,
-                                      ),
-                                    )
-                                  else
-                                    SizedBox(
-                                      width: 56,
-                                      height: 56,
-                                      child: Stack(
-                                        alignment: Alignment.center,
-                                        children: [
-                                          SizedBox(
-                                            width: 56,
-                                            height: 56,
-                                            child: CircularProgressIndicator(
-                                              value: progress,
-                                              backgroundColor: Colors.white
-                                                  .withValues(alpha: 0.06),
-                                              valueColor:
-                                                  AlwaysStoppedAnimation<Color>(
-                                                    needsAttention > 0
-                                                        ? Colors.orange
-                                                        : _gold,
-                                                  ),
-                                              strokeWidth: 4,
-                                            ),
-                                          ),
-                                          Text(
-                                            '${(progress * 100).toInt()}%',
-                                            style: TextStyle(
-                                              color: needsAttention > 0
-                                                  ? Colors.orange
-                                                  : _gold,
-                                              fontSize: 14,
-                                              fontWeight: FontWeight.w800,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  const SizedBox(width: 18),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          allComplete && needsAttention == 0
-                                              ? s.allDocumentsComplete
-                                              : s.documentStatus,
-                                          style: TextStyle(
-                                            color:
-                                                allComplete &&
-                                                    needsAttention == 0
-                                                ? const Color(0xFF4CAF50)
-                                                : Colors.white,
-                                            fontSize: 17,
-                                            fontWeight: FontWeight.w800,
-                                          ),
-                                        ),
-                                        const SizedBox(height: 4),
-                                        Text(
-                                          needsAttention > 0
-                                              ? s.documentNeedsUpdate
-                                              : s.docsApproved(
-                                                  approvedCount,
-                                                  total,
-                                                ),
-                                          style: TextStyle(
-                                            color: needsAttention > 0
-                                                ? Colors.orange.withValues(
-                                                    alpha: 0.7,
-                                                  )
-                                                : Colors.white.withValues(
-                                                    alpha: 0.4,
-                                                  ),
-                                            fontSize: 13,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 24),
-
-                        // ── Document list (read-only) ──
-                        ..._documents.map((doc) => _documentCard(doc)),
-                        const SizedBox(height: 16),
-                        // Info note
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                          decoration: BoxDecoration(
-                            color: Colors.white.withValues(alpha: 0.04),
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Row(
-                            children: [
-                              Icon(Icons.info_outline_rounded, color: Colors.white38, size: 18),
-                              const SizedBox(width: 10),
-                              Expanded(
-                                child: Text(
-                                  s.documentsLockedNote,
-                                  style: TextStyle(
-                                    color: Colors.white.withValues(alpha: 0.4),
-                                    fontSize: 12,
-                                    height: 1.4,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 30),
-                      ],
+                        ],
+                      ),
                     ),
+                  ),
+              ],
+            ),
+    );
+  }
+
+  /// An X, not a back arrow. This screen is a stack the driver steps out
+  /// of, and the reference reads it that way.
+  Widget _closeRow(S s) {
+    return Row(
+      children: [
+        GestureDetector(
+          onTap: () {
+            HapticService.selectionClick();
+            Navigator.pop(context);
+          },
+          child: Container(
+            width: 42,
+            height: 42,
+            decoration: neuBox(radius: 14),
+            child:
+                const Icon(Icons.close_rounded, color: Colors.white, size: 21),
+          ),
+        ),
+        const SizedBox(width: 14),
+        Expanded(
+          child: Text(
+            s.documentsTitle,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 22,
+              fontWeight: FontWeight.w800,
+              letterSpacing: -0.4,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// Which car these documents belong to.
+  ///
+  /// Insurance, registration and the inspection form are all about one
+  /// specific vehicle, and a driver with two of them has no other way to
+  /// tell which list they are looking at.
+  Widget _vehicleCard(S s) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 15),
+      decoration: neuBox(radius: 18),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            s.primaryVehicle,
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.45),
+              fontSize: 12.5,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            _vehicleLabel,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 16,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// A collapsible group. The header is always tappable; the body grows
+  /// and shrinks rather than appearing, so nothing under the thumb jumps
+  /// somewhere else between frames.
+  Widget _section({
+    required String title,
+    required bool open,
+    required VoidCallback onToggle,
+    required List<Widget> chips,
+    required List<Widget> children,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: () {
+            HapticService.selectionClick();
+            onToggle();
+          },
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            child: Row(
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 20,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: -0.4,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                ...chips,
+                const Spacer(),
+                AnimatedRotation(
+                  turns: open ? 0.5 : 0,
+                  duration: const Duration(milliseconds: 240),
+                  curve: Curves.easeOutCubic,
+                  child: Icon(
+                    Icons.keyboard_arrow_down_rounded,
+                    color: Colors.white.withValues(alpha: 0.8),
+                    size: 28,
                   ),
                 ),
               ],
             ),
-              if (_uploading)
-                Container(
-                  color: Colors.black54,
-                  child: Center(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const CircularProgressIndicator(color: _gold, strokeWidth: 2),
-                        const SizedBox(height: 16),
-                        Text(S.of(context).uploadingDocument,
-                          style: const TextStyle(color: Colors.white70, fontSize: 14, fontWeight: FontWeight.w600)),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
+          ),
+        ),
+        AnimatedSize(
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeInOutCubic,
+          alignment: Alignment.topCenter,
+          child: open
+              ? Padding(
+                  padding: const EdgeInsets.only(top: 12),
+                  child: Column(children: children),
+                )
+              : const SizedBox(width: double.infinity),
+        ),
+      ],
+    );
+  }
+
+  Widget _countChip(IconData icon, int count, Color tint) {
+    return Padding(
+      padding: const EdgeInsets.only(right: 7),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+        decoration: neuBox(radius: 11, pressed: true),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 13, color: tint),
+            const SizedBox(width: 5),
+            Text(
+              '$count',
+              style: TextStyle(
+                color: tint,
+                fontSize: 12.5,
+                fontWeight: FontWeight.w800,
+              ),
             ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _lockedNote(S s) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
+      decoration: neuBox(radius: 14, pressed: true),
+      child: Row(
+        children: [
+          Icon(
+            Icons.info_outline_rounded,
+            color: Colors.white.withValues(alpha: 0.35),
+            size: 18,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              s.documentsLockedNote,
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.4),
+                fontSize: 12,
+                height: 1.4,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -567,10 +667,21 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
     if (dt == null) return _ExpiryStatus.ok;
     final now = DateTime.now();
     if (dt.isBefore(now)) return _ExpiryStatus.expired;
-    if (dt.difference(now).inDays <= 30) return _ExpiryStatus.expiringSoon;
+    // Same twenty days the update window uses. It was thirty, which put
+    // a card in "action needed", tinted it orange, and then refused the
+    // tap for ten days — a warning the driver could not answer.
+    if (dt.difference(now).inDays <= _reuploadWindowDays) {
+      return _ExpiryStatus.expiringSoon;
+    }
     return _ExpiryStatus.ok;
   }
 
+  /// One document.
+  ///
+  /// The status is the circle on the left and nothing else — the old
+  /// card said it three times over: a tinted icon, a coloured border and
+  /// a pill on the right, all encoding the same word. The subtitle is
+  /// free to say something the icon cannot, which is when it expires.
   Widget _documentCard(Map<String, dynamic> doc) {
     final s = S.of(context);
     final status = (doc['status'] ?? 'not_uploaded') as String;
@@ -585,97 +696,97 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
     final createdAt = (doc['created_at'] ?? '') as String;
     final expiryStatus = _checkExpiry(expiry);
 
-    // Determine status display
-    Color statusColor;
-    String statusText;
-    IconData statusIcon;
+    // One decision, read once, used by both the circle and the subtitle.
+    final Color tint;
+    final IconData mark;
     if (isComingSoon) {
-      statusColor = Colors.white.withValues(alpha: 0.4);
-      statusText = s.comingSoon;
-      statusIcon = Icons.upcoming_rounded;
+      tint = Colors.white.withValues(alpha: 0.3);
+      mark = Icons.upcoming_rounded;
     } else if (isApproved && expiryStatus == _ExpiryStatus.expired) {
-      statusColor = Colors.red.shade400;
-      statusText = 'Expired';
-      statusIcon = Icons.error_rounded;
+      tint = const Color(0xFFE05C5C);
+      mark = Icons.priority_high_rounded;
     } else if (isApproved && expiryStatus == _ExpiryStatus.expiringSoon) {
-      statusColor = Colors.orange.shade400;
-      statusText = s.documentExpiringSoon;
-      statusIcon = Icons.warning_amber_rounded;
+      tint = const Color(0xFFE8A33D);
+      mark = Icons.warning_amber_rounded;
     } else if (isApproved) {
-      statusColor = const Color(0xFF4CAF50);
-      statusText = s.approved;
-      statusIcon = Icons.check_circle_rounded;
+      tint = const Color(0xFF4CAF50);
+      mark = Icons.check_rounded;
     } else if (isPending) {
-      statusColor = const Color(0xFFF5D990);
-      statusText = s.pending;
-      statusIcon = Icons.schedule_rounded;
+      tint = Colors.white.withValues(alpha: 0.55);
+      mark = Icons.schedule_rounded;
     } else if (isRejected) {
-      statusColor = Colors.red.shade400;
-      statusText = s.documentNeedsUpdate;
-      statusIcon = Icons.cancel_rounded;
+      tint = const Color(0xFFE05C5C);
+      mark = Icons.close_rounded;
     } else {
-      statusColor = Colors.white.withValues(alpha: 0.3);
-      statusText = s.uploadBtn;
-      statusIcon = Icons.upload_rounded;
+      tint = _gold;
+      mark = Icons.arrow_upward_rounded;
     }
 
-    final icon = _iconForDoc(doc);
     final title = _localizedDocTitle(doc['doc_type'] as String?, s);
 
-    // Determine the left icon background and color
-    final iconBg = isApproved && expiryStatus == _ExpiryStatus.ok
-        ? const Color(0xFF4CAF50).withValues(alpha: 0.12)
-        : isApproved && expiryStatus == _ExpiryStatus.expiringSoon
-        ? Colors.orange.withValues(alpha: 0.12)
-        : isApproved && expiryStatus == _ExpiryStatus.expired
-        ? Colors.red.withValues(alpha: 0.12)
-        : isRejected
-        ? Colors.red.withValues(alpha: 0.1)
-        : _gold.withValues(alpha: 0.1);
-    final iconColor = isApproved && expiryStatus == _ExpiryStatus.ok
-        ? const Color(0xFF4CAF50)
-        : isApproved && expiryStatus == _ExpiryStatus.expiringSoon
-        ? Colors.orange.shade400
-        : isApproved && expiryStatus == _ExpiryStatus.expired
-        ? Colors.red.shade400
-        : isRejected
-        ? Colors.red.shade400
-        : _gold;
-
-    // Allow re-upload for expired or rejected uploadable docs
     final docType = doc['doc_type'] as String?;
-    final canUpload = (isRejected || (isApproved && expiryStatus == _ExpiryStatus.expired)) &&
-        (docType == 'insurance' || docType == 'registration' || docType == 'drivers_license');
+    final canUpload = _canReupload(doc);
+    // Locked cards are dimmed and dead to the touch. The four editable
+    // types stay live so their details can be opened even when there is
+    // nothing to upload yet.
+    final locked = !_isEditable(doc) || isComingSoon || isDisabled;
 
-    return GestureDetector(
-      onTap: canUpload ? () => _uploadDocument(docType!, title) : null,
-      child: Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      decoration: BoxDecoration(
-        color: _card,
-        borderRadius: BorderRadius.circular(18),
-        border: expiryStatus == _ExpiryStatus.expired
-            ? Border.all(color: Colors.red.withValues(alpha: 0.3))
-            : expiryStatus == _ExpiryStatus.expiringSoon
-            ? Border.all(color: Colors.orange.withValues(alpha: 0.2))
-            : isRejected
-            ? Border.all(color: Colors.red.withValues(alpha: 0.25))
-            : null,
-      ),
-      child: Opacity(
-        opacity: isDisabled ? 0.5 : 1.0,
-        child: Padding(
-          padding: const EdgeInsets.all(18),
-          child: Row(
+    String subtitle;
+    Color subtitleColor = Colors.white.withValues(alpha: 0.45);
+    if (expiryStatus == _ExpiryStatus.expired) {
+      subtitle = s.documentExpired;
+      subtitleColor = const Color(0xFFE05C5C);
+    } else if (expiryStatus == _ExpiryStatus.expiringSoon) {
+      final dt = DateTime.tryParse(expiry);
+      final days = dt == null ? 0 : dt.difference(DateTime.now()).inDays;
+      subtitle = s.expiresInDays(days);
+      subtitleColor = const Color(0xFFE8A33D);
+    } else if (isRejected) {
+      subtitle = s.documentNeedsUpdate;
+      subtitleColor = const Color(0xFFE05C5C);
+    } else if (isComingSoon) {
+      subtitle = s.comingSoon;
+    } else if (expiry.isNotEmpty) {
+      subtitle = s.expiresDate(_formatShortDate(expiry));
+    } else if (createdAt.isNotEmpty) {
+      subtitle = '${s.uploadedLabel}: ${_formatShortDate(createdAt)}';
+    } else if (isNotUploaded) {
+      subtitle = s.notUploadedYet;
+    } else if (isPending) {
+      subtitle = s.pending;
+    } else {
+      subtitle = s.approved;
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: GestureDetector(
+        // `_showDocDetails` was written, complete, and unreachable — no
+        // caller anywhere. Tapping a document to see it is the whole
+        // point of a screen called "view documents", so the tap goes
+        // there unless the card is asking for a re-upload instead.
+        onTap: locked
+            ? null
+            : () {
+                HapticService.selectionClick();
+                if (canUpload) {
+                  _uploadDocument(docType!, title);
+                } else {
+                  _showDocDetails(doc);
+                }
+              },
+        child: Opacity(
+          opacity: locked ? 0.45 : 1.0,
+          child: Container(
+            padding: const EdgeInsets.all(16),
+            decoration: neuBox(radius: 18),
+            child: Row(
               children: [
                 Container(
-                  width: 46,
-                  height: 46,
-                  decoration: BoxDecoration(
-                    color: iconBg,
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                  child: Icon(icon, color: iconColor, size: 22),
+                  width: 42,
+                  height: 42,
+                  decoration: neuBox(radius: 21, pressed: true),
+                  child: Icon(mark, color: tint, size: 20),
                 ),
                 const SizedBox(width: 14),
                 Expanded(
@@ -686,82 +797,17 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
                         title,
                         style: const TextStyle(
                           color: Colors.white,
-                          fontSize: 15,
+                          fontSize: 15.5,
                           fontWeight: FontWeight.w700,
                         ),
                       ),
-                      const SizedBox(height: 4),
-                      if (expiryStatus == _ExpiryStatus.expired)
-                        Text(
-                          s.documentExpired,
-                          style: TextStyle(
-                            color: Colors.red.shade300,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        )
-                      else if (expiryStatus == _ExpiryStatus.expiringSoon)
-                        Builder(
-                          builder: (_) {
-                            final dt = DateTime.parse(expiry);
-                            final days = dt.difference(DateTime.now()).inDays;
-                            return Text(
-                              s.expiresInDays(days),
-                              style: TextStyle(
-                                color: Colors.orange.shade300,
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            );
-                          },
-                        )
-                      else if (expiry.isNotEmpty)
-                        Text(
-                          s.expiresDate(_formatShortDate(expiry)),
-                          style: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.35),
-                            fontSize: 12,
-                          ),
-                        )
-                      else if (createdAt.isNotEmpty)
-                        Text(
-                          '${s.uploadedLabel}: ${_formatShortDate(createdAt)}',
-                          style: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.35),
-                            fontSize: 12,
-                          ),
-                        )
-                      else
-                        Text(
-                          isNotUploaded ? s.notUploadedYet : '',
-                          style: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.35),
-                            fontSize: 12,
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 5,
-                  ),
-                  decoration: BoxDecoration(
-                    color: statusColor.withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(statusIcon, size: 13, color: statusColor),
-                      const SizedBox(width: 4),
+                      const SizedBox(height: 3),
                       Text(
-                        statusText,
+                        subtitle,
                         style: TextStyle(
-                          color: statusColor,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w700,
+                          color: subtitleColor,
+                          fontSize: 12.5,
+                          height: 1.35,
                         ),
                       ),
                     ],
@@ -770,12 +816,13 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
                 if (canUpload)
                   Padding(
                     padding: const EdgeInsets.only(left: 8),
-                    child: Icon(Icons.upload_rounded, color: statusColor, size: 18),
+                    child: Icon(Icons.file_upload_outlined,
+                        color: _gold, size: 20),
                   ),
               ],
+            ),
           ),
         ),
-      ),
       ),
     );
   }
@@ -823,7 +870,7 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
         return Container(
           padding: const EdgeInsets.all(24),
           decoration: const BoxDecoration(
-            color: _card,
+            color: neuSurface,
             borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
           ),
           child: Column(
@@ -871,6 +918,7 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
               const SizedBox(height: 20),
               Row(
                 children: [
+                  if (_canReupload(doc)) ...[
                   Expanded(
                     child: SizedBox(
                       height: 52,
@@ -900,6 +948,7 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
                     ),
                   ),
                   const SizedBox(width: 12),
+                  ],
                   Expanded(
                     child: SizedBox(
                       height: 52,
@@ -1003,7 +1052,7 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
             return Container(
               padding: const EdgeInsets.all(24),
               decoration: const BoxDecoration(
-                color: _card,
+                color: neuSurface,
                 borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
               ),
               child: Column(
@@ -1177,7 +1226,7 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
         return Container(
           padding: const EdgeInsets.all(24),
           decoration: const BoxDecoration(
-            color: _card,
+            color: neuSurface,
             borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
           ),
           child: Column(

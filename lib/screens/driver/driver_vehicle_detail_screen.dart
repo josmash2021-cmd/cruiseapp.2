@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 
+import '../../config/page_transitions.dart';
 import '../../l10n/app_localizations.dart';
 import '../../services/haptic_service.dart';
 import '../../widgets/neu_style.dart';
+import 'driver_documents_screen.dart';
 
 /// One vehicle, in full.
 ///
@@ -243,11 +245,16 @@ class DriverVehicleDetailScreen extends StatelessWidget {
           decoration: neuBox(radius: 20),
           child: Column(
             children: [
+              // This used to pop the screen. A row that says "view
+              // documents" and closes the page instead is not a missing
+              // feature, it is a wrong one.
               _manageRow(
                 context,
                 Icons.description_outlined,
                 s.viewDocuments,
-                () => Navigator.pop(context),
+                () => Navigator.of(context).push(
+                  slideFromRightRoute(const DriverDocumentsScreen()),
+                ),
               ),
               Divider(
                 height: 1,

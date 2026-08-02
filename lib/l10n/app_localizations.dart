@@ -1670,6 +1670,11 @@ class S {
       : '$approved of $total documents approved';
   String get uploadNewDocument =>
       _es ? 'Subir nuevo documento' : 'Upload New Document';
+  String get primaryVehicle => _es ? 'Vehículo principal' : 'Primary Vehicle';
+  String get docsActionNeeded => _es ? 'Falta por hacer' : 'Action needed';
+  String get docsSubmitted => _es ? 'Entregados' : 'Completed';
+  String docsItemCount(int n) =>
+      _es ? (n == 1 ? '1 punto' : '$n puntos') : (n == 1 ? '1 item' : '$n items');
   String get approved => _es ? 'Aprobado' : 'Approved';
   String get pending => _es ? 'Pendiente' : 'Pending';
   String get uploadBtn => _es ? 'Subir' : 'Upload';

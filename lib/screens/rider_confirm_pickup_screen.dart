@@ -240,14 +240,17 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
       if (data == null) return;
 
       final status = (data['status'] ?? '').toString().toLowerCase().trim();
-      final hasStartedTs = data['startedAt'] != null || data['started_at'] != null || data['rideStartedAt'] != null;
 
-      // Trip started by driver
+      // Trip started by the driver — and ONLY that. A startedAt-style
+      // timestamp used to count as a start too, and any sync that lands one
+      // early (a resumed doc, a backfill) showed "Trip confirmed!" for a
+      // Start Trip the driver never pressed. The status is the one signal
+      // that means Start Trip: it is written by the driver's own button and
+      // by nothing else.
       if (status == 'in_trip' ||
           status == 'in_progress' ||
           status == 'rider_onboard' ||
-          status == 'trip_started' ||
-          hasStartedTs) {
+          status == 'trip_started') {
         _onDriverStartedTrip();
         return;
       }
@@ -504,6 +507,19 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
       return 'premium';
     }
     return 'standard';
+  }
+
+  /// The car image for this card — same cruisert set the tracking card
+  /// draws from, so the rider sees the very render they picked.
+  String _vehicleAssetForConfirm() {
+    switch (_inferTierFromVehicleDesc(widget.vehicleDesc)) {
+      case 'vip':
+        return 'assets/images/cruisert1.png';
+      case 'premium':
+        return 'assets/images/cruisert2.png';
+      default:
+        return 'assets/images/cruisert3.png';
+    }
   }
 
   @override
@@ -931,29 +947,48 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
                                     ],
                                   ),
                                 ),
-                                // License plate pill (right side)
+                                // Vehicle render above, plate pill below it —
+                                // the plate used to sit alone on the right;
+                                // now it rides under the car the rider chose.
                                 if (widget.vehiclePlate != null && widget.vehiclePlate!.isNotEmpty)
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 10,
-                                      vertical: 4,
-                                    ),
-                                    // Sunken well — the plate reads as
-                                    // stamped into the card.
-                                    decoration: neuBox(
-                                      radius: 8,
-                                      pressed: true,
-                                      borderColor: _gold.withValues(alpha: 0.3),
-                                    ),
-                                    child: Text(
-                                      widget.vehiclePlate!,
-                                      style: const TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 13,
-                                        fontWeight: FontWeight.w700,
-                                        letterSpacing: 1.8,
+                                  Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Image.asset(
+                                        _vehicleAssetForConfirm(),
+                                        width: 64,
+                                        height: 30,
+                                        fit: BoxFit.contain,
+                                        errorBuilder: (_, __, ___) => Icon(
+                                          Icons.directions_car_rounded,
+                                          color: _gold.withValues(alpha: 0.5),
+                                          size: 24,
+                                        ),
                                       ),
-                                    ),
+                                      const SizedBox(height: 5),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 10,
+                                          vertical: 4,
+                                        ),
+                                        // Sunken well — the plate reads as
+                                        // stamped into the card.
+                                        decoration: neuBox(
+                                          radius: 8,
+                                          pressed: true,
+                                          borderColor: _gold.withValues(alpha: 0.3),
+                                        ),
+                                        child: Text(
+                                          widget.vehiclePlate!,
+                                          style: const TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 13,
+                                            fontWeight: FontWeight.w700,
+                                            letterSpacing: 1.8,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
                                   ),
                               ],
                             ),

@@ -537,6 +537,12 @@ async def _auto_cascade(trip_id: int, first_offer_id: int, first_driver_id: int)
                         "[Cascade] Trip %d: no more drivers available after %d attempts",
                         trip_id, attempt,
                     )
+                    # Same rule as the reject path: with nobody else within
+                    # twenty miles, go back to the ones who already passed.
+                    if not await _has_other_drivers_nearby(
+                        db, trip, tried_driver_ids
+                    ):
+                        _schedule_reoffer(trip_id)
                     break
 
                 next_driver = next_drivers[0]
@@ -1695,6 +1701,11 @@ async def _requeue_trip_to_next_driver(db: AsyncSession, trip: Trip):
         limit=5,
     )
     if not drivers_sorted:
+        # Nobody new to try. If there is also nobody else online within
+        # twenty miles, the trip comes back to the drivers who passed
+        # rather than stopping here with a rider still waiting.
+        if not await _has_other_drivers_nearby(db, trip, tried_ids):
+            _schedule_reoffer(trip.id)
         return None
 
     next_driver = drivers_sorted[0]
@@ -1714,6 +1725,153 @@ async def _requeue_trip_to_next_driver(db: AsyncSession, trip: Trip):
         _auto_cascade(trip.id, new_offer.id, next_driver.id)
     )
     return new_offer
+
+
+
+# ── Coming back to a driver who passed ────────────────────────────────
+#
+# A rejection sends the trip to the next driver. When there is no next
+# driver — nobody else online and free within _REOFFER_RADIUS_KM of the
+# pickup — the trip used to stop there, and the rider waited for a
+# cascade that had nowhere left to go while a driver sat a mile away
+# having tapped X once.
+#
+# So it comes back. After _REOFFER_DELAY_SECONDS the same drivers are
+# offered again, in order of distance. A driver who passed on a ride they
+# thought someone closer would take gets it back once it is clear nobody
+# else is coming.
+#
+# Bounded by _REOFFER_MAX_ROUNDS: a trip nobody wants must eventually
+# stop asking rather than ring one phone forever.
+
+# 20 miles. The radius that decides "is anyone else even out there" — not
+# the radius the cascade searches, which stays wide so a distant driver is
+# still reachable once everyone close has passed.
+_REOFFER_RADIUS_KM = 32.19
+
+# Long enough that the driver is not handed back the card they just
+# dismissed, short enough that the rider is not left waiting.
+_REOFFER_DELAY_SECONDS = 20
+
+_REOFFER_MAX_ROUNDS = 3
+
+# trip_id -> rounds already spent coming back to the same drivers.
+_reoffer_rounds: dict[int, int] = {}
+
+# trip_id -> the pending comeback task.
+_reoffer_tasks: dict[int, asyncio.Task] = {}
+
+
+async def _has_other_drivers_nearby(
+    db: AsyncSession, trip: Trip, exclude_driver_ids: set[int],
+) -> bool:
+    """Whether anyone else is online, free and within 20 miles of the pickup."""
+    others = await _find_nearest_drivers(
+        db,
+        pickup_lat=trip.pickup_lat or 0,
+        pickup_lng=trip.pickup_lng or 0,
+        exclude_driver_ids=exclude_driver_ids,
+        vehicle_type=trip.vehicle_type or "comfort",
+        radius_km=_REOFFER_RADIUS_KM,
+        limit=1,
+    )
+    return bool(others)
+
+
+async def _reoffer_after_delay(trip_id: int) -> None:
+    """Offer the trip again to the drivers who already passed on it."""
+    rounds = _reoffer_rounds.get(trip_id, 0)
+    if rounds >= _REOFFER_MAX_ROUNDS:
+        logging.info(
+            "[Reoffer] Trip %d: %d rounds spent, leaving it alone",
+            trip_id, rounds,
+        )
+        _reoffer_rounds.pop(trip_id, None)
+        return
+    _reoffer_rounds[trip_id] = rounds + 1
+
+    try:
+        await asyncio.sleep(_REOFFER_DELAY_SECONDS)
+
+        async with SessionLocal() as db:
+            trip = (await db.execute(
+                select(Trip).where(Trip.id == trip_id)
+            )).scalar_one_or_none()
+            if not trip or trip.status != "requested":
+                # Somebody took it, or the rider gave up, while we waited.
+                _reoffer_rounds.pop(trip_id, None)
+                return
+
+            # Anyone new who has come online in the meantime goes first —
+            # they have not seen this trip at all.
+            prev = await db.execute(
+                select(DispatchOffer.driver_id)
+                .where(DispatchOffer.trip_id == trip_id)
+            )
+            tried_ids = {r[0] for r in prev.all()}
+            if await _has_other_drivers_nearby(db, trip, tried_ids):
+                logging.info(
+                    "[Reoffer] Trip %d: someone new is nearby, cascading "
+                    "to them instead", trip_id,
+                )
+                await _requeue_trip_to_next_driver(db, trip)
+                return
+
+            # Nobody new. Go back to the ones who passed, nearest first.
+            candidates = await _find_nearest_drivers(
+                db,
+                pickup_lat=trip.pickup_lat or 0,
+                pickup_lng=trip.pickup_lng or 0,
+                exclude_driver_ids=set(),
+                vehicle_type=trip.vehicle_type or "comfort",
+                radius_km=_REOFFER_RADIUS_KM,
+                limit=5,
+            )
+            if not candidates:
+                logging.info(
+                    "[Reoffer] Trip %d: nobody within %.0f km at all",
+                    trip_id, _REOFFER_RADIUS_KM,
+                )
+                _reoffer_rounds.pop(trip_id, None)
+                return
+
+            driver = candidates[0]
+            rider = None
+            if trip.rider_id:
+                rider = (await db.execute(
+                    select(User).where(User.id == trip.rider_id)
+                )).scalar_one_or_none()
+            rider_name, rider_phone = _resolve_rider_display(trip, rider)
+            rider_photo = (_abs_photo_url(rider.photo_url) or "") if rider else ""
+
+            new_offer = await _send_offer_to_driver(
+                db, trip, driver, rider_name, rider_phone, rider_photo,
+            )
+            logging.info(
+                "[Reoffer] Trip %d: back to driver %d as offer %d "
+                "(round %d/%d) — nobody else within %.0f km",
+                trip_id, driver.id, new_offer.id,
+                rounds + 1, _REOFFER_MAX_ROUNDS, _REOFFER_RADIUS_KM,
+            )
+            # A fresh offer id, so the app does not filter it as one
+            # the driver already rejected.
+            _pending_cache.pop(driver.id, None)
+            _cascade_tasks[trip_id] = _safe_create_task(
+                _auto_cascade(trip_id, new_offer.id, driver.id)
+            )
+    except asyncio.CancelledError:
+        raise
+    except Exception as e:
+        logging.error("[Reoffer] Trip %d failed: %s", trip_id, e, exc_info=True)
+
+
+def _schedule_reoffer(trip_id: int) -> None:
+    """Queue the comeback, replacing any already waiting for this trip."""
+    old = _reoffer_tasks.pop(trip_id, None)
+    if old and not old.done():
+        old.cancel()
+    _reoffer_tasks[trip_id] = _safe_create_task(_reoffer_after_delay(trip_id))
+
 
 
 @router.post("/dispatch/driver/release", dependencies=[Depends(_verify_api_key)])

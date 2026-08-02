@@ -18,41 +18,77 @@ import 'package:flutter/material.dart';
 
 const _gold = Color(0xFFE8C547);
 
-/// A filled gold disc with a dark rim and a soft halo. 30, down from 44 —
-/// at 44 the two endpoints competed with the route line itself.
-Future<Uint8List> renderPickupDotBytes({double size = 30}) =>
+/// A raised gold bead: black gradient shadow, rim, and a glossy body.
+/// 26, down from 30 (44 originally) — small enough to sit under the route
+/// line's importance, big enough to find at a glance.
+Future<Uint8List> renderPickupDotBytes({double size = 26}) =>
     _render(size, fill: _gold);
 
-/// A white disc, same size and treatment as the pickup one.
-Future<Uint8List> renderDropoffCircleBytes({double size = 30}) =>
+/// A white bead, same size and treatment as the pickup one.
+Future<Uint8List> renderDropoffCircleBytes({double size = 26}) =>
     _render(size, fill: Colors.white);
 
 Future<Uint8List> _render(
   double size, {
   required Color fill,
 }) async {
-  // The canvas is bigger than the marker so the halo has room; without it
-  // the glow is clipped square at the bitmap's edge.
-  final canvasSize = size * 1.9;
+  // The canvas is bigger than the marker so the shadow has room to fall;
+  // without it the blur is clipped square at the bitmap's edge.
+  final canvasSize = size * 2.1;
   final recorder = ui.PictureRecorder();
   final canvas = Canvas(recorder);
   final centre = Offset(canvasSize / 2, canvasSize / 2);
   final r = size / 2;
 
-  // Halo — the marker has to stay legible on a pale road as well as on the
-  // dark map style, and a flat shape on light grey disappears.
-  canvas.drawCircle(
-    centre,
-    r * 1.55,
+  // 3D depth, three parts: a soft black shadow the bead casts down onto the
+  // road, a dark rim for the edge, and a body with a vertical gradient —
+  // light on top, full colour in the middle, dark at the bottom — plus a
+  // small gloss. Flat shapes on a dark map read as stickers; this reads as
+  // something sitting ON the road.
+  canvas.drawOval(
+    Rect.fromCenter(
+      center: centre.translate(0, r * 0.35),
+      width: size * 1.05,
+      height: size * 0.85,
+    ),
     Paint()
-      ..color = fill.withValues(alpha: 0.20)
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 7),
+      ..color = Colors.black.withValues(alpha: 0.5)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4),
   );
 
-  // A dark rim under the fill, so the marker reads as raised and keeps its
-  // edge against whatever is behind it.
-  canvas.drawCircle(centre, r + 2.5, Paint()..color = const Color(0xFF0B0B0F));
-  canvas.drawCircle(centre, r, Paint()..color = fill);
+  canvas.drawCircle(
+    centre,
+    r + 1.6,
+    Paint()..color = const Color(0xFF0B0B0F),
+  );
+
+  canvas.drawCircle(
+    centre,
+    r,
+    Paint()
+      ..shader = ui.Gradient.linear(
+        Offset(centre.dx, centre.dy - r),
+        Offset(centre.dx, centre.dy + r),
+        [
+          Color.lerp(fill, Colors.white, 0.45)!,
+          fill,
+          Color.lerp(fill, Colors.black, 0.35)!,
+        ],
+        const [0.0, 0.45, 1.0],
+      ),
+  );
+
+  // Gloss on the upper half — the light source the gradient implies.
+  canvas.drawOval(
+    Rect.fromCenter(
+      center: centre.translate(0, -r * 0.38),
+      width: size * 0.58,
+      height: size * 0.34,
+    ),
+    Paint()
+      ..color = Colors.white.withValues(alpha: 0.40)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2.5),
+  );
 
   final img = await recorder.endRecording().toImage(
         canvasSize.ceil(),

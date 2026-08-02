@@ -73,6 +73,9 @@ class WebMapControllerStub extends WebMapController {
   void clearPolylines() {}
 
   @override
+  bool hasSource(String id) => false;
+
+  @override
   void setCircle(
     String id,
     double lng,

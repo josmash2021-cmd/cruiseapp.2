@@ -88,6 +88,11 @@ abstract class WebMapController {
 
   void clearPolylines();
 
+  /// Whether a GeoJSON source with this id is currently in the style.
+  /// Diagnostic: a layer that was "added" but never renders is told apart
+  /// from one that was never added by this one call.
+  bool hasSource(String id);
+
   // ── Circles ──────────────────────────────────────────────────────────────
 
   /// Adds (or replaces) a screen-space circle ([radiusPx] in pixels).

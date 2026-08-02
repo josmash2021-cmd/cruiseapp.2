@@ -464,25 +464,41 @@ class WebMapControllerWeb extends WebMapController {
     final spec = _polylines[id];
     if (spec == null) return;
     final sourceId = 'cruise-polyline-$id';
-    final existing = _map.getSource(sourceId);
-    if (existing != null) {
-      existing.setData(_js(_feature(spec)));
-      return;
+    // Guarded, with the failure logged: an addLayer throw here used to
+    // escape into a JS event callback (restore) or an async frame (the
+    // preview's re-assert) and vanish — the line silently never existed.
+    try {
+      final existing = _map.getSource(sourceId);
+      if (existing != null) {
+        existing.setData(_js(_feature(spec)));
+        return;
+      }
+      _map.addSource(
+          sourceId,
+          _js({'type': 'geojson', 'data': _feature(spec)}) as JSObject);
+      _map.addLayer(_js({
+        'id': sourceId,
+        'type': 'line',
+        'source': sourceId,
+        'layout': {'line-cap': 'round', 'line-join': 'round'},
+        'paint': {
+          'line-color': spec.color,
+          'line-width': spec.width,
+          'line-opacity': 0.9,
+        },
+      }) as JSObject);
+    } catch (e) {
+      debugPrint('[WebMap] polyline upsert FAILED $sourceId: $e');
     }
-    _map.addSource(
-        sourceId,
-        _js({'type': 'geojson', 'data': _feature(spec)}) as JSObject);
-    _map.addLayer(_js({
-      'id': sourceId,
-      'type': 'line',
-      'source': sourceId,
-      'layout': {'line-cap': 'round', 'line-join': 'round'},
-      'paint': {
-        'line-color': spec.color,
-        'line-width': spec.width,
-        'line-opacity': 0.9,
-      },
-    }) as JSObject);
+  }
+
+  @override
+  bool hasSource(String id) {
+    try {
+      return _map.getSource(id) != null;
+    } catch (_) {
+      return false;
+    }
   }
 
   Object _feature(_PolylineSpec spec) => {

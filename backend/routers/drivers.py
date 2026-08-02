@@ -149,8 +149,14 @@ async def update_driver_location(driver_id: int, body: DriverLocationIn, user: U
 
     # Push driver location to riders watching active trips via SSE (sub-second)
     # Use cached active-trip lookup to avoid DB query on every location update
+    # No manual TTL check: _driver_active_trip is a TTLCache whose get()
+    # evicts anything past its 30s life before answering. The comparison
+    # that used to be here referenced _ACTIVE_TRIP_CACHE_TTL, which the
+    # move to bounded caches deleted — so every GPS heartbeat raised
+    # NameError and returned 500, and this endpoint fires every few
+    # seconds for every driver on shift.
     _cached_trip = _driver_active_trip.get(driver_id)
-    if _cached_trip and (_now - _cached_trip[0]) < _ACTIVE_TRIP_CACHE_TTL:
+    if _cached_trip:
         trip_row = _cached_trip[1]
     else:
         active_trip = await db.execute(

@@ -19,6 +19,9 @@ from services.fcm_service import _send_fcm_push_async
 from services.email_sms_service import _send_email
 from config import (
     PUBLIC_URL, GOOGLE_MAPS_API_KEY, _TUNNEL_URL_FILE,
+    # Used by the document upload path below and never imported, so that
+    # endpoint raised NameError instead of saving a file.
+    UPLOADS_DIR,
     TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_PHONE_NUMBER,
     firestore_sync, _HAS_FIRESTORE,
 )

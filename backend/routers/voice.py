@@ -335,6 +335,11 @@ _EN_KEYWORDS = {
 }
 
 # English closing/escalation keywords
+# The Spanish lists live in support.py and were being read from here
+# without an import, so every Spanish caller hit NameError on the branch
+# below. Same list, one owner.
+from routers.support import _ESCALATION_TRIGGERS, _THANK_KEYWORDS  # noqa: E402
+
 _EN_THANK_KEYWORDS = ["thanks", "thank you", "thx", "ty", "perfect", "great", "that's all", "nothing else", "no thanks", "resolved", "all good", "bye", "goodbye"]
 _EN_ESCALATION_TRIGGERS = ["manager", "supervisor", "boss", "speak to your manager", "escalate", "someone else", "higher up", "in charge"]
 

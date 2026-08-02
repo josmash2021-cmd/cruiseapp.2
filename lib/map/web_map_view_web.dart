@@ -268,6 +268,18 @@ class WebMapControllerWeb extends WebMapController {
       if (_navyGoldApplied) _applyThemeNow();
     }).toJS);
 
+    // 'load' waits for every tile in the viewport, and a single hanging
+    // tile delays it indefinitely — meanwhile the style itself is already
+    // mutable, which is all overlays need. 'styledata' proves that, so it
+    // also flips readiness; without it one unlucky tile kept stored
+    // polylines undrawn while DOM markers showed up fine.
+    _map.on('styledata', ((JSAny? _) {
+      if (!_styleReady) {
+        _styleReady = true;
+        _restoreOverlays();
+      }
+    }).toJS);
+
     _map.on('click', ((JSAny? event) {
       final cb = onMapTap;
       if (cb == null || event == null) return;

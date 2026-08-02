@@ -858,20 +858,35 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
 
     List<LngLatPoint> lngLats(List<LatLng> seg) =>
         [for (final p in seg) (lng: p.longitude, lat: p.latitude)];
-    if (_fullSegOne.length >= 2) {
-      web.setPolyline('offerSegOne', lngLats(_fullSegOne),
-          color: '#FFD700', width: 5);
-    }
-    if (_fullSegTwo.length >= 2) {
-      web.setPolyline('offerSegTwo', lngLats(_fullSegTwo),
-          color: '#FFD700', width: 5);
+    void drawSegments(WebMapController w) {
+      if (_fullSegOne.length >= 2) {
+        w.setPolyline('offerSegOne', lngLats(_fullSegOne),
+            color: '#FFD700', width: 5);
+      }
+      if (_fullSegTwo.length >= 2) {
+        w.setPolyline('offerSegTwo', lngLats(_fullSegTwo),
+            color: '#FFD700', width: 5);
+      }
     }
 
-    // The driver is one end of this route — mark it. The Flutter overlay
-    // dot sits this phase out (it only knows how to draw centred), so the
-    // map itself shows where the drive starts.
-    web.setCircle('driverPos', driverPos.longitude, driverPos.latitude,
-        radiusPx: 9, color: '#D4AF37', opacity: 0.95);
+    drawSegments(web);
+    debugPrint('[OfferRoute] web draw: '
+        'seg1=${_fullSegOne.length} seg2=${_fullSegTwo.length} points');
+    // Re-assert the lines over the next seconds: if the style finished
+    // loading late, or anything wiped runtime layers after the draw, the
+    // first pass is gone and the card gives no second chance.
+    for (final delayMs in const [900, 2500]) {
+      Future.delayed(Duration(milliseconds: delayMs), () {
+        if (!mounted || _previewingOffer == null) return;
+        final w = _webMap;
+        if (w == null) return;
+        drawSegments(w);
+      });
+    }
+
+    // The driver is one end of this route — the Flutter overlay arrow
+    // marks it, projected at the driver's pixel, the same arrow the rest
+    // of the app draws on this same map.
 
     // The same two shapes the card shows: gold disc for the pickup, white
     // square for the dropoff.
@@ -1509,11 +1524,14 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
   /// returning null, so there is no phase check here to keep in sync.
   bool get _dotOverlayOwnsMarker {
     if (_pos == null) return false;
-    // Web: there is no Mapbox annotation to hand the marker to, and while
-    // the offer preview has flown the camera to the route a centred dot
-    // would sit on the wrong place — GL JS draws the driver's circle at
-    // the route's start instead.
-    if (kIsWeb && _previewingOffer != null) return false;
+    // Web: one arrow for the whole app — this same Flutter overlay, placed
+    // at the driver's projected pixel on this same map. While the preview
+    // frames the route the driver is on screen by construction; if a pan
+    // pushes them off, hide rather than draw somewhere wrong.
+    if (kIsWeb) {
+      if (_previewingOffer != null) return _dotScreenOffset != null;
+      return true;
+    }
     // Nothing else is drawing it, so we do — whatever the rules below say.
     //
     // Every branch here hands the marker to the Mapbox annotation, which is
@@ -1537,6 +1555,23 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
   /// Where to draw the marker while the camera is parked, or null if we
   /// cannot say — off screen, or a tilted camera we refuse to guess at.
   Offset? get _dotScreenOffset {
+    if (kIsWeb) {
+      // GL JS projects into the map container's own pixel space — the same
+      // box this overlay is drawn in, so the arrow lands on the driver's
+      // real pixel whether the camera follows them or is framing a route.
+      final p = _pos;
+      final web = _webMap;
+      final size = _onlineMapSize;
+      if (p == null || web == null || size == null) return null;
+      final off = web.pixelForCoordinate(p.longitude, p.latitude);
+      if (!off.dx.isFinite || !off.dy.isFinite) return null;
+      if (off.dx < 0 || off.dy < 0 ||
+          off.dx > size.width ||
+          off.dy > size.height) {
+        return null;
+      }
+      return off;
+    }
     if (_cameraFollowing) return null; // centred, no projection needed
     final cam = _onlineCamState;
     final p = _pos;

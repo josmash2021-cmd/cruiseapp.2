@@ -139,7 +139,14 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
         // Without this handle every route/camera/pin call below aimed at the
         // native `_map`, which is always null in the browser — the offer
         // preview ran its phases against nothing and the map never moved.
-        onControllerCreated: (controller) => _webMap = controller,
+        onControllerCreated: (controller) {
+          _webMap = controller;
+          // Keep the overlay arrow glued to the driver while the camera
+          // moves: every GL move event re-projects the dot.
+          controller.onCameraMove = (_, __, ___) {
+            if (mounted) _markerFrame.value++;
+          };
+        },
       );
     }
     return RepaintBoundary(

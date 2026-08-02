@@ -141,6 +141,35 @@ class UnifiedMapService extends ChangeNotifier {
   }
 
   /// Mueve la cámara a [target] con animación suave.
+  /// True when every number in this camera survives the trip to native.
+  ///
+  /// A NaN here is not an exception a `try` can hold. It reaches
+  /// Objective-C and raises NSInvalidArgumentException — "latitude must
+  /// not be NaN" out of FlyToInterpolator, "Invalid number value (NaN)
+  /// in JSON write" out of convertDictionaryToGeometry — and the app is
+  /// gone. Crashlytics has both, 48 events across four users, and the
+  /// geometry one is tagged as a startup crash.
+  ///
+  /// utils/mapbox_safe.dart already does this for annotations. Nothing
+  /// did it for the camera, and the camera is the one that runs before
+  /// the first frame.
+  static bool _cameraIsFinite(
+    mapbox.Point? center,
+    double? zoom,
+    double? bearing,
+    double? pitch,
+  ) {
+    bool ok(num? v) => v == null || (v.isFinite && !v.isNaN);
+    if (center != null) {
+      final c = center.coordinates;
+      if (!ok(c.lat) || !ok(c.lng)) return false;
+      // A latitude past the poles is as fatal as a NaN, and arrives the
+      // same way — from arithmetic on a location that was never set.
+      if (c.lat.abs() > 90 || c.lng.abs() > 180) return false;
+    }
+    return ok(zoom) && ok(bearing) && ok(pitch);
+  }
+
   Future<void> flyTo(
     mapbox.Point center, {
     double? zoom,
@@ -150,6 +179,10 @@ class UnifiedMapService extends ChangeNotifier {
   }) async {
     final ctrl = _controller;
     if (ctrl == null) return;
+    if (!_cameraIsFinite(center, zoom, bearing, pitch)) {
+      debugPrint('[UnifiedMap] flyTo skipped — non-finite camera');
+      return;
+    }
     await ctrl.flyTo(
       mapbox.CameraOptions(
         center: center,
@@ -174,8 +207,22 @@ class UnifiedMapService extends ChangeNotifier {
   }) async {
     final ctrl = _controller;
     if (ctrl == null || points.isEmpty) return;
+
+    // Guarded on both sides. A single NaN point crashes the padding call
+    // itself — that is the startup crash in convertDictionaryToGeometry —
+    // and even with clean input the result can come back non-finite when
+    // the points are degenerate, which then crashes flyTo instead.
+    final clean = points
+        .where((p) => _cameraIsFinite(p, null, null, null))
+        .toList();
+    if (clean.isEmpty) {
+      debugPrint('[UnifiedMap] fitToPoints skipped — no finite points');
+      return;
+    }
+    if (!_cameraIsFinite(null, null, bearing, pitch)) return;
+
     final cam = await ctrl.cameraForCoordinatesPadding(
-      points,
+      clean,
       mapbox.CameraOptions(
         bearing: bearing,
         pitch: pitch,
@@ -184,6 +231,10 @@ class UnifiedMapService extends ChangeNotifier {
       null,
       null,
     );
+    if (!_cameraIsFinite(cam.center, cam.zoom, cam.bearing, cam.pitch)) {
+      debugPrint('[UnifiedMap] fitToPoints skipped — padding returned NaN');
+      return;
+    }
     await ctrl.flyTo(cam, mapbox.MapAnimationOptions(duration: durationMs));
   }
 

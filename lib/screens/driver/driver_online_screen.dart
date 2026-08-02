@@ -1497,10 +1497,12 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
 
             if (_phase == _Phase.searching && _pendingOffers.isEmpty) ...[
               Positioned(
-                // Just clear of the panel. The gap was 60, which left the
-                // two clusters floating in the middle of the map with
-                // nothing to belong to.
-                bottom: 54 + bot + 14,
+                // Just clear of the panel. The panel is 78 + inset tall now
+                // (it was 54 when this constant last moved), and 54 + 14 sat
+                // the clusters 10 pt INSIDE its top edge — the "glued to the
+                // Finding trips bar" look. 78 + 14 lifts them properly above
+                // it with the same gap that was always intended.
+                bottom: 78 + bot + 14,
                 left: 16,
                 child: Column(
                   children: [
@@ -1522,10 +1524,10 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                 ),
               ),
               Positioned(
-                // Just clear of the panel. The gap was 60, which left the
-                // two clusters floating in the middle of the map with
-                // nothing to belong to.
-                bottom: 54 + bot + 14,
+                // Same lift as the calendar cluster on the left: the panel
+                // is 78 + inset tall, not 54 — anything less sank these two
+                // into its top edge.
+                bottom: 78 + bot + 14,
                 right: 16,
                 child: Column(
                   children: [

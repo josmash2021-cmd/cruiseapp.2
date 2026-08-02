@@ -3612,8 +3612,9 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
           child: AnimatedSwitcher(
             duration: const Duration(milliseconds: 520),
             // Material's emphasized easing, the same one the rider's vehicle
-            // row uses: leaves slowly, arrives slowly. A short slide, because
-            // a long one on two words reads as a card being dealt.
+            // row uses: leaves slowly, arrives slowly. No slide any more —
+            // on two short sentences a slide read as the new line climbing
+            // over the old one.
             switchInCurve: Curves.easeInOutCubicEmphasized,
             switchOutCurve: Curves.easeInOutCubicEmphasized,
             // Stacked and centred, so the outgoing line holds its place while
@@ -3626,14 +3627,18 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
               ],
             ),
             transitionBuilder: (child, anim) => FadeTransition(
-              opacity: anim,
-              child: SlideTransition(
-                position: Tween<Offset>(
-                  begin: const Offset(0, 0.18),
-                  end: Offset.zero,
-                ).animate(anim),
-                child: child,
+              // Nearly sequential: the Interval holds the incoming line
+              // invisible until the outgoing one has finished most of its
+              // fade (the same curve, mirrored by the switcher, drives the
+              // way out), so the swap reads as "one leaves, then one
+              // arrives" — never two sentences printed on top of each
+              // other. The slide that used to ride this is what made the
+              // incoming line climb over the old one mid-word.
+              opacity: CurvedAnimation(
+                parent: anim,
+                curve: const Interval(0.4, 1.0, curve: Curves.easeOut),
               ),
+              child: child,
             ),
             child: IntrinsicWidth(
               key: ValueKey<int>(_statusLine),

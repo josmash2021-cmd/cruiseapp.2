@@ -218,6 +218,13 @@ async def _find_nearest_drivers(
         .scalar_subquery()
     )
 
+    # Drivers already holding an offer they have not answered yet.
+    holding_subq = (
+        select(DispatchOffer.driver_id)
+        .where(DispatchOffer.status == "pending")
+        .scalar_subquery()
+    )
+
     # Build WHERE conditions
     conditions = [
         User.role == "driver",
@@ -234,6 +241,11 @@ async def _find_nearest_drivers(
         User.last_active_at.isnot(None),
         User.last_active_at >= active_cutoff,
         ~User.id.in_(busy_subq),
+        # One ride at a time on screen. A driver already looking at an
+        # offer is not a candidate for the next trip: ten riders ordering
+        # at once used to put ten cards on one phone, and accepting one
+        # left nine stranded that nobody else had been given a chance at.
+        ~User.id.in_(holding_subq),
     ]
     if exclude_driver_ids:
         conditions.append(~User.id.in_(list(exclude_driver_ids)))
@@ -339,6 +351,32 @@ async def _find_nearest_drivers(
             len(drivers) - len(within), radius_km,
         )
     drivers = within
+
+    # ── Same state as the pickup ──────────────────────────────────────
+    #
+    # Live dispatch used to be bounded by distance alone, on the reasoning
+    # that crossing a state line for a real fare is not a mistake. It is
+    # bounded by both now: a driver is only offered work in the state they
+    # are standing in, which is also the rule reserved rides already
+    # follow.
+    #
+    # The resolver is cached per coarse cell, so this is a handful of
+    # lookups over rows that already passed everything else — and it fails
+    # open: a driver whose state cannot be resolved is kept rather than
+    # dropped, because a geocoder that is down must not empty the queue.
+    pickup_state = await _state_for(pickup_lat, pickup_lng)
+    if pickup_state:
+        same = []
+        for d in drivers:
+            d_state = await _state_for(d.lat, d.lng)
+            if d_state is None or d_state == pickup_state:
+                same.append(d)
+        if len(same) != len(drivers):
+            logging.info(
+                "[NearbySearch] dropped %d driver(s) outside %s",
+                len(drivers) - len(same), pickup_state,
+            )
+        drivers = same
 
     if drivers:
         logging.info(
@@ -562,6 +600,7 @@ async def _auto_cascade(trip_id: int, first_offer_id: int, first_driver_id: int)
                     pickup_lng=trip.pickup_lng,
                     exclude_driver_ids=tried_driver_ids,
                     vehicle_type=trip.vehicle_type or "comfort",
+                    radius_km=_LIVE_DISPATCH_RADIUS_KM,
                     limit=5,
                 )
                 if not next_drivers:
@@ -1200,7 +1239,7 @@ async def dispatch_request(body: DispatchRequestIn, user: User = Depends(_get_cu
         pickup_lat=trip.pickup_lat or 0,
         pickup_lng=trip.pickup_lng or 0,
         vehicle_type=trip.vehicle_type or "comfort",
-        radius_km=MAX_DISPATCH_RADIUS_KM,
+        radius_km=_LIVE_DISPATCH_RADIUS_KM,
         limit=10,
     )
 
@@ -1740,6 +1779,7 @@ async def _requeue_trip_to_next_driver(db: AsyncSession, trip: Trip):
         pickup_lng=trip.pickup_lng or 0,
         exclude_driver_ids=tried_ids,
         vehicle_type=trip.vehicle_type or "comfort",
+        radius_km=_LIVE_DISPATCH_RADIUS_KM,
         limit=5,
     )
     if not drivers_sorted:
@@ -1808,7 +1848,7 @@ async def _dispatch_first_offer_after_delay(trip_id: int) -> None:
                 pickup_lat=trip.pickup_lat or 0,
                 pickup_lng=trip.pickup_lng or 0,
                 vehicle_type=trip.vehicle_type or "comfort",
-                radius_km=MAX_DISPATCH_RADIUS_KM,
+                radius_km=_LIVE_DISPATCH_RADIUS_KM,
                 limit=10,
             )
             if not drivers:
@@ -1861,10 +1901,18 @@ async def _dispatch_first_offer_after_delay(trip_id: int) -> None:
 # Bounded by _REOFFER_MAX_ROUNDS: a trip nobody wants must eventually
 # stop asking rather than ring one phone forever.
 
-# 20 miles. The radius that decides "is anyone else even out there" — not
-# the radius the cascade searches, which stays wide so a distant driver is
-# still reachable once everyone close has passed.
-_REOFFER_RADIUS_KM = 32.19
+# 20 miles — how far a live ride travels to find a driver.
+#
+# The search used to run to MAX_DISPATCH_RADIUS_KM, 500 miles, on the
+# reasoning that a far driver is better than none once everyone close has
+# passed. A driver two states away is not better than none: they are an
+# hour of dead mileage the rider waits through. Twenty miles is the whole
+# of live dispatch now — the first offer, the cascade, the re-queue after
+# a reject, and the comeback when nobody is left.
+_LIVE_DISPATCH_RADIUS_KM = 32.19
+
+# Same number, kept under the name the re-offer path reads.
+_REOFFER_RADIUS_KM = _LIVE_DISPATCH_RADIUS_KM
 
 # Long enough that the driver is not handed back the card they just
 # dismissed, short enough that the rider is not left waiting.

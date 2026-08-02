@@ -9,6 +9,7 @@ import '../services/error_service.dart';
 import '../services/haptic_service.dart';
 import '../services/local_data_service.dart';
 import '../widgets/neu_style.dart';
+import '../widgets/shimmer_placeholders.dart';
 import 'credit_card_screen.dart';
 
 /// Screen where users can link / manage their payment accounts
@@ -458,8 +459,9 @@ class _PaymentAccountsScreenState extends State<PaymentAccountsScreen>
               // Every card and bank the rider has attached, each removable
               // and promotable to default.
               if (_loadingServer) ...[
-                const SizedBox(height: 24),
-                const Center(child: CircularProgressIndicator(color: _gold, strokeWidth: 2)),
+                // The section's own shape shimmering while the list arrives —
+                // a spinner here read as the whole page being stuck.
+                const PaymentMethodsShimmer(),
               ] else if (_serverMethods.isNotEmpty) ...[
                 const SizedBox(height: 28),
                 Text(

@@ -255,3 +255,58 @@ class _WalletRowShimmer extends StatelessWidget {
     );
   }
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Payment methods section shimmer — the "Added Payment Methods" header and
+//  two account rows under it, shimmering while the server list arrives.
+// ─────────────────────────────────────────────────────────────────────────────
+class PaymentMethodsShimmer extends StatelessWidget {
+  const PaymentMethodsShimmer({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return const Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(height: 28),
+        ShimmerBox(width: 170, height: 13),
+        SizedBox(height: 12),
+        _AccountRowShimmer(),
+        SizedBox(height: 10),
+        _AccountRowShimmer(),
+      ],
+    );
+  }
+}
+
+class _AccountRowShimmer extends StatelessWidget {
+  const _AccountRowShimmer();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1A1F35),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: const Row(
+        children: [
+          ShimmerBox(width: 40, height: 40, borderRadius: 12),
+          SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                ShimmerBox(width: 120, height: 14),
+                SizedBox(height: 5),
+                ShimmerBox(width: 80, height: 11),
+              ],
+            ),
+          ),
+          ShimmerBox(width: 22, height: 22, shape: BoxShape.circle),
+        ],
+      ),
+    );
+  }
+}

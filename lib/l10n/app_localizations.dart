@@ -4014,6 +4014,28 @@ class S {
       ? (n == 1 ? '1 viaje disponible' : '$n viajes disponibles')
       : (n == 1 ? '1 ride available' : '$n rides available');
 
+  // ── Vehicle page ──
+  String get seeDetails => _es ? 'Ver detalles' : 'See details';
+  String get noVehicleOnFile =>
+      _es ? 'Sin vehículo registrado' : 'No vehicle on file';
+  String get availableRideTypes =>
+      _es ? 'Tipos de viaje disponibles' : 'Available ride types';
+  String get rideTypesSubject => _es
+      ? 'Sujeto a la disponibilidad de tu zona.'
+      : 'All ride types subject to availability in your region.';
+  String get tierFromYourVehicle => _es
+      ? 'Según el vehículo que tienes registrado'
+      : 'From the vehicle on your account';
+  String get manageCar => _es ? 'Gestionar vehículo' : 'Manage car';
+  String get viewDocuments => _es ? 'Ver documentos' : 'View documents';
+  String get removeVehicle => _es ? 'Quitar vehículo' : 'Remove vehicle';
+  String get removeVehicleAsk => _es
+      ? '¿Seguro? Perderías sus documentos y su categoría.'
+      : 'Are you sure? Its documents and tier go with it.';
+  String get removeVehicleContactSupport => _es
+      ? 'Escríbele a soporte para quitar tu vehículo.'
+      : 'Contact support to remove your vehicle.';
+
   String get scheduledRidesTitle =>
       _es ? 'Viajes Reservados' : 'Scheduled Rides';
   String get noScheduledTrips => _es

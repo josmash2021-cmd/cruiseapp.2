@@ -1,5 +1,7 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import '../../widgets/neu_style.dart';
+import 'driver_vehicle_detail_screen.dart';
 import '../../services/haptic_service.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../services/api_service.dart';
@@ -193,8 +195,9 @@ class _DriverVehicleScreenState extends State<DriverVehicleScreen> {
                     style: TextStyle(
                         color: Colors.white, fontWeight: FontWeight.w600)),
                 subtitle: Text(S.of(context).takePhotoSubtitle,
-                    style:
-                        TextStyle(color: Colors.white.withValues(alpha: 0.4), fontSize: 12)),
+                    style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.4),
+                        fontSize: 12)),
                 onTap: () => Navigator.pop(ctx, ImageSource.camera),
               ),
               ListTile(
@@ -212,8 +215,9 @@ class _DriverVehicleScreenState extends State<DriverVehicleScreen> {
                     style: TextStyle(
                         color: Colors.white, fontWeight: FontWeight.w600)),
                 subtitle: Text(S.of(context).chooseFromGallerySubtitle,
-                    style:
-                        TextStyle(color: Colors.white.withValues(alpha: 0.4), fontSize: 12)),
+                    style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.4),
+                        fontSize: 12)),
                 onTap: () => Navigator.pop(ctx, ImageSource.gallery),
               ),
               const SizedBox(height: 8),
@@ -235,7 +239,8 @@ class _DriverVehicleScreenState extends State<DriverVehicleScreen> {
 
       setState(() => _uploading = true);
       final fileSize = await File(xFile.path).length();
-      debugPrint('[Vehicle] Photo file: ${xFile.path} size: ${(fileSize / 1024).toStringAsFixed(0)} KB');
+      debugPrint(
+          '[Vehicle] Photo file: ${xFile.path} size: ${(fileSize / 1024).toStringAsFixed(0)} KB');
 
       // Multipart upload (sends raw file — no base64 bloat)
       // Retry once on failure
@@ -272,7 +277,11 @@ class _DriverVehicleScreenState extends State<DriverVehicleScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(S.of(context).failedToUpload(title, e.toString().length > 80 ? e.toString().substring(0, 80) : e.toString())),
+          content: Text(S.of(context).failedToUpload(
+              title,
+              e.toString().length > 80
+                  ? e.toString().substring(0, 80)
+                  : e.toString())),
           backgroundColor: Colors.red,
           behavior: SnackBarBehavior.floating,
           shape:
@@ -329,23 +338,7 @@ class _DriverVehicleScreenState extends State<DriverVehicleScreen> {
                         padding: const EdgeInsets.all(20),
                         child: Column(
                           children: [
-                            // ── Car visual card ──
-                            _buildCarCard(),
-                            const SizedBox(height: 24),
-
-                            // ── Vehicle details ──
-                            _buildSectionTitle('Vehicle Details'),
-                            const SizedBox(height: 12),
-                            _detailRow(s.makeLabel, _make,
-                                Icons.directions_car_filled_rounded),
-                            _detailRow(
-                                s.modelLabel, _model, Icons.local_taxi_rounded),
-                            _detailRow(s.yearLabel, _year,
-                                Icons.calendar_today_rounded),
-                            _detailRow(
-                                s.colorLabel, _color, Icons.palette_rounded),
-                            _detailRow(s.licensePlate, _plate,
-                                Icons.confirmation_number_rounded),
+                            _buildVehicleCard(),
                             const SizedBox(height: 30),
                           ],
                         ),
@@ -353,7 +346,6 @@ class _DriverVehicleScreenState extends State<DriverVehicleScreen> {
                     ),
                   ],
                 ),
-
               ],
             ),
     );
@@ -444,8 +436,8 @@ class _DriverVehicleScreenState extends State<DriverVehicleScreen> {
               color: _gold.withValues(alpha: 0.15),
               shape: BoxShape.circle,
             ),
-            child: const Icon(Icons.warning_amber_rounded,
-                color: _gold, size: 22),
+            child:
+                const Icon(Icons.warning_amber_rounded, color: _gold, size: 22),
           ),
           const SizedBox(width: 14),
           Expanded(
@@ -476,118 +468,175 @@ class _DriverVehicleScreenState extends State<DriverVehicleScreen> {
     );
   }
 
-  Widget _buildCarCard() {
-    final tier = _tierInfo;
+  /// The vehicle as a card you could put a second one beside.
+  ///
+  /// The old layout was a hero — a car floating over a gradient, the name
+  /// centred under it, then five rows repeating what the hero had already
+  /// said. It read as a poster for one car, and this driver has one car
+  /// today and may have two tomorrow.
+  ///
+  /// This is the shape a list wants: the year and the name stacked on the
+  /// left where the eye starts, the plate under them, the car itself small
+  /// and to the right where it identifies rather than performs, and one
+  /// row at the bottom that opens the detail.
+  Widget _buildVehicleCard() {
+    final s = S.of(context);
+    final title = '$_make $_model'.trim();
     return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(24, 28, 24, 20),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [
-            _gold.withValues(alpha: 0.10),
-            Colors.transparent,
-          ],
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-        ),
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: _gold.withValues(alpha: 0.15)),
-      ),
+      padding: const EdgeInsets.fromLTRB(18, 18, 18, 6),
+      decoration: neuBox(radius: 22),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Car image based on vehicle tier
-          SizedBox(
-            height: 120,
-            child: Image.asset(
-              _carImage,
-              fit: BoxFit.contain,
-              errorBuilder: (_, __, ___) => Container(
-                width: 80,
-                height: 80,
-                decoration: BoxDecoration(
-                  color: _gold.withValues(alpha: 0.15),
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(Icons.directions_car_rounded,
-                    color: _gold, size: 42),
-              ),
-            ),
-          ),
-          const SizedBox(height: 16),
-          // Year Make Model
-          Text(
-            _year.isNotEmpty || _make.isNotEmpty || _model.isNotEmpty
-                ? '$_year $_make $_model'.trim()
-                : 'No vehicle info',
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 22,
-              fontWeight: FontWeight.w900,
-            ),
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: 8),
-          // Plate number
-          if (_plate.isNotEmpty)
-            Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.06),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Text(
-                _plate,
-                style: const TextStyle(
-                  color: _gold,
-                  fontSize: 16,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: 2,
-                ),
-              ),
-            ),
-          const SizedBox(height: 14),
-          // Color + Vehicle tier badge
           Row(
-            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              if (_color.isNotEmpty) ...[
-                _tag(Icons.palette_rounded, _color),
-                const SizedBox(width: 12),
-              ],
-              // Tier badge — styled like rider's Choose a Ride
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [
-                      tier.color.withValues(alpha: 0.25),
-                      tier.color.withValues(alpha: 0.10),
-                    ],
-                  ),
-                  borderRadius: BorderRadius.circular(10),
-                  border:
-                      Border.all(color: tier.color.withValues(alpha: 0.35)),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Icon(tier.icon, size: 14, color: tier.color),
-                    const SizedBox(width: 6),
-                    Text(
-                      tier.label,
-                      style: TextStyle(
-                        color: tier.color,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: 1.5,
+                    if (_year.isNotEmpty)
+                      Text(
+                        _year,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 24,
+                          fontWeight: FontWeight.w800,
+                          height: 1.15,
+                          letterSpacing: -0.4,
+                        ),
                       ),
+                    Text(
+                      title.isEmpty ? s.noVehicleOnFile : title,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 24,
+                        fontWeight: FontWeight.w800,
+                        height: 1.15,
+                        letterSpacing: -0.4,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    if (_plate.isNotEmpty)
+                      Text(
+                        _plate.toUpperCase(),
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.45),
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          letterSpacing: 1.1,
+                        ),
+                      ),
+                    const SizedBox(height: 12),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        if (_color.isNotEmpty)
+                          _vehicleChip(Icons.palette_rounded, _color, null),
+                        _vehicleChip(
+                          _tierInfo.icon,
+                          _tierInfo.label.toUpperCase(),
+                          _tierInfo.color,
+                        ),
+                      ],
                     ),
                   ],
                 ),
               ),
+              const SizedBox(width: 12),
+              // Small, and to the right. On the old card it was 120 px tall
+              // and centred, which made a stock render the loudest thing on
+              // a screen about paperwork.
+              SizedBox(
+                width: 116,
+                height: 84,
+                child: Image.asset(
+                  _carImage,
+                  fit: BoxFit.contain,
+                  errorBuilder: (_, __, ___) => Icon(
+                    Icons.directions_car_rounded,
+                    color: _gold.withValues(alpha: 0.5),
+                    size: 40,
+                  ),
+                ),
+              ),
             ],
+          ),
+          const SizedBox(height: 6),
+          Divider(height: 1, color: Colors.white.withValues(alpha: 0.06)),
+          InkWell(
+            onTap: () {
+              HapticService.selectionClick();
+              Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => DriverVehicleDetailScreen(
+                    make: _make,
+                    model: _model,
+                    year: _year,
+                    color: _color,
+                    plate: _plate,
+                    carImage: _carImage,
+                    tierLabel: _tierInfo.label,
+                    tierColor: _tierInfo.color,
+                    tierIcon: _tierInfo.icon,
+                  ),
+                ),
+              );
+            },
+            borderRadius: BorderRadius.circular(12),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.info_outline_rounded,
+                    color: Colors.white.withValues(alpha: 0.6),
+                    size: 19,
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      s.seeDetails,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                  Icon(
+                    Icons.chevron_right_rounded,
+                    color: Colors.white.withValues(alpha: 0.35),
+                    size: 22,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _vehicleChip(IconData icon, String label, Color? accent) {
+    final c = accent ?? Colors.white.withValues(alpha: 0.6);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 7),
+      decoration: neuBox(radius: 10, pressed: true),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 13, color: c),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: TextStyle(
+              color: c,
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.3,
+            ),
           ),
         ],
       ),
@@ -686,9 +735,11 @@ class _DriverVehicleScreenState extends State<DriverVehicleScreen> {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     SizedBox(
-                      width: 12, height: 12,
+                      width: 12,
+                      height: 12,
                       child: CircularProgressIndicator(
-                        color: cardColor, strokeWidth: 1.5,
+                        color: cardColor,
+                        strokeWidth: 1.5,
                       ),
                     ),
                     const SizedBox(width: 6),
@@ -708,7 +759,8 @@ class _DriverVehicleScreenState extends State<DriverVehicleScreen> {
                 padding:
                     const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                 decoration: BoxDecoration(
-                  color: (isRejected ? Colors.red : _gold).withValues(alpha: 0.15),
+                  color:
+                      (isRejected ? Colors.red : _gold).withValues(alpha: 0.15),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Row(
@@ -730,46 +782,6 @@ class _DriverVehicleScreenState extends State<DriverVehicleScreen> {
               ),
           ],
         ),
-      ),
-    );
-  }
-
-  Widget _buildSectionTitle(String title) {
-    return Align(
-      alignment: Alignment.centerLeft,
-      child: Text(
-        title.toUpperCase(),
-        style: TextStyle(
-          color: Colors.white.withValues(alpha: 0.35),
-          fontSize: 11,
-          fontWeight: FontWeight.w800,
-          letterSpacing: 2,
-        ),
-      ),
-    );
-  }
-
-  Widget _tag(IconData icon, String text) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.05),
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 14, color: Colors.white.withValues(alpha: 0.4)),
-          const SizedBox(width: 6),
-          Text(
-            text,
-            style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.6),
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ],
       ),
     );
   }

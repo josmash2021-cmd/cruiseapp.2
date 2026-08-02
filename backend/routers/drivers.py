@@ -723,7 +723,18 @@ async def create_driver_financial_connections_session(
                 "type": "account",
                 "account": user.stripe_connect_id,
             },
-            permissions=["balances", "ownership", "payment_method"],
+            # `payment_method` only. `balances` and `ownership` are separate
+            # Financial Connections products that a platform has to register
+            # for, and asking for them unregistered is refused outright:
+            #
+            #   You cannot request the ['balances', 'ownership'] permissions
+            #   when collecting bank account details via Financial
+            #   Connections without first activating this product.
+            #
+            # Nothing here reads a balance or an ownership record. This flow
+            # collects a bank account so payouts have somewhere to land, and
+            # `payment_method` is the permission for exactly that.
+            permissions=["payment_method"],
             return_url=f"{PUBLIC_URL}/driver/bank-connected",
         )
         # NOTE: FC Sessions have NO hosted `url` (session.url 500'd here).

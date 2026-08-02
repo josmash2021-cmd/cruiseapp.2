@@ -553,9 +553,32 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     // The card's real height plus its header, so the route is framed in
     // the strip of map that is actually visible above it. 340 was a guess
     // from when the card was shorter.
-    final cardArea = hasCard ? _offerCardHeight(context) + 56.0 + botPad : 60.0;
+    var cardArea = hasCard ? _offerCardHeight(context) + 56.0 + botPad : 60.0;
     // Top: status bar + earnings bar (~56) + breathing room
-    final topArea = topPad + 80.0;
+    var topArea = topPad + 80.0;
+
+    // Never reserve so much that there is no map left to frame in.
+    //
+    // The card is about 396 pt tall. On a 667 pt screen — an iPhone SE —
+    // that plus the header and the top bar leaves 116 pt, and a route
+    // squeezed into 116 pt is a thread. Worse, nothing stopped the two
+    // insets from exceeding the viewport entirely, and
+    // cameraForCoordinatesPadding given more padding than screen does not
+    // fail loudly: it hands back a camera that frames nothing.
+    //
+    // A third of the screen is kept for the route. The card still covers
+    // what it covers — this only stops the *camera* from pretending the
+    // strip is smaller than a third, which zooms the route down to
+    // nothing to satisfy a box it cannot fit in anyway.
+    final screenH = MediaQuery.of(context).size.height;
+    final maxInsets = screenH * 0.65;
+    if (topArea + cardArea > maxInsets) {
+      final scale = maxInsets / (topArea + cardArea);
+      topArea *= scale;
+      cardArea *= scale;
+      debugPrint('[OfferRoute] insets trimmed to fit a ${screenH.round()}pt '
+          'screen: top=${topArea.round()} bottom=${cardArea.round()}');
+    }
     // Preserve current tilt/bearing if cinematic is active
     final currentPitch = _offerTiltAnim?.value ?? 0.0;
     final currentBearing = _offerBearingAnim?.value ?? 0.0;

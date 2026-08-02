@@ -646,7 +646,7 @@ async def create_stripe_connect_link(
         return {"url": link["url"], "stripe_account_id": user.stripe_connect_id}
     except Exception as e:
         logging.error("[StripeConnect] %s", e)
-        raise HTTPException(500, f"Stripe error: {str(e)[:120]}")
+        raise HTTPException(500, f"Stripe error: {str(e)[:400]}")
 
 @router.get("/drivers/stripe-connect/status", dependencies=[Depends(_verify_api_key)])
 async def get_stripe_connect_status(
@@ -665,7 +665,7 @@ async def get_stripe_connect_status(
             "payouts_enabled": acct.get("payouts_enabled", False),
         }
     except Exception as e:
-        return {"connected": False, "error": str(e)[:100]}
+        return {"connected": False, "error": str(e)[:400]}
 
 
 @router.post("/drivers/financial-connections", dependencies=[Depends(_verify_api_key)])
@@ -695,7 +695,7 @@ async def create_driver_financial_connections_session(
             await db.commit()
         except Exception as e:
             logging.error("[DriverFC] Auto-create Connect failed: %s", e)
-            raise HTTPException(500, f"Could not create Connect account: {str(e)[:120]}")
+            raise HTTPException(500, f"Could not create Connect account: {str(e)[:400]}")
 
     try:
         import stripe as _stripe
@@ -1232,7 +1232,7 @@ async def add_debit_card_payout(
             logging.info("[StripeConnect] Auto-created account %s for driver %s", account["id"], user.id)
         except Exception as e:
             logging.error("[StripeConnect] Auto-create failed for driver %s: %s", user.id, e)
-            raise HTTPException(500, f"Could not create Stripe Connect account: {str(e)[:120]}")
+            raise HTTPException(500, f"Could not create Stripe Connect account: {str(e)[:400]}")
 
     card_token = (body.get("card_token") or "").strip()
     set_default = bool(body.get("set_default", False))
@@ -1253,7 +1253,7 @@ async def add_debit_card_payout(
         display = f"{brand} ····{last4}  [ext:{ext_id}]"
     except Exception as e:
         logging.error("[StripeDebitCard] %s", e)
-        raise HTTPException(500, f"Stripe error: {str(e)[:120]}")
+        raise HTTPException(500, f"Stripe error: {str(e)[:400]}")
 
     if set_default:
         await _clear_other_defaults(db, user.id)
@@ -1323,7 +1323,7 @@ async def add_bank_account_payout(
             )
         except Exception as e:
             logging.error("[StripeConnect] Auto-create failed for driver %s: %s", user.id, e)
-            raise HTTPException(500, f"Could not create Stripe Connect account: {str(e)[:120]}")
+            raise HTTPException(500, f"Could not create Stripe Connect account: {str(e)[:400]}")
 
     try:
         import stripe as _stripe
@@ -1339,7 +1339,7 @@ async def add_bank_account_payout(
         display = f"{bank_name} ····{last4}  [ext:{ext_id}]"
     except Exception as e:
         logging.error("[StripeBankAccount] %s", e)
-        raise HTTPException(500, f"Stripe error: {str(e)[:120]}")
+        raise HTTPException(500, f"Stripe error: {str(e)[:400]}")
 
     if set_default:
         await _clear_other_defaults(db, user.id)

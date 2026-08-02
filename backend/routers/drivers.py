@@ -633,7 +633,16 @@ async def create_stripe_connect_link(
             account = _stripe.Account.create(
                 type="express",
                 email=user.email or "",
-                capabilities={"transfers": {"requested": True}},
+                # Both, not just transfers. Stripe refuses a platform
+                # asking for `transfers` alone without prior approval:
+                # "Your platform needs approval for accounts to have
+                # requested the `transfers` capability without the
+                # `card_payments` capability." Requesting the pair is
+                # the standard Express setup and needs no approval.
+                capabilities={
+                    "card_payments": {"requested": True},
+                    "transfers": {"requested": True},
+                },
             )
             user.stripe_connect_id = account["id"]
             await db.commit()
@@ -689,7 +698,16 @@ async def create_driver_financial_connections_session(
             account = _stripe.Account.create(
                 type="express",
                 email=user.email or "",
-                capabilities={"transfers": {"requested": True}},
+                # Both, not just transfers. Stripe refuses a platform
+                # asking for `transfers` alone without prior approval:
+                # "Your platform needs approval for accounts to have
+                # requested the `transfers` capability without the
+                # `card_payments` capability." Requesting the pair is
+                # the standard Express setup and needs no approval.
+                capabilities={
+                    "card_payments": {"requested": True},
+                    "transfers": {"requested": True},
+                },
             )
             user.stripe_connect_id = account["id"]
             await db.commit()
@@ -1225,7 +1243,16 @@ async def add_debit_card_payout(
             account = _stripe.Account.create(
                 type="express",
                 email=user.email or "",
-                capabilities={"transfers": {"requested": True}},
+                # Both, not just transfers. Stripe refuses a platform
+                # asking for `transfers` alone without prior approval:
+                # "Your platform needs approval for accounts to have
+                # requested the `transfers` capability without the
+                # `card_payments` capability." Requesting the pair is
+                # the standard Express setup and needs no approval.
+                capabilities={
+                    "card_payments": {"requested": True},
+                    "transfers": {"requested": True},
+                },
             )
             user.stripe_connect_id = account["id"]
             await db.commit()
@@ -1313,7 +1340,16 @@ async def add_bank_account_payout(
             account = _stripe.Account.create(
                 type="express",
                 email=user.email or "",
-                capabilities={"transfers": {"requested": True}},
+                # Both, not just transfers. Stripe refuses a platform
+                # asking for `transfers` alone without prior approval:
+                # "Your platform needs approval for accounts to have
+                # requested the `transfers` capability without the
+                # `card_payments` capability." Requesting the pair is
+                # the standard Express setup and needs no approval.
+                capabilities={
+                    "card_payments": {"requested": True},
+                    "transfers": {"requested": True},
+                },
             )
             user.stripe_connect_id = account["id"]
             await db.commit()

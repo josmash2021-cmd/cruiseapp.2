@@ -107,6 +107,13 @@ android {
             } else {
                 signingConfigs.getByName("debug")
             }
+            // Stated rather than inherited. Both already defaulted to false,
+            // but "the default is false" is not something you want to be
+            // guessing at while a build dies of memory exhaustion — with
+            // these off, R8 runs dex-only instead of whole-program, which is
+            // the difference between fitting in 8 GB and not.
+            isMinifyEnabled = false
+            isShrinkResources = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"

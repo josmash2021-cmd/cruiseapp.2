@@ -268,7 +268,9 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   /// web and about 94 on a phone that reserves 34 for it. Do not fold that
   /// allowance into this constant: it is a different thing, it varies by
   /// device, and adding it here would put it back on devices that have none.
-  static const double _panelBaseMinH = 60.0;
+  // 52, down from 60. The sheet is bottom-anchored, so taking height
+  // off it is what moves its top edge down the screen.
+  static const double _panelBaseMinH = 52.0;
   double get _panelBaseH =>
       _panelBaseMinH + (MediaQuery.maybeOf(context)?.padding.bottom ?? 0);
   // Extra height reserved while the scheduled-rides banner is shown above the
@@ -3109,11 +3111,11 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     // the eye reads the space between two round things as a gap only once it
     // is wider than the glow by a clear margin.
     //
-    // 34 leaves about twenty-six points of visible map under the disc, which
-    // is where it stops belonging to the sheet and starts floating over the
-    // map. There is room: the button ends up 128 points off the bottom of an
-    // 850-point screen, still well inside thumb reach.
-    final bottomClosed = _panelCollapsedH + 34;
+    // 26 now, with the sheet 8 points shorter than when 34 was measured —
+    // the disc has come down with it and this takes a little more off the
+    // gap. The glow still clears the sheet, which is the constraint the
+    // number exists for.
+    final bottomClosed = _panelCollapsedH + 26;
     final bottom = ui.lerpDouble(bottomClosed, 0, t)!;
 
     // Inset on both sides and centred inside whatever that leaves, rather

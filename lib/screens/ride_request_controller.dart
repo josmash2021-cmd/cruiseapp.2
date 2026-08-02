@@ -485,11 +485,13 @@ extension _RideRequestController on _RideRequestScreenState {
           _searchElapsedSec = 0;
           _searchStatusTimer?.cancel();
           // 3500ms rotation — matches the Shopify widget's __vrRotateMsg
-          // cadence so the message cycles identically.
+          // cadence so the message cycles identically. The camera does NOT
+          // cycle with it: re-flying to the same fixed frame on every tick
+          // restarted the animation all through the search and fought the
+          // rider's finger whenever they panned to read the route.
           _searchStatusTimer = Timer.periodic(const Duration(milliseconds: 3500), (_) {
             if (mounted) {
               _setState(() => _searchStatusIdx++);
-              _animateSearchCameraToAngle(_searchStatusIdx);
             }
           });
           _searchElapsedTimer?.cancel();
@@ -500,6 +502,8 @@ extension _RideRequestController on _RideRequestScreenState {
           _setState(() => _searchingShowMap = true);
           // Trigger cinematic sequence on searching phase open
           _replayCinematicIfRouteAvailable();
+          // Frame the full route ONCE for the search, then hold it.
+          _animateSearchCameraToAngle(0);
         }
         break;
       case RiderPhase.driverAssigned:

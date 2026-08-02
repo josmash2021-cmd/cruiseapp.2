@@ -781,6 +781,19 @@ extension _RideRequestMap on _RideRequestScreenState {
     final endZoom = targetZoom;
     final endBearing = _randomBearing;
 
+    // Bearing takes the shortest arc, not the straight line: a plain
+    // start→end lerp walks the long way round whenever the incoming camera
+    // sits more than ±180° from the target — that was the full 360° spin
+    // the rider saw between confirming the drop-off and the route frame
+    // settling (e.g. starting at 300° and sweeping ~285° instead of 45°).
+    var db = endBearing - startBearing;
+    while (db > 180) {
+      db -= 360;
+    }
+    while (db < -180) {
+      db += 360;
+    }
+
     void onUnifiedTick() {
       if (_mapCtrl == null || !mounted) return;
       final t = Curves.easeInOutCubic.transform(_tiltCtrl!.value);
@@ -793,7 +806,7 @@ extension _RideRequestMap on _RideRequestScreenState {
         ),
         pitch: startPitch + (endPitch - startPitch) * t,
         zoom: startZoom + (endZoom - startZoom) * t,
-        bearing: startBearing + (endBearing - startBearing) * t,
+        bearing: (startBearing + db * t + 360) % 360,
       ));
     }
 

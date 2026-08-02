@@ -64,6 +64,33 @@ def _scheduled_trip_card(trip: Trip, driver_lat: float = 0, driver_lng: float = 
     }
 
 
+def _require_approved_driver(user: User) -> None:
+    """Reserved work is for drivers whose paperwork is done.
+
+    Being online is not the test — a driver browsing tomorrow's calendar
+    is usually offline, and that is exactly when they plan their week. So
+    this list is open to every driver, on shift or not.
+
+    Being approved is the test. A scheduled ride is a promise made to a
+    rider days ahead; letting an unverified account claim one means the
+    promise is only as good as a background check that has not finished.
+    """
+    if (user.status or "active") != "active":
+        raise HTTPException(
+            403, f"Account {user.status} — cannot take reserved rides"
+        )
+    approved = (
+        user.is_verified is True
+        or (user.verification_status or "").strip().lower() == "approved"
+    )
+    if not approved:
+        raise HTTPException(
+            403,
+            "Your account is still being reviewed. Reserved rides open up "
+            "once it is approved.",
+        )
+
+
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 #  GET /scheduled-trips/available — marketplace browse
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -79,6 +106,7 @@ async def get_available_scheduled_trips(
     """List unclaimed scheduled rides a driver can accept."""
     if user.role != "driver":
         raise HTTPException(403, "Only drivers can browse scheduled rides")
+    _require_approved_driver(user)
 
     now = datetime.now(timezone.utc)
     cutoff = now + timedelta(minutes=MIN_ADVANCE_MINUTES)
@@ -154,6 +182,9 @@ async def claim_scheduled_trip(
     """Driver claims an unclaimed scheduled ride from the marketplace."""
     if user.role != "driver":
         raise HTTPException(403, "Only drivers can claim scheduled rides")
+    # Checked here as well as in the browse: a trip id survives a stale
+    # list, and hiding a card is a courtesy while this is the rule.
+    _require_approved_driver(user)
 
     # Fetch trip with row-level lock
     result = await db.execute(

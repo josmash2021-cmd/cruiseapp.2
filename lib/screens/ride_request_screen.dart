@@ -50,6 +50,7 @@ import '../utils/responsive.dart';
 import '../widgets/gold_location_dot.dart';
 import '../widgets/gold_pin_renderer.dart';
 import '../widgets/map/animated_map_label.dart';
+import '../widgets/map/route_endpoint_markers.dart';
 
 import '../widgets/map/circular_pin_renderer.dart';
 import '../widgets/verified_avatar.dart';
@@ -533,6 +534,20 @@ class _RideRequestScreenState extends State<RideRequestScreen>
   /// the camera is, and on web that is null — so dragging the map moved the
   /// pin and told nobody, and Confirm had no coordinate to confirm.
   WebMapController? _webMapCtrl;
+
+  /// Measured on-screen height (px) of the choose-a-vehicle sheet.
+  ///
+  /// The camera fit used to guess the sheet's height (35%/42% of the
+  /// screen) and the guess broke whenever the sheet grew — pick a tier and
+  /// the detail row, payment row and Request Ride button pushed the route
+  /// behind the panel. The sheet now reports its real height and every
+  /// camera fit + the address bar anchor to the measurement; 0 means "not
+  /// laid out yet" and falls back to the old estimate.
+  double _sheetHeightPx = 0;
+
+  /// Web only: the route polyline + endpoint pins have been pushed to the
+  /// browser map. Native draws through the cinematic instead.
+  bool _webRouteDrawn = false;
 
   // ── In-place map picker state (RiderPhase.pickingLocation) ──
   // Mirrors the Shopify widget's drop-a-pin mode but inside the same
@@ -1270,6 +1285,15 @@ class _RideRequestScreenState extends State<RideRequestScreen>
             if (phase == RiderPhase.previewRoute ||
                 phase == RiderPhase.selectingRide)
               _buildRoutePreviewSheet(c, bottomPad),
+
+            // ── Trip addresses — pinned directly above the sheet so the
+            // full pickup → dropoff text is always on screen, never
+            // hidden behind the panel or clipped off the map.
+            if ((phase == RiderPhase.previewRoute ||
+                    phase == RiderPhase.selectingRide) &&
+                _ctrl.state.pickupLabel.isNotEmpty &&
+                _ctrl.state.dropoffLabel.isNotEmpty)
+              _buildTripAddressBar(),
 
             // ── Searching bottom card (map visible behind) ──
             if ((phase == RiderPhase.requesting ||

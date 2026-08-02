@@ -434,7 +434,11 @@ extension _RideRequestController on _RideRequestScreenState {
           final isRealRoute = s.route!.points.length >= 3;
           if (isRealRoute) _fetchingRoute = false;
 
-          if (!_cinematicDone && !_cinematicRunning) {
+          if (kIsWeb) {
+            // Native draws via the cinematic; the browser map gets its
+            // polyline + endpoint pins pushed directly.
+            unawaited(_drawWebRouteOnce());
+          } else if (!_cinematicDone && !_cinematicRunning) {
             _drawRoute();
           } else if (isRealRoute && _routeAnnot == null && !_cinematicRunning) {
             // Real route arrived AFTER the cinematic finished but the
@@ -2722,6 +2726,18 @@ void _showPaymentMethodPickerLegacy(AppColors c, RideOption? option) {
     _routeDrawTicker?.stop();
     _routeDrawTicker?.dispose();
     _routeDrawTicker = null;
+    // Web overlays live on the browser controller, not the native
+    // annotation managers — clear them too or the old route survives
+    // into the next search.
+    final web = _webMapCtrl;
+    if (web != null) {
+      web.removePolyline('route');
+      web.removeMarker('pickup');
+      web.removeMarker('dropoff');
+    }
+    _webRouteDrawn = false;
+    // The sheet unmounts with the phase change; the next one re-measures.
+    _sheetHeightPx = 0;
     final polyMgr = _polylineAnnotMgr;
     if (polyMgr != null) {
       if (_routeAnnot != null) {

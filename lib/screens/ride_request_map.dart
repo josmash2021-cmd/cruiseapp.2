@@ -690,8 +690,14 @@ extension _RideRequestMap on _RideRequestScreenState {
     // the card, and the route fully visible above it.
     if (!mounted) { _cinematicRunning = false; return; }
     final mq = MediaQuery.of(context);
-    final cardInset = (mq.size.height * 0.42).clamp(300.0, 420.0) +
-        mq.padding.bottom + 24;
+    // Measured sheet height once it has laid out — the 42% estimate
+    // undershoots the real panel once a tier is picked (detail row +
+    // payment row + Request Ride), and the route's tail slid under the
+    // sheet on exactly the trips this sequence frames.
+    final cardInset = _sheetHeightPx > 0
+        ? _cameraBottomInset(mq.padding.bottom)
+        : (mq.size.height * 0.42).clamp(300.0, 420.0) +
+            mq.padding.bottom + 24;
     double minLat = 90, maxLat = -90, minLng = 180, maxLng = -180;
     for (final p in pts) {
       if (p.latitude < minLat) minLat = p.latitude;
@@ -851,6 +857,21 @@ extension _RideRequestMap on _RideRequestScreenState {
 
     _cinematicDone = true;
     _cinematicRunning = false;
+
+    // The cinematic's target camera was computed up front. If the sheet
+    // reported its real height in the meantime and it disagrees with the
+    // estimate that framed the shot, reframe once against the real panel —
+    // same orientation (preserveCamera), just a corrected inset.
+    if (mounted && _sheetHeightPx > 0 && _ctrl.state.route != null) {
+      final botSafe = MediaQuery.of(context).padding.bottom;
+      final estimate =
+          (MediaQuery.of(context).size.height * 0.42).clamp(300.0, 420.0) +
+              botSafe + 24;
+      if ((_cameraBottomInset(botSafe) - estimate).abs() > 40) {
+        _fitRoute(List<LatLng>.from(_ctrl.state.route!.points),
+            preserveCamera: true);
+      }
+    }
 
     // Seed the floating label offsets right before they reveal so they
     // appear at the correct pin positions — the onCameraChange listener
@@ -1382,6 +1403,107 @@ extension _RideRequestMap on _RideRequestScreenState {
   // Labels always visible — no toggle behavior
   void _togglePinLabels() {}
 
+  /// Bottom camera inset that keeps the route framed above the sheet.
+  ///
+  /// Uses the sheet's MEASURED height once it has laid out; before that it
+  /// falls back to the old fraction-of-screen estimate. The address bar
+  /// floats above the sheet while addresses are shown, so its height goes
+  /// into the inset too — otherwise the top of the route would slide under
+  /// the bar on long trips.
+  double _cameraBottomInset(double botSafe) {
+    final s = _ctrl.state;
+    if (_sheetHeightPx <= 0) {
+      final screenH = MediaQuery.of(context).size.height;
+      return (screenH * 0.35).clamp(190.0, 320.0) + botSafe + 20;
+    }
+    final barVisible = (s.phase == RiderPhase.previewRoute ||
+            s.phase == RiderPhase.selectingRide) &&
+        s.pickupLabel.isNotEmpty &&
+        s.dropoffLabel.isNotEmpty;
+    return _sheetHeightPx +
+        _sheetScreenGap +
+        (barVisible ? 96 : 0) +
+        18;
+  }
+
+  /// The sheet reported a new height. Reposition the address bar (setState)
+  /// and reframe the route so it stays fully visible above the panel — the
+  /// sheet grows when a tier is picked (detail row + payment row + button).
+  void _onSheetHeightChanged(double h) {
+    if (!mounted || (h - _sheetHeightPx).abs() < 12) return;
+    final firstMeasure = _sheetHeightPx == 0;
+    _setState(() => _sheetHeightPx = h);
+    final s = _ctrl.state;
+    if (s.route == null) return;
+    if (s.phase != RiderPhase.previewRoute &&
+        s.phase != RiderPhase.selectingRide) {
+      return;
+    }
+    if (kIsWeb) {
+      _fitWebRoute(s.route!.points, durationMs: firstMeasure ? 1200 : 450);
+      return;
+    }
+    // Native: never fight the cinematic mid-flight — its final frame is
+    // corrected once it lands (see the end of _startCinematicSequence).
+    if (_cinematicRunning) return;
+    if (!_cinematicDone && !firstMeasure) return;
+    _fitRoute(List<LatLng>.from(s.route!.points), preserveCamera: true);
+  }
+
+  /// Web: fit the whole route above the sheet. No-op without the browser
+  /// controller or points.
+  void _fitWebRoute(List<LatLng> pts, {int durationMs = 1000}) {
+    final web = _webMapCtrl;
+    if (web == null || pts.isEmpty) return;
+    final botSafe = MediaQuery.of(context).padding.bottom;
+    web.fitBounds(
+      [for (final p in pts) (lng: p.longitude, lat: p.latitude)],
+      paddingTop: 70,
+      paddingLeft: 50,
+      paddingBottom: _cameraBottomInset(botSafe),
+      paddingRight: 50,
+      durationMs: durationMs,
+    );
+  }
+
+  /// Web: push the route polyline + endpoint pins to the browser map.
+  /// Native draws through the cinematic instead; on web `_mapCtrl` is null
+  /// and without this the map stayed empty behind the sheet.
+  Future<void> _drawWebRouteOnce() async {
+    final web = _webMapCtrl;
+    final s = _ctrl.state;
+    if (web == null || s.route == null || s.pickup == null || s.dropoff == null) {
+      return;
+    }
+    final pts = s.route!.points;
+    if (pts.length < 2) return;
+    // setPolyline replaces the line under the same id, so a re-fetched
+    // route (edited pickup/dropoff) redraws over the old one.
+    web.setPolyline(
+      'route',
+      [for (final p in pts) (lng: p.longitude, lat: p.latitude)],
+      color: '#F0CA3E',
+      width: 4,
+    );
+    if (_webRouteDrawn) {
+      _fitWebRoute(pts, durationMs: 500);
+      return;
+    }
+    _webRouteDrawn = true; // claim before the awaits so ticks don't double-add pins
+    try {
+      // The same two shapes the native map and the driver's offer preview
+      // use: gold disc for the pickup, white circle for the dropoff.
+      final pins = await Future.wait([
+        renderPickupDotBytes(),
+        renderDropoffCircleBytes(),
+      ]);
+      if (!mounted) return;
+      web.addMarker('pickup', s.pickup!.lng, s.pickup!.lat, iconBytes: pins[0]);
+      web.addMarker('dropoff', s.dropoff!.lng, s.dropoff!.lat, iconBytes: pins[1]);
+    } catch (_) {}
+    if (mounted) _fitWebRoute(pts, durationMs: 1200);
+  }
+
   void _fitRoute(List<LatLng> pts, {bool preserveCamera = false}) {
     if (pts.isEmpty || _mapCtrl == null) return;
     double minLat = 90, maxLat = -90, minLng = 180, maxLng = -180;
@@ -1391,16 +1513,15 @@ extension _RideRequestMap on _RideRequestScreenState {
       if (p.longitude < minLng) minLng = p.longitude;
       if (p.longitude > maxLng) maxLng = p.longitude;
     }
-    final screenH = MediaQuery.of(context).size.height;
     final botPad = MediaQuery.of(context).padding.bottom;
     final phase = _ctrl.state.phase;
-    // The map is full-screen and the route sheet covers about 35%.
-    // Keep route framed in the visible map area above that sheet.
+    // Keep the route framed in the visible map area above the sheet —
+    // measured once the panel has laid out, estimated before that.
     final double bottomPad;
     if (phase == RiderPhase.requesting || phase == RiderPhase.searchingDriver) {
       bottomPad = 160 + botPad;
     } else {
-      bottomPad = (screenH * 0.35).clamp(190.0, 320.0) + botPad + 20;
+      bottomPad = _cameraBottomInset(botPad);
     }
     _mapCtrl!.cameraForCoordinatesPadding(
       [mapbox.Point(coordinates: mapbox.Position(minLng, minLat)),
@@ -1539,6 +1660,14 @@ extension _RideRequestMap on _RideRequestScreenState {
     final s = _ctrl.state;
     // If we have pickup+dropoff, fit both in view
     if (s.pickup != null && s.dropoff != null) {
+      // Web has no native controller — the browser map fits its own bounds.
+      if (kIsWeb) {
+        final pts = s.route?.points ??
+            [LatLng(s.pickup!.lat, s.pickup!.lng),
+             LatLng(s.dropoff!.lat, s.dropoff!.lng)];
+        _fitWebRoute(pts, durationMs: 900);
+        return;
+      }
       final bounds = LatLngBounds(
         southwest: LatLng(
           math.min(s.pickup!.lat, s.dropoff!.lat),
@@ -1553,9 +1682,8 @@ extension _RideRequestMap on _RideRequestScreenState {
         mapbox.Point(coordinates: mapbox.Position(bounds.southwest.longitude, bounds.southwest.latitude)),
         mapbox.Point(coordinates: mapbox.Position(bounds.northeast.longitude, bounds.northeast.latitude)),
       ];
-      final screenH = MediaQuery.of(context).size.height;
       final botSafe = MediaQuery.of(context).padding.bottom;
-      final bottomPad = (screenH * 0.35).clamp(190.0, 320.0) + botSafe + 20;
+      final bottomPad = _cameraBottomInset(botSafe);
       final cam = await _mapCtrl?.cameraForCoordinatesPadding(
         coords, mapbox.CameraOptions(),
         mapbox.MbxEdgeInsets(top: 80, left: 60, bottom: bottomPad, right: 60), null, null,

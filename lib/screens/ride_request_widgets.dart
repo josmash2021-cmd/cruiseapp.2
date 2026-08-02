@@ -287,7 +287,11 @@ extension _RideRequestWidgets on _RideRequestScreenState {
       bottom: floating ? 24 : 0,
       child: Align(
         alignment: Alignment.bottomCenter,
-        child: AnimatedContainer(
+        // Measure the panel's real height — the camera fit and the address
+        // bar anchor to this, not to a fraction-of-screen estimate.
+        child: _SheetSizeReporter(
+          onChanged: _onSheetHeightChanged,
+          child: AnimatedContainer(
             duration: const Duration(milliseconds: 380),
             curve: Curves.easeInOutCubicEmphasized,
             // Rounded all round while it floats, top-only once it meets the
@@ -802,9 +806,105 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                 ),
               ),
             ),
+            ),
           ),
         ),
       );
+  }
+
+  /// Gap between the sheet and the screen's bottom edge: 24 px while the
+  /// panel floats (no tier picked yet), 0 once picking a tier makes it go
+  /// flush. Mirrors the `floating` rule in _buildRoutePreviewSheet.
+  double get _sheetScreenGap {
+    final s = _ctrl.state;
+    final flush = widget.fastRide || s.selectedOption != null;
+    return flush ? 0 : 24;
+  }
+
+  /// Pickup → dropoff addresses, pinned directly above the choose-a-vehicle
+  /// sheet. The map pins show WHERE the trip goes; this bar keeps the WHAT
+  /// (the full typed addresses) on screen at all times — the sheet covers
+  /// the lower map and the floating pin labels only hold a couple of words.
+  Widget _buildTripAddressBar() {
+    final s = _ctrl.state;
+    final bottom = _sheetHeightPx > 0
+        ? _sheetHeightPx + _sheetScreenGap + 10
+        // First frames, before the sheet reports its height: park the bar
+        // over the old estimate so it never flashes behind the panel.
+        : (MediaQuery.of(context).size.height * 0.35).clamp(190.0, 320.0) +
+            MediaQuery.of(context).padding.bottom + 30;
+    return AnimatedPositioned(
+      duration: const Duration(milliseconds: 250),
+      curve: Curves.easeOutCubic,
+      left: 14,
+      right: 14,
+      bottom: bottom,
+      child: IgnorePointer(
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+          decoration: neuBox(radius: 18),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _addressBarRow(
+                icon: Icons.circle,
+                iconColor: const Color(0xFFE8C547),
+                text: s.pickupLabel,
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 7),
+                child: Row(
+                  children: [
+                    const SizedBox(width: 5),
+                    Container(
+                      width: 1.4,
+                      height: 12,
+                      color: Colors.white.withValues(alpha: 0.18),
+                    ),
+                  ],
+                ),
+              ),
+              _addressBarRow(
+                icon: Icons.flag_rounded,
+                iconColor: Colors.white,
+                text: s.dropoffLabel,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _addressBarRow({
+    required IconData icon,
+    required Color iconColor,
+    required String text,
+  }) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(top: 2),
+          child: Icon(icon, size: 11, color: iconColor),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Text(
+            text,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              fontFamily: 'Poppins',
+              color: Colors.white,
+              fontSize: 12.5,
+              fontWeight: FontWeight.w600,
+              height: 1.25,
+            ),
+          ),
+        ),
+      ],
+    );
   }
 
   // Small pill used in the sheet header (airport / promo chips).
@@ -3787,6 +3887,43 @@ class _CarWithDropShadow extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// Reports its child's rendered height after every layout change.
+///
+/// Same pattern as the driver's offer-card `_SizeReporter`, but height-only:
+/// the ride sheet never changes width, and the camera fit / address bar only
+/// care about how much vertical space the panel eats.
+class _SheetSizeReporter extends StatefulWidget {
+  const _SheetSizeReporter({required this.onChanged, required this.child});
+
+  final ValueChanged<double> onChanged;
+  final Widget child;
+
+  @override
+  State<_SheetSizeReporter> createState() => _SheetSizeReporterState();
+}
+
+class _SheetSizeReporterState extends State<_SheetSizeReporter> {
+  double? _reported;
+
+  @override
+  Widget build(BuildContext context) {
+    return NotificationListener<SizeChangedLayoutNotification>(
+      onNotification: (_) {
+        // The notification carries no size — read it after the frame.
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          final h = context.size?.height;
+          if (h == null || h == _reported) return;
+          _reported = h;
+          widget.onChanged(h);
+        });
+        return true;
+      },
+      child: SizeChangedLayoutNotifier(child: widget.child),
     );
   }
 }

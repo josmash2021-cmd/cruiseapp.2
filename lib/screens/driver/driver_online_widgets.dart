@@ -2034,13 +2034,17 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
           width: double.infinity,
           height: 48,
           decoration: BoxDecoration(
-            // White with gold lettering — the one action on the card gets
-            // the light-on-dark inverse of everything around it, and the
-            // brand colour stays on the word that does the work.
+            // Black with gold lettering — the action stays on the dark side
+            // of the card, and the brand colour is the word itself. A
+            // hairline of gold around it so the black reads as a button
+            // and not as a gap in the card.
             color: isAccepting
-                ? Colors.white.withValues(alpha: 0.5)
-                : Colors.white,
+                ? Colors.black.withValues(alpha: 0.5)
+                : Colors.black,
             borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: const Color(0xFFD4A843).withValues(alpha: 0.35),
+            ),
             boxShadow: [
               BoxShadow(
                 color: Colors.black.withValues(alpha: 0.35),

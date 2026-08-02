@@ -9,6 +9,7 @@ import '../../services/firebase_storage_service.dart';
 import '../../l10n/app_localizations.dart';
 import '../../widgets/neu_style.dart';
 import 'background_check_consent_screen.dart';
+import 'driver_license_plate_screen.dart';
 
 enum _ExpiryStatus { ok, expiringSoon, expired }
 
@@ -39,6 +40,15 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
 
   // All required doc types for drivers
   static const _requiredDocs = [
+    // Not a document — a field. It sits in this list because it is one
+    // more thing dispatch has to be satisfied with before a driver
+    // works, and because changing it invalidates the registration two
+    // rows down. Keeping it on another screen would hide that link.
+    {
+      'doc_type': 'license_plate',
+      'title': 'License plate number',
+      'icon': Icons.pin_rounded,
+    },
     {
       'doc_type': 'drivers_license',
       'title': "Driver's License",
@@ -99,6 +109,27 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
       final merged = <Map<String, dynamic>>[];
       for (final req in _requiredDocs) {
         final docType = req['doc_type'] as String;
+
+        // The plate is read off the vehicle, not the documents table.
+        // "Pending" here means the driver changed it and dispatch has
+        // not approved the new registration yet.
+        if (docType == 'license_plate') {
+          final plate = (vehicle?['plate'] ?? '').toString().trim();
+          final pending = vehicle?['plate_pending_review'] == true;
+          merged.add({
+            'doc_type': docType,
+            'title': req['title'],
+            'icon': req['icon'],
+            'status': plate.isEmpty
+                ? 'not_uploaded'
+                : pending
+                    ? 'pending'
+                    : 'approved',
+            'plate': plate,
+            'plate_state': (vehicle?['plate_state'] ?? '').toString(),
+          });
+          continue;
+        }
 
         // Background check — use status from user profile
         if (docType == 'background_check') {
@@ -332,6 +363,27 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
     'profile_photo',
     'insurance',
   };
+
+  /// Open the plate editor and reload if it actually changed anything.
+  Future<void> _editPlate(Map<String, dynamic> doc) async {
+    final changed = await Navigator.of(context).push<bool>(
+      slideFromRightRoute(
+        DriverLicensePlateScreen(
+          currentPlate: (doc['plate'] ?? '').toString(),
+          currentState: (doc['plate_state'] ?? '').toString().isEmpty
+              ? null
+              : (doc['plate_state'] ?? '').toString(),
+        ),
+      ),
+    );
+    if (!mounted) return;
+    // Reload either way: even an unchanged save can have corrected the
+    // state, and the registration row below may have just been rejected.
+    await _fetchDocuments();
+    if (changed == true && mounted) {
+      setState(() => _submittedOpen = true);
+    }
+  }
 
   /// How early the update window opens, in days before expiry.
   ///
@@ -737,7 +789,19 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
 
     String subtitle;
     Color subtitleColor = Colors.white.withValues(alpha: 0.45);
-    if (expiryStatus == _ExpiryStatus.expired) {
+    // The plate says what it is, not when it was uploaded.
+    if (docType == 'license_plate') {
+      final plate = (doc['plate'] ?? '').toString();
+      final st = (doc['plate_state'] ?? '').toString();
+      if (isPending) {
+        subtitle = s.plateChangePendingTitle;
+        subtitleColor = const Color(0xFFE8A33D);
+      } else if (plate.isEmpty) {
+        subtitle = s.notUploadedYet;
+      } else {
+        subtitle = st.isEmpty ? plate : '$plate · $st';
+      }
+    } else if (expiryStatus == _ExpiryStatus.expired) {
       subtitle = s.documentExpired;
       subtitleColor = const Color(0xFFE05C5C);
     } else if (expiryStatus == _ExpiryStatus.expiringSoon) {
@@ -773,7 +837,10 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
             ? null
             : () {
                 HapticService.selectionClick();
-                if (canUpload) {
+                // The plate is a form, not a photo.
+                if (docType == 'license_plate') {
+                  _editPlate(doc);
+                } else if (canUpload) {
                   _uploadDocument(docType!, title);
                 } else {
                   _showDocDetails(doc);

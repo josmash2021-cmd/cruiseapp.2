@@ -1890,13 +1890,123 @@ async def can_go_online(user: User = Depends(_get_current_user), db: AsyncSessio
         reasons.append("expired_documents")
         can_go = False
 
+    # 4. A plate change that dispatch has not signed off yet.
+    #
+    # This one overrides an approved account on purpose. `can_go` above is
+    # true as soon as verification_status is approved, regardless of
+    # documents — so without this a driver could change their plate and
+    # keep working on a registration that names a different car.
+    plate_pending = bool(vehicle and getattr(vehicle, "plate_pending_review", False))
+    if plate_pending:
+        reasons.append("plate_change_pending")
+        can_go = False
+
     return {
         "can_go_online": can_go,
         "approved": approved,
         "has_vehicle": vehicle is not None,
         "all_docs_approved": all_docs_approved,
         "has_expired_docs": has_expired,
+        "plate_change_pending": plate_pending,
         "reasons": reasons,
+    }
+
+
+@router.post("/drivers/vehicle/plate", dependencies=[Depends(_verify_api_key)])
+async def change_license_plate(
+    request: Request,
+    user: User = Depends(_get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Change the plate on the driver's vehicle.
+
+    A plate change invalidates the registration. The document on file
+    names the old plate, so it no longer proves anything about the car
+    this driver is now driving — it has to be uploaded again and approved
+    again before they can take rides.
+
+    The driver is knocked offline immediately rather than at the end of
+    whatever they are doing: an unverified plate is exactly the state
+    that should not be carrying passengers. Any trip already in progress
+    is untouched — this only stops them going online again.
+    """
+    if user.role != "driver":
+        raise HTTPException(403, "Only drivers have a plate")
+
+    body = await request.json()
+    plate = (body.get("plate") or "").strip().upper()
+    confirm = (body.get("confirm_plate") or "").strip().upper()
+    state = (body.get("state") or "").strip().upper()[:2]
+
+    if not plate:
+        raise HTTPException(400, "License plate is required")
+    if len(plate) > 15:
+        raise HTTPException(400, "That plate is too long")
+    # Letters, digits, spaces and dashes. Plates vary by state, so this is
+    # deliberately loose — it rejects nonsense, not unusual formats.
+    if not re.fullmatch(r"[A-Z0-9][A-Z0-9 \-]{0,14}", plate):
+        raise HTTPException(400, "That does not look like a license plate")
+    if confirm and confirm != plate:
+        raise HTTPException(400, "The two plate numbers do not match")
+
+    result = await db.execute(select(Vehicle).where(Vehicle.user_id == user.id))
+    vehicle = result.scalar_one_or_none()
+    if not vehicle:
+        raise HTTPException(404, "No vehicle on file")
+
+    old_plate = (vehicle.plate or "").strip().upper()
+    unchanged = plate == old_plate and (not state or state == (vehicle.plate_state or ""))
+
+    vehicle.plate = plate
+    if state:
+        vehicle.plate_state = state
+
+    # Nothing else happens when the plate did not actually change. Saving
+    # the same plate should not cost a driver their shift.
+    if not unchanged:
+        vehicle.plate_pending_review = True
+        vehicle.plate_changed_at = utc_now()
+        vehicle.registration_valid = False
+
+        # The registration on file described the old plate. Send it back
+        # so the driver is asked for a new one.
+        doc_r = await db.execute(
+            select(Document).where(
+                Document.user_id == user.id,
+                Document.doc_type == "registration",
+            )
+        )
+        for doc in doc_r.scalars().all():
+            doc.status = "rejected"
+            doc.rejection_reason = "License plate changed — upload the new registration"
+
+        # Off the road until dispatch says otherwise.
+        user.is_online = False
+
+    await db.commit()
+    await db.refresh(vehicle)
+
+    if not unchanged:
+        logging.info(
+            "[Plate] driver %s: %s -> %s (%s), registration invalidated",
+            user.id, old_plate or "(none)", plate, state or "??",
+        )
+        try:
+            if user.fcm_token:
+                await _send_fcm_push_async(
+                    user.fcm_token,
+                    title="Upload your new registration",
+                    body="Your plate changed, so we need a registration that "
+                         "matches it before you can go online.",
+                    data={"type": "plate_changed"},
+                )
+        except Exception:
+            pass
+
+    return {
+        "vehicle": _vehicle_dict(vehicle),
+        "plate_changed": not unchanged,
+        "registration_required": not unchanged,
     }
 
 

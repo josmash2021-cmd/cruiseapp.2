@@ -346,6 +346,11 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   // ── Vehicle document approval ──
   bool _vehicleDocsApproved = false;
   bool _hasExpiredDocs = false;
+  /// A plate change is waiting on dispatch. Separate from the other two
+  /// because the driver did this to themselves five minutes ago and the
+  /// button should say so, not send them hunting through Documents for
+  /// which paper is wrong.
+  bool _plateChangePending = false;
   bool _docStatusLoaded = false;
   bool _isNavigatingToOnline = false; // true while navigating to online screen
   late AnimationController _btnColorCtrl;
@@ -1499,6 +1504,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
 
       final canGo = result['can_go_online'] == true;
       final expired = result['has_expired_docs'] == true;
+      final platePending = result['plate_change_pending'] == true;
 
       // Sync approval status locally
       if (result['approved'] == true) {
@@ -1509,6 +1515,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       setState(() {
         _vehicleDocsApproved = canGo;
         _hasExpiredDocs = expired;
+        _plateChangePending = platePending;
         _docStatusLoaded = true;
       });
       _btnColorCtrl.value = 1.0;
@@ -3440,7 +3447,8 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                                   )
                                 : Icon(
                                     !docsOk
-                                        ? (_hasExpiredDocs
+                                        ? (_hasExpiredDocs ||
+                                                _plateChangePending
                                             ? Icons.warning_amber_rounded
                                             : Icons.upload_file_rounded)
                                         : Icons.power_settings_new_rounded,
@@ -3484,9 +3492,15 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                                     ? 'GOING ONLINE...'
                                     : _isVerified
                                         ? (!docsOk
-                                            ? (_hasExpiredDocs
-                                                ? 'EXPIRED DOCS'
-                                                : 'DOCUMENTS')
+                                            // A plate change is the driver's
+                                            // own doing and has one fix, so
+                                            // the button names the problem
+                                            // rather than the folder.
+                                            ? (_plateChangePending
+                                                ? S.of(context).viewIssue
+                                                : _hasExpiredDocs
+                                                    ? 'EXPIRED DOCS'
+                                                    : 'DOCUMENTS')
                                             : (_activeTripData != null ||
                                                     _isStillOnline)
                                                 ? S.of(context).resumeOnline

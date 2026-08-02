@@ -307,9 +307,13 @@ def _vehicle_dict(v) -> dict:
         "id": v.id, "make": v.make, "model": v.model, "year": v.year,
         "color": v.color, "plate": v.plate, "vin": v.vin,
         "vehicle_type": v.vehicle_type,
+        "plate_state": getattr(v, "plate_state", None),
         "inspection_valid": getattr(v, "inspection_valid", False) or False,
         "insurance_valid": getattr(v, "insurance_valid", False) or False,
         "registration_valid": getattr(v, "registration_valid", False) or False,
+        # True while a plate change is waiting on dispatch to approve a
+        # registration that names the new plate.
+        "plate_pending_review": getattr(v, "plate_pending_review", False) or False,
     }
 
 

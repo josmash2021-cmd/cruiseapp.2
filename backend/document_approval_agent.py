@@ -278,6 +278,15 @@ class DocumentApprovalAgent:
                         vehicle.insurance_valid = True
                     elif doc.doc_type == "registration":
                         vehicle.registration_valid = True
+                        # An approved registration is what closes a plate
+                        # change: the document on file now names the plate
+                        # the driver entered, so they can go online again.
+                        if getattr(vehicle, "plate_pending_review", False):
+                            vehicle.plate_pending_review = False
+                            logger.info(
+                                "[DocApproval] plate change cleared for driver #%d",
+                                driver.id,
+                            )
 
                 logger.info(
                     "[DocApproval] APPROVED %s for driver #%d (%s %s)",

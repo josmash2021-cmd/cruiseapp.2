@@ -15,6 +15,13 @@ import logging
 import sys
 from pathlib import Path
 
+# Windows defaults to the Proactor event loop, which psycopg refuses to
+# run async on: "Psycopg cannot use the 'ProactorEventLoop'". The
+# migration script is meant to be runnable from a developer's machine —
+# the docstring above says so — and on Windows it simply could not be.
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
 # Ensure backend/ is on path
 _backend_dir = Path(__file__).parent.resolve()
 if str(_backend_dir) not in sys.path:
@@ -49,6 +56,14 @@ async def _migrate_postgres(conn):
         ("payout_methods", "created_at", "TIMESTAMPTZ DEFAULT NOW()"),
         ("users", "rating_suspended_until", "TIMESTAMPTZ"),
         ("password_reset_tokens", "attempts", "INTEGER DEFAULT 0 NOT NULL"),
+        # Plate changes. The state the plate was issued in, and whether a
+        # change is still waiting on dispatch to re-approve the
+        # registration. Both default to the harmless value, so every row
+        # that exists today reads as "no change pending" — nobody is
+        # knocked offline by the migration itself.
+        ("vehicles", "plate_state", "VARCHAR(2)"),
+        ("vehicles", "plate_pending_review", "BOOLEAN DEFAULT FALSE"),
+        ("vehicles", "plate_changed_at", "TIMESTAMPTZ"),
     ]
     for table, col, col_type in _columns:
         try:

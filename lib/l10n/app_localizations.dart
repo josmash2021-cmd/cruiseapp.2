@@ -1671,6 +1671,33 @@ class S {
   String get uploadNewDocument =>
       _es ? 'Subir nuevo documento' : 'Upload New Document';
   String get primaryVehicle => _es ? 'Vehículo principal' : 'Primary Vehicle';
+  String get viewIssue => _es ? 'VER PROBLEMA' : 'VIEW ISSUE';
+  String get licensePlateNumber =>
+      _es ? 'Número de placa' : 'License Plate Number';
+  String get licensePlateIntro => _es
+      ? 'Ingresa el número de placa de tu vehículo para seguir recibiendo viajes.'
+      : 'Please provide your license plate number in order to continue '
+          'receiving rides.';
+  String get confirmLicensePlate =>
+      _es ? 'Confirmar número de placa' : 'Confirm license plate number';
+  String get stateLabel => _es ? 'Estado' : 'State';
+  String get platesDoNotMatch => _es
+      ? 'Los dos números de placa no coinciden'
+      : 'The two plate numbers do not match';
+  String get plateChangeWarning => _es
+      ? 'Si cambias la placa tendrás que subir la registración otra vez y '
+          'esperar la aprobación. No podrás ponerte en línea mientras tanto.'
+      : 'Changing your plate means uploading your registration again and '
+          'waiting for approval. You will not be able to go online until then.';
+  String get plateSaved => _es ? 'Placa actualizada' : 'License plate updated';
+  String get plateChangePendingTitle => _es
+      ? 'Esperando aprobación de la placa'
+      : 'Plate change under review';
+  String get plateChangePendingBody => _es
+      ? 'Cambiaste la placa. Sube la registración nueva y espera a que la '
+          'aprueben para volver a estar en línea.'
+      : 'You changed your plate. Upload the new registration and wait for it '
+          'to be approved before going online again.';
   String get docsActionNeeded => _es ? 'Falta por hacer' : 'Action needed';
   String get docsSubmitted => _es ? 'Entregados' : 'Completed';
   String docsItemCount(int n) =>

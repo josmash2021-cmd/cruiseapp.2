@@ -3172,6 +3172,32 @@ class ApiService {
   // ═══════════════════════════════════════════════════════
 
   /// Get the driver's vehicle info.
+  /// Change the plate on the driver's vehicle.
+  ///
+  /// A real change invalidates the registration on file and takes the
+  /// driver offline until dispatch approves a new one — the response says
+  /// which of those happened in `plate_changed`.
+  static Future<Map<String, dynamic>> changeLicensePlate({
+    required String plate,
+    required String confirmPlate,
+    String? state,
+  }) async {
+    final token = await getToken();
+    if (token == null) throw ApiException(401, 'Not logged in');
+    final res = await _client
+        .post(
+          Uri.parse('$_baseUrl/drivers/vehicle/plate'),
+          headers: _jsonHeaders(token),
+          body: jsonEncode({
+            'plate': plate,
+            'confirm_plate': confirmPlate,
+            if (state != null && state.isNotEmpty) 'state': state,
+          }),
+        )
+        .timeout(const Duration(seconds: 20));
+    return _parse(res);
+  }
+
   /// Check if driver can go online (backend single source of truth).
   static Future<Map<String, dynamic>> canGoOnline() async {
     final h = await _authHeaders();

@@ -416,6 +416,13 @@ class Vehicle(Base):
     year = Column(Integer, nullable=False)
     color = Column(String(50), nullable=True)
     plate = Column(String(30), nullable=False)
+    # Two-letter state the plate was issued in, and the plate-change
+    # review. A driver may change their plate themselves, but the
+    # registration on file names the old one, so the change puts them
+    # back in dispatch's queue until a new registration is approved.
+    plate_state = Column(String(2), nullable=True)
+    plate_pending_review = Column(Boolean, default=False)
+    plate_changed_at = Column(DateTime(timezone=True), nullable=True)
     vin = Column(String(50), nullable=True)
     vehicle_type = Column(String(30), default="comfort")
     inspection_valid = Column(Boolean, default=False)

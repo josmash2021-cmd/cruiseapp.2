@@ -1987,7 +1987,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
     const double routeBlock = _kOfferStopH + 22 + _kOfferStopH + 24;
     const double divider = 16 + 1 + 16;
     const double riderRow = 17.6;
-    const double accept = 48;
+    const double accept = 54;
     // Room so Accept is never clipped.
     //
     // This used to be as small as it could be, because every spare pixel
@@ -2032,18 +2032,19 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
         duration: const Duration(milliseconds: 100),
         child: Container(
           width: double.infinity,
-          height: 48,
+          height: 54,
           decoration: BoxDecoration(
-            // Black with gold lettering — the action stays on the dark side
-            // of the card, and the brand colour is the word itself. A
-            // hairline of gold around it so the black reads as a button
-            // and not as a gap in the card.
+            // Not pure black: the neumorphic surface taken halfway to
+            // black, so the button sits one step darker than the card
+            // without becoming a hole in it. White letters on top, and
+            // the border keeps the same gold the "+ Tips" text wears.
             color: isAccepting
-                ? Colors.black.withValues(alpha: 0.5)
-                : Colors.black,
+                ? Color.lerp(neuSurface, Colors.black, 0.45)!
+                    .withValues(alpha: 0.5)
+                : Color.lerp(neuSurface, Colors.black, 0.45),
             borderRadius: BorderRadius.circular(12),
             border: Border.all(
-              color: const Color(0xFFD4A843).withValues(alpha: 0.35),
+              color: const Color(0xFFE8C547).withValues(alpha: 0.45),
             ),
             boxShadow: [
               BoxShadow(
@@ -2061,13 +2062,13 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                     height: 20,
                     child: CircularProgressIndicator(
                       strokeWidth: 2.5,
-                      valueColor: AlwaysStoppedAnimation(Color(0xFFD4A843)),
+                      valueColor: AlwaysStoppedAnimation(Colors.white),
                     ),
                   )
                 : Text(
                     S.of(context).accept,
                     style: const TextStyle(
-                      color: Color(0xFFD4A843),
+                      color: Colors.white,
                       fontSize: 16,
                       fontWeight: FontWeight.bold,
                     ),

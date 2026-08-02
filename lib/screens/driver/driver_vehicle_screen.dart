@@ -511,26 +511,6 @@ class _DriverVehicleScreenState extends State<DriverVehicleScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // The tier leads the card. It was a chip sitting beside
-                    // the paint colour, which read the two as the same kind
-                    // of fact — one is what the car looks like, the other
-                    // is what work it gets and what it pays.
-                    Row(
-                      children: [
-                        Icon(_tierInfo.icon, size: 15, color: _tierInfo.color),
-                        const SizedBox(width: 6),
-                        Text(
-                          _tierInfo.label,
-                          style: TextStyle(
-                            color: _tierInfo.color,
-                            fontSize: 13,
-                            fontWeight: FontWeight.w800,
-                            letterSpacing: 1.2,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
                     if (_year.isNotEmpty)
                       Text(
                         _year,
@@ -576,21 +556,51 @@ class _DriverVehicleScreenState extends State<DriverVehicleScreen> {
                 ),
               ),
               const SizedBox(width: 12),
-              // Small, and to the right. On the old card it was 120 px tall
-              // and centred, which made a stock render the loudest thing on
-              // a screen about paperwork.
-              SizedBox(
-                width: 116,
-                height: 84,
-                child: Image.asset(
-                  _carImage,
-                  fit: BoxFit.contain,
-                  errorBuilder: (_, __, ___) => Icon(
-                    Icons.directions_car_rounded,
-                    color: _gold.withValues(alpha: 0.5),
-                    size: 40,
+              // The tier sits over the car it describes.
+              //
+              // It used to lead the left column, above the year, where it
+              // read as a heading for the whole card. It is a fact about
+              // the vehicle, and the vehicle is on this side.
+              //
+              // White, not the tier colour: the label names the category,
+              // and the colour is already carried by the glyph beside it.
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      tierGlyph(_vehicleType, size: 15),
+                      const SizedBox(width: 6),
+                      Text(
+                        _tierInfo.label,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 1.1,
+                        ),
+                      ),
+                    ],
                   ),
-                ),
+                  const SizedBox(height: 6),
+                  // Small, and to the right. On the old card it was 120 px
+                  // tall and centred, which made a stock render the loudest
+                  // thing on a screen about paperwork.
+                  SizedBox(
+                    width: 116,
+                    height: 84,
+                    child: Image.asset(
+                      _carImage,
+                      fit: BoxFit.contain,
+                      errorBuilder: (_, __, ___) => Icon(
+                        Icons.directions_car_rounded,
+                        color: _gold.withValues(alpha: 0.5),
+                        size: 40,
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ],
           ),

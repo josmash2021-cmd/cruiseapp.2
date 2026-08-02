@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../widgets/steering_wheel_icon.dart';
+
 /// How a vehicle tier looks, in one place.
 ///
 /// Standard / Compact / Premium / Black. The backend decides which tier a
@@ -127,6 +129,20 @@ Color tierColor(String? raw) {
     default:
       return const Color(0xFF9E9E9E);
   }
+}
+
+/// The tier's mark as a widget.
+///
+/// Standard is a steering wheel, which Material Icons does not have, so
+/// it is painted — see widgets/steering_wheel_icon.dart. Everything else
+/// is an ordinary [Icon]. Use this instead of [tierIcon] anywhere a
+/// widget will do; [tierIcon] stays for the places that need IconData.
+Widget tierGlyph(String? raw, {double size = 20, Color? color}) {
+  final tint = color ?? tierColor(raw);
+  if (tierKey(raw) == kTierStandard) {
+    return SteeringWheelIcon(size: size, color: tint);
+  }
+  return Icon(tierIcon(raw), size: size, color: tint);
 }
 
 IconData tierIcon(String? raw) {

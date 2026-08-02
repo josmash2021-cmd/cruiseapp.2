@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../config/page_transitions.dart';
 import '../../l10n/app_localizations.dart';
+import '../../utils/vehicle_tier_style.dart';
 import '../../services/haptic_service.dart';
 import '../../widgets/neu_style.dart';
 import 'driver_documents_screen.dart';
@@ -85,7 +86,9 @@ class DriverVehicleDetailScreen extends StatelessWidget {
                 // gets and what share of it the driver keeps.
                 Row(
                   children: [
-                    Icon(tierIcon, size: 15, color: tierColor),
+                    // Same glyph the list card shows — Standard is a
+                    // painted steering wheel, the rest are Icons.
+                    tierGlyph(tierLabel, size: 15, color: tierColor),
                     const SizedBox(width: 6),
                     Text(
                       tierLabel.toUpperCase(),
@@ -213,7 +216,9 @@ class DriverVehicleDetailScreen extends StatelessWidget {
                 width: 42,
                 height: 42,
                 decoration: neuBox(radius: 13, pressed: true),
-                child: Icon(tierIcon, color: tierColor, size: 20),
+                child: Center(
+                  child: tierGlyph(tierLabel, size: 20, color: tierColor),
+                ),
               ),
               const SizedBox(width: 14),
               Expanded(

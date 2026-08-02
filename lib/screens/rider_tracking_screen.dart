@@ -58,6 +58,7 @@ import '../map/tracking_map_annotations.dart';
 import '../map/tracking_map_route.dart';
 import '../map/tracking_map_camera.dart';
 import '../map/tracking_map_car.dart';
+import '../utils/smooth_motion.dart';
 
 part '../controllers/rider_tracking_controller.dart';
 part '../widgets/tracking/driver_info_card.dart';
@@ -255,6 +256,13 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   LatLng _animPos = const LatLng(0, 0);
   double _driverBearing = 0;
   double _animBearing = 0;
+
+  /// The car's motion engine — the same SmoothMotion the driver's own
+  /// online/offline pages use. Fed by every driver GPS packet; the ticker
+  /// only reads it. Constant-velocity glide while the driver rolls, and a
+  /// standstill jitter hold while parked, so the pin no longer wanders when
+  /// the driver is sitting still.
+  final SmoothMotion _carMotion = SmoothMotion();
   int _etaMinutes = 2;
   double _distanceMiles = 0;
   List<LatLng> _routePts = [];
@@ -721,10 +729,13 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
               ),
               // LAYER 4: Driver info card (bottom) — avatar, plate, chat,
               // call, share and the more menu, all within thumb reach.
+              // Welded to the edges and the floor now, like the driver
+              // app's own sheets — no floating margins, the card IS the
+              // bottom of the screen.
               Positioned(
-                bottom: bottomPad + 16,
-                left: 16,
-                right: 16,
+                bottom: 0,
+                left: 0,
+                right: 0,
                 child: KeyedSubtree(
                   key: _bottomCardKey,
                   // While the trip is back in the dispatch queue the old

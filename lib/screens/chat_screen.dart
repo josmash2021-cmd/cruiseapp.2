@@ -9,6 +9,7 @@ import '../services/api_service.dart';
 import '../services/chat_service.dart';
 import '../services/error_service.dart';
 import '../services/masked_call_service.dart';
+import '../services/socket_service.dart';
 import '../l10n/app_localizations.dart';
 import '../config/page_transitions.dart';
 import '../widgets/neu_style.dart';
@@ -103,6 +104,7 @@ class _ChatScreenState extends State<ChatScreen> {
   // ── REST fallback messages (used when RTDB fails) ──
   final List<ChatMessage> _restMessages = [];
   Timer? _restPollTimer;
+  StreamSubscription<Map<String, dynamic>>? _socketChatSub;
 
   // ── Typing ──
   Timer? _typingTimer;
@@ -285,6 +287,7 @@ class _ChatScreenState extends State<ChatScreen> {
     _pollTimer?.cancel();
     _typingTimer?.cancel();
     _restPollTimer?.cancel();
+    _socketChatSub?.cancel();
     _rtdbConnectionSub?.cancel();
     _agentTyping = false;
     // Stop typing indicator when leaving
@@ -304,6 +307,50 @@ class _ChatScreenState extends State<ChatScreen> {
     _restPollTimer = Timer.periodic(const Duration(seconds: 3), (_) {
       _fetchRestMessages();
     });
+
+    // The instant lane under the poll: the backend broadcasts every
+    // REST-sent message over Socket.IO to the trip room in the same beat
+    // (emit_chat_message, sub-100 ms), so a REST-mode chat stops feeling
+    // like a 3-second walkie-talkie in both directions.
+    _socketChatSub?.cancel();
+    final tripId = widget.tripId;
+    if (tripId != null) {
+      unawaited(
+        SocketService.init().then((_) => SocketService.joinTrip(tripId)),
+      );
+      _socketChatSub = SocketService.chatMessageStream.listen((data) {
+        if (!mounted) return;
+        if ((data['trip_id']?.toString() ?? '') != tripId.toString()) return;
+        final senderRole = (data['sender_role'] ?? '').toString();
+        // Own bubble is already on screen from the send path — adding it
+        // again from the room broadcast would double it.
+        if (senderRole == _myRole) return;
+        final text = (data['message'] ?? '').toString().trim();
+        if (text.isEmpty) return;
+        final ts = (data['timestamp'] as num?)?.toInt() ??
+            DateTime.now().millisecondsSinceEpoch;
+        // The next poll brings the same message back from the backend —
+        // never show it twice.
+        final dupe = _restMessages.any((m) =>
+            m.senderRole == senderRole &&
+            m.text == text &&
+            (m.timestamp - ts).abs() < 8000);
+        if (dupe) return;
+        setState(() {
+          _restMessages.add(ChatMessage(
+            id: 'sock_$ts',
+            senderId: (data['sender_id'] ?? '').toString(),
+            senderRole: senderRole,
+            text: text,
+            timestamp: ts,
+            read: false,
+          ));
+          _lastMsgCount = _restMessages.length;
+        });
+        _scrollToBottom();
+        _chat.markAsRead(rideId: _rideId, readerRole: _myRole);
+      });
+    }
   }
 
   Future<void> _fetchRestMessages() async {

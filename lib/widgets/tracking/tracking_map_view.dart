@@ -891,7 +891,9 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     if (!isOnTrip) return;
 
     if (!_mapCamera!.isNavChaseActive) {
-      _mapCamera!.startNavigationChase();
+      // Resume, not entrance: replaying the intro swing on every
+      // post-pan resume is the "camera changes shot for no reason" report.
+      _mapCamera!.startNavigationChase(replayIntro: false);
     }
 
     _mapCamera!.updateChaseFrame(

@@ -120,9 +120,18 @@ extension _RiderTrackingDriverInfoCard on _RiderTrackingScreenState {
     ].where((v) => v.isNotEmpty).join(' ');
 
     return Container(
-      // Raised neumorphic card (shared system — see neu_style.dart).
-      decoration: neuBox(radius: 24),
-      padding: EdgeInsets.all(Responsive.w(14)),
+      // Welded to the bottom edge and both sides, so only the top corners
+      // round. The safe area is inside the padding, not a strip of map
+      // under the card.
+      decoration: neuBox(radius: 24).copyWith(
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(26)),
+      ),
+      padding: EdgeInsets.fromLTRB(
+        Responsive.w(14),
+        Responsive.w(14),
+        Responsive.w(14),
+        Responsive.w(14) + MediaQuery.of(context).padding.bottom,
+      ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [

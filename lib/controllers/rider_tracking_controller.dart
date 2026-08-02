@@ -478,6 +478,12 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     // Validate bearing — NaN/Infinity would break rotation interpolation
     if (bearing != null && (bearing.isNaN || bearing.isInfinite)) bearing = null;
     if (speed != null && (speed.isNaN || speed.isInfinite || speed < 0)) speed = null;
+    // Feed the motion engine first — every packet from every channel lands
+    // here, and the engine decides what is movement and what is parked-car
+    // GPS wander. No accuracy travels on the socket; 8 m is a fair street-
+    // level standstill radius for phone GPS.
+    _carMotion.setTarget(ll.latitude, ll.longitude,
+        bearing: bearing, accuracyM: 8.0);
     // 2026-04-27 diagnostic: log every incoming GPS so we can see in
     // device logs whether the rider is even RECEIVING the driver
     // updates. If this never prints while the car sits frozen, the
@@ -1800,176 +1806,26 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     _lastInterpElapsed = elapsed;
     final dt = dtMs / 1000.0;
 
-    // Time-based factor: at 60fps gives ~base per frame; scales with any refresh rate
-    double tf(double base) => 1.0 - math.pow(1.0 - base, dt * 60);
-
-    // No route yet — use direct GPS lerp so car still moves before route arrives
-    if (_segDist.isEmpty) {
-      final tgt = _directTargetPos;
-      if (tgt != null) {
-        // First GPS: teleport car instantly to driver's real position.
-        // Without this, the car would slide from (0,0) to the real location.
-        if (_animPos.latitude == 0 && _animPos.longitude == 0) {
-          _animPos = tgt;
-          _driverPos = tgt;
-          _animBearing = _directTargetBearing ?? 0;
-          _driverBearing = _animBearing;
-          _updateCarSmooth();
-          return;
-        }
-        final prevPos = _animPos;
-        final posFactor = tf(0.18); // smooth glide toward target
-        final dLat = tgt.latitude - _animPos.latitude;
-        final dLng = tgt.longitude - _animPos.longitude;
-        final newLat = _animPos.latitude + dLat * posFactor;
-        final newLng = _animPos.longitude + dLng * posFactor;
-        _animPos = LatLng(newLat, newLng);
-        _driverPos = _animPos;
-        // Calculate bearing from movement direction (prev→current)
-        // instead of raw GPS bearing — car always faces where it's going
-        final movedEnough = (newLat - prevPos.latitude).abs() > 0.000002 ||
-                            (newLng - prevPos.longitude).abs() > 0.000002;
-        double targetBrg;
-        if (movedEnough) {
-          targetBrg = _bearing(prevPos, _animPos);
-        } else {
-          targetBrg = _directTargetBearing ?? _animBearing;
-        }
-        double d = targetBrg - _animBearing;
-        if (d > 180) d -= 360;
-        if (d < -180) d += 360;
-        final brgFactor = tf(0.35);
-        _animBearing = (_animBearing + d * brgFactor) % 360;
-        _driverBearing = _animBearing;
-        // Only idle when trip is completed — never stop during active phases
-        final isActive = _phase != _TrackPhase.completed;
-        if (!isActive && dLat.abs() < 0.0000005 && dLng.abs() < 0.0000005 && d.abs() < 0.1) {
-          _interpIdle = true;
-          _interpTicker?.stop();
-          return;
-        }
-        _updateCarSmooth();
-      }
-      return;
-    }
-
-    // During arriving without approach route: use raw GPS lerp ONLY.
-    // The trip route (pickup→dropoff) is NOT the right route for tracking
-    // the driver during arriving. Trying to project the driver onto it would
-    // place the car at the pickup or somewhere wrong on the trip route.
-    // Also use raw GPS when driver is far from the approach route.
-    final arrivingNoApproach = _phase == _TrackPhase.arriving && !_approachRouteFetched;
-    final arrivingFarFromRoute = _phase == _TrackPhase.arriving && _approachRouteFetched &&
-        _directTargetPos != null;
-    if (arrivingNoApproach || arrivingFarFromRoute) {
-      final tgt = _directTargetPos;
-      if (tgt != null) {
-        final prevPos = _animPos;
-        if (_animPos.latitude == 0 && _animPos.longitude == 0) {
-          // First GPS: teleport to driver's real position
-          _animPos = tgt;
-          _driverPos = tgt;
-          _animBearing = _directTargetBearing ?? 0;
-          _driverBearing = _animBearing;
-          _updateCarSmooth();
-          return;
-        }
-        // Smooth glide toward GPS target (25% per frame = ~0.15s response)
-        // Higher factor = more responsive, still smooth
-        final posFactor = tf(0.25);
-        final dLat = tgt.latitude - _animPos.latitude;
-        final dLng = tgt.longitude - _animPos.longitude;
-        final newLat = _animPos.latitude + dLat * posFactor;
-        final newLng = _animPos.longitude + dLng * posFactor;
-        _animPos = LatLng(newLat, newLng);
-        _driverPos = _animPos;
-        // Bearing from movement direction (compare prevPos → newPos)
-        final movedEnough = (newLat - prevPos.latitude).abs() > 0.000002 ||
-                            (newLng - prevPos.longitude).abs() > 0.000002;
-        double targetBrg;
-        if (movedEnough) {
-          targetBrg = _bearing(prevPos, _animPos);
-        } else {
-          targetBrg = _directTargetBearing ?? _animBearing;
-        }
-        double d = targetBrg - _animBearing;
-        if (d > 180) d -= 360;
-        if (d < -180) d += 360;
-        final brgFactor = tf(0.30);
-        _animBearing = (_animBearing + d * brgFactor) % 360;
-        _driverBearing = _animBearing;
-        _updateCarSmooth();
-      }
-      return;
-    }
-
-    // ── CONSTANT-VELOCITY advance (glass-smooth, ZERO jumps) ──
-    // First GPS with a route: teleport to projected position on route.
-    if (_animPos.latitude == 0 && _animPos.longitude == 0 && _tgtTraveledM > 0) {
-      _traveledM = _tgtTraveledM;
-      final (p, b) = _posAtDistUltraSmooth(_traveledM);
-      _animPos = p;
-      _animBearing = b;
-      _driverPos = p;
-      _driverBearing = b;
-      _updateCarSmooth();
-      return;
-    }
-    // Predict ahead using driver's real speed so car glides at same pace.
-    // 1.0 s lookahead (was 0.6 s) — gives the car enough runway to glide
-    // through 1-second GPS gaps without any visible deceleration.
-    final predicted = _tgtTraveledM + _velocityMps * 1.0;
-    final effectiveTarget = math.min(predicted, _segDist.last);
-    final diff = effectiveTarget - _traveledM;
-
-    // Primary: advance at measured driver speed (m/s × dt).
-    // This distributes movement EVENLY across ALL frames between GPS updates
-    // instead of proportional catch-up which reaches target in 200ms then stalls.
-    final velStep = _velocityMps * dt;
-    // Proportional correction (8%/frame at 60fps) — strong enough to
-    // absorb GPS jumps within ~0.5s, weak enough to stay invisible
-    // during smooth driving.
-    final corrStep = diff * tf(0.08);
-    // Use whichever produces more forward movement — velocity dominates while
-    // driving, correction dominates when stopped.
-    if (diff > 0.05) {
-      final step2 = math.max(velStep, corrStep).clamp(0.0, 12.0);
-      _traveledM = math.min(_traveledM + step2, effectiveTarget);
-    } else if (diff.abs() <= 0.05) {
-      _traveledM = _tgtTraveledM;
-    }
-    // Velocity decay: retain ~99.7% per second — sustains glide for 8+ sec
-    // GPS gaps so the car NEVER stalls even in tunnels or GPS shadows.
-    // Real driver speed is refreshed every ~1-2s from RTDB, so barely decays.
-    _velocityMps *= math.pow(0.997, dt);
-
-    final (pos, brg) = _posAtDistUltraSmooth(_traveledM);
-
-    // ── Bearing: time-based rotation for smooth car nose direction ──
-    // 0.35 per frame (was 0.50) — slower rotation gives a cinematic
-    // feel on curves instead of snappy heading changes.
-    double db = brg - _animBearing;
-    if (db > 180) db -= 360;
-    if (db < -180) db += 360;
-    final brgFactor = tf(0.35);
-    final newBearing = (_animBearing + db * brgFactor) % 360;
-
-    _animPos = pos;
-    _animBearing = newBearing;
-    _driverPos = pos;
-    _driverBearing = newBearing;
-
-    // ── Direct-target lerp (GPS fallback — ONLY when off-route) ──
-    // Off-route: position follows GPS but bearing ALWAYS follows route direction
-    // so the car icon consistently faces along the gold line.
-    final tgt = _directTargetPos;
-    if (tgt != null) {
-      final offRouteFactor = tf(0.06);
-      final newLat = _animPos.latitude + (tgt.latitude - _animPos.latitude) * offRouteFactor;
-      final newLng = _animPos.longitude + (tgt.longitude - _animPos.longitude) * offRouteFactor;
-      _animPos = LatLng(newLat, newLng);
+    // ── The driver pages' motion engine owns the car ──
+    //
+    // This used to be three hand-rolled lerp branches (no route / arriving /
+    // constant-velocity route advance) plus an off-route fallback — and none
+    // of them had a standstill hold, so a parked driver's GPS wander moved
+    // the pin and the chase camera after it, all day, every fix. The engine
+    // is the same SmoothMotion the driver's own pages run: glide at the
+    // measured speed while the car rolls, swallow wander while it is parked,
+    // freeze the extrapolation when the feed goes quiet.
+    _carMotion.tick(dt);
+    if (_carMotion.hasPosition) {
+      _animPos = LatLng(_carMotion.lat!, _carMotion.lng!);
       _driverPos = _animPos;
-      // Keep bearing from route (already set above) — don't override with GPS bearing
+      _animBearing = _carMotion.bearing;
+      _driverBearing = _animBearing;
+      // Route progress is derived from the smoothed position, never driven:
+      // ETA, remaining distance and the route erase all read this.
+      if (_segDist.isNotEmpty) {
+        _traveledM = _projectOntoRoute(_driverPos).clamp(0.0, _segDist.last);
+      }
     }
 
     // Update map annotations directly — no setState needed (avoids 60fps widget rebuilds)
@@ -1986,12 +1842,12 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     // update instantly (no 1-frame delay on restart). Stopping during active
     // phases causes the car to freeze until the next GPS packet wakes it up.
     final isCompleted = _phase == _TrackPhase.completed;
-    final diff2 = (_tgtTraveledM - _traveledM).abs();
-    if (isCompleted && diff2 < 0.01 && _velocityMps < 0.3 && _directTargetPos == null) {
+    if (isCompleted && _carMotion.isAtTarget) {
       _interpIdle = true;
       _interpTicker?.stop();
     }
   }
+
 
   /// ──────────────────────────────────────────────────────────────────────────
   /// FIX 3 & 4: START RIDE ANIMATION & REAL-TIME TRACKING
@@ -2135,6 +1991,9 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       _driverBearing = heading;
       _directTargetPos = pos;
       _directTargetBearing = heading;
+      // Seed the engine from the same fix so its first live packet glides
+      // from here instead of snapping.
+      _carMotion.snapTo(lat, lng, bearing: heading);
       
       // Trigger car creation immediately
       if (_carPngBytes != null && _carAnnotMgr != null) {

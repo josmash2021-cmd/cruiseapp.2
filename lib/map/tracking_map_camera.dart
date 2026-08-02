@@ -307,13 +307,19 @@ class TrackingMapCamera {
   double _introFromPitch = 0.0;
   double _introFromBearing = 0.0;
 
-  void startNavigationChase() {
+  void startNavigationChase({bool replayIntro = true}) {
     _navChaseActive = true;
     _lastNavFrameAt = null;
     // Leaving the approach phase — re-seed if we ever come back to it.
     _approachZoom = null;
     _lastApproachFrameAt = null;
-    _beginChaseIntro();
+    // The swing is for entries, not resumes: every auto-resume after a pan
+    // used to replay the whole intro, and from the rider's seat that reads
+    // as the camera "changing shot" out of nowhere. A resume just keeps
+    // easing from the state the chase already holds.
+    if (replayIntro) {
+      _beginChaseIntro();
+    }
   }
 
   /// Read the live camera so the intro starts from the real view rather

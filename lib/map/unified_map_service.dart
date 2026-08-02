@@ -64,23 +64,33 @@ class UnifiedMapService extends ChangeNotifier {
     // Unable to establish connection). Crashlytics has it under
     // _LocationComponentSettingsInterface.updateSettings, new in 1.0.9.
     //
-    // A hidden compass is cosmetic; it is not worth the app. If the
-    // channel is genuinely dead the controller is released so a later
-    // attempt can start clean, rather than this instance holding a
-    // reference nothing can talk to.
-    try {
-      await ctrl.scaleBar.updateSettings(mapbox.ScaleBarSettings(enabled: false));
-      await ctrl.compass.updateSettings(mapbox.CompassSettings(enabled: false));
-      await ctrl.attribution.updateSettings(mapbox.AttributionSettings(enabled: false));
-      await ctrl.logo.updateSettings(mapbox.LogoSettings(enabled: false));
-
-      // Desactivar puck nativo (usamos anotaciones custom)
-      await ctrl.location.updateSettings(mapbox.LocationComponentSettings(enabled: false));
-    } catch (e) {
-      debugPrint('[UnifiedMap] ornament setup failed: $e');
-      if (e.toString().contains('channel-error')) {
-        _controller = null;
-        return;
+    // A hidden compass is cosmetic. It must never cost the map.
+    //
+    // An earlier version of this guard released the controller and
+    // returned on channel-error, which meant one transient failure while
+    // hiding a logo skipped the annotation managers and the theme below
+    // — and left a permanently blank map behind. The failure it was
+    // guarding against is a visible ornament; the cure was a black
+    // screen.
+    //
+    // Each call stands alone so one refusal does not skip the rest.
+    for (final step in <(String, Future<void> Function())>[
+      ('scaleBar', () => ctrl.scaleBar.updateSettings(
+          mapbox.ScaleBarSettings(enabled: false))),
+      ('compass', () => ctrl.compass.updateSettings(
+          mapbox.CompassSettings(enabled: false))),
+      ('attribution', () => ctrl.attribution.updateSettings(
+          mapbox.AttributionSettings(enabled: false))),
+      ('logo', () => ctrl.logo.updateSettings(
+          mapbox.LogoSettings(enabled: false))),
+      // Native puck off — we draw our own.
+      ('location', () => ctrl.location.updateSettings(
+          mapbox.LocationComponentSettings(enabled: false))),
+    ]) {
+      try {
+        await step.$2();
+      } catch (e) {
+        debugPrint('[UnifiedMap] ${step.$1} settings failed: $e');
       }
     }
 

@@ -3272,8 +3272,14 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     // So the gap makes up the difference on devices that report less. At
     // an inset of 34 this adds nothing and iOS is pixel-identical to
     // before; at 0 it gives back most of what the sheet lost.
+    //
+    // 26 → 40: at 26 the disc's 8-pt gold glow still landed on the sheet's
+    // shoulder on phones with a full home-indicator inset (which get no
+    // shortfall), and disc + glow + grab handle read as one object — the
+    // "GO is glued to the sheet" report. At 40 the glow ends 32 pt clear
+    // of the sheet on every device.
     final insetShortfall = math.max(0.0, 24 - pad.bottom);
-    final bottomClosed = _panelCollapsedH + 26 + insetShortfall;
+    final bottomClosed = _panelCollapsedH + 40 + insetShortfall;
     final bottom = ui.lerpDouble(bottomClosed, 0, t)!;
 
     // Inset on both sides and centred inside whatever that leaves, rather

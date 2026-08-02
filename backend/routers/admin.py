@@ -23,7 +23,7 @@ from utils.security import (
 )
 from utils.helpers import (
     utc_now, utc_today_start, utc_month_start,
-    _user_dict, _trip_dict, _haversine, _resolve_rider_display, _safe_create_task,
+    _user_dict, _trip_dict, _doc_dict, _haversine, _resolve_rider_display, _safe_create_task,
     _abs_photo_url,
 )
 from utils.ssn_encryption import is_ssn_provided

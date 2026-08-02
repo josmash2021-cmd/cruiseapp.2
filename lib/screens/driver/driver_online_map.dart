@@ -510,6 +510,37 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     await _fitBoundsMulti([a, b]);
   }
 
+  /// The points the camera has to keep on screen: both ends, and enough of
+  /// the road between them that no part of the drawn line falls outside.
+  ///
+  /// Sampled rather than passed whole — a cross-town route is hundreds of
+  /// points, and every one of them is serialised across to the native SDK
+  /// for a bounding box that a few dozen describe just as well.
+  List<LatLng> _routeFramePoints(
+    LatLng driverPos,
+    LatLng pickupLL,
+    LatLng dropoffLL,
+  ) {
+    final pts = <LatLng>[driverPos, pickupLL, dropoffLL];
+    for (final seg in [_fullSegOne, _fullSegTwo]) {
+      if (seg.length < 3) continue;
+      final step = (seg.length / 24).ceil().clamp(1, seg.length);
+      for (var i = 0; i < seg.length; i += step) {
+        pts.add(seg[i]);
+      }
+      pts.add(seg.last);
+    }
+    // A NaN here reaches cameraForCoordinatesPadding as a JSON null and
+    // throws in Objective-C, taking the whole preview with it.
+    return pts
+        .where((p) =>
+            p.latitude.isFinite &&
+            p.longitude.isFinite &&
+            p.latitude.abs() <= 90 &&
+            p.longitude.abs() <= 180)
+        .toList();
+  }
+
   Future<void> _fitBoundsMulti(List<LatLng> points) async {
     if (points.isEmpty || _map == null) return;
     final coords = points
@@ -619,8 +650,17 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
       return;
     }
 
-    // ── PHASE 1: Camera zoom to fit full route (flat, no tilt) ──
-    await _fitBoundsMulti([driverPos, pickupLL, dropoffLL]);
+    // ── PHASE 1: Frame the whole route, flat ──
+    //
+    // The three endpoints are not the route. A road that swings wide of
+    // the straight line between them — a river crossing, a highway that
+    // doubles back — draws outside a frame built from the ends alone, and
+    // the driver sees a line leaving the screen.
+    //
+    // cameraForCoordinatesPadding already works out the zoom from the
+    // spread of what it is given, so a short hop and a cross-town run each
+    // get the zoom they need; it just has to be given the real shape.
+    await _fitBoundsMulti(_routeFramePoints(driverPos, pickupLL, dropoffLL));
     if (!mounted || _previewingOffer == null) {
       _isCardAnimating = false;
       return;

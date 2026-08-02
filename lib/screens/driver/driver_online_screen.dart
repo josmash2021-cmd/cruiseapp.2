@@ -271,6 +271,14 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   final Set<String> _tappedCardIds = {};
   final Set<int> _rejectedOfferIds = {}; // locally rejected — filter from polls
   String? _lastAutoTriggeredOfferId; // prevent duplicate auto-trigger
+
+  /// How many consecutive updates an on-screen offer has been missing from.
+  ///
+  /// SSE and the poll do not always agree for a moment: one of them answers
+  /// without an offer the other has already sent, and taking the card away
+  /// on that single answer is what made it flash up and vanish. An offer
+  /// has to be absent twice running before it goes.
+  final Map<String, int> _offerMisses = {};
   bool _isAcceptPressed = false;
 
   // ── Smooth route draw ──

@@ -1679,12 +1679,46 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       }
     }
 
-    // SSE and the 5-second poll both land here, and usually with the very
-    // same offers. Reassigning the list every time rebuilt the PageView
-    // and the card under the driver — the card blinking out and back in
-    // was this, not an offer being dropped and re-sent.
-    String idsOf(List<Map<String, dynamic>> l) =>
-        l.map((o) => (o['offer_id'] ?? o['id'] ?? '').toString()).join(',');
+    // ── Hold an offer through a single disagreeing update ─────────────
+    //
+    // SSE and the 5-second poll do not always answer with the same list.
+    // One of them returning without an offer the other just sent took the
+    // card off screen, and the next update put it back — the card flashing
+    // up, vanishing, and then returning to run its countdown from the
+    // start, because being removed from the tree disposes the ring.
+    //
+    // An offer the driver can see has to be missing from two updates in a
+    // row before it goes. One poll cycle is the whole delay that adds, and
+    // an offer another driver took still disappears well inside its own
+    // twenty seconds.
+    String idOf(Map<String, dynamic> o) =>
+        (o['offer_id'] ?? o['id'] ?? '').toString();
+
+    final arrivedIds = filtered.map(idOf).toSet();
+    for (final id in arrivedIds) {
+      _offerMisses.remove(id);
+    }
+    final reprieved = <Map<String, dynamic>>[];
+    for (final shown in _pendingOffers) {
+      final id = idOf(shown);
+      if (arrivedIds.contains(id)) continue;
+      // Rejected and accepted offers were already filtered out above, so
+      // anything still here left for a reason we did not ask for.
+      final misses = (_offerMisses[id] ?? 0) + 1;
+      if (misses < 2) {
+        _offerMisses[id] = misses;
+        reprieved.add(shown);
+      } else {
+        _offerMisses.remove(id);
+      }
+    }
+    if (reprieved.isNotEmpty) {
+      filtered = [...filtered, ...reprieved];
+      debugPrint('[Offers] held ${reprieved.length} through a '
+          'disagreeing update');
+    }
+
+    String idsOf(List<Map<String, dynamic>> l) => l.map(idOf).join(',');
     final sameOffers = idsOf(filtered) == idsOf(_pendingOffers);
 
     if (!sameOffers) {

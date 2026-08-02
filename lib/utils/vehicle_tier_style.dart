@@ -44,16 +44,47 @@ const _aliases = <String, String>{
   'suburban': kTierBlack,
 };
 
-/// Any tier string — new, old, spaced or hyphenated — as one of the four.
-/// Anything unrecognised reads as Standard, which is what an unclassified
-/// car gets anyway.
+/// Tokens to look for inside a free-text name, most specific first.
+///
+/// Order is the whole point: "suv_xl" has to be tested before "suv", or
+/// an SUV XL reads as a compact and the rider is shown a RAV4 for a
+/// six-seat booking.
+const _textTokens = <(String, String)>[
+  ('suv_xl', kTierPremium),
+  ('suvxl', kTierPremium),
+  ('suburban', kTierBlack),
+  ('escalade', kTierBlack),
+  ('luxury', kTierBlack),
+  ('black', kTierBlack),
+  ('vip', kTierBlack),
+  ('premium', kTierPremium),
+  ('compact', kTierCompact),
+  ('rav4', kTierCompact),
+  ('suv', kTierCompact),
+  ('standard', kTierStandard),
+  ('comfort', kTierStandard),
+  ('economy', kTierStandard),
+  ('sedan', kTierStandard),
+];
+
+/// Any tier string as one of the four — new, old, spaced, hyphenated, or
+/// a display name with the tier buried in it ("Cruise VIP").
+///
+/// Anything unrecognised reads as Standard, which is what an
+/// unclassified car gets anyway.
 String tierKey(String? raw) {
   final k = (raw ?? '')
       .trim()
       .toLowerCase()
       .replaceAll(RegExp(r'[ \-]'), '_');
+  if (k.isEmpty) return kTierStandard;
   if (kVehicleTiers.contains(k)) return k;
-  return _aliases[k] ?? kTierStandard;
+  final alias = _aliases[k];
+  if (alias != null) return alias;
+  for (final (token, tier) in _textTokens) {
+    if (k.contains(token)) return tier;
+  }
+  return kTierStandard;
 }
 
 /// The car the rider is shown when picking this tier.
@@ -61,16 +92,22 @@ String tierKey(String? raw) {
 /// A rider choosing a six-seater is choosing it for the seats, so the
 /// picture is the whole promise — and the driver has to see the same
 /// shape on their own vehicle page.
+///
+/// All four are the `cruisert*` set: the same side profile, the same
+/// black-and-gold render, shot from the same angle. The older `cruise_3`
+/// / `cruise_6` / `cruise_7` files are three-quarter views, so mixing
+/// them in meant Standard and Black faced the camera while Compact and
+/// Premium stood side-on, in a row where they sit next to each other.
 String tierCarImage(String? raw) {
   switch (tierKey(raw)) {
     case kTierBlack:
-      return 'assets/images/cruise_3.png';
+      return 'assets/images/cruisert1.png'; // Tahoe / Suburban
     case kTierPremium:
-      return 'assets/images/cruisert_suvxl.png';
+      return 'assets/images/cruisert_suvxl.png'; // Traverse, three rows
     case kTierCompact:
-      return 'assets/images/cruisert_compact.png';
+      return 'assets/images/cruisert_compact.png'; // RAV4
     default:
-      return 'assets/images/cruise_6.png';
+      return 'assets/images/cruisert3.png'; // Fusion, a saloon
   }
 }
 

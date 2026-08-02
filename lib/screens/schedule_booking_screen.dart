@@ -1,5 +1,6 @@
 import 'dart:async';
 import '../utils/app_platform.dart';
+import '../utils/vehicle_tier_style.dart';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
@@ -234,12 +235,12 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen>
   }
 
   /// Maps ride name to Cruise-branded car image asset.
-  static String _rideCarAsset(String name) {
-    final n = name.toLowerCase();
-    if (n.contains('vip') || n.contains('suv') || n.contains('suburban')) return 'assets/images/cruise_3.png';
-    if (n.contains('comfort') || n.contains('fusion') || n.contains('economy')) return 'assets/images/cruise_6.png';
-    return 'assets/images/cruise_7.png';
-  }
+  ///
+  /// A fourth copy of this table used to live here, keyed on substrings
+  /// of the ride's display name and reaching for a third set of photos.
+  /// A rider scheduling a Premium saw one car and a rider booking the
+  /// same Premium now saw another.
+  static String _rideCarAsset(String name) => tierCarImage(name);
 
   /// Accent color per ride type.
   static Color _rideAccentColor(String name) {

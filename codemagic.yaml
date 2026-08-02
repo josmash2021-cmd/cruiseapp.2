@@ -745,7 +745,10 @@ workflows:
       - *backend_test
       - name: Build APK
         script: |
-          flutter build apk --release --no-tree-shake-icons --build-number=$BUILD_NUMBER
+          # Same source as the AAB and the IPA — see android-release below.
+          PUBSPEC_BUILD=$(grep '^version:' pubspec.yaml | sed 's/.*+//')
+          flutter build apk --release --no-tree-shake-icons \
+            --build-number=${PUBSPEC_BUILD:-$BUILD_NUMBER}
           APK=$(find build/app/outputs -name "*.apk" | head -1)
           echo "APK: $APK  ($(du -sh "$APK" | cut -f1))"
     artifacts:
@@ -804,7 +807,21 @@ workflows:
       - *flutter_pub_get
       - name: Build AAB
         script: |
-          flutter build appbundle --release --no-tree-shake-icons --build-number=$BUILD_NUMBER
+          # Build number from pubspec.yaml, not the Codemagic counter.
+          #
+          # Play refuses a bundle whose versionCode is not above what is
+          # already published: "no permite que ningún usuario existente
+          # actualice los nuevos paquetes". $BUILD_NUMBER is this app's
+          # build count in Codemagic and has no relationship to what Play
+          # has — it was 447 on Play and lower here, so the upload was
+          # rejected after a full build.
+          #
+          # ios-release has read from pubspec for exactly this reason
+          # since Apple rejected the same thing. Android never got it.
+          PUBSPEC_BUILD=$(grep '^version:' pubspec.yaml | sed 's/.*+//')
+          echo "Build number from pubspec: $PUBSPEC_BUILD"
+          flutter build appbundle --release --no-tree-shake-icons \
+            --build-number=${PUBSPEC_BUILD:-$BUILD_NUMBER}
     artifacts:
       - build/app/outputs/**/*.aab
     publishing:

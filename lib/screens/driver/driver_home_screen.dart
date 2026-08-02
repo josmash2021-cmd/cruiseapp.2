@@ -89,7 +89,10 @@ class DriverHomeScreen extends StatefulWidget {
 }
 
 class _DriverHomeScreenState extends State<DriverHomeScreen>
-    with TickerProviderStateMixin, WidgetsBindingObserver, VelocityAwarePanelMixin,
+    with
+        TickerProviderStateMixin,
+        WidgetsBindingObserver,
+        VelocityAwarePanelMixin,
         RouteAware {
   static final _sqlPrefixRe = RegExp(r'^sql_');
   static const _gold = Color(0xFFE8C547);
@@ -172,6 +175,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   /// Which period the top-bar figure is showing: 0 today, 1 week, 2 month.
   /// Opens on today — the number the driver checks between rides.
   int _earningsPage = 0;
+
   /// Previous values, so a refreshed figure counts up from the old one
   /// instead of snapping. First paint animates from zero.
   double _prevTodayEarnings = 0.0;
@@ -189,11 +193,14 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
 
   // ── Earnings panel ──
   double _weekEarnings = 0.0;
+
   /// Index = local hour 0..23, from the backend's hourly_earnings.
   List<double> _hourlySeries = const [];
+
   /// Seven entries, oldest first, paired with [_daySeriesLabels].
   List<double> _daySeries = const [];
   List<String> _daySeriesLabels = const [];
+
   /// Which tab the earnings chart is showing.
   bool _earningsWeekTab = false;
 
@@ -523,7 +530,9 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       final messaging = FirebaseMessaging.instance;
 
       final settings = await messaging.requestPermission(
-        alert: true, badge: true, sound: true,
+        alert: true,
+        badge: true,
+        sound: true,
       );
       if (settings.authorizationStatus == AuthorizationStatus.denied) {
         debugPrint('[DriverHome] FCM: push permission DENIED by the user — '
@@ -545,7 +554,8 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       for (var attempt = 1; !saved && attempt <= 3; attempt++) {
         await Future.delayed(Duration(seconds: attempt * 3));
         if (!mounted) return;
-        debugPrint('[DriverHome] FCM: retrying token registration ($attempt/3)');
+        debugPrint(
+            '[DriverHome] FCM: retrying token registration ($attempt/3)');
         saved = await ApiService.saveFcmToken(token);
       }
       if (!saved) {
@@ -834,7 +844,6 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     } catch (_) {
       _dropLocAnnot();
     }
-
   }
 
   /// Keep the map under the driver.
@@ -942,7 +951,8 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     // drew the arrow.
     final spot = _homeDotSpot;
     if (spot.at != null) return true; // we know the pixel — draw there
-    if (!spot.known) return true; // we do not know — draw centred, never nothing
+    if (!spot.known)
+      return true; // we do not know — draw centred, never nothing
     // Known, and outside the viewport. The driver has panned away from
     // themselves, so there is genuinely nothing to draw. The annotation is
     // anchored in map space and is just as absent from the view, so this is
@@ -1069,7 +1079,8 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
 
   Future<void> _checkAccountStatus() async {
     try {
-      final status = await ApiService.getAccountStatus().timeout(const Duration(seconds: 15));
+      final status = await ApiService.getAccountStatus()
+          .timeout(const Duration(seconds: 15));
       if (!mounted) return;
       if (status == 'blocked' || status == 'deleted') {
         _accountStatusTimer?.cancel();
@@ -1185,8 +1196,12 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       _updateMyLocAnnotation();
       _mapController?.flyTo(
         mapbox.CameraOptions(
-          center: mapbox.Point(coordinates: mapbox.Position(_currentLatLng!.longitude, _currentLatLng!.latitude)),
-          zoom: 16, pitch: 0, bearing: 0,
+          center: mapbox.Point(
+              coordinates: mapbox.Position(
+                  _currentLatLng!.longitude, _currentLatLng!.latitude)),
+          zoom: 16,
+          pitch: 0,
+          bearing: 0,
         ),
         mapbox.MapAnimationOptions(duration: 800),
       );
@@ -1226,7 +1241,8 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
           _headingSource.value ?? _usableHeading(p) ?? 0,
           p.speed,
         );
-        debugPrint('[DriverHome] GPS update: ${ll.latitude.toStringAsFixed(5)},${ll.longitude.toStringAsFixed(5)} '
+        debugPrint(
+            '[DriverHome] GPS update: ${ll.latitude.toStringAsFixed(5)},${ll.longitude.toStringAsFixed(5)} '
             'speed=${p.speed.toStringAsFixed(1)}m/s accuracy=${p.accuracy.toStringAsFixed(1)}m');
         // Camera follow is handled per dot-tick in _updateMyLocAnnotation
         // (instant setCamera at ~30fps). The old 800ms-throttled flyTo
@@ -1246,7 +1262,9 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     final cachedTrips = prefs.getInt('driver_cached_trips');
     final cachedUserId = prefs.getString('driver_cached_user_id');
     final cachedDay = prefs.getInt('driver_cached_earnings_day');
-    final currentUserId = (await ApiService.getCurrentUserId().timeout(const Duration(seconds: 15)))?.toString();
+    final currentUserId = (await ApiService.getCurrentUserId()
+            .timeout(const Duration(seconds: 15)))
+        ?.toString();
     // Only use cache if it belongs to the current driver (prevents
     // showing another driver's earnings after logout/login) *and* to the
     // current day.
@@ -1281,7 +1299,8 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
 
     // Background refresh from API — use dashboard (single call)
     final dashboard = await ApiService.getDashboard().catchError((_) => null);
-    final notifs = await ApiService.getNotifications().catchError((_) => <Map<String, dynamic>>[]);
+    final notifs = await ApiService.getNotifications()
+        .catchError((_) => <Map<String, dynamic>>[]);
 
     if (!mounted) return;
     final profile = dashboard?['profile'] as Map<String, dynamic>?;
@@ -1378,13 +1397,19 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       // side, so fetching them one after the other would show a stale week
       // total for a whole round trip. Each falls back to an empty map rather
       // than taking the other down with it.
+      // A swallowed failure and a genuinely empty response used to look the
+      // same here, and the pill hedges on both — so a driver whose circuit
+      // breaker had tripped saw "$—" with nothing anywhere to say why.
+      Future<Map<String, dynamic>> fetch(String period) =>
+          ApiService.getDriverEarnings(period: period).catchError((e) {
+            debugPrint('[DriverHome] earnings($period) failed: $e');
+            return <String, dynamic>{};
+          });
+
       final results = await Future.wait([
-        ApiService.getDriverEarnings(period: 'today')
-            .catchError((_) => <String, dynamic>{}),
-        ApiService.getDriverEarnings(period: 'week')
-            .catchError((_) => <String, dynamic>{}),
-        ApiService.getDriverEarnings(period: 'month')
-            .catchError((_) => <String, dynamic>{}),
+        fetch('today'),
+        fetch('week'),
+        fetch('month'),
       ]);
       if (!mounted) return;
       final today = results[0];
@@ -1415,8 +1440,14 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
         _todayHours = dbl(today['online_hours'], _todayHours);
         _weekEarnings = dbl(week['total'], _weekEarnings);
         _monthEarnings = dbl(month['total'], _monthEarnings);
+        // Only a real response lifts the hedge. All three empty means all
+        // three threw — the figures on screen are still unknown, not zero,
+        // and the next tick will try again.
         if (today.isNotEmpty || week.isNotEmpty || month.isNotEmpty) {
           _statsEverLoaded = true;
+        } else {
+          debugPrint('[DriverHome] all three earnings calls failed — '
+              'the pill keeps hedging until one lands');
         }
 
         // Keep the last good series when a response arrives without one —
@@ -1460,7 +1491,8 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   // ═══════════════════════════════════════════════════
   Future<void> _checkVehicleDocStatus() async {
     try {
-      final result = await ApiService.canGoOnline().timeout(const Duration(seconds: 15));
+      final result =
+          await ApiService.canGoOnline().timeout(const Duration(seconds: 15));
       if (!mounted) return;
 
       final canGo = result['can_go_online'] == true;
@@ -1528,7 +1560,8 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
           data['isVerified'] == true ||
           data['isApproved'] == true;
       if (isApproved && !_vehicleDocsApproved) {
-        debugPrint('[DriverHome] Firestore doc-approval listener fired — refreshing doc status');
+        debugPrint(
+            '[DriverHome] Firestore doc-approval listener fired — refreshing doc status');
         _checkVehicleDocStatus();
       }
     }, onError: (e) {
@@ -1617,12 +1650,13 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     final pushFuture = Navigator.of(context).push<Map<String, dynamic>>(
       PageRouteBuilder(
         opaque: true,
-        pageBuilder: (ctx, anim1, anim2) =>
-            DriverOnlineScreen(photoUrl: _photoUrl, initialPos: _currentLatLng, initialHeading: 0),
+        pageBuilder: (ctx, anim1, anim2) => DriverOnlineScreen(
+            photoUrl: _photoUrl, initialPos: _currentLatLng, initialHeading: 0),
         transitionDuration: const Duration(milliseconds: 420),
         reverseTransitionDuration: const Duration(milliseconds: 300),
         transitionsBuilder: (ctx2, anim, anim2b, child) {
-          final curved = CurvedAnimation(parent: anim, curve: Curves.easeOutCubic);
+          final curved =
+              CurvedAnimation(parent: anim, curve: Curves.easeOutCubic);
           return FadeTransition(
             opacity: curved,
             child: SlideTransition(
@@ -1659,7 +1693,8 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     setState(() => _isNavigatingToOnline = false);
     final stillOnline = result?['stillOnline'] == true;
     setState(() => _isStillOnline = stillOnline);
-    PrefsCache.instance.then((p) => p.setBool('driver_was_online', stillOnline));
+    PrefsCache.instance
+        .then((p) => p.setBool('driver_was_online', stillOnline));
     _refreshStats();
     if (stillOnline) {
       _startTripPolling();
@@ -1754,7 +1789,8 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
         transitionDuration: const Duration(milliseconds: 400),
         reverseTransitionDuration: const Duration(milliseconds: 350),
         transitionsBuilder: (ctx2, anim, anim2b, child) {
-          final curved = CurvedAnimation(parent: anim, curve: Curves.easeOutCubic);
+          final curved =
+              CurvedAnimation(parent: anim, curve: Curves.easeOutCubic);
           return FadeTransition(
             opacity: curved,
             child: ScaleTransition(
@@ -1768,7 +1804,8 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     if (!mounted) return;
     final stillOnline = result?['stillOnline'] == true;
     setState(() => _isStillOnline = stillOnline);
-    PrefsCache.instance.then((p) => p.setBool('driver_was_online', stillOnline));
+    PrefsCache.instance
+        .then((p) => p.setBool('driver_was_online', stillOnline));
     _refreshStats();
     if (stillOnline) {
       _startTripPolling();
@@ -1794,7 +1831,10 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       selectedIndex: _navIndex,
       onDestinationSelected: (i) {
         HapticService.selectionClick();
-        if (i == 0) { setState(() => _navIndex = 0); return; }
+        if (i == 0) {
+          setState(() => _navIndex = 0);
+          return;
+        }
         setState(() => _navIndex = i);
         final route = i == 1
             ? slideFromRightRoute(const DriverEarningsScreen())
@@ -1807,23 +1847,29 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       },
       destinations: [
         NavigationDestination(
-          icon: Icon(Icons.map_outlined, color: Colors.white.withValues(alpha: 0.5), size: 22),
-          selectedIcon: const Icon(Icons.map_rounded, color: Color(0xFFE8C547), size: 22),
+          icon: Icon(Icons.map_outlined,
+              color: Colors.white.withValues(alpha: 0.5), size: 22),
+          selectedIcon:
+              const Icon(Icons.map_rounded, color: Color(0xFFE8C547), size: 22),
           label: S.of(context).homeNav,
         ),
         NavigationDestination(
-          icon: Icon(Icons.attach_money_rounded, color: Colors.white.withValues(alpha: 0.5), size: 22),
-          selectedIcon: const Icon(Icons.attach_money_rounded, color: Color(0xFFE8C547), size: 22),
+          icon: Icon(Icons.attach_money_rounded,
+              color: Colors.white.withValues(alpha: 0.5), size: 22),
+          selectedIcon: const Icon(Icons.attach_money_rounded,
+              color: Color(0xFFE8C547), size: 22),
           label: S.of(context).earningsNav,
         ),
         NavigationDestination(
           icon: Stack(
             clipBehavior: Clip.none,
             children: [
-              Icon(Icons.history_rounded, color: Colors.white.withValues(alpha: 0.5), size: 22),
+              Icon(Icons.history_rounded,
+                  color: Colors.white.withValues(alpha: 0.5), size: 22),
             ],
           ),
-          selectedIcon: const Icon(Icons.history_rounded, color: Color(0xFFE8C547), size: 22),
+          selectedIcon: const Icon(Icons.history_rounded,
+              color: Color(0xFFE8C547), size: 22),
           label: S.of(context).tripsNav,
         ),
         NavigationDestination(
@@ -1831,7 +1877,8 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
               ? Stack(
                   clipBehavior: Clip.none,
                   children: [
-                    Icon(Icons.person_outline_rounded, color: Colors.white.withValues(alpha: 0.5), size: 22),
+                    Icon(Icons.person_outline_rounded,
+                        color: Colors.white.withValues(alpha: 0.5), size: 22),
                     Positioned(
                       top: -4,
                       right: -4,
@@ -1846,8 +1893,10 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                     ),
                   ],
                 )
-              : Icon(Icons.person_outline_rounded, color: Colors.white.withValues(alpha: 0.5), size: 22),
-          selectedIcon: const Icon(Icons.person_rounded, color: Color(0xFFE8C547), size: 22),
+              : Icon(Icons.person_outline_rounded,
+                  color: Colors.white.withValues(alpha: 0.5), size: 22),
+          selectedIcon: const Icon(Icons.person_rounded,
+              color: Color(0xFFE8C547), size: 22),
           label: S.of(context).accountNav,
         ),
       ],
@@ -1983,7 +2032,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
               // the arrow slides and turns with the ticker rather than with
               // whatever else happens to rebuild the screen.
               Positioned.fill(
-                child: ListenableBuilder(
+                  child: ListenableBuilder(
                 listenable: _markerFrame,
                 builder: (context, _) {
                   if (!_dotOverlayOwnsMarker) return const SizedBox.shrink();
@@ -2008,7 +2057,8 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       child: mapbox.MapWidget(
         styleUri: MapboxConfig.styleDark,
         cameraOptions: mapbox.CameraOptions(
-          center: mapbox.Point(coordinates: mapbox.Position(pos.longitude, pos.latitude)),
+          center: mapbox.Point(
+              coordinates: mapbox.Position(pos.longitude, pos.latitude)),
           zoom: 16.0,
           pitch: 0.0,
           bearing: 0.0,
@@ -2070,23 +2120,28 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
               simultaneousRotateAndPinchToZoomEnabled: false,
             ));
             // Disable Mapbox native puck IMMEDIATELY before any annotation creation
-            await ctrl.location.updateSettings(mapbox.LocationComponentSettings(enabled: false));
-            
+            await ctrl.location.updateSettings(
+                mapbox.LocationComponentSettings(enabled: false));
+
             // FIX: Create annotation manager with error handling
             try {
-              _pointAnnotMgr = await ctrl.annotations.createPointAnnotationManager();
+              _pointAnnotMgr =
+                  await ctrl.annotations.createPointAnnotationManager();
             } catch (e) {
               debugPrint('[DriverMap] Failed to create annotation manager: $e');
             }
-            
+
             if (_pointAnnotMgr != null) {
               try {
-                await ctrl.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-pitch-alignment', 'viewport');
-                await ctrl.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-rotation-alignment', 'viewport');
-                await ctrl.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-allow-overlap', true);
+                await ctrl.style.setStyleLayerProperty(
+                    _pointAnnotMgr!.id, 'icon-pitch-alignment', 'viewport');
+                await ctrl.style.setStyleLayerProperty(
+                    _pointAnnotMgr!.id, 'icon-rotation-alignment', 'viewport');
+                await ctrl.style.setStyleLayerProperty(
+                    _pointAnnotMgr!.id, 'icon-allow-overlap', true);
               } catch (_) {}
             }
-            
+
             setState(() => _mapReady = true);
 
             // A fresh manager means any annotation we still hold belongs to
@@ -2105,13 +2160,19 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
           try {
             if (_mapController != null) {
               // Re-disable puck after style reload (Mapbox may re-enable it)
-              await _mapController!.location.updateSettings(mapbox.LocationComponentSettings(enabled: false));
+              await _mapController!.location.updateSettings(
+                  mapbox.LocationComponentSettings(enabled: false));
               await _applyNavyGoldTheme(_mapController!);
               if (_pointAnnotMgr != null) {
                 try {
-                  await _mapController!.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-pitch-alignment', 'viewport');
-                  await _mapController!.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-rotation-alignment', 'viewport');
-                  await _mapController!.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-allow-overlap', true);
+                  await _mapController!.style.setStyleLayerProperty(
+                      _pointAnnotMgr!.id, 'icon-pitch-alignment', 'viewport');
+                  await _mapController!.style.setStyleLayerProperty(
+                      _pointAnnotMgr!.id,
+                      'icon-rotation-alignment',
+                      'viewport');
+                  await _mapController!.style.setStyleLayerProperty(
+                      _pointAnnotMgr!.id, 'icon-allow-overlap', true);
                 } catch (_) {}
               }
             }
@@ -2134,7 +2195,8 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
         },
         // FIX: Catch map load errors
         onMapLoadErrorListener: (err) {
-          debugPrint('[DriverMap] Load error: ${err.message} (type: ${err.type})');
+          debugPrint(
+              '[DriverMap] Load error: ${err.message} (type: ${err.type})');
         },
       ),
     );
@@ -2146,7 +2208,8 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     final canvas = Canvas(recorder);
     final center = Offset(size / 2, size / 2);
     canvas.drawCircle(center, size / 2, Paint()..color = Colors.white);
-    canvas.drawCircle(center, size / 2 - 3, Paint()..color = const Color(0xFFE8C547));
+    canvas.drawCircle(
+        center, size / 2 - 3, Paint()..color = const Color(0xFFE8C547));
     final picture = recorder.endRecording();
     final img = await picture.toImage(size.toInt(), size.toInt());
     final bytes = await img.toByteData(format: ui.ImageByteFormat.png);
@@ -2301,9 +2364,8 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                         height: tipH,
                         child: tips.contains(i) && values[i] > 0
                             ? OverflowBox(
-                                maxWidth: week
-                                    ? double.infinity
-                                    : Responsive.w(46),
+                                maxWidth:
+                                    week ? double.infinity : Responsive.w(46),
                                 child: FittedBox(
                                   fit: BoxFit.scaleDown,
                                   child: Text(
@@ -2327,7 +2389,9 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                       // in it and reads as broken rather than as empty.
                       _chartBar(
                         barH *
-                            (peak > 0 ? math.max(0.03, values[i] / peak) : 0.03),
+                            (peak > 0
+                                ? math.max(0.03, values[i] / peak)
+                                : 0.03),
                         week,
                         i == nowIdx,
                       ),
@@ -2376,9 +2440,8 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     );
     // Week: one label per bar. Today: every sixth hour — 24 labels on a phone
     // is a grey smear.
-    final labels = week
-        ? _daySeriesLabels
-        : const ['12AM', '6AM', '12PM', '6PM'];
+    final labels =
+        week ? _daySeriesLabels : const ['12AM', '6AM', '12PM', '6PM'];
     if (labels.isEmpty) return const SizedBox.shrink();
     return Row(
       children: [
@@ -2398,7 +2461,8 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
 
   /// Today / Week pill. The selected one is a raised surface, the other a
   /// sunken well — the same language the rest of the app uses for state.
-  Widget _periodPill(DriverColors dc, String label, bool selected, VoidCallback onTap) {
+  Widget _periodPill(
+      DriverColors dc, String label, bool selected, VoidCallback onTap) {
     return GestureDetector(
       onTap: onTap,
       child: AnimatedContainer(
@@ -2609,7 +2673,6 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                 .push(slideFromRightRoute(const DriverInboxScreen()));
           },
         ),
-
       ],
     );
   }
@@ -2656,69 +2719,69 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     // both: it never moves, and only the type travels through it.
     Widget pillPage(double amount, double prevAmount, String label) {
       return SizedBox(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TweenAnimationBuilder<double>(
-                  key: ValueKey<double>(amount),
-                  duration: const Duration(milliseconds: 900),
-                  curve: Curves.easeOutCubic,
-                  tween: Tween<double>(begin: prevAmount, end: amount),
-                  // The figure, or a bare $ standing in for it.
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TweenAnimationBuilder<double>(
+                key: ValueKey<double>(amount),
+                duration: const Duration(milliseconds: 900),
+                curve: Curves.easeOutCubic,
+                tween: Tween<double>(begin: prevAmount, end: amount),
+                // The figure, or a bare $ standing in for it.
+                //
+                // This chip sits at the top of the map and is the most
+                // legible thing on the screen from a back seat, which is
+                // why the switch in Earnings exists and why this is what
+                // it covers.
+                builder: (_, val, __) => Text(
+                  // "$—" until a real figure has landed.
                   //
-                  // This chip sits at the top of the map and is the most
-                  // legible thing on the screen from a back seat, which is
-                  // why the switch in Earnings exists and why this is what
-                  // it covers.
-                  builder: (_, val, __) => Text(
-                    // "$—" until a real figure has landed.
-                    //
-                    // A double starts at zero, and printing that as $0.00 is
-                    // a claim: it tells a driver who worked yesterday that
-                    // they earned nothing. Week and month were not cached at
-                    // all, so they made that claim on every open, for as
-                    // long as the request took.
-                    _statsEverLoaded ? EarningsPrivacy.format(val) : '\$—',
-                    style: const TextStyle(
-                      color: pillText,
-                      fontSize: 17,
-                      fontWeight: FontWeight.w800,
-                      fontFeatures: [ui.FontFeature.tabularFigures()],
-                    ),
+                  // A double starts at zero, and printing that as $0.00 is
+                  // a claim: it tells a driver who worked yesterday that
+                  // they earned nothing. Week and month were not cached at
+                  // all, so they made that claim on every open, for as
+                  // long as the request took.
+                  _statsEverLoaded ? EarningsPrivacy.format(val) : '\$—',
+                  style: const TextStyle(
+                    color: pillText,
+                    fontSize: 17,
+                    fontWeight: FontWeight.w800,
+                    fontFeatures: [ui.FontFeature.tabularFigures()],
                   ),
                 ),
-                const SizedBox(height: 1),
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      label,
-                      style: const TextStyle(
-                        color: pillSub,
-                        fontSize: 9,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: 1.0,
+              ),
+              const SizedBox(height: 1),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    label,
+                    style: const TextStyle(
+                      color: pillSub,
+                      fontSize: 9,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 1.0,
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  for (int i = 0; i < pageCount; i++) ...[
+                    Container(
+                      width: 4,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: i == safePage ? dotActive : dotInactive,
                       ),
                     ),
-                    const SizedBox(width: 6),
-                    for (int i = 0; i < pageCount; i++) ...[
-                      Container(
-                        width: 4,
-                        height: 4,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: i == safePage ? dotActive : dotInactive,
-                        ),
-                      ),
-                      if (i < pageCount - 1) const SizedBox(width: 3),
-                    ],
+                    if (i < pageCount - 1) const SizedBox(width: 3),
                   ],
-                ),
-              ],
-            ),
+                ],
+              ),
+            ],
           ),
+        ),
       );
     }
 
@@ -2782,58 +2845,58 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
             borderColor: Colors.white.withValues(alpha: 0.06),
           ),
           child: AnimatedSwitcher(
-          duration: const Duration(milliseconds: 380),
-          reverseDuration: const Duration(milliseconds: 380),
-          switchInCurve: Curves.easeOutCubic,
-          switchOutCurve: Curves.easeInCubic,
-          // Slide as well as fade, and in the direction the thumb went.
-          //
-          // A pure crossfade says "this number was replaced". A short travel
-          // says "you moved to the one next door", which is what a swipe
-          // means — and it is the difference between the change reading as
-          // a glitch and as a gesture. layoutBuilder stacks the outgoing and
-          // incoming pages so neither shoves the other while they cross.
-          transitionBuilder: (child, animation) {
-            final incoming = child.key == ValueKey<int>(safePage);
-            final dir = _earningsSwipeForward ? 1.0 : -1.0;
-            return FadeTransition(
-              opacity: animation,
-              child: SlideTransition(
-                position: Tween<Offset>(
-                  begin: Offset(incoming ? 0.35 * dir : -0.35 * dir, 0),
-                  end: Offset.zero,
-                ).animate(animation),
-                child: child,
+            duration: const Duration(milliseconds: 380),
+            reverseDuration: const Duration(milliseconds: 380),
+            switchInCurve: Curves.easeOutCubic,
+            switchOutCurve: Curves.easeInCubic,
+            // Slide as well as fade, and in the direction the thumb went.
+            //
+            // A pure crossfade says "this number was replaced". A short travel
+            // says "you moved to the one next door", which is what a swipe
+            // means — and it is the difference between the change reading as
+            // a glitch and as a gesture. layoutBuilder stacks the outgoing and
+            // incoming pages so neither shoves the other while they cross.
+            transitionBuilder: (child, animation) {
+              final incoming = child.key == ValueKey<int>(safePage);
+              final dir = _earningsSwipeForward ? 1.0 : -1.0;
+              return FadeTransition(
+                opacity: animation,
+                child: SlideTransition(
+                  position: Tween<Offset>(
+                    begin: Offset(incoming ? 0.35 * dir : -0.35 * dir, 0),
+                    end: Offset.zero,
+                  ).animate(animation),
+                  child: child,
+                ),
+              );
+            },
+            layoutBuilder: (current, previous) => Stack(
+              alignment: Alignment.center,
+              children: [...previous, if (current != null) current],
+            ),
+            // KeyedSubtree, not Center — this is what made the plate run the
+            // whole width of the bar.
+            //
+            // A Center with no widthFactor takes every pixel it is offered, and
+            // what it is offered here is the entire span between the two
+            // buttons. That widened the layoutBuilder's Stack, which widened
+            // the Container painting the plate, so a 110 px capsule was drawn
+            // as a 430 px slab with the figure adrift in the middle of it.
+            //
+            // Nothing is lost: the Stack above already centres its children,
+            // and the Center outside the pill still centres the pill in the
+            // bar. The key has to stay for AnimatedSwitcher to see a new child.
+            child: KeyedSubtree(
+              key: ValueKey<int>(safePage),
+              child: pillPage(
+                amounts[safePage],
+                prevAmounts[safePage],
+                labels[safePage],
               ),
-            );
-          },
-          layoutBuilder: (current, previous) => Stack(
-            alignment: Alignment.center,
-            children: [...previous, if (current != null) current],
-          ),
-          // KeyedSubtree, not Center — this is what made the plate run the
-          // whole width of the bar.
-          //
-          // A Center with no widthFactor takes every pixel it is offered, and
-          // what it is offered here is the entire span between the two
-          // buttons. That widened the layoutBuilder's Stack, which widened
-          // the Container painting the plate, so a 110 px capsule was drawn
-          // as a 430 px slab with the figure adrift in the middle of it.
-          //
-          // Nothing is lost: the Stack above already centres its children,
-          // and the Center outside the pill still centres the pill in the
-          // bar. The key has to stay for AnimatedSwitcher to see a new child.
-          child: KeyedSubtree(
-            key: ValueKey<int>(safePage),
-            child: pillPage(
-              amounts[safePage],
-              prevAmounts[safePage],
-              labels[safePage],
             ),
           ),
         ),
       ),
-        ),
     );
   }
 
@@ -2894,7 +2957,9 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
-                  S.of(context).scheduledRidesAvailableLabel(_scheduledAvailableCount),
+                  S
+                      .of(context)
+                      .scheduledRidesAvailableLabel(_scheduledAvailableCount),
                   style: const TextStyle(
                     color: _gold,
                     fontSize: 13,
@@ -2986,8 +3051,11 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
         if (_currentLatLng != null) {
           _mapController?.flyTo(
             mapbox.CameraOptions(
-              center: mapbox.Point(coordinates: mapbox.Position(_currentLatLng!.longitude, _currentLatLng!.latitude)),
-              zoom: 16, pitch: 45,
+              center: mapbox.Point(
+                  coordinates: mapbox.Position(
+                      _currentLatLng!.longitude, _currentLatLng!.latitude)),
+              zoom: 16,
+              pitch: 45,
             ),
             mapbox.MapAnimationOptions(duration: 600),
           );
@@ -3113,8 +3181,8 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
               await _ensureVerified();
             },
       child: AnimatedBuilder(
-        animation:
-            Listenable.merge([_pulseAnim, _btnColorAnim, _glossCtrl, _radarCtrl]),
+        animation: Listenable.merge(
+            [_pulseAnim, _btnColorAnim, _glossCtrl, _radarCtrl]),
         builder: (_, __) {
           final p = _pulseAnim.value;
           final g = _glossCtrl.value;
@@ -3207,7 +3275,8 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                             // word floating in it rather than as a control.
                             BoxShadow(
                               color: glowColor.withValues(
-                                  alpha: ui.lerpDouble(0.12, 0.3 + 0.15 * p, morph)!),
+                                  alpha: ui.lerpDouble(
+                                      0.12, 0.3 + 0.15 * p, morph)!),
                               blurRadius: ui.lerpDouble(8, 16 + 8 * p, morph)!,
                               spreadRadius: 0,
                               offset: const Offset(0, 3),
@@ -3245,41 +3314,40 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                           opacity: (_isNavigatingToOnline || !docsOk)
                               ? 1.0
                               : ((morph - 0.35) / 0.65).clamp(0.0, 1.0),
-                          child:
-                        Container(
-                          width: 28,
-                          height: 28,
-                          decoration: BoxDecoration(
-                            // Dark well on the gold bar, light one on the
-                            // black disc — the fill has to flip with the body
-                            // underneath it or the icon disappears into it.
-                            color: enabled
-                                ? Color.lerp(
-                                    Colors.white.withValues(alpha: 0.10),
-                                    Colors.black.withValues(alpha: 0.16),
-                                    morph)
-                                : Colors.white.withValues(alpha: 0.08),
-                            shape: BoxShape.circle,
-                          ),
-                          child: _isNavigatingToOnline
-                              ? SizedBox(
-                                  width: 16,
-                                  height: 16,
-                                  child: CircularProgressIndicator(
-                                    color: enabled ? Colors.black87 : _gold,
-                                    strokeWidth: 2,
+                          child: Container(
+                            width: 28,
+                            height: 28,
+                            decoration: BoxDecoration(
+                              // Dark well on the gold bar, light one on the
+                              // black disc — the fill has to flip with the body
+                              // underneath it or the icon disappears into it.
+                              color: enabled
+                                  ? Color.lerp(
+                                      Colors.white.withValues(alpha: 0.10),
+                                      Colors.black.withValues(alpha: 0.16),
+                                      morph)
+                                  : Colors.white.withValues(alpha: 0.08),
+                              shape: BoxShape.circle,
+                            ),
+                            child: _isNavigatingToOnline
+                                ? SizedBox(
+                                    width: 16,
+                                    height: 16,
+                                    child: CircularProgressIndicator(
+                                      color: enabled ? Colors.black87 : _gold,
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : Icon(
+                                    !docsOk
+                                        ? (_hasExpiredDocs
+                                            ? Icons.warning_amber_rounded
+                                            : Icons.upload_file_rounded)
+                                        : Icons.power_settings_new_rounded,
+                                    color: fgColor,
+                                    size: 16,
                                   ),
-                                )
-                              : Icon(
-                                  !docsOk
-                                      ? (_hasExpiredDocs
-                                          ? Icons.warning_amber_rounded
-                                          : Icons.upload_file_rounded)
-                                      : Icons.power_settings_new_rounded,
-                                  color: fgColor,
-                                  size: 16,
-                                ),
-                        ),
+                          ),
                         ),
                         const SizedBox(width: 10),
                       ],
@@ -3435,64 +3503,64 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       // Consume taps so panel never opens on tap — swipe-only
       onTap: () {},
       child: Container(
-      height: panelH + pad.bottom,
-      decoration: BoxDecoration(
-        // The ground the panel's cards sit on, so neuBase — neuBox cannot
-        // express a top-only radius, hence the dual shadow spelled out here.
-        //
-        // This was neuSurface, which is the colour of the cards themselves.
-        // The earnings card, the chart and the GO bar were then raised
-        // surfaces on a surface of the same tone, with nothing between them
-        // for their shadows to describe. Same fault the rider's booking sheet
-        // had, and the same fix: a raised thing needs a base to rise from.
-        color: neuBase,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(26)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.55),
-            offset: const Offset(6, 6),
-            blurRadius: 14,
+        height: panelH + pad.bottom,
+        decoration: BoxDecoration(
+          // The ground the panel's cards sit on, so neuBase — neuBox cannot
+          // express a top-only radius, hence the dual shadow spelled out here.
+          //
+          // This was neuSurface, which is the colour of the cards themselves.
+          // The earnings card, the chart and the GO bar were then raised
+          // surfaces on a surface of the same tone, with nothing between them
+          // for their shadows to describe. Same fault the rider's booking sheet
+          // had, and the same fix: a raised thing needs a base to rise from.
+          color: neuBase,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(26)),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.55),
+              offset: const Offset(6, 6),
+              blurRadius: 14,
+            ),
+            BoxShadow(
+              color: Colors.white.withValues(alpha: 0.045),
+              offset: const Offset(-4, -4),
+              blurRadius: 10,
+            ),
+          ],
+          border: Border(
+            top: BorderSide(color: Colors.white.withValues(alpha: 0.04)),
           ),
-          BoxShadow(
-            color: Colors.white.withValues(alpha: 0.045),
-            offset: const Offset(-4, -4),
-            blurRadius: 10,
-          ),
-        ],
-        border: Border(
-          top: BorderSide(color: Colors.white.withValues(alpha: 0.04)),
         ),
-      ),
-      child: Column(
-        children: [
-          // ── Drag handle — drag only registered here ──
-          GestureDetector(
-            behavior: HitTestBehavior.translucent,
-            onVerticalDragStart: (_) => setState(() => _dragging = true),
-            onVerticalDragUpdate: (d) {
-              setState(() => _dragging = true);
-              updatePanelDrag(d.primaryDelta ?? 0);
-            },
-            onVerticalDragEnd: (d) {
-              setState(() => _dragging = false);
-              endPanelDrag(d.primaryVelocity ?? 0);
-            },
-            child: Padding(
-              // 8/4, trimmed from 10/6 — see _panelBaseMinH. The handle keeps
-              // its 36×4 bar and its drag target is the whole row above, so
-              // the four points come off the air around it, not off anything
-              // the thumb has to hit.
-              padding: const EdgeInsets.only(top: 8, bottom: 4),
-              child: Container(
-                width: 36,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.18),
-                  borderRadius: BorderRadius.circular(2),
+        child: Column(
+          children: [
+            // ── Drag handle — drag only registered here ──
+            GestureDetector(
+              behavior: HitTestBehavior.translucent,
+              onVerticalDragStart: (_) => setState(() => _dragging = true),
+              onVerticalDragUpdate: (d) {
+                setState(() => _dragging = true);
+                updatePanelDrag(d.primaryDelta ?? 0);
+              },
+              onVerticalDragEnd: (d) {
+                setState(() => _dragging = false);
+                endPanelDrag(d.primaryVelocity ?? 0);
+              },
+              child: Padding(
+                // 8/4, trimmed from 10/6 — see _panelBaseMinH. The handle keeps
+                // its 36×4 bar and its drag target is the whole row above, so
+                // the four points come off the air around it, not off anything
+                // the thumb has to hit.
+                padding: const EdgeInsets.only(top: 8, bottom: 4),
+                child: Container(
+                  width: 36,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.18),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
                 ),
               ),
             ),
-          ),
             // ── Scheduled Rides Banner (only when online & no active trip) ──
             if (_isStillOnline && _activeTripData == null)
               _buildScheduledRidesBanner(),
@@ -3510,55 +3578,56 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                 endPanelDrag(d.primaryVelocity ?? 0);
               },
               child: Padding(
-              // vertical 8, trimmed from 10 — see _panelBaseMinH. The row is
-              // 26 points of text between these two, so 8/26/8 is 42 and the
-              // sheet's 60 has two points spare over the handle's 16.
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-              child: Row(
-                children: [
-                  // Status text
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      AnimatedContainer(
-                        duration: const Duration(milliseconds: 250),
-                        curve: Curves.easeOutCubic,
-                        width: 8,
-                        height: 8,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: _isStillOnline
-                              ? const Color(0xFF34C759)
-                              : dc.text.withValues(alpha: 0.3),
+                // vertical 8, trimmed from 10 — see _panelBaseMinH. The row is
+                // 26 points of text between these two, so 8/26/8 is 42 and the
+                // sheet's 60 has two points spare over the handle's 16.
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                child: Row(
+                  children: [
+                    // Status text
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        AnimatedContainer(
+                          duration: const Duration(milliseconds: 250),
+                          curve: Curves.easeOutCubic,
+                          width: 8,
+                          height: 8,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: _isStillOnline
+                                ? const Color(0xFF34C759)
+                                : dc.text.withValues(alpha: 0.3),
+                          ),
                         ),
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        _isStillOnline
-                            ? S.of(context).findingTrips
-                            : S.of(context).youreOffline,
-                        style: TextStyle(
-                          color: dc.text,
-                          fontSize: 21,
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: -0.2,
+                        const SizedBox(width: 8),
+                        Text(
+                          _isStillOnline
+                              ? S.of(context).findingTrips
+                              : S.of(context).youreOffline,
+                          style: TextStyle(
+                            color: dc.text,
+                            fontSize: 21,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: -0.2,
+                          ),
                         ),
-                      ),
-                    ],
-                  ),
-                  const Spacer(),
-                  // A chevron that tells you which way the sheet goes.
-                  //
-                  // This was a list button opening trip history — a second
-                  // destination competing with the sheet's own handle for a
-                  // thumb that is already there to drag. The affordance the
-                  // spot needs is "there is more, pull it up", so that is
-                  // what it shows now: an arrow that turns over as the sheet
-                  // opens, so it always points the way it will next travel.
-                  _buildPanelChevron(dc),
-                ],
+                      ],
+                    ),
+                    const Spacer(),
+                    // A chevron that tells you which way the sheet goes.
+                    //
+                    // This was a list button opening trip history — a second
+                    // destination competing with the sheet's own handle for a
+                    // thumb that is already there to drag. The affordance the
+                    // spot needs is "there is more, pull it up", so that is
+                    // what it shows now: an arrow that turns over as the sheet
+                    // opens, so it always points the way it will next travel.
+                    _buildPanelChevron(dc),
+                  ],
+                ),
               ),
-            ),
             ),
             // The GO button used to sit here, inside the column, and a
             // 72 px spacer was left behind to hold its place.
@@ -3577,138 +3646,144 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                 // 0 when closed → fully visible ~60% through the swipe up
                 opacity: (panelExtent * 1.7).clamp(0.0, 1.0),
                 child: FadeTransition(
-                opacity: _statsAnim,
-                child: SlideTransition(
-                  position: Tween<Offset>(
-                    begin: const Offset(0, 0.05),
-                    end: Offset.zero,
-                  ).animate(_statsAnim),
-                  child: SingleChildScrollView(
-                    // Scrollable, where it used to be locked.
-                    //
-                    // The content grew — Cruise Level and the earnings chart
-                    // joined the stats and the recommendations — and locked
-                    // physics do not shrink to fit, they clip. On a short phone
-                    // the last rows simply vanished with no way to reach them.
-                    // The panel's drag lives on the handle and the status row,
-                    // so a scrollable body here cannot fight it.
-                    physics: const ClampingScrollPhysics(),
-                    // The foot of the list clears the GO button hovering
-                    // over it: the button's own height, the gap it keeps
-                    // above the home indicator, and a little air on top.
-                    // Without this the last row sits underneath it.
-                    padding: EdgeInsets.fromLTRB(
-                      20,
-                      8,
-                      20,
-                      8 + _kGoPillH + 26 + MediaQuery.of(context).padding.bottom,
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                      Divider(
-                        color: dc.divider,
-                        height: 1,
+                  opacity: _statsAnim,
+                  child: SlideTransition(
+                    position: Tween<Offset>(
+                      begin: const Offset(0, 0.05),
+                      end: Offset.zero,
+                    ).animate(_statsAnim),
+                    child: SingleChildScrollView(
+                      // Scrollable, where it used to be locked.
+                      //
+                      // The content grew — Cruise Level and the earnings chart
+                      // joined the stats and the recommendations — and locked
+                      // physics do not shrink to fit, they clip. On a short phone
+                      // the last rows simply vanished with no way to reach them.
+                      // The panel's drag lives on the handle and the status row,
+                      // so a scrollable body here cannot fight it.
+                      physics: const ClampingScrollPhysics(),
+                      // The foot of the list clears the GO button hovering
+                      // over it: the button's own height, the gap it keeps
+                      // above the home indicator, and a little air on top.
+                      // Without this the last row sits underneath it.
+                      padding: EdgeInsets.fromLTRB(
+                        20,
+                        8,
+                        20,
+                        8 +
+                            _kGoPillH +
+                            26 +
+                            MediaQuery.of(context).padding.bottom,
                       ),
-                      const SizedBox(height: 14),
-                      // ── Cruise Level ──
-                      _buildCruiseLevelRow(dc),
-                      const SizedBox(height: 16),
-                      // ── Earnings: period toggle + chart + see more ──
-                      Text(
-                        S.of(context).earningsTitle,
-                        style: TextStyle(
-                          color: dc.textSecondary,
-                          fontSize: 13,
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: 1.1,
-                        ),
-                      ),
-                      const SizedBox(height: 10),
-                      _buildEarningsSection(dc),
-                      const SizedBox(height: 16),
-                      // ── Trips and hours ──
-                      // Earnings moved to the top pill and the chart above, so
-                      // only the two figures that are not money left here.
-                      Row(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          _panelStat(
-                            Icons.local_taxi_rounded,
-                            '$_todayTrips',
-                            S.of(context).tripsToday,
+                          Divider(
+                            color: dc.divider,
+                            height: 1,
                           ),
-                          const SizedBox(width: 8),
-                          _panelStat(
-                            Icons.schedule_rounded,
-                            _onlineTimeText(_todayHours),
-                            S.of(context).hoursOnline,
+                          const SizedBox(height: 14),
+                          // ── Cruise Level ──
+                          _buildCruiseLevelRow(dc),
+                          const SizedBox(height: 16),
+                          // ── Earnings: period toggle + chart + see more ──
+                          Text(
+                            S.of(context).earningsTitle,
+                            style: TextStyle(
+                              color: dc.textSecondary,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: 1.1,
+                            ),
                           ),
+                          const SizedBox(height: 10),
+                          _buildEarningsSection(dc),
+                          const SizedBox(height: 16),
+                          // ── Trips and hours ──
+                          // Earnings moved to the top pill and the chart above, so
+                          // only the two figures that are not money left here.
+                          Row(
+                            children: [
+                              _panelStat(
+                                Icons.local_taxi_rounded,
+                                '$_todayTrips',
+                                S.of(context).tripsToday,
+                              ),
+                              const SizedBox(width: 8),
+                              _panelStat(
+                                Icons.schedule_rounded,
+                                _onlineTimeText(_todayHours),
+                                S.of(context).hoursOnline,
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 16),
+                          Text(
+                            S.of(context).recommendedForYou,
+                            style: TextStyle(
+                              color: dc.textSecondary,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: 1.1,
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          // ── Recommendation items — raised neu group ──
+                          Container(
+                            decoration: neuBox(radius: 20),
+                            child: Column(
+                              children: [
+                                _recommendItem(
+                                  Icons.bar_chart_rounded,
+                                  S.of(context).seeEarningsTrends,
+                                  () {
+                                    Navigator.of(context).push(
+                                      slideFromRightRoute(
+                                          const DriverEarningsScreen()),
+                                    );
+                                  },
+                                ),
+                                Divider(
+                                  height: 1,
+                                  indent: 68,
+                                  color: Colors.white.withValues(alpha: 0.05),
+                                ),
+                                _recommendItem(
+                                  Icons.star_outline_rounded,
+                                  S.of(context).seeUpcomingPromotions,
+                                  () {
+                                    Navigator.of(context).push(
+                                      slideFromRightRoute(
+                                          const DriverPromosScreen()),
+                                    );
+                                  },
+                                ),
+                                Divider(
+                                  height: 1,
+                                  indent: 68,
+                                  color: Colors.white.withValues(alpha: 0.05),
+                                ),
+                                _recommendItem(
+                                  Icons.schedule_rounded,
+                                  S.of(context).seeDrivingTime,
+                                  () {
+                                    Navigator.of(context).push(
+                                      slideFromRightRoute(
+                                          const DriverAnalyticsScreen()),
+                                    );
+                                  },
+                                ),
+                              ],
+                            ),
+                          ),
+                          SizedBox(height: pad.bottom + 16),
                         ],
                       ),
-                      const SizedBox(height: 16),
-                      Text(
-                        S.of(context).recommendedForYou,
-                        style: TextStyle(
-                          color: dc.textSecondary,
-                          fontSize: 13,
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: 1.1,
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      // ── Recommendation items — raised neu group ──
-                      Container(
-                        decoration: neuBox(radius: 20),
-                        child: Column(
-                          children: [
-                            _recommendItem(
-                              Icons.bar_chart_rounded,
-                              S.of(context).seeEarningsTrends,
-                              () {
-                                Navigator.of(context).push(
-                                  slideFromRightRoute(const DriverEarningsScreen()),
-                                );
-                              },
-                            ),
-                            Divider(
-                              height: 1,
-                              indent: 68,
-                              color: Colors.white.withValues(alpha: 0.05),
-                            ),
-                            _recommendItem(
-                              Icons.star_outline_rounded,
-                              S.of(context).seeUpcomingPromotions,
-                              () {
-                                Navigator.of(context).push(
-                                  slideFromRightRoute(const DriverPromosScreen()),
-                                );
-                              },
-                            ),
-                            Divider(
-                              height: 1,
-                              indent: 68,
-                              color: Colors.white.withValues(alpha: 0.05),
-                            ),
-                            _recommendItem(
-                              Icons.schedule_rounded,
-                              S.of(context).seeDrivingTime,
-                              () {
-                                Navigator.of(context).push(
-                                  slideFromRightRoute(const DriverAnalyticsScreen()),
-                                );
-                              },
-                            ),
-                          ],
-                        ),
-                      ),
-                      SizedBox(height: pad.bottom + 16),
-                      ],
                     ),
-                  ),
                   ),
                 ),
               ),
-              ),
+            ),
           ],
         ),
       ),
@@ -3919,7 +3994,8 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       // breaks the loop.
       bool confirmedOver = false;
       if (active != null && await _serverSaysTripIsOver(_tripSqlId(active))) {
-        debugPrint('[DriverHome] ignoring stale Firestore trip ${active['_docId']}');
+        debugPrint(
+            '[DriverHome] ignoring stale Firestore trip ${active['_docId']}');
         active = null;
         confirmedOver = true;
       }
@@ -3963,8 +4039,8 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   Future<bool> _serverSaysTripIsOver(int tripId) async {
     if (tripId <= 0) return true; // no id to check; never resumable
     try {
-      final trip = await ApiService.getTrip(tripId)
-          .timeout(const Duration(seconds: 8));
+      final trip =
+          await ApiService.getTrip(tripId).timeout(const Duration(seconds: 8));
       final status = (trip['status'] ?? '').toString().trim().toLowerCase();
       return _kFinishedTripStatuses.contains(status);
     } on ApiException catch (e) {
@@ -3984,10 +4060,21 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       final trip = await ApiService.getActiveTrip();
       if (!mounted || trip == null) return;
       final status = (trip['status'] ?? '').toString();
-      if (status == 'completed' || status == 'canceled' || status == 'cancelled') return;
-      final activeStatuses = {'accepted', 'driver_en_route', 'driver_arriving',
-          'en_route_to_pickup', 'arrived', 'driver_arrived', 'in_trip',
-          'in_progress', 'rider_onboard', 'on_trip'};
+      if (status == 'completed' ||
+          status == 'canceled' ||
+          status == 'cancelled') return;
+      final activeStatuses = {
+        'accepted',
+        'driver_en_route',
+        'driver_arriving',
+        'en_route_to_pickup',
+        'arrived',
+        'driver_arrived',
+        'in_trip',
+        'in_progress',
+        'rider_onboard',
+        'on_trip'
+      };
       if (!activeStatuses.contains(status)) return;
 
       if (!mounted) return;
@@ -4022,7 +4109,8 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
             if (!mounted) return;
             _navigateToScheduledTripScreen(trip);
           } catch (e) {
-            debugPrint('[DriverHome] Auto-start scheduled trip failed: $e — showing countdown instead');
+            debugPrint(
+                '[DriverHome] Auto-start scheduled trip failed: $e — showing countdown instead');
             if (!mounted) return;
             _showScheduledCountdown(trip, minutesUntil);
           }
@@ -4143,8 +4231,10 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     final pickupLng = _pickDouble(trip, ['pickup_lng']);
     final dropoffLat = _pickDouble(trip, ['dropoff_lat']);
     final dropoffLng = _pickDouble(trip, ['dropoff_lng']);
-    if (pickupLat == null || pickupLng == null ||
-        dropoffLat == null || dropoffLng == null) {
+    if (pickupLat == null ||
+        pickupLng == null ||
+        dropoffLat == null ||
+        dropoffLng == null) {
       return;
     }
 
@@ -4158,36 +4248,43 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     final riderId = int.tryParse((trip['rider_id'] ?? '').toString());
 
     _suspendMap();
-    Navigator.of(context).push(
-      slideFromRightRoute(
-        DriverTripAcceptScreen(
-          tripId: tripId,
-          riderName: riderName,
-          riderPhotoUrl: _normalizePhotoUrl(trip['rider_photo_url']?.toString() ?? ''),
-          riderRating: (trip['rider_rating'] as num?)?.toDouble() ?? 0,
-          riderIsNew: trip['rider_is_new'] == true,
-          riderId: riderId,
-          pickupLatLng: pickup,
-          dropoffLatLng: dropoff,
-          pickupAddress: _pickString(trip, ['pickup_address'], fallback: 'Pickup'),
-          dropoffAddress: _pickString(trip, ['dropoff_address'], fallback: 'Drop-off'),
-          fare: _pickDouble(trip, ['fare']) ?? 0,
-          vehicleType: _pickString(trip, ['vehicle_type'], fallback: 'Comfort'),
-          driverPos: driverPos,
-          distToPickupKm: distKm,
-          etaMinutes: etaMinutes,
-          riderPhone: _pickString(trip, ['rider_phone']),
-          tripAlreadyStarted: true,
-        ),
-      ),
-    ).whenComplete(() => _unsuspendMap());
+    Navigator.of(context)
+        .push(
+          slideFromRightRoute(
+            DriverTripAcceptScreen(
+              tripId: tripId,
+              riderName: riderName,
+              riderPhotoUrl:
+                  _normalizePhotoUrl(trip['rider_photo_url']?.toString() ?? ''),
+              riderRating: (trip['rider_rating'] as num?)?.toDouble() ?? 0,
+              riderIsNew: trip['rider_is_new'] == true,
+              riderId: riderId,
+              pickupLatLng: pickup,
+              dropoffLatLng: dropoff,
+              pickupAddress:
+                  _pickString(trip, ['pickup_address'], fallback: 'Pickup'),
+              dropoffAddress:
+                  _pickString(trip, ['dropoff_address'], fallback: 'Drop-off'),
+              fare: _pickDouble(trip, ['fare']) ?? 0,
+              vehicleType:
+                  _pickString(trip, ['vehicle_type'], fallback: 'Comfort'),
+              driverPos: driverPos,
+              distToPickupKm: distKm,
+              etaMinutes: etaMinutes,
+              riderPhone: _pickString(trip, ['rider_phone']),
+              tripAlreadyStarted: true,
+            ),
+          ),
+        )
+        .whenComplete(() => _unsuspendMap());
   }
 
   Future<void> _resumeActiveTrip() async {
     // Idempotency guard — 6 callers, any two firing concurrently would
     // push DriverTripAcceptScreen twice.
     if (_resumingActiveTrip) {
-      debugPrint('[DriverHome] _resumeActiveTrip skipped — already in progress');
+      debugPrint(
+          '[DriverHome] _resumeActiveTrip skipped — already in progress');
       return;
     }
     // Don't re-push DriverTripAcceptScreen if DriverHomeScreen is not the
@@ -4197,7 +4294,8 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     // app-resume after the driver used Google Maps for turn-by-turn.
     final route = ModalRoute.of(context);
     if (route != null && !route.isCurrent) {
-      debugPrint('[DriverHome] _resumeActiveTrip skipped — another route is on top');
+      debugPrint(
+          '[DriverHome] _resumeActiveTrip skipped — another route is on top');
       return;
     }
     _resumingActiveTrip = true;
@@ -4224,7 +4322,10 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     final pickupLng = _pickDouble(trip, ['pickupLng', 'pickup_lng']);
     final dropoffLat = _pickDouble(trip, ['dropoffLat', 'dropoff_lat']);
     final dropoffLng = _pickDouble(trip, ['dropoffLng', 'dropoff_lng']);
-    if (pickupLat == null || pickupLng == null || dropoffLat == null || dropoffLng == null) {
+    if (pickupLat == null ||
+        pickupLng == null ||
+        dropoffLat == null ||
+        dropoffLng == null) {
       return;
     }
 
@@ -4237,16 +4338,24 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       // PATCH /trips/0, the rating screen would rate trip 0, and every one of
       // those calls comes back 404. The driver ends up on a screen whose
       // buttons do nothing, which is how a finished trip turned into a trap.
-      debugPrint('[DriverHome] active trip has no usable id: ${trip.keys.toList()}');
+      debugPrint(
+          '[DriverHome] active trip has no usable id: ${trip.keys.toList()}');
       if (mounted) setState(() => _activeTripData = null);
       return;
     }
-    final riderName = _pickString(trip, ['riderName', 'rider_name', 'passengerName', 'passenger_name'], fallback: 'Rider');
-    final riderPhone = _pickString(trip, ['rider_phone', 'passengerPhone', 'passenger_phone']);
-    final pickupAddress = _pickString(trip, ['pickupAddress', 'pickup_address'], fallback: 'Pickup');
-    final dropoffAddress = _pickString(trip, ['dropoffAddress', 'dropoff_address'], fallback: 'Drop-off');
+    final riderName = _pickString(
+        trip, ['riderName', 'rider_name', 'passengerName', 'passenger_name'],
+        fallback: 'Rider');
+    final riderPhone =
+        _pickString(trip, ['rider_phone', 'passengerPhone', 'passenger_phone']);
+    final pickupAddress = _pickString(trip, ['pickupAddress', 'pickup_address'],
+        fallback: 'Pickup');
+    final dropoffAddress = _pickString(
+        trip, ['dropoffAddress', 'dropoff_address'],
+        fallback: 'Drop-off');
     final fare = _pickDouble(trip, ['fare']) ?? 0;
-    final vehicleType = _pickString(trip, ['vehicleType', 'vehicle_type'], fallback: 'Ride');
+    final vehicleType =
+        _pickString(trip, ['vehicleType', 'vehicle_type'], fallback: 'Ride');
 
     final distKm = _haversineKm(driverPos, pickup);
     final etaMinutes = ((distKm * 1000) / 17.88 / 60).ceil().clamp(1, 99);
@@ -4255,10 +4364,13 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     // at the correct phase instead of resetting to "Slide Start Trip".
     final status = _pickString(trip, ['status'], fallback: 'accepted');
     final arrivedAtPickup = (status == 'arrived' || status == 'driver_arrived');
-    final rideStarted = (status == 'in_trip' || status == 'in_progress' || status == 'rider_onboard');
+    final rideStarted = (status == 'in_trip' ||
+        status == 'in_progress' ||
+        status == 'rider_onboard');
 
     // Extract rider SQL integer ID from riderId/passengerId ("sql_123" → 123)
-    final passengerIdRaw = _pickString(trip, ['riderId', 'rider_id', 'passengerId', 'passenger_id']);
+    final passengerIdRaw = _pickString(
+        trip, ['riderId', 'rider_id', 'passengerId', 'passenger_id']);
     final resumeRiderId = int.tryParse(passengerIdRaw.replaceFirst('sql_', ''));
 
     // Drop our native map before the trip screen mounts its own — two live
@@ -4272,9 +4384,15 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
             tripId: tripId,
             riderName: riderName,
             riderPhotoUrl: _normalizePhotoUrl(
-              _pickString(trip, ['riderPhotoUrl', 'rider_photo_url', 'passengerPhotoUrl', 'passenger_photo_url']),
+              _pickString(trip, [
+                'riderPhotoUrl',
+                'rider_photo_url',
+                'passengerPhotoUrl',
+                'passenger_photo_url'
+              ]),
             ),
-            riderRating: _pickDouble(trip, ['riderRating', 'rider_rating']) ?? 0,
+            riderRating:
+                _pickDouble(trip, ['riderRating', 'rider_rating']) ?? 0,
             riderIsNew: trip['rider_is_new'] == true,
             riderId: resumeRiderId,
             pickupLatLng: pickup,
@@ -4287,8 +4405,10 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
             distToPickupKm: distKm,
             etaMinutes: etaMinutes,
             riderPhone: riderPhone,
-            pickupInstructions: _pickString(trip, ['pickupInstructions', 'pickup_instructions']),
-            dropoffInstructions: _pickString(trip, ['dropoffInstructions', 'dropoff_instructions']),
+            pickupInstructions: _pickString(
+                trip, ['pickupInstructions', 'pickup_instructions']),
+            dropoffInstructions: _pickString(
+                trip, ['dropoffInstructions', 'dropoff_instructions']),
             arrivedAtPickup: arrivedAtPickup,
             rideStarted: rideStarted,
             tripAlreadyStarted: true,
@@ -4327,7 +4447,11 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   /// stuck on the rating screen was looking at.
   int _tripSqlId(Map<String, dynamic> data) {
     final direct = _pickInt(data, const [
-      'id', 'tripId', 'trip_id', 'sqliteId', 'sqlite_id',
+      'id',
+      'tripId',
+      'trip_id',
+      'sqliteId',
+      'sqlite_id',
     ]);
     if (direct != null && direct > 0) return direct;
     final docId = (data['_docId'] ?? '').toString();
@@ -4355,7 +4479,8 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     return null;
   }
 
-  String _pickString(Map<String, dynamic> data, List<String> keys, {String fallback = ''}) {
+  String _pickString(Map<String, dynamic> data, List<String> keys,
+      {String fallback = ''}) {
     for (final k in keys) {
       final v = data[k]?.toString().trim();
       if (v != null && v.isNotEmpty) return v;
@@ -4380,7 +4505,8 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     final aa = sa * sa +
         math.cos(a.latitude * math.pi / 180) *
             math.cos(b.latitude * math.pi / 180) *
-            sb * sb;
+            sb *
+            sb;
     return r * 2 * math.atan2(math.sqrt(aa), math.sqrt(1 - aa));
   }
 }

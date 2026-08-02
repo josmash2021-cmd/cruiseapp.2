@@ -25,12 +25,35 @@ What happens to a car that qualifies for none — a 2011 sedan, a 2014 SUV
 Unchanged, per the existing `_COMMISSION_BY_TYPE` in
 `backend/routers/trips.py`:
 
-| Tier | Platform | Driver |
+The table has five rows today, not three:
+
+| Key | Platform | Driver |
 |---|---|---|
-| Standard | 40% | 60% |
+| `sedan` | 40% | 60% |
+| `comfort` | 40% | 60% |
+| `premium` | 35% | 65% |
+| `suv_xl` | 32% | 68% |
+| `vip` | 30% | 70% |
+
+Which maps onto the four tiers as:
+
+| Tier | From | Driver keeps |
+|---|---|---|
+| Standard | `comfort` / `sedan` | 60% |
 | Compact | *(see Open)* | |
-| Premium | 35% | 65% |
-| Black | 30% | 70% |
+| Premium | `premium` | 65% |
+| Black | `vip` | 70% |
+
+`suv_xl` at 68% is unclaimed by the new naming and is the obvious home
+for one of the SUV tiers.
+
+### The estimate on the offer card does not use this table
+
+`DRIVER_SHARE_RATE = 0.60` is hardcoded in `dispatch.py` and
+`guardian_agent.py`, and it is what computes the figure the driver reads
+on the offer card. A Black driver is shown 60% of the fare and paid 70%.
+The card under-promises today, which is the safe direction, but it is
+still two sources for one number and they have already disagreed.
 
 ## What this touches
 
@@ -69,5 +92,6 @@ Order of work, and it matters:
   tiers. "As already set" leaves Compact undefined — 60% like Standard,
   or 65% like Premium? A wrong guess here is a driver underpaid on every
   trip, so it is not being guessed.
-- **Cars that qualify for nothing.** A 2011 sedan or a 2014 SUV matches
-  no row. Rejected at signup, or grandfathered into Standard?
+- ~~Cars that qualify for nothing.~~ **Decided:** they fall into
+  Standard. A 2011 sedan or a 2014 SUV still drives; it just never
+  qualifies for a higher tier.

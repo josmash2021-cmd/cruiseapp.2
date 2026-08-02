@@ -15,6 +15,7 @@ import '../map/map_surface_coordinator.dart';
 import '../config/map_theme.dart';
 import 'package:geolocator/geolocator.dart';
 import '../services/preload_service.dart';
+import '../services/heading_service.dart';
 import 'package:permission_handler/permission_handler.dart'
     show openAppSettings;
 import 'package:shared_preferences/shared_preferences.dart';
@@ -183,6 +184,12 @@ class _HomeScreenState extends State<HomeScreen>
   mapbox.MapboxMap? _homeMiniMapCtrl;
   bool _creatingHomeDotAnnot = false; // guard: prevents parallel annotation creation
   final GoldLocationDot _homeDot = GoldLocationDot();
+
+  /// Where the mini-map arrow points: GPS course while moving, compass at a
+  /// standstill — the same source the driver's own pages use, so the rider's
+  /// arrow behaves exactly like the driver's.
+  final HeadingService _headingSource = HeadingService();
+  StreamSubscription<double>? _headingSub;
   // Throttle camera recentering so it doesn't fight the dot ticker.
   DateTime _lastMiniMapRecenter = DateTime(0);
 
@@ -264,6 +271,14 @@ class _HomeScreenState extends State<HomeScreen>
       _miniDotFrame.value++;   // repaint the Flutter dot with the frame
       _recenterHomeMiniMap();  // and keep the map under it
     }));
+    // The arrow's direction: course while moving, compass parked — the
+    // dot's SmoothMotion low-passes it into the same silky turn the
+    // driver's arrow makes.
+    _headingSource.start();
+    _headingSub?.cancel();
+    _headingSub = _headingSource.stream.listen((deg) {
+      _homeDot.setBearing(deg);
+    });
     // Defer driver check until after first frame to avoid blocking startup
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _checkDriversOnline();
@@ -456,6 +471,8 @@ class _HomeScreenState extends State<HomeScreen>
     // first. The other order leaves a live ticker pointed at a disposed
     // ValueNotifier.
     _homeDot.dispose();
+    _headingSub?.cancel();
+    _headingSource.dispose();
     _miniDotFrame.dispose();
     _boltFlashCtrl.dispose();
     _promoShimmerCtrl.dispose();
@@ -666,6 +683,9 @@ class _HomeScreenState extends State<HomeScreen>
             _lastGpsFixAt = DateTime.now();
             final ll = LatLng(p.latitude, p.longitude);
             _currentLatLng = ll;
+            // Feed the compass/course arbiter the same fix the driver pages
+            // feed theirs — it decides which source the arrow trusts.
+            _headingSource.onFix(p);
             // Feed the mini map dot (SmoothMotion glides) + throttled
             // follow camera — the platform channel stays unsaturated.
             _feedHomeDot(ll.latitude, ll.longitude);

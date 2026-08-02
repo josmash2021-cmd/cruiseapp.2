@@ -1489,10 +1489,48 @@ extension _HomeScreenWidgets on _HomeScreenState {
                 child: ListenableBuilder(
                   listenable: _miniDotFrame,
                   builder: (_, __) => Center(
-                    child: GoldLocationDotOverlay(
-                      bearing: 0,
-                      heading: false,
-                      size: 40,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        // "You" tag — a small gold-rimmed pill riding above
+                        // the arrow, so the marker reads as *you*, not as
+                        // just another pin on the card.
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 9, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF14141A),
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(
+                              color: _gold.withValues(alpha: 0.55),
+                            ),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.45),
+                                blurRadius: 6,
+                                offset: const Offset(0, 2),
+                              ),
+                            ],
+                          ),
+                          child: Text(
+                            S.of(context).cruiseYouColumn,
+                            style: const TextStyle(
+                              color: _gold,
+                              fontSize: 10.5,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: 0.4,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 3),
+                        // Bigger now, and it points: same arrow badge the
+                        // driver's maps draw, fed by the same heading source.
+                        GoldLocationDotOverlay(
+                          bearing: _homeDot.bearing,
+                          heading: true,
+                          size: 56,
+                        ),
+                      ],
                     ),
                   ),
                 ),

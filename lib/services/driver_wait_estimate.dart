@@ -69,6 +69,22 @@ class DriverWaitEstimate {
   static const double radiusMiles = 15.0;
   static const double _milesToKm = 1.60934;
 
+  /// Per-state catchment, product rule: up to 20 miles while the pickup is
+  /// in Alabama, 15 while it is in Florida. Anything else falls back to
+  /// the wider of the two — under-reading demand costs a sale, over-reading
+  /// it costs only a slightly optimistic minute range.
+  static double radiusMilesFor(double lat, double lng) {
+    // Florida: everything south of the AL/GA line through Jacksonville.
+    if (lat >= 24.3 && lat <= 31.1 && lng >= -87.7 && lng <= -79.8) {
+      return 15.0;
+    }
+    // Alabama: the whole state, a little padded past the borders.
+    if (lat >= 30.1 && lat <= 35.1 && lng >= -88.6 && lng <= -84.8) {
+      return 20.0;
+    }
+    return 20.0;
+  }
+
   /// The fallback range, used only when no distance can be worked out —
   /// the lookup failed, or drivers came back without coordinates.
   static const int _bestCase = 5;
@@ -90,18 +106,22 @@ class DriverWaitEstimate {
   static final Map<String, Future<WaitEstimate>> _inFlight =
       <String, Future<WaitEstimate>>{};
 
-  /// Round to ~1 km so a rider nudging the pin does not re-fetch.
-  static String _key(double lat, double lng) =>
-      '${lat.toStringAsFixed(2)},${lng.toStringAsFixed(2)}';
+  /// Round to ~1 km so a rider nudging the pin does not re-fetch. The tier
+  /// is part of the key: "who takes Black" and "who takes Standard" are
+  /// different answers to the same point.
+  static String _key(double lat, double lng, String tier) =>
+      '${lat.toStringAsFixed(2)},${lng.toStringAsFixed(2)}|$tier';
 
   /// The answer if we already have it, for a first paint with no gap.
-  static WaitEstimate? cached(double lat, double lng) => _cache[_key(lat, lng)];
+  static WaitEstimate? cached(double lat, double lng, {String tier = ''}) =>
+      _cache[_key(lat, lng, tier)];
 
   static Future<WaitEstimate> fetch({
     required double lat,
     required double lng,
+    String tier = '',
   }) {
-    final key = _key(lat, lng);
+    final key = _key(lat, lng, tier);
     final hit = _cache[key];
     if (hit != null) return Future<WaitEstimate>.value(hit);
     // Share one request between simultaneous callers — the card and whatever
@@ -109,7 +129,7 @@ class DriverWaitEstimate {
     final pending = _inFlight[key];
     if (pending != null) return pending;
 
-    final future = _load(lat, lng).then((e) {
+    final future = _load(lat, lng, tier).then((e) {
       _cache[key] = e;
       _inFlight.remove(key);
       return e;
@@ -129,11 +149,12 @@ class DriverWaitEstimate {
     return future;
   }
 
-  static Future<WaitEstimate> _load(double lat, double lng) async {
+  static Future<WaitEstimate> _load(double lat, double lng, String tier) async {
     final drivers = await ApiService.getNearbyDrivers(
       lat: lat,
       lng: lng,
-      radiusKm: radiusMiles * _milesToKm,
+      radiusKm: radiusMilesFor(lat, lng) * _milesToKm,
+      tier: tier,
     );
     if (drivers.isEmpty) {
       return const WaitEstimate(

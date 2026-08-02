@@ -293,24 +293,38 @@ _TIER_ALIASES: dict[str, tuple[str, ...]] = {
 }
 
 
+# Who may serve a request for each tier, product rule 2026-08-02:
+# a driver is offered exactly the work their own tier says, with one
+# exception — a Black car also sees Premium requests, because a Black
+# cabin serves a Premium rider without complaint. Nothing else crosses:
+# Premium drivers get Premium only, Compact get Compact only, Standard
+# get Standard only. Read from the driver's seat that is: Black gets
+# Black + Premium work, Premium gets Premium work, and the rest stay
+# in their lane.
+_REQUEST_RULE: dict[str, tuple[str, ...]] = {
+    TIER_STANDARD: (TIER_STANDARD,),
+    TIER_COMPACT: (TIER_COMPACT,),
+    TIER_PREMIUM: (TIER_PREMIUM, TIER_BLACK),
+    TIER_BLACK: (TIER_BLACK,),
+}
+
+
 def eligible_tiers(requested: str | None) -> tuple[str, ...]:
     """Stored tier strings that can serve a request for `requested`.
 
-    A request is taken by its own tier or the one directly above it, and
-    no higher. That is the rule the dispatcher has always followed —
-    comfort rides went to comfort and premium cars but never to a VIP —
-    and it survives the rename because capacity only grows as you climb:
-    a car one rung up always seats at least as many people.
+    The 2026-08 rule in [_REQUEST_RULE]: own tier only, plus Black
+    serving Premium too. It replaces the older "own tier or one rung
+    up" ladder, which let Compact cars into Standard work and Premium
+    cars into Compact work — neither side of that was wanted.
 
-    Both the old strings and the new ones come back, so the same list is
-    correct before, during and after the data migration.
+    Both the old strings and the new ones come back through the alias
+    table, so the same list is correct before, during and after the
+    data migration.
     """
     tier = normalize_tier(requested)
-    rank = TIER_ORDER[tier]
     out: list[str] = []
-    for t in TIERS:
-        if rank <= TIER_ORDER[t] <= rank + 1:
-            out.extend(_TIER_ALIASES[t])
+    for t in _REQUEST_RULE[tier]:
+        out.extend(_TIER_ALIASES[t])
     return tuple(out)
 
 

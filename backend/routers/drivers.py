@@ -224,14 +224,34 @@ async def update_driver_location(driver_id: int, body: DriverLocationIn, user: U
 @router.get("/drivers/nearby", dependencies=[Depends(_verify_api_key)])
 async def get_nearby_drivers(
     lat: float = Query(...), lng: float = Query(...), radius_km: float = Query(15.0),
+    tier: str = Query(""),
     user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db),
 ):
+    """Online drivers near a point, optionally limited to one vehicle tier.
+
+    The tier filter answers "who could actually take this request" —
+    per-tier ETAs mean nothing if they count cars that would never see
+    the offer. Eligibility (Black also serves Premium) is the dispatch
+    rule in vehicle_tiers.eligible_tiers, so the count matches the offer.
+    """
     # Cache key: round coordinates to ~100m grid for cache hits from same area
-    _cache_key = (round(lat, 3), round(lng, 3), radius_km)
+    _cache_key = (round(lat, 3), round(lng, 3), radius_km, tier)
     _now = time.monotonic()
     _cached = _nearby_cache.get(_cache_key)
     if _cached and (_now - _cached[0]) < _NEARBY_CACHE_TTL:
         return _cached[1]
+
+    from services.vehicle_tiers import eligible_tiers, normalize_tier
+    tier_keys = set(eligible_tiers(tier)) if tier else set()
+
+    async def _tiers_for(driver_ids: list[int]) -> dict[int, str]:
+        if not driver_ids:
+            return {}
+        rows = (await db.execute(
+            select(Vehicle.user_id, Vehicle.vehicle_type).where(
+                Vehicle.user_id.in_(driver_ids))
+        )).all()
+        return {uid: (vt or "") for uid, vt in rows}
 
     # Try Redis Geo first for ultra-fast nearby queries
     nearby = []
@@ -242,6 +262,8 @@ async def get_nearby_drivers(
                 "drivers:online", lng, lat, radius_km, unit="km", withdist=True
             )
             if geo_results:
+                candidate_ids = []
+                parsed = []
                 for item in geo_results:
                     # aioredis returns tuples or lists depending on version
                     if isinstance(item, (list, tuple)) and len(item) >= 2:
@@ -250,10 +272,16 @@ async def get_nearby_drivers(
                     else:
                         driver_id_str = item
                         dist = 0.0
+                    candidate_ids.append(int(driver_id_str))
+                    parsed.append((int(driver_id_str), dist))
+                tier_map = _tiers_for(candidate_ids) if tier_keys else {}
+                for driver_id, dist in parsed:
+                    if tier_keys and tier_map.get(driver_id, "").lower() not in tier_keys:
+                        continue
                     # Fetch driver name from DB (or cache)
                     d_res = await db.execute(
                         select(User.id, User.first_name, User.last_name, User.lat, User.lng)
-                        .where(User.id == int(driver_id_str))
+                        .where(User.id == driver_id)
                     )
                     d_row = d_res.first()
                     if d_row:
@@ -263,6 +291,7 @@ async def get_nearby_drivers(
                             "lng": d_row.lng or lng,
                             "name": f"{d_row.first_name or ''} {d_row.last_name or ''}".strip(),
                             "distance_km": round(dist, 2),
+                            "tier": normalize_tier(tier_map.get(driver_id)) if tier_keys else None,
                         })
     except Exception as _redis_err:
         logger.warning("Redis georadius failed, falling back to SQL: %s", _redis_err)
@@ -281,13 +310,21 @@ async def get_nearby_drivers(
                 User.lng >= lng - _lng_delta, User.lng <= lng + _lng_delta,
             ))
         )
+        fallback_ids = [r[0] for r in result.all()]
+        tier_map = _tiers_for(fallback_ids) if tier_keys else {}
         for d_id, d_lat, d_lng, d_first, d_last in result.all():
+            if tier_keys and tier_map.get(d_id, "").lower() not in tier_keys:
+                continue
             # Use in-memory location if fresher than DB
             mem = _driver_locations.get(d_id)
             if mem and mem["is_online"]:
                 d_lat, d_lng = mem["lat"], mem["lng"]
             if _haversine(lat, lng, d_lat or 0, d_lng or 0) <= radius_km:
-                nearby.append({"id": d_id, "lat": d_lat, "lng": d_lng, "name": f"{d_first} {d_last}"})
+                nearby.append({
+                    "id": d_id, "lat": d_lat, "lng": d_lng,
+                    "name": f"{d_first} {d_last}",
+                    "tier": normalize_tier(tier_map.get(d_id)) if tier_keys else None,
+                })
 
     response = {"count": len(nearby), "drivers": nearby}
     _nearby_cache[_cache_key] = (_now, response)

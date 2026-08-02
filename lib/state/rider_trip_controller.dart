@@ -577,19 +577,50 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
     }
     final mins = rawMins < 1 ? 1 : (rawMins > maxMins ? maxMins : rawMins);
     final miles = rawMiles < 0.5 ? 0.5 : (rawMiles > maxMiles ? maxMiles : rawMiles);
-    double baseFare = 2.50 + (miles * 1.50) + (mins * 0.25);
 
-    // Airport surcharge: +$8 flat + 15% uplift
+    // ── Competitive anchor: cheaper of Uber/Lyft's published cards − $5 ──
+    //
+    // There is no official real-time pricing API from either company, so
+    // the anchor is the published rate card per tier (the cheaper of the
+    // two) and our total holds $5 under it. Our surge multiplier moves for
+    // the same reasons theirs does — traffic, rain, holidays — so the
+    // undercut holds on those days too.
+    (double, double, double, double, double) anchorRates(String tier) {
+      switch (tier) {
+        case 'black':
+          return (7.50, 2.75, 0.50, 3.00, 20.00);
+        case 'premium':
+          return (3.00, 1.75, 0.30, 2.75, 12.00);
+        case 'compact':
+          return (2.50, 1.15, 0.22, 2.50, 9.00);
+        default: // standard
+          return (2.00, 1.00, 0.20, 2.50, 8.00);
+      }
+    }
+
+    // Miami-market cards run ~8% above Birmingham's; everywhere else 1.0.
+    final plat = _state.pickup?.lat ?? 0;
+    final plng = _state.pickup?.lng ?? 0;
+    final stateMult =
+        (plat >= 24.3 && plat <= 31.1 && plng >= -87.7 && plng <= -79.8)
+            ? 1.08
+            : 1.0;
+    double anchoredTotal(String tier) {
+      final r = anchorRates(tier);
+      final anchor =
+          (r.$1 + miles * r.$2 + mins * r.$3 + r.$4) * stateMult;
+      final total = anchor - 5.0;
+      return total > r.$5 ? total : r.$5;
+    }
+
+    // Airport surcharge: +$8 flat + 15% uplift, on top of the anchor.
     final airportTrip =
         _isAirport(_state.pickupLabel) || _isAirport(_state.dropoffLabel);
-    if (airportTrip) {
-      baseFare = (baseFare + 8.0) * 1.15;
-    }
+    double withAirport(double v) => airportTrip ? (v + 8.0) * 1.15 : v;
     _state = _state.copyWith(isAirportTrip: airportTrip);
 
     // Apply surge multiplier (fetched async, default 1.0)
     final surge = _surgeMultiplier;
-    final surgedBase = baseFare * surge;
 
     // Use real route duration from API (traffic-aware seconds) when available,
     // otherwise parse "12 min" or "1 h 5 min" text from durationText.
@@ -601,7 +632,7 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
         id: 'suburban',
         name: 'VIP',
         description: 'Spacious • Leather • Snacks & Drinks',
-        priceEstimate: _round(surgedBase * 2.20),
+        priceEstimate: _round(withAirport(anchoredTotal('black')) * surge),
         etaMinutes: baseDuration + 3,
         icon: '🚐',
         capacity: 7,
@@ -614,7 +645,7 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
         id: 'suv_xl',
         name: 'SUV XL',
         description: 'Up to 6 • XL luggage • Climate',
-        priceEstimate: _round(surgedBase * 1.485),
+        priceEstimate: _round(withAirport(anchoredTotal('premium')) * surge),
         etaMinutes: baseDuration + 2,
         icon: '🚙',
         capacity: 6,
@@ -624,7 +655,7 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
         id: 'camry',
         name: 'Sedan',
         description: 'Comfort • Climate • Charger',
-        priceEstimate: _round(surgedBase * 1.35),
+        priceEstimate: _round(withAirport(anchoredTotal('compact')) * surge),
         etaMinutes: baseDuration + 2,
         icon: '🚙',
         capacity: 4,
@@ -634,7 +665,7 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
         id: 'fusion',
         name: 'Comfort',
         description: 'Clean • Safe • Efficient',
-        priceEstimate: _round(surgedBase),
+        priceEstimate: _round(withAirport(anchoredTotal('standard')) * surge),
         etaMinutes: baseDuration,
         icon: '🚗',
         capacity: 4,

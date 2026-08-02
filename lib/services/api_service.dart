@@ -3143,12 +3143,14 @@ class ApiService {
     required double lat,
     required double lng,
     double radiusKm = 15.0,
+    String tier = '',
   }) async {
     try {
       final h = await _authHeaders();
+      final tierQ = tier.isEmpty ? '' : '&tier=$tier';
       final res = await _cachedGet(
         Uri.parse(
-          '$_baseUrl/drivers/nearby?lat=$lat&lng=$lng&radius_km=$radiusKm',
+          '$_baseUrl/drivers/nearby?lat=$lat&lng=$lng&radius_km=$radiusKm$tierQ',
         ),
         headers: h,
         cacheTtl: const Duration(seconds: 15),

@@ -156,3 +156,13 @@ Nothing. The spec is complete and ready to build.
 - ~~Cars that qualify for nothing.~~ **Decided:** they fall into
   Standard. A 2011 sedan or a 2014 SUV still drives; it just never
   qualifies for a higher tier.
+
+## Eligibility rule (updated 2026-08-02)
+
+A driver is offered exactly the work their own tier says, with one
+exception: a Black car also sees Premium requests. From the driver's
+seat — Black gets Black + Premium, Premium gets Premium only, Compact
+gets Compact only, Standard gets Standard only. This replaces the older
+"own tier or one rung up" ladder. The rule lives in
+`backend/services/vehicle_tiers.py` (`_REQUEST_RULE`) and is pinned by
+`backend/tests/test_vehicle_tiers.py`.

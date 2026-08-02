@@ -1468,12 +1468,15 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                 ),
               ),
             ),
-            // The wait, under the car. Just the range — the same figure the
-            // expanded card spells out in full, so the rider sees the same
-            // number before and after choosing.
+            // The wait, under the car. Just the range — per tier now,
+            // because different tiers really have different drivers, and
+            // one shared "2-4 min" for everyone was a number nobody
+            // could trust.
             SizedBox(height: 5 * s),
             Text(
-              _gridWaitRangeText(),
+              _gridWaitRangeText(
+                isSuv ? 'black' : isSuvXl ? 'premium' : (isPremium ? 'compact' : 'standard'),
+              ),
               textAlign: TextAlign.center,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
@@ -1493,24 +1496,20 @@ extension _RideRequestWidgets on _RideRequestScreenState {
 
   /// Wait range for the small tier cards. Cache-only: these build on every
   /// frame of the collapse animation, and a build must never start network
-  /// work. The expanded card's FutureBuilder is what fetches it.
-  String _gridWaitRangeText() {
+  /// work. The expanded card's FutureBuilder is what fetches it — per tier
+  /// now, because "who takes Black" and "who takes Standard" are different
+  /// answers to the same pickup.
+  String _gridWaitRangeText(String tier) {
     final pickup = _ctrl.state.pickup;
     if (pickup == null) return '';
-    final est = DriverWaitEstimate.cached(pickup.lat, pickup.lng);
+    final est = DriverWaitEstimate.cached(pickup.lat, pickup.lng, tier: tier);
     if (est == null) {
-      // Nothing cached yet — so ask.
-      //
-      // This used to return blank and stop there, waiting for a value that
-      // nothing was going to fetch. The expanded card asks (it is built on
-      // a FutureBuilder), so the minutes turned up only after opening a
-      // card; the four tiles sat with an empty line under the car, and if
-      // the rider set a pickup away from where they were standing, nothing
-      // had ever asked for that point and the line stayed empty for good.
-      //
-      // The request is shared and cached, so four tiles cause one call.
+      // Nothing cached for THIS tier — so ask. The request is shared and
+      // cached for 15 s, so the four tiles cause four calls, one each, not
+      // one per frame.
       unawaited(
-        DriverWaitEstimate.fetch(lat: pickup.lat, lng: pickup.lng).then((_) {
+        DriverWaitEstimate.fetch(lat: pickup.lat, lng: pickup.lng, tier: tier)
+            .then((_) {
           _setState(() {});
         }),
       );

@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import '../../utils/vehicle_tier_style.dart';
 import '../../widgets/neu_style.dart';
 import 'driver_vehicle_detail_screen.dart';
 import '../../services/haptic_service.dart';
@@ -100,50 +101,19 @@ class _DriverVehicleScreenState extends State<DriverVehicleScreen> {
     }
   }
 
-  /// Vehicle tier → car image asset
-  String get _carImage {
-    // The same four shapes the rider is shown when they pick a ride. A
-    // driver whose car is a compact SUV should not see a saloon on their
-    // own vehicle page.
-    switch (_vehicleType.toLowerCase().replaceAll(RegExp(r'[ -]'), '_')) {
-      case 'vip':
-      case 'black':
-        return 'assets/images/cruise_3.png';
-      case 'premium':
-      case 'suv_xl':
-      case 'suvxl':
-        return 'assets/images/cruisert_suvxl.png';
-      case 'suv':
-      case 'compact':
-        return 'assets/images/cruisert_compact.png';
-      default: // comfort — sedans and compact cars
-        return 'assets/images/cruise_6.png';
-    }
-  }
+  /// The same four shapes the rider is shown when they pick a ride.
+  String get _carImage => tierCarImage(_vehicleType);
 
-  /// Vehicle tier → display info
-  ({String label, Color color, IconData icon}) get _tierInfo {
-    switch (_vehicleType.toLowerCase()) {
-      case 'vip':
-        return (
-          label: 'VIP',
-          color: const Color(0xFFD4A843),
-          icon: Icons.star_rounded,
-        );
-      case 'premium':
-        return (
-          label: 'PREMIUM',
-          color: const Color(0xFFB0BEC5),
-          icon: Icons.diamond_rounded,
-        );
-      default:
-        return (
-          label: 'COMFORT',
-          color: const Color(0xFF66BB6A),
-          icon: Icons.eco_rounded,
-        );
-    }
-  }
+  /// Tier label, colour and icon.
+  ///
+  /// This used to hold its own switch that knew only VIP, PREMIUM and
+  /// COMFORT, so a `black` or `compact` car fell through to the default
+  /// and a Black driver read "COMFORT" under a green leaf.
+  ({String label, Color color, IconData icon}) get _tierInfo => (
+        label: tierLabel(_vehicleType),
+        color: tierColor(_vehicleType),
+        icon: tierIcon(_vehicleType),
+      );
 
   bool get _allDocsValid => _insuranceValid && _registrationValid;
 

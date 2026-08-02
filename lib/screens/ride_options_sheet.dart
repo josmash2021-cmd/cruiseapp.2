@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../config/app_theme.dart';
 import '../l10n/app_localizations.dart';
 import '../state/rider_trip_controller.dart';
+import '../utils/vehicle_tier_style.dart';
 import '../widgets/car_image_3d.dart';
 import '../widgets/vehicle_tier_badge.dart';
 
@@ -284,31 +285,20 @@ class RideOptionsSheet extends StatelessWidget {
     // and a sedan arrived under the same photo and an SUV XL was
     // advertised with a saloon. A rider choosing a six-seater is choosing
     // it because of the seats; the picture is the whole promise.
-    final String id = opt.id.toLowerCase();
-    final VehicleTier tier;
-    final String displayName;
-    final String carImage;
-    if (id == 'suburban' || id == 'black' || id == 'vip') {
-      // Suburban, Escalade — seven seats.
-      tier = VehicleTier.vip;
-      displayName = 'BLACK';
-      carImage = 'cruise_3.png';
-    } else if (id == 'suv_xl' || id == 'suvxl' || id == 'premium') {
-      // Traverse and its kind — three rows, six seats.
-      tier = VehicleTier.premium;
-      displayName = 'PREMIUM';
-      carImage = 'cruisert_suvxl.png';
-    } else if (id == 'compact' || id == 'suv' || id == 'rav4') {
-      // A compact SUV, not a saloon and not a seven-seater.
-      tier = VehicleTier.comfort;
-      displayName = 'COMPACT';
-      carImage = 'cruisert_compact.png';
-    } else {
-      // Sedans and compact cars.
-      tier = VehicleTier.comfort;
-      displayName = 'STANDARD';
-      carImage = 'cruise_6.png';
-    }
+    // The picture, the name and the badge all come from one place now —
+    // utils/vehicle_tier_style.dart — so the driver's vehicle page cannot
+    // show a different car for the same tier than the rider was promised.
+    final String key = tierKey(opt.id);
+    final String displayName = tierLabel(opt.id);
+    final String carImage = tierCarImage(opt.id).split('/').last;
+    // VehicleTier is the older three-value enum the badge widget takes.
+    // Compact rides under Comfort there; the four-tier name above is what
+    // the rider actually reads.
+    final VehicleTier tier = key == kTierBlack
+        ? VehicleTier.vip
+        : key == kTierPremium
+            ? VehicleTier.premium
+            : VehicleTier.comfort;
 
     final borderColor = isSelected
         ? _gold.withValues(alpha: 0.70)
@@ -440,32 +430,8 @@ class RideOptionsSheet extends StatelessWidget {
     );
   }
 
-  // Build car image widget based on vehicle type
-  Widget _buildCarImage(String type, bool isSelected) {
-    String imagePath;
-
-    switch (type) {
-      case 'suburban':
-        imagePath = 'assets/images/cruise_3.png';
-        break;
-      case 'camry':
-        imagePath = 'assets/images/cruise_7.png';
-        break;
-      case 'fusion':
-      default:
-        imagePath = 'assets/images/cruise_6.png';
-    }
-
-    return CarImage3D(
-      assetPath: imagePath,
-      cacheWidth: 200,
-      dimmed: !isSelected,
-      selected: isSelected,
-      fallback: Icon(
-        Icons.directions_car_rounded,
-        color: isSelected ? _gold : Colors.white.withValues(alpha: 0.4),
-        size: 36,
-      ),
-    );
-  }
+  // A third car-image mapping lived here — keyed on 'suburban' / 'camry'
+  // / 'fusion', a vocabulary nothing else in the app uses, and the only
+  // reference anywhere to cruise_7.png. It had no callers. Removed rather
+  // than left to be found and trusted.
 }

@@ -86,7 +86,11 @@ LEGACY_TIER_MAP = {
     "sedan": TIER_STANDARD,
     "economy": TIER_STANDARD,
     "suv": TIER_COMPACT,
-    "suv_xl": TIER_BLACK,
+    # An SUV XL is a Traverse — three rows, six seats. That is Premium,
+    # not Black. The rider's ride picker has always shown it that way;
+    # mapping it to Black here would have started offering Black work to
+    # six-seat cars. Its 68% is grandfathered in LEGACY_COMMISSION.
+    "suv_xl": TIER_PREMIUM,
     "vip": TIER_BLACK,
     "black": TIER_BLACK,
     "luxury": TIER_BLACK,

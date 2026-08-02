@@ -100,10 +100,11 @@ CASES = [
     # ── Old tier strings map onto the four ────────────────────────────
     ("comfort becomes Standard", vt.normalize_tier("comfort"), vt.TIER_STANDARD),
     ("vip becomes Black", vt.normalize_tier("vip"), vt.TIER_BLACK),
-    ("suv_xl becomes Black", vt.normalize_tier("suv_xl"), vt.TIER_BLACK),
+    # A Traverse is a six-seater. Black is the seven-seat tier.
+    ("suv_xl becomes Premium", vt.normalize_tier("suv_xl"), vt.TIER_PREMIUM),
     ("premium keeps its name", vt.normalize_tier("premium"), vt.TIER_PREMIUM),
     ("a dash reads the same as an underscore",
-     vt.normalize_tier("SUV-XL"), vt.TIER_BLACK),
+     vt.normalize_tier("SUV-XL"), vt.TIER_PREMIUM),
     ("nothing at all becomes Standard", vt.normalize_tier(None), vt.TIER_STANDARD),
 
     # ── Up the ladder ─────────────────────────────────────────────────

@@ -178,3 +178,80 @@ class EarningsShimmer extends StatelessWidget {
     );
   }
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Wallet shimmer — the screen's own layout, shimmering: the Cruise Cash
+//  card, the "Payment methods" header, and the method rows under it. Shown
+//  instead of the lone centered spinner, which told the rider nothing about
+//  what was coming.
+// ─────────────────────────────────────────────────────────────────────────────
+class WalletShimmer extends StatelessWidget {
+  const WalletShimmer({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      padding: const EdgeInsets.all(20),
+      children: const [
+        _WalletRowShimmer(goldRim: true),
+        SizedBox(height: 24),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            ShimmerBox(width: 150, height: 18),
+            ShimmerBox(width: 48, height: 14),
+          ],
+        ),
+        SizedBox(height: 14),
+        _WalletRowShimmer(),
+        SizedBox(height: 12),
+        _WalletRowShimmer(),
+        SizedBox(height: 12),
+        _WalletRowShimmer(),
+      ],
+    );
+  }
+}
+
+class _WalletRowShimmer extends StatelessWidget {
+  const _WalletRowShimmer({this.goldRim = false});
+
+  final bool goldRim;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1A1F35),
+        borderRadius: BorderRadius.circular(16),
+        // The Cruise Cash card carries the gold rim on the real screen, so
+        // its placeholder does too — dimmer, because it is not the balance
+        // yet, only the shape of it.
+        border: goldRim
+            ? Border.all(
+                color: const Color(0xFFE8C547).withValues(alpha: 0.25),
+                width: 1.2,
+              )
+            : null,
+      ),
+      child: const Row(
+        children: [
+          ShimmerBox(width: 44, height: 44, borderRadius: 12),
+          SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                ShimmerBox(width: 90, height: 10),
+                SizedBox(height: 6),
+                ShimmerBox(width: 130, height: 15),
+              ],
+            ),
+          ),
+          ShimmerBox(width: 20, height: 20, borderRadius: 6),
+        ],
+      ),
+    );
+  }
+}

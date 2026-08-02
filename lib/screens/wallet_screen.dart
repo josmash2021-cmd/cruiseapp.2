@@ -7,6 +7,7 @@ import '../l10n/app_localizations.dart';
 import '../services/api_service.dart';
 import '../services/screen_security_service.dart';
 import '../widgets/neu_style.dart';
+import '../widgets/shimmer_placeholders.dart';
 import 'payment_accounts_screen.dart';
 import 'referral_screen.dart';
 
@@ -210,7 +211,9 @@ class _WalletScreenState extends State<WalletScreen> with SecureScreenMixin {
             // ── Content ──
             Expanded(
               child: _loading
-                  ? const Center(child: CircularProgressIndicator(color: _gold))
+                  // The screen's own layout, shimmering — a spinner on a
+                  // blank page told the rider nothing about what was coming.
+                  ? const WalletShimmer()
                   : _error != null
                       ? _buildError()
                       : _buildContent(c, loc),

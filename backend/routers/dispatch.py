@@ -365,6 +365,18 @@ async def _find_nearest_drivers(
     # open: a driver whose state cannot be resolved is kept rather than
     # dropped, because a geocoder that is down must not empty the queue.
     pickup_state = await _state_for(pickup_lat, pickup_lng)
+    state_radius = _radius_for_state(pickup_state)
+
+    if state_radius is None:
+        # A resolved state Cruise does not operate in. There is nobody to
+        # offer this to, and saying so here is the whole answer.
+        logging.info(
+            "[NearbySearch] pickup is in %s — outside the service area "
+            "(%s), no drivers offered",
+            pickup_state, ", ".join(sorted(_STATE_RADIUS_KM)),
+        )
+        return []
+
     if pickup_state:
         same = []
         for d in drivers:
@@ -377,6 +389,23 @@ async def _find_nearest_drivers(
                 len(drivers) - len(same), pickup_state,
             )
         drivers = same
+
+    # The state's own reach, applied last. The caller asked for a radius
+    # and the SQL box was built from it, but Florida's ten miles is not
+    # Alabama's twenty and the pickup decides which one this is.
+    if state_radius < radius_km:
+        inside = [
+            d for d in drivers
+            if _haversine(pickup_lat, pickup_lng, d.lat or 0, d.lng or 0)
+            <= state_radius
+        ]
+        if len(inside) != len(drivers):
+            logging.info(
+                "[NearbySearch] %s reaches %.0f km: dropped %d driver(s) "
+                "past it", pickup_state, state_radius,
+                len(drivers) - len(inside),
+            )
+        drivers = inside
 
     if drivers:
         logging.info(
@@ -1901,15 +1930,59 @@ async def _dispatch_first_offer_after_delay(trip_id: int) -> None:
 # Bounded by _REOFFER_MAX_ROUNDS: a trip nobody wants must eventually
 # stop asking rather than ring one phone forever.
 
-# 20 miles — how far a live ride travels to find a driver.
+# ══════════════════════════════════════════════════════════════════════
+#  Where Cruise operates, and how far a ride reaches inside it
+# ══════════════════════════════════════════════════════════════════════
 #
-# The search used to run to MAX_DISPATCH_RADIUS_KM, 500 miles, on the
-# reasoning that a far driver is better than none once everyone close has
-# passed. A driver two states away is not better than none: they are an
-# hour of dead mileage the rider waits through. Twenty miles is the whole
-# of live dispatch now — the first offer, the cascade, the re-queue after
-# a reject, and the comeback when nobody is left.
-_LIVE_DISPATCH_RADIUS_KM = 32.19
+# Two states, each its own island. A ride requested in Alabama only ever
+# rings an Alabama driver's phone; one requested in Florida only reaches
+# Florida. Nothing crosses.
+#
+# The radius differs per state because the states do: Alabama's drivers
+# are spread thin enough that twenty miles is a reasonable reach, Florida
+# dense enough that ten is plenty and more would only mean dead mileage.
+#
+# A pickup anywhere else is not served. Not "served badly" — not served:
+# there are no drivers there to offer it to, and a rider in Atlanta asking
+# to be driven to Alabama is asking for a car that does not exist. What
+# the rider's destination is does not enter into it; a fare that *leaves*
+# Alabama for Georgia is a real fare and still dispatches.
+_STATE_RADIUS_KM: dict[str, float] = {
+    "AL": 32.19,  # 20 miles
+    "FL": 16.09,  # 10 miles
+}
+
+# Used when the pickup's state cannot be resolved at all — see
+# _radius_for_state. Not a service area, a fallback.
+_FALLBACK_RADIUS_KM = 32.19
+
+
+def _radius_for_state(state: str | None) -> float | None:
+    """How far this pickup reaches, or None when it is outside the map.
+
+    A resolved state that is not in the table means no service, and that
+    is a real answer — the rider is told nobody is available, because
+    nobody is.
+
+    A state of None is a different thing: the geocoder did not answer.
+    That is our outage, not the rider's location, and refusing every ride
+    in both states because a Google endpoint is slow is a far worse
+    failure than serving one ride from a few miles outside. It falls back
+    and says so in the log.
+    """
+    if state is None:
+        logging.warning(
+            "[Dispatch] pickup state unresolved — falling back to %.0f km. "
+            "Service-area limits are not being enforced for this request.",
+            _FALLBACK_RADIUS_KM,
+        )
+        return _FALLBACK_RADIUS_KM
+    return _STATE_RADIUS_KM.get(state)
+
+
+# The widest any live ride reaches, for the bounding-box pre-filter that
+# runs before the state is known.
+_LIVE_DISPATCH_RADIUS_KM = max(_STATE_RADIUS_KM.values())
 
 # Same number, kept under the name the re-offer path reads.
 _REOFFER_RADIUS_KM = _LIVE_DISPATCH_RADIUS_KM

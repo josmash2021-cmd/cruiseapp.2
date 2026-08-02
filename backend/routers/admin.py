@@ -227,6 +227,28 @@ async def admin_update_trip(trip_id: int, body: AdminUpdateTripIn, db: AsyncSess
     update_data = body.model_dump(exclude_unset=True)
     for key, value in update_data.items():
         setattr(trip, key, value)
+
+    # Dispatch-completing a trip runs the same money pipeline as the driver
+    # finishing it: commission split + driver balances. A bare PATCH used to
+    # leave platform_fee/driver_earnings null and the driver unpaid for a
+    # trip dispatch closed by hand. Guarded on not-already-computed so a
+    # second PATCH can't pay twice.
+    new_status = (update_data.get("status") or "").lower()
+    if (new_status == "completed" and trip.fare and trip.fare > 0
+            and trip.driver_id and trip.driver_earnings is None):
+        from services import vehicle_tiers as _vt
+        platform_rate, driver_rate = _vt.commission(trip.vehicle_type)
+        tip = trip.tip_amount or 0.0
+        trip.platform_fee = round(trip.fare * platform_rate, 2)
+        trip.driver_earnings = round((trip.fare * driver_rate) + tip, 2)
+        _drv_res = await db.execute(select(User).where(User.id == trip.driver_id))
+        _drv = _drv_res.scalar_one_or_none()
+        if _drv:
+            _drv.pending_balance = round((_drv.pending_balance or 0.0) + trip.driver_earnings, 2)
+            _drv.total_earnings = round((_drv.total_earnings or 0.0) + trip.driver_earnings, 2)
+        if not trip.completed_at:
+            trip.completed_at = datetime.now(timezone.utc)
+
     await db.commit()
     await db.refresh(trip)
     if _HAS_FIRESTORE:

@@ -100,10 +100,29 @@ class TripFirestoreService {
 
   /// Watch a trip's status in real time (so the passenger can see updates).
   static Stream<Map<String, dynamic>?> watchTrip(String tripId) {
-    return _trips.doc(tripId).snapshots().map((snap) {
-      if (!snap.exists) return null;
-      return snap.data() as Map<String, dynamic>;
-    });
+    return _trips
+        .doc(tripId)
+        .snapshots()
+        .handleError(_logSnapshotError)
+        .map((snap) {
+          if (!snap.exists) return null;
+          return snap.data() as Map<String, dynamic>;
+        });
+  }
+
+  /// Keep a rejected snapshot from becoming an unhandled error.
+  ///
+  /// A `.snapshots()` listener with no onError throws into the zone, and
+  /// Crashlytics files it under EventChannelExtension — 160 events across
+  /// eleven users, all of them [cloud_firestore/permission-denied], which
+  /// is what every rule that reads `auth != null` returns when the
+  /// Firebase session never established.
+  ///
+  /// Handled, not silenced: the stream stays alive so it recovers the
+  /// moment auth does, and the reason reaches the log instead of the
+  /// crash report.
+  static void _logSnapshotError(Object e, StackTrace _) {
+    debugPrint('[TripFirestore] snapshot rejected: $e');
   }
 
   /// Cancel a trip from the passenger side.
@@ -246,6 +265,7 @@ class TripFirestoreService {
     return _trips
         .doc(tripId)
         .snapshots()
+        .handleError(_logSnapshotError)
         .map((snap) {
           if (!snap.exists) return null;
           final d = snap.data() as Map<String, dynamic>?;

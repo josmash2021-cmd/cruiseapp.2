@@ -12,6 +12,40 @@ bool _isPermissionDenied(Object e) {
   return e.toString().contains('permission-denied');
 }
 
+/// True when the failure is "this app has no Firebase session", in any of
+/// the shapes that takes.
+///
+/// `permission-denied` alone was not enough. Anonymous sign-in is disabled
+/// on this project, so `signInAnonymously()` throws
+/// `admin-restricted-operation` — which is not a permission-denied, so the
+/// old guards rethrew it, out of an async call nobody was awaiting, into
+/// the zone. That is a crash report for a condition the code already knew
+/// how to survive: chat falls back to REST polling and carries on.
+bool _isNoFirebaseSession(Object e) {
+  if (_isPermissionDenied(e)) return true;
+  if (e is FirebaseAuthException) return true;
+  final s = e.toString();
+  return s.contains('admin-restricted-operation') ||
+      s.contains('operation-not-allowed') ||
+      s.contains('network-request-failed');
+}
+
+/// Sign in if there is no session. Returns false instead of throwing.
+///
+/// Every caller below used to inline `await signInAnonymously()` inside its
+/// own try, which meant a sign-in failure took the same path as a failed
+/// write and got rethrown.
+Future<bool> _ensureSession() async {
+  if (FirebaseAuth.instance.currentUser != null) return true;
+  try {
+    await FirebaseAuth.instance.signInAnonymously();
+    return FirebaseAuth.instance.currentUser != null;
+  } catch (e) {
+    debugPrint('[ChatService] no Firebase session: $e');
+    return false;
+  }
+}
+
 /// Singleton service for real-time chat between driver and rider using
 /// Firebase Realtime Database. Messages are delivered in < 100ms.
 ///
@@ -41,12 +75,10 @@ class ChatService {
     final trimmed = text.trim();
     if (trimmed.isEmpty) return;
 
+    // The REST path in ChatScreen is what actually guarantees delivery;
+    // RTDB is the fast lane. Losing it costs latency, not the message.
+    if (!await _ensureSession()) return;
     try {
-      // Ensure anonymous auth before writing to RTDB
-      if (FirebaseAuth.instance.currentUser == null) {
-        await FirebaseAuth.instance.signInAnonymously();
-      }
-
       final chatRef = _db.ref('chats/$rideId');
       final msgRef = chatRef.child('messages').push();
 
@@ -62,11 +94,18 @@ class ChatService {
         'chats/$rideId/lastTimestamp': ServerValue.timestamp,
       });
 
-      // Stop typing indicator after send
-      setTyping(rideId: rideId, role: senderRole, isTyping: false);
+      // Stop typing indicator after send. Not awaited on purpose — but an
+      // unawaited future that throws goes to the zone, not to the catch
+      // below, so it gets its own.
+      unawaited(
+        setTyping(rideId: rideId, role: senderRole, isTyping: false)
+            .catchError((Object e) {
+          debugPrint('[ChatService] clearing typing failed: $e');
+        }),
+      );
     } catch (e) {
-      if (_isPermissionDenied(e)) {
-        debugPrint('[ChatService] sendMessage permission denied for $rideId');
+      if (_isNoFirebaseSession(e)) {
+        debugPrint('[ChatService] sendMessage denied for $rideId');
       } else {
         rethrow;
       }
@@ -192,16 +231,14 @@ class ChatService {
     required String role,
     required bool isTyping,
   }) async {
+    // A typing dot is the most disposable thing in the app. It is never
+    // worth an exception.
+    if (!await _ensureSession()) return;
     try {
-      // Ensure anonymous auth before writing to RTDB
-      if (FirebaseAuth.instance.currentUser == null) {
-        await FirebaseAuth.instance.signInAnonymously();
-      }
       await _db.ref('chats/$rideId/typing/$role').set(isTyping);
     } catch (e) {
-      // Silently ignore permission-denied errors — chat still works without typing indicator
-      if (_isPermissionDenied(e)) {
-        debugPrint('[ChatService] setTyping permission denied for $rideId/$role');
+      if (_isNoFirebaseSession(e)) {
+        debugPrint('[ChatService] setTyping denied for $rideId/$role');
       } else {
         rethrow;
       }
@@ -216,6 +253,11 @@ class ChatService {
     return _db
         .ref('chats/$rideId/typing/$otherRole')
         .onValue
+        // A rejected listener throws into the zone the same way a rejected
+        // write does, and this one is watching a dot.
+        .handleError((Object e) {
+          debugPrint('[ChatService] typing stream rejected: $e');
+        })
         .map((e) => (e.snapshot.value as bool?) ?? false);
   }
 
@@ -226,12 +268,8 @@ class ChatService {
     required String rideId,
     required String readerRole,
   }) async {
+    if (!await _ensureSession()) return;
     try {
-      // Ensure anonymous auth before reading/writing RTDB
-      if (FirebaseAuth.instance.currentUser == null) {
-        await FirebaseAuth.instance.signInAnonymously();
-      }
-
       final snapshot = await _db
           .ref('chats/$rideId/messages')
           .orderByChild('read')

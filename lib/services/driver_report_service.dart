@@ -49,6 +49,12 @@ class DriverReportService {
         .where('driverId', isEqualTo: driverId)
         .orderBy('createdAt', descending: true)
         .snapshots()
+        // Without this a permission-denied throws into the zone and lands
+        // in Crashlytics instead of the log. The stream survives, so it
+        // recovers on its own once the Firebase session exists.
+        .handleError((Object e, StackTrace _) {
+          debugPrint('[DriverReports] snapshot rejected: $e');
+        })
         .map((snapshot) {
       return snapshot.docs.map((doc) {
         final data = doc.data() as Map<String, dynamic>;

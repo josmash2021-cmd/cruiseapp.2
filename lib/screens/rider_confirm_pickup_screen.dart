@@ -256,6 +256,11 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
       if (status == 'cancelled' || status == 'canceled') {
         _onTripCancelled(data);
       }
+    }, onError: (Object e) {
+      // This screen has a REST poll behind it, so a rejected snapshot
+      // costs latency rather than correctness. Untreated it was an
+      // unhandled error on the rider's most important screen.
+      debugPrint('[ConfirmPickup] trip snapshot rejected: $e');
     });
   }
 

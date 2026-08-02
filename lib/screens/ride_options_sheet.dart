@@ -331,7 +331,20 @@ class RideOptionsSheet extends StatelessWidget {
               ),
             ],
           ),
-          child: Stack(
+          // An explicit clip, not just the Container's clipBehavior.
+          //
+          // CarImage3D draws its shadows and its selected-state glow with
+          // ImageFiltered, and on Android's Impeller those filter layers
+          // escape a decoration clip — the blurred halo spilled past the
+          // card's rounded edge as soon as a car was selected. iOS honours
+          // the decoration clip, which is why it only showed on one.
+          //
+          // A ClipRRect is a real clip layer in the render tree and filters
+          // respect it. Same radius as the decoration, so nothing moves on
+          // the platform that was already clipping correctly.
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(24),
+            child: Stack(
             children: [
               // Content
               Padding(
@@ -392,6 +405,7 @@ class RideOptionsSheet extends StatelessWidget {
                   ),
                 ),
             ],
+            ),
           ),
         ),
       ),

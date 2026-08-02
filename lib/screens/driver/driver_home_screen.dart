@@ -3220,7 +3220,21 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     // the disc has come down with it and this takes a little more off the
     // gap. The glow still clears the sheet, which is the constraint the
     // number exists for.
-    final bottomClosed = _panelCollapsedH + 26;
+    // 26 was measured on an iPhone, which reserves 34 points at the foot
+    // of the screen for the home indicator. That inset is inside
+    // _panelCollapsedH, so on a phone reporting it the sheet stands taller
+    // and the disc rides up with it, well clear of the screen edge.
+    //
+    // An Android phone on gesture navigation often reports none. The sheet
+    // shrinks by the full 34, the disc comes down with it, and the same 26
+    // points of gap end up looking like none — the disc lands on the
+    // sheet's shoulder. Which is the report: stuck on Android, fine on iOS.
+    //
+    // So the gap makes up the difference on devices that report less. At
+    // an inset of 34 this adds nothing and iOS is pixel-identical to
+    // before; at 0 it gives back most of what the sheet lost.
+    final insetShortfall = math.max(0.0, 24 - pad.bottom);
+    final bottomClosed = _panelCollapsedH + 26 + insetShortfall;
     final bottom = ui.lerpDouble(bottomClosed, 0, t)!;
 
     // Inset on both sides and centred inside whatever that leaves, rather

@@ -17,8 +17,8 @@ driver never picks it.
 | **Black** | Suburban, Escalade, 7+ seats | 2022 – 2026 |
 
 A vehicle outside its tier's year range does not qualify for that tier.
-What happens to a car that qualifies for none — a 2011 sedan, a 2014 SUV
-— is **not decided**. See "Open" below.
+A car that qualifies for none — a 2011 sedan, a 2014 SUV — falls into
+Standard. It still drives; it just never reaches a higher tier.
 
 ## Commission
 
@@ -40,12 +40,14 @@ Which maps onto the four tiers as:
 | Tier | From | Driver keeps |
 |---|---|---|
 | Standard | `comfort` / `sedan` | 60% |
-| Compact | *(see Open)* | |
+| Compact | new row, `0.38 / 0.62` | 62% |
 | Premium | `premium` | 65% |
 | Black | `vip` | 70% |
 
-`suv_xl` at 68% is unclaimed by the new naming and is the obvious home
-for one of the SUV tiers.
+Compact is a new row rather than a rename: 62% sits between Standard's
+60 and Premium's 65 and matches no key that exists. `suv_xl` at 68% is
+left where it is — nothing in the four-tier naming claims it, and a live
+row is not deleted on the way past.
 
 ### The estimate on the offer card does not use this table
 
@@ -88,10 +90,10 @@ Order of work, and it matters:
 
 ## Open
 
-- **Compact's commission.** The table above has three splits for four
-  tiers. "As already set" leaves Compact undefined — 60% like Standard,
-  or 65% like Premium? A wrong guess here is a driver underpaid on every
-  trip, so it is not being guessed.
+Nothing. The spec is complete and ready to build.
+
+- ~~Compact's commission.~~ **Decided:** 62% to the driver, 38% to the
+  platform. A new row; it matches no existing key.
 - ~~Cars that qualify for nothing.~~ **Decided:** they fall into
   Standard. A 2011 sedan or a 2014 SUV still drives; it just never
   qualifies for a higher tier.

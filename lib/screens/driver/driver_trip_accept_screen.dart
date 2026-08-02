@@ -1037,6 +1037,32 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
             debugPrint('[Driver] poll-cancel-navigate failed: $e');
           }
         }
+      } on ApiException catch (e) {
+        // A 404 is not transient: the trip does not exist server-side at
+        // all, so there is nothing to keep this screen for. Treat it like
+        // an external cancel and leave — retrying it every 8 s forever was
+        // how a driver got stuck on a dead trip (the sql_453 case, where
+        // only an optimistic Firestore doc kept the trip "alive").
+        if (e.statusCode == 404 && mounted && !_tripFinished) {
+          debugPrint('[Driver] Backend poll: trip ${widget.tripId} not found (404) → leaving');
+          _tripFinished = true;
+          _statusPollTimer?.cancel();
+          _riderConfirmSub?.cancel();
+          try {
+            Navigator.of(context).pushAndRemoveUntil(
+              PageRouteBuilder(
+                pageBuilder: (_, __, ___) =>
+                    const DriverOnlineScreen(showCancelledNotice: true),
+                transitionsBuilder: (_, anim, __, child) =>
+                    FadeTransition(opacity: anim, child: child),
+                transitionDuration: const Duration(milliseconds: 400),
+              ),
+              (route) => route.isFirst,
+            );
+          } catch (navErr) {
+            debugPrint('[Driver] 404-navigate failed: $navErr');
+          }
+        }
       } catch (_) {
         // Ignore transient errors — next tick retries.
       } finally {

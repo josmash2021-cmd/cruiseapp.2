@@ -561,7 +561,8 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     // The card's real height plus its header, so the route is framed in
     // the strip of map that is actually visible above it. 340 was a guess
     // from when the card was shorter.
-    var cardArea = hasCard ? _offerCardHeight(context) + 56.0 + botPad : 60.0;
+    var cardArea =
+        hasCard ? _currentOfferCardHeight(context) + 56.0 + botPad : 60.0;
     // Top: status bar + earnings bar (~56) + breathing room
     var topArea = topPad + 80.0;
 

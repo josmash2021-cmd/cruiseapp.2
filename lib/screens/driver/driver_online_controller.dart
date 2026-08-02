@@ -2045,6 +2045,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       _routeCache.clear();
       _expandedOfferIds.clear();
       _offerFirstSeenAt.clear();
+      _offerCardHeights.clear();
       _pollT?.cancel();
       _previewingOffer = null;
       _offerRouteShown = false;
@@ -2740,7 +2741,9 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       HapticService.lightImpact();
       final offerId = toInt(r['offer_id']);
       if (offerId != null) _rejectedOfferIds.add(offerId);
-      _offerFirstSeenAt.remove((r['offer_id'] ?? r['id'] ?? '').toString());
+      final rejectedId = (r['offer_id'] ?? r['id'] ?? '').toString();
+      _offerFirstSeenAt.remove(rejectedId);
+      _offerCardHeights.remove(rejectedId);
 
       // INSTANT dismiss — remove card + clear map in the same frame
       if (mounted) {
@@ -2890,6 +2893,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       _pendingOffers = [];
     });
     _offerFirstSeenAt.clear();
+    _offerCardHeights.clear();
     _syncSearchPulse();
     _clearAllAnnotations();
     if (_pos != null) {
@@ -2950,6 +2954,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       _pendingOffers = [];
     });
     _offerFirstSeenAt.clear();
+    _offerCardHeights.clear();
     _syncSearchPulse();
     _clearAllAnnotations();
     if (_pos != null) {
@@ -3168,6 +3173,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     // idempotent guard in _acceptOffer to permanently block re-acceptance.
     _acceptedOfferIds.clear();
     _offerFirstSeenAt.clear();
+    _offerCardHeights.clear();
     _setState(() {
       _phase = _Phase.searching;
       _tripId = null;

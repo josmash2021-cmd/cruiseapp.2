@@ -769,7 +769,9 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
           AnimatedContainer(
             duration: const Duration(milliseconds: 300),
             curve: Curves.easeOutCubic,
-            height: _offerCardHeight(context),
+            // Exact as soon as the card reports its real height; the
+            // estimate below only ever covers the first frame.
+            height: _currentOfferCardHeight(context),
             child: PageView.builder(
               controller: _offerPageCtrl,
               onPageChanged: (index) {
@@ -842,19 +844,24 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                   },
                   // Anchored to the bottom of the height it was given.
                   //
-                  // _offerCardHeight adds up the card's parts, and any term
-                  // that reads a little high leaves slack. Aligned to the
+                  // The container starts at the _offerCardHeight estimate,
+                  // which reads a little high on purpose. Aligned to the
                   // top, that slack sat under the Accept button and pushed
                   // the whole card up the screen — the card floated with a
                   // band of map beneath it. Aligned to the bottom, the same
                   // slack lands above the card, where the map already is,
                   // and the card keeps its small gap from the screen edge.
+                  // A frame later the measured height replaces the estimate
+                  // and the slack animates away.
                   child: Align(
                     alignment: Alignment.bottomCenter,
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 4, vertical: 4),
-                      child: card,
+                    child: _SizeReporter(
+                      onChanged: (size) => _onOfferCardMeasured(oid, size),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 4, vertical: 4),
+                        child: card,
+                      ),
                     ),
                   ),
                 );
@@ -1722,10 +1729,11 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
     required String dropoffAddr,
   }) {
     const goldAccent = Color(0xFFE8C547);
-    // Both stop blocks are given the same fixed height, so the markers can
-    // be centred on them by arithmetic instead of by eye: half the block,
-    // minus half the marker. Left to the text's natural height the two
-    // would only line up by luck, and drift the moment a font changed.
+    // The markers are centred on the stops by arithmetic: half the typical
+    // block, minus half the marker. The stops themselves size to their text
+    // now (web fonts run taller than the Roboto this constant came from),
+    // so the centre can drift a point or two — invisible next to an 11-pt
+    // dot, and nothing overflows.
     const halfPad = (_kOfferStopH - 11) / 2;
     // One box around the pair, not one around each. The two stops are a
     // single journey; a box each said they were two unrelated rows.
@@ -1794,33 +1802,34 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
       );
 
   Widget _offerStopText(String meta, String address) {
-    return SizedBox(
-      height: _kOfferStopH,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisAlignment: MainAxisAlignment.center,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            meta,
-            style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.4),
-              fontSize: 11,
-            ),
+    // No fixed height — the card around it is measured for real now, so the
+    // stop takes what the font takes. A hard 34-pt box is what painted the
+    // "BOTTOM OVERFLOWED" stripes on web fonts, whose line heights run a
+    // few points taller than the Roboto this was tuned for.
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisAlignment: MainAxisAlignment.center,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          meta,
+          style: TextStyle(
+            color: Colors.white.withValues(alpha: 0.4),
+            fontSize: 11,
           ),
-          const SizedBox(height: 2),
-          Text(
-            address,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 14,
-              fontWeight: FontWeight.w500,
-            ),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          address,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 14,
+            fontWeight: FontWeight.w500,
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
@@ -1846,6 +1855,27 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
         ],
       ),
     );
+  }
+
+  /// The height the offer-card area really occupies: the card's own
+  /// measured height once it has reported one, the estimate until then.
+  double _currentOfferCardHeight(BuildContext context) {
+    final safeIdx =
+        _currentOfferIndex.clamp(0, (_pendingOffers.length - 1).clamp(0, 999));
+    final oid = _pendingOffers.isNotEmpty
+        ? (_pendingOffers[safeIdx]['offer_id'] ??
+                _pendingOffers[safeIdx]['id'] ??
+                '')
+            .toString()
+        : '';
+    return _offerCardHeights[oid] ?? _offerCardHeight(context);
+  }
+
+  /// A card just reported its real laid-out height — size the PageView to
+  /// it. Guarded against no-change reports so measuring can never loop.
+  void _onOfferCardMeasured(String offerId, Size size) {
+    if (_offerCardHeights[offerId] == size.height) return;
+    _setState(() => _offerCardHeights[offerId] = size.height);
   }
 
   /// Responsive card height: adapts to screen so Accept button never gets cut.
@@ -1909,7 +1939,12 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
     // slack now lands above it, over the map. It costs nothing to be
     // generous here and it is the only thing standing between a
     // mis-measured row and a cut-off Accept button.
-    const double slack = 28;
+    //
+    // And this only has to survive one frame: the card measures itself and
+    // the container animates to the real height, so the estimate's job is
+    // just to start too tall rather than too short — a short first frame
+    // is the one that paints overflow stripes.
+    const double slack = 64;
     const double base = pad +
         fareBlock +
         18 +
@@ -4382,5 +4417,45 @@ class _ShimmerBadgeState extends State<_ShimmerBadge>
     // Returns 0..1 based on how centered the sweep is (peak at 0.5)
     final dist = (sweep - 0.5).abs();
     return (1.0 - dist * 2.0).clamp(0.0, 1.0);
+  }
+}
+
+/// Reports its child's laid-out size after every change.
+///
+/// The offer-card PageView needs a height up front but the card's real
+/// height depends on the font the platform actually renders (web runs a
+/// few points taller per row than the Roboto the estimate was tuned
+/// for). Wrapping the card in this lets the container start at the
+/// estimate and animate to the measured height a frame later — the end
+/// of hand-tuned constants painting overflow stripes.
+class _SizeReporter extends StatefulWidget {
+  const _SizeReporter({required this.onChanged, required this.child});
+
+  final ValueChanged<Size> onChanged;
+  final Widget child;
+
+  @override
+  State<_SizeReporter> createState() => _SizeReporterState();
+}
+
+class _SizeReporterState extends State<_SizeReporter> {
+  Size? _reported;
+
+  @override
+  Widget build(BuildContext context) {
+    return NotificationListener<SizeChangedLayoutNotification>(
+      onNotification: (_) {
+        // The notification carries no size — read it after the frame.
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          final size = context.size;
+          if (size == null || size == _reported) return;
+          _reported = size;
+          widget.onChanged(size);
+        });
+        return true;
+      },
+      child: SizeChangedLayoutNotifier(child: widget.child),
+    );
   }
 }

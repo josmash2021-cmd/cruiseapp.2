@@ -305,6 +305,15 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   /// is held through those disagreements until its countdown window closes;
   /// what removes it at the end is the ring firing, a real reject.
   final Map<String, DateTime> _offerFirstSeenAt = {};
+
+  /// Real laid-out height of each offer card, reported by the card itself.
+  ///
+  /// The PageView around the cards needs a number up front, so it starts at
+  /// the `_offerCardHeight` estimate and animates to the measured value a
+  /// frame later. Hand-computed heights drift a few points off the real
+  /// font — on web a few points per row — and every point lands as an
+  /// overflow stripe across the addresses and the Accept button.
+  final Map<String, double> _offerCardHeights = {};
   bool _isAcceptPressed = false;
 
   // ── Smooth route draw ──

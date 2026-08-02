@@ -1216,7 +1216,23 @@ extension _RideRequestWidgets on _RideRequestScreenState {
         radius: 24,
         borderColor: const Color(0xFFE8C547).withValues(alpha: 0.45),
       ),
-      child: Row(
+      // Clipped, and explicitly.
+      //
+      // CarImage3D stacks three blurred shadows under the render, the
+      // deepest offset 16 points down with a 20-point blur — so it reaches
+      // well past the bottom of its own 76-point box on purpose, to give
+      // the car something to sit on. Inside a padded card that is fine.
+      //
+      // On Android's Impeller those ImageFiltered layers are not held by a
+      // Container's decoration clip, so the shadow ran out under the card's
+      // rounded corner and read as the car hanging off the edge. iOS honours
+      // the decoration clip, which is why it looked right there.
+      //
+      // A ClipRRect is a real clip layer and filters respect it. Same radius,
+      // so the platform that was already correct does not move.
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(24),
+        child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           // ── Left: tier name sitting directly above its car, the two
@@ -1292,6 +1308,7 @@ extension _RideRequestWidgets on _RideRequestScreenState {
             ),
           ),
         ],
+        ),
       ),
     );
   }

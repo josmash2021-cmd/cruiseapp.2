@@ -4015,6 +4015,9 @@ class S {
       : (n == 1 ? '1 ride available' : '$n rides available');
 
   // ── Vehicle page ──
+  String get addVehicleAsk => _es
+      ? 'Escríbele a soporte para agregar otro vehículo — hace falta revisar su registro y su seguro.'
+      : 'Contact support to add another vehicle — its registration and insurance have to be reviewed.';
   String get seeDetails => _es ? 'Ver detalles' : 'See details';
   String get noVehicleOnFile =>
       _es ? 'Sin vehículo registrado' : 'No vehicle on file';

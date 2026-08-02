@@ -151,7 +151,8 @@ class RideOptionsSheet extends StatelessWidget {
                   final opt = entry.value;
                   return Expanded(
                     child: Padding(
-                      padding: EdgeInsets.only(right: i < options.length - 1 ? 8 : 0),
+                      padding: EdgeInsets.only(
+                          right: i < options.length - 1 ? 8 : 0),
                       child: _buildCard(c, isDark, opt, opt.id == selected?.id),
                     ),
                   );
@@ -253,12 +254,10 @@ class RideOptionsSheet extends StatelessWidget {
                       fit: BoxFit.scaleDown,
                       child: Text(
                         selected != null
-                            ? S
-                                  .of(context)
-                                  .confirmRideWithDetails(
-                                    selected!.name,
-                                    '\$${selected!.priceEstimate.toStringAsFixed(2)}',
-                                  )
+                            ? S.of(context).confirmRideWithDetails(
+                                  selected!.name,
+                                  '\$${selected!.priceEstimate.toStringAsFixed(2)}',
+                                )
                             : S.of(context).confirmRide,
                         maxLines: 1,
                         style: const TextStyle(
@@ -279,21 +278,33 @@ class RideOptionsSheet extends StatelessWidget {
   }
 
   Widget _buildCard(AppColors c, bool isDark, RideOption opt, bool isSelected) {
-    final isSuv = opt.id == 'suburban';
-    final isCamry = opt.id == 'camry';
-
+    // Each tier shows the shape of car it actually sends.
+    //
+    // There were three pictures for four kinds of car, so a compact SUV
+    // and a sedan arrived under the same photo and an SUV XL was
+    // advertised with a saloon. A rider choosing a six-seater is choosing
+    // it because of the seats; the picture is the whole promise.
+    final String id = opt.id.toLowerCase();
     final VehicleTier tier;
     final String displayName;
     final String carImage;
-    if (isSuv) {
+    if (id == 'suburban' || id == 'black' || id == 'vip') {
+      // Suburban, Escalade — seven seats.
       tier = VehicleTier.vip;
       displayName = 'BLACK';
       carImage = 'cruise_3.png';
-    } else if (isCamry) {
+    } else if (id == 'suv_xl' || id == 'suvxl' || id == 'premium') {
+      // Traverse and its kind — three rows, six seats.
       tier = VehicleTier.premium;
       displayName = 'PREMIUM';
-      carImage = 'cruise_7.png';
+      carImage = 'cruisert_suvxl.png';
+    } else if (id == 'compact' || id == 'suv' || id == 'rav4') {
+      // A compact SUV, not a saloon and not a seven-seater.
+      tier = VehicleTier.comfort;
+      displayName = 'COMPACT';
+      carImage = 'cruisert_compact.png';
     } else {
+      // Sedans and compact cars.
       tier = VehicleTier.comfort;
       displayName = 'STANDARD';
       carImage = 'cruise_6.png';
@@ -304,7 +315,8 @@ class RideOptionsSheet extends StatelessWidget {
         : Colors.white.withValues(alpha: 0.08);
 
     return Semantics(
-      label: '${opt.name} ride option, \$${opt.priceEstimate.toStringAsFixed(2)}, ${opt.etaMinutes} minutes away',
+      label:
+          '${opt.name} ride option, \$${opt.priceEstimate.toStringAsFixed(2)}, ${opt.etaMinutes} minutes away',
       button: true,
       selected: isSelected,
       child: GestureDetector(
@@ -431,7 +443,7 @@ class RideOptionsSheet extends StatelessWidget {
   // Build car image widget based on vehicle type
   Widget _buildCarImage(String type, bool isSelected) {
     String imagePath;
-    
+
     switch (type) {
       case 'suburban':
         imagePath = 'assets/images/cruise_3.png';
@@ -443,7 +455,7 @@ class RideOptionsSheet extends StatelessWidget {
       default:
         imagePath = 'assets/images/cruise_6.png';
     }
-    
+
     return CarImage3D(
       assetPath: imagePath,
       cacheWidth: 200,

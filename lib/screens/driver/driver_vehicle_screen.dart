@@ -22,7 +22,6 @@ class _DriverVehicleScreenState extends State<DriverVehicleScreen> {
   static const _gold = Color(0xFFE8C547);
   static const _goldDark = Color(0xFFD4A843);
   static const _card = Color(0xFF1C1C1E);
-  static const _surface = Color(0xFF141414);
   // _gold removed — use _gold for pending/missing doc styling
   static const _green = Color(0xFF4CAF50);
 
@@ -103,12 +102,21 @@ class _DriverVehicleScreenState extends State<DriverVehicleScreen> {
 
   /// Vehicle tier → car image asset
   String get _carImage {
-    switch (_vehicleType.toLowerCase()) {
+    // The same four shapes the rider is shown when they pick a ride. A
+    // driver whose car is a compact SUV should not see a saloon on their
+    // own vehicle page.
+    switch (_vehicleType.toLowerCase().replaceAll(RegExp(r'[ -]'), '_')) {
       case 'vip':
+      case 'black':
         return 'assets/images/cruise_3.png';
       case 'premium':
-        return 'assets/images/cruise_7.png';
-      default: // comfort
+      case 'suv_xl':
+      case 'suvxl':
+        return 'assets/images/cruisert_suvxl.png';
+      case 'suv':
+      case 'compact':
+        return 'assets/images/cruisert_compact.png';
+      default: // comfort — sedans and compact cars
         return 'assets/images/cruise_6.png';
     }
   }
@@ -297,7 +305,10 @@ class _DriverVehicleScreenState extends State<DriverVehicleScreen> {
   Widget build(BuildContext context) {
     final s = S.of(context);
     return Scaffold(
-      backgroundColor: Colors.black,
+      // The app's own ground, not black. Black is not a neutral here —
+      // neumorphic shadows are invisible on it, which is why neuBase is
+      // #14141A and not #000000.
+      backgroundColor: neuBase,
       body: _loading
           ? const Center(
               child: CircularProgressIndicator(color: _gold, strokeWidth: 2))
@@ -307,7 +318,42 @@ class _DriverVehicleScreenState extends State<DriverVehicleScreen> {
                   physics: const BouncingScrollPhysics(),
                   slivers: [
                     SliverAppBar(
-                      backgroundColor: _surface,
+                      // Same ground as the page, so the colour runs behind
+                      // the title instead of stopping at a seam under it.
+                      // _surface was #141414 against a black page: near
+                      // enough to look like a mistake, far enough to show.
+                      backgroundColor: neuBase,
+                      surfaceTintColor: neuBase,
+                      actions: [
+                        // Adding a car is a document flow, not a form: the
+                        // registration and the insurance have to be
+                        // photographed and reviewed. Support runs it, so
+                        // this points there rather than opening a page
+                        // that would only collect a make and a model.
+                        Padding(
+                          padding: const EdgeInsets.only(right: 12),
+                          child: GestureDetector(
+                            onTap: () {
+                              HapticService.selectionClick();
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text(S.of(context).addVehicleAsk),
+                                ),
+                              );
+                            },
+                            child: Container(
+                              width: 38,
+                              height: 38,
+                              decoration: neuBox(radius: 19),
+                              child: const Icon(
+                                Icons.add_rounded,
+                                color: _gold,
+                                size: 22,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
                       pinned: true,
                       expandedHeight: 110,
                       leading: IconButton(

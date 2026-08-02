@@ -948,11 +948,14 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     }
 
     drawSegments(web);
+    final midOne = _fullSegOne.isNotEmpty
+        ? _fullSegOne[_fullSegOne.length ~/ 2]
+        : driverPos;
     debugPrint('[OfferRoute] web draw: '
         'seg1=${_fullSegOne.length} seg2=${_fullSegTwo.length} points, '
-        'in-style: '
-        'one=${web.hasSource('cruise-polyline-offerSegOne')} '
-        'two=${web.hasSource('cruise-polyline-offerSegTwo')}');
+        'layer=${web.hasLayer('cruise-polyline-offerSegOne')}, '
+        'painted=${web.renderedFeatureCount(
+            'cruise-polyline-offerSegOne', midOne.longitude, midOne.latitude)}');
     // Re-assert the lines over the next seconds: if the style finished
     // loading late, or anything wiped runtime layers after the draw, the
     // first pass is gone and the card gives no second chance.
@@ -963,8 +966,9 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
         if (w == null) return;
         drawSegments(w);
         debugPrint('[OfferRoute] web re-assert ($delayMs ms): '
-            'one=${w.hasSource('cruise-polyline-offerSegOne')} '
-            'two=${w.hasSource('cruise-polyline-offerSegTwo')}');
+            'layer=${w.hasLayer('cruise-polyline-offerSegOne')}, '
+            'painted=${w.renderedFeatureCount('cruise-polyline-offerSegOne',
+                midOne.longitude, midOne.latitude)}');
       });
     }
 

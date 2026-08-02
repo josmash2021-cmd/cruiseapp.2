@@ -93,6 +93,15 @@ abstract class WebMapController {
   /// from one that was never added by this one call.
   bool hasSource(String id);
 
+  /// Whether a layer with this id is currently in the style. A source can
+  /// outlive its layer; this is how the two are told apart.
+  bool hasLayer(String id);
+
+  /// How many features of [layerId] are actually painted around (lng, lat).
+  /// The render-side check: the layer can be in the style and still paint
+  /// nothing — this is the only call that separates the two.
+  int renderedFeatureCount(String layerId, double lng, double lat);
+
   // ── Circles ──────────────────────────────────────────────────────────────
 
   /// Adds (or replaces) a screen-space circle ([radiusPx] in pixels).

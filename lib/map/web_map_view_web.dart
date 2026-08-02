@@ -47,6 +47,7 @@ extension type _JSMap._(JSObject _) implements JSObject {
   external void addLayer(JSObject layer);
   external void removeLayer(String id);
   external void removeSource(String id);
+  external JSArray? queryRenderedFeatures(JSAny pointOrBox, JSAny? options);
   external void setPaintProperty(String layerId, String name, JSAny value);
   external void setLayoutProperty(String layerId, String name, JSAny value);
   external _JSScreenPoint project(JSAny lngLat);
@@ -471,12 +472,25 @@ class WebMapControllerWeb extends WebMapController {
       final existing = _map.getSource(sourceId);
       if (existing != null) {
         existing.setData(_js(_feature(spec)));
+        // A source can outlive its layer — a style that finished loading
+        // after the first add can drop the runtime layer, and this branch
+        // used to never put it back: every later upsert took the same
+        // branch, so the line existed as data and never as paint.
+        if (_map.getLayer(sourceId) == null) {
+          _map.addLayer(_lineLayerSpec(sourceId, spec));
+        }
         return;
       }
       _map.addSource(
           sourceId,
           _js({'type': 'geojson', 'data': _feature(spec)}) as JSObject);
-      _map.addLayer(_js({
+      _map.addLayer(_lineLayerSpec(sourceId, spec));
+    } catch (e) {
+      debugPrint('[WebMap] polyline upsert FAILED $sourceId: $e');
+    }
+  }
+
+  JSObject _lineLayerSpec(String sourceId, _PolylineSpec spec) => _js({
         'id': sourceId,
         'type': 'line',
         'source': sourceId,
@@ -486,11 +500,7 @@ class WebMapControllerWeb extends WebMapController {
           'line-width': spec.width,
           'line-opacity': 0.9,
         },
-      }) as JSObject);
-    } catch (e) {
-      debugPrint('[WebMap] polyline upsert FAILED $sourceId: $e');
-    }
-  }
+      }) as JSObject;
 
   @override
   bool hasSource(String id) {
@@ -498,6 +508,35 @@ class WebMapControllerWeb extends WebMapController {
       return _map.getSource(id) != null;
     } catch (_) {
       return false;
+    }
+  }
+
+  @override
+  bool hasLayer(String id) {
+    try {
+      return _map.getLayer(id) != null;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  @override
+  int renderedFeatureCount(String layerId, double lng, double lat) {
+    try {
+      final p = _map.project(_js([lng, lat]));
+      const d = 8.0;
+      final feats = _map.queryRenderedFeatures(
+        _js([
+          [p.x - d, p.y - d],
+          [p.x + d, p.y + d],
+        ]),
+        _js({
+          'layers': [layerId],
+        }),
+      );
+      return feats?.length ?? 0;
+    } catch (_) {
+      return -1;
     }
   }
 

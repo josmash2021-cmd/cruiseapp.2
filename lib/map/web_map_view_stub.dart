@@ -76,6 +76,12 @@ class WebMapControllerStub extends WebMapController {
   bool hasSource(String id) => false;
 
   @override
+  bool hasLayer(String id) => false;
+
+  @override
+  int renderedFeatureCount(String layerId, double lng, double lat) => 0;
+
+  @override
   void setCircle(
     String id,
     double lng,

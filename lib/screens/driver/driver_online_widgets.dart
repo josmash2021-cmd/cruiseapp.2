@@ -723,7 +723,11 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
     final isCardExpanded = _expandedOfferIds.contains(currentOid);
 
     return Padding(
-      padding: EdgeInsets.only(bottom: bot > 0 ? bot * 0.5 : 6),
+      // A minimal gap from the screen edge — down from half the home
+      // indicator's inset, which put 17 points of air under the card on a
+      // phone reporting 34, on top of whatever the dots row adds. Enough
+      // that the card does not look glued to the edge, and no more.
+      padding: EdgeInsets.only(bottom: bot > 0 ? bot * 0.3 : 4),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -1884,9 +1888,15 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
     const double divider = 16 + 1 + 16;
     const double riderRow = 17.6;
     const double accept = 48;
-    // Enough that Accept is never clipped, no more. Every px here is dead
-    // space under the button that pushes the whole card up the screen.
-    const double slack = 12;
+    // Room so Accept is never clipped.
+    //
+    // This used to be as small as it could be, because every spare pixel
+    // sat under the button and pushed the card up the screen. That is no
+    // longer true: the card is anchored to the bottom of this height, so
+    // slack now lands above it, over the map. It costs nothing to be
+    // generous here and it is the only thing standing between a
+    // mis-measured row and a cut-off Accept button.
+    const double slack = 28;
     const double base = pad +
         fareBlock +
         18 +

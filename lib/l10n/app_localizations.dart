@@ -846,8 +846,8 @@ class S {
   String get noScheduledNearby =>
       _es ? 'No hay viajes programados' : 'No scheduled trips';
   String get noScheduledNearbySub => _es
-      ? 'Aparecerán aquí cuando alguien reserve cerca de ti'
-      : 'They show up here when someone books near you';
+      ? 'Aparecerán aquí cuando alguien reserve un viaje'
+      : 'They show up here when someone books and reserves a ride';
 
   /// Subtitle for the other half of the same card — when there *are* rides.
   /// [noScheduledNearbySub] was shown in both states, so a driver looking at
@@ -4010,6 +4010,10 @@ class S {
   String get forPickup => _es ? 'para recogida' : 'until pickup';
   String get startRideButton => _es ? 'INICIAR VIAJE' : 'START RIDE';
   String get availableInLabel => _es ? 'DISPONIBLE EN' : 'AVAILABLE IN';
+  String scheduledAvailableCount(int n) => _es
+      ? (n == 1 ? '1 viaje disponible' : '$n viajes disponibles')
+      : (n == 1 ? '1 ride available' : '$n rides available');
+
   String get scheduledRidesTitle =>
       _es ? 'Viajes Reservados' : 'Scheduled Rides';
   String get noScheduledTrips => _es

@@ -2556,6 +2556,104 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     );
   }
 
+  /// The reserved-rides card, which is only there when there is one.
+  ///
+  /// It grows into the sheet rather than appearing: a card that pops into
+  /// a list the driver is already reading shoves everything below it down
+  /// by its full height in one frame, and whatever they were about to tap
+  /// is somewhere else by the time their thumb lands.
+  ///
+  /// AnimatedSize carries the height, a fade and a small rise carry the
+  /// card. `_scheduledBannerVisible` has always reserved the sheet's
+  /// height for this; nothing ever drew it.
+  Widget _buildReservedRidesCard(DriverColors dc) {
+    final show = _scheduledBannerVisible;
+    return AnimatedSize(
+      duration: const Duration(milliseconds: 460),
+      curve: Curves.easeInOutCubicEmphasized,
+      alignment: Alignment.topCenter,
+      child: AnimatedOpacity(
+        opacity: show ? 1 : 0,
+        duration: const Duration(milliseconds: 320),
+        curve: Curves.easeOut,
+        child: !show
+            ? const SizedBox(width: double.infinity)
+            : TweenAnimationBuilder<double>(
+                key: ValueKey('reserved_$_scheduledAvailableCount'),
+                tween: Tween<double>(begin: 14, end: 0),
+                duration: const Duration(milliseconds: 460),
+                curve: Curves.easeOutCubic,
+                builder: (_, dy, child) =>
+                    Transform.translate(offset: Offset(0, dy), child: child),
+                child: Padding(
+                  padding: const EdgeInsets.only(bottom: 16),
+                  child: GestureDetector(
+                    onTap: () {
+                      HapticService.selectionClick();
+                      Navigator.of(context).push(
+                        slideFromRightRoute(
+                          const ScheduledRidesScreen(initialTab: 0),
+                        ),
+                      );
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: neuBox(radius: 20),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 44,
+                            height: 44,
+                            decoration: neuBox(radius: 14, pressed: true),
+                            child: const Icon(
+                              Icons.event_available_rounded,
+                              color: Color(0xFFE8C547),
+                              size: 21,
+                            ),
+                          ),
+                          const SizedBox(width: 14),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  S.of(context).scheduledRidesTitle,
+                                  style: TextStyle(
+                                    color: dc.text,
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                                const SizedBox(height: 3),
+                                Text(
+                                  S.of(context).scheduledAvailableCount(
+                                        _scheduledAvailableCount,
+                                      ),
+                                  style: TextStyle(
+                                    color: const Color(0xFFE8C547)
+                                        .withValues(alpha: 0.9),
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          Icon(
+                            Icons.chevron_right_rounded,
+                            color: dc.textSecondary,
+                            size: 22,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+      ),
+    );
+  }
+
   /// Cruise Level row. Tapping opens the full ladder.
   ///
   /// No level name or point count here on purpose: this screen does not fetch
@@ -3688,6 +3786,8 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                           // ── Cruise Level ──
                           _buildCruiseLevelRow(dc),
                           const SizedBox(height: 16),
+                          // Only there when there is a reservation to take.
+                          _buildReservedRidesCard(dc),
                           // ── Earnings: period toggle + chart + see more ──
                           Text(
                             S.of(context).earningsTitle,
@@ -3742,36 +3842,6 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                                     Navigator.of(context).push(
                                       slideFromRightRoute(
                                           const DriverEarningsScreen()),
-                                    );
-                                  },
-                                ),
-                                Divider(
-                                  height: 1,
-                                  indent: 68,
-                                  color: Colors.white.withValues(alpha: 0.05),
-                                ),
-                                _recommendItem(
-                                  Icons.star_outline_rounded,
-                                  S.of(context).seeUpcomingPromotions,
-                                  () {
-                                    Navigator.of(context).push(
-                                      slideFromRightRoute(
-                                          const DriverPromosScreen()),
-                                    );
-                                  },
-                                ),
-                                Divider(
-                                  height: 1,
-                                  indent: 68,
-                                  color: Colors.white.withValues(alpha: 0.05),
-                                ),
-                                _recommendItem(
-                                  Icons.schedule_rounded,
-                                  S.of(context).seeDrivingTime,
-                                  () {
-                                    Navigator.of(context).push(
-                                      slideFromRightRoute(
-                                          const DriverAnalyticsScreen()),
                                     );
                                   },
                                 ),

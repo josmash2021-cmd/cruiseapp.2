@@ -1042,34 +1042,6 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                         );
                       },
                     ),
-                    _panelItem(
-                      Icons.star_outline_rounded,
-                      S.of(context).seeUpcomingPromotions,
-                      panelItemIcon,
-                      panelItemText,
-                      panelItemChevron,
-                      () {
-                        Navigator.pop(context);
-                        Navigator.push(
-                          context,
-                          slideFromRightRoute(const DriverPromosScreen()),
-                        );
-                      },
-                    ),
-                    _panelItem(
-                      Icons.access_time_rounded,
-                      S.of(context).seeDrivingTime,
-                      panelItemIcon,
-                      panelItemText,
-                      panelItemChevron,
-                      () {
-                        Navigator.pop(context);
-                        Navigator.push(
-                          context,
-                          slideFromRightRoute(const DriverAnalyticsScreen()),
-                        );
-                      },
-                    ),
                     const SizedBox(height: 20),
                     // PAUSE and GO OFFLINE buttons row
                     Row(
@@ -3138,7 +3110,15 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                           Padding(
                             padding: const EdgeInsets.symmetric(horizontal: 18),
                             child: Text(
-                              S.of(context).earningsTitle.toUpperCase(),
+                              // The slot below crosses between the figures
+                              // and the reservations. A heading fixed on
+                              // "EARNINGS" over a list of scheduled rides
+                              // is the same mistake the old
+                              // "Recommended for you" made.
+                              (_panelShowsReserve
+                                      ? S.of(context).scheduledRidesTitle
+                                      : S.of(context).earningsTitle)
+                                  .toUpperCase(),
                               style: TextStyle(
                                 fontFamily: 'Poppins',
                                 color: Colors.white.withValues(alpha: 0.45),
@@ -3728,31 +3708,6 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                 ),
               ),
             ],
-          ),
-        ),
-        const SizedBox(height: 14),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 14),
-          child: Container(
-            decoration: isDark
-                ? neuBox(radius: 18, pressed: true)
-                : BoxDecoration(
-                    color: Colors.black.withValues(alpha: 0.03),
-                    borderRadius: BorderRadius.circular(18),
-                  ),
-            child: _panelItem(
-              Icons.star_outline_rounded,
-              S.of(context).seeUpcomingPromotions,
-              panelItemIcon,
-              panelItemText,
-              panelItemChevron,
-              () {
-                Navigator.push(
-                  context,
-                  slideFromRightRoute(const DriverPromosScreen()),
-                );
-              },
-            ),
           ),
         ),
       ],

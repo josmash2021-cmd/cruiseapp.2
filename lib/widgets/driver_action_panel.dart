@@ -1,9 +1,7 @@
 import 'package:flutter/material.dart';
 import '../services/haptic_service.dart';
-import 'package:url_launcher/url_launcher.dart';
 import '../navigation/nav_state_machine.dart';
 import '../l10n/app_localizations.dart';
-import '../services/map_launcher_service.dart';
 import 'driver_report_dialog.dart';
 
 /// Indicación de navegación turn-by-turn
@@ -242,14 +240,20 @@ class DriverActionPanel extends StatelessWidget {
                       width: double.infinity,
                       height: 52,
                       child: OutlinedButton.icon(
-                        onPressed: () {
-                          HapticService.mediumImpact();
-                          if (onStartNavigation != null) {
-                            onStartNavigation!();
-                          } else {
-                            _launchGoogleMaps();
-                          }
-                        },
+                        // Disabled rather than silently doing nothing.
+                        //
+                        // The else branch called _launchGoogleMaps() with
+                        // no arguments, and that method returned early
+                        // unless both lat and lng were non-null — which
+                        // they never were, because this widget has no
+                        // destination, only a callback. The button looked
+                        // live and did nothing at all.
+                        onPressed: onStartNavigation == null
+                            ? null
+                            : () {
+                                HapticService.mediumImpact();
+                                onStartNavigation!();
+                              },
                         icon: const Icon(Icons.navigation_rounded, size: 22),
                         label: const Text(
                           'INICIAR NAVEGACIÓN',
@@ -351,13 +355,6 @@ class DriverActionPanel extends StatelessWidget {
       case 'straight':
       default:
         return Icons.straight_rounded;
-    }
-  }
-
-  // Abrir Google Maps con navegación
-  void _launchGoogleMaps({double? lat, double? lng}) {
-    if (lat != null && lng != null) {
-      MapLauncherService.navigate(destLat: lat, destLng: lng);
     }
   }
 

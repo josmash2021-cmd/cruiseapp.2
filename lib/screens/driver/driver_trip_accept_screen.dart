@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import '../../services/map_launcher_service.dart';
 import '../../utils/app_platform.dart';
 import '../../widgets/neu_style.dart';
 import 'driver_earnings_screen.dart';
@@ -1213,6 +1214,23 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   Future<void> _openNativeMaps(LatLng dest) async {
     final lat = dest.latitude;
     final lng = dest.longitude;
+
+    // Ask Settings → Navigation first.
+    //
+    // This screen is where a driver actually presses Navigate, and it
+    // used to ignore every one of those settings: it opened Google Maps,
+    // then Waze, then Apple Maps, in that fixed order, with no avoid
+    // parameters. A driver who chose Waze and turned on Avoid Tolls got
+    // Google Maps and a route through the toll booth.
+    //
+    // False means either they prefer in-app navigation or their chosen
+    // app would not open — both fall through to the chain below, which
+    // is the behaviour this button has always had.
+    if (await MapLauncherService.navigate(destLat: lat, destLng: lng)) {
+      return;
+    }
+    if (!mounted) return;
+
     if (AppPlatform.isIOS) {
       final gMapsUrl = Uri.parse(
         'comgooglemaps://?daddr=$lat,$lng&directionsmode=driving',

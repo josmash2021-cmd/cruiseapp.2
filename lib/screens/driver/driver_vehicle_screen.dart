@@ -511,6 +511,26 @@ class _DriverVehicleScreenState extends State<DriverVehicleScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    // The tier leads the card. It was a chip sitting beside
+                    // the paint colour, which read the two as the same kind
+                    // of fact — one is what the car looks like, the other
+                    // is what work it gets and what it pays.
+                    Row(
+                      children: [
+                        Icon(_tierInfo.icon, size: 15, color: _tierInfo.color),
+                        const SizedBox(width: 6),
+                        Text(
+                          _tierInfo.label,
+                          style: TextStyle(
+                            color: _tierInfo.color,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 1.2,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
                     if (_year.isNotEmpty)
                       Text(
                         _year,
@@ -550,11 +570,6 @@ class _DriverVehicleScreenState extends State<DriverVehicleScreen> {
                       children: [
                         if (_color.isNotEmpty)
                           _vehicleChip(Icons.palette_rounded, _color, null),
-                        _vehicleChip(
-                          _tierInfo.icon,
-                          _tierInfo.label.toUpperCase(),
-                          _tierInfo.color,
-                        ),
                       ],
                     ),
                   ],

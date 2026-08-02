@@ -27,10 +27,14 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
   bool _uploading = false;
   List<Map<String, dynamic>> _documents = [];
   String _vehicleLabel = '';
-  // Anything still owed is open on arrival; what is already done starts
-  // collapsed. The driver came here for the first list, not the second.
+  // Both open on arrival.
+  //
+  // Collapsing the done list looked tidy until a driver with nothing
+  // outstanding opened the screen: the only section was closed, and the
+  // page was a heading, a chip and half a screen of nothing. The
+  // documents are the content — they are not hidden by default.
   bool _actionOpen = true;
-  bool _submittedOpen = false;
+  bool _submittedOpen = true;
   final _picker = ImagePicker();
 
   // All required doc types for drivers

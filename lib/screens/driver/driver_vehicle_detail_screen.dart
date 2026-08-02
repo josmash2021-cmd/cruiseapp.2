@@ -79,6 +79,26 @@ class DriverVehicleDetailScreen extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                // The tier leads, above the make. It used to be the last
+                // of three fact rows, below the plate — the least
+                // prominent line on a card about which work this car
+                // gets and what share of it the driver keeps.
+                Row(
+                  children: [
+                    Icon(tierIcon, size: 15, color: tierColor),
+                    const SizedBox(width: 6),
+                    Text(
+                      tierLabel.toUpperCase(),
+                      style: TextStyle(
+                        color: tierColor,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 1.2,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
                 if (make.isNotEmpty)
                   Text(
                     make.toUpperCase(),
@@ -108,7 +128,6 @@ class DriverVehicleDetailScreen extends StatelessWidget {
                 ),
                 if (plate.isNotEmpty)
                   _fact(Icons.confirmation_number_rounded, plate.toUpperCase()),
-                _fact(tierIcon, tierLabel.toUpperCase(), tint: tierColor),
               ],
             ),
           ),

@@ -1395,7 +1395,35 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
       // The card is the app's raised surface, not a black panel with a gold
       // outline. The gold now lives on the fare, the metrics and the
       // countdown, where it means something.
-      decoration: neuBox(radius: 20),
+      //
+      // Deeper than neuBox: this card floats over a live map, and at
+      // neuBox's 4-pt offset the two read as one flat layer. A long soft
+      // shadow well below the card, a short contact shadow, and a hairline
+      // of light on the top edge give it actual 3-D lift off the map.
+      decoration: BoxDecoration(
+        color: neuSurface,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.05)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.55),
+            offset: const Offset(0, 16),
+            blurRadius: 32,
+            spreadRadius: -8,
+          ),
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.35),
+            offset: const Offset(0, 4),
+            blurRadius: 10,
+            spreadRadius: -3,
+          ),
+          BoxShadow(
+            color: Colors.white.withValues(alpha: 0.06),
+            offset: const Offset(0, -1),
+            blurRadius: 2,
+          ),
+        ],
+      ),
       child: Stack(
         clipBehavior: Clip.none,
         children: [
@@ -1628,21 +1656,41 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
               ),
             ),
             const SizedBox(width: 10),
-            // The clock, level with the fare. Keyed on the offer so a new
-            // one starts fresh and a rebuild of this one does not.
-            OfferCountdownRing(
-              key: ValueKey('countdown_$offerId'),
-              active: isVisible,
-              onExpired: () {
-                if (!mounted) return;
-                _rejectOffer(offer);
-              },
-              // cruise_logo.png, not logoapp.png: the latter is the same
-              // mark baked onto a black square, which inside the ring
-              // showed up as a black box around the car.
-              child: Image.asset(
-                'assets/images/cruise_logo.png',
-                fit: BoxFit.contain,
+            // The clock, level with the fare — raised like the card itself:
+            // a disc with its own contact shadow and top light, so it reads
+            // as a second 3-D object sitting on the card, not painted on it.
+            Container(
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: neuSurface,
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.5),
+                    offset: const Offset(0, 5),
+                    blurRadius: 12,
+                    spreadRadius: -3,
+                  ),
+                  BoxShadow(
+                    color: Colors.white.withValues(alpha: 0.07),
+                    offset: const Offset(0, -1),
+                    blurRadius: 2,
+                  ),
+                ],
+              ),
+              child: OfferCountdownRing(
+                key: ValueKey('countdown_$offerId'),
+                active: isVisible,
+                onExpired: () {
+                  if (!mounted) return;
+                  _rejectOffer(offer);
+                },
+                // cruise_logo.png, not logoapp.png: the latter is the same
+                // mark baked onto a black square, which inside the ring
+                // showed up as a black box around the car.
+                child: Image.asset(
+                  'assets/images/cruise_logo.png',
+                  fit: BoxFit.contain,
+                ),
               ),
             ),
           ],
@@ -1986,10 +2034,21 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
           width: double.infinity,
           height: 48,
           decoration: BoxDecoration(
+            // White with gold lettering — the one action on the card gets
+            // the light-on-dark inverse of everything around it, and the
+            // brand colour stays on the word that does the work.
             color: isAccepting
-                ? const Color(0xFFD4A843).withValues(alpha: 0.5)
-                : const Color(0xFFD4A843),
+                ? Colors.white.withValues(alpha: 0.5)
+                : Colors.white,
             borderRadius: BorderRadius.circular(12),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.35),
+                offset: const Offset(0, 3),
+                blurRadius: 8,
+                spreadRadius: -2,
+              ),
+            ],
           ),
           child: Center(
             child: isAccepting
@@ -1998,13 +2057,13 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                     height: 20,
                     child: CircularProgressIndicator(
                       strokeWidth: 2.5,
-                      valueColor: AlwaysStoppedAnimation(Colors.black),
+                      valueColor: AlwaysStoppedAnimation(Color(0xFFD4A843)),
                     ),
                   )
                 : Text(
                     S.of(context).accept,
                     style: const TextStyle(
-                      color: Colors.black,
+                      color: Color(0xFFD4A843),
                       fontSize: 16,
                       fontWeight: FontWeight.bold,
                     ),

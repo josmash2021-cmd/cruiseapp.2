@@ -55,7 +55,16 @@ def _send_email(to_email: str, subject: str, html_body: str, template_params: di
             req = _ureq.Request(
                 "https://api.emailjs.com/api/v1.0/email/send",
                 data=payload,
-                headers={"Content-Type": "application/json", "origin": "https://cruiseapp2-production.up.railway.app"},
+                headers={
+                    "Content-Type": "application/json",
+                    "origin": "https://cruiseapp2-production.up.railway.app",
+                    # Cloudflare fronts api.emailjs.com and blocks urllib's
+                    # default UA (403 "error code: 1010") before the request
+                    # ever reaches EmailJS — send a browser UA.
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                                  "AppleWebKit/537.36 (KHTML, like Gecko) "
+                                  "Chrome/126.0.0.0 Safari/537.36",
+                },
                 method="POST",
             )
             with _ureq.urlopen(req, timeout=10) as resp:

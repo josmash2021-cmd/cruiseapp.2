@@ -830,10 +830,22 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                   onTapCancel: () {
                     _pulseCtrl?.reverse();
                   },
-                  child: Padding(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-                    child: card,
+                  // Anchored to the bottom of the height it was given.
+                  //
+                  // _offerCardHeight adds up the card's parts, and any term
+                  // that reads a little high leaves slack. Aligned to the
+                  // top, that slack sat under the Accept button and pushed
+                  // the whole card up the screen — the card floated with a
+                  // band of map beneath it. Aligned to the bottom, the same
+                  // slack lands above the card, where the map already is,
+                  // and the card keeps its small gap from the screen edge.
+                  child: Align(
+                    alignment: Alignment.bottomCenter,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 4, vertical: 4),
+                      child: card,
+                    ),
                   ),
                 );
               },

@@ -407,11 +407,40 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
               _statusPill(linked ? statusLabel : s.payoutSetUp,
                   linked: linked),
             const SizedBox(width: 6),
-            Icon(
-              Icons.chevron_right_rounded,
-              color: Colors.white.withValues(alpha: 0.3),
-              size: 20,
-            ),
+            // A linked row gets a bin instead of a chevron.
+            //
+            // `_confirmDelete` and `_deleteMethod` were written and had no
+            // caller: the redesign replaced the per-method cards with these
+            // two structural rows and the delete button went with them. A
+            // driver could attach a card and never take it off.
+            if (linked && !_busy && !_loading)
+              GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () {
+                  HapticService.selectionClick();
+                  _confirmDelete(
+                    method['id'],
+                    _cleanDisplay((method['display_name'] ?? '').toString()),
+                  );
+                },
+                child: Container(
+                  width: 34,
+                  height: 34,
+                  alignment: Alignment.center,
+                  decoration: neuBox(radius: 12, pressed: true),
+                  child: Icon(
+                    Icons.delete_outline_rounded,
+                    color: Colors.white.withValues(alpha: 0.4),
+                    size: 17,
+                  ),
+                ),
+              )
+            else
+              Icon(
+                Icons.chevron_right_rounded,
+                color: Colors.white.withValues(alpha: 0.3),
+                size: 20,
+              ),
           ],
         ),
         ),
@@ -795,9 +824,31 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
         return;
       }
 
-      final result = await stripe.Stripe.instance.collectBankAccountToken(
-        clientSecret: clientSecret,
-      );
+      // The session belongs to the driver's connected account, not to the
+      // platform — the backend builds it with
+      // `account_holder: {type: "account", account: <connect id>}`. Without
+      // telling the SDK which account it is acting for, it asks the
+      // platform about a session the platform does not own, and the sheet
+      // never opens: "Failed to add method", with a 200 OK in the server
+      // log a second earlier.
+      //
+      // The backend has been returning stripe_account_id all along, and
+      // ApiService even documents it in the return type. Nothing read it.
+      final accountId = (session['stripe_account_id'] ?? '').toString();
+      final previousAccount = stripe.Stripe.stripeAccountId;
+      final stripe.FinancialConnectionTokenResult result;
+      try {
+        if (accountId.isNotEmpty) {
+          stripe.Stripe.stripeAccountId = accountId;
+        }
+        result = await stripe.Stripe.instance.collectBankAccountToken(
+          clientSecret: clientSecret,
+        );
+      } finally {
+        // Put it back. Leaving it set would point every later Stripe call
+        // — the rider's payment sheet included — at this driver's account.
+        stripe.Stripe.stripeAccountId = previousAccount;
+      }
       if (!mounted) return;
 
       final bankToken = result.token.id ?? '';

@@ -1531,6 +1531,56 @@ async def cancel_trip(trip_id: int, request: Request, user: User = Depends(_get_
     await db.commit()
     await db.refresh(trip)
 
+    # ── Tell the driver who already took it ───────────────────────────
+    #
+    # The block below reaches drivers holding a *pending* offer. A driver
+    # who accepted has no pending offer — they have a trip, and they are
+    # driving to a pickup that is no longer there. Nothing told them.
+    if trip.driver_id and user.id != trip.driver_id:
+        try:
+            _drv = (await db.execute(
+                select(User).where(User.id == trip.driver_id)
+            )).scalar_one_or_none()
+            if _drv:
+                _title = "Ride cancelled"
+                _body = "The rider cancelled this trip. You are back online."
+                db.add(Notification(
+                    user_id=_drv.id,
+                    title=_title,
+                    body=_body,
+                    notif_type="trip_cancelled",
+                    data=json.dumps({"trip_id": trip.id}),
+                ))
+                await db.commit()
+                if _drv.fcm_token:
+                    _safe_create_task(_send_fcm_push_async(
+                        _drv.fcm_token,
+                        title=_title,
+                        body=_body,
+                        data={
+                            "type": "trip_cancelled",
+                            "trip_id": str(trip.id),
+                            "cancelled_by": "rider",
+                        },
+                    ))
+                # The app watches the trip over SSE, so this is what moves
+                # it off the trip screen without waiting for a poll.
+                from services.event_bus import event_bus as _ev
+                _safe_create_task(_ev.push_trip_update(trip.id, {
+                    "status": "cancelled",
+                    "cancelled_by": "rider",
+                    "trip_id": trip.id,
+                }))
+                logging.info(
+                    "[Cancel] Trip %s: told driver %s the rider cancelled",
+                    trip.id, _drv.id,
+                )
+        except Exception as e:
+            logging.warning(
+                "[Cancel] Trip %s: could not notify driver %s: %s",
+                trip.id, trip.driver_id, e,
+            )
+
     # Evict pending-offer cache + push empty offers list via SSE to every driver
     # that had a live offer on this trip. Without this the driver app keeps
     # showing the ride card until its next poll (up to ~5s) even though the

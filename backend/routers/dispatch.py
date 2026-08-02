@@ -387,6 +387,36 @@ async def _send_offer_to_driver(
         )
     ).scalars().first()
 
+    # One trip, one driver, at any moment.
+    #
+    # Every path that offers a ride comes through here — initial dispatch,
+    # the cascade, the re-queue after a reject or release, and the comeback
+    # when nobody else is nearby. Each of them expires the previous offer
+    # before making the next, but they can overlap: a cascade waking from
+    # its sleep while a reject is already handing the trip on leaves two
+    # pending offers for one trip, and the same ride rings on two phones.
+    # Whichever driver is slower then taps Accept on a trip that is gone.
+    #
+    # Retiring the others here closes that off wherever it is opened from,
+    # rather than trusting four callers to have got their ordering right.
+    stale = (
+        await db.execute(
+            select(DispatchOffer).where(
+                DispatchOffer.trip_id == trip.id,
+                DispatchOffer.driver_id != driver.id,
+                DispatchOffer.status == "pending",
+            )
+        )
+    ).scalars().all()
+    for other in stale:
+        other.status = "expired"
+        _pending_cache.pop(other.driver_id, None)
+        logging.info(
+            "[Dispatch] trip %s: expiring offer %s to driver %s — it is "
+            "driver %s's turn now",
+            trip.id, other.id, other.driver_id, driver.id,
+        )
+
     if existing is not None:
         logging.info(
             "[Dispatch] driver %s already holds a pending offer for trip %s "
@@ -394,6 +424,8 @@ async def _send_offer_to_driver(
             driver.id, trip.id, existing.id,
         )
         offer = existing
+        if stale:
+            await db.commit()
     else:
         offer = DispatchOffer(trip_id=trip.id, driver_id=driver.id)
         db.add(offer)
@@ -1195,25 +1227,35 @@ async def dispatch_request(body: DispatchRequestIn, user: User = Depends(_get_cu
             ) or "none online",
         )
 
-    # Create offer for closest driver and start auto-cascade
+    # The first offer waits _FIRST_OFFER_DELAY_SECONDS before it reaches
+    # anyone. Requested and confirmed: the rider is held at "finding a
+    # driver" for that long, which is twenty seconds added to the start of
+    # every ride.
+    #
+    # The search above is not the assignment. Twenty seconds is long enough
+    # for the nearest driver to go offline, take another trip, or for a
+    # closer one to come online, so the choice is made again when the wait
+    # is over rather than acted on now with a stale answer.
     if drivers_sorted:
         assigned = drivers_sorted[0]
-        rider_name, rider_phone = _resolve_rider_display(trip, user)
-        rider_photo = _abs_photo_url(user.photo_url) or ""
-
-        offer = await _send_offer_to_driver(
-            db, trip, assigned, rider_name, rider_phone, rider_photo,
-        )
-
-        # Launch auto-cascade background task: will try next drivers every 8s
-        # if the first driver does not respond.
         old_task = _cascade_tasks.pop(trip.id, None)
         if old_task and not old_task.done():
             old_task.cancel()
-        task = _safe_create_task(_auto_cascade(trip.id, offer.id, assigned.id))
-        _cascade_tasks[trip.id] = task
-
-        return {**_trip_dict(trip), "trip_id": trip.id, "offer_id": offer.id, "dispatched_to": assigned.id}
+        _first_offer_tasks[trip.id] = _safe_create_task(
+            _dispatch_first_offer_after_delay(trip.id)
+        )
+        logging.info(
+            "[Dispatch] Trip %d: first offer scheduled for %ds from now "
+            "(nearest right now is driver %d)",
+            trip.id, _FIRST_OFFER_DELAY_SECONDS, assigned.id,
+        )
+        return {
+            **_trip_dict(trip),
+            "trip_id": trip.id,
+            "offer_id": None,
+            "dispatched_to": assigned.id,
+            "offer_delay_seconds": _FIRST_OFFER_DELAY_SECONDS,
+        }
 
     return {**_trip_dict(trip), "trip_id": trip.id, "offer_id": None, "dispatched_to": None}
 
@@ -1727,6 +1769,81 @@ async def _requeue_trip_to_next_driver(db: AsyncSession, trip: Trip):
     return new_offer
 
 
+
+# ── The first offer waits ─────────────────────────────────────────────
+#
+# A rider's request does not reach a driver immediately; it reaches one
+# after _FIRST_OFFER_DELAY_SECONDS. This is a deliberate product choice
+# and it costs the rider that long staring at "finding a driver" on every
+# single trip — the whole delay is in front of the first driver's phone
+# ringing, not behind it.
+
+_FIRST_OFFER_DELAY_SECONDS = 20
+
+# trip_id -> the pending first-offer task.
+_first_offer_tasks: dict[int, asyncio.Task] = {}
+
+
+async def _dispatch_first_offer_after_delay(trip_id: int) -> None:
+    """Wait, then pick a driver and offer the trip to them."""
+    try:
+        await asyncio.sleep(_FIRST_OFFER_DELAY_SECONDS)
+
+        async with SessionLocal() as db:
+            trip = (await db.execute(
+                select(Trip).where(Trip.id == trip_id)
+            )).scalar_one_or_none()
+            if not trip or trip.status != "requested":
+                logging.info(
+                    "[Dispatch] Trip %s: gone before the first offer went "
+                    "out (status=%s)",
+                    trip_id, trip.status if trip else "missing",
+                )
+                return
+
+            # Chosen now, not twenty seconds ago: whoever was nearest then
+            # may be offline or on another trip by now.
+            drivers = await _find_nearest_drivers(
+                db,
+                pickup_lat=trip.pickup_lat or 0,
+                pickup_lng=trip.pickup_lng or 0,
+                vehicle_type=trip.vehicle_type or "comfort",
+                radius_km=MAX_DISPATCH_RADIUS_KM,
+                limit=10,
+            )
+            if not drivers:
+                logging.info(
+                    "[Dispatch] Trip %s: nobody available once the wait was "
+                    "over", trip_id,
+                )
+                return
+
+            assigned = drivers[0]
+            rider = None
+            if trip.rider_id:
+                rider = (await db.execute(
+                    select(User).where(User.id == trip.rider_id)
+                )).scalar_one_or_none()
+            rider_name, rider_phone = _resolve_rider_display(trip, rider)
+            rider_photo = (_abs_photo_url(rider.photo_url) or "") if rider else ""
+
+            offer = await _send_offer_to_driver(
+                db, trip, assigned, rider_name, rider_phone, rider_photo,
+            )
+            logging.info(
+                "[Dispatch] Trip %s: offer %s to driver %s after the %ds wait",
+                trip_id, offer.id, assigned.id, _FIRST_OFFER_DELAY_SECONDS,
+            )
+            _cascade_tasks[trip_id] = _safe_create_task(
+                _auto_cascade(trip_id, offer.id, assigned.id)
+            )
+    except asyncio.CancelledError:
+        raise
+    except Exception as e:
+        logging.error(
+            "[Dispatch] Trip %s: delayed first offer failed: %s",
+            trip_id, e, exc_info=True,
+        )
 
 # ── Coming back to a driver who passed ────────────────────────────────
 #

@@ -686,6 +686,41 @@ except ImportError:
 
 app = FastAPI(title="Cruise Ride API", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None, default_response_class=_default_response_class)
 
+# Pydantic's default 422 handler echoes the request body back inside each
+# error's `input` — including the plaintext password and the SSN, which then
+# render straight into the client's error banner. Keep the useful part
+# (what is missing or invalid), mask the sensitive keys.
+from fastapi.exceptions import RequestValidationError as _RequestValidationError
+from fastapi.responses import JSONResponse as _JSONResponse
+
+_SENSITIVE_ERROR_KEYS = {
+    "password", "new_password", "old_password", "current_password",
+    "ssn", "token", "id_token", "access_token", "refresh_token",
+}
+
+
+def _mask_validation_inputs(value):
+    if isinstance(value, dict):
+        return {
+            k: ("***" if str(k).lower() in _SENSITIVE_ERROR_KEYS else _mask_validation_inputs(v))
+            for k, v in value.items()
+        }
+    if isinstance(value, list):
+        return [_mask_validation_inputs(v) for v in value]
+    if isinstance(value, (str, int, float, bool)) or value is None:
+        return value
+    # pydantic v2 packs the raised ValueError into ctx — serialize it, never
+    # fail the error response over it.
+    return str(value)
+
+
+@app.exception_handler(_RequestValidationError)
+async def _validation_exception_handler(request: Request, exc: _RequestValidationError):
+    return _JSONResponse(
+        status_code=422,
+        content={"detail": _mask_validation_inputs(exc.errors())},
+    )
+
 # Configure Socket.io JWT (same secret as REST API)
 # Guard: if JWT_SECRET is empty/missing, fail fast with a clear message.
 if not JWT_SECRET:

@@ -144,6 +144,22 @@ class GoogleAuthService {
     }
   }
 
+  /// A fresh ID token without any UI: re-authenticates silently. Use it
+  /// before submitting a token captured minutes (or days) ago — Google ID
+  /// tokens live about an hour, and the registration payload travels
+  /// through the whole onboarding before it is finally sent.
+  Future<String?> refreshIdToken() async {
+    try {
+      final account = await _googleSignIn.signInSilently();
+      if (account == null) return null;
+      final auth = await account.authentication;
+      return auth.idToken;
+    } catch (e) {
+      debugPrint('[GoogleAuth] silent token refresh failed: $e');
+      return null;
+    }
+  }
+
   Future<void> signOut() async {
     try {
       await _googleSignIn.signOut();

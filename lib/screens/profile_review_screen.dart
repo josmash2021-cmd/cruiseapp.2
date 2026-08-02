@@ -12,6 +12,7 @@ import '../services/firebase_storage_service.dart';
 import '../services/photo_recovery_service.dart';
 import '../widgets/dismiss_keyboard.dart';
 import '../services/user_session.dart';
+import '../services/google_auth_service.dart';
 import 'ready_to_ride_screen.dart';
 
 class ProfileReviewScreen extends StatefulWidget {
@@ -64,9 +65,18 @@ class _ProfileReviewScreenState extends State<ProfileReviewScreen> {
         '📋 Social register: ${widget.firstName} ${widget.lastName} | email=${widget.email} | phone=${widget.phone}',
       );
       try {
+        // The pending token was captured at Google sign-in — possibly hours
+        // or days ago, and Google ID tokens live about an hour. Refresh
+        // silently right before the call; the stored one is the fallback,
+        // not the default.
+        var idToken = pendingSocial['idToken']!;
+        if (pendingSocial['provider'] == 'google') {
+          final fresh = await GoogleAuthService.instance.refreshIdToken();
+          if (fresh != null && fresh.isNotEmpty) idToken = fresh;
+        }
         final result = await ApiService.socialAuth(
           provider: pendingSocial['provider']!,
-          idToken: pendingSocial['idToken']!,
+          idToken: idToken,
           firstName: widget.firstName,
           lastName: widget.lastName,
           loginOnly: false,

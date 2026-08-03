@@ -1001,6 +1001,9 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                 styleUri: MapboxConfig.styleDark,
                 onControllerCreated: (c) {
                   _webMapCtrl = c;
+                  // The same navy/gold the native map gets in
+                  // _applyDarkNavyGoldTheme — raw dark-v11 is grey, not ours.
+                  c.applyNavyGoldTheme();
                   // The same two hooks the native map wires below, so the
                   // pin under the finger geocodes as the map is dragged.
                   c.onCameraMove = (_, __, ___) {

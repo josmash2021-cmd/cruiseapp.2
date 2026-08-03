@@ -1415,16 +1415,12 @@ extension _HomeScreenWidgets on _HomeScreenState {
   // ─── "Your location" live mini map card ───
   // Follow-only map: gestures disabled so it never steals the sheet scroll.
   Widget _buildHomeMiniMapCard() {
-    // Mapbox Maps Flutter has no web implementation — its MapWidget crashes
-    // during the first layout (bool.fromEnvironment non-const). On web show
-    // a static placeholder instead of the live map.
-    //
-    // Same placeholder during an active ride. The card is now dimmed
-    // instead of removed, but mounting a live MapWidget here would put a
-    // second native Mapbox surface behind the tracking screen's own — two
-    // GL contexts and two tile caches at once, which is precisely what was
+    // Static placeholder during an active ride. The card is dimmed
+    // instead of removed, but mounting a live map here would put a
+    // second map surface behind the tracking screen's own — two GL
+    // contexts and two tile caches at once, which is precisely what was
     // crashing the app on iOS. Visible and inert, without the surface.
-    if (kIsWeb || _activeRide != null) {
+    if (_activeRide != null) {
       return Container(
         height: Responsive.h(190),
         decoration: neuBox(radius: 24),
@@ -1478,7 +1474,9 @@ extension _HomeScreenWidgets on _HomeScreenState {
               Positioned.fill(
                 child: _miniMapSuspended
                     ? const ColoredBox(color: Color(0xFF0B0B0F))
-                    : _homeMiniMapSurface(pos),
+                    : kIsWeb
+                        ? _homeMiniMapWebSurface(pos)
+                        : _homeMiniMapSurface(pos),
               ),
               // The dot, painted by Flutter at the centre the camera is
               // held on. Same reason as the driver's arrow: an annotation
@@ -1554,6 +1552,26 @@ extension _HomeScreenWidgets on _HomeScreenState {
           ),
         ),
       ),
+    );
+  }
+
+  /// The home mini map in the browser: same card, but the surface is the
+  /// GL JS WebMapView (the native MapWidget has no web implementation).
+  /// Gestures stay off — the IgnorePointer above already eats every touch,
+  /// and the camera follows the rider from _recenterHomeMiniMap.
+  Widget _homeMiniMapWebSurface(LatLng pos) {
+    return WebMapView(
+      key: const ValueKey('home_mini_map_web'),
+      initialLng: pos.longitude,
+      initialLat: pos.latitude,
+      initialZoom: 15.0,
+      styleUri: MapboxConfig.styleDark,
+      onControllerCreated: (c) {
+        _homeWebMapCtrl = c;
+        // Same navy/gold the native map wears — the whole point of the
+        // shared theme is that web and iOS read as the same place.
+        c.applyNavyGoldTheme();
+      },
     );
   }
 

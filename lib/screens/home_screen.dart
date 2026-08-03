@@ -183,6 +183,10 @@ class _HomeScreenState extends State<HomeScreen>
 
   // ── Home mini map ("Your location" card) ──
   mapbox.MapboxMap? _homeMiniMapCtrl;
+
+  /// Web counterpart of the home mini map controller (GL JS). The native
+  /// controller above stays null in the browser.
+  WebMapController? _homeWebMapCtrl;
   bool _creatingHomeDotAnnot = false; // guard: prevents parallel annotation creation
   final GoldLocationDot _homeDot = GoldLocationDot();
 

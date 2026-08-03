@@ -562,6 +562,12 @@ class _RideRequestScreenState extends State<RideRequestScreen>
   /// camera bounce nonstop and tore the rider's own zoom apart.
   Timer? _sheetFitDebounce;
 
+  /// Periodic refresh of the driver-availability answers on the sheet.
+  /// "No drivers available" cached an hour ago was still on screen until
+  /// the rider force-closed the app — while the sheet is open the answer
+  /// is re-asked every 20 seconds instead.
+  Timer? _waitRefreshTimer;
+
   // ── In-place map picker state (RiderPhase.pickingLocation) ──
   // Mirrors the Shopify widget's drop-a-pin mode but inside the same
   // Mapbox canvas — no Navigator push, no second map instance.
@@ -901,6 +907,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
     MapSurfaceCoordinator.instance.release(_mapSurfaceOwner);
     _shimmerTimeoutTimer?.cancel();
     _stuckPaymentFuse?.cancel();
+    _waitRefreshTimer?.cancel();
     _searchMapTimer?.cancel();
     _splashTimer?.cancel();
     _driverFoundTimer?.cancel();

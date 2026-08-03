@@ -456,6 +456,9 @@ extension _RideRequestController on _RideRequestScreenState {
           _shimmerTimeoutTimer?.cancel();
           _setState(() => _optionsLoaded = true);
         }
+        // Keep the availability answers fresh while the sheet is open —
+        // a driver coming online must clear "No drivers" by itself.
+        _startWaitRefresh();
         // Auto-select ride option from home screen card tap
         if (!_didAutoSelectRide &&
             widget.initialRideId != null &&
@@ -504,6 +507,9 @@ extension _RideRequestController on _RideRequestScreenState {
           });
           // Force immediate rebuild so bottom card shows right away (no black flash)
           _setState(() => _searchingShowMap = true);
+          // The request is in — availability answers no longer matter here.
+          _waitRefreshTimer?.cancel();
+          _waitRefreshTimer = null;
           // Trigger cinematic sequence on searching phase open
           _replayCinematicIfRouteAvailable();
           // Frame the full route ONCE for the search, then hold it.
@@ -2721,6 +2727,31 @@ void _showPaymentMethodPickerLegacy(AppColors c, RideOption? option) {
     _navigatingToTracking = false;
   }
 
+  /// Starts the 20-second availability refresh (idempotent) while the
+  /// booking sheet is on screen.
+  void _startWaitRefresh() {
+    if (_waitRefreshTimer != null) return;
+    _waitRefreshTimer = Timer.periodic(
+      const Duration(seconds: 20),
+      (_) => unawaited(_refreshWaitEstimates()),
+    );
+  }
+
+  /// Re-asks how many drivers are around the pickup — the untiered key
+  /// that drives the "No drivers" gate and the big wait figure, plus each
+  /// tier card's own range — then repaints so a driver who just came
+  /// online clears the notice without an app restart.
+  Future<void> _refreshWaitEstimates() async {
+    final p = _ctrl.state.pickup;
+    if (p == null || !mounted) return;
+    await Future.wait([
+      DriverWaitEstimate.fetch(lat: p.lat, lng: p.lng, force: true),
+      for (final t in const ['black', 'premium', 'compact', 'standard'])
+        DriverWaitEstimate.fetch(lat: p.lat, lng: p.lng, tier: t, force: true),
+    ]);
+    if (mounted) _setState(() {});
+  }
+
   /// Removes all trip-related polyline and pin annotations from the map.
   Future<void> _cleanupMapAnnotations() async {
     _routeDrawTicker?.stop();
@@ -2740,6 +2771,8 @@ void _showPaymentMethodPickerLegacy(AppColors c, RideOption? option) {
     _sheetHeightPx = 0;
     _sheetFitDebounce?.cancel();
     _userTookCamera = false;
+    _waitRefreshTimer?.cancel();
+    _waitRefreshTimer = null;
     final polyMgr = _polylineAnnotMgr;
     if (polyMgr != null) {
       if (_routeAnnot != null) {

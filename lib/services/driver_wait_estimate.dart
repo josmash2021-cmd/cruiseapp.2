@@ -103,8 +103,14 @@ class DriverWaitEstimate {
   static const int _maxSpreadMinutes = 15;
 
   static final Map<String, WaitEstimate> _cache = <String, WaitEstimate>{};
+  static final Map<String, DateTime> _fetchedAt = <String, DateTime>{};
   static final Map<String, Future<WaitEstimate>> _inFlight =
       <String, Future<WaitEstimate>>{};
+
+  /// How fresh an answer has to be before it is silently reused. Drivers go
+  /// on- and offline all day; "no drivers" cached an hour ago was still
+  /// being shown until the rider force-closed the app.
+  static const Duration _ttl = Duration(seconds: 30);
 
   /// Round to ~1 km so a rider nudging the pin does not re-fetch. The tier
   /// is part of the key: "who takes Black" and "who takes Standard" are
@@ -120,10 +126,17 @@ class DriverWaitEstimate {
     required double lat,
     required double lng,
     String tier = '',
+    bool force = false,
   }) {
     final key = _key(lat, lng, tier);
     final hit = _cache[key];
-    if (hit != null) return Future<WaitEstimate>.value(hit);
+    if (hit != null && !force) {
+      final at = _fetchedAt[key];
+      if (at != null && DateTime.now().difference(at) < _ttl) {
+        return Future<WaitEstimate>.value(hit);
+      }
+      // Stale — fall through and ask again.
+    }
     // Share one request between simultaneous callers — the card and whatever
     // else asks on the same frame must not become two round trips.
     final pending = _inFlight[key];
@@ -131,6 +144,7 @@ class DriverWaitEstimate {
 
     final future = _load(lat, lng, tier).then((e) {
       _cache[key] = e;
+      _fetchedAt[key] = DateTime.now();
       _inFlight.remove(key);
       return e;
     }).catchError((Object err) {
@@ -258,6 +272,7 @@ class DriverWaitEstimate {
   /// Drop everything — used when the rider changes pickup entirely.
   static void clear() {
     _cache.clear();
+    _fetchedAt.clear();
     _inFlight.clear();
   }
 }

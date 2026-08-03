@@ -1011,8 +1011,13 @@ async def admin_update_user(user_id: int, request: Request, db: AsyncSession = D
     if "password" in body and body["password"]:
         if not body.get("confirm_password_change"):
             raise HTTPException(400, "Password changes require confirm_password_change=true")
-        _sanitize_string(body["password"])
-        # Enforce minimum password strength
+        # NOTE: the password is deliberately NOT passed through
+        # _sanitize_string(). That filter rejects ; & | ` $ as command
+        # injection, which is the right check for a name or an address but
+        # wrong for a password: this value is never interpolated into a shell
+        # or a query, it goes straight to pwd.hash(). Running it here meant the
+        # panel answered "Invalid input detected" to exactly the strongest
+        # passwords an operator could pick.
         pw = body["password"]
         if len(pw) < 8:
             raise HTTPException(400, "Password must be at least 8 characters")

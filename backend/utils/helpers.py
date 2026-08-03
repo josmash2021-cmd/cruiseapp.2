@@ -157,6 +157,56 @@ MAX_DISPATCH_RADIUS_KM = MAX_DISPATCH_RADIUS_MILES * 1.609344  # 804.672
 
 
 # ═══════════════════════════════════════════════════════
+#  Account status
+# ═══════════════════════════════════════════════════════
+#
+# `User.status` answers one question: may this account be used? The values
+# that mean yes are these.
+#
+# "approved" is in the set because it is already in the data. The dispatch
+# panel writes it when an operator approves someone — a verification word in
+# an account-status column — and PATCH /admin/users never validated the field,
+# so it went straight in. The damage was silent and total for drivers:
+#
+#   * PATCH /drivers/{id}/location refuses is_online for any status that is
+#     not "active", so an approved driver got 403 on every heartbeat and the
+#     backend never learned where they were.
+#   * _find_nearest_drivers requires status == "active", a non-null lat/lng
+#     and a last_active_at inside 15 minutes — all three of which that 403
+#     had just made impossible.
+#
+# Net effect: approving a driver was what stopped them from ever being
+# offered a trip. Reading both spellings fixes every account already in that
+# state; _normalise_account_status keeps new ones out of it.
+ACTIVE_ACCOUNT_STATUSES = ("active", "approved")
+
+# Everything an operator is allowed to set an account to.
+SETTABLE_ACCOUNT_STATUSES = (
+    "active",
+    "blocked",
+    "deleted",
+    "deactivated",
+    "pending_deletion",
+    "inactive",
+    "suspended",
+)
+
+
+def normalise_account_status(value: str | None) -> str | None:
+    """Fold verification words into the account status they meant.
+
+    Returns None when the value is not a status at all, so callers can reject
+    it instead of writing something that silently disables the account.
+    """
+    if value is None:
+        return None
+    v = str(value).strip().lower()
+    if v in ("approved", "verified"):
+        return "active"
+    return v if v in SETTABLE_ACCOUNT_STATUSES else None
+
+
+# ═══════════════════════════════════════════════════════
 #  Dict converters (ORM → API response)
 # ═══════════════════════════════════════════════════════
 

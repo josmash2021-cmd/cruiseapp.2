@@ -16,7 +16,7 @@ from utils.security import (
     _dispatch_sessions, _security_audit_log,
     JWT_SECRET, JWT_ALGORITHM,
 )
-from utils.helpers import _safe_create_task, utc_now, _haversine, _trip_dict, _user_dict, _abs_photo_url, _resolve_rider_display, MAX_DISPATCH_RADIUS_KM
+from utils.helpers import _safe_create_task, utc_now, _haversine, _trip_dict, _user_dict, _abs_photo_url, _resolve_rider_display, MAX_DISPATCH_RADIUS_KM, ACTIVE_ACCOUNT_STATUSES
 from services.fcm_service import _send_fcm_push, _send_fcm_push_async
 from services.sms_service import notify_guest_driver_assigned
 from services.email_service import email_guest_driver_assigned
@@ -232,7 +232,10 @@ async def _find_nearest_drivers(
         User.is_online == True,
         # Suspended/deactivated drivers (zero-tolerance, doc expiry, etc.)
         # are never eligible for offers, even if is_online is stale.
-        User.status == "active",
+        # Both spellings of "usable account" count — an approved driver has
+        # status "approved", and matching only "active" excluded exactly the
+        # drivers an operator had just approved.
+        User.status.in_(ACTIVE_ACCOUNT_STATUSES),
         User.lat.isnot(None),
         User.lng.isnot(None),
         User.lat >= min_lat,

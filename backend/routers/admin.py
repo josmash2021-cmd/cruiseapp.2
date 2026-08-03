@@ -31,6 +31,7 @@ from utils.helpers import (
     utc_now, utc_today_start, utc_month_start,
     _user_dict, _trip_dict, _doc_dict, _haversine, _resolve_rider_display, _safe_create_task,
     _abs_photo_url,
+    SETTABLE_ACCOUNT_STATUSES, ACTIVE_ACCOUNT_STATUSES, normalise_account_status,
 )
 from utils.ssn_encryption import is_ssn_provided, decrypt_ssn, get_ssn_masked, format_ssn_for_display
 from services.fcm_service import _send_fcm_push_async
@@ -740,7 +741,8 @@ async def admin_dispatch_trip(request: Request, db: AsyncSession = Depends(get_d
     _lng_delta = _search_radius / (111.0 * max(math.cos(math.radians(trip.pickup_lat)), 0.01))
     drivers_q = await db.execute(
         select(User).where(
-            User.role == "driver", User.is_online == True, User.status == "active",
+            User.role == "driver", User.is_online == True,
+            User.status.in_(ACTIVE_ACCOUNT_STATUSES),
             User.lat.isnot(None), User.lng.isnot(None),
             User.lat >= trip.pickup_lat - _lat_delta, User.lat <= trip.pickup_lat + _lat_delta,
             User.lng >= trip.pickup_lng - _lng_delta, User.lng <= trip.pickup_lng + _lng_delta,
@@ -1005,6 +1007,22 @@ async def admin_update_user(user_id: int, request: Request, db: AsyncSession = D
     for key in ("first_name", "last_name", "email", "phone", "status"):
         if key in body:
             _sanitize_string(str(body[key]))
+            if key == "status":
+                # This endpoint used to write `status` verbatim, unlike
+                # PATCH /admin/users/{id}/status which whitelists it. That is
+                # how "approved" — a verification word — ended up in the
+                # account-status column, and an approved driver silently lost
+                # the right to go online. Fold it to what it meant; refuse
+                # anything that is not a status at all.
+                normalised = normalise_account_status(body[key])
+                if normalised is None:
+                    raise HTTPException(
+                        400,
+                        f"Invalid status '{body[key]}'. Allowed: "
+                        f"{', '.join(SETTABLE_ACCOUNT_STATUSES)}",
+                    )
+                user.status = normalised
+                continue
             setattr(user, key, body[key])
     # Handle password reset — requires explicit confirmation flag
     # to prevent accidental or malicious password changes

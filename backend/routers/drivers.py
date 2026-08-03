@@ -23,6 +23,7 @@ from utils.helpers import (
     utc_now, utc_today_start, utc_days_ago, utc_month_start, utc_year_start,
     _haversine, _user_dict, _vehicle_dict, _doc_dict, _trip_dict, _safe_create_task,
     _compute_user_rating, validate_driver_minimum_age,
+    ACTIVE_ACCOUNT_STATUSES,
 )
 # Both of these were used below without ever being imported: every
 # driver photo upload and every surge lookup raised NameError, which
@@ -120,7 +121,12 @@ async def update_driver_location(driver_id: int, body: DriverLocationIn, user: U
     # Suspended/deactivated drivers (zero-tolerance, doc expiry, re-check, etc.)
     # must not be able to flip themselves back online — otherwise they would
     # re-enter dispatch eligibility. Offline heartbeats are still accepted.
-    if body.is_online and (user.status or "active") != "active":
+    #
+    # The check reads ACTIVE_ACCOUNT_STATUSES rather than "active" alone
+    # because an approved driver carries status "approved", and comparing
+    # against one spelling turned approval into a permanent 403 on every
+    # heartbeat — which is what stopped trips reaching them at all.
+    if body.is_online and (user.status or "active") not in ACTIVE_ACCOUNT_STATUSES:
         _driver_locations.pop(driver_id, None)
         raise HTTPException(403, f"Account {user.status} — cannot go online")
 

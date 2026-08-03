@@ -139,6 +139,7 @@ from utils.security import (
 from utils.helpers import (
     utc_now, utc_today_start, utc_days_ago, utc_month_start, utc_year_start,
     _haversine, _user_dict, _trip_dict, _vehicle_dict, _doc_dict, _support_msg_dict,
+    ACTIVE_ACCOUNT_STATUSES,
 )
 from services.fcm_service import _send_fcm_push
 from services.email_sms_service import _send_email
@@ -1296,7 +1297,7 @@ async def _scheduled_ride_dispatcher():
                         select(User).where(
                             User.role == "driver",
                             User.is_online == True,
-                            User.status == "active",
+                            User.status.in_(ACTIVE_ACCOUNT_STATUSES),
                         )
                     )
                     drivers = drivers_r.scalars().all()

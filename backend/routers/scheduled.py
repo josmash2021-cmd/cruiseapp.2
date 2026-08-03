@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.database import get_db, User, Trip, DispatchOffer, Vehicle
 from utils.security import _verify_api_key, _get_current_user
-from utils.helpers import utc_now, _haversine, _trip_dict
+from utils.helpers import utc_now, _haversine, _trip_dict, ACTIVE_ACCOUNT_STATUSES
 from services.fcm_service import _send_fcm_push_async
 from services.sms_service import notify_guest_driver_assigned
 from services.email_service import email_guest_driver_assigned
@@ -75,7 +75,7 @@ def _require_approved_driver(user: User) -> None:
     rider days ahead; letting an unverified account claim one means the
     promise is only as good as a background check that has not finished.
     """
-    if (user.status or "active") != "active":
+    if (user.status or "active") not in ACTIVE_ACCOUNT_STATUSES:
         raise HTTPException(
             403, f"Account {user.status} — cannot take reserved rides"
         )

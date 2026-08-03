@@ -294,30 +294,75 @@ extension _RideRequestController on _RideRequestScreenState {
     try {
       // The empty booking sheet starts here.
       //
-      // On web the permission dance never resolves: requestPermission() is a
-      // getCurrentPosition with a one-day timeout, so ignoring the browser
-      // prompt leaves the future hanging and _userLocation null for good.
+      // On web, getCurrentPosition IS the permission prompt: the browser's
+      // Geolocation API resolves with a real fix or rejects when the rider
+      // denies, while requestPermission() can hang forever. This used to
+      // skip GPS entirely and seed downtown Birmingham — so the pickup was
+      // always "601 19th Street North" no matter where the rider was, and
+      // every route preview started from the wrong city.
       //
-      // Null there is not cosmetic. _userLocation is the only source a pickup
-      // ever gets when the rider did not search one by name, and
-      // _tryFetchRoute() returns early on `pickup == null` — so rideOptions is
-      // never filled and the sheet keeps its four shimmer cards forever.
-      // "Choose a vehicle" over what reads as an empty panel, no way forward.
-      //
-      // Same downtown Birmingham seed the driver screens already use.
+      // Null _userLocation is not cosmetic. _userLocation is the only source
+      // a pickup ever gets when the rider did not search one by name, and
+      // _tryFetchRoute() returns early on `pickup == null` — so rideOptions
+      // is never filled and the sheet keeps its four shimmer cards forever.
+      // If the real fix fails we fall back to the last cached fix, then to
+      // the seed — logging which path was taken instead of teleporting the
+      // pickup silently.
       if (kIsWeb) {
-        const seed = LatLng(33.5186, -86.8104);
+        LatLng? fix;
+        try {
+          final pos = await Geolocator.getCurrentPosition(
+            locationSettings: const LocationSettings(
+              accuracy: LocationAccuracy.high,
+              timeLimit: Duration(seconds: 10),
+            ),
+          );
+          fix = LatLng(pos.latitude, pos.longitude);
+          debugPrint('[RideRequest] web GPS: real browser fix '
+              '${fix.latitude},${fix.longitude}');
+        } catch (e) {
+          debugPrint('[RideRequest] web GPS denied/unavailable: $e');
+          final lat = LocalCache.get<double>('last_driver_lat');
+          final lng = LocalCache.get<double>('last_driver_lng');
+          if (lat != null && lng != null) {
+            fix = LatLng(lat, lng);
+            debugPrint('[RideRequest] web GPS: cached fix $lat,$lng');
+          }
+        }
+        // Same downtown Birmingham seed the driver screens already use —
+        // last resort only, so the sheet can still function.
+        if (fix == null) {
+          debugPrint('[RideRequest] web GPS: no real or cached fix — '
+              'Birmingham seed fallback');
+        }
+        final center = fix ?? const LatLng(33.5186, -86.8104);
+        if (!mounted) return;
         _setState(() {
-          _userLocation = seed;
-          _center = seed;
+          _userLocation = center;
+          _center = center;
           _fetchingLocation = false;
         });
+        _webMapCtrl?.flyTo(
+            lng: center.longitude, lat: center.latitude, zoom: 15.5,
+            durationMs: 800);
         _mapCtrl?.setCamera(mapbox.CameraOptions(
           center: mapbox.Point(
-            coordinates: mapbox.Position(seed.longitude, seed.latitude),
+            coordinates: mapbox.Position(center.longitude, center.latitude),
           ),
           zoom: 15.5,
         ));
+        // Reverse geocode the fix so the pickup label isn't a lie — the
+        // seed path keeps the sheet's default label instead.
+        if (fix != null) {
+          final places = PlacesService(ApiKeys.webServices);
+          final addr = await places.reverseGeocode(
+            lat: fix.latitude,
+            lng: fix.longitude,
+          );
+          if (addr != null && mounted) {
+            _setState(() => _currentAddress = addr);
+          }
+        }
         return;
       }
       bool svc = await Geolocator.isLocationServiceEnabled();
@@ -2757,6 +2802,8 @@ void _showPaymentMethodPickerLegacy(AppColors c, RideOption? option) {
     _routeDrawTicker?.stop();
     _routeDrawTicker?.dispose();
     _routeDrawTicker = null;
+    _webRouteAnimTimer?.cancel();
+    _webRouteAnimTimer = null;
     // Web overlays live on the browser controller, not the native
     // annotation managers — clear them too or the old route survives
     // into the next search.

@@ -1633,8 +1633,8 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                   const SizedBox(height: 4),
                   Text(
                     S.of(context).offerHourlyRate(hourly.toStringAsFixed(2)),
-                    style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.45),
+                    style: const TextStyle(
+                      color: Colors.white,
                       fontSize: 12.5,
                     ),
                   ),
@@ -1717,48 +1717,54 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
         const SizedBox(height: 16),
 
         // ── Who is riding ───────────────────────────────────────────
-        Row(
-          children: [
-            Expanded(
-              child: Text(
-                (offer['rider_name'] as String?) ?? S.of(context).riderFallback,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 15,
-                  fontWeight: FontWeight.w700,
+        Builder(builder: (context) {
+          final riderName =
+              (offer['rider_name'] as String?) ?? S.of(context).riderFallback;
+          return Row(
+            children: [
+              _offerRiderAvatar(offer, riderName),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  riderName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
               ),
-            ),
-            const SizedBox(width: 8),
-            // A rider with no rating yet is a new rider — say so. The old
-            // rule showed nothing at all in that case, which is how the
-            // name ended up alone on the row with no way to tell whether
-            // the rating was missing or the rider was.
-            if (riderIsNew || !hasRating)
-              Text(
-                S.of(context).newRiderLabel,
-                style: const TextStyle(
-                  color: goldAccent,
-                  fontSize: 12.5,
-                  fontWeight: FontWeight.w600,
+              const SizedBox(width: 8),
+              // A rider with no rating yet is a new rider — say so. The old
+              // rule showed nothing at all in that case, which is how the
+              // name ended up alone on the row with no way to tell whether
+              // the rating was missing or the rider was.
+              if (riderIsNew || !hasRating)
+                Text(
+                  S.of(context).newRiderLabel,
+                  style: const TextStyle(
+                    color: goldAccent,
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w600,
+                  ),
+                )
+              else ...[
+                const Icon(Icons.star_rounded, color: goldAccent, size: 15),
+                const SizedBox(width: 3),
+                Text(
+                  rating.toStringAsFixed(1),
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
-              )
-            else ...[
-              const Icon(Icons.star_rounded, color: goldAccent, size: 15),
-              const SizedBox(width: 3),
-              Text(
-                rating.toStringAsFixed(1),
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
+              ],
             ],
-          ],
-        ),
+          );
+        }),
 
         const SizedBox(height: 16),
         _offerDivider(),
@@ -1767,6 +1773,77 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
         // ── Accept ──────────────────────────────────────────────────
         _buildAcceptButton(offer, offerId),
       ],
+    );
+  }
+
+  /// Small circular rider photo for the offer card. The photo URL travels in
+  /// the offer payload itself (`rider_photo_url`, set by the backend when the
+  /// offer is dispatched — see driver_online_screen.dart where the offer map
+  /// is built). No URL → gold initial of the rider's name instead.
+  Widget _offerRiderAvatar(Map<String, dynamic> offer, String riderName) {
+    const goldAccent = Color(0xFFE8C547);
+    final photoUrl = _normalizePhotoUrl(
+      offer['rider_photo_url'] ??
+          offer['riderPhotoUrl'] ??
+          offer['passenger_photo_url'] ??
+          offer['photo_url'] ??
+          '',
+    );
+    final initial = riderName.trim().isNotEmpty
+        ? riderName.trim()[0].toUpperCase()
+        : '?';
+    return Container(
+      width: 30,
+      height: 30,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        border: Border.all(
+          color: Colors.white.withValues(alpha: 0.15),
+          width: 1,
+        ),
+      ),
+      child: ClipOval(
+        child: photoUrl.isNotEmpty
+            ? Image.network(
+                photoUrl,
+                width: 30,
+                height: 30,
+                fit: BoxFit.cover,
+                loadingBuilder: (context, child, progress) {
+                  if (progress == null) return child;
+                  return Center(
+                    child: SizedBox(
+                      width: 12,
+                      height: 12,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 1.5,
+                        color: Colors.white.withValues(alpha: 0.4),
+                      ),
+                    ),
+                  );
+                },
+                errorBuilder: (context, error, stack) => Center(
+                  child: Text(
+                    initial,
+                    style: const TextStyle(
+                      color: goldAccent,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              )
+            : Center(
+                child: Text(
+                  initial,
+                  style: const TextStyle(
+                    color: goldAccent,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+      ),
     );
   }
 
@@ -1804,31 +1881,40 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
               child: Column(
                 children: [
                   const SizedBox(height: halfPad),
+                  // Pickup: double concentric gold circle — an outer ring
+                  // with a solid dot inside.
                   Container(
                     width: 11,
                     height: 11,
-                    decoration: const BoxDecoration(
-                      color: goldAccent,
+                    decoration: BoxDecoration(
                       shape: BoxShape.circle,
+                      border: Border.all(color: goldAccent, width: 1.5),
+                    ),
+                    child: Center(
+                      child: Container(
+                        width: 4,
+                        height: 4,
+                        decoration: const BoxDecoration(
+                          color: goldAccent,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
                     ),
                   ),
                   // Expanded, so the rule runs to whatever height the
                   // addresses beside it actually take — a fixed height would
-                  // break the moment one of them wrapped to two lines.
+                  // break the moment one of them wrapped to two lines. No
+                  // vertical padding: the line must touch both markers.
                   const Expanded(
-                    child: Padding(
-                      padding: EdgeInsets.symmetric(vertical: 4),
-                      child: RouteConnectorLine(),
-                    ),
+                    child: RouteConnectorLine(),
                   ),
+                  // Dropoff: hollow white circle — ring only, no fill.
                   Container(
                     width: 11,
                     height: 11,
-                    decoration: const BoxDecoration(
-                      color: Colors.white,
-                      // A disc now, matching the map marker — the square was
-                      // retired everywhere in the same pass.
+                    decoration: BoxDecoration(
                       shape: BoxShape.circle,
+                      border: Border.all(color: Colors.white, width: 1.5),
                     ),
                   ),
                   const SizedBox(height: halfPad),
@@ -1870,8 +1956,8 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
       children: [
         Text(
           meta,
-          style: TextStyle(
-            color: Colors.white.withValues(alpha: 0.4),
+          style: const TextStyle(
+            color: Colors.white,
             fontSize: 11,
           ),
         ),
@@ -1880,8 +1966,8 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
           address,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
-          style: const TextStyle(
-            color: Colors.white,
+          style: TextStyle(
+            color: Colors.white.withValues(alpha: 0.4),
             fontSize: 14,
             fontWeight: FontWeight.w500,
           ),

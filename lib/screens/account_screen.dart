@@ -900,19 +900,26 @@ class _SettingsScreenState extends State<_SettingsScreen> {
 
   Future<void> _loadBiometric() async {
     final auth = LocalAuthentication();
-    final canCheck =
-        await auth.canCheckBiometrics || await auth.isDeviceSupported();
-    final enabled = await LocalDataService.isBiometricLoginEnabled();
-    final types = await auth.getAvailableBiometrics();
-    final isFace = types.contains(BiometricType.face);
-    if (mounted) {
-      setState(() {
-        _biometricAvailable = canCheck;
-        _biometricEnabled = enabled;
-        _biometricType = isFace
-            ? BiometricIconType.faceId
-            : BiometricIconType.fingerprint;
-      });
+    // local_auth throws PlatformException on devices without biometrics or
+    // when the plugin can't query the keystore — an unhandled one from this
+    // initState call lands in the zone handler as a FATAL crash report.
+    try {
+      final canCheck =
+          await auth.canCheckBiometrics || await auth.isDeviceSupported();
+      final enabled = await LocalDataService.isBiometricLoginEnabled();
+      final types = await auth.getAvailableBiometrics();
+      final isFace = types.contains(BiometricType.face);
+      if (mounted) {
+        setState(() {
+          _biometricAvailable = canCheck;
+          _biometricEnabled = enabled;
+          _biometricType = isFace
+              ? BiometricIconType.faceId
+              : BiometricIconType.fingerprint;
+        });
+      }
+    } catch (e) {
+      debugPrint('[Account] biometric query failed: $e');
     }
   }
 

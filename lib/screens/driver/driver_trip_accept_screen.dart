@@ -699,6 +699,10 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     ).listen((pos) {
       if (!mounted || _nearPickup) return;
       _checkPickupProximity(LatLng(pos.latitude, pos.longitude));
+    }, onError: (Object e) {
+      // Keep platform-channel errors (permission revoked, location off) from
+      // becoming unhandled async errors reported as FATAL crashes.
+      debugPrint('[DriverTrip] pickup proximity stream error: $e');
     });
   }
 
@@ -740,6 +744,9 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     ).listen((pos) {
       if (!mounted || _nearDropoff) return;
       _checkDropoffProximity(LatLng(pos.latitude, pos.longitude));
+    }, onError: (Object e) {
+      // Same guard as the pickup stream: no unhandled PlatformExceptions.
+      debugPrint('[DriverTrip] dropoff proximity stream error: $e');
     });
   }
 

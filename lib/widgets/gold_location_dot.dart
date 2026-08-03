@@ -69,6 +69,83 @@ class GoldLocationDot {
   /// `iconSize` for the Mapbox annotation, so it lands at the same size.
   static const double driverIconSize = driverScale;
 
+  // ── High-resolution frame ─────────────────────────────────────────────
+  //
+  // The cached bitmap is 160 px. Handed to Mapbox at `iconSize` 2.9 it is
+  // drawn ~464 px on screen — a ~2.9× upscale, which is the "pixelated
+  // arrow" reported whenever the annotation (not the vector overlay) is
+  // what paints the marker, e.g. while an offer preview frames the route.
+  //
+  // So alongside the classic frame a second one is rasterised at
+  // [rasterScale]× the pixels. A consumer that uses [currentBytesHiRes]
+  // must divide its iconSize by [rasterScale] to keep the same on-screen
+  // size — and gets a ~1:1 bitmap instead of an upscale. Consumers that
+  // keep using [currentBytes] see no change at all.
+  static const double rasterScale = 3.0;
+
+  static final Map<bool, Uint8List> _frameHiResCache = <bool, Uint8List>{};
+
+  // ── Offer-preview marker scale ────────────────────────────────────────
+  //
+  // While an offer preview is open the driver badge shrinks toward the
+  // size of the pickup/dropoff beads so all three stops read at the same
+  // level of detail, and grows back when the preview closes. One animated
+  // factor drives both painters of the marker: the Flutter overlay reads
+  // [offerMarkerScale] directly, and the Mapbox annotation has it folded
+  // into its iconSize by the driver screen on every frame.
+  //
+  // The beads are 26 px across; the badge disc is 32 px at scale 1
+  // (128 px box × 40/160 canvas), so 0.8 puts them on par.
+  static const double offerMarkerScaleSmall = 0.8;
+
+  /// Current scale factor for the driver badge. 1.0 = normal size.
+  static final ValueNotifier<double> offerMarkerScale =
+      ValueNotifier<double>(1.0);
+
+  static Ticker? _offerScaleTicker;
+  static double _offerScaleTarget = 1.0;
+
+  /// Glide [offerMarkerScale] to [target] with an easeInOut curve.
+  ///
+  /// Idempotent: repeating the call with the target already running (or
+  /// reached) is a no-op, so callers can re-assert it from cheap places
+  /// like a per-frame tick. [onFrame] fires after every value write — the
+  /// driver screen uses it to push the new scale into the Mapbox
+  /// annotation, which does not listen to the notifier itself.
+  static void animateOfferMarkerScale(
+    TickerProvider vsync,
+    double target, {
+    int durationMs = 450,
+    VoidCallback? onFrame,
+  }) {
+    if (target == _offerScaleTarget) return;
+    _offerScaleTarget = target;
+    _offerScaleTicker?.stop();
+    _offerScaleTicker?.dispose();
+    _offerScaleTicker = null;
+    final from = offerMarkerScale.value;
+    if ((from - target).abs() < 1e-3 || durationMs <= 0) {
+      offerMarkerScale.value = target;
+      onFrame?.call();
+      return;
+    }
+    final stopwatch = Stopwatch()..start();
+    Ticker? ticker;
+    ticker = vsync.createTicker((_) {
+      final p = (stopwatch.elapsedMilliseconds / durationMs).clamp(0.0, 1.0);
+      offerMarkerScale.value =
+          from + (target - from) * Curves.easeInOut.transform(p);
+      onFrame?.call();
+      if (p >= 1.0) {
+        ticker?.stop();
+        ticker?.dispose();
+        if (identical(_offerScaleTicker, ticker)) _offerScaleTicker = null;
+      }
+    });
+    _offerScaleTicker = ticker;
+    ticker.start();
+  }
+
   /// Outer edge of the marker.
   static const double _dotR = 20.0;
 
@@ -135,6 +212,7 @@ class GoldLocationDot {
   }
 
   Uint8List? _frame;
+  Uint8List? _frameHiRes;
   Ticker? _ticker;
   Duration _lastElapsed = Duration.zero;
   VoidCallback? _onTick;
@@ -158,6 +236,11 @@ class GoldLocationDot {
   bool get isReady => _frame != null;
 
   Uint8List? get currentBytes => _frame;
+
+  /// The same marker rasterised at [rasterScale]× the pixels of
+  /// [currentBytes]. Use it with `iconSize / rasterScale` — same on-screen
+  /// size, no upscale blur. Null until the first successful raster.
+  Uint8List? get currentBytesHiRes => _frameHiRes;
 
   /// Feed each raw GPS fix. The dot glides toward it at the measured
   /// velocity — no jumps, no stalls.
@@ -225,16 +308,49 @@ class GoldLocationDot {
     final cached = _frameCache[heading];
     if (cached != null) {
       _frame = cached;
+      _frameHiRes = _frameHiResCache[heading];
       _startTicker(vsync, onTick);
       return;
     }
 
     // Render a single static frame — no sprite atlas, no 90-frame loop.
+    // Rasterising can fail (GPU context lost while backgrounding, OOM on
+    // low-end devices). Left unguarded it escapes as an unhandled async
+    // error AND leaves _frame null forever, so the dot never draws again
+    // — callers see currentBytes == null and silently give up. Each
+    // resolution is attempted on its own: a failed hi-res must not take
+    // the classic frame down with it, nor the other way round.
+    try {
+      _frame = await _rasterizeFrame(_canvasSize);
+      if (_frame == null) return;
+      _frameCache[heading] = _frame!;
+    } catch (e) {
+      debugPrint('[GoldLocationDot] frame render failed: $e');
+      return; // isReady stays false; the caller may build() again later
+    }
+    try {
+      _frameHiRes = await _rasterizeFrame(_canvasSize * rasterScale);
+      if (_frameHiRes != null) _frameHiResCache[heading] = _frameHiRes!;
+    } catch (e) {
+      // Not fatal — consumers fall back to currentBytes.
+      debugPrint('[GoldLocationDot] hi-res frame render failed: $e');
+    }
+
+    _startTicker(vsync, onTick);
+  }
+
+  /// Rasterise the marker into a PNG of [pixelSize]×[pixelSize].
+  ///
+  /// The drawing itself always happens in the same 160-unit space, so the
+  /// two resolutions are pixel-identical apart from density. Returns null
+  /// when the raster is abandoned (disposed mid-flight) or yields no data.
+  Future<Uint8List?> _rasterizeFrame(double pixelSize) async {
     final recorder = ui.PictureRecorder();
     final canvas = Canvas(
       recorder,
-      const Rect.fromLTWH(0, 0, _canvasSize, _canvasSize),
+      Rect.fromLTWH(0, 0, pixelSize, pixelSize),
     );
+    canvas.scale(pixelSize / _canvasSize);
     const center = Offset(_canvasSize / 2, _canvasSize / 2);
 
     if (heading) {
@@ -249,25 +365,13 @@ class GoldLocationDot {
       _paintPlainDot(canvas, center);
     }
 
-    // Rasterising can fail (GPU context lost while backgrounding, OOM on
-    // low-end devices). Left unguarded it escapes as an unhandled async
-    // error AND leaves _frame null forever, so the dot never draws again
-    // — callers see currentBytes == null and silently give up.
-    try {
-      final img = await recorder
-          .endRecording()
-          .toImage(_canvasSize.toInt(), _canvasSize.toInt());
-      final data = await img.toByteData(format: ui.ImageByteFormat.png);
-      img.dispose();
-      if (data == null || _isDisposing) return;
-      _frame = data.buffer.asUint8List();
-      _frameCache[heading] = _frame!;
-    } catch (e) {
-      debugPrint('[GoldLocationDot] frame render failed: $e');
-      return; // isReady stays false; the caller may build() again later
-    }
-
-    _startTicker(vsync, onTick);
+    final img = await recorder
+        .endRecording()
+        .toImage(pixelSize.round(), pixelSize.round());
+    final data = await img.toByteData(format: ui.ImageByteFormat.png);
+    img.dispose();
+    if (data == null || _isDisposing) return null;
+    return data.buffer.asUint8List();
   }
 
   /// Drive the marker from vsync. Split out of [build] so the cached path
@@ -517,8 +621,19 @@ class GoldLocationDotOverlay extends StatelessWidget {
       child: SizedBox(
         width: size,
         height: size,
-        child: CustomPaint(
-          painter: _GoldDotOverlayPainter(bearing: bearing, heading: heading),
+        // The offer-preview shrink: one shared factor, applied about the
+        // centre so the marker stays pinned to its projected pixel. Layout
+        // size is untouched — callers position this box once and never
+        // re-measure it as the scale animates.
+        child: ValueListenableBuilder<double>(
+          valueListenable: GoldLocationDot.offerMarkerScale,
+          builder: (context, scale, child) => Transform.scale(
+            scale: scale,
+            child: child,
+          ),
+          child: CustomPaint(
+            painter: _GoldDotOverlayPainter(bearing: bearing, heading: heading),
+          ),
         ),
       ),
     );

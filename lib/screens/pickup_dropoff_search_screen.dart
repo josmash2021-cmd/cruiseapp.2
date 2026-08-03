@@ -957,6 +957,14 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
       itemCount: _suggestions.length,
       physics: const BouncingScrollPhysics(),
       itemBuilder: (_, i) {
+        // Race guard: when a new search replaces _suggestions with a
+        // shorter/empty list mid-frame (or while the list is scrolled
+        // far), ListView can still request stale indices beyond the new
+        // itemCount before it clamps its scroll offset. Never index
+        // out of range — that threw RangeError in production.
+        if (i < 0 || i >= _suggestions.length) {
+          return const SizedBox.shrink();
+        }
         final s = _suggestions[i];
         return _SuggestionRow(
           key: ValueKey('sug_${s.placeId}'),

@@ -20,6 +20,7 @@ import '../../config/map_styles.dart';
 import '../../config/page_transitions.dart';
 import '../../config/route_observers.dart';
 import '../../map/flat_map_projection.dart';
+import '../../map/web_map_view.dart';
 import '../../map/map_surface_coordinator.dart';
 import '../../config/driver_colors.dart';
 import '../../services/api_service.dart';
@@ -56,6 +57,7 @@ import '../../widgets/user_profile_photo.dart';
 import '../../widgets/velocity_aware_panel.dart';
 import '../../utils/responsive.dart';
 import '../../utils/name_helper.dart' as nh;
+import '../../utils/driver_location_settings.dart';
 
 /// Statuses the backend treats as the end of a trip.
 ///
@@ -102,6 +104,8 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
 
   // ── Map ──
   mapbox.MapboxMap? _mapController;
+  // Web counterpart — GL JS surface behind the kIsWeb guard in _buildMap.
+  WebMapController? _homeWebMapCtrl;
   mapbox.PointAnnotationManager? _pointAnnotMgr;
   mapbox.PointAnnotation? _myLocAnnot;
   LatLng? _currentLatLng;
@@ -1212,16 +1216,31 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
         ),
         mapbox.MapAnimationOptions(duration: 800),
       );
+      // Same fix on the web surface — the native controller is null there.
+      _homeWebMapCtrl?.flyTo(
+        lng: _currentLatLng!.longitude,
+        lat: _currentLatLng!.latitude,
+        zoom: 16,
+        durationMs: 800,
+      );
 
       // ── Real-time GPS stream ──
       // distanceFilter: 2 -> accept fixes every 2 meters.
       // SmoothMotion interpolates smoothly between fixes.
       // Balance between accuracy and battery life.
+      //
+      // Background-capable, same as every other driver stream: the driver
+      // can be online on this screen (see _feedGpsUploads), and a bare
+      // LocationSettings stops publishing the moment the app leaves the
+      // foreground — the passenger's car freezes and the ghost agent starts
+      // counting the driver inactive. See driverLocationSettings.
+      final s = S.of(context);
       _posStream?.cancel();
       _posStream = Geolocator.getPositionStream(
-        locationSettings: const LocationSettings(
-          accuracy: LocationAccuracy.bestForNavigation,
+        locationSettings: driverLocationSettings(
           distanceFilter: 2,
+          notificationTitle: s.driverLocationNotifTitle,
+          notificationText: s.driverLocationNotifOnline,
         ),
       ).listen((p) {
         if (!mounted) return;
@@ -1255,6 +1274,11 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
         // (instant setCamera at ~30fps). The old 800ms-throttled flyTo
         // restarted its animation on every fix and made the map — and the
         // dot relative to the screen — visibly jump.
+      }, onError: (Object e) {
+        // Without this, a PlatformException from the geolocator channel
+        // (permission revoked mid-shift, location services toggled) escapes
+        // as an unhandled async error and is reported as a FATAL crash.
+        debugPrint('[DriverHome] position stream error: $e');
       });
     } catch (_) {}
   }
@@ -2026,31 +2050,38 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       return Container(color: neuBase);
     }
     // Use Google Maps on both iOS and Android
-    final dc = DriverColors.of(context);
     // Mapbox Maps Flutter has no web implementation — its MapWidget crashes
-    // during the first layout. On web show a static placeholder instead.
+    // during the first layout. On web show the GL JS WebMapView instead,
+    // same pattern as the rider home mini map.
     if (kIsWeb) {
+      final webPos = _currentLatLng ?? const LatLng(40.7128, -74.0060);
       return Container(
         decoration: neuBox(radius: 24),
-        child: Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                Icons.map_outlined,
-                color: const Color(0xFFE8C547).withValues(alpha: 0.5),
-                size: 44,
+        clipBehavior: Clip.antiAlias,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            WebMapView(
+              key: const ValueKey('driver_home_map_web'),
+              initialLng: webPos.longitude,
+              initialLat: webPos.latitude,
+              initialZoom: 15.0,
+              styleUri: MapboxConfig.styleDark,
+              onControllerCreated: (c) {
+                _homeWebMapCtrl = c;
+                // Same navy/gold the native map wears — web and iOS read
+                // as the same place.
+                c.applyNavyGoldTheme();
+              },
+            ),
+            // The dot, painted by Flutter on top — gestures are off for
+            // this preview, so the camera stays centred on the driver.
+            IgnorePointer(
+              child: Center(
+                child: GoldLocationDotOverlay(bearing: _goldDot.bearing),
               ),
-              const SizedBox(height: 10),
-              Text(
-                'Map preview is not available on web',
-                style: TextStyle(
-                  color: dc.textSecondary,
-                  fontSize: 13,
-                ),
-              ),
-            ],
-          ),
+            ),
+          ],
         ),
       );
     }

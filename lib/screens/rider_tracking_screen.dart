@@ -6,7 +6,7 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart' show kDebugMode;
+import 'package:flutter/foundation.dart' show kDebugMode, kIsWeb;
 import 'package:flutter/scheduler.dart';
 import '../services/haptic_service.dart';
 import 'package:flutter/services.dart' show rootBundle, SystemUiOverlayStyle;
@@ -58,6 +58,7 @@ import '../map/tracking_map_annotations.dart';
 import '../map/tracking_map_route.dart';
 import '../map/tracking_map_camera.dart';
 import '../map/tracking_map_car.dart';
+import '../map/web_map_view.dart';
 import '../utils/smooth_motion.dart';
 
 part '../controllers/rider_tracking_controller.dart';
@@ -192,6 +193,16 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   }
 
   mapbox.MapboxMap? _map;
+  /// Web (Mapbox GL JS) controller — used instead of [_map] when kIsWeb.
+  /// Every map entry point branches to this before touching the native
+  /// controller, so `_map` stays null on web and nothing native runs.
+  WebMapController? _webMapCtrl;
+  /// Window during which camera moves are treated as programmatic (ours),
+  /// not user pans. Mirrors ride_request_screen's `_webAutoCameraUntil`.
+  DateTime _webAutoCameraUntil = DateTime(2000);
+  DateTime _lastWebCamMove = DateTime(2000);
+  /// Last bearing pushed to the web car marker; < 0 = not created yet.
+  double _webCarBearing = -1;
   mapbox.PointAnnotationManager? _pointAnnotMgr;  // for pins (icon-anchor: bottom)
   mapbox.PointAnnotationManager? _carAnnotMgr;     // for car (icon-anchor: center)
   mapbox.PolylineAnnotationManager? _polylineAnnotMgr;

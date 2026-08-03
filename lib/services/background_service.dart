@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:developer';
 import '../utils/app_platform.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 /// Initializes the background service for keeping the driver online
 /// when the app is backgrounded on Android.
@@ -24,6 +25,27 @@ class DriverBackgroundService {
     }
 
     final service = FlutterBackgroundService();
+
+    // flutter_background_service does NOT create a custom notification
+    // channel itself — when `notificationChannelId` is set it only uses it.
+    // Starting the foreground service with a channel that does not exist is
+    // exactly what throws `RemoteServiceException: Bad notification for
+    // startForeground` on Android 8+, so the channel must exist before
+    // configure()/startService() runs.
+    final androidNotifications = FlutterLocalNotificationsPlugin()
+        .resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin>();
+    await androidNotifications?.createNotificationChannel(
+      const AndroidNotificationChannel(
+        'cruise_driver_bg',
+        'Driver Background Service',
+        description: 'Keeps you online while the app is in the background',
+        importance: Importance.low,
+        playSound: false,
+        enableVibration: false,
+        showBadge: false,
+      ),
+    );
 
     await service.configure(
       androidConfiguration: AndroidConfiguration(

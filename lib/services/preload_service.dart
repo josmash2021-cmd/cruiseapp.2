@@ -50,11 +50,53 @@ class PreloadService {
 
   // ── GPS: get first fix early (takes longest on cold start) ──
   static Future<void> _preloadGps() async {
-    // The browser reports an ungranted permission as `denied`, so this used
-    // to bail and leave initialPosition null forever — and that field is the
-    // instant first fix both the rider home and the driver's online screen
-    // read. One seed here gives both a position to draw with.
+    // Web: the browser DOES have real geolocation (the Geolocation API —
+    // getCurrentPosition is what triggers the permission prompt there).
+    // This used to skip it entirely and pretend the rider was in downtown
+    // Birmingham: the home mini map and the ride-request pickup then showed
+    // a confident wrong answer for anyone not actually there. Ask for the
+    // real fix first; fall back to the last cached fix, then to the seed —
+    // logging which path was taken instead of failing silently.
     if (kIsWeb) {
+      try {
+        initialPosition = await Geolocator.getCurrentPosition(
+          locationSettings: const LocationSettings(
+            accuracy: LocationAccuracy.high,
+            timeLimit: Duration(seconds: 8),
+          ),
+        ).timeout(const Duration(seconds: 10), onTimeout: () {
+          throw TimeoutException('web GPS timeout');
+        });
+        debugPrint('[PreloadService] web GPS: real browser fix '
+            '${initialPosition!.latitude},${initialPosition!.longitude}');
+        await Future.wait([
+          LocalCache.set('last_driver_lat', initialPosition!.latitude),
+          LocalCache.set('last_driver_lng', initialPosition!.longitude),
+        ]);
+        return;
+      } catch (e) {
+        debugPrint('[PreloadService] web GPS unavailable ($e) — trying cache');
+      }
+      final lat = LocalCache.get<double>('last_driver_lat');
+      final lng = LocalCache.get<double>('last_driver_lng');
+      if (lat != null && lng != null) {
+        debugPrint('[PreloadService] web GPS: cached fix $lat,$lng');
+        initialPosition = Position(
+          latitude: lat,
+          longitude: lng,
+          timestamp: DateTime.now(),
+          accuracy: 10,
+          altitude: 0,
+          altitudeAccuracy: 0,
+          heading: 0,
+          headingAccuracy: 0,
+          speed: 0,
+          speedAccuracy: 0,
+        );
+        return;
+      }
+      debugPrint('[PreloadService] web GPS: no real or cached fix — '
+          'Birmingham seed fallback');
       initialPosition = Position(
         latitude: _kWebSeedLat,
         longitude: _kWebSeedLng,

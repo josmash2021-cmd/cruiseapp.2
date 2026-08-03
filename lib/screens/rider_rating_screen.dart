@@ -1,4 +1,5 @@
-﻿import 'dart:ui' as ui;
+import 'dart:ui' as ui;
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../services/haptic_service.dart';
@@ -7,6 +8,7 @@ import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' as mapbox;
 import '../config/mapbox_config.dart';
 import '../config/map_theme.dart';
 import '../config/page_transitions.dart';
+import '../map/web_map_view.dart';
 import '../services/api_service.dart';
 import '../services/analytics_service.dart';
 import '../services/map_controller_cache.dart';
@@ -203,7 +205,18 @@ class _RiderRatingScreenState extends State<RiderRatingScreen>
             // ── Blurred dark Mapbox map background ──
             Positioned.fill(
               child: IgnorePointer(
-                child: mapbox.MapWidget(
+                // The native MapWidget has no web implementation — GL JS
+                // takes over in the browser, same as the booking screens.
+                child: kIsWeb
+                    ? WebMapView(
+                        key: const ValueKey('rider_rating_map_web'),
+                        initialLng: widget.dropoffLng ?? -80.1918,
+                        initialLat: widget.dropoffLat ?? 25.7617,
+                        initialZoom: 14.0,
+                        styleUri: MapboxConfig.styleDark,
+                        onControllerCreated: (c) => c.applyNavyGoldTheme(),
+                      )
+                    : mapbox.MapWidget(
                   textureView: true,
                   styleUri: MapboxConfig.styleDark,
                   cameraOptions: mapbox.CameraOptions(

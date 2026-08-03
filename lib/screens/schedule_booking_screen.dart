@@ -4,6 +4,7 @@ import '../utils/vehicle_tier_style.dart';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:geolocator/geolocator.dart';
@@ -12,6 +13,7 @@ import '../models/lat_lng.dart';
 import '../config/mapbox_config.dart';
 import '../config/route_observers.dart';
 import '../map/map_surface_coordinator.dart';
+import '../map/web_map_view.dart';
 import '../config/map_theme.dart';
 import 'package:intl/intl.dart';
 
@@ -88,6 +90,8 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen>
 
   // Map
   mapbox.MapboxMap? _mapCtrl;
+  // Web counterpart — GL JS surface behind the kIsWeb guard below.
+  WebMapController? _webMapCtrl;
   mapbox.PointAnnotationManager? _pointAnnotMgr;
   mapbox.PolylineAnnotationManager? _polylineAnnotMgr;
   List<mapbox.PointAnnotation> _markerAnnots = [];
@@ -363,6 +367,7 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen>
       }
     });
     _places.resetSession();
+    if (kIsWeb) _refreshWebMap();
     _tryFetchRoute();
   }
 
@@ -391,6 +396,7 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen>
         });
         _startCinematicRoute(route.points);
         _fitMap();
+        if (kIsWeb) _refreshWebMap(route.points);
       }
     } catch (_) {}
     if (mounted) setState(() => _isLoadingRoute = false);
@@ -590,6 +596,37 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen>
   String _price(int minutes, double mult) {
     final v = (minutes / 60.0) * 120.0 * mult;
     return '\$${v.toStringAsFixed(2)}';
+  }
+
+  /// Web counterpart of the native annotation/fit path: same gold route and
+  /// pickup/dropoff pins on the GL JS surface. The cinematic tilt is skipped.
+  void _refreshWebMap([List<LatLng>? routePoints]) {
+    final c = _webMapCtrl;
+    if (c == null) return;
+    c.clearMarkers();
+    if (_pickupLatLng != null) {
+      c.addMarker('pickup', _pickupLatLng!.longitude, _pickupLatLng!.latitude);
+    }
+    if (_dropoffLatLng != null) {
+      c.addMarker(
+          'dropoff', _dropoffLatLng!.longitude, _dropoffLatLng!.latitude);
+    }
+    if (routePoints != null && routePoints.length >= 2) {
+      final pts =
+          routePoints.map((p) => (lng: p.longitude, lat: p.latitude)).toList();
+      c.setPolyline('route', pts, color: '#FFD700', width: 5);
+      c.fitBounds(pts, durationMs: 800);
+    } else {
+      c.removePolyline('route');
+      if (_pickupLatLng != null) {
+        c.flyTo(
+          lng: _pickupLatLng!.longitude,
+          lat: _pickupLatLng!.latitude,
+          zoom: 14.0,
+          durationMs: 600,
+        );
+      }
+    }
   }
 
   void _fitMap() {
@@ -1259,6 +1296,21 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen>
                     if (!_mapMounted)
                       const Positioned.fill(
                         child: ColoredBox(color: Color(0xFF07080D)),
+                      )
+                    // The native MapWidget has no web implementation — GL JS
+                    // takes over in the browser with the same route + pins.
+                    else if (kIsWeb)
+                      WebMapView(
+                        key: const ValueKey('schedule_booking_map_web'),
+                        initialLng: _mapCenter.longitude,
+                        initialLat: _mapCenter.latitude,
+                        initialZoom: 14.0,
+                        styleUri: MapboxConfig.styleDark,
+                        onControllerCreated: (c) {
+                          _webMapCtrl = c;
+                          c.applyNavyGoldTheme();
+                          _refreshWebMap();
+                        },
                       )
                     else
                     mapbox.MapWidget(

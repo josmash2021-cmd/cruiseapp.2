@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' as mapbox;
@@ -8,6 +9,7 @@ import '../config/app_theme.dart';
 import '../config/map_theme.dart';
 import '../config/mapbox_config.dart';
 import '../config/page_transitions.dart';
+import '../map/web_map_view.dart';
 import '../models/lat_lng.dart';
 import '../services/api_service.dart';
 import '../services/directions_service.dart';
@@ -609,6 +611,37 @@ class _TripCardState extends State<_TripCard> with TickerProviderStateMixin {
       _expanded = !_expanded;
       if (_expanded) _mapEverExpanded = true;
     });
+  }
+
+  /// Web counterpart of [_onMapCreated]: same navy/gold, same gold route
+  /// and pins. The tilt/line animation is skipped on web.
+  Future<void> _onWebMapCreated(WebMapController c) async {
+    c.applyNavyGoldTheme();
+    if (!_hasCoords || !mounted || _routeLoading || _routeLoaded) return;
+    setState(() => _routeLoading = true);
+    try {
+      final pickup = LatLng(_pickupLat!, _pickupLng!);
+      final dropoff = LatLng(_dropoffLat!, _dropoffLng!);
+      final route = await DirectionsService(ApiKeys.webServices)
+          .getRoute(origin: pickup, destination: dropoff);
+      if (!mounted || route == null) return;
+      setState(() {
+        _tripDuration = route.durationText;
+        _routeLoaded = true;
+      });
+      final pts = route.points
+          .map((p) => (lng: p.longitude, lat: p.latitude))
+          .toList();
+      if (pts.length >= 2) {
+        c.setPolyline('route', pts, color: '#FFD700', width: 5);
+        c.fitBounds(pts, durationMs: 700);
+      }
+      c.addMarker('pickup', pickup.longitude, pickup.latitude);
+      c.addMarker('dropoff', dropoff.longitude, dropoff.latitude);
+    } catch (_) {
+    } finally {
+      if (mounted) setState(() => _routeLoading = false);
+    }
   }
 
   Future<void> _onMapCreated(mapbox.MapboxMap ctrl) async {
@@ -1217,19 +1250,30 @@ class _TripCardState extends State<_TripCard> with TickerProviderStateMixin {
   }
 
   Widget _buildMiniMap() {
+    final midLng = (_pickupLng! + (_dropoffLng ?? _pickupLng!)) / 2;
+    final midLat = (_pickupLat! + (_dropoffLat ?? _pickupLat!)) / 2;
     return ClipRRect(
       borderRadius: BorderRadius.circular(16),
       child: Stack(
         children: [
+          // The native MapWidget has no web implementation — GL JS takes
+          // over in the browser with the same route + pins.
+          if (kIsWeb)
+            WebMapView(
+              key: const ValueKey('scheduled_ride_mini_map_web'),
+              initialLng: midLng,
+              initialLat: midLat,
+              initialZoom: 11.5,
+              styleUri: MapboxConfig.styleDark,
+              onControllerCreated: (c) => _onWebMapCreated(c),
+            )
+          else
           mapbox.MapWidget(
             textureView: true,
             styleUri: MapboxConfig.styleDark,
             cameraOptions: mapbox.CameraOptions(
               center: mapbox.Point(
-                coordinates: mapbox.Position(
-                  (_pickupLng! + (_dropoffLng ?? _pickupLng!)) / 2,
-                  (_pickupLat! + (_dropoffLat ?? _pickupLat!)) / 2,
-                ),
+                coordinates: mapbox.Position(midLng, midLat),
               ),
               zoom: 11.5,
             ),

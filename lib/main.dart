@@ -943,8 +943,14 @@ Future<void> heavyInit() async {
 
     // ── Local Notifications ──
     () async {
-      if (kIsWeb) return; // flutter_local_notifications has no web package
       try {
+        if (kIsWeb) {
+          // flutter_local_notifications has no web package — only arm the
+          // offer AudioPlayer (audioplayers works on web) so offers are
+          // not silent in the browser.
+          await NotificationService.initWebAudio();
+          return;
+        }
         await NotificationService.init();
       } catch (e) {
         debugPrint('[NotificationService] init error: $e');

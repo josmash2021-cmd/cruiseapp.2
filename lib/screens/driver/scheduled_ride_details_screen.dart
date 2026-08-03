@@ -4,6 +4,7 @@ import '../../map/map_surface_coordinator.dart';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import '../../services/haptic_service.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -13,6 +14,7 @@ import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' as mapbox;
 
 import '../../config/map_theme.dart';
 import '../../config/mapbox_config.dart';
+import '../../map/web_map_view.dart';
 import '../../config/app_theme.dart';
 import '../../config/page_transitions.dart';
 import '../../l10n/app_localizations.dart';
@@ -360,7 +362,18 @@ class _ScheduledRideDetailsScreenState extends State<ScheduledRideDetailsScreen>
           if (_mapMounted && pickupLat != null && pickupLng != null)
             Positioned.fill(
               child: IgnorePointer(
-                child: mapbox.MapWidget(
+                // The native MapWidget has no web implementation — GL JS
+                // takes over in the browser.
+                child: kIsWeb
+                    ? WebMapView(
+                        key: const ValueKey('scheduled_details_map_web'),
+                        initialLng: pickupLng,
+                        initialLat: pickupLat,
+                        initialZoom: 13.0,
+                        styleUri: MapboxConfig.styleDark,
+                        onControllerCreated: (c) => c.applyNavyGoldTheme(),
+                      )
+                    : mapbox.MapWidget(
                   styleUri: MapboxConfig.styleDark,
                   cameraOptions: mapbox.CameraOptions(
                     center: mapbox.Point(

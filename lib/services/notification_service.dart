@@ -133,6 +133,27 @@ class NotificationService {
     debugPrint('[NotificationService] initialized');
   }
 
+  /// Web-only partial init. flutter_local_notifications has no web
+  /// implementation, so [init] must not run there — but the offer sound
+  /// uses audioplayers, which does work on web. This configures only the
+  /// offer AudioPlayer so incoming offers are not silent in the browser.
+  /// (No silent pre-warm: browsers block audio before the first user
+  /// gesture; the first [playOfferSound] after any tap will succeed.)
+  static Future<void> initWebAudio() async {
+    if (_initialized) return;
+    _initialized = true;
+    try {
+      await _offerPlayer.setReleaseMode(ReleaseMode.stop);
+      await _offerPlayer.setSource(AssetSource('sounds/cruise_online.wav'));
+      _offerPlayer.onPlayerComplete.listen((_) {
+        _quietly(_offerPlayer.stop(), 'stop');
+      });
+    } catch (e) {
+      debugPrint('[NotificationService] web audio init error: $e');
+    }
+    debugPrint('[NotificationService] web audio initialized');
+  }
+
   static Future<void> _createChannels() async {
     final android = _plugin
         .resolvePlatformSpecificImplementation<

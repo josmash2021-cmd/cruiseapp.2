@@ -1,9 +1,11 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' as mapbox;
 
 import '../config/mapbox_config.dart';
 import '../config/map_theme.dart';
+import '../map/web_map_view.dart';
 import '../models/lat_lng.dart';
 import '../widgets/map/circular_pin_renderer.dart';
 import '../utils/mapbox_safe.dart';
@@ -169,7 +171,18 @@ class _RideBookingConfirmedScreenState extends State<RideBookingConfirmedScreen>
             if (_hasMapData)
               IgnorePointer(
                 child: RepaintBoundary(
-                  child: mapbox.MapWidget(
+                  // The native MapWidget has no web implementation — GL JS
+                  // takes over in the browser with the same route + pins.
+                  child: kIsWeb
+                      ? WebMapView(
+                          key: const ValueKey('booking_confirmed_map_web'),
+                          initialLng: midLng,
+                          initialLat: midLat,
+                          initialZoom: 13.5,
+                          styleUri: MapboxConfig.styleDark,
+                          onControllerCreated: _onWebMapCreated,
+                        )
+                      : mapbox.MapWidget(
                     textureView: true,
                     styleUri: MapboxConfig.styleDark,
                     cameraOptions: mapbox.CameraOptions(
@@ -366,6 +379,30 @@ class _RideBookingConfirmedScreenState extends State<RideBookingConfirmedScreen>
         ),
       ),
     );
+  }
+
+  /// Web counterpart of [_onMapCreated]: same navy/gold, same gold route,
+  /// same pickup/dropoff pins — tilt animation is skipped on web.
+  void _onWebMapCreated(WebMapController c) {
+    c.applyNavyGoldTheme();
+    final routePts = widget.routePoints;
+    if (routePts != null && routePts.length >= 2) {
+      c.setPolyline(
+        'route',
+        routePts.map((p) => (lng: p.longitude, lat: p.latitude)).toList(),
+        color: '#FFD700',
+        width: 5,
+      );
+      c.fitBounds(
+        routePts.map((p) => (lng: p.longitude, lat: p.latitude)).toList(),
+      );
+    }
+    if (widget.pickupLat != null && widget.pickupLng != null) {
+      c.addMarker('pickup', widget.pickupLng!, widget.pickupLat!);
+    }
+    if (widget.dropoffLat != null && widget.dropoffLng != null) {
+      c.addMarker('dropoff', widget.dropoffLng!, widget.dropoffLat!);
+    }
   }
 
   Future<void> _onMapCreated(mapbox.MapboxMap ctrl) async {

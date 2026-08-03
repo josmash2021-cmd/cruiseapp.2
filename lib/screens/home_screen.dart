@@ -695,6 +695,11 @@ class _HomeScreenState extends State<HomeScreen>
             // follow camera — the platform channel stays unsaturated.
             _feedHomeDot(ll.latitude, ll.longitude);
             _recenterHomeMiniMap();
+          }, onError: (Object e) {
+            // Platform channel errors (permission revoked, location services
+            // off) arrive here instead of escaping as unhandled async errors
+            // into the zone handler — which reports them as FATAL crashes.
+            debugPrint('[Home] position stream error: $e');
           });
     } catch (_) {
       // Location unavailable — the rider can still type a pickup manually.

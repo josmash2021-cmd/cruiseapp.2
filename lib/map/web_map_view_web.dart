@@ -116,6 +116,8 @@ extension type _JSStyleDeclaration._(JSObject _) implements JSObject {
 extension type _JSElement._(JSObject _) implements JSObject {
   external _JSStyleDeclaration get style;
   external set src(String value); // only meaningful for <img>
+  external set textContent(String value); // only meaningful for <style>
+  external void appendChild(JSObject child);
 }
 
 /// Watches an element's box and reports every change.
@@ -136,6 +138,7 @@ extension type _JSResizeObserver._(JSObject _) implements JSObject {
 @JS('document')
 extension type _JSDocument._(JSObject _) implements JSObject {
   external _JSElement createElement(String tag);
+  external _JSElement? get head;
 }
 
 @JS('document')
@@ -603,6 +606,19 @@ class WebMapControllerWeb extends WebMapController {
     final existing = _map.getSource(sourceId);
     if (existing != null) {
       existing.setData(_js(_pointFeature(spec.lng, spec.lat)));
+      // The layer outlives setData, so radius/opacity must be pushed too —
+      // without this a setCircle that only changes the paint (e.g. the
+      // picker ripple animating its waves frame by frame) moved nothing.
+      if (_map.getLayer(sourceId) != null) {
+        try {
+          _map.setPaintProperty(sourceId, 'circle-radius', spec.radiusPx.toJS);
+          _map.setPaintProperty(sourceId, 'circle-opacity', spec.opacity.toJS);
+          _map.setPaintProperty(
+              sourceId,
+              'circle-stroke-opacity',
+              (spec.opacity + 0.3 > 1 ? 1.0 : spec.opacity + 0.3).toJS);
+        } catch (_) {}
+      }
       return;
     }
     _map.addSource(
@@ -839,6 +855,14 @@ class _WebMapViewState extends State<WebMapView> {
     options.zoom = widget.initialZoom;
     options.attributionControl = false;
 
+    // Mirror the native maps: lib/config/map_theme.dart sets
+    // AttributionSettings(enabled: false) AND LogoSettings(enabled: false)
+    // on iOS/Android. attributionControl:false above covers the attribution
+    // text, but in GL JS the "mapbox" wordmark is a separate control that
+    // stays visible — hide it the same way native does. Injected once per
+    // page; several WebMapViews share the rule.
+    _hideMapboxLogoOnce();
+
     final map = _JSMap(options);
     final controller = WebMapControllerWeb(map);
     controller.attachEvents();
@@ -883,6 +907,26 @@ class _WebMapViewState extends State<WebMapView> {
   }
 
   _JSResizeObserver? _resizeObserver;
+
+  static bool _logoCssInjected = false;
+
+  /// Hides the GL JS logo control (`.mapboxgl-ctrl-logo`) page-wide, matching
+  /// what the native maps do in `lib/config/map_theme.dart`
+  /// (`LogoSettings(enabled: false)`). The attribution control is already off
+  /// via `attributionControl: false`, same as native's
+  /// `AttributionSettings(enabled: false)` — nothing more is hidden here
+  /// than what iOS hides.
+  static void _hideMapboxLogoOnce() {
+    if (_logoCssInjected) return;
+    _logoCssInjected = true;
+    try {
+      final style = _document.createElement('style');
+      style.textContent = '.mapboxgl-ctrl-logo{display:none!important;}';
+      _document.head?.appendChild(style);
+    } catch (e) {
+      debugPrint('[WebMap] could not inject logo-hiding CSS: $e');
+    }
+  }
 
   @override
   void dispose() {

@@ -2,11 +2,11 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 
-/// Car image with enhanced 3D floating shadow for dark vehicle cards.
+/// Car image with silhouette drop shadows for dark vehicle cards.
 ///
-/// Replicates CSS drop-shadow that respects PNG alpha channel:
-///   filter: drop-shadow(0 3px 2px #000) drop-shadow(0 9px 12px #000)
-///         drop-shadow(0 16px 24px rgba(0,0,0,0.5));
+/// The shadow is the render's own alpha mask, tinted black and blurred —
+/// it covers exactly the car's silhouette, never a plate or a ground
+/// blob behind it.
 ///
 /// Plus an optional gold glow when selected.
 class CarImage3D extends StatelessWidget {
@@ -57,6 +57,9 @@ class CarImage3D extends StatelessWidget {
       );
     }
 
+    // Silhouette drop shadow: the car's own alpha mask, tinted black and
+    // blurred — the shadow covers exactly the car's silhouette, nothing
+    // else (no plate, no ellipse).
     Widget shadow({required double dy, required double blur, required double alpha}) {
       return Positioned.fill(
         child: IgnorePointer(
@@ -106,12 +109,10 @@ class CarImage3D extends StatelessWidget {
         clipBehavior: Clip.none,
         fit: StackFit.expand,
         children: [
-          // Deep ambient shadow (farthest)
-          shadow(dy: 16, blur: 20, alpha: 0.45),
-          // Medium ambient shadow
-          shadow(dy: 9, blur: 12, alpha: 0.55),
-          // Tight contact shadow (closest to ground)
-          shadow(dy: 3, blur: 2, alpha: 0.85),
+          // Silhouette shadows only — they follow the car's alpha mask,
+          // so the shadow never reads as a plate behind the render.
+          shadow(dy: 9, blur: 10, alpha: 0.50),
+          shadow(dy: 3, blur: 3, alpha: 0.75),
           // Gold glow when selected
           goldGlow(),
           // Actual car image on top

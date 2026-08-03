@@ -965,22 +965,9 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                       child: Stack(
                         alignment: Alignment.center,
                         children: [
-                          // Shadow/glow behind car
-                          Container(
-                            width: 80,
-                            height: 40,
-                            decoration: BoxDecoration(
-                              color: Colors.black.withValues(alpha: 0.5),
-                              borderRadius: BorderRadius.circular(20),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: const Color(0xFFE8C547).withValues(alpha: 0.15),
-                                  blurRadius: 20,
-                                  spreadRadius: 5,
-                                ),
-                              ],
-                            ),
-                          ),
+                          // No plate behind the car: the black rounded box
+                          // + gold blur used to read as a square overlay.
+                          // The render carries its own look now.
                           // Car image
                           Image.asset(
                             _carAssetForOption(opt.name),
@@ -1232,13 +1219,12 @@ extension _RideRequestWidgets on _RideRequestScreenState {
       ),
       // Clipped, and explicitly.
       //
-      // CarImage3D stacks three blurred shadows under the render, the
-      // deepest offset 16 points down with a 20-point blur — so it reaches
-      // well past the bottom of its own 76-point box on purpose, to give
-      // the car something to sit on. Inside a padded card that is fine.
+      // CarImage3D paints silhouette drop shadows and, when selected, a
+      // blurred gold glow that reaches past the render's own box on
+      // purpose. Inside a padded card that is fine.
       //
       // On Android's Impeller those ImageFiltered layers are not held by a
-      // Container's decoration clip, so the shadow ran out under the card's
+      // Container's decoration clip, so the glow ran out under the card's
       // rounded corner and read as the car hanging off the edge. iOS honours
       // the decoration clip, which is why it looked right there.
       //
@@ -1276,7 +1262,16 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                   ),
                 ),
                 const SizedBox(height: 6),
-                SizedBox(
+                // Flexible, not fixed: the picker sheet caps the card row
+                // (SizedBox(height: cardH), max 120) and the card's 28 px
+                // of vertical padding leave ~92 px for this column — 12
+                // short of the name + gap + 76 the car asks for, which is
+                // the "BOTTOM OVERFLOWED BY 12 PIXELS" under the render.
+                // Letting the image give those pixels back keeps the full
+                // 76 wherever the row is unconstrained and only shrinks
+                // the picture, never the words.
+                Flexible(
+                  child: SizedBox(
                   height: 76,
                   child: CarImage3D(
                     assetPath: _carAssetForOption(opt.name),
@@ -1294,6 +1289,7 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                       color: const Color(0xFFE8C547).withValues(alpha: 0.5),
                       size: 32,
                     ),
+                  ),
                   ),
                 ),
               ],
@@ -3047,7 +3043,42 @@ extension _RideRequestWidgets on _RideRequestScreenState {
             fit: StackFit.expand,
             children: [
               // ── Full-screen Mapbox map background with tilt + route + pins ──
-              if (pickup != null)
+              if (pickup != null && kIsWeb)
+                // The native MapWidget has no web implementation — GL JS
+                // takes over in the browser with the same route + pins.
+                IgnorePointer(
+                  child: RepaintBoundary(
+                    child: WebMapView(
+                      key: const ValueKey('driver_found_map_web'),
+                      initialLng: midLng,
+                      initialLat: midLat,
+                      initialZoom: 14.5,
+                      styleUri: MapboxConfig.styleDark,
+                      onControllerCreated: (c) {
+                        c.applyNavyGoldTheme();
+                        final routePts = _ctrl.state.route?.points;
+                        if (routePts != null && routePts.length >= 2) {
+                          final pts = routePts
+                              .map((p) => (lng: p.longitude, lat: p.latitude))
+                              .toList();
+                          c.setPolyline('route', pts,
+                              color: '#FFD700', width: 5);
+                          c.fitBounds(pts);
+                        } else if (dropoff != null) {
+                          c.fitBounds([
+                            (lng: pickup.lng, lat: pickup.lat),
+                            (lng: dropoff.lng, lat: dropoff.lat),
+                          ]);
+                        }
+                        c.addMarker('pickup', pickup.lng, pickup.lat);
+                        if (dropoff != null) {
+                          c.addMarker('dropoff', dropoff.lng, dropoff.lat);
+                        }
+                      },
+                    ),
+                  ),
+                )
+              else if (pickup != null)
                 IgnorePointer(
                   child: RepaintBoundary(
                     child: mapbox.MapWidget(

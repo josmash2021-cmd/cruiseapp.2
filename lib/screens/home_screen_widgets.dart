@@ -1493,7 +1493,14 @@ extension _HomeScreenWidgets on _HomeScreenState {
                         // "You" tag — gold bubble with a tail, exactly the
                         // tooltip style the rider pointed at: gold fill,
                         // black bold text, tiny diamond tail underneath.
-                        Column(
+                        // Painted ~20px lower than its layout slot so the
+                        // tail tip lands exactly on the dot's white ring
+                        // (the ring's top edge sits ~25px inside the 64px
+                        // overlay box; layout itself stays put, so the dot
+                        // keeps marking the real position).
+                        Transform.translate(
+                          offset: const Offset(0, 20),
+                          child: Column(
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             Container(
@@ -1534,6 +1541,7 @@ extension _HomeScreenWidgets on _HomeScreenState {
                               ),
                             ),
                           ],
+                          ),
                         ),
                         const SizedBox(height: 1),
                         // Always the plain gold dot — never the arrow. The

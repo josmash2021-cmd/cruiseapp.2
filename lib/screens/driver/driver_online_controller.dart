@@ -353,10 +353,25 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
         return;
       }
       // requestPermission() on web is a getCurrentPosition with a one-day
-      // timeout: ignore the browser prompt and the future never completes,
-      // so the screen sits on "Getting your location" for good.
+      // timeout: ignore the browser prompt and the future never completes.
+      // getCurrentPosition itself IS the prompt there — it resolves with a
+      // real fix or rejects on deny, so ask for it instead of seeding
+      // downtown Birmingham (which located every web driver in Alabama no
+      // matter where they actually were).
       if (kIsWeb) {
-        _setState(() => _pos = const LatLng(33.5186, -86.8104));
+        try {
+          final pos = await Geolocator.getCurrentPosition(
+            locationSettings: const LocationSettings(
+              accuracy: LocationAccuracy.high,
+              timeLimit: Duration(seconds: 10),
+            ),
+          );
+          debugPrint('[DriverOnline] web GPS: real browser fix');
+          _setState(() => _pos = LatLng(pos.latitude, pos.longitude));
+        } catch (e) {
+          debugPrint('[DriverOnline] web GPS unavailable ($e) — seed fallback');
+          _setState(() => _pos = const LatLng(33.5186, -86.8104));
+        }
         return;
       }
       var p = await Geolocator.checkPermission();
@@ -1574,6 +1589,14 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
   /// on every reconnect and drop any event whose captured generation no
   /// longer matches the current one.
   void _connectSse() {
+    // Web: fetch buffers the SSE body, so the stream never delivers events
+    // nor errors — skip SSE entirely and let the 5s polling fallback in
+    // _startPolling own offer delivery (it only runs while _sseActive is
+    // false). Avoids a 500ms error→reconnect hot loop as well.
+    if (kIsWeb) {
+      _sseActive = false;
+      return;
+    }
     _offerSseSub?.cancel();
     _sseReconnectTimer?.cancel();
     final driverId = _driverId;

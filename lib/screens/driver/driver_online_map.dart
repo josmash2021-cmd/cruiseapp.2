@@ -14,6 +14,42 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
   /// the in-memory annotation (cheap), and only fire mgr.update()
   /// when the previous IPC finished. The next IPC always carries the
   /// latest position, no information lost.
+  /// The iconSize the gold-dot annotation should carry right now.
+  ///
+  /// Three factors, one place: the first-appearance pop ([_dotPopScale]),
+  /// the offer-preview shrink ([GoldLocationDot.offerMarkerScale]), and —
+  /// when the high-resolution bitmap is the one in the image slot — the
+  /// raster density, so the denser bitmap lands at the exact same
+  /// on-screen size instead of three times it.
+  double get _dotAnnotIconSize {
+    final hiRes = _goldDot.currentBytesHiRes != null;
+    return _dotPopScale *
+        GoldLocationDot.offerMarkerScale.value *
+        (hiRes ? 1 / GoldLocationDot.rasterScale : 1.0);
+  }
+
+  /// Shrink the driver badge toward the pickup/dropoff beads while an
+  /// offer preview is on screen, and grow it back when the preview goes
+  /// away — same level of detail across driver / pickup / dropoff.
+  ///
+  /// Called from [_clearAllAnnotations] because every preview entry and
+  /// exit path funnels through it (tap, auto-trigger, dismiss, accept,
+  /// reject, timeout) with `_previewingOffer` already set to the new
+  /// state, so this one hook covers them all. The animation itself is
+  /// idempotent — re-asserting the current target is a no-op.
+  void _syncArrowScale() {
+    final target = _previewingOffer != null
+        ? GoldLocationDot.offerMarkerScaleSmall
+        : 1.0;
+    GoldLocationDot.animateOfferMarkerScale(
+      this,
+      target,
+      // The overlay listens to the notifier itself; the Mapbox annotation
+      // does not, so push each animated value into it.
+      onFrame: () => _updateDriverAnnotation(),
+    );
+  }
+
   Future<void> _updateDriverAnnotation() async {
     if (!mounted) return;
     await _updateDriverAnnotationInner();
@@ -44,6 +80,11 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
       // ── Searching mode: golden dot ──
       final dotBytes = _goldDot.currentBytes;
       if (dotBytes == null) return;
+      // Crisp bitmap when available: the classic 160-px frame at iconSize
+      // 2.9 is a ~2.9× upscale — the "pixelated arrow" the driver saw the
+      // moment an offer arrived and the annotation took over from the
+      // vector overlay. Same artwork, same generated badge, more pixels.
+      final dotImg = _goldDot.currentBytesHiRes ?? dotBytes;
 
       // Remove car annotation if switching to gold dot
       if (_carAnnot != null && !_annotCreateBusy) {
@@ -71,11 +112,19 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
         if (_annotCreateBusy) return;
         _annotCreateBusy = true;
         try {
+          // Recreated under an offer preview (the preview cleared every
+          // annotation on arrival): skip the 0→1.15 pop — the badge is
+          // already mid-glide toward its offer size, and a bounce from
+          // nothing on top of that glide reads as a glitch.
+          if (!_dotPopDone && _previewingOffer != null) {
+            _dotPopScale = GoldLocationDot.driverIconSize;
+            _dotPopDone = true;
+          }
           _goldDotAnnot = await pointMgr.create(mapbox.PointAnnotationOptions(
             geometry: mapbox.Point(
                 coordinates: mapbox.Position(_pos!.longitude, _pos!.latitude)),
-            image: dotBytes,
-            iconSize: _dotPopScale,
+            image: dotImg,
+            iconSize: _dotAnnotIconSize,
             iconAnchor: mapbox.IconAnchor.CENTER,
             iconOffset: [0, 0],
             // The badge carries a heading arrow now, so it turns with the
@@ -108,13 +157,13 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
       try {
         _goldDotAnnot!.geometry = mapbox.Point(
             coordinates: mapbox.Position(_pos!.longitude, _pos!.latitude));
-        _goldDotAnnot!.image = dotBytes;
+        _goldDotAnnot!.image = dotImg;
         // Invisible while the Flutter overlay is drawing the marker, or the
         // driver would see two: the smooth one and this one stepping behind
         // it. Kept alive and kept current rather than deleted, so the moment
         // they pan away it is already in the right place.
         _goldDotAnnot!.iconOpacity = overlayOwns ? 0.0 : 1.0;
-        _goldDotAnnot!.iconSize = _dotPopScale;
+        _goldDotAnnot!.iconSize = _dotAnnotIconSize;
         _goldDotAnnot!.iconRotate = _heading;
       } catch (_) {
         // Annotation became invalid (rare). Null it so next tick recreates.
@@ -255,7 +304,7 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
         await Future.delayed(const Duration(milliseconds: 30));
         continue;
       }
-      annot.iconSize = _dotPopScale;
+      annot.iconSize = _dotAnnotIconSize;
       _annotUpdateBusy = true;
       try {
         await mgr.update(annot);
@@ -454,6 +503,10 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
 
   Future<void> _clearAllAnnotations() async {
     _isClearingAnnotations = true;
+    // Every preview entry/exit funnels through here with _previewingOffer
+    // already at its new value — the one place that starts the badge's
+    // shrink/grow glide no matter which path opened or closed the offer.
+    _syncArrowScale();
     try {
       // Web overlays live in the GL JS controller, not in annotation
       // managers — clear them by the ids the preview draws with.

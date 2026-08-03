@@ -2651,6 +2651,15 @@ class ApiService {
   /// CANCELABLE: when the consumer unsubscribes, the HTTP connection is closed and
   /// the retry loop stops — preventing connection leaks in production.
   static Stream<List<Map<String, dynamic>>> streamDriverOffers(int driverId) {
+    // Web: BrowserClient (fetch) buffers the entire response body, so SSE
+    // events never arrive and no error ever fires — the caller would wait
+    // forever with its polling fallback disabled. Fail fast instead so the
+    // existing polling path takes over.
+    if (kIsWeb) {
+      return Stream.error(
+        StateError('SSE is not supported on web — use polling fallback'),
+      );
+    }
     final controller = StreamController<List<Map<String, dynamic>>>();
     bool cancelled = false;
 
@@ -2757,6 +2766,13 @@ class ApiService {
   /// PRIMARY channel for instant updates (<100ms) — replaces Firestore listener.
   /// CANCELABLE: when the consumer unsubscribes, the HTTP connection is closed.
   static Stream<Map<String, dynamic>> streamTripStatus(int tripId) {
+    // Web: fetch buffers the whole body — see streamDriverOffers. Fail fast
+    // so callers fall back to polling / RTDB.
+    if (kIsWeb) {
+      return Stream.error(
+        StateError('SSE is not supported on web — use polling fallback'),
+      );
+    }
     final controller = StreamController<Map<String, dynamic>>();
     bool cancelled = false;
 

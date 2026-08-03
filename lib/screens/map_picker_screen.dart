@@ -1,12 +1,14 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' as mapbox;
 import '../config/api_keys.dart';
 import '../map/map_surface_coordinator.dart';
+import '../map/web_map_view.dart';
 import '../config/app_theme.dart';
 import '../config/map_theme.dart';
 import '../config/mapbox_config.dart';
@@ -46,6 +48,8 @@ class _MapPickerScreenState extends State<MapPickerScreen>
   bool _mapMounted = false;
 
   mapbox.MapboxMap? _mapCtrl;
+  // Web counterpart — GL JS surface behind the kIsWeb guard in build().
+  WebMapController? _webMapCtrl;
   String _address = '';
   bool _addressIsPlaceholder = true;
   bool _loading = false;
@@ -92,6 +96,13 @@ class _MapPickerScreenState extends State<MapPickerScreen>
       ).timeout(const Duration(seconds: 5));
       if (!mounted) return;
       _center = LatLng(pos.latitude, pos.longitude);
+      // Same fix on the web surface — the native controller is null there.
+      _webMapCtrl?.flyTo(
+        lng: pos.longitude,
+        lat: pos.latitude,
+        zoom: 15.0,
+        durationMs: 800,
+      );
       final map = _mapCtrl;
       if (map != null) {
         await map.flyTo(
@@ -444,6 +455,31 @@ class _MapPickerScreenState extends State<MapPickerScreen>
             const Positioned.fill(
               child: ColoredBox(color: Color(0xFF0A1128)),
             )
+          // The native MapWidget has no web implementation — GL JS takes
+          // over in the browser. Camera drags feed the same debounced
+          // reverse-geocode the native onCameraChange/onMapIdle pair drives.
+          else if (kIsWeb)
+          RepaintBoundary(
+            child: WebMapView(
+              key: const ValueKey('map_picker_web'),
+              initialLng: _center.longitude,
+              initialLat: _center.latitude,
+              initialZoom: 15.0,
+              styleUri: MapboxConfig.styleDark,
+              onControllerCreated: (c) {
+                _webMapCtrl = c;
+                c.applyNavyGoldTheme();
+                c.onCameraMove = (_, __, ___) {
+                  final ctr = c.getCenter();
+                  _center = LatLng(ctr.lat, ctr.lng);
+                  _settleCtrl.forward(from: 0);
+                  _scheduleGeocode();
+                };
+                Future.delayed(
+                    const Duration(milliseconds: 800), _onCameraIdle);
+              },
+            ),
+          )
           else
           RepaintBoundary(
             child: mapbox.MapWidget(

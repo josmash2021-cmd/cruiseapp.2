@@ -30,6 +30,7 @@ import '../services/api_service.dart';
 import '../services/driver_wait_estimate.dart';
 import '../services/directions_service.dart';
 import '../services/local_data_service.dart';
+import '../services/local_cache.dart';
 import '../services/payment_service.dart';
 import '../services/analytics_service.dart';
 import '../services/haptic_service.dart';
@@ -411,6 +412,10 @@ class _RideRequestScreenState extends State<RideRequestScreen>
   Animation<double>? _labelPopAnim;
   LatLng? _center;
   LatLng? _userLocation;
+  // In-flight _initLocation() future — lets the map picker await a pending
+  // GPS fix (on web the browser permission prompt can take several seconds)
+  // instead of bouncing back to search with _userLocation still null.
+  Future<void>? _locationReadyFuture;
   bool _mapReady = false;
 
   // ── Trip controller ──
@@ -548,6 +553,10 @@ class _RideRequestScreenState extends State<RideRequestScreen>
   /// Web only: the route polyline + endpoint pins have been pushed to the
   /// browser map. Native draws through the cinematic instead.
   bool _webRouteDrawn = false;
+
+  /// Web only: drives the progressive route draw (the browser equivalent of
+  /// the native _animateGoldRoute ticker). Cancelled on cleanup/dispose.
+  Timer? _webRouteAnimTimer;
 
   /// True once the rider drags or zooms the map themselves — automatic
   /// camera fits stop fighting their frame until they tap recenter.
@@ -759,7 +768,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
         route: widget.preloadedRoute!,
       );
       // Still resolve GPS for the user-dot overlay
-      _initLocation();
+      _locationReadyFuture = _initLocation();
     } else if (widget.initialPickupDetails != null && widget.initialDropoffDetails != null) {
       // Both locations already known — set immediately, don't wait for GPS
       _ctrl.setPickup(
@@ -771,9 +780,9 @@ class _RideRequestScreenState extends State<RideRequestScreen>
         widget.initialDropoffLabel ?? widget.initialDropoffDetails!.address,
       );
       // Resolve GPS in parallel for user-dot overlay only
-      _initLocation();
+      _locationReadyFuture = _initLocation();
     } else {
-      _initLocation().then((_) {
+      _locationReadyFuture = _initLocation().then((_) {
         // Airport selection already handled above via post-frame callback.
         // Direct details available (e.g. from Choose on map) — use immediately
         if (widget.initialPickupDetails != null) {
@@ -908,6 +917,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
     _shimmerTimeoutTimer?.cancel();
     _stuckPaymentFuse?.cancel();
     _waitRefreshTimer?.cancel();
+    _webRouteAnimTimer?.cancel();
     _searchMapTimer?.cancel();
     _splashTimer?.cancel();
     _driverFoundTimer?.cancel();

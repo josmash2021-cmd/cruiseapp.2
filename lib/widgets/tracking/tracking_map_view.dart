@@ -51,6 +51,15 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
 
   /// Removes all trip-related polyline and pin annotations from the map.
   Future<void> _cleanupMapAnnotations() async {
+    if (kIsWeb) {
+      final web = _webMapCtrl;
+      if (web != null) {
+        web.clearMarkers();
+        web.clearPolylines();
+        web.clearCircles();
+      }
+      return;
+    }
     // Clean up modular components first
     await _mapCar?.clear();
     await _mapRoute?.clear();
@@ -407,6 +416,16 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
   void _revealPickupLabel() {
     if (_pickupLabelRevealed || _pickupPinWithLabelBytes == null) return;
     _pickupLabelRevealed = true;
+    if (kIsWeb) {
+      // Swap the marker icon for the pin+label bitmap (no spring anim on web).
+      _webMapCtrl?.addMarker(
+        'pickup',
+        widget.pickupLatLng.longitude,
+        widget.pickupLatLng.latitude,
+        iconBytes: _pickupPinWithLabelBytes,
+      );
+      return;
+    }
     // Use modular component if available
     if (_mapAnnotations != null) {
       _mapAnnotations!.revealPickupLabel();
@@ -429,6 +448,15 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
   void _revealDropoffLabel() {
     if (_dropoffLabelRevealed || _dropoffPinWithLabelBytes == null) return;
     _dropoffLabelRevealed = true;
+    if (kIsWeb) {
+      _webMapCtrl?.addMarker(
+        'dropoff',
+        widget.dropoffLatLng.longitude,
+        widget.dropoffLatLng.latitude,
+        iconBytes: _dropoffPinWithLabelBytes,
+      );
+      return;
+    }
     // Use modular component if available
     if (_mapAnnotations != null) {
       _mapAnnotations!.revealDropoffLabel();
@@ -560,6 +588,10 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
   /// long routes show driver + enough ahead to see well (not zoomed out too far).
   /// During arrived: no-op — camera is locked via _fitArrivedBounds().
   void _fitRouteBounds() {
+    if (kIsWeb) {
+      _webFitRouteBounds();
+      return;
+    }
     if (_map == null || (_routePts.isEmpty && _tripRoutePts.isEmpty)) return;
     // Arrived phase uses _fitArrivedBounds() once, then camera stays still.
     if (_phase == _TrackPhase.arrived) return;
@@ -834,6 +866,10 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
 
   /// Ticker callback: drive the Uber-style chase camera.
   void _onCameraTick(Duration elapsed) {
+    if (kIsWeb) {
+      _webCameraTick();
+      return;
+    }
     if (!mounted || _map == null || _mapCamera == null) return;
 
     // Before anything that can return early. The annotation is only allowed
@@ -1151,6 +1187,42 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
           const Positioned.fill(
             child: ColoredBox(color: Color(0xFF07080D)),
           )
+        else if (kIsWeb)
+          // Mapbox GL JS in the browser — the native MapWidget below does
+          // not exist on web and crashes the whole screen. Same pattern as
+          // ride_request_screen: WebMapView + WebMapController helpers.
+          WebMapView(
+            key: const ValueKey('rider-map-web'),
+            initialLng: widget.pickupLatLng.longitude,
+            initialLat: widget.pickupLatLng.latitude,
+            initialZoom: 14,
+            styleUri: MapboxConfig.styleDark,
+            onControllerCreated: (c) {
+              _webMapCtrl = c;
+              // The same navy/gold the native map gets in
+              // _applyDarkNavyGoldTheme — raw dark-v11 is grey, not ours.
+              c.applyNavyGoldTheme();
+              c.onCameraMove = (_, __, ___) {
+                if (!mounted) return;
+                // Our own fits/follows land inside the programmatic window —
+                // anything outside it is the rider's hand.
+                if (DateTime.now().isAfter(_webAutoCameraUntil)) {
+                  _onUserPannedMap();
+                }
+              };
+              c.onReady = () {
+                if (!mounted) return;
+                _setState(() {
+                  _mapLoadError = false;
+                  _mapErrorMessage = '';
+                });
+                // Static creation is guarded + idempotent; nudge it in case
+                // pins/route were ready before the GL style finished loading.
+                _updateStaticAnnotationsOnce();
+                _fitRouteBounds();
+              };
+            },
+          )
         else
         RepaintBoundary(
           child: mapbox.MapWidget(
@@ -1419,6 +1491,10 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
 
   // ── Car update: delegates to TrackingMapCar ──
   void _updateCarSmooth() {
+    if (kIsWeb) {
+      _webUpdateCarMarker();
+      return;
+    }
     if (_map == null) return;
 
     // Determine effective position: use _animPos if valid, fallback to _directTargetPos
@@ -1593,6 +1669,10 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
   }
 
   Future<void> _updateStaticAnnotationsOnce() async {
+    if (kIsWeb) {
+      _webCreateStaticAnnotationsOnce();
+      return;
+    }
     if (_staticAnnotsDone) return;
     final pointMgr = _pointAnnotMgr;
     final polyMgr = _polylineAnnotMgr;
@@ -1688,6 +1768,17 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
 
   /// Add dropoff pin (called once when phase transitions to onTrip)
   Future<void> _addDropoffPin() async {
+    if (kIsWeb) {
+      if (_dropoffPinAdded) return;
+      _dropoffPinAdded = true;
+      _webMapCtrl?.addMarker(
+        'dropoff',
+        widget.dropoffLatLng.longitude,
+        widget.dropoffLatLng.latitude,
+        iconBytes: _dropoffPinBytes,
+      );
+      return;
+    }
     if (_dropoffPinAdded) return;
     final pointMgr = _pointAnnotMgr;
     if (pointMgr == null || _dropoffPinBytes == null) return;
@@ -1759,6 +1850,13 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
   void _popOutPickupPin() {
     if (_pickupPopping) return;
     _pickupPopping = true;
+    if (kIsWeb) {
+      // No pop-out sprite anim on web — just remove the marker.
+      _webMapCtrl?.removeMarker('pickup');
+      _showPickupPin = false;
+      _pickupPopping = false;
+      return;
+    }
     // Use modular component if available
     if (_mapAnnotations != null) {
       _mapAnnotations!.popOutPickupPin().then((_) {
@@ -1797,6 +1895,13 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
 
   /// Animated route draw: progressively reveals the gold route line to dropoff
   Future<void> _startAnimatedRouteDraw() async {
+    if (kIsWeb) {
+      // No progressive draw on web — the gold polyline appears complete.
+      if (_routeDrawDone || _routePts.length < 2) return;
+      _routeDrawDone = true;
+      _webDrawGoldRoute(_routePts);
+      return;
+    }
     if (_routeDrawDone || _routePts.length < 2) return;
     _routeDrawDone = true;
 
@@ -1926,6 +2031,11 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     }
     _lastRouteErase = now;
 
+    if (kIsWeb) {
+      _webEraseRouteBehindCar();
+      return;
+    }
+
     // Use modular route component if available
     if (_mapRoute != null) {
       _mapRoute!.eraseRouteBehindCar(_animPos);
@@ -1991,6 +2101,10 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
 
   /// Remove the dimmed route (called when transitioning to onTrip gloss route)
   void _removeDimmedRoute() {
+    if (kIsWeb) {
+      _webMapCtrl?.removePolyline('dimmed');
+      return;
+    }
     // Use modular route component if available
     if (_mapRoute != null) {
       _mapRoute!.removeDimmedRoute();
@@ -2004,6 +2118,10 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
   }
 
   void _updateApproachLine() {
+    if (kIsWeb) {
+      _webUpdateApproachLine();
+      return;
+    }
     // When approach route is fetched (road-following), the main route polyline
     // IS the approach — no need for an extra straight line.
     if (_approachRouteFetched) return;
@@ -2093,6 +2211,37 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
   /// Handle driver arrival: draw trip route, fit camera to pickup+dropoff, then STOP.
   /// Camera must be stable during arrived phase — no further animations.
   Future<void> _handleDriverArrived() async {
+    if (kIsWeb) {
+      if (_arrivedStateInitialized) return;
+      _arrivedStateInitialized = true;
+
+      // Stop all camera movement — same contract as the native path.
+      _shouldFollowDriver = false;
+      _cameraFollowTimer?.cancel();
+      _cameraFollowTimer = null;
+
+      final web = _webMapCtrl;
+      web?.removePolyline('approach');
+      web?.removePolyline('route');
+
+      // Trip route (pickup→dropoff) becomes the dimmed preview; the bright
+      // draw fires when the rider confirms pickup (_restartRouteAnimation).
+      if (_tripRoutePts.isNotEmpty) {
+        _routePts = _tripRoutePts;
+        _buildSegDist();
+        _traveledM = 0;
+        _tgtTraveledM = 0;
+        _routeDrawDone = false;
+        _webDrawDimmedRoute();
+      }
+
+      // Fit camera to pickup + dropoff ONCE, then stop.
+      Future.delayed(const Duration(milliseconds: 300), () {
+        if (!mounted) return;
+        _webFitArrivedBounds();
+      });
+      return;
+    }
     if (_arrivedStateInitialized || _map == null) return;
     _arrivedStateInitialized = true;
 
@@ -2145,6 +2294,10 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
   /// Produces a stable view showing the full trip route without including
   /// the driver's jittery GPS position or approach route points.
   void _fitArrivedBounds() {
+    if (kIsWeb) {
+      _webFitArrivedBounds();
+      return;
+    }
     if (_map == null) return;
 
     final mq = MediaQuery.of(context).padding;
@@ -2208,6 +2361,17 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
   }
 
   Future<void> _centerDriverOnArrival() async {
+    if (kIsWeb) {
+      if (_animPos.latitude == 0 && _animPos.longitude == 0) return;
+      _webAutoCameraUntil = DateTime.now().add(const Duration(milliseconds: 1200));
+      _webMapCtrl?.flyTo(
+        lng: _animPos.longitude,
+        lat: _animPos.latitude,
+        zoom: 16.4,
+        durationMs: 1100,
+      );
+      return;
+    }
     if (_map == null) return;
     final mq = MediaQuery.of(context).padding;
     final topInset = mq.top + 10 + _topCardHeight + 48;
@@ -2257,6 +2421,17 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
   /// Animate camera to top-down follow centred on driver position.
   /// Called during the ride-start animation sequence (Phase 4).
   void _flyToDriverAt45() {
+    if (kIsWeb) {
+      if (_animPos.latitude == 0 && _animPos.longitude == 0) return;
+      _webAutoCameraUntil = DateTime.now().add(const Duration(milliseconds: 1600));
+      _webMapCtrl?.flyTo(
+        lng: _animPos.longitude,
+        lat: _animPos.latitude,
+        zoom: 16.5,
+        durationMs: 1500,
+      );
+      return;
+    }
     if (_map == null) return;
     final mq = MediaQuery.of(context).padding;
     final topInset = mq.top + 10 + _topCardHeight + 48;
@@ -2321,6 +2496,315 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
         _routeDrawDone = false;
       },
     );
+  }
+
+  // ════════════════════════════════════════════════════════════
+  //  WEB MAP (Mapbox GL JS) — parity helpers used when kIsWeb.
+  //
+  //  The native stack (MapboxMap, annotation managers, TrackingMap*
+  //  components, chase camera) is untouched; every public entry point
+  //  above branches here first so `_map` stays null on web and nothing
+  //  native ever runs. Not ported: 3D tilt chase camera, pin pop/spring
+  //  sprite animations, progressive route draw — GL JS DOM markers and
+  //  GeoJSON polylines cover the essentials instead.
+  // ════════════════════════════════════════════════════════════
+
+  List<LngLatPoint> _webPts(List<LatLng> pts) => [
+        for (final p in pts) (lng: p.longitude, lat: p.latitude),
+      ];
+
+  void _webDrawGoldRoute(List<LatLng> pts) {
+    if (pts.length < 2) return;
+    _webMapCtrl?.setPolyline('route', _webPts(pts), color: '#FFD700', width: 5);
+  }
+
+  void _webDrawDimmedRoute() {
+    final pts = _tripRoutePts.isNotEmpty ? _tripRoutePts : _routePts;
+    if (pts.length < 2) return;
+    _webMapCtrl?.setPolyline(
+      'dimmed',
+      _webPts(pts),
+      color: 'rgba(255,215,0,0.20)',
+      width: 5,
+    );
+  }
+
+  /// Web twin of [_updateStaticAnnotationsOnce]: pins + dimmed trip route,
+  /// created once, then the gold route draw and label reveals on the same
+  /// cadence as native.
+  void _webCreateStaticAnnotationsOnce() {
+    if (_staticAnnotsDone) return;
+    final web = _webMapCtrl;
+    if (web == null) return;
+    if (_pickupPinBytes == null || _dropoffPinBytes == null) return;
+    if (_routePts.length < 2 &&
+        _tripRoutePts.length < 2 &&
+        _phase != _TrackPhase.arriving &&
+        _phase != _TrackPhase.arrived) {
+      return;
+    }
+    _staticAnnotsDone = true;
+
+    _webDrawDimmedRoute();
+    if (_showPickupPin) {
+      web.addMarker(
+        'pickup',
+        widget.pickupLatLng.longitude,
+        widget.pickupLatLng.latitude,
+        iconBytes: _pickupPinBytes,
+      );
+    }
+    _dropoffPinAdded = true;
+    web.addMarker(
+      'dropoff',
+      widget.dropoffLatLng.longitude,
+      widget.dropoffLatLng.latitude,
+      iconBytes: _dropoffPinBytes,
+    );
+
+    _fitRouteBounds();
+    // Gold route draw, mirroring the native cinematic delay.
+    Future.delayed(const Duration(milliseconds: 400), () {
+      if (mounted) _startAnimatedRouteDraw();
+    });
+    if (_pickupPinWithLabelBytes != null && !_pickupLabelRevealed) {
+      Future.delayed(const Duration(milliseconds: 600), () {
+        if (mounted) _revealPickupLabel();
+      });
+    }
+    if (_dropoffPinWithLabelBytes != null && !_dropoffLabelRevealed) {
+      Future.delayed(const Duration(milliseconds: 1200), () {
+        if (mounted) _revealDropoffLabel();
+      });
+    }
+  }
+
+  /// Web twin of the car-annotation update: one DOM marker, created on the
+  /// first valid fix and moved every frame after.
+  void _webUpdateCarMarker() {
+    final web = _webMapCtrl;
+    if (web == null) return;
+
+    LatLng effectivePos = _animPos;
+    double effectiveBearing = _animBearing;
+    if (_animPos.latitude == 0 && _animPos.longitude == 0) {
+      final directPos = _directTargetPos;
+      if (directPos != null &&
+          directPos.latitude != 0 &&
+          directPos.longitude != 0) {
+        effectivePos = directPos;
+        effectiveBearing = _directTargetBearing ?? 0;
+        _animPos = effectivePos;
+        _animBearing = effectiveBearing;
+        _driverPos = effectivePos;
+        _driverBearing = effectiveBearing;
+      } else {
+        return; // No valid position yet — car stays hidden, same as native.
+      }
+    }
+    if (!isValidLatLng(effectivePos.latitude, effectivePos.longitude)) return;
+
+    if (_webCarBearing < 0) {
+      _webCarBearing = effectiveBearing;
+      web.addMarker(
+        'driver',
+        effectivePos.longitude,
+        effectivePos.latitude,
+        iconBytes: _carPngBytes,
+        rotation: effectiveBearing,
+      );
+      return;
+    }
+    // GL JS markers rebuild from scratch on rotation change — deadband it so
+    // a parked driver's GPS wander does not churn the DOM every frame.
+    final rot = (effectiveBearing - _webCarBearing).abs() > 3
+        ? effectiveBearing
+        : null;
+    if (rot != null) _webCarBearing = effectiveBearing;
+    web.updateMarkerPosition(
+      'driver',
+      effectivePos.longitude,
+      effectivePos.latitude,
+      rotation: rot,
+    );
+  }
+
+  /// Web twin of the native route erase: same math, written as a GeoJSON
+  /// polyline update instead of a PolylineAnnotation update.
+  void _webEraseRouteBehindCar() {
+    final web = _webMapCtrl;
+    if (web == null || _segDist.isEmpty || _routePts.length < 2) return;
+    if (!_routeDrawDone) return;
+
+    final dist = _traveledM;
+    if (dist <= 0) return;
+
+    int lo = 0, hi = _segDist.length - 1;
+    while (lo < hi - 1) {
+      final mid = (lo + hi) >> 1;
+      if (_segDist[mid] <= dist) {
+        lo = mid;
+      } else {
+        hi = mid;
+      }
+    }
+    final segLen = _segDist[hi] - _segDist[lo];
+    final t = segLen > 0.01
+        ? ((dist - _segDist[lo]) / segLen).clamp(0.0, 1.0)
+        : 0.0;
+    final a = _routePts[lo];
+    final b = _routePts[hi];
+    final curLat = a.latitude + (b.latitude - a.latitude) * t;
+    final curLng = a.longitude + (b.longitude - a.longitude) * t;
+    if (!isValidLatLng(curLat, curLng)) return;
+
+    final remaining = <LngLatPoint>[
+      (lng: curLng, lat: curLat),
+      for (int i = hi; i < _routePts.length; i++)
+        (lng: _routePts[i].longitude, lat: _routePts[i].latitude),
+    ];
+    if (remaining.length < 2) return;
+    web.setPolyline('route', remaining, color: '#FFD700', width: 5);
+  }
+
+  /// Web twin of the straight approach line (driver → pickup) shown until
+  /// the road-following approach route arrives.
+  void _webUpdateApproachLine() {
+    final web = _webMapCtrl;
+    if (web == null) return;
+    // Main route polyline IS the approach once the fetched route lands.
+    if (_approachRouteFetched) return;
+
+    final now = DateTime.now();
+    if (now.difference(_lastApproachUpdate).inMilliseconds < 500) return;
+    _lastApproachUpdate = now;
+
+    if (_phase != _TrackPhase.arriving ||
+        (_animPos.latitude == 0 && _animPos.longitude == 0)) {
+      web.removePolyline('approach');
+      return;
+    }
+    web.setPolyline('approach', [
+      (lng: _animPos.longitude, lat: _animPos.latitude),
+      (lng: widget.pickupLatLng.longitude, lat: widget.pickupLatLng.latitude),
+    ], color: '#FFD700', width: 5);
+  }
+
+  /// Web twin of [_fitRouteBounds]: same point sets and card-aware padding,
+  /// one fitBounds call instead of cameraForCoordinatesPadding + flyTo.
+  void _webFitRouteBounds() {
+    final web = _webMapCtrl;
+    if (web == null || (_routePts.isEmpty && _tripRoutePts.isEmpty)) return;
+    // Arrived/onTrip phases own their camera elsewhere, same as native.
+    if (_phase == _TrackPhase.arrived) return;
+    if (_phase == _TrackPhase.onTrip ||
+        _phase == _TrackPhase.nearDestination) {
+      return;
+    }
+
+    final pts = <LatLng>[
+      widget.pickupLatLng,
+      widget.dropoffLatLng,
+    ];
+    if (_animPos.latitude != 0 && _animPos.longitude != 0) pts.add(_animPos);
+    pts.addAll(_routePts);
+    if (_phase == _TrackPhase.arriving) pts.addAll(_tripRoutePts);
+
+    final mq = MediaQuery.of(context).padding;
+    _webAutoCameraUntil = DateTime.now().add(const Duration(milliseconds: 1000));
+    web.fitBounds(
+      _webPts(pts),
+      paddingTop: mq.top + 10 + _topCardHeight + 64,
+      paddingBottom: mq.bottom + 16 + _bottomCardHeight + 64,
+      paddingLeft: 44,
+      paddingRight: 44,
+      durationMs: 800,
+    );
+  }
+
+  /// Web twin of [_fitArrivedBounds]: pickup + dropoff + trip route, once.
+  void _webFitArrivedBounds() {
+    final web = _webMapCtrl;
+    if (web == null) return;
+    final pts = <LatLng>[
+      widget.pickupLatLng,
+      widget.dropoffLatLng,
+      ..._tripRoutePts,
+    ];
+    final mq = MediaQuery.of(context).padding;
+    _webAutoCameraUntil = DateTime.now().add(const Duration(milliseconds: 1400));
+    web.fitBounds(
+      _webPts(pts),
+      paddingTop: mq.top + 10 + _topCardHeight + 48,
+      paddingBottom: mq.bottom + 16 + _bottomCardHeight + 48,
+      paddingLeft: 44,
+      paddingRight: 44,
+      durationMs: 1300,
+    );
+  }
+
+  /// Web chase camera, driven by the same shared ticker as native.
+  ///
+  /// No 3D pitch chase (that is the native TrackingMapCamera's job and GL JS
+  /// markers do not lie flat anyway): during arriving the camera frames
+  //  driver + pickup and tightens as the gap closes; during the trip it
+  /// follows the car top-down with the map rotated to heading.
+  void _webCameraTick() {
+    if (!mounted) return;
+    final web = _webMapCtrl;
+    if (web == null) return;
+    if (_phase == _TrackPhase.arrived || _phase == _TrackPhase.completed) {
+      return;
+    }
+
+    // Auto-resume after the rider stops panning — same rule as native.
+    if (_userControllingCamera) {
+      final last = _lastUserCameraInteraction;
+      if (last == null ||
+          DateTime.now().difference(last).inMilliseconds >
+              _kResumeFollowAfterPanMs) {
+        _userControllingCamera = false;
+        _lastUserCameraInteraction = null;
+      } else {
+        return;
+      }
+    }
+    if (_animPos.latitude == 0 && _animPos.longitude == 0) return;
+
+    // Throttled: a 60 fps flyTo storms the GL camera for no visible gain.
+    final now = DateTime.now();
+    if (now.difference(_lastWebCamMove).inMilliseconds < 400) return;
+    _lastWebCamMove = now;
+    _webAutoCameraUntil = now.add(const Duration(milliseconds: 800));
+
+    final mq = MediaQuery.of(context);
+    final topPad = mq.padding.top + 10 + _topCardHeight + 32;
+    final bottomPad = mq.padding.bottom + 16 + _bottomCardHeight + 32;
+
+    if (_phase == _TrackPhase.arriving) {
+      // Frame driver + pickup, tightening continuously as the gap closes.
+      web.fitBounds([
+        (lng: _animPos.longitude, lat: _animPos.latitude),
+        (lng: widget.pickupLatLng.longitude, lat: widget.pickupLatLng.latitude),
+      ],
+          paddingTop: topPad,
+          paddingBottom: bottomPad,
+          paddingLeft: 60,
+          paddingRight: 60,
+          durationMs: 400);
+      return;
+    }
+    if (_phase == _TrackPhase.onTrip ||
+        _phase == _TrackPhase.nearDestination) {
+      web.flyTo(
+        lng: _animPos.longitude,
+        lat: _animPos.latitude,
+        zoom: 15.5,
+        bearing: _animBearing,
+        pitch: 0,
+        durationMs: 400,
+      );
+    }
   }
 
   Future<void> _updateAnnotations() async {

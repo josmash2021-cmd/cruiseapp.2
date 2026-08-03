@@ -911,6 +911,17 @@ extension _RideRequestMap on _RideRequestScreenState {
   /// entering the searchingDriver phase; eases once to the frame and holds
   /// it. Never re-takes the camera from a rider who moved it themselves.
   void _animateSearchCameraToAngle(int idx) {
+    // Web: the native controller is null here, which used to bail out and
+    // leave the camera wherever the picker dropped it. The browser map has
+    // no pitch/bearing, so "top-down full route" is just the animated fit.
+    if (kIsWeb) {
+      if (!mounted || _userTookCamera) return;
+      final r = _ctrl.state.route;
+      if (r != null && r.points.isNotEmpty) {
+        _fitWebRoute(List<LatLng>.from(r.points), durationMs: 1200);
+      }
+      return;
+    }
     if (_mapCtrl == null || !mounted) return;
     // The rider panned/zoomed — their frame stays; the recenter button is
     // the way back to the full-route frame.
@@ -1490,19 +1501,24 @@ extension _RideRequestMap on _RideRequestScreenState {
     }
     final pts = s.route!.points;
     if (pts.length < 2) return;
-    // setPolyline replaces the line under the same id, so a re-fetched
-    // route (edited pickup/dropoff) redraws over the old one.
-    web.setPolyline(
-      'route',
-      [for (final p in pts) (lng: p.longitude, lat: p.latitude)],
-      color: '#F0CA3E',
-      width: 4,
-    );
     if (_webRouteDrawn) {
+      // Re-fetched route (edited pickup/dropoff): setPolyline replaces the
+      // line under the same id, so the new one redraws over the old.
+      web.setPolyline(
+        'route',
+        [for (final p in pts) (lng: p.longitude, lat: p.latitude)],
+        color: '#F0CA3E',
+        width: 4,
+      );
       _fitWebRoute(pts, durationMs: 500);
       return;
     }
     _webRouteDrawn = true; // claim before the awaits so ticks don't double-add pins
+    // First draw: grow the line from pickup to dropoff over ~2 s, the
+    // browser equivalent of the native _animateGoldRoute ticker (same
+    // easeOutCubic feel, same gold, same camera fit at the end). A static
+    // line popping in read as "nothing happened" next to iOS.
+    _animateWebRoute(web, pts);
     try {
       // The same two shapes the native map and the driver's offer preview
       // use: gold disc for the pickup, white circle for the dropoff.
@@ -1515,6 +1531,37 @@ extension _RideRequestMap on _RideRequestScreenState {
       web.addMarker('dropoff', s.dropoff!.lng, s.dropoff!.lat, iconBytes: pins[1]);
     } catch (_) {}
     if (mounted) _fitWebRoute(pts, durationMs: 1200);
+  }
+
+  /// Web: progressive route draw — extends the gold polyline a few points
+  /// per tick with easeOutCubic timing, mirroring the native
+  /// _animateGoldRoute. Simpler than native (vertex slicing, no per-metre
+  /// interpolation): at route-preview zooms the steps are invisible.
+  void _animateWebRoute(WebMapController web, List<LatLng> pts) {
+    _webRouteAnimTimer?.cancel();
+    // Same duration rule as native: ~16 ms per point, clamped 2–4 s.
+    final totalMs = (pts.length * 16).clamp(2000, 4000);
+    final stopwatch = Stopwatch()..start();
+    web.setPolyline('route', [(lng: pts[0].longitude, lat: pts[0].latitude)],
+        color: '#F0CA3E', width: 4);
+    _webRouteAnimTimer =
+        Timer.periodic(const Duration(milliseconds: 33), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      final progress =
+          (stopwatch.elapsedMilliseconds / totalMs).clamp(0.0, 1.0);
+      final eased = Curves.easeOutCubic.transform(progress);
+      final count = 2 + (eased * (pts.length - 2)).round();
+      web.setPolyline(
+        'route',
+        [for (final p in pts.take(count)) (lng: p.longitude, lat: p.latitude)],
+        color: '#F0CA3E',
+        width: 4,
+      );
+      if (progress >= 1.0) timer.cancel();
+    });
   }
 
   void _fitRoute(List<LatLng> pts, {bool preserveCamera = false}) {
@@ -1836,12 +1883,21 @@ extension _RideRequestMap on _RideRequestScreenState {
 
     // 3. After the settle, read the camera + commit the picked place.
     Future.delayed(const Duration(milliseconds: 1000), () async {
-      if (!mounted || _mapCtrl == null) return;
+      if (!mounted) return;
+      // Web has no native controller — bailing on `_mapCtrl == null` here
+      // left the button spinning forever and the drop-off never committed.
+      if (_mapCtrl == null && _webMapCtrl == null) return;
       LatLng? center;
       try {
-        final cam = await _mapCtrl!.getCameraState();
-        final c = cam.center.coordinates;
-        center = LatLng(c.lat.toDouble(), c.lng.toDouble());
+        final web = _webMapCtrl;
+        if (web != null) {
+          final c = web.getCenter();
+          center = LatLng(c.lat, c.lng);
+        } else {
+          final cam = await _mapCtrl!.getCameraState();
+          final c = cam.center.coordinates;
+          center = LatLng(c.lat.toDouble(), c.lng.toDouble());
+        }
       } catch (_) {}
       if (!mounted || center == null) return;
 
@@ -1865,6 +1921,23 @@ extension _RideRequestMap on _RideRequestScreenState {
       //     (mirrors the "Choose on map" pickup flow). Only bounce
       //     back to search if GPS isn't resolved yet.
       var s = _ctrl.state;
+      if (s.pickup == null && _userLocation == null) {
+        // GPS may still be resolving — on web getCurrentPosition IS the
+        // browser permission prompt and can take several seconds. Bouncing
+        // back to search here popped the picker before the fix arrived,
+        // dumping the rider on the search screen right after a valid
+        // Confirm. Wait for the in-flight location init instead; only
+        // bounce back if it finished (or timed out) without any fix.
+        final pending = _locationReadyFuture;
+        if (pending != null) {
+          await pending.timeout(
+            const Duration(seconds: 12),
+            onTimeout: () {},
+          );
+          if (!mounted) return;
+          s = _ctrl.state;
+        }
+      }
       if (s.pickup == null && _userLocation != null) {
         final curLabel = _currentAddress.isNotEmpty
             ? _currentAddress
@@ -1897,7 +1970,11 @@ extension _RideRequestMap on _RideRequestScreenState {
 
   Future<void> _pickerStartRipple() async {
     final map = _mapCtrl;
-    if (map == null) return;
+    if (map == null) {
+      // Web: same ripple through the browser controller's circles.
+      _webPickerStartRipple();
+      return;
+    }
     LatLng center;
     try {
       final cam = await map.getCameraState();
@@ -1948,6 +2025,61 @@ extension _RideRequestMap on _RideRequestScreenState {
       }
       _pickerUpdateRippleLayers();
     })..start();
+  }
+
+  /// Web twin of [_pickerStartRipple]: the native code drives style-layer
+  /// circle properties directly; the browser controller only exposes
+  /// `setCircle`, which now re-pushes radius/opacity on every call — enough
+  /// to run the same three gold waves at the pin tip (the camera center).
+  void _webPickerStartRipple() {
+    final web = _webMapCtrl;
+    if (web == null) return;
+    final c = web.getCenter();
+    for (int i = 0; i < _pickerRippleWaveCount; i++) {
+      web.setCircle('picker-ripple-$i', c.lng, c.lat,
+          radiusPx: 0, color: '#E8C547', opacity: 0);
+    }
+    _pickerRippleElapsed = 0.0;
+    _pickerRippleTicker?.dispose();
+    _pickerRippleTicker = createTicker((elapsed) {
+      _pickerRippleElapsed = elapsed.inMilliseconds.toDouble();
+      if (_pickerRippleElapsed > _pickerRippleDurationMs) {
+        _pickerRippleTicker?.stop();
+        _webPickerCleanupRipple();
+        return;
+      }
+      _webPickerUpdateRipple();
+    })..start();
+  }
+
+  void _webPickerUpdateRipple() {
+    final web = _webMapCtrl;
+    if (web == null) return;
+    final c = web.getCenter();
+    for (int i = 0; i < _pickerRippleWaveCount; i++) {
+      final waveOffset = i * 150.0;
+      final waveTime = (_pickerRippleElapsed - waveOffset)
+          .clamp(0.0, _pickerRippleDurationMs - waveOffset);
+      final progress = (waveTime / (_pickerRippleDurationMs - waveOffset))
+          .clamp(0.0, 1.0);
+      if (progress <= 0) continue;
+      final eased = 1.0 - (1.0 - progress) * (1.0 - progress);
+      final maxRadius = 80.0 + (i * 30.0);
+      final radius = maxRadius * eased;
+      final opacity = progress < 0.15
+          ? (progress / 0.15) * 0.35
+          : 0.35 * (1.0 - ((progress - 0.15) / 0.85));
+      web.setCircle('picker-ripple-$i', c.lng, c.lat,
+          radiusPx: radius, color: '#E8C547', opacity: opacity * 0.25);
+    }
+  }
+
+  void _webPickerCleanupRipple() {
+    final web = _webMapCtrl;
+    if (web == null) return;
+    for (int i = 0; i < _pickerRippleWaveCount; i++) {
+      web.removeCircle('picker-ripple-$i');
+    }
   }
 
   void _pickerUpdateRippleLayers() {

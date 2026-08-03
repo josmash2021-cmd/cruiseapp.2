@@ -280,7 +280,7 @@ async def get_nearby_drivers(
                         dist = 0.0
                     candidate_ids.append(int(driver_id_str))
                     parsed.append((int(driver_id_str), dist))
-                tier_map = _tiers_for(candidate_ids) if tier_keys else {}
+                tier_map = await _tiers_for(candidate_ids) if tier_keys else {}
                 for driver_id, dist in parsed:
                     if tier_keys and tier_map.get(driver_id, "").lower() not in tier_keys:
                         continue
@@ -316,9 +316,13 @@ async def get_nearby_drivers(
                 User.lng >= lng - _lng_delta, User.lng <= lng + _lng_delta,
             ))
         )
-        fallback_ids = [r[0] for r in result.all()]
-        tier_map = _tiers_for(fallback_ids) if tier_keys else {}
-        for d_id, d_lat, d_lng, d_first, d_last in result.all():
+        # Materialise once: a second result.all() on an async Result returns
+        # [], which left this fallback permanently empty — every rider was
+        # told "no drivers" whenever Redis geo had nothing to say.
+        rows = result.all()
+        fallback_ids = [r[0] for r in rows]
+        tier_map = await _tiers_for(fallback_ids) if tier_keys else {}
+        for d_id, d_lat, d_lng, d_first, d_last in rows:
             if tier_keys and tier_map.get(d_id, "").lower() not in tier_keys:
                 continue
             # Use in-memory location if fresher than DB

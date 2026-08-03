@@ -1882,11 +1882,21 @@ extension _RideRequestMap on _RideRequestScreenState {
     });
 
     // 3. After the settle, read the camera + commit the picked place.
+    //
+    // Every early return on this path must release `_pickerConfirming` —
+    // the guard at the top of _pickerConfirm keys on it, so one stuck
+    // `true` disables the Confirm button for the rest of the picker's life.
     Future.delayed(const Duration(milliseconds: 1000), () async {
+      void release() {
+        if (mounted) _setState(() => _pickerConfirming = false);
+      }
       if (!mounted) return;
       // Web has no native controller — bailing on `_mapCtrl == null` here
       // left the button spinning forever and the drop-off never committed.
-      if (_mapCtrl == null && _webMapCtrl == null) return;
+      if (_mapCtrl == null && _webMapCtrl == null) {
+        release();
+        return;
+      }
       LatLng? center;
       try {
         final web = _webMapCtrl;
@@ -1899,7 +1909,11 @@ extension _RideRequestMap on _RideRequestScreenState {
           center = LatLng(c.lat.toDouble(), c.lng.toDouble());
         }
       } catch (_) {}
-      if (!mounted || center == null) return;
+      if (!mounted) return;
+      if (center == null) {
+        release();
+        return;
+      }
 
       final place = PlaceDetails(
         address: _pickerAddress,

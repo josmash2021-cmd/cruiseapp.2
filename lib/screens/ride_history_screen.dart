@@ -514,8 +514,8 @@ class _RideHistoryScreenState extends State<RideHistoryScreen> {
 /// dollars + small cents so amounts read like a premium receipt
 /// instead of a chunky chip. White-on-black, no background.
 /// Falls back to the raw string if the format is unexpected.
-/// Small status pill for the history card header: gold-green "Complete"
-/// for finished rides, red "Canceled" for the rest.
+/// Status text for the history card header: green "Complete" for finished
+/// rides, red "Canceled" for the rest — bare text, no pill around it.
 class _StatusChip extends StatelessWidget {
   final String status;
   const _StatusChip({required this.status});
@@ -524,22 +524,14 @@ class _StatusChip extends StatelessWidget {
   Widget build(BuildContext context) {
     final cancelled = status.toLowerCase().startsWith('cancel');
     final color = cancelled ? const Color(0xFFFF6B6B) : const Color(0xFF4ADE80);
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: color.withValues(alpha: 0.45), width: 0.8),
-      ),
-      child: Text(
-        cancelled ? S.of(context).cancelledBadge : S.of(context).completed,
-        style: TextStyle(
-          fontFamily: 'Poppins',
-          color: color,
-          fontSize: 9.5,
-          fontWeight: FontWeight.w800,
-          letterSpacing: 0.4,
-        ),
+    return Text(
+      cancelled ? S.of(context).cancelledBadge : S.of(context).completed,
+      style: TextStyle(
+        fontFamily: 'Poppins',
+        color: color,
+        fontSize: 10.5,
+        fontWeight: FontWeight.w800,
+        letterSpacing: 0.4,
       ),
     );
   }

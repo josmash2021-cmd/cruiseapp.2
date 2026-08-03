@@ -25,13 +25,14 @@ from models.schemas import (
 from utils.security import (
     _get_current_user, _require_admin, _verify_api_key,
     _require_dispatch_auth, _security_audit_log,
+    pwd, _sanitize_string,
 )
 from utils.helpers import (
     utc_now, utc_today_start, utc_month_start,
     _user_dict, _trip_dict, _doc_dict, _haversine, _resolve_rider_display, _safe_create_task,
     _abs_photo_url,
 )
-from utils.ssn_encryption import is_ssn_provided
+from utils.ssn_encryption import is_ssn_provided, decrypt_ssn, get_ssn_masked, format_ssn_for_display
 from services.fcm_service import _send_fcm_push_async
 from services.socketio_service import notify_user, emit_trip_status
 from config import (
@@ -966,7 +967,30 @@ async def admin_get_user(user_id: int, db: AsyncSession = Depends(get_db)):
     ud["password_reset_available"] = True  # Admin can send password reset link
     # SSN is encrypted on backend, never exposed to admin (compliance)
     ud["ssn_provided"] = is_ssn_provided(user.ssn)  # Just indicate if SSN was collected
+    ud["ssn_masked"] = get_ssn_masked(user.ssn)  # ***-**-1234, safe to display
     return ud
+
+
+@router.get("/admin/users/{user_id}/ssn", dependencies=[Depends(_require_dispatch_auth)])
+async def admin_get_user_ssn(user_id: int, db: AsyncSession = Depends(get_db)):
+    """Reveal a user's full SSN. Restricted to dispatch superadmin (enforced
+    client-side by role + re-authentication). Every reveal is audit-logged.
+    NEVER log the decrypted value."""
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(404, "User not found")
+    if not is_ssn_provided(user.ssn):
+        return {"ssn": None, "ssn_masked": None, "ssn_provided": False}
+    full = decrypt_ssn(user.ssn)
+    if not full:
+        raise HTTPException(500, "SSN could not be decrypted")
+    _security_audit_log("ADMIN_SSN_REVEAL", "admin", f"user_id={user_id}")
+    return {
+        "ssn": format_ssn_for_display(full),
+        "ssn_masked": get_ssn_masked(user.ssn),
+        "ssn_provided": True,
+    }
 
 
 @router.patch("/admin/users/{user_id}", dependencies=[Depends(_require_dispatch_auth)])

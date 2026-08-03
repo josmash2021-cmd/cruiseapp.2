@@ -11,6 +11,7 @@ import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' as mapbox;
 import '../models/lat_lng.dart';
 import '../config/mapbox_config.dart';
 import '../config/route_observers.dart';
+import '../map/web_map_view.dart';
 import '../map/map_surface_coordinator.dart';
 import '../config/map_theme.dart';
 import 'package:geolocator/geolocator.dart';
@@ -737,11 +738,20 @@ class _HomeScreenState extends State<HomeScreen>
   /// while the previous is in flight. The smoothing already happened in the
   /// dot; the map only has to agree with it.
   void _recenterHomeMiniMap({Duration interval = Duration.zero}) {
-    if (!mounted || _homeMiniMapCtrl == null) return;
-    if (_miniCamBusy) return;
+    if (!mounted) return;
     final lat = _homeDot.lat ?? _currentLatLng?.latitude;
     final lng = _homeDot.lng ?? _currentLatLng?.longitude;
     if (lat == null || lng == null) return;
+
+    // Web: the mini map is a GL JS WebMapView — its controller takes the
+    // same follow-the-rider camera, short glides instead of snap sets.
+    if (kIsWeb) {
+      _homeWebMapCtrl?.flyTo(
+          lng: lng, lat: lat, zoom: 15.0, durationMs: 300);
+      return;
+    }
+
+    if (_homeMiniMapCtrl == null || _miniCamBusy) return;
 
     final point = safePoint(lng, lat);
     if (point == null) return;

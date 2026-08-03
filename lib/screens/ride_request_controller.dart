@@ -2738,6 +2738,8 @@ void _showPaymentMethodPickerLegacy(AppColors c, RideOption? option) {
     _webRouteDrawn = false;
     // The sheet unmounts with the phase change; the next one re-measures.
     _sheetHeightPx = 0;
+    _sheetFitDebounce?.cancel();
+    _userTookCamera = false;
     final polyMgr = _polylineAnnotMgr;
     if (polyMgr != null) {
       if (_routeAnnot != null) {

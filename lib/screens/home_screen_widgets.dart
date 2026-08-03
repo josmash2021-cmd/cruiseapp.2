@@ -1492,43 +1492,58 @@ extension _HomeScreenWidgets on _HomeScreenState {
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        // "You" tag — a small gold-rimmed pill riding above
-                        // the arrow, so the marker reads as *you*, not as
-                        // just another pin on the card.
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 9, vertical: 3),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF14141A),
-                            borderRadius: BorderRadius.circular(10),
-                            border: Border.all(
-                              color: _gold.withValues(alpha: 0.55),
-                            ),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withValues(alpha: 0.45),
-                                blurRadius: 6,
-                                offset: const Offset(0, 2),
+                        // "You" tag — gold bubble with a tail, exactly the
+                        // tooltip style the rider pointed at: gold fill,
+                        // black bold text, tiny diamond tail underneath.
+                        Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 10, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: _gold,
+                                borderRadius: BorderRadius.circular(9),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withValues(alpha: 0.45),
+                                    blurRadius: 6,
+                                    offset: const Offset(0, 2),
+                                  ),
+                                ],
                               ),
-                            ],
-                          ),
-                          child: Text(
-                            S.of(context).cruiseYouColumn,
-                            style: const TextStyle(
-                              color: _gold,
-                              fontSize: 10.5,
-                              fontWeight: FontWeight.w800,
-                              letterSpacing: 0.4,
+                              child: Text(
+                                S.of(context).cruiseYouColumn,
+                                style: const TextStyle(
+                                  color: Colors.black,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w900,
+                                  letterSpacing: 0.3,
+                                ),
+                              ),
                             ),
-                          ),
+                            // The tail — a gold square rotated 45°, tucked
+                            // under the bubble so it reads as one tooltip.
+                            Transform.translate(
+                              offset: const Offset(0, -4),
+                              child: Transform.rotate(
+                                angle: 0.785398,
+                                child: Container(
+                                  width: 8,
+                                  height: 8,
+                                  color: _gold,
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
-                        const SizedBox(height: 3),
-                        // Bigger now, and it points: same arrow badge the
-                        // driver's maps draw, fed by the same heading source.
+                        const SizedBox(height: 1),
+                        // Always the plain gold dot — never the arrow. The
+                        // rider's own spot reads as a place, not a vehicle.
                         GoldLocationDotOverlay(
                           bearing: _homeDot.bearing,
-                          heading: true,
-                          size: 56,
+                          heading: false,
+                          size: 64,
                         ),
                       ],
                     ),

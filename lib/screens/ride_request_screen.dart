@@ -549,6 +549,19 @@ class _RideRequestScreenState extends State<RideRequestScreen>
   /// browser map. Native draws through the cinematic instead.
   bool _webRouteDrawn = false;
 
+  /// True once the rider drags or zooms the map themselves — automatic
+  /// camera fits stop fighting their frame until they tap recenter.
+  bool _userTookCamera = false;
+
+  /// Web only: our own flyTo/fitBounds fire onCameraMove too; until this
+  /// moment those are ignored so they don't read as a rider gesture.
+  DateTime _webAutoCameraUntil = DateTime.fromMillisecondsSinceEpoch(0);
+
+  /// Debounce for sheet-height refits: the panel animates ~380 ms and
+  /// reports a new size every frame; fitting on each report made the
+  /// camera bounce nonstop and tore the rider's own zoom apart.
+  Timer? _sheetFitDebounce;
+
   // ── In-place map picker state (RiderPhase.pickingLocation) ──
   // Mirrors the Shopify widget's drop-a-pin mode but inside the same
   // Mapbox canvas — no Navigator push, no second map instance.
@@ -985,6 +998,11 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                   // pin under the finger geocodes as the map is dragged.
                   c.onCameraMove = (_, __, ___) {
                     if (!mounted) return;
+                    // Our own fits land inside the programmatic window —
+                    // anything outside it is the rider's hand.
+                    if (DateTime.now().isAfter(_webAutoCameraUntil)) {
+                      _userTookCamera = true;
+                    }
                     if (_ctrl.state.phase == RiderPhase.pickingLocation) {
                       _pickerScheduleGeocode();
                     }
@@ -1092,6 +1110,10 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                       _pickerScheduleGeocode();
                     }
                   },
+                  // The rider took the camera — stop auto-fitting over
+                  // their own pan/zoom until they tap recenter.
+                  onScrollListener: (_) => _userTookCamera = true,
+                  onZoomListener: (_) => _userTookCamera = true,
                   onMapIdleListener: (_) {
                     if (_ctrl.state.phase == RiderPhase.pickingLocation) {
                       _pickerSettleCtrl?.forward(from: 0);
@@ -1173,11 +1195,13 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                   ],
                 ),
               ),
-              // Bottom floating "Set your drop-off" card.
+              // Bottom floating "Set your drop-off" card — lifted a touch
+              // off the edge so it floats over the map like the rest of
+              // the panels instead of hugging the bezel.
               Positioned(
                 left: 10,
                 right: 10,
-                bottom: 10,
+                bottom: 28,
                 child: _buildPickerFooter(),
               ),
             ],
@@ -1285,15 +1309,6 @@ class _RideRequestScreenState extends State<RideRequestScreen>
             if (phase == RiderPhase.previewRoute ||
                 phase == RiderPhase.selectingRide)
               _buildRoutePreviewSheet(c, bottomPad),
-
-            // ── Trip addresses — pinned directly above the sheet so the
-            // full pickup → dropoff text is always on screen, never
-            // hidden behind the panel or clipped off the map.
-            if ((phase == RiderPhase.previewRoute ||
-                    phase == RiderPhase.selectingRide) &&
-                _ctrl.state.pickupLabel.isNotEmpty &&
-                _ctrl.state.dropoffLabel.isNotEmpty)
-              _buildTripAddressBar(),
 
             // ── Searching bottom card (map visible behind) ──
             if ((phase == RiderPhase.requesting ||

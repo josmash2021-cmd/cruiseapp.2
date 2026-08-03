@@ -1411,43 +1411,39 @@ extension _RideRequestMap on _RideRequestScreenState {
   /// into the inset too — otherwise the top of the route would slide under
   /// the bar on long trips.
   double _cameraBottomInset(double botSafe) {
-    final s = _ctrl.state;
     if (_sheetHeightPx <= 0) {
       final screenH = MediaQuery.of(context).size.height;
       return (screenH * 0.35).clamp(190.0, 320.0) + botSafe + 20;
     }
-    final barVisible = (s.phase == RiderPhase.previewRoute ||
-            s.phase == RiderPhase.selectingRide) &&
-        s.pickupLabel.isNotEmpty &&
-        s.dropoffLabel.isNotEmpty;
-    return _sheetHeightPx +
-        _sheetScreenGap +
-        (barVisible ? 96 : 0) +
-        18;
+    return _sheetHeightPx + _sheetScreenGap + 18;
   }
 
-  /// The sheet reported a new height. Reposition the address bar (setState)
-  /// and reframe the route so it stays fully visible above the panel — the
-  /// sheet grows when a tier is picked (detail row + payment row + button).
+  /// The sheet reported a new height. Store it, then reframe ONCE after
+  /// the panel settles — the 380 ms open/grow animation reports a size
+  /// every frame, and fitting on each report made the camera bounce
+  /// nonstop. Never yanks the camera away from a rider who moved it.
   void _onSheetHeightChanged(double h) {
     if (!mounted || (h - _sheetHeightPx).abs() < 12) return;
-    final firstMeasure = _sheetHeightPx == 0;
     _setState(() => _sheetHeightPx = h);
-    final s = _ctrl.state;
-    if (s.route == null) return;
-    if (s.phase != RiderPhase.previewRoute &&
-        s.phase != RiderPhase.selectingRide) {
-      return;
-    }
-    if (kIsWeb) {
-      _fitWebRoute(s.route!.points, durationMs: firstMeasure ? 1200 : 450);
-      return;
-    }
-    // Native: never fight the cinematic mid-flight — its final frame is
-    // corrected once it lands (see the end of _startCinematicSequence).
-    if (_cinematicRunning) return;
-    if (!_cinematicDone && !firstMeasure) return;
-    _fitRoute(List<LatLng>.from(s.route!.points), preserveCamera: true);
+    _sheetFitDebounce?.cancel();
+    _sheetFitDebounce = Timer(const Duration(milliseconds: 450), () {
+      if (!mounted) return;
+      final s = _ctrl.state;
+      if (s.route == null) return;
+      if (s.phase != RiderPhase.previewRoute &&
+          s.phase != RiderPhase.selectingRide) {
+        return;
+      }
+      // The rider dragged or zoomed — the frame is theirs now; only the
+      // recenter button hands it back to us.
+      if (_userTookCamera) return;
+      if (kIsWeb) {
+        _fitWebRoute(s.route!.points, durationMs: 450);
+        return;
+      }
+      if (_cinematicRunning || !_cinematicDone) return;
+      _fitRoute(List<LatLng>.from(s.route!.points), preserveCamera: true);
+    });
   }
 
   /// Web: fit the whole route above the sheet. No-op without the browser
@@ -1456,6 +1452,9 @@ extension _RideRequestMap on _RideRequestScreenState {
     final web = _webMapCtrl;
     if (web == null || pts.isEmpty) return;
     final botSafe = MediaQuery.of(context).padding.bottom;
+    // This move is ours — onCameraMove must not read it as a rider gesture.
+    _webAutoCameraUntil =
+        DateTime.now().add(Duration(milliseconds: durationMs + 250));
     web.fitBounds(
       [for (final p in pts) (lng: p.longitude, lat: p.latitude)],
       paddingTop: 70,
@@ -1657,6 +1656,9 @@ extension _RideRequestMap on _RideRequestScreenState {
   /// flies to the rider. Safe to call repeatedly — it holds no state, so
   /// the button behind it stays live for as many taps as the rider wants.
   Future<void> _recenterMap() async {
+    // The rider explicitly asked us to re-frame — hand the camera back to
+    // the automatic fits.
+    _userTookCamera = false;
     final s = _ctrl.state;
     // If we have pickup+dropoff, fit both in view
     if (s.pickup != null && s.dropoff != null) {

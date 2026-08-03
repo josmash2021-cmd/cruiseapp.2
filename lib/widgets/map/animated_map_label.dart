@@ -127,11 +127,11 @@ class _AnimatedMapLabelState extends State<AnimatedMapLabel>
   Widget _pill(String kind, String address, IconData icon, double glowAlpha,
       double blur) {
     return Container(
-      padding: const EdgeInsets.fromLTRB(6, 6, 12, 6),
+      padding: const EdgeInsets.fromLTRB(5, 5, 10, 5),
       decoration: BoxDecoration(
         // Pure black per the 2026-04-27 spec — was navy (0xF50F1120).
         color: Colors.black,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(10),
         border: Border.all(
           color: _gold.withValues(alpha: 0.35),
           width: 1,
@@ -153,23 +153,23 @@ class _AnimatedMapLabelState extends State<AnimatedMapLabel>
         children: [
           // Gold icon chip
           Container(
-            width: 22,
-            height: 22,
+            width: 19,
+            height: 19,
             decoration: BoxDecoration(
               gradient: const LinearGradient(
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
                 colors: [Color(0xFFF5DC7A), Color(0xFFD4A800)],
               ),
-              borderRadius: BorderRadius.circular(6),
+              borderRadius: BorderRadius.circular(5),
             ),
             alignment: Alignment.center,
-            child: Icon(icon, color: Colors.black, size: 13),
+            child: Icon(icon, color: Colors.black, size: 11),
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: 6),
           // Kind + address stack
           ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 180),
+            constraints: const BoxConstraints(maxWidth: 130),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -181,9 +181,9 @@ class _AnimatedMapLabelState extends State<AnimatedMapLabel>
                   style: const TextStyle(
                     fontFamily: 'Poppins',
                     color: _gold,
-                    fontSize: 8.5,
+                    fontSize: 7.5,
                     fontWeight: FontWeight.w800,
-                    letterSpacing: 1.4,
+                    letterSpacing: 1.2,
                     height: 1.0,
                   ),
                 ),
@@ -195,7 +195,7 @@ class _AnimatedMapLabelState extends State<AnimatedMapLabel>
                   style: const TextStyle(
                     fontFamily: 'Poppins',
                     color: Colors.white,
-                    fontSize: 12,
+                    fontSize: 10.5,
                     fontWeight: FontWeight.w600,
                     height: 1.15,
                   ),

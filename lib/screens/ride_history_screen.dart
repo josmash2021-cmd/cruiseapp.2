@@ -123,6 +123,7 @@ class _RideHistoryScreenState extends State<RideHistoryScreen> {
               createdAt:
                   DateTime.tryParse(t['created_at']?.toString() ?? '') ??
                   DateTime.now(),
+              status: t['status']?.toString() ?? 'completed',
               pickupLat: (t['pickup_lat'] as num?)?.toDouble(),
               pickupLng: (t['pickup_lng'] as num?)?.toDouble(),
             );
@@ -373,7 +374,14 @@ class _RideHistoryScreenState extends State<RideHistoryScreen> {
                   ),
                 ),
                 const SizedBox(width: 10),
-                _PriceText(raw: trip.price),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    _StatusChip(status: trip.status),
+                    const SizedBox(height: 4),
+                    _PriceText(raw: trip.price),
+                  ],
+                ),
               ],
             ),
             const SizedBox(height: 14),
@@ -506,6 +514,37 @@ class _RideHistoryScreenState extends State<RideHistoryScreen> {
 /// dollars + small cents so amounts read like a premium receipt
 /// instead of a chunky chip. White-on-black, no background.
 /// Falls back to the raw string if the format is unexpected.
+/// Small status pill for the history card header: gold-green "Complete"
+/// for finished rides, red "Canceled" for the rest.
+class _StatusChip extends StatelessWidget {
+  final String status;
+  const _StatusChip({required this.status});
+
+  @override
+  Widget build(BuildContext context) {
+    final cancelled = status.toLowerCase().startsWith('cancel');
+    final color = cancelled ? const Color(0xFFFF6B6B) : const Color(0xFF4ADE80);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color.withValues(alpha: 0.45), width: 0.8),
+      ),
+      child: Text(
+        cancelled ? S.of(context).cancelledBadge : S.of(context).completed,
+        style: TextStyle(
+          fontFamily: 'Poppins',
+          color: color,
+          fontSize: 9.5,
+          fontWeight: FontWeight.w800,
+          letterSpacing: 0.4,
+        ),
+      ),
+    );
+  }
+}
+
 class _PriceText extends StatelessWidget {
   final String raw;
   const _PriceText({required this.raw});

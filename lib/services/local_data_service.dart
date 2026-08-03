@@ -52,6 +52,11 @@ class TripHistoryItem {
   final String duration;
   final DateTime createdAt;
 
+  /// Backend trip status ('completed', 'cancelled', …). Drives the
+  /// Complete/Canceled chip on the history card. Defaults to 'completed'
+  /// for legacy cached entries that predate the field.
+  final String status;
+
   /// Where the pickup actually was, when the address itself does not say.
   ///
   /// A trip booked from the rider's own position is stored with the literal
@@ -70,6 +75,7 @@ class TripHistoryItem {
     required this.miles,
     required this.duration,
     required this.createdAt,
+    this.status = 'completed',
     this.pickupLat,
     this.pickupLng,
   });
@@ -83,6 +89,7 @@ class TripHistoryItem {
     'miles': miles,
     'duration': duration,
     'createdAt': createdAt.toIso8601String(),
+    'status': status,
     'pickupLat': pickupLat,
     'pickupLng': pickupLng,
   };
@@ -99,6 +106,7 @@ class TripHistoryItem {
       createdAt:
           DateTime.tryParse(json['createdAt']?.toString() ?? '') ??
           DateTime.now(),
+      status: json['status']?.toString() ?? 'completed',
       pickupLat: (json['pickupLat'] as num?)?.toDouble(),
       pickupLng: (json['pickupLng'] as num?)?.toDouble(),
     );

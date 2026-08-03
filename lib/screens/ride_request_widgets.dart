@@ -821,92 +821,6 @@ extension _RideRequestWidgets on _RideRequestScreenState {
     return flush ? 0 : 24;
   }
 
-  /// Pickup → dropoff addresses, pinned directly above the choose-a-vehicle
-  /// sheet. The map pins show WHERE the trip goes; this bar keeps the WHAT
-  /// (the full typed addresses) on screen at all times — the sheet covers
-  /// the lower map and the floating pin labels only hold a couple of words.
-  Widget _buildTripAddressBar() {
-    final s = _ctrl.state;
-    final bottom = _sheetHeightPx > 0
-        ? _sheetHeightPx + _sheetScreenGap + 10
-        // First frames, before the sheet reports its height: park the bar
-        // over the old estimate so it never flashes behind the panel.
-        : (MediaQuery.of(context).size.height * 0.35).clamp(190.0, 320.0) +
-            MediaQuery.of(context).padding.bottom + 30;
-    return AnimatedPositioned(
-      duration: const Duration(milliseconds: 250),
-      curve: Curves.easeOutCubic,
-      left: 14,
-      right: 14,
-      bottom: bottom,
-      child: IgnorePointer(
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
-          decoration: neuBox(radius: 18),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _addressBarRow(
-                icon: Icons.circle,
-                iconColor: const Color(0xFFE8C547),
-                text: s.pickupLabel,
-              ),
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 7),
-                child: Row(
-                  children: [
-                    const SizedBox(width: 5),
-                    Container(
-                      width: 1.4,
-                      height: 12,
-                      color: Colors.white.withValues(alpha: 0.18),
-                    ),
-                  ],
-                ),
-              ),
-              _addressBarRow(
-                icon: Icons.flag_rounded,
-                iconColor: Colors.white,
-                text: s.dropoffLabel,
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _addressBarRow({
-    required IconData icon,
-    required Color iconColor,
-    required String text,
-  }) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.only(top: 2),
-          child: Icon(icon, size: 11, color: iconColor),
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: Text(
-            text,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              fontFamily: 'Poppins',
-              color: Colors.white,
-              fontSize: 12.5,
-              fontWeight: FontWeight.w600,
-              height: 1.25,
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
   // Small pill used in the sheet header (airport / promo chips).
   Widget _headerPill({
     IconData? icon,
@@ -1189,12 +1103,12 @@ extension _RideRequestWidgets on _RideRequestScreenState {
     // numbers are the ones to nudge if the pill reads high or low.
     const double pinOnScreenHalfWidth = 28.0;
     const double pinHeadLift = 34.0; // head centre above the tip
-    const double sideGap = 14.0; // clear gap, pill never touches the pin
-    // Pill height is deterministic: 6px padding top/bottom + the taller
-    // of the 22px icon chip and the kind+address stack (~25px), + border.
-    const double pillHeight = 39.0;
+    const double sideGap = 10.0; // clear gap, pill never touches the pin
+    // Pill height is deterministic: 5px padding top/bottom + the taller
+    // of the 19px icon chip and the kind+address stack (~22px), + border.
+    const double pillHeight = 34.0;
     const double pillHalfHeight = pillHeight / 2;
-    const double pillEstimatedWidth = 230.0; // icon+gap+maxWidth(180)+padding
+    const double pillEstimatedWidth = 170.0; // icon+gap+maxWidth(130)+padding
 
     // Map viewport bounds so we can clamp the label inside the visible area.
     final mq = MediaQuery.of(context);

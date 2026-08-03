@@ -107,9 +107,12 @@ extension _HomeScreenWidgets on _HomeScreenState {
     final screenW = MediaQuery.of(context).size.width;
     final topPad = MediaQuery.of(context).padding.top;
 
-    return Container(
-      color: neuBase,
-      child: CustomScrollView(
+    return Stack(
+      children: [
+        // Live backdrop: dot grid + slow drifting glows (gold/white on
+        // black) behind every card on the page.
+        const Positioned.fill(child: _HomeBackdrop()),
+        CustomScrollView(
         // Scrolls in every state now. It was locked while a ride was
         // active because everything below the hero card was removed and
         // there was nothing to scroll to; the content is dimmed rather
@@ -284,7 +287,8 @@ extension _HomeScreenWidgets on _HomeScreenState {
           ],
           )),
         ],
-      ),
+          ),
+        ],
     );
   }
 
@@ -1750,113 +1754,138 @@ extension _HomeScreenWidgets on _HomeScreenState {
       },
     ];
 
-    // The fleet uses the quick-access design: a 2×2 grid of roomy cards,
-    // visual on top (the car, centred) and the words below it, centred —
-    // name, then the wait under it. 12 px apart, radius 20, padding 14:
-    // the same numbers the quick-access tiles carry, so the two sections
-    // read as one card family.
-    const double gap = 12.0;
+    // The card keeps its shape as tiers are added instead of getting
+    // narrower against a fixed height. Four tiers in the width three used
+    // to have would otherwise leave a card half as wide as it is tall —
+    // stretched, which is exactly what a vehicle card must not look like.
+    // Same geometry as the picker's cards, down to the numbers: 8 px apart,
+    // height 1.10 x width, everything inside scaled off a 120 px base. They
+    // are the same card in two places, and at 1 : 1.39 this one carried a
+    // band of dead air the other did not.
+    const double gap = 8.0;
+    final double cardW = (screenW - 48 - gap * 3) / 4;
+    final double cardH = (cardW * 1.10).clamp(84.0, 120.0);
+    final double k = cardH / 120.0;
 
-    Widget card(Map<String, Object> v) {
-      final tier = v['tier'] as String;
-      final displayName = v['displayName'] as String;
-      final isVIP = tier == 'VIP';
+    return Row(
+      children: vehicles.map((v) {
+        final idx = v['idx'] as int;
+        final tier = v['tier'] as String;
+        final displayName = v['displayName'] as String;
+        final isVIP = tier == 'VIP';
 
-      final rideId = isVIP
-          ? 'suburban'
-          : tier == 'SUV_XL'
-              ? 'suv_xl'
-              : tier == 'PREMIUM'
-                  ? 'camry'
-                  : 'fusion';
+        final rideId = isVIP
+            ? 'suburban'
+            : tier == 'SUV_XL'
+                ? 'suv_xl'
+                : tier == 'PREMIUM'
+                    ? 'camry'
+                    : 'fusion';
 
-      return IgnorePointer(
-        ignoring: active,
-        child: Opacity(
-          opacity: active ? 0.45 : 1.0,
-          child: GestureDetector(
-            onTap: () => _openSearchThenRide(rideId: rideId),
-            child: Container(
-              clipBehavior: Clip.antiAlias,
-              // No ring on any of them.
-              //
-              // PREMIUM carried a permanent gold border, which read as
-              // "this one is selected" on a grid where nothing is
-              // selected — these four are a way in, not a choice being
-              // held. The picker lost the same marking for the same
-              // reason.
-              decoration: neuBox(radius: 20),
-              child: Padding(
-                padding: const EdgeInsets.all(14),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
-                    SizedBox(
-                      height: 62,
-                      width: double.infinity,
-                      child: CarImage3D(
-                        assetPath: 'assets/images/${v['image']}',
-                        cacheWidth: 640,
-                        alignment: Alignment.center,
-                        fallback: Icon(
-                          Icons.directions_car_rounded,
-                          color: _gold.withValues(alpha: 0.5),
-                          size: 40,
+        return Expanded(
+          child: Padding(
+            padding: EdgeInsets.only(right: idx < 3 ? gap : 0),
+            child: IgnorePointer(
+              ignoring: active,
+              child: Opacity(
+                opacity: active ? 0.45 : 1.0,
+                child: GestureDetector(
+                  onTap: () => _openSearchThenRide(rideId: rideId),
+                  child: Container(
+                    height: cardH,
+                    clipBehavior: Clip.antiAlias,
+                    // No ring on any of them.
+                    //
+                    // PREMIUM carried a permanent gold border, which read as
+                    // "this one is selected" on a row where nothing is
+                    // selected — these four are a way in, not a choice being
+                    // held. The picker lost the same marking for the same
+                    // reason.
+                    decoration: neuBox(radius: 24),
+                    child: Stack(
+                      children: [
+                        // Display name pinned to the top
+                        Positioned(
+                          top: cardH * 0.083,
+                          left: 8,
+                          right: 8,
+                          child: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Text(
+                              displayName,
+                              textAlign: TextAlign.center,
+                              maxLines: 1,
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: math.max(10.0, 13 * k),
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: 0.5,
+                              ),
+                            ),
+                          ),
                         ),
-                      ),
+                        // The wait, under the car.
+                        //
+                        // Just the range — no "of wait", no icon. On a card
+                        // this size the number is the whole message, and a
+                        // label beside it would take the room the car needs.
+                        Positioned(
+                          left: 8,
+                          right: 8,
+                          bottom: cardH * 0.122,
+                          child: Text(
+                            _homeWaitRangeText(),
+                            textAlign: TextAlign.center,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: Colors.white.withValues(alpha: 0.55),
+                              fontSize: math.max(10.0, 11 * k),
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: 0.2,
+                            ),
+                          ),
+                        ),
+                        // Car centred in the band the title and the wait
+                        // line leave between them.
+                        //
+                        // Measured, not guessed: the title runs to y=32 and
+                        // the wait line starts at y=126, so a 58 px car
+                        // placed at y=50 has 18 px of air above and below.
+                        // Anchoring it to the bottom instead pushed it onto
+                        // the minutes — that is how they ended up behind
+                        // the wheels — and left the card top-heavy.
+                        // 14 instead of 8: the render is far wider than it
+                        // is tall, so on a card this narrow the width is
+                        // what sets the car's size. Trimming the box height
+                        // would leave it exactly as big as it was.
+                        Positioned(
+                          left: 10,
+                          right: 10,
+                          top: cardH * 0.295,
+                          child: SizedBox(
+                            height: cardH * 0.383,
+                            child: CarImage3D(
+                              assetPath: 'assets/images/${v['image']}',
+                              cacheWidth: 640,
+                              alignment: Alignment.bottomCenter,
+                              fallback: Icon(
+                                Icons.directions_car_rounded,
+                                color: _gold.withValues(alpha: 0.5),
+                                size: 40,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
-                    const SizedBox(height: 10),
-                    Text(
-                      displayName,
-                      maxLines: 1,
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: 0.5,
-                      ),
-                    ),
-                    Text(
-                      _homeWaitRangeText(),
-                      maxLines: 1,
-                      textAlign: TextAlign.center,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.55),
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: 0.2,
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
               ),
             ),
           ),
-        ),
-      );
-    }
-
-    return Column(
-      children: [
-        Row(
-          children: [
-            Expanded(child: card(vehicles[0])),
-            const SizedBox(width: gap),
-            Expanded(child: card(vehicles[1])),
-          ],
-        ),
-        const SizedBox(height: gap),
-        Row(
-          children: [
-            Expanded(child: card(vehicles[2])),
-            const SizedBox(width: gap),
-            Expanded(child: card(vehicles[3])),
-          ],
-        ),
-      ],
+        );
+      }).toList(),
     );
   }
 
@@ -2490,4 +2519,46 @@ class RideCarIcon extends StatelessWidget {
     size: Size(size, size),
     painter: _CarIconPainter(),
   );
+}
+
+
+/// Home backdrop: a fine dot grid over the base colour, behind every
+/// card on the page. Pure paint, no assets, no animation.
+class _HomeBackdrop extends StatelessWidget {
+  const _HomeBackdrop();
+
+  @override
+  Widget build(BuildContext context) {
+    return const RepaintBoundary(
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          ColoredBox(color: neuBase),
+          CustomPaint(painter: _HomeDotsPainter()),
+        ],
+      ),
+    );
+  }
+}
+
+
+/// Fine, even dot grid — the same speckled texture the fleet cards
+/// carry, scaled up to the whole page.
+class _HomeDotsPainter extends CustomPainter {
+  const _HomeDotsPainter();
+
+  static const double spacing = 26.0;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()..color = Colors.white.withValues(alpha: 0.05);
+    for (var y = spacing / 2; y < size.height; y += spacing) {
+      for (var x = spacing / 2; x < size.width; x += spacing) {
+        canvas.drawCircle(Offset(x, y), 1.0, paint);
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(_HomeDotsPainter old) => false;
 }

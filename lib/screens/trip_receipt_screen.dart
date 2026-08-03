@@ -1,3 +1,5 @@
+import 'dart:ui' as ui;
+
 import 'package:flutter/material.dart';
 
 import '../config/app_theme.dart';
@@ -271,7 +273,33 @@ class _TripReceiptScreenState extends State<TripReceiptScreen>
                       const SizedBox(height: 24),
 
                       // ── INVOICE CARD ──
-                      Container(
+                      // Torn-receipt bottom: the card ends in a sawtooth
+                      // edge, and a soft shadow under the teeth fakes the
+                      // slight curl of a ripped paper slip.
+                      Stack(
+                        clipBehavior: Clip.none,
+                        children: [
+                          // Curl shadow, only visible through the teeth.
+                          Positioned(
+                            left: 14,
+                            right: 14,
+                            bottom: -7,
+                            height: 18,
+                            child: ImageFiltered(
+                              imageFilter: ui.ImageFilter.blur(
+                                  sigmaX: 7, sigmaY: 7),
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  color: Colors.black
+                                      .withValues(alpha: 0.55),
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                              ),
+                            ),
+                          ),
+                          ClipPath(
+                            clipper: _ReceiptEdgeClipper(),
+                            child: Container(
                         padding: const EdgeInsets.all(22),
                         decoration: _neu(radius: 26),
                         child: Column(
@@ -376,20 +404,16 @@ class _TripReceiptScreenState extends State<TripReceiptScreen>
                                   mainAxisSize: MainAxisSize.min,
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    // Centred over the car render below it
-                                    // (same 88-wide box), not on the card's
-                                    // left edge.
-                                    SizedBox(
-                                      width: 88,
-                                      child: Text(
-                                        _tierLabel(trip.rideName),
-                                        textAlign: TextAlign.center,
-                                        style: TextStyle(
-                                          color: c.textPrimary,
-                                          fontSize: 15,
-                                          fontWeight: FontWeight.w800,
-                                          letterSpacing: 0.5,
-                                        ),
+                                    // Tier name hugging the left edge; the
+                                    // car centred in its own box below.
+                                    Text(
+                                      _tierLabel(trip.rideName),
+                                      textAlign: TextAlign.left,
+                                      style: TextStyle(
+                                        color: c.textPrimary,
+                                        fontSize: 15,
+                                        fontWeight: FontWeight.w800,
+                                        letterSpacing: 0.5,
                                       ),
                                     ),
                                     const SizedBox(height: 4),
@@ -399,11 +423,10 @@ class _TripReceiptScreenState extends State<TripReceiptScreen>
                                       child: Image.asset(
                                         _tierAsset(trip.rideName),
                                         fit: BoxFit.contain,
-                                        // Hugging the left edge, directly
-                                        // under the tier name — centred in
-                                        // its box it drifted right of the
-                                        // label it belongs to.
-                                        alignment: Alignment.centerLeft,
+                                        // A touch left of centre — the
+                                        // render's cabin mass sits right,
+                                        // so dead-centre reads as right.
+                                        alignment: Alignment(-0.45, 0),
                                         errorBuilder: (_, __, ___) =>
                                             const SizedBox.shrink(),
                                       ),
@@ -529,38 +552,52 @@ class _TripReceiptScreenState extends State<TripReceiptScreen>
                                           const SizedBox(height: 2),
                                         ],
                                       ),
-                                      // The tag sits in the line's break,
-                                      // centred on the rail.
+                                      // The tag sits in the line's break:
+                                      // a small pill, tilted a touch like
+                                      // it was stamped on the slip. Kept
+                                      // tight (font 7, short padding) so
+                                      // it clears the card's clip — a
+                                      // wider pill gets cut by the edge.
                                       if (_isCancelled)
-                                        Positioned.fill(
+                                        Positioned(
+                                          left: -30,
+                                          right: -30,
+                                          top: 0,
+                                          bottom: 0,
                                           child: Center(
-                                            child: Container(
-                                              padding: const EdgeInsets
-                                                  .symmetric(
-                                                  horizontal: 6,
-                                                  vertical: 2),
-                                              decoration: BoxDecoration(
-                                                color: _surface,
-                                                borderRadius:
-                                                    BorderRadius.circular(6),
-                                                border: Border.all(
-                                                  color:
-                                                      const Color(0xFFE57373)
-                                                          .withValues(
-                                                              alpha: 0.9),
-                                                  width: 1.2,
+                                            child: Transform.rotate(
+                                              angle: -0.18,
+                                              child: Container(
+                                                padding: const EdgeInsets
+                                                    .symmetric(
+                                                    horizontal: 5,
+                                                    vertical: 1),
+                                                decoration: BoxDecoration(
+                                                  color: _surface,
+                                                  borderRadius:
+                                                      BorderRadius.circular(
+                                                          4),
+                                                  border: Border.all(
+                                                    color: const Color(
+                                                            0xFFE57373)
+                                                        .withValues(
+                                                            alpha: 0.9),
+                                                    width: 1,
+                                                  ),
                                                 ),
-                                              ),
-                                              child: Text(
-                                                S.of(context).cancelledBadge
-                                                    .toUpperCase(),
-                                                style: const TextStyle(
-                                                  color:
-                                                      Color(0xFFE57373),
-                                                  fontSize: 8,
-                                                  fontWeight:
-                                                      FontWeight.w900,
-                                                  letterSpacing: 1.2,
+                                                child: Text(
+                                                  S.of(context)
+                                                      .cancelledBadge
+                                                      .toUpperCase(),
+                                                  softWrap: false,
+                                                  style: const TextStyle(
+                                                    color: Color(
+                                                        0xFFE57373),
+                                                    fontSize: 7,
+                                                    fontWeight:
+                                                        FontWeight.w900,
+                                                    letterSpacing: 0.8,
+                                                  ),
                                                 ),
                                               ),
                                             ),
@@ -680,8 +717,13 @@ class _TripReceiptScreenState extends State<TripReceiptScreen>
                             ],
                           ],
                         ),
+                          ),
+                          ),
+                        ],
                       ),
 
+                      // No thanks on a ride that never happened.
+                      if (!_isCancelled) ...[
                       const SizedBox(height: 20),
                       Center(
                         child: Text(
@@ -693,6 +735,7 @@ class _TripReceiptScreenState extends State<TripReceiptScreen>
                           ),
                         ),
                       ),
+                      ],
                     ],
                   ),
                 ),
@@ -1032,14 +1075,14 @@ class _RouteConnectorPainter extends CustomPainter {
     final x = size.width / 2;
     const inset = 1.0;
 
-    // Solid line — not dashes. One stroke pickup-side to dropoff-side.
     final linePaint = Paint()
       ..color = const Color(0x59E8C547)
       ..strokeWidth = 1.5
       ..strokeCap = StrokeCap.round;
 
     if (cancelled) {
-      // Two segments with a break in the middle for the tag; no pulse.
+      // Two solid segments with a break in the middle for the tag; no
+      // pulse — nothing is moving on a ride that never happened.
       const gapHalf = 16.0;
       final mid = size.height / 2;
       canvas.drawLine(
@@ -1050,8 +1093,15 @@ class _RouteConnectorPainter extends CustomPainter {
       return;
     }
 
-    canvas.drawLine(
-        Offset(x, inset), Offset(x, size.height - inset), linePaint);
+    // Live trips: dashed base line with the travelling glow pulse.
+    const dashH = 3.5;
+    const gap = 3.5;
+    double y = inset;
+    while (y < size.height - inset) {
+      final end = (y + dashH).clamp(y, size.height - inset);
+      canvas.drawLine(Offset(x, y), Offset(x, end), linePaint);
+      y += dashH + gap;
+    }
 
     // Traveling glow pulse, eased, fading near the ends
     final eased = Curves.easeInOut.transform(t);
@@ -1181,4 +1231,46 @@ class _SkeletonBar extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Torn-receipt edge: keeps the card's top corners rounded but replaces
+/// the bottom edge with a sawtooth, like a slip ripped off the roll.
+class _ReceiptEdgeClipper extends CustomClipper<Path> {
+  /// How deep each tooth bites, in logical pixels.
+  static const double depth = 8.0;
+
+  /// Tooth width — narrow enough to read as serration, wide enough to
+  /// survive anti-aliasing at phone densities.
+  static const double tooth = 12.0;
+
+  /// Top corner radius, matching the card's _neu(radius: 26).
+  static const double radius = 26.0;
+
+  @override
+  Path getClip(Size size) {
+    final w = size.width;
+    final h = size.height;
+    final baseY = h - depth;
+    final path = Path()
+      ..moveTo(0, radius)
+      ..quadraticBezierTo(0, 0, radius, 0)
+      ..lineTo(w - radius, 0)
+      ..quadraticBezierTo(w, 0, w, radius)
+      ..lineTo(w, baseY);
+    // Zigzag back along the bottom, right to left: each tooth dips to
+    // baseY + depth at its midpoint and returns to the base line.
+    var x = w;
+    while (x > 0) {
+      final next = (x - tooth).clamp(0.0, w);
+      path
+        ..lineTo((x + next) / 2, baseY + depth)
+        ..lineTo(next, baseY);
+      x = next;
+    }
+    path.close();
+    return path;
+  }
+
+  @override
+  bool shouldReclip(_ReceiptEdgeClipper old) => false;
 }

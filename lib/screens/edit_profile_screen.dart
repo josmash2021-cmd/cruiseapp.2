@@ -1,14 +1,17 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import '../config/app_theme.dart';
 import '../l10n/app_localizations.dart';
 import '../services/api_service.dart';
 import '../services/firebase_storage_service.dart';
+import '../services/haptic_service.dart';
 import '../services/photo_recovery_service.dart';
 import '../services/user_session.dart';
 import '../widgets/neu_style.dart';
 import '../widgets/user_profile_photo.dart';
+import 'driver/driver_reset_password_screen.dart';
 
 class EditProfileScreen extends StatefulWidget {
   const EditProfileScreen({super.key});
@@ -31,6 +34,37 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   bool _loading = false;
   bool _saving = false;
 
+  /// Digits only, without the US country code.
+  static String _phoneDigits(String raw) {
+    var d = raw.replaceAll(RegExp(r'\D'), '');
+    if (d.startsWith('1') && d.length > 10) d = d.substring(1);
+    if (d.length > 10) d = d.substring(d.length - 10);
+    return d;
+  }
+
+  /// Display form: +1 (XXX) XXX-XXXX. Empty input stays empty.
+  static String _formatPhone(String digits) {
+    if (digits.isEmpty) return '';
+    final b = StringBuffer('+1 (');
+    b.write(digits.substring(0, digits.length < 3 ? digits.length : 3));
+    if (digits.length >= 3) b.write(')');
+    if (digits.length > 3) {
+      b.write(' ');
+      b.write(digits.substring(3, digits.length < 6 ? digits.length : 6));
+    }
+    if (digits.length > 6) {
+      b.write('-');
+      b.write(digits.substring(6));
+    }
+    return b.toString();
+  }
+
+  /// Storage form: E.164 (+1XXXXXXXXXX) — what the backend holds.
+  static String _phoneE164(String display) {
+    final d = _phoneDigits(display);
+    return d.isEmpty ? '' : '+1$d';
+  }
+
   /// Original values loaded from the session — the Save button only appears
   /// when email/phone differ from these or a new photo was picked.
   String _origEmail = '';
@@ -43,7 +77,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   bool get _hasChanges =>
       _pendingPhotoPath != null ||
       _emailCtrl.text.trim() != _origEmail.trim() ||
-      _phoneCtrl.text.trim() != _origPhone.trim();
+      _phoneE164(_phoneCtrl.text) != _origPhone;
 
   void _onFieldChanged() => setState(() {});
 
@@ -73,9 +107,10 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       _firstNameCtrl.text = user?['firstName'] ?? '';
       _lastNameCtrl.text = user?['lastName'] ?? '';
       _emailCtrl.text = user?['email'] ?? '';
-      _phoneCtrl.text = user?['phone'] ?? '';
+      // Stored as E.164 or bare digits; shown formatted.
+      _phoneCtrl.text = _formatPhone(_phoneDigits(user?['phone'] ?? ''));
       _origEmail = _emailCtrl.text;
-      _origPhone = _phoneCtrl.text;
+      _origPhone = _phoneE164(_phoneCtrl.text);
       _photoPath = user?['photoPath'] ?? '';
       _photoUrl = user?['photoUrl'] ?? UserSession.photoUrlNotifier.value;
       _gender = user?['gender'] ?? '';
@@ -243,7 +278,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     await UserSession.updateField('firstName', first);
     await UserSession.updateField('lastName', last);
     await UserSession.updateField('email', _emailCtrl.text.trim());
-    await UserSession.updateField('phone', _phoneCtrl.text.trim());
+    await UserSession.updateField('phone', _phoneE164(_phoneCtrl.text));
     await UserSession.updateField('photoPath', _photoPath);
     if (_gender.isNotEmpty) {
       await UserSession.updateField('gender', _gender);
@@ -255,7 +290,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         'first_name': first,
         'last_name': last,
         'email': _emailCtrl.text.trim(),
-        'phone': _phoneCtrl.text.trim(),
+        'phone': _phoneE164(_phoneCtrl.text),
         if (_gender.isNotEmpty) 'gender': _gender,
       });
     } catch (e) {
@@ -268,8 +303,19 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     Navigator.of(context).pop(true); // true = changed
   }
 
+  /// Same emailed-code reset the driver app uses — the screen sends the
+  /// code to the account's own address on open.
+  Future<void> _openPasswordReset() async {
+    HapticService.selectionClick();
+    final changed = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(builder: (_) => const DriverResetPasswordScreen()),
+    );
+    if (changed == true && mounted) {
+      _showSnack(S.of(context).passwordChanged);
+    }
+  }
+
   void _showSnack(String msg) {
-    final c = AppColors.of(context);
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(msg),
@@ -483,6 +529,50 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                       _phoneCtrl,
                       Icons.phone_outlined,
                       keyboardType: TextInputType.phone,
+                      inputFormatters: [_UsPhoneFormatter()],
+                    ),
+                    const SizedBox(height: 14),
+                    // Password reset — a door, not an input. Same emailed-code
+                    // flow the driver app uses.
+                    GestureDetector(
+                      onTap: _openPasswordReset,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 16,
+                        ),
+                        decoration: neuBox(radius: 14),
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 38,
+                              height: 38,
+                              decoration: neuBox(radius: 12, pressed: true),
+                              child: const Icon(
+                                Icons.lock_outline_rounded,
+                                color: _gold,
+                                size: 19,
+                              ),
+                            ),
+                            const SizedBox(width: 13),
+                            Expanded(
+                              child: Text(
+                                S.of(context).forgotPassword,
+                                style: TextStyle(
+                                  color: c.textPrimary,
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                            Icon(
+                              Icons.chevron_right_rounded,
+                              color: Colors.white.withValues(alpha: 0.3),
+                              size: 22,
+                            ),
+                          ],
+                        ),
+                      ),
                     ),
                     const SizedBox(height: 32),
                   ],
@@ -502,6 +592,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     IconData icon, {
     TextInputType keyboardType = TextInputType.text,
     bool readOnly = false,
+    List<TextInputFormatter>? inputFormatters,
   }) {
     return Opacity(
       opacity: readOnly ? 0.5 : 1.0,
@@ -513,6 +604,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
           keyboardType: keyboardType,
           readOnly: readOnly,
           enabled: !readOnly,
+          inputFormatters: inputFormatters,
           style: TextStyle(fontSize: 16, color: c.textPrimary),
           decoration: InputDecoration(
             prefixIcon: Icon(
@@ -533,6 +625,27 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Live US phone mask: whatever the user types (digits, spaces, an
+/// existing +1) collapses to digits and comes back as +1 (XXX) XXX-XXXX,
+/// capped at 10 digits. The cursor parks at the end — acceptable on a
+/// single-line phone field, and far simpler than mask-aware caret math.
+class _UsPhoneFormatter extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    var d = newValue.text.replaceAll(RegExp(r'\D'), '');
+    if (d.startsWith('1')) d = d.substring(1);
+    if (d.length > 10) d = d.substring(0, 10);
+    final text = _EditProfileScreenState._formatPhone(d);
+    return TextEditingValue(
+      text: text,
+      selection: TextSelection.collapsed(offset: text.length),
     );
   }
 }

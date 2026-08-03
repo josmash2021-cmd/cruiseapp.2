@@ -506,16 +506,13 @@ class _RidePaymentMethodScreenState extends State<RidePaymentMethodScreen>
               ),
             ),
 
-            // ── Keep this one for next time ──
+            // ── Confirm + keep ──
             //
-            // Only once something is selected, and it slides up rather than
-            // appearing: a button that materialises under the thumb is a
+            // Two buttons, two decisions: Continuar takes the selected
+            // method for THIS ride and leaves; Set as default also keeps
+            // it for the next ones. Both slide up only once something is
+            // selected — a button that materialises under the thumb is a
             // button people press by accident.
-            //
-            // Its absence is meaningful too. Leaving by the back arrow
-            // without pressing it is the rider saying "just this ride" —
-            // there is no separate confirm to hunt for, because choosing is
-            // already confirmed the moment they tap a card.
             AnimatedSize(
               duration: const Duration(milliseconds: 340),
               curve: Curves.easeInOutCubicEmphasized,
@@ -526,7 +523,44 @@ class _RidePaymentMethodScreenState extends State<RidePaymentMethodScreen>
                       top: false,
                       child: Padding(
                         padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
-                        child: GestureDetector(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            // Continuar: confirm for this ride, don't
+                            // touch the stored default.
+                            GestureDetector(
+                              onTap: () {
+                                HapticService.selectionClick();
+                                Navigator.of(context).pop(_selected);
+                              },
+                              child: Container(
+                                height: 52,
+                                alignment: Alignment.center,
+                                decoration: BoxDecoration(
+                                  color: _gold,
+                                  borderRadius: BorderRadius.circular(16),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: _gold.withValues(alpha: 0.3),
+                                      offset: const Offset(0, 4),
+                                      blurRadius: 12,
+                                    ),
+                                  ],
+                                ),
+                                child: Text(
+                                  S.of(context).continueBtn,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    color: Color(0xFF1A1400),
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 10),
+                            GestureDetector(
                           onTap: _savingDefault ? null : _saveAsDefault,
                           child: Container(
                             height: 52,
@@ -560,6 +594,8 @@ class _RidePaymentMethodScreenState extends State<RidePaymentMethodScreen>
                             ),
                           ),
                         ),
+                          ],
+                          ),
                       ),
                     ),
             ),

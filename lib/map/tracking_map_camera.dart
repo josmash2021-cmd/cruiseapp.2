@@ -220,13 +220,23 @@ class TrackingMapCamera {
   double _navZoom = 17.0;
   DateTime? _lastNavFrameAt;
 
+  /// Smoothed screen-y where the car is pinned. Null until the first chase
+  /// frame (intro or steady state) seeds it. Smoothed with the same
+  /// low-pass as zoom/pitch: the raw target jumps whenever the cards
+  /// change height (phase flip, ETA banner), and handing setCamera a new
+  /// anchor in one frame slides the car across the screen in one frame.
+  double? _navAnchorY;
+
   /// Tilt of the chase view. This is what "the camera sits behind the car"
   /// means: the map leans away from the viewer so the road the car is about
   /// to drive is the part of the screen you are looking at.
   ///
   /// It was dropped to 35° in the same pass that widened the zoom, and
-  /// between the two the view stopped reading as a chase at all.
-  static const double _kChasePitch = 50.0;
+  /// between the two the view stopped reading as a chase at all. The 50°
+  /// that replaced it read as fully laid-back 3D; 20° keeps just enough
+  /// lean for depth while staying close to the top-down "car low, route
+  /// ahead" framing riders asked for.
+  static const double _kChasePitch = 20.0;
 
   /// True while a camera write is crossing the platform channel. Same
   /// latest-wins discipline as the car marker: frames produced during a
@@ -463,6 +473,13 @@ class TrackingMapCamera {
   /// [screenSize]  Full screen size.
   /// [topPadding] / [bottomPadding]  Visible map insets (cards + safe area).
   /// [use3DPitch]  When true, tilt to [_kChasePitch]; false = 2D north-up.
+  /// [routeBearing]  Bearing of the route under the car right now
+  ///   (e.g. `_posAtDistUltraSmooth(traveledM).$2`). Used as the heading
+  ///   source while the car is effectively stopped: a parked car reports no
+  ///   meaningful GPS heading, and at trip start the inherited one is
+  ///   whatever the previous phase left (north after arrived) — which swung
+  ///   the intro in sideways. The route always knows which way the car is
+  ///   about to drive.
   void updateChaseFrame({
     required LatLng driverPos,
     required double bearing,
@@ -471,6 +488,7 @@ class TrackingMapCamera {
     required double topPadding,
     required double bottomPadding,
     bool use3DPitch = true,
+    double? routeBearing,
   }) {
     if (_map == null) return;
     if (driverPos.latitude == 0 && driverPos.longitude == 0) return;
@@ -507,9 +525,13 @@ class TrackingMapCamera {
           .clamp(0.0, 1.0);
       final e = _easeInOut(t);
 
-      // A stopped car has no meaningful heading — hold the starting bearing
-      // instead of swinging the map to a stale one.
-      final introTargetBearing = speedMps < 1.0 ? _introFromBearing : bearing;
+      // A stopped car has no meaningful heading — aim at the route's
+      // bearing under the car instead of holding the starting one. Holding
+      // it was the "chase from the side" bug: arrived leaves the camera
+      // north-up, speed is ~0 at trip start, so the whole swing froze on
+      // that north heading while the route ran somewhere else entirely.
+      final introTargetBearing =
+          speedMps < 1.0 ? (routeBearing ?? _introFromBearing) : bearing;
       var introDb = introTargetBearing - _introFromBearing;
       while (introDb > 180) {
         introDb -= 360;
@@ -529,6 +551,9 @@ class TrackingMapCamera {
       // one frame slides the car across the screen right as the swing lands.
       final anchorYFrom = screenSize.height / 2;
       final anchorYTo = _chaseAnchorY(screenSize.height, topPadding, bottomPadding);
+      // Keep the steady-state low-pass in sync with the swing so the frame
+      // after t = 1.0 continues from exactly where the intro landed.
+      _navAnchorY = anchorYFrom + (anchorYTo - anchorYFrom) * e;
 
       _writeChaseFrame(
         center: LatLng(
@@ -536,17 +561,21 @@ class TrackingMapCamera {
           from.longitude + (driverPos.longitude - from.longitude) * e,
         ),
         anchorX: screenSize.width / 2,
-        anchorY: anchorYFrom + (anchorYTo - anchorYFrom) * e,
+        anchorY: _navAnchorY!,
       );
 
       if (t >= 1.0) _introActive = false;
       return;
     }
 
-    // Bearing: freeze when nearly stopped so the map doesn't spin in traffic.
+    // Bearing: freeze when nearly stopped so the map doesn't spin in
+    // traffic — but freeze on the route's heading, not on whatever bearing
+    // the car last reported. Until the GPS shows real speed its heading is
+    // untrustworthy (the first fix after Start can point 90°+ off the road),
+    // while the route under the car always points where it is about to go.
     var targetBearing = bearing;
     if (speedMps < 1.0) {
-      targetBearing = _navBearing;
+      targetBearing = routeBearing ?? _navBearing;
     }
 
     // Smooth bearing via shortest arc.
@@ -569,7 +598,15 @@ class TrackingMapCamera {
     // Hang the car low on the screen: the camera is behind it and the road
     // it is driving into takes the rest of the view.
     final anchorX = screenSize.width / 2;
-    final anchorY = _chaseAnchorY(screenSize.height, topPadding, bottomPadding);
+    // Same low-pass as zoom/pitch. The raw target steps whenever the cards
+    // resize (onTrip → nearDestination flips the bottom card's height), and
+    // an unfiltered step here is a one-frame slide of the whole map.
+    final targetAnchorY = _chaseAnchorY(screenSize.height, topPadding, bottomPadding);
+    final prevAnchorY = _navAnchorY;
+    final anchorY = prevAnchorY == null
+        ? targetAnchorY
+        : prevAnchorY + (targetAnchorY - prevAnchorY) * tf(0.12);
+    _navAnchorY = anchorY;
 
     _writeChaseFrame(
       center: driverPos,

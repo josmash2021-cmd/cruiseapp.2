@@ -134,6 +134,15 @@ class SmoothMotion {
           return;
         }
 
+        // After a long gap the average speed over the gap says nothing
+        // about how fast the car is moving NOW — it crept through traffic
+        // for 6 s and the delta reads as one slow slide. Left uncapped,
+        // the blended velocity keeps the marker gliding far past the fix.
+        // 12 m/s ≈ 43 km/h: a city car between fixes, never a flight.
+        final speedScale = dtSec > 5.0 && impliedSpeed > 12.0
+            ? 12.0 / impliedSpeed
+            : 1.0;
+
         // Standstill jitter hold: while essentially parked, ignore position
         // hops small enough to be GPS wander rather than movement.
         //
@@ -179,8 +188,8 @@ class SmoothMotion {
         }
         _consecutiveHolds = 0;
 
-        final newVLat = dLat / dtSec;
-        final newVLng = dLng / dtSec;
+        final newVLat = dLat / dtSec * speedScale;
+        final newVLng = dLng / dtSec * speedScale;
         // Exponential average — absorbs GPS jitter without overfitting.
         _vLat = _vLat * 0.3 + newVLat * 0.7;
         _vLng = _vLng * 0.3 + newVLng * 0.7;

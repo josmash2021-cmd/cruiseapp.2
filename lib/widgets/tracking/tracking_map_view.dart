@@ -888,6 +888,7 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
               _kResumeFollowAfterPanMs) {
         _userControllingCamera = false;
         _lastUserCameraInteraction = null;
+        _chaseResumedFromPan = true;
       } else {
         return;
       }
@@ -927,9 +928,16 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     if (!isOnTrip) return;
 
     if (!_mapCamera!.isNavChaseActive) {
-      // Resume, not entrance: replaying the intro swing on every
-      // post-pan resume is the "camera changes shot for no reason" report.
-      _mapCamera!.startNavigationChase(replayIntro: false);
+      // Entrance (the FIRST flip into the trip) replays the intro swing:
+      // the camera eases from wherever the previous phase left it to behind
+      // the car instead of cutting to it. Neither a post-pan auto-resume
+      // nor a re-entry into an already-running trip (map surface recreated,
+      // phase restored from persistence) gets the swing — replaying it
+      // there is the "camera changes shot for no reason" report.
+      final replayIntro = !_chaseResumedFromPan && !_chaseIntroPlayedForTrip;
+      _chaseResumedFromPan = false;
+      _chaseIntroPlayedForTrip = true;
+      _mapCamera!.startNavigationChase(replayIntro: replayIntro);
     }
 
     _mapCamera!.updateChaseFrame(
@@ -940,6 +948,11 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
       topPadding: topPad + 10 + _topCardHeight + 32,
       bottomPadding: bottomPad + 16 + _bottomCardHeight + 32,
       use3DPitch: _useNavCamera,
+      // Heading the route runs under the car right now — the camera leans
+      // on it while the GPS reports no real speed (trip start, traffic).
+      routeBearing: _routePts.length >= 2
+          ? _posAtDistUltraSmooth(_traveledM).$2
+          : null,
     );
   }
 
@@ -1865,7 +1878,11 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
       });
       return;
     }
-    // Legacy fallback
+    // Legacy fallback. The flag goes off BEFORE any early return: it is
+    // what gates the pin's (re)creation in _updateAnnotations, and leaving
+    // it on when there is nothing to animate is exactly how the pickup pin
+    // resurrected and sat next to the moving car for the whole trip.
+    _showPickupPin = false;
     if (_pickupAnnot == null || _pointAnnotMgr == null) {
       _pickupPopping = false;
       return;
@@ -2781,6 +2798,12 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     final topPad = mq.padding.top + 10 + _topCardHeight + 32;
     final bottomPad = mq.padding.bottom + 16 + _bottomCardHeight + 32;
 
+    // Leaving (or not in) the trip re-arms the entry glide for next time.
+    if (_phase != _TrackPhase.onTrip &&
+        _phase != _TrackPhase.nearDestination) {
+      _webChaseEntered = false;
+    }
+
     if (_phase == _TrackPhase.arriving) {
       // Frame driver + pickup, tightening continuously as the gap closes.
       web.fitBounds([
@@ -2796,14 +2819,37 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     }
     if (_phase == _TrackPhase.onTrip ||
         _phase == _TrackPhase.nearDestination) {
+      // Same rule as the native chase: below 1 m/s the GPS heading is
+      // untrustworthy (trip start, traffic), so the map turns to the
+      // route's bearing under the car instead of a stale inherited one.
+      final chaseBearing = _velocityMps < 1.0 && _routePts.length >= 2
+          ? _posAtDistUltraSmooth(_traveledM).$2
+          : _animBearing;
+      if (!_webChaseEntered) {
+        // Entry into the trip: one long glide from the previous framing to
+        // heading-up follow, instead of snapping onto the car with the
+        // 400 ms stepped flyTos the steady state uses.
+        _webChaseEntered = true;
+        _webAutoCameraUntil = now.add(const Duration(milliseconds: 1700));
+        web.flyTo(
+          lng: _animPos.longitude,
+          lat: _animPos.latitude,
+          zoom: 16.0,
+          bearing: chaseBearing,
+          pitch: 0,
+          durationMs: 1600,
+        );
+        return;
+      }
       web.flyTo(
         lng: _animPos.longitude,
         lat: _animPos.latitude,
         zoom: 15.5,
-        bearing: _animBearing,
+        bearing: chaseBearing,
         pitch: 0,
         durationMs: 400,
       );
+      return;
     }
   }
 

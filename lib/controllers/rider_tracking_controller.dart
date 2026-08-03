@@ -352,7 +352,8 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       }
 
       _markChannelAlive();
-      _onRealDriverLocation(LatLng(lat, lng), bearing: bearing, speed: speed);
+      _onRealDriverLocation(LatLng(lat, lng), bearing: bearing, speed: speed,
+          timestampMs: _fixTimestampMs(data['timestamp']));
     });
 
     // Listen for trip status updates
@@ -424,6 +425,16 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       final driverLat = (tripData['driver_lat'] as num?)?.toDouble();
       final driverLng = (tripData['driver_lng'] as num?)?.toDouble();
       if (driverLat != null && driverLng != null && driverLat != 0 && driverLng != 0) {
+        // The backend's cached position lags the live channels by design —
+        // it is only written when the driver's app reports in. Feeding it
+        // over a fix that arrived seconds ago drags the car backwards, the
+        // "jump" riders see right after the live feed hiccups and recovers.
+        final lastFixMs = _lastAcceptedFixAt;
+        if (lastFixMs != null &&
+            DateTime.now().millisecondsSinceEpoch - lastFixMs < 12000) {
+          debugPrint('[RiderTracking] Fallback skipped — live fix is fresher');
+          return;
+        }
         debugPrint('[RiderTracking] Fallback: got driver pos from backend ($driverLat, $driverLng)');
         if (mounted) _onRealDriverLocation(LatLng(driverLat, driverLng));
       }
@@ -471,9 +482,49 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     });
   }
 
+  /// Normalise a fix timestamp from any channel to ms epoch.
+  /// Socket.io sends ms; RTDB writes may carry seconds.
+  double? _fixTimestampMs(dynamic ts) {
+    if (ts is! num) return null;
+    final v = ts.toDouble();
+    if (!v.isFinite || v <= 0) return null;
+    return v < 1e12 ? v * 1000 : v; // seconds → ms
+  }
+
   /// Process real-time driver location from RTDB.
-  void _onRealDriverLocation(LatLng ll, {double? bearing, double? speed}) {
+  ///
+  /// [timestampMs] is the fix's own timestamp (ms epoch) when the channel
+  /// carries one. Fixes older than the last accepted one are dropped, so a
+  /// stale retry or a late re-delivery can never pull the car backwards.
+  /// When no timestamp travels, arrival order is the only clock we have;
+  /// the same fix fanning out over socket AND RTDB is deduped by position.
+  void _onRealDriverLocation(LatLng ll, {double? bearing, double? speed, double? timestampMs}) {
     if (ll.latitude == 0 && ll.longitude == 0) return;
+    final nowMs = DateTime.now().millisecondsSinceEpoch.toDouble();
+    if (timestampMs != null) {
+      final last = _lastAcceptedFixAt;
+      if (last != null && timestampMs < last) {
+        debugPrint('[RiderTracking] Dropping stale fix (${(last - timestampMs).round()}ms old)');
+        return;
+      }
+    } else {
+      // No payload timestamp: dedupe the same fix arriving through a second
+      // channel (socket + RTDB both carry the driver's last write).
+      final lastAt = _lastAcceptedFixAt;
+      final lastLat = _lastAcceptedFixLat;
+      final lastLng = _lastAcceptedFixLng;
+      if (lastAt != null &&
+          lastLat != null &&
+          lastLng != null &&
+          nowMs - lastAt < 1500 &&
+          (ll.latitude - lastLat).abs() < 1e-6 &&
+          (ll.longitude - lastLng).abs() < 1e-6) {
+        return; // same fix, other channel
+      }
+    }
+    _lastAcceptedFixAt = timestampMs ?? nowMs;
+    _lastAcceptedFixLat = ll.latitude;
+    _lastAcceptedFixLng = ll.longitude;
     _lastDriverGpsAt = DateTime.now();
     // Validate bearing — NaN/Infinity would break rotation interpolation
     if (bearing != null && (bearing.isNaN || bearing.isInfinite)) bearing = null;
@@ -1185,7 +1236,13 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     }
     _traveledM = 0;
     _tgtTraveledM = 0;
-    _velocityMps = 0;
+    // Do NOT zero _velocityMps here. The chase camera reads it the very next
+    // frame to decide the target bearing: speed < 1 m/s means "parked, hold
+    // heading", and the heading it would hold at trip start is the one the
+    // arrived phase forced (north) — the camera then swings in sideways.
+    // Keeping the last measured speed lets the first frames chase the real
+    // heading; when there never was one, the camera falls back to the route
+    // bearing (see updateChaseFrame's routeBearing).
     _approachRouteFetched = false;
     _routeDurationSec = null;
     if (_segDist.isNotEmpty) {
@@ -1361,7 +1418,8 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
         }
       }
       _markChannelAlive();
-      _onRealDriverLocation(LatLng(lat, lng), bearing: bearing, speed: speed);
+      _onRealDriverLocation(LatLng(lat, lng), bearing: bearing, speed: speed,
+          timestampMs: _fixTimestampMs(data['timestamp']));
     }, onError: (e) {
       debugPrint('[RiderTracking] RTDB stream error: $e');
       _pollFailCount++;
@@ -1914,8 +1972,8 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
   /// Start real-time camera tracking.
   ///
   /// In onTrip/nearDestination we now use a 25 fps navigation chase ticker
-  /// (Uber-style: bearing follows the car, 55° pitch, adaptive zoom, driver
-  /// anchored at the lower third). In arriving/final states the existing
+  /// (Uber-style: bearing follows the car, gentle 20° tilt, adaptive zoom,
+  /// driver anchored low on screen). In arriving/final states the existing
   /// bounds-fit paths keep pickup + dropoff visible.
   void _startCameraFollowTracking() {
     _cameraFollowTimer?.cancel();

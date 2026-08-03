@@ -201,6 +201,9 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   /// not user pans. Mirrors ride_request_screen's `_webAutoCameraUntil`.
   DateTime _webAutoCameraUntil = DateTime(2000);
   DateTime _lastWebCamMove = DateTime(2000);
+  /// True once the web chase has flown in behind the car for this trip;
+  /// reset whenever the phase leaves onTrip so a re-entry glides again.
+  bool _webChaseEntered = false;
   /// Last bearing pushed to the web car marker; < 0 = not created yet.
   double _webCarBearing = -1;
   mapbox.PointAnnotationManager? _pointAnnotMgr;  // for pins (icon-anchor: bottom)
@@ -643,7 +646,21 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   // Smooth camera follow (for real-time tracking after animation)
   bool _shouldFollowDriver = true;
   Timer? _cameraFollowTimer;
-  bool _useNavCamera = true; // When true: follow driver at 55° pitch (Uber-style)
+  bool _useNavCamera = true; // When true: heading-up chase with a gentle 20° tilt
+
+  /// Set when the chase camera is being handed back after a rider pan
+  /// (auto-resume), so the next [startNavigationChase] keeps easing from
+  /// its held state instead of replaying the full intro swing. The swing
+  /// is for entrances (phase flip into onTrip), not resumes.
+  bool _chaseResumedFromPan = false;
+
+  /// True once the full intro swing has played for this trip. The swing is
+  /// for the FIRST entry into the trip only: when the map surface is
+  /// recreated mid-trip (fresh TrackingMapCamera, _navChaseActive = false)
+  /// or the chase is handed back while already onTrip/nearDestination, the
+  /// camera just keeps easing from its held state instead of swinging
+  /// around again.
+  bool _chaseIntroPlayedForTrip = false;
 
   // No camera Ticker of its own: the chase camera runs on _interpTicker,
   // the same frame that moves the car. Two tickers writing to one platform
@@ -692,6 +709,15 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   /// listener attached, Firestore responding — can be true while this stays
   /// null and the car sits frozen on the map.
   DateTime? _lastDriverGpsAt;
+
+  /// Timestamp (ms epoch, payload time when the fix carries one, arrival
+  /// time otherwise) of the last driver fix accepted into the motion
+  /// engine. A fix older than this is stale — a delayed retry or a
+  /// re-delivered socket frame — and feeding it would drag the car
+  /// backwards across the map.
+  double? _lastAcceptedFixAt;
+  double? _lastAcceptedFixLat;
+  double? _lastAcceptedFixLng;
 
   /// Re-arms the RTDB driver feed when [_lastDriverGpsAt] goes quiet.
   Timer? _driverGpsWatchdog;

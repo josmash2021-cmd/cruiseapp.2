@@ -577,6 +577,18 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     await _fitBoundsMulti([a, b]);
   }
 
+  /// Copy [seg] with its first point replaced by [first] and its last by
+  /// [last], so the drawn line touches the markers exactly instead of the
+  /// road-snapped points the router returned. Never mutates the input —
+  /// cached segment lists are shared.
+  List<LatLng> _anchoredEndpoints(List<LatLng> seg, LatLng first, LatLng last) {
+    if (seg.isEmpty) return [first, last];
+    final out = List<LatLng>.of(seg);
+    out[0] = first;
+    out[out.length - 1] = last;
+    return out;
+  }
+
   /// The points the camera has to keep on screen: both ends, and enough of
   /// the road between them that no part of the drawn line falls outside.
   ///
@@ -708,7 +720,9 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
       final seg = await _fetchRouteWithMetrics(newLL, pickupLL);
       if (!mounted || _previewingOffer == null || seg.pts.length < 2) return;
       _offerRouteAnchor = newLL;
-      _fullSegOne = seg.pts;
+      // Anchor the start under the driver's arrow — the router snaps the
+      // origin to the road, the same stub the initial draw fixes.
+      _fullSegOne = _anchoredEndpoints(seg.pts, newLL, pickupLL);
 
       // The card reads its "X min (Y mi) away" from this cache — refresh
       // the driver leg's metrics in place so the numbers drop as the
@@ -733,7 +747,7 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
       if (kIsWeb) {
         _webMap?.setPolyline(
           'offerSegOne',
-          [for (final p in seg.pts) (lng: p.longitude, lat: p.latitude)],
+          [for (final p in _fullSegOne) (lng: p.longitude, lat: p.latitude)],
           color: '#FFD700',
           width: 4,
         );
@@ -742,7 +756,7 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
         // arrival, not for every GPS fix.
         final annot = _previewPickupAnnot;
         final polyMgr = _polylineAnnotMgr;
-        final safeGeom = safeLineString(seg.pts);
+        final safeGeom = safeLineString(_fullSegOne);
         if (annot != null && polyMgr != null && safeGeom != null) {
           annot.geometry = safeGeom;
           try {
@@ -826,6 +840,14 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     debugPrint('[OfferRoute] $oid segments: '
         '${_fullSegOne.length} + ${_fullSegTwo.length} points'
         '${cached != null ? " (cached)" : ""}');
+
+    // Anchor both ends exactly: routing snaps the origin/destination to the
+    // nearest road, which can leave a visible stub of street between a
+    // marker and the line's end. The line must begin under the driver's
+    // arrow and end under the dropoff ring. Copies — the cache's lists are
+    // shared and must not be mutated.
+    _fullSegOne = _anchoredEndpoints(_fullSegOne, driverPos, pickupLL);
+    _fullSegTwo = _anchoredEndpoints(_fullSegTwo, pickupLL, dropoffLL);
     if (!mounted || _previewingOffer == null) {
       _isCardAnimating = false;
       return;
@@ -857,13 +879,14 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     }
 
     // ── PHASE 2: Create pins at size 0 (invisible) ──
-    // A gold disc and a white square — the same two shapes the card uses
-    // for these stops. The cached pins are ignored on purpose: they hold
+    // A hollow gold ring for the pickup and a white ring with a solid dot
+    // for the dropoff — this page's pair, inverted from the rider receipt
+    // by request. The cached pins are ignored on purpose: they hold
     // the old teardrop pins, and mixing the two would give the driver a
     // different marker depending on whether the route had been fetched.
     final pinResults = await Future.wait([
-      renderPickupDotBytes(),
-      renderDropoffCircleBytes(),
+      renderPickupRingBytes(),
+      renderDropoffRingDotBytes(),
     ]);
     final Uint8List pickupPinImg = pinResults[0];
     final Uint8List dropoffPinImg = pinResults[1];
@@ -962,8 +985,8 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
       return;
     }
 
-    // ── PHASE 8: Refit with preserved tilt ──
-    _fitBoundsMulti([driverPos, pickupLL, dropoffLL]);
+    // ── PHASE 8: Refit with the full route shape ──
+    _fitBoundsMulti(_routeFramePoints(driverPos, pickupLL, dropoffLL));
 
     if (mounted && _previewingOffer != null) {
       _setState(() => _offerRouteShown = true);
@@ -1029,11 +1052,11 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     // marks it, projected at the driver's pixel, the same arrow the rest
     // of the app draws on this same map.
 
-    // The same two shapes the card shows: gold disc for the pickup, white
-    // square for the dropoff.
+    // The same pair as the native preview: hollow gold ring for the
+    // pickup, white ring with a solid dot for the dropoff.
     final pinResults = await Future.wait([
-      renderPickupDotBytes(),
-      renderDropoffCircleBytes(),
+      renderPickupRingBytes(),
+      renderDropoffRingDotBytes(),
     ]);
     if (!mounted || _previewingOffer == null) return;
     web.addMarker('offerPickup', pickupLL.longitude, pickupLL.latitude,
@@ -1617,6 +1640,11 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     if (!mounted) return;
     _reFollowTimer?.cancel();
     _followResumeTimer?.cancel();
+    // An offer preview owns the frame: the route (driver → pickup →
+    // dropoff) is fitted above the card, and the ten-second auto-refollow
+    // after a pan must not yank the camera back onto the driver and leave
+    // the route behind. The driver explores freely until the offer closes.
+    if (_previewingOffer != null) return;
     final bearing = _smoothedBearing;
     _cameraBearing = bearing; // sync for sprite selection
     if (_pos == null) {

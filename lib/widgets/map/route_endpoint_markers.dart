@@ -28,6 +28,79 @@ Future<Uint8List> renderPickupDotBytes({double size = 26}) =>
 Future<Uint8List> renderDropoffCircleBytes({double size = 26}) =>
     _render(size, fill: Colors.white);
 
+/// Driver offer map only: the pickup is a hollow ring — no fill, just the
+/// band. (The rider's receipt uses the solid beads above; the driver asked
+/// for the inverted pair on this page.)
+Future<Uint8List> renderPickupRingBytes({double size = 26}) =>
+    _renderRing(size, color: _gold, innerDot: false);
+
+/// Driver offer map only: the dropoff is a ring with a solid dot inside.
+Future<Uint8List> renderDropoffRingDotBytes({double size = 26}) =>
+    _renderRing(size, color: Colors.white, innerDot: true);
+
+Future<Uint8List> _renderRing(
+  double size, {
+  required Color color,
+  required bool innerDot,
+}) async {
+  final canvasSize = size * 2.1;
+  final recorder = ui.PictureRecorder();
+  final canvas = Canvas(recorder);
+  final centre = Offset(canvasSize / 2, canvasSize / 2);
+  final r = size / 2;
+  final stroke = size * 0.22;
+
+  // Same soft ground shadow the beads cast, so ring and bead read as the
+  // same family sitting on the road.
+  canvas.drawOval(
+    Rect.fromCenter(
+      center: centre.translate(0, r * 0.35),
+      width: size * 1.05,
+      height: size * 0.85,
+    ),
+    Paint()
+      ..color = Colors.black.withValues(alpha: 0.5)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4),
+  );
+
+  // The ring itself, with a dark hairline on both edges so the band keeps
+  // its shape over light streets.
+  final ringRadius = r - stroke / 2;
+  canvas.drawCircle(
+    centre,
+    ringRadius,
+    Paint()
+      ..color = const Color(0xFF0B0B0F)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = stroke + 1.6,
+  );
+  canvas.drawCircle(
+    centre,
+    ringRadius,
+    Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = stroke,
+  );
+
+  // Dropoff only: the solid dot the ring carries inside.
+  if (innerDot) {
+    canvas.drawCircle(
+      centre,
+      size * 0.16,
+      Paint()..color = color,
+    );
+  }
+
+  final img = await recorder.endRecording().toImage(
+        canvasSize.ceil(),
+        canvasSize.ceil(),
+      );
+  final data = await img.toByteData(format: ui.ImageByteFormat.png);
+  img.dispose();
+  return data!.buffer.asUint8List();
+}
+
 Future<Uint8List> _render(
   double size, {
   required Color fill,

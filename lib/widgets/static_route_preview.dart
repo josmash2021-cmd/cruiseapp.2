@@ -192,15 +192,30 @@ class StaticRoutePreview extends StatelessWidget {
           // than a broken image.
           if (MapboxConfig.accessToken.isEmpty) return _placeholder();
 
-          return Image.network(
-            _url(w, h),
-            fit: BoxFit.cover,
-            width: double.infinity,
-            height: double.infinity,
-            gaplessPlayback: true,
-            errorBuilder: (_, __, ___) => _placeholder(),
-            loadingBuilder: (_, child, progress) =>
-                progress == null ? child : _placeholder(),
+          return Stack(
+            fit: StackFit.expand,
+            children: [
+              Image.network(
+                _url(w, h),
+                fit: BoxFit.cover,
+                width: double.infinity,
+                height: double.infinity,
+                gaplessPlayback: true,
+                errorBuilder: (_, __, ___) => _placeholder(),
+                loadingBuilder: (_, child, progress) =>
+                    progress == null ? child : _placeholder(),
+              ),
+              // The Static Images API cannot recolour layers — the navy
+              // every live map wears is painted at runtime, and a static
+              // render comes back in factory dark-v11 grey. A navy veil at
+              // half strength lands the thumbnail in the same family as the
+              // rest of the app (gold route and pins still read through).
+              IgnorePointer(
+                child: ColoredBox(
+                  color: const Color(0xFF0A1128).withValues(alpha: 0.50),
+                ),
+              ),
+            ],
           );
         },
       ),

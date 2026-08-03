@@ -11,6 +11,7 @@ import '../services/photo_recovery_service.dart';
 import '../services/user_session.dart';
 import '../widgets/neu_style.dart';
 import '../widgets/user_profile_photo.dart';
+import '../utils/phone_format.dart';
 import 'driver/driver_reset_password_screen.dart';
 
 class EditProfileScreen extends StatefulWidget {
@@ -42,22 +43,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     return d;
   }
 
-  /// Display form: +1 (XXX) XXX-XXXX. Empty input stays empty.
-  static String _formatPhone(String digits) {
-    if (digits.isEmpty) return '';
-    final b = StringBuffer('+1 (');
-    b.write(digits.substring(0, digits.length < 3 ? digits.length : 3));
-    if (digits.length >= 3) b.write(')');
-    if (digits.length > 3) {
-      b.write(' ');
-      b.write(digits.substring(3, digits.length < 6 ? digits.length : 6));
-    }
-    if (digits.length > 6) {
-      b.write('-');
-      b.write(digits.substring(6));
-    }
-    return b.toString();
-  }
+  /// Display form lives in utils/phone_format.dart (shared with the
+  /// forgot-password identifier field).
 
   /// Storage form: E.164 (+1XXXXXXXXXX) — what the backend holds.
   static String _phoneE164(String display) {
@@ -108,7 +95,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       _lastNameCtrl.text = user?['lastName'] ?? '';
       _emailCtrl.text = user?['email'] ?? '';
       // Stored as E.164 or bare digits; shown formatted.
-      _phoneCtrl.text = _formatPhone(_phoneDigits(user?['phone'] ?? ''));
+      _phoneCtrl.text = formatUsPhone(_phoneDigits(user?['phone'] ?? ''));
       _origEmail = _emailCtrl.text;
       _origPhone = _phoneE164(_phoneCtrl.text);
       _photoPath = user?['photoPath'] ?? '';
@@ -529,7 +516,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                       _phoneCtrl,
                       Icons.phone_outlined,
                       keyboardType: TextInputType.phone,
-                      inputFormatters: [_UsPhoneFormatter()],
+                      inputFormatters: [const UsPhoneFormatter()],
                     ),
                     const SizedBox(height: 14),
                     // Password reset — a door, not an input. Same emailed-code
@@ -625,27 +612,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
           ),
         ),
       ),
-    );
-  }
-}
-
-/// Live US phone mask: whatever the user types (digits, spaces, an
-/// existing +1) collapses to digits and comes back as +1 (XXX) XXX-XXXX,
-/// capped at 10 digits. The cursor parks at the end — acceptable on a
-/// single-line phone field, and far simpler than mask-aware caret math.
-class _UsPhoneFormatter extends TextInputFormatter {
-  @override
-  TextEditingValue formatEditUpdate(
-    TextEditingValue oldValue,
-    TextEditingValue newValue,
-  ) {
-    var d = newValue.text.replaceAll(RegExp(r'\D'), '');
-    if (d.startsWith('1')) d = d.substring(1);
-    if (d.length > 10) d = d.substring(0, 10);
-    final text = _EditProfileScreenState._formatPhone(d);
-    return TextEditingValue(
-      text: text,
-      selection: TextSelection.collapsed(offset: text.length),
     );
   }
 }

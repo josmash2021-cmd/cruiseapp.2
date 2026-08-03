@@ -676,8 +676,13 @@ class S {
       _es ? '¿Olvidaste tu contraseña?' : 'Forgot password?';
   String get resetPassword => _es ? 'Restablecer contraseña' : 'Reset password';
   String get forgotSubtitle => _es
-      ? 'Introduce tu correo electrónico y te enviaremos un enlace para restablecer tu contraseña.'
-      : "Enter your email and we'll send you a link to reset your password.";
+      ? 'Introduce tu correo o teléfono y te enviaremos un código de 6 dígitos para restablecer tu contraseña.'
+      : "Enter your email or phone and we'll send you a 6-digit code to reset your password.";
+  String get resetCodeSentGeneric => _es
+      ? 'Si existe una cuenta con ese correo o teléfono, el código va en camino.'
+      : 'If an account exists for that email or phone, a code is on its way.';
+  String get codeSentViaEmail => _es ? 'por correo' : 'by email';
+  String get codeSentViaSms => _es ? 'por SMS' : 'by SMS';
   String get resetCodeSubtitle => _es
       ? 'Introduce el código de 6 dígitos que te enviamos y tu nueva contraseña.'
       : 'Enter the 6-digit code we sent and your new password.';
@@ -4380,8 +4385,8 @@ class S {
       ? 'Reloj del dispositivo desincronizado. Ve a Ajustes → Fecha y Hora y activa "Ajustar automáticamente".'
       : 'Device clock out of sync. Go to Settings → Date & Time and enable "Set Automatically".';
   String get invalidEmailPhoneOrPassword => _es
-      ? 'Email/teléfono o contraseña inválida'
-      : 'Invalid email/phone or password';
+      ? 'El correo/teléfono o la contraseña que ingresaste son incorrectos'
+      : 'The email/phone or password you entered is incorrect';
   String get accountNoLongerExists =>
       _es ? 'Esta cuenta ya no existe' : 'This account no longer exists';
   String get orLower => _es ? 'o' : 'or';

@@ -1274,7 +1274,46 @@ class ApiService {
     _parse(res);
   }
 
-  /// Delete the current user's account.
+  /// Public (signed-out) forgot-password: send a six-digit code to the
+  /// email or phone the identifier belongs to.
+  ///
+  /// Returns `{status, method: "email"|"sms"|"none", masked}` — "none" is
+  /// the anti-enumeration answer for an identifier with no account, and the
+  /// screen decides how much to say. Longer timeout: waits on SMTP/Twilio.
+  static Future<Map<String, dynamic>> sendPasswordResetCodePublic(
+    String identifier,
+  ) async {
+    final res = await _client
+        .post(
+          Uri.parse('$_baseUrl/auth/password-reset/send-code-public'),
+          headers: _jsonHeaders(),
+          body: jsonEncode({'identifier': identifier}),
+        )
+        .timeout(const Duration(seconds: 25));
+    return _parse(res);
+  }
+
+  /// Public counterpart of [confirmPasswordReset]: set a new password with
+  /// the code that was emailed or texted. Throws [ApiException] with the
+  /// server's own message for wrong/expired codes and weak passwords.
+  static Future<void> confirmPasswordResetPublic({
+    required String identifier,
+    required String code,
+    required String newPassword,
+  }) async {
+    final res = await _client
+        .post(
+          Uri.parse('$_baseUrl/auth/password-reset/confirm-public'),
+          headers: _jsonHeaders(),
+          body: jsonEncode({
+            'identifier': identifier,
+            'code': code,
+            'new_password': newPassword,
+          }),
+        )
+        .timeout(const Duration(seconds: 15));
+    _parse(res);
+  }
   static Future<void> deleteAccount() async {
     final token = await getToken();
     if (token == null) throw ApiException(401, 'Not logged in');

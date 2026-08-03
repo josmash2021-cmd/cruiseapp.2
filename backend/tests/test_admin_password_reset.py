@@ -228,4 +228,6 @@ async def test_password_accounts_keep_the_generic_message(client, test_rider):
     )
 
     assert resp.status_code == 401, resp.text
-    assert resp.json()["detail"] == "Invalid credentials"
+    assert resp.json()["detail"] == (
+        "The email/phone or password you entered is incorrect"
+    )

@@ -342,7 +342,9 @@ async def login(body: LoginIn, request: Request, db: AsyncSession = Depends(get_
                 f"Sign in with {provider}, or ask support to set a password.",
             )
         _record_login_failure(client_ip)
-        raise HTTPException(401, "Invalid credentials")
+        raise HTTPException(
+            401, "The email/phone or password you entered is incorrect"
+        )
     st = user.status or "active"
     if st == "deleted":
         raise HTTPException(403, "Account deleted")
@@ -2789,6 +2791,246 @@ async def confirm_password_reset(
     await db.delete(token_row)
     await db.commit()
     logging.info("[PasswordReset] user %s changed their password", user.id)
+    return {"status": "password_reset"}
+
+
+# ═══════════════════════════════════════════════════════════════════════
+#  Public password reset — for a signed-out rider who forgot theirs
+# ═══════════════════════════════════════════════════════════════════════
+#
+# Same six-digit code as the in-app pair above, but reached without a
+# session, so the account has to be found from what the user typed. The
+# safety property survives: the token is still looked up by user_id, never
+# by code alone, so a guessed code can only ever be aimed at the account
+# the guesser asked about. Answers for unknown identifiers are generic
+# ("sent") so the endpoint cannot be used to enumerate accounts — the app
+# gets method "none" and decides how much to say.
+
+
+def _mask_phone(phone: str) -> str:
+    """+1 (•••) •••-7890 — last four only, enough to recognise."""
+    digits = re.sub(r"\D", "", phone)
+    if len(digits) < 4:
+        return "+1 (•••) •••-••••"
+    return f"+1 (•••) •••-{digits[-4:]}"
+
+
+def _phone_lookup_variants(identifier: str) -> list[str]:
+    """Every plausible way the same US number may sit in the users table.
+
+    Numbers have been stored as +1XXXXXXXXXX, 1XXXXXXXXXX, XXXXXXXXXX and
+    formatted '+1 (XXX) XXX-XXXX', so matching only one shape would strand
+    real accounts.
+    """
+    digits = re.sub(r"\D", "", identifier)
+    if digits.startswith("1") and len(digits) == 11:
+        digits = digits[1:]
+    if len(digits) != 10:
+        return []
+    return [
+        f"+1{digits}",
+        f"1{digits}",
+        digits,
+        f"+1 ({digits[0:3]}) {digits[3:6]}-{digits[6:10]}",
+    ]
+
+
+def _normalize_phone_e164(identifier: str) -> str:
+    """+1XXXXXXXXXX — what Twilio and the OTP store already use."""
+    digits = re.sub(r"\D", "", identifier)
+    if digits.startswith("1") and len(digits) == 11:
+        digits = digits[1:]
+    return f"+1{digits}"
+
+
+async def _find_user_by_public_identifier(identifier: str, db: AsyncSession):
+    """Resolve an email-or-phone string to (user, method) or (None, None)."""
+    ident = identifier.strip()
+    digits_only = re.sub(r"[\s\-()+.]", "", ident)
+    if digits_only.lstrip("+").isdigit() and len(re.sub(r"\D", "", ident)) >= 7:
+        variants = _phone_lookup_variants(ident)
+        if not variants:
+            return None, None
+        result = await db.execute(
+            select(User).where(
+                User.phone.in_(variants),
+                ~User.status.in_(["deleted", "pending_deletion"]),
+            )
+        )
+        return result.scalars().first(), "phone"
+    result = await db.execute(
+        select(User).where(
+            func.lower(User.email) == ident.lower(),
+            ~User.status.in_(["deleted", "pending_deletion"]),
+        )
+    )
+    return result.scalars().first(), "email"
+
+
+@router.post("/auth/password-reset/send-code-public", dependencies=[Depends(_verify_api_key)])
+async def send_password_reset_code_public(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """Mail or text a six-digit code to whoever owns this email/phone.
+
+    Unknown identifiers get the same generic answer with method "none" —
+    nothing about the response reveals whether an account exists.
+    """
+    body = await request.json()
+    identifier = str(body.get("identifier", "")).strip()
+    if not identifier:
+        raise HTTPException(400, "Enter your email or phone number")
+
+    if _check_password_reset_rate(identifier):
+        raise HTTPException(429, "Too many attempts. Try again in 1 hour.")
+    _record_password_reset(identifier)
+
+    user, method = await _find_user_by_public_identifier(identifier, db)
+    if not user:
+        # Anti-enumeration: same shape as a success, method "none" tells the
+        # app there is nowhere to deliver a code without saying why.
+        return {"status": "sent", "method": "none", "masked": ""}
+
+    code = f"{secrets.randbelow(1000000):06d}"
+    hashed = hashlib.sha256(code.encode()).hexdigest()
+
+    # One live code per user: issuing a second must retire the first.
+    await db.execute(
+        PasswordResetToken.__table__.delete().where(
+            PasswordResetToken.user_id == user.id
+        )
+    )
+    db.add(PasswordResetToken(
+        code=hashed,
+        user_id=user.id,
+        expires_at=time.time() + _RESET_CODE_TTL_SECONDS,
+        attempts=0,
+    ))
+    await db.commit()
+
+    _minutes = _RESET_CODE_TTL_SECONDS // 60
+    if method == "email":
+        _logo_url = "https://raw.githubusercontent.com/josmash2021-cmd/cruiseapp.2/main/assets/images/cruise_logo_email.png"
+        _name = user.first_name or "there"
+        html = f"""
+    <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;max-width:560px;margin:0 auto;background:#050505;border-radius:16px;overflow:hidden;border:1px solid #1a1a1a;">
+      <div style="background:linear-gradient(90deg,transparent,#D4AF37,#E8C547,#D4AF37,transparent);height:2px;"></div>
+      <div style="padding:48px 40px 40px;">
+        <div style="text-align:center;margin-bottom:36px;">
+          <img src="{_logo_url}" alt="Cruise" width="64" height="64" style="display:block;margin:0 auto 14px;border-radius:16px;">
+          <h2 style="font-family:Georgia,'Times New Roman',serif;font-size:24px;font-weight:700;color:#E8C547;letter-spacing:8px;margin:0;text-indent:8px;">CRUISE</h2>
+        </div>
+        <h1 style="text-align:center;color:#FFFFFF;font-size:23px;font-weight:300;margin:0 0 6px;">Your verification <strong>code</strong></h1>
+        <p style="text-align:center;color:#666;font-size:14px;margin:10px 0 28px;line-height:1.6;">Hi {_name}, enter this code in the app to set a new password.</p>
+        <div style="text-align:center;margin-bottom:28px;">
+          <span style="display:inline-block;background:#111;border:1px solid #2a2a1a;border-radius:12px;padding:18px 30px;color:#E8C547;font-size:34px;font-weight:700;letter-spacing:12px;text-indent:12px;">{code}</span>
+        </div>
+        <div style="background:#111;border-radius:10px;padding:20px;border:1px solid #1a1a1a;">
+          <p style="color:#555;font-size:12px;margin:0;line-height:1.6;text-align:center;">This code expires in <strong style="color:#D4AF37;">{_minutes} minutes</strong>.<br>If you didn't request it, ignore this email and your password stays as it is.</p>
+        </div>
+      </div>
+      <div style="border-top:1px solid #111;padding:24px 40px;text-align:center;">
+        <p style="color:#333;font-size:11px;letter-spacing:3px;margin:0 0 4px;">CRUISE</p>
+        <p style="color:#252525;font-size:10px;margin:0;">Premium Rides &mdash; cruiseinride.com</p>
+      </div>
+    </div>
+    """
+        # _send_email is blocking; run it off the event loop (same reason
+        # as the in-app endpoint above).
+        try:
+            await asyncio.get_event_loop().run_in_executor(
+                None,
+                lambda: _send_email(user.email, "Cruise — Your verification code", html),
+            )
+        except Exception as e:
+            logging.error("[PasswordReset] public send failed for user %s: %s", user.id, e)
+            raise HTTPException(502, "Could not send the email. Try again.")
+        masked = _mask_email(user.email)
+        sent_method = "email"
+    else:
+        if not (TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN and TWILIO_PHONE_NUMBER):
+            logging.error("[PasswordReset] SMS requested but Twilio is not configured")
+            raise HTTPException(502, "Could not send the code. Try again.")
+        to_number = _normalize_phone_e164(identifier)
+        sms_body = f"Cruise: your password reset code is {code}. It expires in {_minutes} minutes."
+        try:
+            def _send_sms():
+                from twilio.rest import Client as TwilioClient
+                twilio_client = TwilioClient(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
+                twilio_client.messages.create(
+                    body=sms_body,
+                    from_=TWILIO_PHONE_NUMBER,
+                    to=to_number,
+                )
+            await asyncio.get_event_loop().run_in_executor(None, _send_sms)
+        except Exception as e:
+            logging.error("[PasswordReset] SMS send failed for user %s: %s", user.id, e)
+            raise HTTPException(502, "Could not send the code. Try again.")
+        masked = _mask_phone(to_number)
+        sent_method = "sms"
+
+    return {"status": "sent", "method": sent_method, "masked": masked}
+
+
+@router.post("/auth/password-reset/confirm-public", dependencies=[Depends(_verify_api_key)])
+async def confirm_password_reset_public(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """Check the code and set the new password, without a session.
+
+    The token is found through the account the identifier resolves to —
+    never by code alone — so a guess can only target one account, and
+    wrong guesses burn the code at _RESET_CODE_MAX_ATTEMPTS.
+    """
+    body = await request.json()
+    identifier = str(body.get("identifier", "")).strip()
+    code = str(body.get("code", "")).strip()
+    new_password = body.get("new_password", "")
+
+    if (len(new_password) < 8
+            or not re.search(r'[0-9]', new_password)
+            or not re.search(r'[A-Z]', new_password)
+            or not re.search(r'[!@#$%^&*(),.?":{}|<>_\-+=\[\]\\/~`]', new_password)):
+        raise HTTPException(
+            400,
+            "Password must be at least 8 characters with a number, "
+            "uppercase letter, and special character",
+        )
+
+    user, _method = await _find_user_by_public_identifier(identifier, db)
+    if not user:
+        # Unknown account: same words as a wrong code, never "no such user".
+        raise HTTPException(400, "That code is not right")
+
+    result = await db.execute(
+        select(PasswordResetToken).where(PasswordResetToken.user_id == user.id)
+    )
+    token_row = result.scalars().first()
+    if not token_row:
+        raise HTTPException(400, "Request a code first")
+    if time.time() > token_row.expires_at:
+        await db.delete(token_row)
+        await db.commit()
+        raise HTTPException(400, "That code expired. Request a new one.")
+
+    if hashlib.sha256(code.encode()).hexdigest() != token_row.code:
+        token_row.attempts = (token_row.attempts or 0) + 1
+        burned = token_row.attempts >= _RESET_CODE_MAX_ATTEMPTS
+        if burned:
+            await db.delete(token_row)
+        await db.commit()
+        raise HTTPException(
+            400,
+            "Too many wrong codes. Request a new one." if burned
+            else "That code is not right",
+        )
+
+    user.password_hash = pwd.hash(new_password)
+    await db.delete(token_row)
+    await db.commit()
+    logging.info("[PasswordReset] user %s reset their password (public flow)", user.id)
     return {"status": "password_reset"}
 
 

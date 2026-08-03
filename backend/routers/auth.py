@@ -324,6 +324,23 @@ async def login(body: LoginIn, request: Request, db: AsyncSession = Depends(get_
                 raise HTTPException(404, f"No {body.role} account found with these credentials. You have a {other_role} account with this email/phone.")
                 break
     if not user:
+        # Accounts created through Google or Apple carry a random placeholder
+        # hash (see /auth/social) that nobody knows, so email+password can
+        # never match. Saying "Invalid credentials" sent those people round in
+        # circles retyping a password that never existed — tell them which
+        # button to press instead.
+        social = next(
+            (u for u in users if (u.auth_provider or "") in ("google", "apple")),
+            None,
+        )
+        if social is not None:
+            _record_login_failure(client_ip)
+            provider = "Google" if social.auth_provider == "google" else "Apple"
+            raise HTTPException(
+                401,
+                f"This account was created with {provider}. "
+                f"Sign in with {provider}, or ask support to set a password.",
+            )
         _record_login_failure(client_ip)
         raise HTTPException(401, "Invalid credentials")
     st = user.status or "active"

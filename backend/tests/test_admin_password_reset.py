@@ -173,3 +173,59 @@ async def test_the_old_password_stops_working(client, test_rider):
     )
 
     assert resp.status_code == 401, resp.text
+
+
+# ── Social accounts: no password anybody knows ──────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_social_account_says_which_button_to_press(client, db, test_rider):
+    """A Google/Apple account has a random placeholder hash, so email+password
+    can never match. "Invalid credentials" made people retype a password that
+    never existed."""
+    rider, _ = test_rider
+    rider.auth_provider = "google"
+    await db.commit()
+
+    resp = await client.post(
+        "/auth/login",
+        json={"identifier": rider.email, "password": "AnyGuess1", "role": "rider"},
+        headers=_make_auth_headers(),
+    )
+
+    assert resp.status_code == 401, resp.text
+    assert "Google" in resp.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_admin_password_unblocks_a_social_account(client, db, test_rider):
+    """Setting a password from the panel is the remedy: the same account can
+    then sign in with email+password."""
+    rider, _ = test_rider
+    rider.auth_provider = "google"
+    await db.commit()
+
+    assert (await _reset(client, rider.id, "Cruise$2026")).status_code == 200
+
+    resp = await client.post(
+        "/auth/login",
+        json={"identifier": rider.email, "password": "Cruise$2026", "role": "rider"},
+        headers=_make_auth_headers(),
+    )
+
+    assert resp.status_code == 200, resp.text
+    assert "login_token" in resp.json()
+
+
+@pytest.mark.asyncio
+async def test_password_accounts_keep_the_generic_message(client, test_rider):
+    """No account enumeration beyond what the social hint requires: a normal
+    account with a wrong password still says nothing specific."""
+    resp = await client.post(
+        "/auth/login",
+        json={"identifier": "rider@test.com", "password": "WrongPass9", "role": "rider"},
+        headers=_make_auth_headers(),
+    )
+
+    assert resp.status_code == 401, resp.text
+    assert resp.json()["detail"] == "Invalid credentials"

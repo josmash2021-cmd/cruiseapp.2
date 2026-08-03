@@ -654,6 +654,9 @@ extension _RideRequestMap on _RideRequestScreenState {
     if (route == null || route.points.isEmpty) return;
     _showPinLabels = true;
     _buildRouteMarkers();
+    // Pins and route are drawn — but the camera itself stays with the
+    // rider if they already took it.
+    if (_userTookCamera) return;
     // Only run a fresh cinematic if one was never played yet — otherwise
     // we'd jolt the camera back to the dropoff start frame.
     if (!_cinematicDone && !_cinematicRunning) {
@@ -903,12 +906,15 @@ extension _RideRequestMap on _RideRequestScreenState {
     ));
   }
 
-  /// Frame the FULL route on screen with a fixed 50° cinematic pitch — NO
-  /// rotation. Called when entering the searchingDriver phase; eases once
-  /// to the route-fitting frame and holds it there while dispatch searches
-  /// for a driver. (Replaces the old 360° ambient bearing drift.)
+  /// Frame the FULL route top-down while dispatch searches — pitch 0,
+  /// north-up, whole route above the searching-status card. Called when
+  /// entering the searchingDriver phase; eases once to the frame and holds
+  /// it. Never re-takes the camera from a rider who moved it themselves.
   void _animateSearchCameraToAngle(int idx) {
     if (_mapCtrl == null || !mounted) return;
+    // The rider panned/zoomed — their frame stays; the recenter button is
+    // the way back to the full-route frame.
+    if (_userTookCamera) return;
 
     // Kill any in-flight search camera controller (legacy rotation).
     _searchCamCtrl?.dispose();
@@ -926,9 +932,11 @@ extension _RideRequestMap on _RideRequestScreenState {
     }
 
     final mq = MediaQuery.of(context);
-    // Keep the whole route visible above the searching-status card.
-    final bottomInset =
-        (mq.size.height * 0.38).clamp(280.0, 400.0) + mq.padding.bottom;
+    // Keep the whole route visible above the searching-status card —
+    // measured once the card has laid out, estimated before that.
+    final bottomInset = _sheetHeightPx > 0
+        ? _sheetHeightPx + 24 + 16
+        : (mq.size.height * 0.38).clamp(280.0, 400.0) + mq.padding.bottom;
 
     _mapCtrl!
         .cameraForCoordinatesPadding(
@@ -936,8 +944,8 @@ extension _RideRequestMap on _RideRequestScreenState {
         mapbox.Point(coordinates: mapbox.Position(minLng, minLat)),
         mapbox.Point(coordinates: mapbox.Position(maxLng, maxLat)),
       ],
-      mapbox.CameraOptions(pitch: 50.0, bearing: _randomBearing),
-      mapbox.MbxEdgeInsets(top: 80, left: 50, bottom: bottomInset, right: 50),
+      mapbox.CameraOptions(pitch: 0.0, bearing: 0.0),
+      mapbox.MbxEdgeInsets(top: 90, left: 50, bottom: bottomInset, right: 50),
       null,
       null,
     )
@@ -947,8 +955,8 @@ extension _RideRequestMap on _RideRequestScreenState {
         mapbox.CameraOptions(
           center: cam.center,
           zoom: cam.zoom,
-          pitch: 50.0,
-          bearing: _randomBearing,
+          pitch: 0.0,
+          bearing: 0.0,
         ),
         mapbox.MapAnimationOptions(duration: 1200),
       );
@@ -1430,13 +1438,19 @@ extension _RideRequestMap on _RideRequestScreenState {
       if (!mounted) return;
       final s = _ctrl.state;
       if (s.route == null) return;
+      // The rider dragged or zoomed — the frame is theirs now; only the
+      // recenter button hands it back to us.
+      if (_userTookCamera) return;
+      // Searching: re-frame top-down with the card's measured height.
+      if (s.phase == RiderPhase.requesting ||
+          s.phase == RiderPhase.searchingDriver) {
+        _animateSearchCameraToAngle(0);
+        return;
+      }
       if (s.phase != RiderPhase.previewRoute &&
           s.phase != RiderPhase.selectingRide) {
         return;
       }
-      // The rider dragged or zoomed — the frame is theirs now; only the
-      // recenter button hands it back to us.
-      if (_userTookCamera) return;
       if (kIsWeb) {
         _fitWebRoute(s.route!.points, durationMs: 450);
         return;
@@ -1518,7 +1532,8 @@ extension _RideRequestMap on _RideRequestScreenState {
     // measured once the panel has laid out, estimated before that.
     final double bottomPad;
     if (phase == RiderPhase.requesting || phase == RiderPhase.searchingDriver) {
-      bottomPad = 160 + botPad;
+      // Searching card: measured height + its 24px float off the edge.
+      bottomPad = (_sheetHeightPx > 0 ? _sheetHeightPx + 24 : 160.0) + botPad + 16;
     } else {
       bottomPad = _cameraBottomInset(botPad);
     }
@@ -1660,6 +1675,13 @@ extension _RideRequestMap on _RideRequestScreenState {
     // the automatic fits.
     _userTookCamera = false;
     final s = _ctrl.state;
+    // While dispatch searches, "recenter" means the top-down full-route
+    // frame above the searching card.
+    if (s.phase == RiderPhase.requesting ||
+        s.phase == RiderPhase.searchingDriver) {
+      _animateSearchCameraToAngle(0);
+      return;
+    }
     // If we have pickup+dropoff, fit both in view
     if (s.pickup != null && s.dropoff != null) {
       // Web has no native controller — the browser map fits its own bounds.

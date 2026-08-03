@@ -2439,7 +2439,9 @@ extension _RideRequestWidgets on _RideRequestScreenState {
         opacity: _searchingShowMap ? 1.0 : 0.0,
         child: IgnorePointer(
           ignoring: !_searchingShowMap,
-          child: Container(
+          child: _SheetSizeReporter(
+            onChanged: _onSheetHeightChanged,
+            child: Container(
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(28),
               // 3D fade shadow — layered for depth
@@ -2777,6 +2779,7 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                 ),
                 ),
             ),
+          ),
           ),
         ),
       ),

@@ -158,13 +158,21 @@ class _TripReceiptScreenState extends State<TripReceiptScreen>
     return m == 0 ? '$h h' : '$h h $m min';
   }
 
-  /// What the passenger actually paid — backend `total` (trip.fare) wins,
-  /// local trip price is the fallback.
+  /// A cancelled trip is not a sale: no PAID stamp, and the Total reads
+  /// zero. The fare lines stay — they record what the ride would have
+  /// cost; the Total records what was actually charged: nothing.
+  bool get _isCancelled => trip.status.toLowerCase().contains('cancel');
+
+  /// What the ride cost — backend `total` (trip.fare) wins, local trip
+  /// price is the fallback. Shown on the header and the fare lines.
   String get _paidTotal {
     final t = (_fareBreakdown?['total'] as num?)?.toDouble();
     if (t != null && t > 0) return '\$${t.toStringAsFixed(2)}';
     return trip.price;
   }
+
+  /// What the passenger was actually charged. Cancelled trips: zero.
+  String get _chargedTotal => _isCancelled ? '\$0.00' : _paidTotal;
 
   /// The tier as the rider is shown it, from whatever `vehicle_type` holds.
   ///
@@ -309,26 +317,37 @@ class _TripReceiptScreenState extends State<TripReceiptScreen>
                                     ],
                                   ),
                                 ),
-                                // PAID stamp — square to the page.
+                                // Status stamp — square to the page.
                                 //
                                 // It was rotated ten degrees to look like an
                                 // ink stamp. On a receipt whose every other
                                 // line is aligned, one tilted element reads as
                                 // a rendering fault rather than as a flourish.
+                                //
+                                // Cancelled trips never say PAID — nothing
+                                // was charged. Red CANCELLED stamp instead.
                                 Container(
                                     padding: const EdgeInsets.symmetric(
                                         horizontal: 14, vertical: 6),
                                     decoration: BoxDecoration(
                                       borderRadius: BorderRadius.circular(8),
                                       border: Border.all(
-                                        color: _gold.withValues(alpha: 0.85),
+                                        color: _isCancelled
+                                            ? const Color(0xFFE57373)
+                                                .withValues(alpha: 0.9)
+                                            : _gold.withValues(alpha: 0.85),
                                         width: 2,
                                       ),
                                     ),
                                     child: Text(
-                                      S.of(context).statusPaid,
-                                      style: const TextStyle(
-                                        color: _gold,
+                                      _isCancelled
+                                          ? S.of(context).cancelledBadge
+                                              .toUpperCase()
+                                          : S.of(context).statusPaid,
+                                      style: TextStyle(
+                                        color: _isCancelled
+                                            ? const Color(0xFFE57373)
+                                            : _gold,
                                         fontSize: 15,
                                         fontWeight: FontWeight.w900,
                                         letterSpacing: 3,
@@ -357,13 +376,20 @@ class _TripReceiptScreenState extends State<TripReceiptScreen>
                                   mainAxisSize: MainAxisSize.min,
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    Text(
-                                      _tierLabel(trip.rideName),
-                                      style: TextStyle(
-                                        color: c.textPrimary,
-                                        fontSize: 15,
-                                        fontWeight: FontWeight.w800,
-                                        letterSpacing: 0.5,
+                                    // Centred over the car render below it
+                                    // (same 88-wide box), not on the card's
+                                    // left edge.
+                                    SizedBox(
+                                      width: 88,
+                                      child: Text(
+                                        _tierLabel(trip.rideName),
+                                        textAlign: TextAlign.center,
+                                        style: TextStyle(
+                                          color: c.textPrimary,
+                                          fontSize: 15,
+                                          fontWeight: FontWeight.w800,
+                                          letterSpacing: 0.5,
+                                        ),
                                       ),
                                     ),
                                     const SizedBox(height: 4),
@@ -373,6 +399,11 @@ class _TripReceiptScreenState extends State<TripReceiptScreen>
                                       child: Image.asset(
                                         _tierAsset(trip.rideName),
                                         fit: BoxFit.contain,
+                                        // Hugging the left edge, directly
+                                        // under the tier name — centred in
+                                        // its box it drifted right of the
+                                        // label it belongs to.
+                                        alignment: Alignment.centerLeft,
                                         errorBuilder: (_, __, ___) =>
                                             const SizedBox.shrink(),
                                       ),
@@ -425,50 +456,116 @@ class _TripReceiptScreenState extends State<TripReceiptScreen>
                               ],
                             ),
                             const SizedBox(height: 16),
-                            // Timeline: dot — connector — square in a
-                            // stretched left rail so the line physically
-                            // touches both endpoint shapes.
+                            // Timeline: donut — connector — hollow ring in
+                            // a stretched left rail so the line physically
+                            // touches both endpoint shapes. Cancelled: the
+                            // line breaks in the middle and carries the
+                            // CANCELLED tag in the gap.
                             IntrinsicHeight(
                               child: Row(
                                 crossAxisAlignment: CrossAxisAlignment.stretch,
                                 children: [
-                                  Column(
+                                  Stack(
+                                    clipBehavior: Clip.none,
                                     children: [
-                                      const SizedBox(height: 2),
-                                      Container(
-                                        width: 10,
-                                        height: 10,
-                                        decoration: BoxDecoration(
-                                          color: _gold,
-                                          borderRadius:
-                                              BorderRadius.circular(5),
-                                          boxShadow: [
-                                            BoxShadow(
-                                              color: _gold.withValues(
-                                                  alpha: 0.45),
-                                              blurRadius: 6,
+                                      Column(
+                                        children: [
+                                          const SizedBox(height: 2),
+                                          // Pickup: gold ring with a solid
+                                          // gold core inside.
+                                          Container(
+                                            width: 12,
+                                            height: 12,
+                                            decoration: BoxDecoration(
+                                              shape: BoxShape.circle,
+                                              border: Border.all(
+                                                color: _gold,
+                                                width: 1.6,
+                                              ),
+                                              boxShadow: [
+                                                BoxShadow(
+                                                  color: _gold.withValues(
+                                                      alpha: 0.45),
+                                                  blurRadius: 6,
+                                                ),
+                                              ],
                                             ),
-                                          ],
-                                        ),
-                                      ),
-                                      const Expanded(child: _RouteConnector()),
-                                      Container(
-                                        width: 10,
-                                        height: 10,
-                                        decoration: BoxDecoration(
-                                          color: Colors.white,
-                                          borderRadius:
-                                              BorderRadius.circular(2),
-                                          boxShadow: [
-                                            BoxShadow(
-                                              color: Colors.white.withValues(
-                                                  alpha: 0.30),
-                                              blurRadius: 4,
+                                            child: Center(
+                                              child: Container(
+                                                width: 5,
+                                                height: 5,
+                                                decoration:
+                                                    const BoxDecoration(
+                                                  color: _gold,
+                                                  shape: BoxShape.circle,
+                                                ),
+                                              ),
                                             ),
-                                          ],
-                                        ),
+                                          ),
+                                          Expanded(
+                                            child: _RouteConnector(
+                                                cancelled: _isCancelled),
+                                          ),
+                                          // Drop-off: hollow white ring.
+                                          Container(
+                                            width: 12,
+                                            height: 12,
+                                            decoration: BoxDecoration(
+                                              shape: BoxShape.circle,
+                                              border: Border.all(
+                                                color: Colors.white,
+                                                width: 1.6,
+                                              ),
+                                              boxShadow: [
+                                                BoxShadow(
+                                                  color: Colors.white
+                                                      .withValues(
+                                                          alpha: 0.30),
+                                                  blurRadius: 4,
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                          const SizedBox(height: 2),
+                                        ],
                                       ),
-                                      const SizedBox(height: 2),
+                                      // The tag sits in the line's break,
+                                      // centred on the rail.
+                                      if (_isCancelled)
+                                        Positioned.fill(
+                                          child: Center(
+                                            child: Container(
+                                              padding: const EdgeInsets
+                                                  .symmetric(
+                                                  horizontal: 6,
+                                                  vertical: 2),
+                                              decoration: BoxDecoration(
+                                                color: _surface,
+                                                borderRadius:
+                                                    BorderRadius.circular(6),
+                                                border: Border.all(
+                                                  color:
+                                                      const Color(0xFFE57373)
+                                                          .withValues(
+                                                              alpha: 0.9),
+                                                  width: 1.2,
+                                                ),
+                                              ),
+                                              child: Text(
+                                                S.of(context).cancelledBadge
+                                                    .toUpperCase(),
+                                                style: const TextStyle(
+                                                  color:
+                                                      Color(0xFFE57373),
+                                                  fontSize: 8,
+                                                  fontWeight:
+                                                      FontWeight.w900,
+                                                  letterSpacing: 1.2,
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                        ),
                                     ],
                                   ),
                                   const SizedBox(width: 14),
@@ -546,7 +643,7 @@ class _TripReceiptScreenState extends State<TripReceiptScreen>
                                   ),
                                   const Spacer(),
                                   Text(
-                                    _paidTotal,
+                                    _chargedTotal,
                                     style: const TextStyle(
                                       color: _gold,
                                       fontSize: 20,
@@ -878,7 +975,12 @@ class _DashedDivider extends StatelessWidget {
 /// and out at the ends. Painted so it stretches to exactly fill the gap
 /// between the endpoint shapes.
 class _RouteConnector extends StatefulWidget {
-  const _RouteConnector();
+  const _RouteConnector({this.cancelled = false});
+
+  /// Cancelled trips: the line breaks in the middle (the CANCELLED tag
+  /// fills the gap) and the travelling pulse does not run — nothing is
+  /// moving on a ride that never happened.
+  final bool cancelled;
 
   @override
   State<_RouteConnector> createState() => _RouteConnectorState();
@@ -894,7 +996,8 @@ class _RouteConnectorState extends State<_RouteConnector>
     _ctl = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 2000),
-    )..repeat();
+    );
+    if (!widget.cancelled) _ctl.repeat();
   }
 
   @override
@@ -910,7 +1013,8 @@ class _RouteConnectorState extends State<_RouteConnector>
       child: AnimatedBuilder(
         animation: _ctl,
         builder: (_, __) => CustomPaint(
-          painter: _RouteConnectorPainter(t: _ctl.value),
+          painter: _RouteConnectorPainter(
+              t: _ctl.value, cancelled: widget.cancelled),
         ),
       ),
     );
@@ -919,27 +1023,35 @@ class _RouteConnectorState extends State<_RouteConnector>
 
 class _RouteConnectorPainter extends CustomPainter {
   final double t;
+  final bool cancelled;
 
-  _RouteConnectorPainter({required this.t});
+  _RouteConnectorPainter({required this.t, required this.cancelled});
 
   @override
   void paint(Canvas canvas, Size size) {
     final x = size.width / 2;
     const inset = 1.0;
 
-    // Dashed base line
-    final dashPaint = Paint()
+    // Solid line — not dashes. One stroke pickup-side to dropoff-side.
+    final linePaint = Paint()
       ..color = const Color(0x59E8C547)
       ..strokeWidth = 1.5
       ..strokeCap = StrokeCap.round;
-    const dashH = 3.5;
-    const gap = 3.5;
-    double y = inset;
-    while (y < size.height - inset) {
-      final end = (y + dashH).clamp(y, size.height - inset);
-      canvas.drawLine(Offset(x, y), Offset(x, end), dashPaint);
-      y += dashH + gap;
+
+    if (cancelled) {
+      // Two segments with a break in the middle for the tag; no pulse.
+      const gapHalf = 16.0;
+      final mid = size.height / 2;
+      canvas.drawLine(
+          Offset(x, inset), Offset(x, mid - gapHalf), linePaint);
+      canvas.drawLine(
+          Offset(x, mid + gapHalf), Offset(x, size.height - inset),
+          linePaint);
+      return;
     }
+
+    canvas.drawLine(
+        Offset(x, inset), Offset(x, size.height - inset), linePaint);
 
     // Traveling glow pulse, eased, fading near the ends
     final eased = Curves.easeInOut.transform(t);
@@ -958,8 +1070,8 @@ class _RouteConnectorPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(_RouteConnectorPainter oldDelegate) =>
-      oldDelegate.t != t;
+  bool shouldRepaint(_RouteConnectorPainter old) =>
+      old.t != t || old.cancelled != cancelled;
 }
 
 /// Shimmer skeleton shown while the fare breakdown loads — three fake

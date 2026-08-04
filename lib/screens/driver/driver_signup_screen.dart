@@ -356,12 +356,15 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
 
   Future<void> _pickDob() async {
     final now = DateTime.now();
-    final picked = await showDatePicker(
+    // Blocks, in order: year first, then month, then day — never the
+    // calendar page, which asked for the day before knowing the year.
+    final picked = await showDialog<DateTime>(
       context: context,
-      initialDate:
-          _dob ?? DateTime(now.year - _minDriverAge, now.month, now.day),
-      firstDate: DateTime(1900),
-      lastDate: now,
+      builder: (_) => _DobBlockPicker(
+        initial: _dob,
+        minYear: 1900,
+        maxYear: now.year,
+      ),
     );
     if (picked != null && mounted) {
       setState(() => _dob = picked);
@@ -2460,6 +2463,228 @@ class _SsnFormatter extends TextInputFormatter {
     return TextEditingValue(
       text: str,
       selection: TextSelection.collapsed(offset: str.length),
+    );
+  }
+}
+
+/// Three-step date picker as tap blocks: YEAR grid first, then MONTH
+/// grid, then DAY grid. Replaces the stock calendar dialog for date of
+/// birth — a driver picking a birth year two decades back should never
+/// have to page month by month to get there.
+class _DobBlockPicker extends StatefulWidget {
+  const _DobBlockPicker({
+    required this.initial,
+    required this.minYear,
+    required this.maxYear,
+  });
+
+  final DateTime? initial;
+  final int minYear;
+  final int maxYear;
+
+  @override
+  State<_DobBlockPicker> createState() => _DobBlockPickerState();
+}
+
+class _DobBlockPickerState extends State<_DobBlockPicker> {
+  static const _gold = Color(0xFFE8C547);
+  static const _months = [
+    'JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN',
+    'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC',
+  ];
+
+  /// 0 = year, 1 = month, 2 = day. Always opens on the year grid.
+  int _step = 0;
+  int? _year;
+  int? _month;
+
+  late final ScrollController _yearScroll;
+
+  @override
+  void initState() {
+    super.initState();
+    _year = widget.initial?.year;
+    _month = widget.initial?.month;
+    // Land the year grid near the likely pick (a driver is 21+), not on
+    // 1900: rows of 4 blocks, ~52 px each.
+    final anchor = (widget.initial?.year ?? (widget.maxYear - 25));
+    final rows = (anchor - widget.minYear) / 4;
+    _yearScroll = ScrollController(
+      initialScrollOffset: (rows * 52).clamp(0, double.infinity),
+    );
+  }
+
+  @override
+  void dispose() {
+    _yearScroll.dispose();
+    super.dispose();
+  }
+
+  Widget _block(String text, bool selected, VoidCallback onTap) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        height: 44,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: selected ? _gold : Colors.white.withValues(alpha: 0.05),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: selected ? _gold : Colors.white.withValues(alpha: 0.10),
+          ),
+        ),
+        child: Text(
+          text,
+          style: TextStyle(
+            color: selected ? const Color(0xFF1A1400) : Colors.white,
+            fontSize: 15,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final titles = ['Year', 'Month', 'Day'];
+    return Dialog(
+      backgroundColor: const Color(0xFF14141A),
+      insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 40),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              children: [
+                if (_step > 0)
+                  GestureDetector(
+                    onTap: () => setState(() => _step--),
+                    child: const Padding(
+                      padding: EdgeInsets.all(4),
+                      child: Icon(Icons.arrow_back_ios_new_rounded,
+                          color: _gold, size: 16),
+                    ),
+                  )
+                else
+                  const SizedBox(width: 24),
+                const Spacer(),
+                Text(
+                  titles[_step],
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0.5,
+                  ),
+                ),
+                const Spacer(),
+                GestureDetector(
+                  onTap: () => Navigator.of(context).pop(),
+                  child: const Padding(
+                    padding: EdgeInsets.all(4),
+                    child: Icon(Icons.close_rounded,
+                        color: Colors.white54, size: 18),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            // Breadcrumb of what is already chosen.
+            Text(
+              [
+                if (_year != null) '$_year',
+                if (_month != null) _months[_month! - 1],
+              ].join(' · '),
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.45),
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Flexible(
+              child: SizedBox(
+                height: 300,
+                child: _step == 0
+                    ? _buildYears()
+                    : _step == 1
+                        ? _buildMonths()
+                        : _buildDays(),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildYears() {
+    final years = [
+      for (var y = widget.maxYear; y >= widget.minYear; y--) y,
+    ];
+    return GridView.builder(
+      controller: _yearScroll,
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 4,
+        mainAxisSpacing: 8,
+        crossAxisSpacing: 8,
+        childAspectRatio: 2.0,
+      ),
+      itemCount: years.length,
+      itemBuilder: (_, i) => _block('${years[i]}', _year == years[i], () {
+        setState(() {
+          _year = years[i];
+          _step = 1;
+        });
+      }),
+    );
+  }
+
+  Widget _buildMonths() {
+    return GridView.builder(
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 3,
+        mainAxisSpacing: 8,
+        crossAxisSpacing: 8,
+        childAspectRatio: 2.2,
+      ),
+      itemCount: 12,
+      itemBuilder: (_, i) => _block(_months[i], _month == i + 1, () {
+        setState(() {
+          _month = i + 1;
+          _step = 2;
+        });
+      }),
+    );
+  }
+
+  Widget _buildDays() {
+    final y = _year ?? widget.maxYear;
+    final m = _month ?? 1;
+    final days = DateUtils.getDaysInMonth(y, m);
+    final initialDay = widget.initial != null &&
+            widget.initial!.year == y &&
+            widget.initial!.month == m
+        ? widget.initial!.day
+        : null;
+    return GridView.builder(
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 7,
+        mainAxisSpacing: 6,
+        crossAxisSpacing: 6,
+        childAspectRatio: 1.0,
+      ),
+      itemCount: days,
+      itemBuilder: (_, i) {
+        final d = i + 1;
+        return _block('$d', initialDay == d, () {
+          Navigator.of(context).pop(DateTime(y, m, d));
+        });
+      },
     );
   }
 }

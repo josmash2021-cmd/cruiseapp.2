@@ -45,8 +45,12 @@ service cloud.firestore {
     // VERIFICATIONS — identity verification documents
     // ═══════════════════════════════════════════════════════════════════
     match /verifications/{docId} {
+      // userId is the backend's INT id; the app signs in with a custom
+      // token whose uid is the string 'user_{id}' — both shapes accepted.
       allow read: if isOwnerOrAdmin()
-        || (isAuthenticated() && resource.data.userId == request.auth.uid);
+        || (isAuthenticated()
+            && (resource.data.userId == request.auth.uid
+                || request.auth.uid == 'user_' + string(resource.data.userId)));
       allow create: if isAuthenticated();
       allow update: if isOwnerOrAdmin()
         || (isAuthenticated() && resource.data.userId == request.auth.uid);

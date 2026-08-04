@@ -336,6 +336,36 @@ async def get_nearby_drivers(
                     "tier": normalize_tier(tier_map.get(d_id)) if tier_keys else None,
                 })
 
+    # Exclude drivers mid-trip: the rider-facing wait estimate reads this
+    # endpoint, and "2-4 min away" computed from a car that is currently
+    # driving someone else is a promise nobody can keep. Product rule
+    # (2026-08-04): the estimate is the nearest driver WITHOUT a trip in
+    # progress. One IN query over the candidates, both Redis and SQL paths.
+    #
+    # Currently-busy only — NOT trips.py's _ACTIVE_TRIP_STATUSES: that
+    # list includes requested (no driver assigned yet) and
+    # scheduled_accepted/scheduled_active, so a driver who claimed
+    # tomorrow's scheduled ride would vanish from every wait estimate
+    # today. Same tightening dispatch.py applies for its own busy check.
+    # The 6h recency bound keeps a stuck row (the /audit-trips failure
+    # mode) from blacklisting its driver forever.
+    if nearby:
+        _BUSY_STATUSES = [
+            "accepted", "driver_en_route", "driver_arriving", "arrived",
+            "driver_arrived", "in_trip", "in_progress", "rider_onboard",
+            "on_trip", "en_route_to_pickup",
+        ]
+        busy_res = await db.execute(
+            select(Trip.driver_id).where(and_(
+                Trip.driver_id.in_([d["id"] for d in nearby]),
+                Trip.status.in_(_BUSY_STATUSES),
+                Trip.created_at >= utc_now() - timedelta(hours=6),
+            ))
+        )
+        busy = {row[0] for row in busy_res.all()}
+        if busy:
+            nearby = [d for d in nearby if d["id"] not in busy]
+
     response = {"count": len(nearby), "drivers": nearby}
     _nearby_cache[_cache_key] = (_now, response)
     return response

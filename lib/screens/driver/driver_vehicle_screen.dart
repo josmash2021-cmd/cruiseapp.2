@@ -101,8 +101,21 @@ class _DriverVehicleScreenState extends State<DriverVehicleScreen> {
     }
   }
 
-  /// The same four shapes the rider is shown when they pick a ride.
-  String get _carImage => tierCarImage(_vehicleType);
+  /// The driver's own garage art: three-quarter views (driver_tier_*),
+  /// shown ONLY on this screen and its detail page. The rider keeps the
+  /// side-profile `cruisert*` set — tierCarImage() — everywhere else.
+  String get _carImage {
+    switch (tierKey(_vehicleType)) {
+      case kTierBlack:
+        return 'assets/images/driver_tier_black.png';
+      case kTierPremium:
+        return 'assets/images/driver_tier_premium.png';
+      case kTierCompact:
+        return 'assets/images/driver_tier_compact.png';
+      default:
+        return 'assets/images/driver_tier_standard.png';
+    }
+  }
 
   /// Tier label, colour and icon.
   ///

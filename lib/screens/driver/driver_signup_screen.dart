@@ -2671,20 +2671,49 @@ class _DobBlockPickerState extends State<_DobBlockPicker> {
             widget.initial!.month == m
         ? widget.initial!.day
         : null;
-    return GridView.builder(
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 7,
-        mainAxisSpacing: 6,
-        crossAxisSpacing: 6,
-        childAspectRatio: 1.0,
-      ),
-      itemCount: days,
-      itemBuilder: (_, i) {
-        final d = i + 1;
-        return _block('$d', initialDay == d, () {
-          Navigator.of(context).pop(DateTime(y, m, d));
-        });
-      },
+    // Calendar-shaped: a weekday header and the leading blanks the 1st
+    // leaves, so the month assembles as a real calendar as you pick.
+    const week = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+    final lead = DateTime(y, m, 1).weekday % 7; // Sunday-first offset
+    return Column(
+      children: [
+        Row(
+          children: [
+            for (final w in week)
+              Expanded(
+                child: Center(
+                  child: Text(
+                    w,
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.40),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+        const SizedBox(height: 6),
+        Expanded(
+          child: GridView.builder(
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 7,
+              mainAxisSpacing: 6,
+              crossAxisSpacing: 6,
+              childAspectRatio: 1.0,
+            ),
+            itemCount: lead + days,
+            itemBuilder: (_, i) {
+              if (i < lead) return const SizedBox.shrink();
+              final d = i - lead + 1;
+              return _block('$d', initialDay == d, () {
+                Navigator.of(context).pop(DateTime(y, m, d));
+              });
+            },
+          ),
+        ),
+      ],
     );
   }
 }

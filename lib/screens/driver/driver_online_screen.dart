@@ -68,6 +68,7 @@ import '../../services/prefs_cache.dart';
 import 'driver_trip_accept_screen.dart';
 import 'trip_accepted_overlay.dart';
 import 'scheduled_rides_screen.dart';
+import '../../services/live_activity_service.dart';
 import '../../services/network_service.dart';
 import '../../services/notification_service.dart';
 import '../../services/socket_service.dart';

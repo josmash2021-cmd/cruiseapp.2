@@ -941,6 +941,8 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       _isGoingOnline = false;
       debugPrint('âœ… Driver online successfully');
       AnalyticsService.instance.logDriverOnline();
+      // iOS: Cruise logo in the Dynamic Island while online (no-op elsewhere)
+      LiveActivityService.startOnline();
       // Show persistent notification (fire-and-forget, non-blocking)
       NotificationService.showDriverOnlineNotification();
       // Subscribe to scheduled rides topic — receives FCM when new
@@ -967,6 +969,8 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
   void _goOfflineBackend() {
     if (_driverId == null || _pos == null) return;
     AnalyticsService.instance.logDriverOffline();
+    // iOS: dismiss the Dynamic Island activity (no-op elsewhere)
+    LiveActivityService.stop();
     NotificationService.cancelDriverOnlineNotification();
     NotificationService.cancelOfferNotifications();
     // Unsubscribe from scheduled rides topic when going offline.

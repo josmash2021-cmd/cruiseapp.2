@@ -17,6 +17,11 @@
 		97C147011CF9000F007C117D /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FF1CF9000F007C117D /* LaunchScreen.storyboard */; };
 		B1F2D3E4A5B6C7D800112233 /* GoogleService-Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = B1F2D3E4A5B6C7D800112234 /* GoogleService-Info.plist */; };
 		C1D2E3F4A5B6C7D800PRIV01 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = C1D2E3F4A5B6C7D800PRIV02 /* PrivacyInfo.xcprivacy */; };
+		CA11AC7101DECAFE00000011 /* CruiseLiveActivityBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA11AC7101DECAFE00000002 /* CruiseLiveActivityBundle.swift */; };
+		CA11AC7101DECAFE00000012 /* CruiseActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA11AC7101DECAFE00000003 /* CruiseActivityAttributes.swift */; };
+		CA11AC7101DECAFE00000013 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = CA11AC7101DECAFE00000005 /* Assets.xcassets */; };
+		CA11AC7101DECAFE00000014 /* CruiseActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA11AC7101DECAFE00000003 /* CruiseActivityAttributes.swift */; };
+		CA11AC7101DECAFE00000015 /* CruiseLiveActivity.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = CA11AC7101DECAFE00000001 /* CruiseLiveActivity.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -26,6 +31,13 @@
 			proxyType = 1;
 			remoteGlobalIDString = 97C146ED1CF9000F007C117D;
 			remoteInfo = Runner;
+		};
+		CA11AC7101DECAFE00000051 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 97C146E61CF9000F007C117D /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = CA11AC7101DECAFE00000030;
+			remoteInfo = CruiseLiveActivity;
 		};
 /* End PBXContainerItemProxy section */
 
@@ -38,6 +50,17 @@
 			files = (
 			);
 			name = "Embed Frameworks";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		CA11AC7101DECAFE00000043 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				CA11AC7101DECAFE00000015 /* CruiseLiveActivity.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXCopyFilesBuildPhase section */
@@ -62,10 +85,22 @@
 		A1B2C3D4E5F60001 /* Runner.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Runner.entitlements; sourceTree = "<group>"; };
 		B1F2D3E4A5B6C7D800112234 /* GoogleService-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "GoogleService-Info.plist"; sourceTree = "<group>"; };
 		C1D2E3F4A5B6C7D800PRIV02 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		CA11AC7101DECAFE00000001 /* CruiseLiveActivity.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = CruiseLiveActivity.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		CA11AC7101DECAFE00000002 /* CruiseLiveActivityBundle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CruiseLiveActivityBundle.swift; sourceTree = "<group>"; };
+		CA11AC7101DECAFE00000003 /* CruiseActivityAttributes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CruiseActivityAttributes.swift; sourceTree = "<group>"; };
+		CA11AC7101DECAFE00000004 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		CA11AC7101DECAFE00000005 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		97C146EB1CF9000F007C117D /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		CA11AC7101DECAFE00000041 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -81,6 +116,17 @@
 				331C807B294A618700263BE5 /* RunnerTests.swift */,
 			);
 			path = RunnerTests;
+			sourceTree = "<group>";
+		};
+		CA11AC7101DECAFE00000020 /* CruiseLiveActivity */ = {
+			isa = PBXGroup;
+			children = (
+				CA11AC7101DECAFE00000002 /* CruiseLiveActivityBundle.swift */,
+				CA11AC7101DECAFE00000003 /* CruiseActivityAttributes.swift */,
+				CA11AC7101DECAFE00000005 /* Assets.xcassets */,
+				CA11AC7101DECAFE00000004 /* Info.plist */,
+			);
+			path = CruiseLiveActivity;
 			sourceTree = "<group>";
 		};
 		9740EEB11CF90186004384FC /* Flutter */ = {
@@ -101,6 +147,7 @@
 				97C146F01CF9000F007C117D /* Runner */,
 				97C146EF1CF9000F007C117D /* Products */,
 				331C8082294A63A400263BE5 /* RunnerTests */,
+				CA11AC7101DECAFE00000020 /* CruiseLiveActivity */,
 			);
 			sourceTree = "<group>";
 		};
@@ -109,6 +156,7 @@
 			children = (
 				97C146EE1CF9000F007C117D /* Runner.app */,
 				331C8081294A63A400263BE5 /* RunnerTests.xctest */,
+				CA11AC7101DECAFE00000001 /* CruiseLiveActivity.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -135,6 +183,23 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		CA11AC7101DECAFE00000030 /* CruiseLiveActivity */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = CA11AC7101DECAFE00000031 /* Build configuration list for PBXNativeTarget "CruiseLiveActivity" */;
+			buildPhases = (
+				CA11AC7101DECAFE00000040 /* Sources */,
+				CA11AC7101DECAFE00000041 /* Frameworks */,
+				CA11AC7101DECAFE00000042 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = CruiseLiveActivity;
+			productName = CruiseLiveActivity;
+			productReference = CA11AC7101DECAFE00000001 /* CruiseLiveActivity.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 		331C8080294A63A400263BE5 /* RunnerTests */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = 331C8087294A63A400263BE5 /* Build configuration list for PBXNativeTarget "RunnerTests" */;
@@ -161,11 +226,13 @@
 				97C146EB1CF9000F007C117D /* Frameworks */,
 				97C146EC1CF9000F007C117D /* Resources */,
 				9705A1C41CF9048500538489 /* Embed Frameworks */,
+				CA11AC7101DECAFE00000043 /* Embed Foundation Extensions */,
 				3B06AD1E1E4923F5004D2608 /* Thin Binary */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				CA11AC7101DECAFE00000050 /* PBXTargetDependency */,
 			);
 			name = Runner;
 			productName = Runner;
@@ -185,6 +252,9 @@
 					331C8080294A63A400263BE5 = {
 						CreatedOnToolsVersion = 14.0;
 						TestTargetID = 97C146ED1CF9000F007C117D;
+					};
+					CA11AC7101DECAFE00000030 = {
+						CreatedOnToolsVersion = 15.0;
 					};
 					97C146ED1CF9000F007C117D = {
 						CreatedOnToolsVersion = 7.3.1;
@@ -208,11 +278,20 @@
 			targets = (
 				97C146ED1CF9000F007C117D /* Runner */,
 				331C8080294A63A400263BE5 /* RunnerTests */,
+				CA11AC7101DECAFE00000030 /* CruiseLiveActivity */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
+		CA11AC7101DECAFE00000042 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				CA11AC7101DECAFE00000013 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		331C807F294A63A400263BE5 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -270,6 +349,15 @@
 /* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		CA11AC7101DECAFE00000040 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				CA11AC7101DECAFE00000011 /* CruiseLiveActivityBundle.swift in Sources */,
+				CA11AC7101DECAFE00000012 /* CruiseActivityAttributes.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		331C807D294A63A400263BE5 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -285,12 +373,18 @@
 				74858FAF1ED2DC5600515810 /* AppDelegate.swift in Sources */,
 				1498D2341E8E89220040F4C2 /* GeneratedPluginRegistrant.m in Sources */,
 				7884E8682EC3CC0700C636F2 /* SceneDelegate.swift in Sources */,
+				CA11AC7101DECAFE00000014 /* CruiseActivityAttributes.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
+		CA11AC7101DECAFE00000050 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = CA11AC7101DECAFE00000030 /* CruiseLiveActivity */;
+			targetProxy = CA11AC7101DECAFE00000051 /* PBXContainerItemProxy */;
+		};
 		331C8086294A63A400263BE5 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = 97C146ED1CF9000F007C117D /* Runner */;
@@ -318,6 +412,85 @@
 /* End PBXVariantGroup section */
 
 /* Begin XCBuildConfiguration section */
+		CA11AC7101DECAFE00000032 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 9740EEB31CF90195004384FC /* Generated.xcconfig */;
+			buildSettings = {
+				CLANG_ENABLE_MODULES = YES;
+				CODE_SIGN_IDENTITY = "Apple Distribution";
+				CODE_SIGN_STYLE = Manual;
+				CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)";
+				DEVELOPMENT_TEAM = 7QLC9UVB3Z;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = CruiseLiveActivity/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.1;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = "$(FLUTTER_BUILD_NAME)";
+				PRODUCT_BUNDLE_IDENTIFIER = com.cruiseinride.app.CruiseLiveActivity;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		CA11AC7101DECAFE00000033 /* Release */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 9740EEB31CF90195004384FC /* Generated.xcconfig */;
+			buildSettings = {
+				CLANG_ENABLE_MODULES = YES;
+				CODE_SIGN_IDENTITY = "Apple Distribution";
+				CODE_SIGN_STYLE = Manual;
+				CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)";
+				DEVELOPMENT_TEAM = 7QLC9UVB3Z;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = CruiseLiveActivity/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.1;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = "$(FLUTTER_BUILD_NAME)";
+				PRODUCT_BUNDLE_IDENTIFIER = com.cruiseinride.app.CruiseLiveActivity;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		CA11AC7101DECAFE00000034 /* Profile */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 9740EEB31CF90195004384FC /* Generated.xcconfig */;
+			buildSettings = {
+				CLANG_ENABLE_MODULES = YES;
+				CODE_SIGN_IDENTITY = "Apple Distribution";
+				CODE_SIGN_STYLE = Manual;
+				CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)";
+				DEVELOPMENT_TEAM = 7QLC9UVB3Z;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = CruiseLiveActivity/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.1;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = "$(FLUTTER_BUILD_NAME)";
+				PRODUCT_BUNDLE_IDENTIFIER = com.cruiseinride.app.CruiseLiveActivity;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Profile;
+		};
 		249021D3217E4FDB00AE95B9 /* Profile */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -607,6 +780,16 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		CA11AC7101DECAFE00000031 /* Build configuration list for PBXNativeTarget "CruiseLiveActivity" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				CA11AC7101DECAFE00000032 /* Debug */,
+				CA11AC7101DECAFE00000033 /* Release */,
+				CA11AC7101DECAFE00000034 /* Profile */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 		331C8087294A63A400263BE5 /* Build configuration list for PBXNativeTarget "RunnerTests" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (

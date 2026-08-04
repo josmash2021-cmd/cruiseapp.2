@@ -393,6 +393,7 @@ workflows:
       vars:
         <<: *shared_vars
         BUNDLE_ID: "com.cruiseinride.app"
+        EXT_BUNDLE_ID: "com.cruiseinride.app.CruiseLiveActivity"
     scripts:
       - *generate_env
       - *generate_firebase_configs
@@ -419,55 +420,83 @@ workflows:
             --delete-stale-profiles \
             --certificate-key=@env:CERTIFICATE_PRIVATE_KEY \
             --verbose
+          # Second profile: the CruiseLiveActivity widget extension. --create
+          # registers the bundle id on App Store Connect if it doesn't exist
+          # yet (same API key that already creates the app's profile).
+          # --delete-stale-profiles: cert rotations invalidate old profiles
+          # and stale ones eventually 409 on name conflict (same failure the
+          # app fetch already guards against).
+          app-store-connect fetch-signing-files "$EXT_BUNDLE_ID" \
+            --type IOS_APP_ADHOC \
+            --create \
+            --strict-match-identifier \
+            --delete-stale-profiles \
+            --certificate-key=@env:CERTIFICATE_PRIVATE_KEY \
+            --verbose
           keychain add-certificates
 
-          # ── Extract profile info ──
-          PROFILE_PATH=$(find "$HOME/Library/MobileDevice/Provisioning Profiles" \
-            "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles" \
-            -name "*.mobileprovision" 2>/dev/null | head -1)
-          if [ -z "$PROFILE_PATH" ]; then
-            echo "❌ No provisioning profile downloaded"; exit 1
-          fi
-          PLIST=$(security cms -D -i "$PROFILE_PATH" 2>/dev/null)
-          PROFILE_UUID=$(echo "$PLIST" | grep -A1 '<key>UUID</key>' | tail -1 \
-            | sed 's/.*<string>//' | sed 's/<\/string>.*//' | tr -d '[:space:]')
-          PROFILE_NAME=$(echo "$PLIST" | grep -A1 '<key>Name</key>' | tail -1 \
-            | sed 's/.*<string>//' | sed 's/<\/string>.*//' | xargs)
-          echo "✅ Profile: '$PROFILE_NAME' ($PROFILE_UUID)"
-
-          # ── Patch pbxproj ──
-          # Inject PROVISIONING_PROFILE directly into Runner's pbxproj.
+          # ── Patch pbxproj + export options, one profile per bundle id ──
+          # The old perl injected ONE profile after every CODE_SIGN_STYLE =
+          # Manual; — correct with a single target, wrong now that the
+          # extension target is also Manual with a different bundle id.
           # We do NOT use FLUTTER_XCODE_* env vars for CODE_SIGN_STYLE or
           # PROVISIONING_PROFILE because Xcode 15 passes them as global
           # xcodebuild settings, which forces manual signing on SPM packages
           # and causes "does not support provisioning profiles" failures.
-          # The pbxproj injection is local to the Runner target only.
           PBXPROJ="ios/Runner.xcodeproj/project.pbxproj"
           perl -i -ne 'print unless /^\s*PROVISIONING_PROFILE/' "$PBXPROJ"
           perl -i -pe 's/CODE_SIGN_IDENTITY = "[^"]*"/CODE_SIGN_IDENTITY = "Apple Distribution"/g' "$PBXPROJ"
-          perl -i -pe "s{(CODE_SIGN_STYLE = Manual;)}{\$1\n\t\t\t\tPROVISIONING_PROFILE_SPECIFIER = \"${PROFILE_NAME}\";\n\t\t\t\tPROVISIONING_PROFILE = \"${PROFILE_UUID}\";}" "$PBXPROJ"
-
-          # ── Only DEVELOPMENT_TEAM as env var (safe, doesn't affect signing style) ──
-          echo "FLUTTER_XCODE_DEVELOPMENT_TEAM=7QLC9UVB3Z" >> $CM_ENV
-
-          # ── Generate export_options.plist ──
-          export PROFILE_NAME
-          python3 - << 'PYEOF'
-          import plistlib, os, pathlib
-          name = os.environ["PROFILE_NAME"]
+          export EXPORT_METHOD="ad-hoc"
+          python3 << 'PYEOF'
+          import glob, os, pathlib, plistlib, subprocess, sys
+          bundle_app = os.environ["BUNDLE_ID"]
+          bundle_ext = os.environ["EXT_BUNDLE_ID"]
+          profiles = {}
+          for d in ("~/Library/MobileDevice/Provisioning Profiles",
+                    "~/Library/Developer/Xcode/UserData/Provisioning Profiles"):
+              for f in glob.glob(os.path.join(os.path.expanduser(d), "*.mobileprovision")):
+                  raw = subprocess.run(["security", "cms", "-D", "-i", f],
+                                       capture_output=True).stdout
+                  if not raw:
+                      continue
+                  pl = plistlib.loads(raw)
+                  app_id = pl.get("Entitlements", {}).get("application-identifier", "")
+                  bid = app_id.split(".", 1)[1] if "." in app_id else ""
+                  profiles[bid] = {"name": pl.get("Name", ""), "uuid": pl.get("UUID", "")}
+          print("profiles by bundle id:", {k: v["name"] for k, v in profiles.items()})
+          missing = [b for b in (bundle_app, bundle_ext) if b not in profiles]
+          if missing:
+              sys.exit(f"missing provisioning profiles for: {missing}")
+          path = "ios/Runner.xcodeproj/project.pbxproj"
+          src = open(path).read()
+          for bid in (bundle_app, bundle_ext):
+              p = profiles[bid]
+              anchor = f"PRODUCT_BUNDLE_IDENTIFIER = {bid};"
+              if anchor not in src:
+                  sys.exit(f"pbxproj anchor missing: {anchor}")
+              inj = (anchor + "\n\t\t\t\tPROVISIONING_PROFILE_SPECIFIER = \"" + p["name"]
+                     + "\";\n\t\t\t\tPROVISIONING_PROFILE = \"" + p["uuid"] + "\";")
+              src = src.replace(anchor, inj)
+          open(path, "w").write(src)
           pl = {
-              "method": "ad-hoc",
+              "method": os.environ.get("EXPORT_METHOD", "ad-hoc"),
               "teamID": "7QLC9UVB3Z",
               "signingStyle": "manual",
               "provisioningProfiles": {
-                  "com.cruiseinride.app": name,
+                  bundle_app: profiles[bundle_app]["name"],
+                  bundle_ext: profiles[bundle_ext]["name"],
               },
           }
+          if pl["method"] == "app-store":
+              pl["uploadSymbols"] = True
           out = pathlib.Path.home() / "export_options.plist"
           with open(out, "wb") as f:
               plistlib.dump(pl, f)
-          print(f"Created {out}")
+          print("export options:", pl)
           PYEOF
+
+          # ── Only DEVELOPMENT_TEAM as env var (safe, doesn't affect signing style) ──
+          echo "FLUTTER_XCODE_DEVELOPMENT_TEAM=7QLC9UVB3Z" >> $CM_ENV
           security find-identity -v -p codesigning
           echo "✅ Ad Hoc signing ready"
       - name: Flutter build IPA (Ad Hoc)
@@ -505,6 +534,7 @@ workflows:
       vars:
         <<: *shared_vars
         BUNDLE_ID: "com.cruiseinride.app"
+        EXT_BUNDLE_ID: "com.cruiseinride.app.CruiseLiveActivity"
     scripts:
       - *generate_env
       - *generate_firebase_configs
@@ -559,83 +589,84 @@ workflows:
             --certificate-key=@env:CERTIFICATE_PRIVATE_KEY \
             --verbose
 
+          # Second profile: the CruiseLiveActivity widget extension. --create
+          # registers the bundle id on App Store Connect if it doesn't exist
+          # yet (same API key that already creates the app's profile).
+          app-store-connect fetch-signing-files "$EXT_BUNDLE_ID" \
+            --type IOS_APP_STORE \
+            --create \
+            --strict-match-identifier \
+            --certificate-key=@env:CERTIFICATE_PRIVATE_KEY \
+            --verbose
+
           keychain add-certificates
-
-          # ── Extract profile info ──────────────────────────────────────────
-          PROFILE_PATH=$(find "$HOME/Library/MobileDevice/Provisioning Profiles" \
-            "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles" \
-            -name "*.mobileprovision" 2>/dev/null | head -1)
-          if [ -z "$PROFILE_PATH" ]; then
-            echo "❌ No provisioning profile downloaded"
-            echo "Checking MobileDevice:" && ls -la "$HOME/Library/MobileDevice/Provisioning Profiles/" 2>/dev/null || true
-            echo "Checking Xcode UserData:" && ls -la "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles/" 2>/dev/null || true
-            exit 1
-          fi
-          echo "Profile file: $PROFILE_PATH"
-
-          PLIST=$(security cms -D -i "$PROFILE_PATH" 2>/dev/null)
-          if [ -z "$PLIST" ]; then
-            echo "❌ security cms failed to decode the profile"
-            exit 1
-          fi
-
-          PROFILE_UUID=$(echo "$PLIST" | grep -A1 '<key>UUID</key>' | tail -1 \
-            | sed 's/.*<string>//' | sed 's/<\/string>.*//' | tr -d '[:space:]')
-          PROFILE_NAME=$(echo "$PLIST" | grep -A1 '<key>Name</key>' | tail -1 \
-            | sed 's/.*<string>//' | sed 's/<\/string>.*//' | xargs)
-
-          if [ -z "$PROFILE_UUID" ] || [ -z "$PROFILE_NAME" ]; then
-            echo "❌ Could not extract UUID or Name from profile"
-            echo "   UUID='$PROFILE_UUID'  NAME='$PROFILE_NAME'"
-            echo "$PLIST" | head -40
-            exit 1
-          fi
-          echo "✅ Profile: '$PROFILE_NAME' ($PROFILE_UUID)"
 
           # ── Detect signing identity from keychain ─────────────────────────
           IDENTITY=$(security find-identity -v -p codesigning \
             | grep -o '"[^"]*"' | head -1 | tr -d '"')
           echo "✅ Identity: '$IDENTITY'"
 
-          # ── Patch pbxproj: inject signing fields into Runner target only ──
+          # ── Patch pbxproj + export options, one profile per bundle id ──
+          # The old perl injected ONE profile after every CODE_SIGN_STYLE =
+          # Manual; — correct with a single target, wrong now that the
+          # extension target is also Manual with a different bundle id.
           # NOTE: FLUTTER_XCODE_* env vars for CODE_SIGN_STYLE/PROVISIONING_PROFILE
           # are intentionally OMITTED because Xcode 15 passes them as global
           # xcodebuild settings, forcing manual signing on SPM packages.
-          # The pbxproj injection is local to the Runner target only.
           PBXPROJ="ios/Runner.xcodeproj/project.pbxproj"
-
-          # 1) Strip any stale PROVISIONING_PROFILE* lines
           perl -i -ne 'print unless /^\s*PROVISIONING_PROFILE/' "$PBXPROJ"
-
-          # 2) Ensure CODE_SIGN_IDENTITY matches the actual certificate
           perl -i -pe 's/CODE_SIGN_IDENTITY = "[^"]*"/CODE_SIGN_IDENTITY = "Apple Distribution"/g' "$PBXPROJ"
-
-          # 3) Inject fresh PROVISIONING_PROFILE_SPECIFIER + PROVISIONING_PROFILE
-          #    after every CODE_SIGN_STYLE = Manual; (covers Debug, Profile, Release)
-          perl -i -pe "s{(CODE_SIGN_STYLE = Manual;)}{\$1\n\t\t\t\tPROVISIONING_PROFILE_SPECIFIER = \"${PROFILE_NAME}\";\n\t\t\t\tPROVISIONING_PROFILE = \"${PROFILE_UUID}\";}" "$PBXPROJ"
-
-          # ── Only DEVELOPMENT_TEAM as env var (safe, doesn't affect signing style) ──
-          echo "FLUTTER_XCODE_DEVELOPMENT_TEAM=7QLC9UVB3Z" >> $CM_ENV
-
-          # ── Generate export_options.plist ──────────────────────────────────
-          export PROFILE_NAME
-          python3 - << 'PYEOF'
-          import plistlib, os, pathlib
-          name = os.environ["PROFILE_NAME"]
+          export EXPORT_METHOD="app-store"
+          python3 << 'PYEOF'
+          import glob, os, pathlib, plistlib, subprocess, sys
+          bundle_app = os.environ["BUNDLE_ID"]
+          bundle_ext = os.environ["EXT_BUNDLE_ID"]
+          profiles = {}
+          for d in ("~/Library/MobileDevice/Provisioning Profiles",
+                    "~/Library/Developer/Xcode/UserData/Provisioning Profiles"):
+              for f in glob.glob(os.path.join(os.path.expanduser(d), "*.mobileprovision")):
+                  raw = subprocess.run(["security", "cms", "-D", "-i", f],
+                                       capture_output=True).stdout
+                  if not raw:
+                      continue
+                  pl = plistlib.loads(raw)
+                  app_id = pl.get("Entitlements", {}).get("application-identifier", "")
+                  bid = app_id.split(".", 1)[1] if "." in app_id else ""
+                  profiles[bid] = {"name": pl.get("Name", ""), "uuid": pl.get("UUID", "")}
+          print("profiles by bundle id:", {k: v["name"] for k, v in profiles.items()})
+          missing = [b for b in (bundle_app, bundle_ext) if b not in profiles]
+          if missing:
+              sys.exit(f"missing provisioning profiles for: {missing}")
+          path = "ios/Runner.xcodeproj/project.pbxproj"
+          src = open(path).read()
+          for bid in (bundle_app, bundle_ext):
+              p = profiles[bid]
+              anchor = f"PRODUCT_BUNDLE_IDENTIFIER = {bid};"
+              if anchor not in src:
+                  sys.exit(f"pbxproj anchor missing: {anchor}")
+              inj = (anchor + "\n\t\t\t\tPROVISIONING_PROFILE_SPECIFIER = \"" + p["name"]
+                     + "\";\n\t\t\t\tPROVISIONING_PROFILE = \"" + p["uuid"] + "\";")
+              src = src.replace(anchor, inj)
+          open(path, "w").write(src)
           pl = {
-              "method": "app-store",
+              "method": os.environ.get("EXPORT_METHOD", "app-store"),
               "teamID": "7QLC9UVB3Z",
               "signingStyle": "manual",
-              "uploadSymbols": True,
               "provisioningProfiles": {
-                  "com.cruiseinride.app": name,
+                  bundle_app: profiles[bundle_app]["name"],
+                  bundle_ext: profiles[bundle_ext]["name"],
               },
           }
+          if pl["method"] == "app-store":
+              pl["uploadSymbols"] = True
           out = pathlib.Path.home() / "export_options.plist"
           with open(out, "wb") as f:
               plistlib.dump(pl, f)
-          print(f"Created {out}")
+          print("export options:", pl)
           PYEOF
+
+          # ── Only DEVELOPMENT_TEAM as env var (safe, doesn't affect signing style) ──
+          echo "FLUTTER_XCODE_DEVELOPMENT_TEAM=7QLC9UVB3Z" >> $CM_ENV
           cat "$HOME/export_options.plist"
 
           # ── Diagnostics ───────────────────────────────────────────────────

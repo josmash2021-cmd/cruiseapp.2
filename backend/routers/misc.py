@@ -418,9 +418,10 @@ async def estimate_fare(
 # Neither company offers an official real-time pricing API, and scraping
 # their live surge is against both ToSes — so "real time" here is honest:
 # the anchor is the published rate card, the cheaper of the two companies
-# per tier, and our total holds $5 under it. Our own surge multiplier
-# moves for the same reasons theirs does (traffic, rain, holidays), so
-# the undercut also holds on the days the anchor itself would have moved.
+# per tier, and our total matches it (pricing policy 2026-08: the rider
+# pays the same as on Uber). Our own surge multiplier moves for the same
+# reasons theirs does (traffic, rain, holidays), so the match also holds
+# on the days the anchor itself would have moved.
 _TIER_ALIASES_PRICING = {
     "standard": "standard", "comfort": "standard", "sedan": "standard",
     "economy": "standard",
@@ -437,7 +438,6 @@ _ANCHOR_RATES = {
     "premium":  (3.00, 1.75, 0.30, 2.75, 12.00),
     "black":    (7.50, 2.75, 0.50, 3.00, 20.00),
 }
-_ANCHOR_UNDERCUT_USD = 5.00
 
 
 def _anchor_state_mult(lat: float, lng: float) -> float:
@@ -449,8 +449,9 @@ def _anchor_state_mult(lat: float, lng: float) -> float:
 
 def _anchored_total(vehicle_type: str, dist_mi: float, duration_min: float,
                     lat: float, lng: float) -> dict:
-    """Cruise total: cheaper-of-Uber/Lyft published card − $5, floored at
-    the tier minimum. Surge and surcharges are applied by the caller."""
+    """Cruise total: the cheaper-of-Uber/Lyft published card, matched
+    exactly, floored at the tier minimum. Surge and surcharges are
+    applied by the caller."""
     tier = _TIER_ALIASES_PRICING.get((vehicle_type or "").lower(), "standard")
     base, per_mile, per_minute, booking, min_fare = _ANCHOR_RATES[tier]
     anchor = (base + dist_mi * per_mile + duration_min * per_minute + booking) \
@@ -458,8 +459,8 @@ def _anchored_total(vehicle_type: str, dist_mi: float, duration_min: float,
     return {
         "tier": tier,
         "anchor_total": round(anchor, 2),
-        "undercut": _ANCHOR_UNDERCUT_USD,
-        "total": max(round(anchor - _ANCHOR_UNDERCUT_USD, 2), min_fare),
+        "undercut": 0,
+        "total": max(round(anchor, 2), min_fare),
         "min_fare": min_fare,
     }
 

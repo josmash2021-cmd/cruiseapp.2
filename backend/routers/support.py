@@ -859,9 +859,9 @@ and cancellations are REQUESTS that a human approves — use the markers below.
 
     driver_knowledge = shared_knowledge + """
 THIS USER IS A DRIVER. What you know about their side:
-- Earnings split by vehicle type — the driver keeps 60% on sedan and
-  comfort, 65% on premium, 70% on vip. These are the real numbers; you may
-  state them.
+- Earnings split — the driver keeps a flat 70% of the fare on every
+  vehicle type (sedan, comfort, compact, premium, vip alike). This is
+  the real number; you may state it.
 - Payouts and bank/card linking go through Stripe Connect.
 - Cruise Level is a tier earned on ratings: Bronze, Silver, Gold, Platinum,
   Diamond.

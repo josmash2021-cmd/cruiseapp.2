@@ -83,10 +83,10 @@ void main() {
   });
 
   group('the share the driver keeps', () {
-    test('climbs with the tier', () {
-      expect(tierDriverShare('standard'), 0.60);
-      expect(tierDriverShare('compact'), 0.62);
-      expect(tierDriverShare('premium'), 0.65);
+    test('is a flat 70% on every tier', () {
+      expect(tierDriverShare('standard'), 0.70);
+      expect(tierDriverShare('compact'), 0.70);
+      expect(tierDriverShare('premium'), 0.70);
       expect(tierDriverShare('black'), 0.70);
     });
 

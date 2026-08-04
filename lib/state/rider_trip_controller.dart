@@ -578,13 +578,14 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
     final mins = rawMins < 1 ? 1 : (rawMins > maxMins ? maxMins : rawMins);
     final miles = rawMiles < 0.5 ? 0.5 : (rawMiles > maxMiles ? maxMiles : rawMiles);
 
-    // ── Competitive anchor: cheaper of Uber/Lyft's published cards − $5 ──
+    // ── Competitive anchor: matches the cheaper of Uber/Lyft's cards ──
     //
     // There is no official real-time pricing API from either company, so
     // the anchor is the published rate card per tier (the cheaper of the
-    // two) and our total holds $5 under it. Our surge multiplier moves for
-    // the same reasons theirs does — traffic, rain, holidays — so the
-    // undercut holds on those days too.
+    // two) and our total matches it — the rider pays the same as on Uber
+    // (pricing policy 2026-08). Our surge multiplier moves for the same
+    // reasons theirs does — traffic, rain, holidays — so the match holds
+    // on those days too.
     (double, double, double, double, double) anchorRates(String tier) {
       switch (tier) {
         case 'black':
@@ -609,8 +610,7 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
       final r = anchorRates(tier);
       final anchor =
           (r.$1 + miles * r.$2 + mins * r.$3 + r.$4) * stateMult;
-      final total = anchor - 5.0;
-      return total > r.$5 ? total : r.$5;
+      return anchor > r.$5 ? anchor : r.$5;
     }
 
     // Airport surcharge: +$8 flat + 15% uplift, on top of the anchor.

@@ -36,7 +36,7 @@ from utils.bounded_cache import TTLCache, BoundedDict
 
 router = APIRouter()
 
-DRIVER_SHARE_RATE = 0.60
+DRIVER_SHARE_RATE = 0.70
 
 # Local dict to track action-request reminder tasks (avoids cross-router import)
 # Bounded: max 2,000 tasks

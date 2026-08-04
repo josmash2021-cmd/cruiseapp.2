@@ -83,19 +83,19 @@ CASES = [
      tier("Rivian", "R1S", 2024, seats=7, body="suv"), vt.TIER_BLACK),
 
     # ── Commission ────────────────────────────────────────────────────
-    ("Standard pays the driver 60%", vt.driver_share(vt.TIER_STANDARD), 0.60),
-    ("Compact pays 62%", vt.driver_share(vt.TIER_COMPACT), 0.62),
-    ("Premium pays 65%", vt.driver_share(vt.TIER_PREMIUM), 0.65),
+    ("Standard pays the driver 70%", vt.driver_share(vt.TIER_STANDARD), 0.70),
+    ("Compact pays 70%", vt.driver_share(vt.TIER_COMPACT), 0.70),
+    ("Premium pays 70%", vt.driver_share(vt.TIER_PREMIUM), 0.70),
     ("Black pays 70%", vt.driver_share(vt.TIER_BLACK), 0.70),
     ("the two shares of a fare add up to one",
      [round(sum(v), 10) for v in vt.COMMISSION.values()], [1.0, 1.0, 1.0, 1.0]),
 
-    # ── Old rows keep the rate they were promised ─────────────────────
-    ("comfort still pays 60%", vt.driver_share("comfort"), 0.60),
-    ("vip still pays 70%", vt.driver_share("vip"), 0.70),
-    ("suv_xl still pays 68%", vt.driver_share("suv_xl"), 0.68),
-    ("an unknown tier pays the Standard rate", vt.driver_share("banana"), 0.60),
-    ("no tier at all pays the Standard rate", vt.driver_share(None), 0.60),
+    # ── Old rows get the same flat rate ───────────────────────────────
+    ("comfort pays the flat 70%", vt.driver_share("comfort"), 0.70),
+    ("vip pays the flat 70%", vt.driver_share("vip"), 0.70),
+    ("suv_xl pays the flat 70%", vt.driver_share("suv_xl"), 0.70),
+    ("an unknown tier pays the Standard rate", vt.driver_share("banana"), 0.70),
+    ("no tier at all pays the Standard rate", vt.driver_share(None), 0.70),
 
     # ── Old tier strings map onto the four ────────────────────────────
     ("comfort becomes Standard", vt.normalize_tier("comfort"), vt.TIER_STANDARD),

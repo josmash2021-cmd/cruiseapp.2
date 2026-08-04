@@ -55,22 +55,23 @@ PREMIUM_MIN_YEAR = 2015
 COMPACT_MIN_YEAR = 2015
 
 # ── Commission, platform share first ──────────────────────────────────
-# Compact's 62% is a new row: it sits between Standard's 60 and
-# Premium's 65 and matches no rate that existed before.
+# Flat 70/30 in every tier (pricing policy 2026-08: the driver earns
+# like on Uber, ~70% of the fare). It replaces the old 60–70% ladder
+# that paid a better car a bigger cut.
 COMMISSION = {
-    TIER_STANDARD: (0.40, 0.60),
-    TIER_COMPACT: (0.38, 0.62),
-    TIER_PREMIUM: (0.35, 0.65),
+    TIER_STANDARD: (0.30, 0.70),
+    TIER_COMPACT: (0.30, 0.70),
+    TIER_PREMIUM: (0.30, 0.70),
     TIER_BLACK: (0.30, 0.70),
 }
 
 # Rows written before the four tiers existed. Kept so a vehicle that has
-# not been migrated yet is still paid the rate it was promised rather
-# than falling through to a default.
+# not been migrated yet still resolves to a rate rather than falling
+# through to a default — the same flat 70/30 as everyone else.
 LEGACY_COMMISSION = {
-    "sedan": (0.40, 0.60),
-    "comfort": (0.40, 0.60),
-    "suv_xl": (0.32, 0.68),
+    "sedan": (0.30, 0.70),
+    "comfort": (0.30, 0.70),
+    "suv_xl": (0.30, 0.70),
     "vip": (0.30, 0.70),
 }
 
@@ -79,8 +80,7 @@ LEGACY_COMMISSION = {
 DEFAULT_COMMISSION = COMMISSION[TIER_STANDARD]
 
 # Old tier string → new one, for the migration and for any row that
-# slips through it. `premium` is deliberately absent: it keeps its name
-# and its 65%.
+# slips through it. `premium` is deliberately absent: it keeps its name.
 LEGACY_TIER_MAP = {
     "comfort": TIER_STANDARD,
     "sedan": TIER_STANDARD,
@@ -89,7 +89,7 @@ LEGACY_TIER_MAP = {
     # An SUV XL is a Traverse — three rows, six seats. That is Premium,
     # not Black. The rider's ride picker has always shown it that way;
     # mapping it to Black here would have started offering Black work to
-    # six-seat cars. Its 68% is grandfathered in LEGACY_COMMISSION.
+    # six-seat cars.
     "suv_xl": TIER_PREMIUM,
     "vip": TIER_BLACK,
     "black": TIER_BLACK,

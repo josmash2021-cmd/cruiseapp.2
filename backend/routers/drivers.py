@@ -53,8 +53,8 @@ router = APIRouter()
 _COMMISSION_BY_TYPE = vehicle_tiers.COMMISSION
 _DEFAULT_COMMISSION = vehicle_tiers.DEFAULT_COMMISSION
 
-PLATFORM_COMMISSION_RATE = 0.40
-DRIVER_SHARE_RATE = 0.60
+PLATFORM_COMMISSION_RATE = 0.30
+DRIVER_SHARE_RATE = 0.70
 
 
 def _get_driver_rate(vehicle_type: str | None) -> float:
@@ -998,7 +998,7 @@ async def request_cashout(body: CashoutIn, user: User = Depends(_get_current_use
     if available_balance < 0 or available_balance > 100000:
         # Recalculate from scratch (rare — indicates cache bug)
         # Include cancelled trips with driver_earnings (charged cancellation
-        # fees) so the driver's 60% fee share isn't wiped from the balance.
+        # fees) so the driver's 70% fee share isn't wiped from the balance.
         completed_r = await db.execute(
             select(Trip).where(
                 and_(
@@ -1875,7 +1875,7 @@ async def reevaluate_driver_tier(db: AsyncSession, driver_id: int):
 
     # A rename is not news. Only tell the driver when the tier actually
     # moved up the ladder — `comfort` becoming `standard` is the same
-    # tier under a new name and the same 60%.
+    # tier under a new name and the same flat 70%.
     if not vehicle_tiers.is_upgrade(old_tier, new_tier):
         return
     try:

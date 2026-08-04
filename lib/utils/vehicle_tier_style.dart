@@ -160,16 +160,8 @@ IconData tierIcon(String? raw) {
 
 /// The driver's share of the fare, as a fraction. Mirrors COMMISSION in
 /// backend/services/vehicle_tiers.py — the backend is the authority; this
-/// is only for showing a driver what a tier is worth.
+/// is only for showing a driver what a tier is worth. Flat 70% on every
+/// tier since the 2026-08 pricing policy ("driver earns like on Uber").
 double tierDriverShare(String? raw) {
-  switch (tierKey(raw)) {
-    case kTierBlack:
-      return 0.70;
-    case kTierPremium:
-      return 0.65;
-    case kTierCompact:
-      return 0.62;
-    default:
-      return 0.60;
-  }
+  return 0.70;
 }

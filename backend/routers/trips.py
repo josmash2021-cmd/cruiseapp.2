@@ -43,9 +43,9 @@ router = APIRouter()
 
 # Commission splits live in services/vehicle_tiers.py, which is the one
 # place that knows both the four tiers and the strings they replaced:
-#   Standard 60% · Compact 62% · Premium 65% · Black 70%
-# and, for rows the migration has not reached, comfort 60% / suv_xl 68%
-# / vip 70%. Duplicating the table here is how the offer card ended up
+# a flat 70% driver / 30% platform on every tier, legacy strings
+# included (pricing policy 2026-08: the driver earns like on Uber).
+# Duplicating the table here is how the offer card ended up
 # quoting a rate the payout did not use.
 _COMMISSION_BY_TYPE = vehicle_tiers.COMMISSION
 _DEFAULT_COMMISSION = vehicle_tiers.DEFAULT_COMMISSION
@@ -147,8 +147,8 @@ def _wait_policy(vehicle_type: str | None, is_airport: bool) -> tuple[int, float
     return _WAIT_POLICY_BY_TYPE.get(_vehicle_key(vehicle_type), _DEFAULT_WAIT_POLICY)
 
 # Legacy constants kept for backward-compat in places that don't have vehicle_type
-PLATFORM_COMMISSION_RATE = 0.40
-DRIVER_SHARE_RATE = 0.60
+PLATFORM_COMMISSION_RATE = 0.30
+DRIVER_SHARE_RATE = 0.70
 
 
 def _driver_visible_trip_dict(trip: Trip) -> dict:
@@ -186,8 +186,8 @@ def _trip_dict_for_user(trip: Trip, user: User) -> dict:
 async def _credit_driver_cancellation_fee(db, trip: Trip) -> tuple[float, float]:
     """Split a charged cancellation fee with the driver using the SAME ledger
     mechanism as the completed-trip fare split:
-      - trip.driver_earnings  <- 60% driver share (e.g. $3.00 of $5.00)
-      - trip.platform_fee     <- 40% Company revenue (e.g. $2.00 of $5.00)
+      - trip.driver_earnings  <- 70% driver share (e.g. $3.50 of $5.00)
+      - trip.platform_fee     <- 30% Company revenue (e.g. $1.50 of $5.00)
       - driver.pending_balance / total_earnings incremented by the driver share
     Returns (driver_share, platform_share). No-op when there is no fee or
     no assigned driver.
@@ -1524,8 +1524,8 @@ async def cancel_trip(trip_id: int, request: Request, user: User = Depends(_get_
             trip_id, trip.stripe_payment_intent_id,
         )
 
-    # Credit the driver their 60% share of any charged cancellation fee
-    # (same 60/40 ledger split as completed-trip fares; 40% = Company revenue).
+    # Credit the driver their 70% share of any charged cancellation fee
+    # (same 70/30 ledger split as completed-trip fares; 30% = Company revenue).
     if cancellation_fee > 0:
         await _credit_driver_cancellation_fee(db, trip)
 

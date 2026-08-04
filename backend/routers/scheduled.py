@@ -18,7 +18,7 @@ from config import _HAS_FIRESTORE, firestore_sync
 
 router = APIRouter(tags=["scheduled"])
 
-DRIVER_SHARE_RATE = 0.60
+DRIVER_SHARE_RATE = 0.70
 # Lockout kicks in this many minutes before scheduled pickup
 LOCKOUT_MINUTES = 30
 # Minimum advance for marketplace (rides closer than this go through auto-dispatch)

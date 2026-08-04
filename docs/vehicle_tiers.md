@@ -22,40 +22,26 @@ Standard. It still drives; it just never reaches a higher tier.
 
 ## Commission
 
-Unchanged, per the existing `_COMMISSION_BY_TYPE` in
-`backend/routers/trips.py`:
+Flat 70/30 everywhere, per the 2026-08 pricing policy ("the driver earns
+like on Uber"). It replaced the 60–70% ladder this section used to
+describe; `COMMISSION` and `LEGACY_COMMISSION` in
+`backend/services/vehicle_tiers.py` both read `0.30 / 0.70` on every row.
 
-The table has five rows today, not three:
+| Tier | Driver keeps |
+|---|---|
+| Standard | 70% |
+| Compact | 70% |
+| Premium | 70% |
+| Black | 70% |
 
-| Key | Platform | Driver |
-|---|---|---|
-| `sedan` | 40% | 60% |
-| `comfort` | 40% | 60% |
-| `premium` | 35% | 65% |
-| `suv_xl` | 32% | 68% |
-| `vip` | 30% | 70% |
+Legacy strings (`sedan`, `comfort`, `suv_xl`, `vip`) resolve to the same
+flat 70%.
 
-Which maps onto the four tiers as:
+### The estimate on the offer card uses the same flat rate
 
-| Tier | From | Driver keeps |
-|---|---|---|
-| Standard | `comfort` / `sedan` | 60% |
-| Compact | new row, `0.38 / 0.62` | 62% |
-| Premium | `premium` | 65% |
-| Black | `vip` | 70% |
-
-Compact is a new row rather than a rename: 62% sits between Standard's
-60 and Premium's 65 and matches no key that exists. `suv_xl` at 68% is
-left where it is — nothing in the four-tier naming claims it, and a live
-row is not deleted on the way past.
-
-### The estimate on the offer card does not use this table
-
-`DRIVER_SHARE_RATE = 0.60` is hardcoded in `dispatch.py` and
-`guardian_agent.py`, and it is what computes the figure the driver reads
-on the offer card. A Black driver is shown 60% of the fare and paid 70%.
-The card under-promises today, which is the safe direction, but it is
-still two sources for one number and they have already disagreed.
+`DRIVER_SHARE_RATE = 0.70` in `dispatch.py` and `guardian_agent.py`
+computes the figure the driver reads on the offer card — the same 70%
+the payout split uses, so card and payout no longer disagree.
 
 ## What this touches
 

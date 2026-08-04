@@ -34,8 +34,10 @@ class GpsService {
   // Adaptive Socket.io interval: fast (300ms) while the driver is on an
   // active trip and moving so the rider sees fluid motion; relaxed (1000ms)
   // when idle or offline to save battery/data.
-  static const Duration _socketIONormalInterval = Duration(milliseconds: 1000);
-  static const Duration _socketIOFastInterval = Duration(milliseconds: 300);
+  // Real-time targets: the rider's car should move as fixes land, not
+  // once a second. 400 ms relaxed, 250 ms on an active trip.
+  static const Duration _socketIONormalInterval = Duration(milliseconds: 400);
+  static const Duration _socketIOFastInterval = Duration(milliseconds: 250);
   static const Duration _rtdbInterval = Duration(seconds: 5); // Increased from 2s
   static const double _minDistanceMeters = 2.0; // Increased from 0.5m to reduce noise
 
@@ -99,7 +101,7 @@ class GpsService {
     });
 
     unawaited(_setupPresence(driverId));
-    debugPrint('[GPS] Started: Socket.io 1s + RTDB 5s backup');
+    debugPrint('[GPS] Started: Socket.io 400ms + RTDB 5s backup');
   }
 
   /// Attach or detach the driver's active trip context.
@@ -144,7 +146,7 @@ class GpsService {
 
     if (_isFastInterval && wantsNormal) {
       _isFastInterval = false;
-      debugPrint('[GPS] Switching to relaxed Socket.io cadence (1000ms)');
+      debugPrint('[GPS] Switching to relaxed Socket.io cadence (400ms)');
       _restartSocketIOTimer(_socketIONormalInterval);
     } else if (!_isFastInterval && wantsFast) {
       _isFastInterval = true;

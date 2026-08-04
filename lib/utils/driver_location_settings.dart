@@ -48,7 +48,9 @@ import 'package:geolocator/geolocator.dart';
 LocationSettings driverLocationSettings({
   LocationAccuracy accuracy = LocationAccuracy.bestForNavigation,
   int distanceFilter = 5,
-  Duration intervalDuration = const Duration(seconds: 1),
+  // 500 ms: real-time, not near-real-time. The socket cadence below is
+  // 250–400 ms, so the fix stream must not be the slowest link.
+  Duration intervalDuration = const Duration(milliseconds: 500),
   required String notificationTitle,
   required String notificationText,
 }) {

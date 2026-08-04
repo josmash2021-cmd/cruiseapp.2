@@ -95,11 +95,25 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
     try {
       final res = await ApiService.sendPasswordResetCodePublic(identifier);
       if (!mounted) return;
+      final method = (res['method'] as String?) ?? 'none';
+      // "none" is how the backend says it found no account for what was
+      // typed — it answers with the same shape as a success so the endpoint
+      // itself gives nothing away. Product call: tell the user plainly
+      // instead of sending them to a code screen where no code will ever
+      // arrive. Stay on this step and show it in red under the field.
+      if (method == 'none') {
+        HapticService.mediumImpact();
+        setState(() {
+          _loading = false;
+          _errorText = S.of(context).identifierNotFound;
+        });
+        return;
+      }
       HapticService.mediumImpact();
       setState(() {
         _loading = false;
         _identifier = identifier;
-        _method = (res['method'] as String?) ?? 'none';
+        _method = method;
         _masked = (res['masked'] as String?) ?? '';
         _step = 1;
       });
@@ -302,7 +316,10 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
               Expanded(
                 child: TextField(
                   controller: _identCtrl,
-                  onChanged: (_) => setState(() {}),
+                  // Editing the identifier clears the "not found" line: it
+                  // was about what used to be in the field, and leaving it
+                  // up makes a fresh, valid address look rejected too.
+                  onChanged: (_) => setState(() => _errorText = null),
                   keyboardType: phone
                       ? TextInputType.phone
                       : TextInputType.emailAddress,

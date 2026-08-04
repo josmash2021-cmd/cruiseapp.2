@@ -681,6 +681,9 @@ class S {
   String get resetCodeSentGeneric => _es
       ? 'Si existe una cuenta con ese correo o teléfono, el código va en camino.'
       : 'If an account exists for that email or phone, a code is on its way.';
+  String get identifierNotFound => _es
+      ? 'Correo o número de teléfono no encontrado'
+      : 'Email or phone number not found';
   String get codeSentViaEmail => _es ? 'por correo' : 'by email';
   String get codeSentViaSms => _es ? 'por SMS' : 'by SMS';
   String get resetCodeSubtitle => _es

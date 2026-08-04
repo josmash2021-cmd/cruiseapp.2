@@ -18,34 +18,47 @@ import 'package:flutter/material.dart';
 
 const _gold = Color(0xFFE8C547);
 
+/// Raster density for the offer-preview markers: the same artwork at 3×
+/// the pixels. The badge taught this lesson first (GoldLocationDot
+/// .rasterScale): Mapbox draws a 55 px bitmap at iconSize 1.0 as 55
+/// *logical* px, which on a 3× Android phone is a 3× upscale — the fuzzy
+/// ring in the offer screenshot. Render at this scale and divide the
+/// iconSize by it: same on-screen size, ~1:1 pixels.
+const double kEndpointRasterScale = 3.0;
+
 /// A raised gold bead: black gradient shadow, rim, and a glossy body.
 /// 26, down from 30 (44 originally) — small enough to sit under the route
 /// line's importance, big enough to find at a glance.
-Future<Uint8List> renderPickupDotBytes({double size = 26}) =>
-    _render(size, fill: _gold);
+Future<Uint8List> renderPickupDotBytes({double size = 26, double rasterScale = 1.0}) =>
+    _render(size, fill: _gold, rasterScale: rasterScale);
 
 /// A white bead, same size and treatment as the pickup one.
-Future<Uint8List> renderDropoffCircleBytes({double size = 26}) =>
-    _render(size, fill: Colors.white);
+Future<Uint8List> renderDropoffCircleBytes({double size = 26, double rasterScale = 1.0}) =>
+    _render(size, fill: Colors.white, rasterScale: rasterScale);
 
 /// Driver offer map only: the pickup is a hollow ring — no fill, just the
 /// band. (The rider's receipt uses the solid beads above; the driver asked
 /// for the inverted pair on this page.)
-Future<Uint8List> renderPickupRingBytes({double size = 26}) =>
-    _renderRing(size, color: _gold, innerDot: false);
+Future<Uint8List> renderPickupRingBytes({double size = 26, double rasterScale = 1.0}) =>
+    _renderRing(size, color: _gold, innerDot: false, rasterScale: rasterScale);
 
 /// Driver offer map only: the dropoff is a ring with a solid dot inside.
-Future<Uint8List> renderDropoffRingDotBytes({double size = 26}) =>
-    _renderRing(size, color: Colors.white, innerDot: true);
+Future<Uint8List> renderDropoffRingDotBytes({double size = 26, double rasterScale = 1.0}) =>
+    _renderRing(size, color: Colors.white, innerDot: true, rasterScale: rasterScale);
 
 Future<Uint8List> _renderRing(
   double size, {
   required Color color,
   required bool innerDot,
+  double rasterScale = 1.0,
 }) async {
   final canvasSize = size * 2.1;
   final recorder = ui.PictureRecorder();
   final canvas = Canvas(recorder);
+  // Logical drawing below, physical pixels above: the scale makes every
+  // stroke, blur and radius land at [rasterScale]× the resolution with no
+  // change to the artwork itself.
+  canvas.scale(rasterScale);
   final centre = Offset(canvasSize / 2, canvasSize / 2);
   final r = size / 2;
   final stroke = size * 0.22;
@@ -93,8 +106,8 @@ Future<Uint8List> _renderRing(
   }
 
   final img = await recorder.endRecording().toImage(
-        canvasSize.ceil(),
-        canvasSize.ceil(),
+        (canvasSize * rasterScale).ceil(),
+        (canvasSize * rasterScale).ceil(),
       );
   final data = await img.toByteData(format: ui.ImageByteFormat.png);
   img.dispose();
@@ -104,12 +117,14 @@ Future<Uint8List> _renderRing(
 Future<Uint8List> _render(
   double size, {
   required Color fill,
+  double rasterScale = 1.0,
 }) async {
   // The canvas is bigger than the marker so the shadow has room to fall;
   // without it the blur is clipped square at the bitmap's edge.
   final canvasSize = size * 2.1;
   final recorder = ui.PictureRecorder();
   final canvas = Canvas(recorder);
+  canvas.scale(rasterScale);
   final centre = Offset(canvasSize / 2, canvasSize / 2);
   final r = size / 2;
 
@@ -164,8 +179,8 @@ Future<Uint8List> _render(
   );
 
   final img = await recorder.endRecording().toImage(
-        canvasSize.ceil(),
-        canvasSize.ceil(),
+        (canvasSize * rasterScale).ceil(),
+        (canvasSize * rasterScale).ceil(),
       );
   final data = await img.toByteData(format: ui.ImageByteFormat.png);
   img.dispose();

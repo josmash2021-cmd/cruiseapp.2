@@ -740,7 +740,16 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
       // that the card does not look glued to the edge, and no more. On
       // screens with no gesture inset (web, desktop) a fixed 10 does the
       // same job — close to the bottom, never flush with it.
-      padding: EdgeInsets.only(bottom: bot > 0 ? bot * 0.3 : 10),
+      //
+      // Android is the exception: the app runs edge-to-edge and the system
+      // navigation bar is real, touch-blocking chrome (48 dp with 3-button
+      // nav). 30% of the inset leaves the other 70% UNDER the card — the
+      // Accept button ended up drawn behind the nav bar and untappable.
+      // There the card clears the bar entirely.
+      padding: EdgeInsets.only(
+          bottom: bot > 0
+              ? (!kIsWeb && Platform.isAndroid ? bot : bot * 0.3)
+              : 10),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [

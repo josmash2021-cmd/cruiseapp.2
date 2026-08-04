@@ -628,8 +628,18 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     // The card's real height plus its header, so the route is framed in
     // the strip of map that is actually visible above it. 340 was a guess
     // from when the card was shorter.
-    var cardArea =
-        hasCard ? _currentOfferCardHeight(context) + 56.0 + botPad : 60.0;
+    //
+    // The header is the drag handle + "N Viaje(s) disponible(s)" row, the
+    // dots row appears when more than one offer is stacked, and botPad is
+    // the full system-nav inset the card itself now clears on Android.
+    // Reserve what the column really occupies: less, and the framed pickup
+    // pin lands behind the header text (the overlap in the offer photo).
+    var cardArea = hasCard
+        ? _currentOfferCardHeight(context) +
+            56.0 +
+            botPad +
+            (_pendingOffers.length > 1 ? 18.0 : 0.0)
+        : 60.0;
     // Top: status bar + earnings bar (~56) + breathing room
     var topArea = topPad + 80.0;
 
@@ -646,12 +656,21 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     // what it covers — this only stops the *camera* from pretending the
     // strip is smaller than a third, which zooms the route down to
     // nothing to satisfy a box it cannot fit in anyway.
+    //
+    // The trim eats the top allowance first: shaving the card reservation
+    // frames content where the card actually is, which is exactly the
+    // pin-under-the-header overlap this padding exists to prevent. The
+    // card area only gives once the top is down to its minimum — a phone
+    // so short the card genuinely cannot fit any other way.
     final screenH = MediaQuery.of(context).size.height;
     final maxInsets = screenH * 0.65;
     if (topArea + cardArea > maxInsets) {
-      final scale = maxInsets / (topArea + cardArea);
-      topArea *= scale;
-      cardArea *= scale;
+      final excess = topArea + cardArea - maxInsets;
+      final minTop = topPad + 30.0;
+      final topCut = math.min(excess, math.max(0.0, topArea - minTop));
+      topArea -= topCut;
+      final remaining = excess - topCut;
+      if (remaining > 0) cardArea -= remaining;
       debugPrint('[OfferRoute] insets trimmed to fit a ${screenH.round()}pt '
           'screen: top=${topArea.round()} bottom=${cardArea.round()}');
     }
@@ -884,9 +903,14 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     // by request. The cached pins are ignored on purpose: they hold
     // the old teardrop pins, and mixing the two would give the driver a
     // different marker depending on whether the route had been fetched.
+    //
+    // Rendered at kEndpointRasterScale× the pixels and shown at
+    // 1/kEndpointRasterScale the iconSize (see _animateSinglePinPop):
+    // the same size on screen, but a ~1:1 bitmap on a 3× Android phone
+    // instead of the fuzzy 3× upscale the 55 px render produced.
     final pinResults = await Future.wait([
-      renderPickupRingBytes(),
-      renderDropoffRingDotBytes(),
+      renderPickupRingBytes(rasterScale: kEndpointRasterScale),
+      renderDropoffRingDotBytes(rasterScale: kEndpointRasterScale),
     ]);
     final Uint8List pickupPinImg = pinResults[0];
     final Uint8List dropoffPinImg = pinResults[1];
@@ -957,7 +981,8 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     }
 
     // ── PHASE 5: Pickup pin popup ──
-    await _animateSinglePinPop(_prevPickupAnnot);
+    await _animateSinglePinPop(_prevPickupAnnot,
+        targetScale: 1 / kEndpointRasterScale);
     await Future.delayed(const Duration(milliseconds: 200));
     if (!mounted || _previewingOffer == null) {
       _isCardAnimating = false;
@@ -979,7 +1004,8 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     }
 
     // ── PHASE 7: Dropoff pin popup ──
-    await _animateSinglePinPop(_prevDropoffAnnot);
+    await _animateSinglePinPop(_prevDropoffAnnot,
+        targetScale: 1 / kEndpointRasterScale);
     if (!mounted || _previewingOffer == null) {
       _isCardAnimating = false;
       return;
@@ -1157,7 +1183,12 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
   }
 
   /// Animate a single pin from tiny → overshoot → settle (spring feel)
-  Future<void> _animateSinglePinPop(mapbox.PointAnnotation? annot) async {
+  ///
+  /// [targetScale] is the iconSize the spring settles on: 1.0 for a
+  /// standard-density bitmap, 1/kEndpointRasterScale for a hi-res one, so
+  /// the denser render lands at the same on-screen size instead of 3× it.
+  Future<void> _animateSinglePinPop(mapbox.PointAnnotation? annot,
+      {double targetScale = 1.0}) async {
     final pointMgr = _pinAnnotMgr;
     if (pointMgr == null || annot == null) return;
     const totalMs = 500;
@@ -1173,7 +1204,7 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
       }
       final elapsed = stopwatch.elapsedMilliseconds;
       final progress = (elapsed / totalMs).clamp(0.0, 1.0);
-      final scale = _springScale(progress);
+      final scale = _springScale(progress) * targetScale;
       annot.iconSize = scale;
       try {
         await pointMgr.update(annot);

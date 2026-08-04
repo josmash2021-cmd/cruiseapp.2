@@ -880,6 +880,14 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       _approachRouteFetched = true;
       _approachRouteFetching = false;
 
+      // The straight driver→pickup stopgap line _updateApproachLine drew
+      // while this fetch was in flight is superseded by the road route
+      // below. _updateApproachLine early-returns once _approachRouteFetched
+      // is set, so nothing else ever removes it — delete it here or the
+      // rider sees two yellow lines: the straight one cutting across
+      // blocks and the real road route.
+      unawaited(_mapRoute?.removeApproach());
+
       // Keep trip route as dimmed background (already drawn in _updateStaticAnnotationsOnce).
       // Set approach route as the active route for car tracking.
       _routePts = result.points;
@@ -1244,6 +1252,17 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     // heading; when there never was one, the camera falls back to the route
     // bearing (see updateChaseFrame's routeBearing).
     _approachRouteFetched = false;
+    // The dimmed driver→pickup line _fetchApproachRoute drew lives in the
+    // legacy _approachAnnot field, which the modular _mapRoute component
+    // does not track — and _updateApproachLine only ever removes the
+    // modular one. Left here, that stale line survived the route swap and
+    // stayed on the map for the whole trip: the second yellow line next
+    // to the real route in the rider's screenshot.
+    final approachMgr = _polylineAnnotMgr;
+    if (approachMgr != null && _approachAnnot != null) {
+      try { approachMgr.delete(_approachAnnot!); } catch (_) {}
+      _approachAnnot = null;
+    }
     _routeDurationSec = null;
     if (_segDist.isNotEmpty) {
       final totalRouteM = _segDist.last;

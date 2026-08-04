@@ -36,9 +36,19 @@ import 'package:geolocator/geolocator.dart';
 /// [pauseLocationUpdatesAutomatically] is off deliberately: iOS pauses
 /// updates when it decides the device has stopped moving, and a car at a
 /// long red light reads exactly like a device that has stopped moving.
+///
+/// [intervalDuration] matters only on Android, and there it matters a lot:
+/// geolocator_android's default is 5000 ms, and the native client applies
+/// it as BOTH `setIntervalMillis` and `setMinUpdateIntervalMillis` — the
+/// latter is a hard floor, so no fix ever arrives faster than once per 5 s
+/// no matter how small [distanceFilter] is. The car then glides for the
+/// 3.5 s SmoothMotion dares to extrapolate, stalls, and snaps to the next
+/// fix: the "jumps like it loses signal" the driver and the rider both
+/// see. 1 s is the cadence Google Maps navigation runs at.
 LocationSettings driverLocationSettings({
   LocationAccuracy accuracy = LocationAccuracy.bestForNavigation,
   int distanceFilter = 5,
+  Duration intervalDuration = const Duration(seconds: 1),
   required String notificationTitle,
   required String notificationText,
 }) {
@@ -62,6 +72,9 @@ LocationSettings driverLocationSettings({
     return AndroidSettings(
       accuracy: accuracy,
       distanceFilter: distanceFilter,
+      // See the doc comment above: without this the native default floors
+      // delivery at one fix per 5 s and the marker steps instead of glides.
+      intervalDuration: intervalDuration,
       foregroundNotificationConfig: ForegroundNotificationConfig(
         notificationTitle: notificationTitle,
         notificationText: notificationText,

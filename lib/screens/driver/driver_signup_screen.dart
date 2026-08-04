@@ -356,15 +356,59 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
 
   Future<void> _pickDob() async {
     final now = DateTime.now();
-    // Neumorphic three-step picker: year list (capped at 21+), month
-    // grid, then the day calendar — each step slides into the next.
-    // Years younger than the minimum age simply do not exist here.
-    final picked = await showDialog<DateTime>(
+    // The calendar design, wearing the app's neumorphic palette. Opens
+    // on the YEAR list first; the latest selectable date is exactly 21
+    // years ago — under-age dates are not just warned about, they are
+    // not on the calendar at all.
+    final picked = await showDatePicker(
       context: context,
-      builder: (_) => _DobNeuPicker(
-        initial: _dob,
-        minYear: 1900,
-        maxYear: now.year - _minDriverAge,
+      initialDate:
+          _dob ?? DateTime(now.year - _minDriverAge, now.month, now.day),
+      firstDate: DateTime(1900),
+      lastDate: DateTime(now.year - _minDriverAge, now.month, now.day),
+      initialDatePickerMode: DatePickerMode.year,
+      builder: (context, child) => Theme(
+        data: Theme.of(context).copyWith(
+          datePickerTheme: DatePickerThemeData(
+            backgroundColor: neuBase,
+            surfaceTintColor: Colors.transparent,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(24),
+            ),
+            headerBackgroundColor: neuPressed,
+            headerForegroundColor: Colors.white,
+            dayBackgroundColor: WidgetStateProperty.resolveWith(
+              (states) => states.contains(WidgetState.selected)
+                  ? _gold
+                  : Colors.transparent,
+            ),
+            dayForegroundColor: WidgetStateProperty.resolveWith(
+              (states) => states.contains(WidgetState.selected)
+                  ? const Color(0xFF1A1400)
+                  : Colors.white,
+            ),
+            yearBackgroundColor: WidgetStateProperty.resolveWith(
+              (states) => states.contains(WidgetState.selected)
+                  ? _gold
+                  : Colors.transparent,
+            ),
+            yearForegroundColor: WidgetStateProperty.resolveWith(
+              (states) => states.contains(WidgetState.selected)
+                  ? const Color(0xFF1A1400)
+                  : Colors.white,
+            ),
+            todayBorder: const BorderSide(color: _gold, width: 1),
+            confirmButtonStyle: TextButton.styleFrom(
+              foregroundColor: _gold,
+              textStyle: const TextStyle(fontWeight: FontWeight.w700),
+            ),
+            cancelButtonStyle: TextButton.styleFrom(
+              foregroundColor: _gold,
+              textStyle: const TextStyle(fontWeight: FontWeight.w700),
+            ),
+          ),
+        ),
+        child: child!,
       ),
     );
     if (picked != null && mounted) {
@@ -2464,270 +2508,6 @@ class _SsnFormatter extends TextInputFormatter {
     return TextEditingValue(
       text: str,
       selection: TextSelection.collapsed(offset: str.length),
-    );
-  }
-}
-
-/// Neumorphic three-step date picker: a year LIST first (already capped
-/// at the minimum driving age — younger years simply do not appear),
-/// then the month grid, then the day calendar of the chosen month. Each
-/// step slides and fades into the next instead of snapping.
-class _DobNeuPicker extends StatefulWidget {
-  const _DobNeuPicker({
-    required this.initial,
-    required this.minYear,
-    required this.maxYear,
-  });
-
-  final DateTime? initial;
-
-  /// Youngest birth year on offer (today minus the minimum age).
-  final int minYear;
-  final int maxYear;
-
-  @override
-  State<_DobNeuPicker> createState() => _DobNeuPickerState();
-}
-
-class _DobNeuPickerState extends State<_DobNeuPicker> {
-  static const _gold = Color(0xFFE8C547);
-  static const _months = [
-    'JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN',
-    'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC',
-  ];
-
-  /// 0 = year, 1 = month, 2 = day. Always opens on the year list.
-  int _step = 0;
-  int? _year;
-  int? _month;
-
-  late final ScrollController _yearScroll;
-
-  @override
-  void initState() {
-    super.initState();
-    _year = widget.initial?.year;
-    _month = widget.initial?.month;
-    // Land near a plausible pick rather than at the oldest year: rows of
-    // ~52 px, the anchor a quarter of the way down the legal range.
-    final anchor = widget.initial?.year ?? (widget.maxYear - 4);
-    final rows = widget.maxYear - anchor;
-    _yearScroll = ScrollController(
-      initialScrollOffset: (rows * 52.0).clamp(0.0, double.infinity),
-    );
-  }
-
-  @override
-  void dispose() {
-    _yearScroll.dispose();
-    super.dispose();
-  }
-
-  Widget _block(String text, bool selected, VoidCallback onTap) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        height: 44,
-        alignment: Alignment.center,
-        decoration: selected
-            ? BoxDecoration(
-                color: _gold,
-                borderRadius: BorderRadius.circular(12),
-              )
-            : neuBox(radius: 12, pressed: true),
-        child: Text(
-          text,
-          style: TextStyle(
-            color: selected ? const Color(0xFF1A1400) : Colors.white,
-            fontSize: 15,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    const titles = ['Year', 'Month', 'Day'];
-    return Dialog(
-      backgroundColor: neuBase,
-      insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 40),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Row(
-              children: [
-                if (_step > 0)
-                  GestureDetector(
-                    onTap: () => setState(() => _step--),
-                    child: const Padding(
-                      padding: EdgeInsets.all(4),
-                      child: Icon(Icons.arrow_back_ios_new_rounded,
-                          color: _gold, size: 16),
-                    ),
-                  )
-                else
-                  const SizedBox(width: 24),
-                const Spacer(),
-                Text(
-                  titles[_step],
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: 0.5,
-                  ),
-                ),
-                const Spacer(),
-                GestureDetector(
-                  onTap: () => Navigator.of(context).pop(),
-                  child: const Padding(
-                    padding: EdgeInsets.all(4),
-                    child:
-                        Icon(Icons.close_rounded, color: Colors.white54, size: 18),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 6),
-            Text(
-              [
-                if (_year != null) '$_year',
-                if (_month != null) _months[_month! - 1],
-              ].join(' · '),
-              style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.45),
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            const SizedBox(height: 12),
-            SizedBox(
-              height: 300,
-              // The animated hand-off between steps: slide + fade, never
-              // a snap.
-              child: AnimatedSwitcher(
-                duration: const Duration(milliseconds: 280),
-                switchInCurve: Curves.easeOutCubic,
-                switchOutCurve: Curves.easeInCubic,
-                transitionBuilder: (child, anim) => SlideTransition(
-                  position: Tween<Offset>(
-                    begin: const Offset(0.08, 0),
-                    end: Offset.zero,
-                  ).animate(anim),
-                  child: FadeTransition(opacity: anim, child: child),
-                ),
-                child: KeyedSubtree(
-                  key: ValueKey(_step),
-                  child: _step == 0
-                      ? _buildYears()
-                      : _step == 1
-                          ? _buildMonths()
-                          : _buildDays(),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildYears() {
-    final years = [
-      for (var y = widget.maxYear; y >= widget.minYear; y--) y,
-    ];
-    return GridView.builder(
-      controller: _yearScroll,
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 4,
-        mainAxisSpacing: 8,
-        crossAxisSpacing: 8,
-        childAspectRatio: 2.0,
-      ),
-      itemCount: years.length,
-      itemBuilder: (_, i) => _block('${years[i]}', _year == years[i], () {
-        setState(() {
-          _year = years[i];
-          _step = 1;
-        });
-      }),
-    );
-  }
-
-  Widget _buildMonths() {
-    return GridView.builder(
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 3,
-        mainAxisSpacing: 8,
-        crossAxisSpacing: 8,
-        childAspectRatio: 2.2,
-      ),
-      itemCount: 12,
-      itemBuilder: (_, i) => _block(_months[i], _month == i + 1, () {
-        setState(() {
-          _month = i + 1;
-          _step = 2;
-        });
-      }),
-    );
-  }
-
-  Widget _buildDays() {
-    final y = _year ?? widget.maxYear;
-    final m = _month ?? 1;
-    final days = DateUtils.getDaysInMonth(y, m);
-    final initialDay = widget.initial != null &&
-            widget.initial!.year == y &&
-            widget.initial!.month == m
-        ? widget.initial!.day
-        : null;
-    // Calendar-shaped: weekday header plus the blanks the 1st leaves.
-    const week = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
-    final lead = DateTime(y, m, 1).weekday % 7; // Sunday-first offset
-    return Column(
-      children: [
-        Row(
-          children: [
-            for (final w in week)
-              Expanded(
-                child: Center(
-                  child: Text(
-                    w,
-                    style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.40),
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ),
-              ),
-          ],
-        ),
-        const SizedBox(height: 6),
-        Expanded(
-          child: GridView.builder(
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 7,
-              mainAxisSpacing: 6,
-              crossAxisSpacing: 6,
-              childAspectRatio: 1.0,
-            ),
-            itemCount: lead + days,
-            itemBuilder: (_, i) {
-              if (i < lead) return const SizedBox.shrink();
-              final d = i - lead + 1;
-              return _block('$d', initialDay == d, () {
-                Navigator.of(context).pop(DateTime(y, m, d));
-              });
-            },
-          ),
-        ),
-      ],
     );
   }
 }

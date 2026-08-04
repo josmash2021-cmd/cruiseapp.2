@@ -54,13 +54,20 @@ extension _HomeScreenController on _HomeScreenState {
       return;
     }
 
-    _verificationRetryCount = 0; // Reset on new subscription
+    // NOTE: the retry count is deliberately NOT reset here. The denied
+    // handler below re-enters this method for its single recovery attempt;
+    // resetting on every subscription turned the one-attempt cap into an
+    // infinite 1 s re-subscribe loop (each denied error logging its own
+    // Crashlytics event — caught live in the browser on 2026-08-04).
+    // Transient-error recovery resets it in the data callback instead.
     _verificationSub?.cancel();
     _verificationSub = FirebaseFirestore.instance
         .collection('verifications')
         .where('userId', isEqualTo: userIdInt)
         .snapshots()
         .listen((snapshot) async {
+      // Live data — the stream genuinely works; re-arm the error budget.
+      _verificationRetryCount = 0;
       if (!mounted) return;
       for (final doc in snapshot.docs) {
         final data = doc.data();
@@ -134,9 +141,14 @@ extension _HomeScreenController on _HomeScreenState {
               'backend polling covers verification status');
           return;
         }
-        // Fresh session: one immediate re-subscribe, not a backoff loop.
+        // Fresh session: ONE re-subscribe. 3 s, not 1 — the web SDK can
+        // open the listen channel before the auth token is attached on a
+        // cold boot, and re-subscribing inside that window burns the only
+        // retry on the same race. (Verified 2026-08-04: the identical
+        // query passes over REST with the same uid while the SDK listen
+        // reports denied at boot.)
         _verificationRetryTimer?.cancel();
-        _verificationRetryTimer = Timer(const Duration(seconds: 1), () {
+        _verificationRetryTimer = Timer(const Duration(seconds: 3), () {
           if (mounted) _listenVerificationStatus();
         });
         return;

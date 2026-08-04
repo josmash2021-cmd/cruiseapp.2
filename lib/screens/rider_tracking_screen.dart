@@ -879,6 +879,16 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
             driverId: widget.driverId,
             driverRating: widget.driverRating,
             vehiclePlate: widget.vehiclePlate,
+            // The tier's model name ('Suburban'/'Traverse'/'Camry'/'Fusion')
+            // — the confirm card maps it to the same per-category render the
+            // vehicle picker showed, instead of guessing from the vehicle
+            // description (where the COLOR word "Black" used to put a
+            // Suburban on a standard trip).
+            rideTier: widget.rideName,
+            // Live driver position for the compass arrow, the distance
+            // readout and the proximity auto-detect.
+            driverPosOf: () => _driverPos,
+            driverPhone: widget.driverPhone,
             onConfirmed: () async {
               // NOTE: keep _confirmPickupShown = true so a late status=arrived
               // poll (driver hasn't tapped Start Ride yet) does NOT re-show the

@@ -662,7 +662,11 @@ class _ChatScreenState extends State<ChatScreen> {
                         child: Opacity(
                           opacity: 0.035,
                           child: Image.asset(
-                            'assets/images/logoapp.png',
+                            // cruise_logo.png, not logoapp.png: the latter
+                            // is the same mark baked onto a black square,
+                            // which on the chat's lighter neu background
+                            // read as a dark box behind the watermark.
+                            'assets/images/cruise_logo.png',
                             width: MediaQuery.of(context).size.width * 0.62,
                             fit: BoxFit.contain,
                             errorBuilder: (_, __, ___) => const SizedBox.shrink(),

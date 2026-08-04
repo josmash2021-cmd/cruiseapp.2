@@ -1845,7 +1845,10 @@ extension _HomeScreenWidgets on _HomeScreenState {
                           right: 8,
                           bottom: cardH * 0.122,
                           child: Text(
-                            _homeWaitRangeText(),
+                            // Same tier keys the ride screen's estimate
+                            // uses — BLACK/PREMIUM/COMPACT/STANDARD map
+                            // straight down.
+                            _homeWaitRangeText(displayName.toLowerCase()),
                             textAlign: TextAlign.center,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
@@ -1906,15 +1909,18 @@ extension _HomeScreenWidgets on _HomeScreenState {
   /// the same answer the ride screen uses, so the rider is not told one
   /// thing here and another after tapping through. Blank until it lands
   /// rather than a guess that changes.
-  String _homeWaitRangeText() {
+  String _homeWaitRangeText(String tier) {
     final pos = _currentLatLng;
     if (pos == null) return '';
-    final est = DriverWaitEstimate.cached(pos.latitude, pos.longitude);
+    final est =
+        DriverWaitEstimate.cached(pos.latitude, pos.longitude, tier: tier);
     if (est == null) {
       // Not fetched yet. Kick it off and repaint when it arrives; the
-      // request is shared and cached, so three cards cause one call.
+      // request is shared and cached PER TIER, so four cards cause four
+      // calls once — each card answers for its own category's drivers.
       unawaited(
-        DriverWaitEstimate.fetch(lat: pos.latitude, lng: pos.longitude)
+        DriverWaitEstimate.fetch(
+                lat: pos.latitude, lng: pos.longitude, tier: tier)
             .then((_) {
           if (mounted) setState(() {});
         }),

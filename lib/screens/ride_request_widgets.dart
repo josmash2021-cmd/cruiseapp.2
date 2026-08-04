@@ -327,6 +327,18 @@ extension _RideRequestWidgets on _RideRequestScreenState {
             ),
             child: SafeArea(
               top: false,
+              // viewPadding, not padding: padding can arrive already consumed
+              // by an ancestor, and on Android that left the Request Ride
+              // button under the system nav/gesture bar (user report
+              // 2026-08-04). viewPadding always carries the real bar height;
+              // minimum guarantees it even when SafeArea's own padding
+              // lookup reads 0. Flush mode only — floating already hovers
+              // 24px above the edge.
+              minimum: EdgeInsets.only(
+                bottom: floating
+                    ? 0
+                    : MediaQuery.viewPaddingOf(context).bottom,
+              ),
               // The sheet is as tall as what is in it. No ceiling, no scroll.
               //
               // It used to be capped at 40% of the screen with a scroll view
@@ -1090,12 +1102,38 @@ extension _RideRequestWidgets on _RideRequestScreenState {
     // numbers are the ones to nudge if the pill reads high or low.
     const double pinOnScreenHalfWidth = 28.0;
     const double pinHeadLift = 34.0; // head centre above the tip
-    const double sideGap = 10.0; // clear gap, pill never touches the pin
+    // Air between pin and pill (user spec 2026-08-04: first "a bit more
+    // to the side" than the original 10, then "not so separated" — 14).
+    const double sideGap = 14.0;
     // Pill height is deterministic: 5px padding top/bottom + the taller
     // of the 19px icon chip and the kind+address stack (~22px), + border.
     const double pillHeight = 34.0;
     const double pillHalfHeight = pillHeight / 2;
     const double pillEstimatedWidth = 170.0; // icon+gap+maxWidth(130)+padding
+
+    // Trip minutes pickup→dropoff for the gold box glued to the dropoff
+    // label. Traffic-aware seconds first; the formatted "11 min" /
+    // "1 h 5 min" text as fallback.
+    String? etaMinutes;
+    final route = s.route;
+    if (route != null) {
+      final secs = route.durationSeconds;
+      int? mins = (secs != null && secs > 0)
+          ? (secs / 60).round().clamp(1, 24 * 60)
+          : null;
+      if (mins == null) {
+        final h = RegExp(r'(\d+)\s*h').firstMatch(route.durationText);
+        final m = RegExp(r'(\d+)\s*min').firstMatch(route.durationText);
+        if (h != null || m != null) {
+          mins = (int.tryParse(h?.group(1) ?? '') ?? 0) * 60 +
+              (int.tryParse(m?.group(1) ?? '') ?? 0);
+        }
+      }
+      if (mins != null && mins > 0) etaMinutes = '$mins';
+    }
+    // The ETA box adds ~38px to the dropoff pill.
+    final double dropoffPillWidth =
+        pillEstimatedWidth + (etaMinutes != null ? 38.0 : 0.0);
 
     // Map viewport bounds so we can clamp the label inside the visible area.
     final mq = MediaQuery.of(context);
@@ -1138,13 +1176,13 @@ extension _RideRequestWidgets on _RideRequestScreenState {
     final dropoffPos = _dropoffScreenOffset;
     if (dropoffPos != null && s.dropoffLabel.isNotEmpty) {
       double left =
-          dropoffPos.dx - pinOnScreenHalfWidth - sideGap - pillEstimatedWidth;
+          dropoffPos.dx - pinOnScreenHalfWidth - sideGap - dropoffPillWidth;
       final bool flipRight = left < 8;
       if (flipRight) {
         left = dropoffPos.dx + pinOnScreenHalfWidth + sideGap;
       }
       // Clamp inside the viewport.
-      left = left.clamp(8.0, screenW - pillEstimatedWidth - 8.0);
+      left = left.clamp(8.0, screenW - dropoffPillWidth - 8.0);
       double top = dropoffPos.dy - pinHeadLift - pillHalfHeight;
       top = top.clamp(topSafe, bottomSafe - pillHeight);
       widgets.add(
@@ -1158,6 +1196,7 @@ extension _RideRequestWidgets on _RideRequestScreenState {
             dropoffText: dropoffText,
             visible: _dropoffLabelRevealed,
             alignEnd: !flipRight,
+            etaMinutes: etaMinutes,
           ),
         ),
       );
@@ -1210,7 +1249,6 @@ extension _RideRequestWidgets on _RideRequestScreenState {
 
     return Container(
       key: ValueKey('horizontal_${opt.id}'),
-      padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
       // Raised neumorphic card on the sheet, thin gold edge marking it
       // as the selected tier.
       decoration: neuBox(
@@ -1221,18 +1259,70 @@ extension _RideRequestWidgets on _RideRequestScreenState {
       //
       // CarImage3D paints silhouette drop shadows and, when selected, a
       // blurred gold glow that reaches past the render's own box on
-      // purpose. Inside a padded card that is fine.
+      // purpose — and on Android's Impeller those ImageFiltered layers are
+      // not held by a Container's decoration clip, so unclipped they ran
+      // out under the card's rounded corner.
       //
-      // On Android's Impeller those ImageFiltered layers are not held by a
-      // Container's decoration clip, so the glow ran out under the card's
-      // rounded corner and read as the car hanging off the edge. iOS honours
-      // the decoration clip, which is why it looked right there.
-      //
-      // A ClipRRect is a real clip layer and filters respect it. Same radius,
-      // so the platform that was already correct does not move.
+      // The clip sits OUTSIDE the padding, on the card's true edge. It
+      // used to wrap only the padded content, which truncated the car's
+      // shadow (and the Faster badge) at an invisible rectangle 14 px
+      // inside the card — the "something is cutting it" the user pointed
+      // at. Same clip radius as the decoration, so nothing else moves.
       child: ClipRRect(
         borderRadius: BorderRadius.circular(24),
-        child: Row(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
+          child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            // "Faster" — right edge, vertically ON the "2-4 min away" line
+            // (user spec 2026-08-04: level with the minutes text, not up in
+            // the corner). Only when the nearest FREE driver is ≤5 min out.
+            // Its own FutureBuilder over the same per-pickup cached fetch
+            // the wait line uses, so the two always agree. The -11 nudge
+            // lands it on the first line of the two-line wait column
+            // (range 23px + gap + clock 12.5px, centered as a block).
+            Positioned(
+              right: -6,
+              top: 0,
+              bottom: 0,
+              child: Builder(builder: (context) {
+                final pickup = _ctrl.state.pickup;
+                if (pickup == null) return const SizedBox.shrink();
+                // Same per-tier estimate as the wait line — the badge only
+                // fires when a driver of THIS category is ≤5 min out.
+                final tierKey = _tierKeyForOption(opt);
+                return FutureBuilder<WaitEstimate>(
+                  initialData: DriverWaitEstimate.cached(pickup.lat, pickup.lng,
+                      tier: tierKey),
+                  future: DriverWaitEstimate.fetch(
+                      lat: pickup.lat, lng: pickup.lng, tier: tierKey),
+                  builder: (context, snap) {
+                    final est = snap.data;
+                    final show = est != null &&
+                        est.hasDrivers &&
+                        est.minMinutes <= 5;
+                    // AnimatedSwitcher so it leaves as silkily as it lands
+                    // when the pickup moves out of fast range.
+                    return Center(
+                      child: Transform.translate(
+                        // Up from dead-center onto the "2-4 min" line.
+                        offset: const Offset(0, -11),
+                        child: AnimatedSwitcher(
+                          duration: const Duration(milliseconds: 300),
+                          switchOutCurve: Curves.easeInCubic,
+                          child: show
+                              ? const FasterBadge(key: ValueKey('faster'))
+                              : const SizedBox.shrink(
+                                  key: ValueKey('no-faster')),
+                        ),
+                      ),
+                    );
+                  },
+                );
+              }),
+            ),
+            Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           // ── Left: tier name sitting directly above its car, the two
@@ -1314,10 +1404,13 @@ extension _RideRequestWidgets on _RideRequestScreenState {
               // where it read as clipped and had nowhere to go if the range
               // ever ran wider. Centring gives it air on both sides and
               // keeps it clear of the tier name on the left.
-              child: _buildWaitEstimate(),
+              child: _buildWaitEstimate(opt),
             ),
           ),
         ],
+            ),
+          ],
+          ),
         ),
       ),
     );
@@ -1502,6 +1595,22 @@ extension _RideRequestWidgets on _RideRequestScreenState {
         ),
       ),
     );
+  }
+
+  /// The tier key the wait-estimate endpoint filters by, from a ride
+  /// option — the SAME mapping the grid tiles use, so the selected card,
+  /// the Faster badge and the tiles always ask the same question.
+  String _tierKeyForOption(RideOption opt) {
+    switch (opt.id) {
+      case 'suburban':
+        return 'black';
+      case 'suv_xl':
+        return 'premium';
+      case 'fusion':
+        return 'standard';
+      default:
+        return 'compact';
+    }
   }
 
   /// Wait range for the small tier cards. Cache-only: these build on every
@@ -1974,14 +2083,20 @@ extension _RideRequestWidgets on _RideRequestScreenState {
   /// vehicle, so switching between tiers can never need a new request. Only
   /// the first tap on a new pickup waits, and only for as long as one cached
   /// call takes.
-  Widget _buildWaitEstimate() {
+  Widget _buildWaitEstimate(RideOption opt) {
     final pickup = _ctrl.state.pickup;
     if (pickup == null) return const SizedBox.shrink();
 
-    final cached = DriverWaitEstimate.cached(pickup.lat, pickup.lng);
+    // Per tier: the range answers "when can a driver of THIS category be
+    // here", from the drivers actually eligible to take it — not one
+    // shared number stamped on every card.
+    final tier = _tierKeyForOption(opt);
+    final cached =
+        DriverWaitEstimate.cached(pickup.lat, pickup.lng, tier: tier);
     return FutureBuilder<WaitEstimate>(
       initialData: cached,
-      future: DriverWaitEstimate.fetch(lat: pickup.lat, lng: pickup.lng),
+      future: DriverWaitEstimate.fetch(
+          lat: pickup.lat, lng: pickup.lng, tier: tier),
       builder: (context, snap) {
         final est = snap.data;
         // Still asking. Deliberately blank rather than "0 min" or a spinner:
@@ -2019,44 +2134,95 @@ extension _RideRequestWidgets on _RideRequestScreenState {
           //
           // Baseline-aligned, so the small word sits on the same line as the
           // digits instead of floating at their vertical centre.
-          child: FittedBox(
+          // Two lines now: "2-4 min away" and, under it, the clock time
+          // that range lands at ("3:42 PM") — the answer and what it means
+          // for the rider's watch. Arrival is computed from the range's
+          // midpoint: the min oversells, the max undersells.
+          child: Builder(
             key: ValueKey('wait_${none}_$text'),
-            fit: BoxFit.scaleDown,
-            // Shrinks rather than ellipsing. "No drivers available" is a
-            // sentence, not a number — cut to "No drivers av…" it stops
-            // being an answer at all.
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              textBaseline: TextBaseline.alphabetic,
-              crossAxisAlignment: CrossAxisAlignment.baseline,
-              children: [
-                Text(
-                  text,
-                  maxLines: 1,
-                  style: TextStyle(
-                    fontFamily: 'Poppins',
-                    color: none ? const Color(0xFFEF9A9A) : Colors.white,
-                    fontSize: none ? 15 : 23,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: -0.4,
-                    height: 1.1,
-                  ),
-                ),
-                if (!none) ...[
-                  const SizedBox(width: 6),
-                  Text(
-                    S.of(context).ofWait,
-                    maxLines: 1,
-                    style: TextStyle(
-                      fontFamily: 'Poppins',
-                      color: Colors.white.withValues(alpha: 0.55),
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
+            builder: (context) {
+              String arrivalStr = '';
+              if (!none && est.hasDrivers) {
+                final mid = ((est.minMinutes + est.maxMinutes) / 2).round();
+                final arrival = DateTime.now().add(Duration(minutes: mid));
+                final h = arrival.hour;
+                final ampm = h >= 12 ? 'PM' : 'AM';
+                final h12 = h == 0 ? 12 : (h > 12 ? h - 12 : h);
+                arrivalStr =
+                    '$h12:${arrival.minute.toString().padLeft(2, '0')} $ampm';
+              }
+              return Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  FittedBox(
+                    fit: BoxFit.scaleDown,
+                    // Shrinks rather than ellipsing. "No drivers available"
+                    // is a sentence, not a number — cut to "No drivers av…"
+                    // it stops being an answer at all.
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      textBaseline: TextBaseline.alphabetic,
+                      crossAxisAlignment: CrossAxisAlignment.baseline,
+                      children: [
+                        Text(
+                          text,
+                          maxLines: 1,
+                          style: TextStyle(
+                            fontFamily: 'Poppins',
+                            color:
+                                none ? const Color(0xFFEF9A9A) : Colors.white,
+                            fontSize: none ? 15 : 23,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: -0.4,
+                            height: 1.1,
+                          ),
+                        ),
+                        if (!none) ...[
+                          const SizedBox(width: 6),
+                          Text(
+                            S.of(context).away,
+                            maxLines: 1,
+                            style: TextStyle(
+                              fontFamily: 'Poppins',
+                              color: Colors.white.withValues(alpha: 0.55),
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ],
                     ),
                   ),
+                  if (arrivalStr.isNotEmpty) ...[
+                    const SizedBox(height: 3),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.access_time_filled_rounded,
+                          size: 11,
+                          color:
+                              const Color(0xFFE8C547).withValues(alpha: 0.75),
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          arrivalStr,
+                          maxLines: 1,
+                          style: TextStyle(
+                            fontFamily: 'Poppins',
+                            color: Colors.white.withValues(alpha: 0.65),
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 0.2,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                 ],
-              ],
-            ),
+              );
+            },
           ),
         );
       },
@@ -3543,12 +3709,16 @@ class _PaymentMethodButtonState extends State<_PaymentMethodButton> {
       onTapDown: (_) => setState(() => _pressed = true),
       onTapCancel: () => setState(() => _pressed = false),
       onTapUp: (_) => setState(() => _pressed = false),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 150),
-        curve: Curves.easeOut,
+      // No card around this row — user spec 2026-08-04: the selector sits
+      // flat on the sheet, just icon + label + chevron. The press feedback
+      // that the neu box used to carry is now a simple opacity dip.
+      child: AnimatedOpacity(
+        duration: const Duration(milliseconds: 120),
+        opacity: _pressed ? 0.6 : 1.0,
+        child: Container(
         width: double.infinity,
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-        decoration: neuBox(radius: 16, pressed: _pressed),
+        color: Colors.transparent, // keeps the whole row tappable
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 10),
         child: Row(
           children: [
             // Icon in a pressed neumorphic well — the Apple / Google /
@@ -3596,6 +3766,7 @@ class _PaymentMethodButtonState extends State<_PaymentMethodButton> {
               size: 20,
             ),
           ],
+        ),
         ),
       ),
     );
@@ -3901,4 +4072,147 @@ class _SheetSizeReporterState extends State<_SheetSizeReporter> {
       child: SizeChangedLayoutNotifier(child: widget.child),
     );
   }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  "Faster" badge — selected tier card, nearest FREE driver ≤ 5 min
+// ═══════════════════════════════════════════════════════════════════
+
+/// Gold pill with a hand-painted steering wheel, top-right of the selected
+/// tier card. Silky by construction: it lands with an overshoot pop
+/// (easeOutBack scale + fade) and then breathes — a slow 2.4 s glow/scale
+/// sine loop, subtle enough to feel alive without shouting.
+class FasterBadge extends StatefulWidget {
+  const FasterBadge({super.key});
+
+  @override
+  State<FasterBadge> createState() => _FasterBadgeState();
+}
+
+class _FasterBadgeState extends State<FasterBadge>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _breathe;
+
+  @override
+  void initState() {
+    super.initState();
+    _breathe = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 2400),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _breathe.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // Entrance: one-shot pop.
+    return TweenAnimationBuilder<double>(
+      tween: Tween(begin: 0.0, end: 1.0),
+      duration: const Duration(milliseconds: 480),
+      curve: Curves.easeOutBack,
+      builder: (context, t, child) => Transform.scale(
+        scale: 0.6 + 0.4 * t,
+        child: Opacity(opacity: t.clamp(0.0, 1.0), child: child),
+      ),
+      child: AnimatedBuilder(
+        animation: _breathe,
+        builder: (context, child) {
+          // No box at all — user spec 2026-08-04: just the gold word and
+          // the gold wheel. The breathing lives in a soft glow around the
+          // glyphs themselves plus a barely-there scale.
+          final s = math.sin(_breathe.value * 2 * math.pi);
+          final glow = 0.35 + 0.25 * s;
+          final scale = 1.0 + 0.02 * s;
+          return Transform.scale(
+            scale: scale,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                SizedBox(
+                  width: 11,
+                  height: 11,
+                  child: CustomPaint(
+                    painter: _SteeringWheelPainter(
+                      color: const Color(0xFFE8C547),
+                      glow: glow,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  // Product copy by request — the same word in both languages.
+                  'Faster',
+                  style: TextStyle(
+                    fontFamily: 'Poppins',
+                    fontSize: 10,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0.4,
+                    color: const Color(0xFFF5D990),
+                    shadows: [
+                      Shadow(
+                        color: const Color(0xFFE8C547)
+                            .withValues(alpha: glow),
+                        blurRadius: 8,
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+/// Minimal steering wheel: rim, three spokes at 90°/210°/330°, hub.
+/// Material has no steering-wheel glyph — 20 lines of canvas beat a wrong
+/// metaphor. Gold, with a breathing glow behind the strokes.
+class _SteeringWheelPainter extends CustomPainter {
+  const _SteeringWheelPainter({
+    this.color = const Color(0xFFE8C547),
+    this.glow = 0.0,
+  });
+
+  final Color color;
+  final double glow;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final c = Offset(size.width / 2, size.height / 2);
+    final r = size.width / 2 - 0.8;
+    if (glow > 0) {
+      final gp = Paint()
+        ..color = color.withValues(alpha: glow * 0.6)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 3.0
+        ..maskFilter = const ui.MaskFilter.blur(ui.BlurStyle.normal, 3);
+      canvas.drawCircle(c, r, gp);
+    }
+    final p = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.4
+      ..strokeCap = StrokeCap.round;
+    canvas.drawCircle(c, r, p);
+    for (final deg in [90.0, 210.0, 330.0]) {
+      final a = deg * math.pi / 180;
+      canvas.drawLine(
+        c + Offset(math.cos(a), math.sin(a)) * 2.2,
+        c + Offset(math.cos(a), math.sin(a)) * (r - 0.6),
+        p,
+      );
+    }
+    canvas.drawCircle(c, 1.6, Paint()..color = color);
+  }
+
+  @override
+  bool shouldRepaint(_SteeringWheelPainter oldDelegate) =>
+      oldDelegate.glow != glow || oldDelegate.color != color;
 }

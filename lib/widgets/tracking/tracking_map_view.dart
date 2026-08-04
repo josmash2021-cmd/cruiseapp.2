@@ -1563,12 +1563,25 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
         );
         _carAnnot!.iconRotate = effectiveBearing;
         mgr.update(_carAnnot!).catchError((e) {
+          // Project rule 17: a failed update may have left the OLD marker
+          // alive on the map. Nulling only the handle made the next tick
+          // create a SECOND car next to it (the rider's two-cars
+          // screenshot). Fire-and-forget the delete before letting a new
+          // create happen — same recipe as the home mini map dot.
+          final stale = _carAnnot;
           _carAnnot = null;
           _carAnnotCreating = false;
+          if (stale != null) {
+            mgr.delete(stale).catchError((_) {});
+          }
         });
       } catch (e) {
+        final stale = _carAnnot;
         _carAnnot = null;
         _carAnnotCreating = false;
+        if (stale != null) {
+          try { mgr.delete(stale).catchError((_) {}); } catch (_) {}
+        }
       }
       return;
     }
@@ -1631,6 +1644,11 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     }
     
     try {
+      // Project rule 17: the car manager owns exactly ONE annotation, so a
+      // deleteAll before create is a free dedup — it clears any zombie the
+      // failed-update path could not confirm dead, instead of drawing the
+      // new car next to it.
+      try { await mgr.deleteAll(); } catch (_) {}
       // Create car with size 0 for pop-in animation
       final annot = await mgr.create(mapbox.PointAnnotationOptions(
         geometry: mapbox.Point(

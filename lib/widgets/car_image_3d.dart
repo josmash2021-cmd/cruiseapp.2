@@ -57,14 +57,21 @@ class CarImage3D extends StatelessWidget {
       );
     }
 
-    // Silhouette drop shadow: the car's own alpha mask, tinted black and
-    // blurred — the shadow covers exactly the car's silhouette, nothing
-    // else (no plate, no ellipse).
+    // Ground shadow: the car's own silhouette CAST ON THE FLOOR — the
+    // alpha mask tinted black, squashed vertically against the wheels and
+    // blurred. It keeps the car's actual form (never a plate or an
+    // ellipse) but reads as the shape on the ground under it, softly
+    // diffused (user spec, 2026-08-04).
     Widget shadow({required double dy, required double blur, required double alpha}) {
       return Positioned.fill(
         child: IgnorePointer(
-          child: Transform.translate(
-            offset: Offset(0, dy),
+          child: Transform(
+            alignment: Alignment.bottomCenter,
+            transform: Matrix4.identity()
+              ..translate(0.0, dy)
+              // Flatten to 38% height, pinned at the wheels; a touch wider
+              // so the ground spread peeks past the body like a real cast.
+              ..scale(1.06, 0.38),
             child: ImageFiltered(
               imageFilter: ui.ImageFilter.blur(sigmaX: blur, sigmaY: blur),
               child: ColorFiltered(
@@ -109,10 +116,12 @@ class CarImage3D extends StatelessWidget {
         clipBehavior: Clip.none,
         fit: StackFit.expand,
         children: [
-          // Silhouette shadows only — they follow the car's alpha mask,
-          // so the shadow never reads as a plate behind the render.
-          shadow(dy: 9, blur: 10, alpha: 0.50),
-          shadow(dy: 3, blur: 3, alpha: 0.75),
+          // ONE soft ground shadow — the car's form on the floor, diffused,
+          // never "marked". The old pair included a barely-blurred
+          // 75%-black layer that read as a hard dark stamp under the car
+          // (user report, 2026-08-04); the squashed silhouette keeps the
+          // shape, the harshness goes.
+          shadow(dy: 7, blur: 7, alpha: 0.38),
           // Gold glow when selected
           goldGlow(),
           // Actual car image on top

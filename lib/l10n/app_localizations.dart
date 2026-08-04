@@ -14,6 +14,10 @@ class S {
 
   bool get _es => locale.languageCode == 'es';
 
+  /// Public locale check for the few places that pick UNITS (meters vs
+  /// feet) rather than words.
+  bool get isSpanish => _es;
+
   // ── General / Shared ──────────────────────────────────────────────────────
   String get appName => 'Cruise';
   String get continueButton => _es ? 'Continuar' : 'Continue';
@@ -368,6 +372,7 @@ class S {
 
   /// The wait shown beside the chosen vehicle, and the reason there is none.
   String get ofWait => _es ? 'de espera' : 'of wait';
+  String get away => _es ? 'de camino' : 'away';
 
   /// Shown on the rider's live-location card before the first GPS fix.
   String get syncing => _es ? 'Sincronizando' : 'Syncing';
@@ -1856,6 +1861,10 @@ class S {
   String get addCard => _es ? 'Agregar tarjeta' : 'Add card';
   String get addDebitCreditCard =>
       _es ? 'Agregar tarjeta de débito/crédito' : 'Add Debit/Credit Card';
+  // Payment bottom sheet (Uber-style picker, 2026-08-04)
+  String get moreOptions => _es ? 'Más opciones' : 'More options';
+  // Brand names — stay in English in both languages, like "Cruise Cash".
+  String get cruiseBalance => 'Cruise Balance';
   String get cardEntryMobileOnly => _es
       ? 'La captura segura de tarjeta está disponible en la app móvil (iOS / Android).'
       : 'Secure card entry is available in the mobile app (iOS / Android).';
@@ -4231,8 +4240,8 @@ class S {
 
   // ── Rider Confirm Pickup Screen ────────────────────────────────────────────
   String get rideAutoStartWarning => _es
-      ? 'El viaje comenzará automáticamente\nsi no confirmas'
-      : 'The ride will start automatically\nif you do not confirm';
+      ? 'El viaje comenzará automáticamente\nsi olvidaste confirmar'
+      : 'The ride will start automatically\nif you forgot to confirm';
 
   // ── Scheduled Rides Screen (rider) ────────────────────────────────────────
   String get driverAssignedLabel =>
@@ -4467,10 +4476,15 @@ class S {
       ? 'Presiona cuando\nestés con el driver'
       : 'Press when you\nare with the driver';
   String get isWaiting => _es ? 'está esperando' : 'is waiting';
+  String get driverDetected => _es ? 'Driver detectado' : 'Driver detected';
+  String get finding => _es ? 'BUSCANDO' : 'FINDING';
+  String get followArrowToDriver => _es
+      ? 'Sigue la flecha para\nencontrar a tu driver'
+      : 'Follow the arrow to\nfind your driver';
   String get freeWaitTime => _es ? 'Tiempo de espera gratis' : 'Free wait time';
   String get rideStartsAutomatically => _es
-      ? 'El viaje comenzará automáticamente si no confirmas'
-      : 'The ride will start automatically if you do not confirm';
+      ? 'El viaje comenzará automáticamente si olvidaste confirmar'
+      : 'The ride will start automatically if you forgot to confirm';
   String get yourTripConfirmed =>
       _es ? 'Tu viaje\nconfirmado' : 'Your trip\nconfirmed';
 

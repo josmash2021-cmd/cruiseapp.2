@@ -143,6 +143,11 @@ class TrackingMapCar {
     if (_carAnnot == null) {
       _carAnnotCreating = true;
       try {
+        // Project rule 17: this manager owns exactly ONE annotation. A
+        // failed update below nulls the handle without proof the marker
+        // died — deleteAll here clears any such zombie instead of drawing
+        // the new car NEXT TO it (the rider's two-cars screenshot).
+        try { await mgr.deleteAll(); } catch (_) {}
         _carAnnot = await mgr.create(
           mapbox.PointAnnotationOptions(
             geometry: mapbox.Point(
@@ -201,12 +206,21 @@ class TrackingMapCar {
       }).catchError((e) {
         debugPrint('[TrackingMapCar] Failed to update car annotation: $e');
         _writeInFlight = false;
+        // Rule 17: the failed update may have left the marker alive.
+        // Delete fire-and-forget before the next position recreates —
+        // nulling the handle alone put TWO cars on the rider's map.
+        final stale = _carAnnot;
         _carAnnot = null; // stale handle — recreated on the next position
+        if (stale != null) mgr.delete(stale).catchError((_) {});
       });
     } catch (e) {
       debugPrint('[TrackingMapCar] Failed to update car annotation: $e');
       _writeInFlight = false;
+      final stale = _carAnnot;
       _carAnnot = null;
+      if (stale != null) {
+        try { mgr.delete(stale).catchError((_) {}); } catch (_) {}
+      }
     }
   }
 

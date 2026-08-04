@@ -2,9 +2,16 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_compass/flutter_compass.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:url_launcher/url_launcher.dart';
+import '../config/page_transitions.dart';
+import '../models/lat_lng.dart';
 import '../services/haptic_service.dart';
+import 'chat_screen.dart';
 
 import '../widgets/verified_avatar.dart';
 import '../widgets/neu_style.dart';
@@ -31,7 +38,12 @@ class RiderConfirmPickupScreen extends StatefulWidget {
     this.vehiclePlate,
     this.rideTier,
     this.isAirportTrip = false,
+    this.driverPosOf,
+    this.driverPhone,
   });
+
+  /// For the Call round button (Find-My style bottom row).
+  final String? driverPhone;
 
   final String driverName;
   final String vehicleDesc;
@@ -45,6 +57,12 @@ class RiderConfirmPickupScreen extends StatefulWidget {
   final String? rideTier;
   /// Airport rides get a longer free wait window (10 min) regardless of tier.
   final bool isAirportTrip;
+
+  /// Live driver position, read on every rider GPS fix — feeds the compass
+  /// arrow, the animated distance readout and the proximity auto-detect.
+  /// Null (or a 0,0 reading) keeps the screen in follow-the-arrow copy with
+  /// no distance shown.
+  final LatLng Function()? driverPosOf;
 
   /// Called when the rider presses the confirm button OR when the driver
   /// starts the trip from their side.
@@ -66,7 +84,6 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
   static const _bg = neuBase;
 
   late final AnimationController _pulseCtrl;
-  late final Animation<double> _pulseAnim;
 
   late final AnimationController _rotateCtrl;
 
@@ -81,14 +98,43 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
   late final AnimationController _ripple2Ctrl;
   late final AnimationController _ripple3Ctrl;
 
-  // Hand tap animation
+  // Hand tap animation (retired — controller kept for stop paths)
   late final AnimationController _handCtrl;
-  late final Animation<double> _handScale;
-  late final Animation<double> _handOpacity;
+
+  // One slow clock for the Find-My particle ring + the animated clock hand.
+  late final AnimationController _particleCtrl;
 
   bool _pressed = false;
   bool _driverStarted = false; // true when driver slides "Start Trip"
   StreamSubscription? _tripSub;
+
+  // ── Proximity auto-detect + compass arrow ──
+  // The circle is no longer a button to press: the phone watches its own
+  // GPS against the driver's live position, points an arrow at them, and
+  // the moment the rider is within ~2.5 m for two consecutive fixes it
+  // flips green ("Driver detected") and confirms by itself.
+  StreamSubscription<Position>? _riderGpsSub;
+  StreamSubscription<CompassEvent>? _compassSub;
+
+  /// Straight-line meters to the driver; negative until both fixes exist.
+  double _distanceM = -1;
+
+  /// Bearing rider→driver, degrees clockwise from true north.
+  double _bearingToDriver = 0;
+
+  /// Device compass heading (degrees). 0 when the device has no
+  /// magnetometer — the arrow then points north-referenced.
+  double _heading = 0;
+
+  bool _driverDetected = false;
+  int _closeFixes = 0;
+  static const double _kDetectMeters = 2.5;
+
+  /// Screen-space angle (radians) the particle crescent is CURRENTLY
+  /// facing. Eased toward the arrow's live direction a little every frame
+  /// (shortest arc), so the dust swings with the needle instead of
+  /// snapping — mutated inside the ring's per-frame builder, no setState.
+  double _crescentAngle = -math.pi / 2;
 
   // ── Wait time fee tracking (Uber/Lyft style) ──
   // Per-tier policy. Airport overrides tier with a longer 10 min free window.
@@ -108,7 +154,16 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
     super.initState();
 
     // ── Wait time policy per tier (Uber/Lyft inspired) ──
-    final tier = (widget.rideTier ?? _inferTierFromVehicleDesc(widget.vehicleDesc));
+    //
+    // rideTier arrives as whatever the caller had on hand: a picker
+    // display name ('SUV XL', 'VIP', 'BLACK'), a backend vehicle_type
+    // ('black', 'suv_xl') on resume paths, or a legacy tier key. Left
+    // raw, the switch below matched only exact 'vip'/'premium' and every
+    // Black/SUV XL trip fell to the standard 2-min/$0.40 policy while
+    // the backend charged the 5-min/$1.00 one (trips.py
+    // _WAIT_POLICY_BY_TYPE). Normalize onto the backend's groups first.
+    final tier = _normalizeWaitTier(
+        widget.rideTier ?? '', widget.vehicleDesc);
     if (widget.isAirportTrip) {
       _freeWaitSec = 10 * 60;
       _waitFeePerMin = 0.40;
@@ -145,19 +200,26 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
     _fadeInAnim = CurvedAnimation(parent: _fadeInCtrl, curve: Curves.easeOut);
     _fadeInCtrl.forward();
 
-    // Pulse: scale ring 1.0 → 1.06 → 1.0
+    // Pulse: scale ring 1.0 → 1.06 → 1.0. NOT started — the disc it drove
+    // was replaced by the Find-My particle ring; kept constructed so every
+    // stop()/dispose() path stays valid.
     _pulseCtrl = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1800),
-    )..repeat(reverse: true);
-    _pulseAnim = Tween<double>(begin: 1.0, end: 1.06).animate(
-      CurvedAnimation(parent: _pulseCtrl, curve: Curves.easeInOut),
     );
 
-    // Rotating golden glow
+    // Rotating golden glow — same: constructed, not started.
     _rotateCtrl = AnimationController(
       vsync: this,
       duration: const Duration(seconds: 5),
+    );
+
+    // The Find-My particle ring + the little clock hand both breathe off
+    // this one slow clock: 12 s per cycle, repeating — drift, twinkle and
+    // needle sweep all derive from its value, one ticker for everything.
+    _particleCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 12),
     )..repeat();
 
     // Fade out on confirm
@@ -168,11 +230,12 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
     _fadeOutAnim =
         CurvedAnimation(parent: _fadeOutCtrl, curve: Curves.easeInOut);
 
-    // Ripple waves — 3 staggered expanding rings
+    // Ripple waves — retired with the pressable disc; constructed only so
+    // the stop()/dispose() paths stay valid.
     _ripple1Ctrl = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 2400),
-    )..repeat();
+    );
     _ripple2Ctrl = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 2400),
@@ -181,45 +244,78 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
       vsync: this,
       duration: const Duration(milliseconds: 2400),
     );
-    // Stagger ripple 2 and 3
-    Future.delayed(const Duration(milliseconds: 800), () {
-      if (mounted && !_pressed && !_driverStarted) _ripple2Ctrl.repeat();
-    });
-    Future.delayed(const Duration(milliseconds: 1600), () {
-      if (mounted && !_pressed && !_driverStarted) _ripple3Ctrl.repeat();
-    });
 
-    // Hand tap animation — realistic press-down gesture
+    // Hand tap animation — retired: nothing is pressable any more.
     _handCtrl = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 2000),
-    )..repeat();
-    // Finger presses down then lifts with a natural bounce
-    _handScale = TweenSequence<double>([
-      // Hover / approach
-      TweenSequenceItem(tween: Tween(begin: 1.0, end: 0.96).chain(CurveTween(curve: Curves.easeIn)), weight: 12),
-      // Press down firmly
-      TweenSequenceItem(tween: Tween(begin: 0.96, end: 0.78).chain(CurveTween(curve: Curves.easeInQuart)), weight: 14),
-      // Hold pressed
-      TweenSequenceItem(tween: ConstantTween(0.78), weight: 8),
-      // Lift off with bounce
-      TweenSequenceItem(tween: Tween(begin: 0.78, end: 1.04).chain(CurveTween(curve: Curves.easeOutBack)), weight: 18),
-      // Settle
-      TweenSequenceItem(tween: Tween(begin: 1.04, end: 1.0).chain(CurveTween(curve: Curves.easeInOut)), weight: 8),
-      // Pause before next tap
-      TweenSequenceItem(tween: ConstantTween(1.0), weight: 40),
-    ]).animate(_handCtrl);
-    _handOpacity = TweenSequence<double>([
-      TweenSequenceItem(tween: Tween(begin: 0.6, end: 0.95), weight: 12),
-      TweenSequenceItem(tween: Tween(begin: 0.95, end: 1.0), weight: 14),
-      TweenSequenceItem(tween: ConstantTween(1.0), weight: 8),
-      TweenSequenceItem(tween: Tween(begin: 1.0, end: 0.85), weight: 18),
-      TweenSequenceItem(tween: Tween(begin: 0.85, end: 0.6), weight: 8),
-      TweenSequenceItem(tween: ConstantTween(0.6), weight: 40),
-    ]).animate(_handCtrl);
+    );
 
     // Listen for driver starting the trip
     _listenForTripStart();
+
+    // Proximity + compass — the smart replacement for the press.
+    _startProximityWatch();
+  }
+
+  /// Watch the rider's own GPS against the driver's live position: keep the
+  /// arrow pointed, the distance readout fresh, and auto-confirm the moment
+  /// two consecutive fixes land within [_kDetectMeters].
+  void _startProximityWatch() {
+    if (kIsWeb) return; // browser GPS is too coarse to point or detect with
+    if (widget.driverPosOf == null) return;
+
+    // Compass heading (magnetometer). Some devices have none — events just
+    // never arrive and the arrow stays north-referenced.
+    try {
+      _compassSub = FlutterCompass.events?.listen((event) {
+        final h = event.heading;
+        if (h == null || !mounted) return;
+        if ((h - _heading).abs() > 1.5) setState(() => _heading = h);
+      });
+    } catch (_) {}
+
+    _riderGpsSub = Geolocator.getPositionStream(
+      locationSettings: const LocationSettings(
+        accuracy: LocationAccuracy.bestForNavigation,
+        distanceFilter: 0,
+      ),
+    ).listen((pos) {
+      if (!mounted || _pressed || _driverStarted) return;
+      final driver = widget.driverPosOf!();
+      if (driver.latitude == 0 && driver.longitude == 0) return;
+
+      final meters = Geolocator.distanceBetween(
+          pos.latitude, pos.longitude, driver.latitude, driver.longitude);
+      final bearing = Geolocator.bearingBetween(
+          pos.latitude, pos.longitude, driver.latitude, driver.longitude);
+
+      setState(() {
+        _distanceM = meters;
+        _bearingToDriver = (bearing + 360) % 360;
+      });
+
+      // Detection: two consecutive fixes inside the ring, so a single GPS
+      // spike through the threshold cannot trigger it — instant in practice
+      // (fixes arrive ~1/s) without being gullible.
+      if (meters <= _kDetectMeters) {
+        _closeFixes++;
+        if (_closeFixes >= 2 && !_driverDetected) {
+          _driverDetected = true;
+          HapticService.heavyImpact();
+          setState(() {});
+          // A beat of green "Driver detected", then the same confirm the
+          // button used to do.
+          Future.delayed(const Duration(milliseconds: 700), () {
+            if (mounted && !_pressed && !_driverStarted) _onConfirmPressed();
+          });
+        }
+      } else {
+        _closeFixes = 0;
+      }
+    }, onError: (Object e) {
+      debugPrint('[ConfirmPickup] rider GPS stream error: $e');
+    });
   }
 
   /// Listen to Firestore for the trip status changing to in_progress/in_trip
@@ -358,44 +454,35 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
     }
 
     if (isFreePhase) {
-      return Container(
-        margin: const EdgeInsets.symmetric(horizontal: 24),
-        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
-        // Sunken well with a green edge — a countdown readout, same idiom
-        // as the ETA badge on the tracking screen.
-        decoration: neuBox(
-          radius: 16,
-          pressed: true,
-          borderColor: const Color(0xFF22C55E).withValues(alpha: 0.40),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.schedule_rounded,
-                color: Color(0xFF22C55E), size: 18),
-            const SizedBox(width: 8),
-            Text(
-              'Free wait time',
-              style: TextStyle(
-                fontFamily: 'Poppins',
-                color: Colors.white.withValues(alpha: 0.85),
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-              ),
+      // Boxless, GOLD (was green — user spec 2026-08-04), with a real
+      // sweeping hand on the clock icon. Sits under the big distance in
+      // the Find-My bottom block.
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _AnimatedClockIcon(listenable: _particleCtrl, size: 14),
+          const SizedBox(width: 7),
+          Text(
+            S.of(context).freeWaitTime,
+            style: TextStyle(
+              fontFamily: 'Poppins',
+              color: Colors.white.withValues(alpha: 0.70),
+              fontSize: 12.5,
+              fontWeight: FontWeight.w600,
             ),
-            const SizedBox(width: 10),
-            Text(
-              fmt(freeRemaining),
-              style: const TextStyle(
-                fontFamily: 'Poppins',
-                color: Color(0xFF22C55E),
-                fontSize: 18,
-                fontWeight: FontWeight.w800,
-                letterSpacing: -0.3,
-              ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            fmt(freeRemaining),
+            style: const TextStyle(
+              fontFamily: 'Poppins',
+              color: _gold,
+              fontSize: 16,
+              fontWeight: FontWeight.w800,
+              letterSpacing: -0.3,
             ),
-          ],
-        ),
+          ),
+        ],
       );
     }
 
@@ -408,29 +495,10 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
         opacity: 0.85 + 0.15 * (1 - (t - 0.925).abs() * 13).clamp(0.0, 1.0),
         child: child,
       ),
-      child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 24),
-        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
-        // Charging phase: raised, not sunken, plus the red glow — this one
-        // is meant to push forward and be noticed, unlike the calm
-        // free-wait readout above.
-        decoration: neuBox(
-          radius: 16,
-          borderColor: const Color(0xFFEF4444).withValues(alpha: 0.55),
-          borderWidth: 1.2,
-        ).copyWith(
-          color: Color.alphaBlend(
-            const Color(0xFFEF4444).withValues(alpha: 0.10),
-            neuSurface,
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: const Color(0xFFEF4444).withValues(alpha: 0.18),
-              blurRadius: 14,
-              spreadRadius: 1,
-            ),
-          ],
-        ),
+      // Boxless like the free phase — the red type and the pulse carry the
+      // urgency on their own.
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 24),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -497,35 +565,55 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
   /// Best-effort tier inference from the vehicle description string.
   /// Caller should pass `rideTier` explicitly when possible — this is a
   /// fallback so the timer always picks a sensible policy.
-  String _inferTierFromVehicleDesc(String desc) {
-    final d = desc.toLowerCase();
-    if (d.contains('suburban') || d.contains('escalade') || d.contains('vip') ||
-        d.contains('black')) {
+  ///
+  /// NOTE: 'black' is deliberately NOT a vip matcher any more. It is a
+  /// COLOR word — "Black Ford Fusion" is a standard-tier car, and matching
+  /// on it put the BLACK-tier Suburban render on a standard trip's card
+  /// (the mismatch in the user's screenshot, 2026-08-04).
+  /// Collapse a tier string of ANY provenance onto the backend's wait
+  /// policy groups: 'vip' = 5 min free/$1.00 per min (vip, black, suv_xl,
+  /// suburban), 'premium' = 3 min/$0.60, everything else 'standard' =
+  /// 2 min/$0.40 — mirrors trips.py _WAIT_POLICY_BY_TYPE. 'black' is only
+  /// matched in the tier string, never in the vehicle description, where
+  /// it is usually the car's COLOR.
+  String _normalizeWaitTier(String raw, String desc) {
+    final t = raw.toLowerCase().replaceAll('_', ' ').trim();
+    bool hasAny(String s, List<String> words) => words.any(s.contains);
+    if (hasAny(t, ['vip', 'black', 'suv', 'suburban', 'escalade'])) {
       return 'vip';
     }
-    if (d.contains('camry') || d.contains('accord') || d.contains('premium')) {
-      return 'premium';
+    if (hasAny(t, ['premium', 'traverse'])) return 'premium';
+    if (t.isNotEmpty &&
+        hasAny(t, ['standard', 'compact', 'sedan', 'comfort', 'fusion'])) {
+      return 'standard';
     }
-    return 'standard';
+    // Tier string decided nothing — fall back to the vehicle model text.
+    final inferred = _inferTierFromVehicleDesc(desc);
+    return inferred == 'compact' ? 'standard' : inferred;
   }
 
-  /// The car image for this card — same cruisert set the tracking card
-  /// draws from, so the rider sees the very render they picked.
-  String _vehicleAssetForConfirm() {
-    switch (_inferTierFromVehicleDesc(widget.vehicleDesc)) {
-      case 'vip':
-        return 'assets/images/cruisert1.png';
-      case 'premium':
-        return 'assets/images/cruisert2.png';
-      default:
-        return 'assets/images/cruisert3.png';
+  String _inferTierFromVehicleDesc(String desc) {
+    final d = desc.toLowerCase();
+    if (d.contains('suburban') || d.contains('escalade') || d.contains('vip')) {
+      return 'vip';
     }
+    if (d.contains('traverse') || d.contains('accord') || d.contains('premium')) {
+      return 'premium';
+    }
+    if (d.contains('camry') || d.contains('rav4') || d.contains('compact') ||
+        d.contains('sedan')) {
+      return 'compact';
+    }
+    return 'standard';
   }
 
   @override
   void dispose() {
     _waitTimer?.cancel();
     _tripSub?.cancel();
+    _riderGpsSub?.cancel();
+    _compassSub?.cancel();
+    _particleCtrl.dispose();
     _pulseCtrl.dispose();
     _rotateCtrl.dispose();
     _fadeInCtrl.dispose();
@@ -566,26 +654,53 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
     if (mounted) widget.onConfirmed();
   }
 
-  /// Builds a single expanding + fading golden ripple ring.
-  Widget _buildRippleRing(double progress) {
-    final size = 200 + (80 * progress); // expands from 200 to 280
-    final opacity = (1.0 - progress).clamp(0.0, 0.35); // fades out as it expands
-    return Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        border: Border.all(
-          color: _gold.withValues(alpha: opacity),
-          width: 2.0 - (progress * 1.2), // thins as it expands
+  /// Find-My style round action button (chat / call).
+  Widget _roundAction({required IconData icon, required VoidCallback onTap}) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 52,
+        height: 52,
+        decoration: neuBox(radius: 26),
+        child: Icon(icon, color: _gold, size: 22),
+      ),
+    );
+  }
+
+  void _openChat() {
+    HapticService.lightImpact();
+    final nav = Navigator.of(context);
+    nav.push(
+      chatOpenRoute(
+        ChatScreen(
+          recipientName: widget.driverName,
+          recipientPhotoUrl: widget.driverPhotoUrl,
+          recipientId: widget.driverId,
+          recipientRole: 'driver',
+          avatarInitial: widget.driverName.isNotEmpty
+              ? widget.driverName[0].toUpperCase()
+              : 'D',
+          tripId: widget.tripId,
+          currentRole: 'rider',
+          currentUserId: null,
         ),
       ),
     );
   }
 
+  Future<void> _callDriver() async {
+    HapticService.lightImpact();
+    final phone = widget.driverPhone;
+    if (phone == null || phone.isEmpty) return;
+    try {
+      await launchUrl(Uri.parse('tel:$phone'));
+    } catch (e) {
+      debugPrint('[ConfirmPickup] call failed: $e');
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    final firstName = widget.driverName.split(' ').first;
     final pad = MediaQuery.of(context).padding;
     final isConfirmed = _pressed || _driverStarted;
 
@@ -610,408 +725,253 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
                   child: SafeArea(
                     child: Column(
                       children: [
-                        SizedBox(height: pad.top + 20),
+                        SizedBox(height: pad.top + 8),
 
-                        // ── Top title ──
-                        AnimatedSwitcher(
-                          duration: const Duration(milliseconds: 400),
-                          child: isConfirmed
-                              ? Text(
-                                  S.of(context).tripConfirmedExclaim,
-                                  key: const ValueKey('title_confirmed'),
-                                  textAlign: TextAlign.center,
-                                  style: const TextStyle(
-                                    color: _gold,
-                                    fontSize: 22,
-                                    fontWeight: FontWeight.w800,
-                                    height: 1.3,
-                                  ),
-                                )
-                              : Text(
-                                  S.of(context).yourDriverHasArrived,
-                                  key: const ValueKey('title_arrived'),
-                                  textAlign: TextAlign.center,
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 22,
-                                    fontWeight: FontWeight.w700,
-                                    height: 1.3,
-                                  ),
-                                ),
-                        ),
-                        AnimatedOpacity(
-                          opacity: isConfirmed ? 0.0 : 1.0,
-                          duration: const Duration(milliseconds: 400),
-                          curve: Curves.easeOut,
-                          child: AnimatedSlide(
-                            offset: isConfirmed ? const Offset(0, -0.3) : Offset.zero,
-                            duration: const Duration(milliseconds: 400),
-                            curve: Curves.easeOut,
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                const SizedBox(height: 6),
-                                Text(
-                                  S.of(context).driverIsWaiting(firstName),
-                                  textAlign: TextAlign.center,
-                                  style: TextStyle(
-                                    color: Colors.white.withValues(alpha: 0.40),
-                                    fontSize: 14,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-
-                        const Spacer(),
-
-                        // ── Large gold ring CTA with ripple waves + hand hint ──
-                        SizedBox(
-                          width: 280,
-                          height: 280,
-                          child: Stack(
-                            alignment: Alignment.center,
+                        // ── Find-My style header: eyebrow + avatar + name ──
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 24),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              // Ripple waves — fade out smoothly on confirm
-                              AnimatedOpacity(
-                                opacity: isConfirmed ? 0.0 : 1.0,
-                                duration: const Duration(milliseconds: 500),
-                                curve: Curves.easeOut,
-                                child: Stack(
-                                  alignment: Alignment.center,
-                                  children: [
-                                    AnimatedBuilder(
-                                      animation: _ripple1Ctrl,
-                                      builder: (_, __) => _buildRippleRing(_ripple1Ctrl.value),
-                                    ),
-                                    AnimatedBuilder(
-                                      animation: _ripple2Ctrl,
-                                      builder: (_, __) => _buildRippleRing(_ripple2Ctrl.value),
-                                    ),
-                                    AnimatedBuilder(
-                                      animation: _ripple3Ctrl,
-                                      builder: (_, __) => _buildRippleRing(_ripple3Ctrl.value),
-                                    ),
-                                  ],
+                              Text(
+                                isConfirmed
+                                    ? S.of(context).tripConfirmedExclaim
+                                    : S.of(context).finding,
+                                style: TextStyle(
+                                  color: isConfirmed
+                                      ? _gold
+                                      : Colors.white.withValues(alpha: 0.45),
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w700,
+                                  letterSpacing: 2.0,
                                 ),
                               ),
-                              // The button
-                              GestureDetector(
-                                onTap: isConfirmed ? null : _onConfirmPressed,
-                                child: AnimatedBuilder(
-                                  animation: Listenable.merge([_pulseCtrl, _rotateCtrl]),
-                                  builder: (context, child) {
-                                    return AnimatedScale(
-                                      scale: _pressed ? 0.92 : (isConfirmed ? 1.0 : _pulseAnim.value),
-                                      duration: const Duration(milliseconds: 500),
-                                      curve: Curves.easeOutCubic,
-                                      child: SizedBox(
-                                        width: 200,
-                                        height: 200,
-                                        child: CustomPaint(
-                                          painter: _GoldenRingPainter(
-                                            rotation: _rotateCtrl.value * 2 * math.pi,
-                                          ),
-                                          child: Center(
-                                            child: Container(
-                                              width: 180,
-                                              height: 180,
-                                              // Raised neumorphic disc —
-                                              // radius = half the box, so it
-                                              // renders as a circle. It reads
-                                              // as a physical button waiting
-                                              // to be pressed, which is
-                                              // exactly what it is. Confirmed
-                                              // state keeps the gold tint,
-                                              // blended over the surface so
-                                              // the shadows survive.
-                                              decoration: isConfirmed
-                                                  ? neuBox(
-                                                      radius: 90,
-                                                      borderColor: _gold
-                                                          .withValues(alpha: 0.5),
-                                                      borderWidth: 2,
-                                                    ).copyWith(
-                                                      color: Color.alphaBlend(
-                                                        _gold.withValues(
-                                                            alpha: 0.12),
-                                                        neuSurface,
-                                                      ),
-                                                    )
-                                                  : neuBox(
-                                                      radius: 90,
-                                                      borderColor: _gold
-                                                          .withValues(alpha: 0.15),
-                                                    ),
-                                              child: AnimatedSwitcher(
-                                                duration: const Duration(milliseconds: 400),
-                                                switchInCurve: Curves.easeOutBack,
-                                                child: isConfirmed
-                                                    ? Column(
-                                                        key: const ValueKey('confirmed_content'),
-                                                        mainAxisAlignment: MainAxisAlignment.center,
-                                                        children: [
-                                                          Icon(
-                                                            Icons.check_circle_rounded,
-                                                            color: _gold,
-                                                            size: 52,
-                                                          ),
-                                                          const SizedBox(height: 10),
-                                                          Text(
-                                                            S.of(context).yourTripConfirmed,
-                                                            textAlign: TextAlign.center,
-                                                            style: const TextStyle(
-                                                              color: _gold,
-                                                              fontSize: 16,
-                                                              fontWeight: FontWeight.w700,
-                                                              height: 1.3,
-                                                            ),
-                                                          ),
-                                                        ],
-                                                      )
-                                                    : Column(
-                                                        key: const ValueKey('cta_content'),
-                                                        mainAxisAlignment: MainAxisAlignment.center,
-                                                        children: [
-                                                          const Icon(
-                                                            Icons.check_rounded,
-                                                            color: Colors.white,
-                                                            size: 40,
-                                                          ),
-                                                          const SizedBox(height: 12),
-                                                          Text(
-                                                            S.of(context).pressWhenWithDriver,
-                                                            textAlign: TextAlign.center,
-                                                            style: TextStyle(
-                                                              color: Colors.white.withValues(alpha: 0.60),
-                                                              fontSize: 13,
-                                                              fontWeight: FontWeight.w500,
-                                                              height: 1.4,
-                                                            ),
-                                                          ),
-                                                        ],
-                                                      ),
-                                              ),
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                    );
-                                  },
-                                ),
-                              ),
-                              // ── Hand tap hint — fades out on confirm ──
-                              Positioned(
-                                  bottom: 6,
-                                  right: 24,
-                                  child: AnimatedBuilder(
-                                    animation: _handCtrl,
-                                    builder: (_, __) {
-                                      final pressProgress = (1.0 - _handScale.value).clamp(0.0, 1.0);
-                                      final yOffset = pressProgress * 10.0; // moves down when pressing
-                                      final tiltAngle = pressProgress * 0.08; // slight wrist tilt on press
-                                      return Transform.translate(
-                                        offset: Offset(0, yOffset),
-                                        child: Transform.rotate(
-                                          angle: -tiltAngle,
-                                          alignment: Alignment.bottomCenter,
-                                          child: AnimatedOpacity(
-                                            opacity: isConfirmed ? 0.0 : _handOpacity.value,
-                                            duration: const Duration(milliseconds: 350),
-                                            child: Column(
-                                              mainAxisSize: MainAxisSize.min,
-                                              children: [
-                                                // The hand
-                                                Transform.scale(
-                                                  scale: _handScale.value,
-                                                  alignment: Alignment.bottomCenter,
-                                                  child: const Text(
-                                                    '👆',
-                                                    style: TextStyle(fontSize: 34),
-                                                  ),
-                                                ),
-                                                // Press shadow — grows when finger is down
-                                                Container(
-                                                  width: 16 + (pressProgress * 10),
-                                                  height: 4 + (pressProgress * 2),
-                                                  decoration: BoxDecoration(
-                                                    borderRadius: BorderRadius.circular(10),
-                                                    boxShadow: [
-                                                      BoxShadow(
-                                                        color: _gold.withValues(alpha: 0.15 + pressProgress * 0.25),
-                                                        blurRadius: 6 + (pressProgress * 4),
-                                                        spreadRadius: pressProgress * 2,
-                                                      ),
-                                                    ],
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
-                                          ),
-                                        ),
-                                      );
-                                    },
+                              const SizedBox(height: 8),
+                              Row(
+                                children: [
+                                  VerifiedAvatar(
+                                    photoUrl: widget.driverPhotoUrl,
+                                    uid: widget.driverId,
+                                    fallbackName: widget.driverName,
+                                    radius: 21,
+                                    role: 'driver',
+                                    isVerified: true,
                                   ),
-                                ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          widget.driverName,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: const TextStyle(
+                                            fontFamily: 'Poppins',
+                                            color: Colors.white,
+                                            fontSize: 22,
+                                            fontWeight: FontWeight.w800,
+                                            letterSpacing: -0.4,
+                                          ),
+                                        ),
+                                        Text(
+                                          widget.vehiclePlate != null &&
+                                                  widget
+                                                      .vehiclePlate!.isNotEmpty
+                                              ? '${widget.vehicleDesc}  ·  ${widget.vehiclePlate}'
+                                              : widget.vehicleDesc,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: TextStyle(
+                                            color: Colors.white
+                                                .withValues(alpha: 0.40),
+                                            fontSize: 12.5,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  // Distance — right side, at the name's
+                                  // level (user spec 2026-08-04). Tweens
+                                  // between readings; ft in EN, m in ES.
+                                  if (!isConfirmed && _distanceM >= 0)
+                                    TweenAnimationBuilder<double>(
+                                      tween: Tween(end: _distanceM),
+                                      duration:
+                                          const Duration(milliseconds: 600),
+                                      curve: Curves.easeOutCubic,
+                                      builder: (context, m, _) {
+                                        final es = S.of(context).isSpanish;
+                                        final v = es ? m : m * 3.28084;
+                                        final unit = es ? 'm' : 'ft';
+                                        return Text(
+                                          '${v.round()} $unit',
+                                          style: TextStyle(
+                                            fontFamily: 'Poppins',
+                                            color: _driverDetected
+                                                ? const Color(0xFF22C55E)
+                                                : Colors.white,
+                                            fontSize: 24,
+                                            fontWeight: FontWeight.w800,
+                                            letterSpacing: -0.6,
+                                          ),
+                                        );
+                                      },
+                                    ),
+                                ],
+                              ),
                             ],
                           ),
                         ),
 
-                        const SizedBox(height: 18),
-
-                        // ── Wait time fee badge (Uber/Lyft style) ──
-                        // Hidden once the rider confirms or the driver
-                        // starts the trip. Green count-down for free
-                        // wait time, red count-up + per-min fee after.
-                        if (!_pressed && !_driverStarted)
-                          _buildWaitTimerBadge(),
-
                         const Spacer(),
 
-                        // ── Driver info card (always visible) ──
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 20),
-                          child: Container(
-                            width: double.infinity,
-                            padding: const EdgeInsets.all(14),
-                            decoration: neuBox(
-                              radius: 20,
-                              borderColor: _gold.withValues(alpha: 0.18),
-                            ),
-                            child: Row(
-                              children: [
-                                // Driver avatar (always shows photo)
-                                VerifiedAvatar(
-                                  photoUrl: widget.driverPhotoUrl,
-                                  uid: widget.driverId,
-                                  fallbackName: widget.driverName,
-                                  radius: 24,
-                                  role: 'driver',
-                                  isVerified: true,
+                        // ── The particle ring with the compass arrow ──
+                        // Not a button: nothing here responds to touch. The
+                        // system detects the driver by proximity on its own.
+                        SizedBox(
+                          width: 320,
+                          height: 320,
+                          child: AnimatedBuilder(
+                            animation: _particleCtrl,
+                            builder: (context, child) {
+                              // Ease the crescent toward the arrow's live
+                              // direction — shortest arc, a fraction per
+                              // frame: the dust SWINGS with the needle.
+                              // Screen space: 0° bearing (north) = up.
+                              final target =
+                                  (_bearingToDriver - _heading) *
+                                          math.pi / 180.0 -
+                                      math.pi / 2;
+                              var d = (target - _crescentAngle) %
+                                  (2 * math.pi);
+                              if (d > math.pi) d -= 2 * math.pi;
+                              if (d < -math.pi) d += 2 * math.pi;
+                              _crescentAngle += d * 0.09;
+                              return CustomPaint(
+                                painter: _ParticleRingPainter(
+                                  t: _particleCtrl.value,
+                                  // Confirmed/detected: full even ring, no
+                                  // crescent — there is nowhere to point.
+                                  focus: (isConfirmed || _driverDetected)
+                                      ? null
+                                      : _crescentAngle,
+                                  color: isConfirmed
+                                      ? _gold
+                                      : _driverDetected
+                                          ? const Color(0xFF22C55E)
+                                          : Colors.white,
                                 ),
-                                const SizedBox(width: 12),
-                                // Name + vehicle + rating
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        widget.driverName,
-                                        style: const TextStyle(
-                                          color: Colors.white,
-                                          fontSize: 16,
-                                          fontWeight: FontWeight.w700,
-                                        ),
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                      const SizedBox(height: 4),
-                                      Row(
+                                child: child,
+                              );
+                            },
+                            child: Center(
+                              child: AnimatedSwitcher(
+                                duration: const Duration(milliseconds: 400),
+                                switchInCurve: Curves.easeOutBack,
+                                child: isConfirmed
+                                    ? Column(
+                                        key: const ValueKey('c_ok'),
+                                        mainAxisSize: MainAxisSize.min,
                                         children: [
-                                          Icon(
-                                            Icons.directions_car_rounded,
-                                            size: 13,
-                                            color: Colors.white.withValues(alpha: 0.35),
-                                          ),
-                                          const SizedBox(width: 4),
-                                          Expanded(
-                                            child: Text(
-                                              widget.vehicleDesc,
-                                              style: TextStyle(
-                                                color: Colors.white.withValues(alpha: 0.55),
-                                                fontSize: 13,
-                                              ),
-                                              maxLines: 1,
-                                              overflow: TextOverflow.ellipsis,
+                                          const Icon(
+                                              Icons.check_circle_rounded,
+                                              color: _gold, size: 60),
+                                          const SizedBox(height: 10),
+                                          Text(
+                                            S.of(context).yourTripConfirmed,
+                                            textAlign: TextAlign.center,
+                                            style: const TextStyle(
+                                              color: _gold,
+                                              fontSize: 16,
+                                              fontWeight: FontWeight.w700,
+                                              height: 1.3,
                                             ),
                                           ),
                                         ],
-                                      ),
-                                      const SizedBox(height: 4),
-                                      Row(
-                                        children: [
-                                          if (widget.driverRating != null) ...[
-                                            Icon(Icons.star_rounded, size: 13, color: _gold),
-                                            const SizedBox(width: 3),
-                                            Text(
-                                              widget.driverRating!.toStringAsFixed(1),
-                                              style: TextStyle(
-                                                color: Colors.white.withValues(alpha: 0.55),
-                                                fontSize: 12,
+                                      )
+                                    : _driverDetected
+                                        ? Column(
+                                            key: const ValueKey('c_det'),
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              const Icon(
+                                                  Icons
+                                                      .person_pin_circle_rounded,
+                                                  color: Color(0xFF22C55E),
+                                                  size: 60),
+                                              const SizedBox(height: 8),
+                                              Text(
+                                                S.of(context).driverDetected,
+                                                style: const TextStyle(
+                                                  color: Color(0xFF22C55E),
+                                                  fontSize: 15,
+                                                  fontWeight: FontWeight.w800,
+                                                ),
                                               ),
+                                            ],
+                                          )
+                                        : AnimatedRotation(
+                                            key: const ValueKey('c_arrow'),
+                                            // Compass needle: bearing to the
+                                            // driver minus device heading,
+                                            // short-arc sweep — silky.
+                                            turns: (_bearingToDriver -
+                                                    _heading) /
+                                                360.0,
+                                            duration: const Duration(
+                                                milliseconds: 250),
+                                            curve: Curves.easeOutCubic,
+                                            child: const Icon(
+                                              Icons.arrow_upward_rounded,
+                                              color: Colors.white,
+                                              size: 104,
                                             ),
-                                          ],
-                                        ],
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                // Vehicle render above, plate pill below it —
-                                // the plate used to sit alone on the right;
-                                // now it rides under the car the rider chose.
-                                if (widget.vehiclePlate != null && widget.vehiclePlate!.isNotEmpty)
-                                  Column(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Image.asset(
-                                        _vehicleAssetForConfirm(),
-                                        width: 64,
-                                        height: 30,
-                                        fit: BoxFit.contain,
-                                        errorBuilder: (_, __, ___) => Icon(
-                                          Icons.directions_car_rounded,
-                                          color: _gold.withValues(alpha: 0.5),
-                                          size: 24,
-                                        ),
-                                      ),
-                                      const SizedBox(height: 5),
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 10,
-                                          vertical: 4,
-                                        ),
-                                        // Sunken well — the plate reads as
-                                        // stamped into the card.
-                                        decoration: neuBox(
-                                          radius: 8,
-                                          pressed: true,
-                                          borderColor: _gold.withValues(alpha: 0.3),
-                                        ),
-                                        child: Text(
-                                          widget.vehiclePlate!,
-                                          style: const TextStyle(
-                                            color: Colors.white,
-                                            fontSize: 13,
-                                            fontWeight: FontWeight.w700,
-                                            letterSpacing: 1.8,
                                           ),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                              ],
+                              ),
                             ),
                           ),
                         ),
 
-                        // ── Bottom hint — fades out on confirm ──
-                        AnimatedOpacity(
-                          opacity: isConfirmed ? 0.0 : 1.0,
-                          duration: const Duration(milliseconds: 400),
-                          curve: Curves.easeOut,
+                        const Spacer(),
+
+                        // ── Bottom block, Find-My layout: wait line,
+                        // auto-start hint, chat/call buttons. (The distance
+                        // moved up beside the driver's name.) ──
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 24),
                           child: Column(
-                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              const SizedBox(height: 14),
-                              Text(
-                                isConfirmed ? '' : S.of(context).rideAutoStartWarning,
-                                textAlign: TextAlign.center,
-                                style: TextStyle(
-                                  color: _gold.withValues(alpha: 0.55),
-                                  fontSize: 12,
-                                  height: 1.4,
+                              if (!_pressed && !_driverStarted) ...[
+                                _buildWaitTimerBadge(),
+                                const SizedBox(height: 3),
+                                Text(
+                                  S
+                                      .of(context)
+                                      .rideAutoStartWarning
+                                      .replaceAll('\n', ' '),
+                                  style: TextStyle(
+                                    color: _gold.withValues(alpha: 0.45),
+                                    fontSize: 11.5,
+                                    height: 1.4,
+                                  ),
                                 ),
+                              ],
+                              const SizedBox(height: 18),
+                              Row(
+                                children: [
+                                  _roundAction(
+                                    icon: Icons.chat_bubble_rounded,
+                                    onTap: _openChat,
+                                  ),
+                                  const Spacer(),
+                                  _roundAction(
+                                    icon: Icons.call_rounded,
+                                    onTap: _callDriver,
+                                  ),
+                                ],
                               ),
                             ],
                           ),
@@ -1032,47 +992,148 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
   }
 }
 
-/// Custom painter for the animated rotating golden gradient ring.
-class _GoldenRingPainter extends CustomPainter {
-  _GoldenRingPainter({required this.rotation});
-  final double rotation;
+/// The Find-My particle ring: ~640 dots scattered in a gaussian band
+/// around a circle, each drifting slowly along it and twinkling — silky
+/// because everything derives from one slow 12 s clock, nothing jumps.
+class _ParticleRingPainter extends CustomPainter {
+  const _ParticleRingPainter({
+    required this.t,
+    required this.color,
+    this.focus,
+  });
+
+  /// 0..1 phase of the shared 12 s controller.
+  final double t;
+  final Color color;
+
+  /// Screen-space angle (radians) the crescent faces — the arrow's
+  /// direction. The dust concentrates in a soft lobe around it (dense and
+  /// bright toward the driver, sparse behind) and swings with it. Null
+  /// draws the full even ring (detected / confirmed states).
+  final double? focus;
+
+  static const int _count = 640;
+
+  // Deterministic per-particle pseudo-randoms — stable across frames.
+  double _h(int i, double salt) =>
+      (math.sin(i * 12.9898 + salt * 78.233) * 43758.5453).abs() % 1.0;
 
   @override
   void paint(Canvas canvas, Size size) {
-    final rect = Offset.zero & size;
-    final center = rect.center;
-    final radius = size.width / 2 - 2;
+    final c = Offset(size.width / 2, size.height / 2);
+    final baseR = size.width * 0.36;
+    final paintDot = Paint();
+    final phase = t * 2 * math.pi;
 
-    final gradient = SweepGradient(
-      startAngle: rotation,
-      endAngle: rotation + 2 * math.pi,
-      colors: const [
-        Color(0xFFE8C547),
-        Color(0xFFFBE47A),
-        Color(0xFFE8C547),
-        Color(0xFFB08C35),
-        Color(0xFFE8C547),
-      ],
-      stops: const [0.0, 0.25, 0.5, 0.75, 1.0],
-    );
-
-    final paint = Paint()
-      ..shader = gradient.createShader(rect)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 3.5;
-
-    canvas.drawCircle(center, radius, paint);
-
-    // Glow effect
-    final glowPaint = Paint()
-      ..shader = gradient.createShader(rect)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 10
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8);
-
-    canvas.drawCircle(center, radius, glowPaint);
+    for (var i = 0; i < _count; i++) {
+      final h1 = _h(i, 1), h2 = _h(i, 2), h3 = _h(i, 3), h4 = _h(i, 4);
+      // Angle: NO net rotation — full orbits read as "the ring is
+      // spinning". Each particle only SWAYS around its home spot, 3°–8°
+      // at its own slow tempo (a full sway takes 6–12 s), so neighbours
+      // slide gently past one another while the ring itself stays put.
+      // Every frequency is an integer multiple of the 12 s cycle: the
+      // wrap is seamless.
+      final s1 = 2 + (h4 * 2).floor(); // 2..3 sways per cycle (4–6 s each)
+      final sway = 0.07 + 0.09 * h1; // 4°..9° of local swing
+      final ang = h1 * 2 * math.pi +
+          math.sin(phase * s1 + h4 * 6.283) * sway;
+      // Radius: gaussian-ish band plus a moderate two-frequency weave —
+      // particles thread in and out between each other, milling about
+      // rather than holding formation.
+      final band = ((h2 + h3) - 1.0) * 26.0;
+      final w1 = 2 + (h2 * 2).floor(); // 2..3 cycles per loop
+      final w2 = 3 + (h3 * 3).floor(); // 3..5 cycles per loop
+      final weave = math.sin(phase * w1 + h2 * 6.283) * 3.5 +
+          math.sin(phase * w2 + h4 * 6.283) * 2.5;
+      final r = baseR + band + weave;
+      // Twinkle: moderate opacity swell, never fully off.
+      final twf = 2 + (h3 * 3).floor(); // 2..4
+      final tw = 0.18 + 0.65 *
+          (0.5 + 0.5 * math.sin(phase * twf + h4 * 6.283));
+      var sizePx = 0.7 + 1.9 * h3 * h3;
+      var alpha = tw * (0.35 + 0.65 * h2);
+      // Crescent: a smooth cosine lobe centered on the arrow's direction.
+      // Dots near it keep full presence; the far side fades to a faint
+      // trace (never fully off — the ring still reads as a ring).
+      final f = focus;
+      if (f != null) {
+        final lobe = 0.5 + 0.5 * math.cos(ang - f);
+        final w = lobe * lobe; // sharpen: dense front, sparse back
+        alpha *= 0.08 + 0.92 * w;
+        sizePx *= 0.6 + 0.5 * w;
+      }
+      paintDot.color = color.withValues(alpha: alpha.clamp(0.0, 1.0));
+      canvas.drawCircle(
+        c + Offset(math.cos(ang) * r, math.sin(ang) * r),
+        sizePx,
+        paintDot,
+      );
+    }
   }
 
   @override
-  bool shouldRepaint(_GoldenRingPainter old) => old.rotation != rotation;
+  bool shouldRepaint(_ParticleRingPainter old) =>
+      old.t != t || old.color != color || old.focus != focus;
 }
+
+/// Tiny clock with a sweeping hand — the animated icon on the wait line.
+class _AnimatedClockIcon extends StatelessWidget {
+  const _AnimatedClockIcon({required this.listenable, this.size = 14});
+
+  final Animation<double> listenable;
+  final double size;
+  static const Color color = Color(0xFFE8C547);
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: listenable,
+      builder: (_, __) => CustomPaint(
+        size: Size.square(size),
+        painter: _ClockPainter(
+          // 6 sweeps per 12 s cycle = one full turn every 2 s.
+          handTurns: listenable.value * 6,
+          color: color,
+        ),
+      ),
+    );
+  }
+}
+
+class _ClockPainter extends CustomPainter {
+  const _ClockPainter({required this.handTurns, required this.color});
+
+  final double handTurns;
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final c = Offset(size.width / 2, size.height / 2);
+    final r = size.width / 2 - 0.8;
+    final ring = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.3
+      ..strokeCap = StrokeCap.round;
+    canvas.drawCircle(c, r, ring);
+    // Sweeping "minute" hand.
+    final a = handTurns * 2 * math.pi - math.pi / 2;
+    canvas.drawLine(
+      c,
+      c + Offset(math.cos(a), math.sin(a)) * (r - 1.6),
+      ring,
+    );
+    // Short fixed hour hand for the clock silhouette.
+    canvas.drawLine(
+      c,
+      c + const Offset(0, -1) * (r * 0.45),
+      ring,
+    );
+  }
+
+  @override
+  bool shouldRepaint(_ClockPainter old) =>
+      old.handTurns != handTurns || old.color != color;
+}
+
+

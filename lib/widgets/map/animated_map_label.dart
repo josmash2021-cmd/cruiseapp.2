@@ -21,6 +21,11 @@ class AnimatedMapLabel extends StatefulWidget {
   final bool alignEnd;
   final int revealDelayMs;
 
+  /// Trip minutes (pickup → dropoff) shown as a gold box GLUED to the
+  /// pill's right edge — e.g. "11" renders as a stacked 11 / MIN chip.
+  /// Null hides the box entirely (pickup label, or route not loaded yet).
+  final String? etaMinutes;
+
   const AnimatedMapLabel({
     super.key,
     required this.kind,
@@ -30,6 +35,7 @@ class AnimatedMapLabel extends StatefulWidget {
     required this.visible,
     this.alignEnd = false,
     this.revealDelayMs = 0,
+    this.etaMinutes,
   });
 
   @override
@@ -126,8 +132,8 @@ class _AnimatedMapLabelState extends State<AnimatedMapLabel>
 
   Widget _pill(String kind, String address, IconData icon, double glowAlpha,
       double blur) {
+    final eta = widget.etaMinutes;
     return Container(
-      padding: const EdgeInsets.fromLTRB(5, 5, 10, 5),
       decoration: BoxDecoration(
         // Pure black per the 2026-04-27 spec — was navy (0xF50F1120).
         color: Colors.black,
@@ -148,62 +154,121 @@ class _AnimatedMapLabelState extends State<AnimatedMapLabel>
           ),
         ],
       ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          // Gold icon chip
-          Container(
-            width: 19,
-            height: 19,
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [Color(0xFFF5DC7A), Color(0xFFD4A800)],
+      // Clip so the gold ETA section's corners follow the pill's radius —
+      // it must read as one piece ("pegado"), not a floating chip.
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(9),
+        child: IntrinsicHeight(
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(5, 5, 10, 5),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Gold icon chip
+                    Container(
+                      width: 19,
+                      height: 19,
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: [Color(0xFFF5DC7A), Color(0xFFD4A800)],
+                        ),
+                        borderRadius: BorderRadius.circular(5),
+                      ),
+                      alignment: Alignment.center,
+                      child: Icon(icon, color: Colors.black, size: 11),
+                    ),
+                    const SizedBox(width: 6),
+                    // Kind + address stack
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 130),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            kind,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontFamily: 'Poppins',
+                              color: _gold,
+                              fontSize: 7.5,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: 1.2,
+                              height: 1.0,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            address,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontFamily: 'Poppins',
+                              color: Colors.white,
+                              fontSize: 10.5,
+                              fontWeight: FontWeight.w600,
+                              height: 1.15,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
               ),
-              borderRadius: BorderRadius.circular(5),
-            ),
-            alignment: Alignment.center,
-            child: Icon(icon, color: Colors.black, size: 11),
-          ),
-          const SizedBox(width: 6),
-          // Kind + address stack
-          ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 130),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  kind,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontFamily: 'Poppins',
-                    color: _gold,
-                    fontSize: 7.5,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: 1.2,
-                    height: 1.0,
+              // Trip-minutes box, full pill height, flush on the right.
+              if (eta != null)
+                Container(
+                  constraints: const BoxConstraints(minWidth: 32),
+                  padding: const EdgeInsets.symmetric(horizontal: 7),
+                  decoration: const BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [Color(0xFFF5DC7A), Color(0xFFD4A800)],
+                    ),
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        eta,
+                        maxLines: 1,
+                        style: const TextStyle(
+                          fontFamily: 'Poppins',
+                          color: Colors.black,
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w800,
+                          height: 1.0,
+                        ),
+                      ),
+                      const Text(
+                        'MIN',
+                        maxLines: 1,
+                        style: TextStyle(
+                          fontFamily: 'Poppins',
+                          color: Colors.black,
+                          fontSize: 6.5,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 0.8,
+                          height: 1.1,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-                const SizedBox(height: 2),
-                Text(
-                  address,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontFamily: 'Poppins',
-                    color: Colors.white,
-                    fontSize: 10.5,
-                    fontWeight: FontWeight.w600,
-                    height: 1.15,
-                  ),
-                ),
-              ],
-            ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }

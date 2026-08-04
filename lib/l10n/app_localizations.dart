@@ -770,6 +770,21 @@ class S {
   String get personalInfoSubtitle =>
       _es ? 'Cuéntanos un poco sobre ti' : 'Tell us a bit about yourself';
   String get dateOfBirth => _es ? 'Fecha de nacimiento' : 'Date of birth';
+  // Per-field red guide shown above the box while it is still missing
+  String get fieldHintFirstName =>
+      _es ? 'Coloca tu nombre' : 'Enter your first name';
+  String get fieldHintLastName =>
+      _es ? 'Coloca tu apellido' : 'Enter your last name';
+  String get fieldHintDob =>
+      _es ? 'Coloca tu fecha de nacimiento' : 'Enter your date of birth';
+  String get fieldHintEmail =>
+      _es ? 'Coloca tu correo electrónico' : 'Enter your email address';
+  String get fieldHintPhone =>
+      _es ? 'Coloca tu número de teléfono' : 'Enter your phone number';
+  String get fieldHintPassword =>
+      _es ? 'Crea una contraseña' : 'Create a password';
+  String get fieldHintConfirmPassword =>
+      _es ? 'Confirma tu contraseña' : 'Confirm your password';
   String get driverAgeRequirement => _es
       ? 'Debes tener al menos 21 años para conducir con Cruise.'
       : 'You must be at least 21 years old to drive with Cruise.';

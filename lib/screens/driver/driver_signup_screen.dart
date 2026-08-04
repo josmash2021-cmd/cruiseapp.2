@@ -1215,6 +1215,9 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
                   ctrl: _firstNameCtrl,
                   label: S.of(context).firstNameLabel,
                   icon: Icons.person_outline,
+                  topHint: _firstNameCtrl.text.trim().isEmpty
+                      ? S.of(context).fieldHintFirstName
+                      : null,
                 ),
               ),
               const SizedBox(width: 12),
@@ -1223,11 +1226,27 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
                   ctrl: _lastNameCtrl,
                   label: S.of(context).lastNameLabel,
                   icon: Icons.person_outline,
+                  topHint: _lastNameCtrl.text.trim().isEmpty
+                      ? S.of(context).fieldHintLastName
+                      : null,
                 ),
               ),
             ],
           ),
           const SizedBox(height: 16),
+          // Same red guide as the text fields, above the DOB tile.
+          if (_dob == null)
+            Padding(
+              padding: const EdgeInsets.only(left: 4, bottom: 6),
+              child: Text(
+                S.of(context).fieldHintDob,
+                style: const TextStyle(
+                  color: Colors.redAccent,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
           _buildDobPicker(),
           const SizedBox(height: 16),
           _field(
@@ -1236,6 +1255,9 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
             icon: Icons.email_outlined,
             keyboard: TextInputType.emailAddress,
             errorText: _emailError,
+            topHint: !_emailRe.hasMatch(_emailCtrl.text.trim())
+                ? S.of(context).fieldHintEmail
+                : null,
             suffix: _checkingEmail
                 ? const Padding(
                     padding: EdgeInsets.all(14),
@@ -1266,6 +1288,9 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
             icon: Icons.phone_outlined,
             keyboard: TextInputType.phone,
             errorText: _phoneError,
+            topHint: _phoneCtrl.text.replaceAll(_nonDigitRe, '').length < 10
+                ? S.of(context).fieldHintPhone
+                : null,
             suffix: _checkingPhone
                 ? const Padding(
                     padding: EdgeInsets.all(14),
@@ -1296,6 +1321,12 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
             label: S.of(context).passwordLabel,
             icon: Icons.lock_outline_rounded,
             obscure: _obscurePass,
+            topHint: !(_passwordCtrl.text.length >= 8 &&
+                    _passwordCtrl.text.contains(_digitRe) &&
+                    _passwordCtrl.text.contains(_upperRe) &&
+                    _passwordCtrl.text.contains(_specialRe))
+                ? S.of(context).fieldHintPassword
+                : null,
             suffix: IconButton(
               icon: Icon(
                 _obscurePass
@@ -1313,6 +1344,10 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
             label: S.of(context).confirmPassword,
             icon: Icons.lock_outline_rounded,
             obscure: _obscureConfirm,
+            topHint: _confirmPassCtrl.text.isEmpty ||
+                    _confirmPassCtrl.text != _passwordCtrl.text
+                ? S.of(context).fieldHintConfirmPassword
+                : null,
             suffix: IconButton(
               icon: Icon(
                 _obscureConfirm
@@ -2343,10 +2378,29 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
     int? maxLength,
     bool capitalize = false,
     String? errorText,
+    String? topHint,
   }) {
     final c = AppColors.of(context);
     final hasError = errorText != null;
-    return Container(
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Red guide above the box: what this field still needs. Visible
+        // only while the caller says the field is incomplete — it goes
+        // away the moment the answer is in.
+        if (topHint != null)
+          Padding(
+            padding: const EdgeInsets.only(left: 4, bottom: 6),
+            child: Text(
+              topHint,
+              style: const TextStyle(
+                color: Colors.redAccent,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        Container(
       decoration: neuBox(
         radius: 16,
         pressed: true,
@@ -2382,6 +2436,8 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
           if (suffix != null) suffix,
         ],
       ),
+        ),
+      ],
     );
   }
 }

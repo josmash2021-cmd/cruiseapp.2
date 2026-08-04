@@ -51,7 +51,6 @@ import '../utils/responsive.dart';
 import '../widgets/gold_location_dot.dart';
 import '../widgets/gold_pin_renderer.dart';
 import '../widgets/map/animated_map_label.dart';
-import '../widgets/map/route_endpoint_markers.dart';
 
 import '../widgets/map/circular_pin_renderer.dart';
 import '../widgets/verified_avatar.dart';
@@ -533,6 +532,18 @@ class _RideRequestScreenState extends State<RideRequestScreen>
   bool _pickupLabelRevealed = false;
   bool _dropoffLabelRevealed = false;
 
+  /// Last time the camera listener re-projected the label offsets — the
+  /// 66 ms throttle that keeps label glue from flooding the platform
+  /// channel during camera animations.
+  DateTime _lastLabelSync = DateTime(2000);
+
+  /// Interruption token for the cinematic. _startCinematicSequence captures
+  /// it at takeoff and refuses to write ANY state after its awaits if it
+  /// changed — without this, a cancel (or the search-phase takeover) reset
+  /// the flags, and 2 s later the suspended sequence's tail re-wrote
+  /// _cinematicDone = true over them, so the NEXT ride never animated.
+  int _cinematicGen = 0;
+
   /// The browser map's controller, when there is one.
   ///
   /// Everything downstream of the picker asks the NATIVE controller where
@@ -557,6 +568,19 @@ class _RideRequestScreenState extends State<RideRequestScreen>
   /// Web only: drives the progressive route draw (the browser equivalent of
   /// the native _animateGoldRoute ticker). Cancelled on cleanup/dispose.
   Timer? _webRouteAnimTimer;
+
+  /// True once a REAL (≥3-point) route line has been drawn on the web map.
+  /// Distinct from [_webRouteDrawn], which claims the whole first-draw
+  /// cinematic: with the 2-point placeholder the cinematic runs but the
+  /// line is skipped, and this flag is what lets the road-snapped route
+  /// animate in when it lands.
+  bool _webRouteLineDrawn = false;
+
+  /// Identity of the route currently pushed to the web map — endpoint
+  /// coords + length. The controller notifies for tier taps and surge
+  /// updates too; this is how those no-op instead of re-pushing the line
+  /// and re-flying the camera.
+  int _webRouteSig = 0;
 
   /// True once the rider drags or zooms the map themselves — automatic
   /// camera fits stop fighting their frame until they tap recenter.
@@ -1005,26 +1029,55 @@ class _RideRequestScreenState extends State<RideRequestScreen>
             // browser, the native SDK everywhere else.
             else if (kIsWeb)
               WebMapView(
-                initialLng: _center!.longitude,
-                initialLat: _center!.latitude,
-                initialZoom: 14,
+                // Same boot frame as native: the handoff camera from the
+                // previous map when there is one, otherwise the rider at
+                // 15.5 with the 45° house tilt — never a flat zoom-14
+                // teleport.
+                initialLng: widget.handoffLng ?? _center!.longitude,
+                initialLat: widget.handoffLat ?? _center!.latitude,
+                initialZoom: widget.handoffZoom ?? 15.5,
+                initialBearing: widget.handoffBearing ?? 0.0,
+                initialPitch: widget.handoffPitch ?? 45.0,
                 styleUri: MapboxConfig.styleDark,
                 onControllerCreated: (c) {
                   _webMapCtrl = c;
                   // The same navy/gold the native map gets in
                   // _applyDarkNavyGoldTheme — raw dark-v11 is grey, not ours.
                   c.applyNavyGoldTheme();
+                  // Streets + our pins only, same as the native path's
+                  // MapTheme.hidePoiLayers after the theme.
+                  c.hidePoiLayers();
+                  // The ONLY trustworthy "rider took the camera" signal —
+                  // GL JS 'move' also fires for our own flights and even
+                  // for resize, which used to poison _userTookCamera and
+                  // silently kill every later auto-frame.
+                  c.onUserGesture = () {
+                    if (mounted) _userTookCamera = true;
+                  };
+                  // The preloaded-route notify fires in initState, before
+                  // this controller exists — without this catch-up the two
+                  // main entry paths left the browser map empty.
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (!mounted) return;
+                    if (_ctrl.state.route != null) {
+                      unawaited(_drawWebRouteOnce());
+                    }
+                  });
                   // The same two hooks the native map wires below, so the
                   // pin under the finger geocodes as the map is dragged.
                   c.onCameraMove = (_, __, ___) {
                     if (!mounted) return;
-                    // Our own fits land inside the programmatic window —
-                    // anything outside it is the rider's hand.
-                    if (DateTime.now().isAfter(_webAutoCameraUntil)) {
-                      _userTookCamera = true;
-                    }
+                    // _userTookCamera moved to onUserGesture above: this
+                    // event also fires for our own flights and resizes.
                     if (_ctrl.state.phase == RiderPhase.pickingLocation) {
                       _pickerScheduleGeocode();
+                    }
+                    // Keep the floating pickup/dropoff labels glued to
+                    // their pins while the camera moves — the same job the
+                    // native onCameraChangeListener does. Synchronous GL JS
+                    // projection, so per-frame is cheap.
+                    if (_pickupLabelRevealed || _dropoffLabelRevealed) {
+                      unawaited(_syncLabelOffsets());
                     }
                   };
                   c.onReady = () {
@@ -1125,7 +1178,20 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                     }
                   },
                   onCameraChangeListener: (_) {
-                    _syncLabelOffsets();
+                    // Throttled: this fires per camera frame, and each sync
+                    // is two awaited pixelForCoordinate IPCs. Unthrottled it
+                    // pushed ~120 round-trips/s into the channel DURING the
+                    // cinematic (whose own setCamera writes share it) —
+                    // visible stutter on iOS ProMotion. 66 ms ≈ 15 fps is
+                    // plenty for label glue, and while no label is revealed
+                    // there is nothing to glue at all.
+                    if (_pickupLabelRevealed || _dropoffLabelRevealed) {
+                      final now = DateTime.now();
+                      if (now.difference(_lastLabelSync).inMilliseconds >= 66) {
+                        _lastLabelSync = now;
+                        _syncLabelOffsets();
+                      }
+                    }
                     if (_ctrl.state.phase == RiderPhase.pickingLocation) {
                       _pickerScheduleGeocode();
                     }

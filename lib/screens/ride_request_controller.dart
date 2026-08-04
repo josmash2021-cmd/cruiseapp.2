@@ -162,6 +162,19 @@ extension _RideRequestController on _RideRequestScreenState {
 
     // Fly map to airport
     final target = LatLng(details.lat, details.lng);
+    if (kIsWeb) {
+      // Same glide in the browser — _mapCtrl is null there and the camera
+      // used to just sit still until the route fit arrived.
+      _webAutoCameraUntil =
+          DateTime.now().add(const Duration(milliseconds: 1050));
+      _webMapCtrl?.flyTo(
+        lng: target.longitude,
+        lat: target.latitude,
+        zoom: 16.5,
+        durationMs: 800,
+      );
+      return;
+    }
     _mapCtrl?.flyTo(
       mapbox.CameraOptions(
         center: mapbox.Point(coordinates: mapbox.Position(target.longitude, target.latitude)),
@@ -311,12 +324,19 @@ extension _RideRequestController on _RideRequestScreenState {
       if (kIsWeb) {
         LatLng? fix;
         try {
+          // The Dart-side .timeout is NOT redundant with timeLimit:
+          // geolocator's web implementation does not enforce timeLimit, so
+          // a browser that grants the permission but never produces a
+          // position left this await hanging FOREVER — _userLocation stayed
+          // null, and the picker's Confirm waited its full 12 s on
+          // _locationReadyFuture and then bounced the rider out of the
+          // picker with a Navigator.pop. Caught live on 2026-08-04.
           final pos = await Geolocator.getCurrentPosition(
             locationSettings: const LocationSettings(
               accuracy: LocationAccuracy.high,
               timeLimit: Duration(seconds: 10),
             ),
-          );
+          ).timeout(const Duration(seconds: 8));
           fix = LatLng(pos.latitude, pos.longitude);
           debugPrint('[RideRequest] web GPS: real browser fix '
               '${fix.latitude},${fix.longitude}');
@@ -342,9 +362,17 @@ extension _RideRequestController on _RideRequestScreenState {
           _center = center;
           _fetchingLocation = false;
         });
-        _webMapCtrl?.flyTo(
-            lng: center.longitude, lat: center.latitude, zoom: 15.5,
-            durationMs: 800);
+        // Browser geolocation can take seconds (permission prompt) — by
+        // then the route may already be framed, and this late flight would
+        // yank the camera off it. Also mark the move as ours: unmarked it
+        // used to read as a rider pan and disable every later auto-frame.
+        if (_ctrl.state.route == null && !_userTookCamera) {
+          _webAutoCameraUntil =
+              DateTime.now().add(const Duration(milliseconds: 1050));
+          _webMapCtrl?.flyTo(
+              lng: center.longitude, lat: center.latitude, zoom: 15.5,
+              durationMs: 800);
+        }
         _mapCtrl?.setCamera(mapbox.CameraOptions(
           center: mapbox.Point(
             coordinates: mapbox.Position(center.longitude, center.latitude),
@@ -414,10 +442,17 @@ extension _RideRequestController on _RideRequestScreenState {
             _userLocation = lastLl;
             _center = lastLl;
           });
-          _mapCtrl?.setCamera(mapbox.CameraOptions(
-            center: mapbox.Point(coordinates: mapbox.Position(lastLl.longitude, lastLl.latitude)),
-            zoom: 15.5,
-          ));
+          // Same guard the web branch carries: with a route on screen the
+          // camera belongs to the cinematic/route frame, and once the rider
+          // moved the map (picker drag included) it belongs to them. This
+          // unguarded write used to teleport the camera back to the rider
+          // whenever the last-known fix landed between cinematic ticks.
+          if (_ctrl.state.route == null && !_userTookCamera) {
+            _mapCtrl?.setCamera(mapbox.CameraOptions(
+              center: mapbox.Point(coordinates: mapbox.Position(lastLl.longitude, lastLl.latitude)),
+              zoom: 15.5,
+            ));
+          }
         }
       } catch (_) {}
 
@@ -435,10 +470,17 @@ extension _RideRequestController on _RideRequestScreenState {
         _center = ll;
         _fetchingLocation = false;
       });
-      _mapCtrl?.flyTo(
-        mapbox.CameraOptions(center: mapbox.Point(coordinates: mapbox.Position(ll.longitude, ll.latitude)), zoom: 15.5),
-        mapbox.MapAnimationOptions(duration: 800),
-      );
+      // A cold high-accuracy fix can take up to 10 s: by then the cinematic
+      // may be flying (this flyTo fought it frame-by-frame) or already
+      // settled on the route frame (this abandoned it and glided to the
+      // pickup at street zoom — the "animation destroyed, map parked at the
+      // pickup" report). Same rule as above and as the web branch.
+      if (_ctrl.state.route == null && !_userTookCamera) {
+        _mapCtrl?.flyTo(
+          mapbox.CameraOptions(center: mapbox.Point(coordinates: mapbox.Position(ll.longitude, ll.latitude)), zoom: 15.5),
+          mapbox.MapAnimationOptions(duration: 800),
+        );
+      }
 
       // Reverse geocode for address
       final places = PlacesService(ApiKeys.webServices);
@@ -2809,11 +2851,19 @@ void _showPaymentMethodPickerLegacy(AppColors c, RideOption? option) {
     // into the next search.
     final web = _webMapCtrl;
     if (web != null) {
-      web.removePolyline('route');
-      web.removeMarker('pickup');
-      web.removeMarker('dropoff');
+      // The WebMapView can be unmounted (driver-found swap, tracking
+      // handoff) while this handle still points at the disposed GL JS map;
+      // a throw here used to abort the cleanup below it.
+      try {
+        web.removePolyline('route');
+        web.removeMarker('pickup');
+        web.removeMarker('dropoff');
+      } catch (_) {}
     }
     _webRouteDrawn = false;
+    _webRouteLineDrawn = false;
+    _webRouteSig = 0;
+    _webRouteAnimTimer?.cancel();
     // The sheet unmounts with the phase change; the next one re-measures.
     _sheetHeightPx = 0;
     _sheetFitDebounce?.cancel();
@@ -2838,7 +2888,13 @@ void _showPaymentMethodPickerLegacy(AppColors c, RideOption? option) {
         _dropoffAnnot = null;
       }
     }
-    // Reset ALL cinematic state so the next route can animate fresh
+    // Reset ALL cinematic state so the next route can animate fresh.
+    // Bump the token FIRST and stop the tilt: a cinematic still flying
+    // would keep writing setCamera per frame toward the dead trip for up
+    // to 2 s, and its tail would re-write _cinematicDone = true over this
+    // reset — the "next ride never animates" bug.
+    _cinematicGen++;
+    _tiltCtrl?.stop();
     _showPinLabels = false;
     _labelsRevealed = false;
     _cinematicRunning = false;

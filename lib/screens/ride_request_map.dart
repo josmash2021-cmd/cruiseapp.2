@@ -9,6 +9,12 @@ extension _RideRequestMap on _RideRequestScreenState {
   // route and any updated/recreated route use the exact same shade.
   static const int _routeGoldColor = 0xFFF0CA3E;
 
+  // The cinematic's final frame — the same 55° tilt and fixed 15° bearing
+  // _startCinematicSequence flies to on native; the web fit uses them so
+  // both platforms settle on an identical view.
+  static const double _kCinematicPitch = 55.0;
+  static const double _kCinematicBearing = 15.0;
+
   /// Detect what icon to show on the dropoff pin based on address text.
   _PinIcon _detectDropoffType(String address) {
     final lower = address.toLowerCase();
@@ -682,6 +688,9 @@ extension _RideRequestMap on _RideRequestScreenState {
   Future<void> _startCinematicSequence(List<LatLng> pts) async {
     if (!mounted || _mapCtrl == null) return;
     // _cinematicRunning is already true — set by _drawRoute() caller.
+    // Interruption token: if a cancel or the search-phase camera takes over
+    // mid-flight, everything after our awaits must become a no-op.
+    final gen = _cinematicGen;
 
     // Fixed 15° bearing — matches the Shopify widget's static camera
     // angle during step 3. Previously randomized ±5–12°, but the web is
@@ -854,6 +863,14 @@ extension _RideRequestMap on _RideRequestScreenState {
       routeFuture,
     ]);
     if (!mounted) { _cinematicRunning = false; return; }
+    // Interrupted while flying (cancel, search takeover): whoever bumped
+    // the token already owns the flags AND the camera — writing
+    // _cinematicDone = true here was what poisoned the next ride into
+    // never animating.
+    if (gen != _cinematicGen) {
+      _tiltCtrl?.removeListener(onUnifiedTick);
+      return;
+    }
 
     // Clean up the unified listener.
     _tiltCtrl!.removeListener(onUnifiedTick);
@@ -863,14 +880,18 @@ extension _RideRequestMap on _RideRequestScreenState {
 
     // The cinematic's target camera was computed up front. If the sheet
     // reported its real height in the meantime and it disagrees with the
-    // estimate that framed the shot, reframe once against the real panel —
-    // same orientation (preserveCamera), just a corrected inset.
+    // inset that ACTUALLY framed the shot, reframe once against the real
+    // panel — same orientation (preserveCamera), just a corrected inset.
+    //
+    // Compare against `cardInset` (what this sequence used), NOT the
+    // estimate formula: when the sheet had already reported its height at
+    // takeoff, cardInset was the measured value, and comparing measured vs
+    // estimate re-fired a pointless reframe ~2 s after the camera had
+    // settled — the rider watched the finished frame "restart" for no
+    // visual gain.
     if (mounted && _sheetHeightPx > 0 && _ctrl.state.route != null) {
       final botSafe = MediaQuery.of(context).padding.bottom;
-      final estimate =
-          (MediaQuery.of(context).size.height * 0.42).clamp(300.0, 420.0) +
-              botSafe + 24;
-      if ((_cameraBottomInset(botSafe) - estimate).abs() > 40) {
+      if ((_cameraBottomInset(botSafe) - cardInset).abs() > 40) {
         _fitRoute(List<LatLng>.from(_ctrl.state.route!.points),
             preserveCamera: true);
       }
@@ -918,7 +939,11 @@ extension _RideRequestMap on _RideRequestScreenState {
       if (!mounted || _userTookCamera) return;
       final r = _ctrl.state.route;
       if (r != null && r.points.isNotEmpty) {
-        _fitWebRoute(List<LatLng>.from(r.points), durationMs: 1200);
+        // Same frame as native: top-down, north-up, 1200 ms ease, 90 px
+        // top inset — undoes the cinematic's 55°/15° when the search
+        // begins.
+        _fitWebRoute(List<LatLng>.from(r.points),
+            durationMs: 1200, pitch: 0, bearing: 0, paddingTop: 90);
       }
       return;
     }
@@ -926,6 +951,19 @@ extension _RideRequestMap on _RideRequestScreenState {
     // The rider panned/zoomed — their frame stays; the recenter button is
     // the way back to the full-route frame.
     if (_userTookCamera) return;
+
+    // A rider who taps Request while the cinematic is still flying: the
+    // per-frame setCamera in onUnifiedTick stomped this flyTo frame by
+    // frame, and when the tilt finished the search frame restarted with a
+    // stale inset — the "camera restarts" the user reported. Take the
+    // camera over cleanly: bump the token (the sequence's tail becomes a
+    // no-op), stop the tilt, and mark the cinematic finished.
+    if (_cinematicRunning) {
+      _cinematicGen++;
+      _tiltCtrl?.stop();
+      _cinematicRunning = false;
+      _cinematicDone = true;
+    }
 
     // Kill any in-flight search camera controller (legacy rotation).
     _searchCamCtrl?.dispose();
@@ -1045,10 +1083,32 @@ extension _RideRequestMap on _RideRequestScreenState {
   /// overlay labels follow the map while it tilts, pans or zooms.
   /// Called on every camera change event and at the end of the cinematic.
   Future<void> _syncLabelOffsets() async {
-    final mc = _mapCtrl;
-    if (mc == null) return;
     final pickup = _ctrl.state.pickup;
     final dropoff = _ctrl.state.dropoff;
+    // Web: same projection through GL JS — synchronous, no channel.
+    // Without this branch the floating labels never had coordinates in the
+    // browser and simply never appeared.
+    if (kIsWeb) {
+      final web = _webMapCtrl;
+      if (web == null) return;
+      try {
+        if (pickup != null) {
+          final px = web.pixelForCoordinate(pickup.lng, pickup.lat);
+          if (!mounted) return;
+          _setState(() => _pickupScreenOffset = px);
+        }
+        if (dropoff != null) {
+          final px = web.pixelForCoordinate(dropoff.lng, dropoff.lat);
+          if (!mounted) return;
+          _setState(() => _dropoffScreenOffset = px);
+        }
+      } catch (e) {
+        debugPrint('[Label] web _syncLabelOffsets failed: $e');
+      }
+      return;
+    }
+    final mc = _mapCtrl;
+    if (mc == null) return;
     try {
       if (pickup != null) {
         final px = await mc.pixelForCoordinate(mapbox.Point(
@@ -1379,8 +1439,24 @@ extension _RideRequestMap on _RideRequestScreenState {
     final mgr = _pointAnnotMgr;
     if (mgr == null) return;
 
-    // During cinematic, pins start tiny and grow via _startPinPop().
-    final scale = (!_cinematicDone || (_pinPopCtrl?.isAnimating ?? false)) ? 0.01 : 0.85;
+    // During cinematic, pins start tiny and grow via _startPinPop(). But
+    // the pop is a one-shot 500 ms window racing the pin BITMAP renders
+    // (4 sequential toImage/PNG round-trips — often slower, worst on
+    // Android): a marker created after the pop's last tick froze at 0.01
+    // forever, and because pickup and dropoff are created by two awaited
+    // IPCs in sequence, the pop could land between them — pickup popped,
+    // dropoff invisible. That asymmetry is the reported "animation only
+    // shows on the pickup". Compute the scale FRESH per create: mid-pop
+    // markers adopt the pop's live value (its listener keeps driving
+    // them), late markers land directly at the pop's final 0.65.
+    double pinScale() {
+      if (_cinematicDone) return 0.85;
+      final pop = _pinPopCtrl;
+      if (pop != null && pop.isAnimating) {
+        return ((_pinPopAnim?.value ?? 0.015) * 0.65).clamp(0.01, 1.0);
+      }
+      return (pop?.status == AnimationStatus.completed) ? 0.65 : 0.01;
+    }
     // Labels now live as Flutter overlay widgets (AnimatedMapLabel),
     // so we always draw the pin-only bitmap — the bitmap-with-label
     // variant is only kept for legacy paths that still reference it.
@@ -1394,7 +1470,7 @@ extension _RideRequestMap on _RideRequestScreenState {
         _pickupAnnot = await mgr.create(mapbox.PointAnnotationOptions(
           geometry: pickupPoint,
           image: bytes,
-          iconSize: scale,
+          iconSize: pinScale(),
           iconAnchor: mapbox.IconAnchor.BOTTOM,
           iconOffset: [0, 0],
         ));
@@ -1410,7 +1486,7 @@ extension _RideRequestMap on _RideRequestScreenState {
         _dropoffAnnot = await mgr.create(mapbox.PointAnnotationOptions(
           geometry: dropoffPoint,
           image: bytes,
-          iconSize: scale,
+          iconSize: pinScale(),
           iconAnchor: mapbox.IconAnchor.BOTTOM,
           iconOffset: [0, 0],
         ));
@@ -1430,11 +1506,15 @@ extension _RideRequestMap on _RideRequestScreenState {
   /// into the inset too — otherwise the top of the route would slide under
   /// the bar on long trips.
   double _cameraBottomInset(double botSafe) {
+    // 70 px of breathing room above the sheet, not 18. The route's lowest
+    // pin carries a floating address label; with 18 the label sat glued to
+    // the sheet's top edge (user report, 2026-08-04) instead of living
+    // comfortably in the visible map area.
     if (_sheetHeightPx <= 0) {
       final screenH = MediaQuery.of(context).size.height;
-      return (screenH * 0.35).clamp(190.0, 320.0) + botSafe + 20;
+      return (screenH * 0.35).clamp(190.0, 320.0) + botSafe + 70;
     }
-    return _sheetHeightPx + _sheetScreenGap + 18;
+    return _sheetHeightPx + _sheetScreenGap + 70;
   }
 
   /// The sheet reported a new height. Store it, then reframe ONCE after
@@ -1463,7 +1543,21 @@ extension _RideRequestMap on _RideRequestScreenState {
         return;
       }
       if (kIsWeb) {
-        _fitWebRoute(s.route!.points, durationMs: 450);
+        // Same refusals as native: never fight the cinematic mid-flight
+        // (the programmatic window is exactly its duration) and never take
+        // the camera back from a rider who panned away.
+        if (_userTookCamera ||
+            DateTime.now().isBefore(_webAutoCameraUntil)) {
+          return;
+        }
+        // Tier picked: reframe for the taller sheet but HOLD the cinematic
+        // orientation — native's _fitRoute(preserveCamera: true) flies
+        // 1400 ms keeping the 55°/15°. Without these GL JS would snap the
+        // bearing back to 0.
+        _fitWebRoute(s.route!.points,
+            durationMs: 1400,
+            pitch: _kCinematicPitch,
+            bearing: _kCinematicBearing);
         return;
       }
       if (_cinematicRunning || !_cinematicDone) return;
@@ -1473,7 +1567,15 @@ extension _RideRequestMap on _RideRequestScreenState {
 
   /// Web: fit the whole route above the sheet. No-op without the browser
   /// controller or points.
-  void _fitWebRoute(List<LatLng> pts, {int durationMs = 1000}) {
+  /// [pitch]/[bearing] pass straight to GL JS so a fit can fly tilted —
+  /// the cinematic frames at 55°/15° like native, the searching phase goes
+  /// back to 0°/0° top-down like native. Omitted, GL JS resets bearing to 0
+  /// and keeps the current pitch.
+  void _fitWebRoute(List<LatLng> pts,
+      {int durationMs = 1000,
+      double? pitch,
+      double? bearing,
+      double paddingTop = 70}) {
     final web = _webMapCtrl;
     if (web == null || pts.isEmpty) return;
     final botSafe = MediaQuery.of(context).padding.bottom;
@@ -1482,11 +1584,13 @@ extension _RideRequestMap on _RideRequestScreenState {
         DateTime.now().add(Duration(milliseconds: durationMs + 250));
     web.fitBounds(
       [for (final p in pts) (lng: p.longitude, lat: p.latitude)],
-      paddingTop: 70,
+      paddingTop: paddingTop,
       paddingLeft: 50,
       paddingBottom: _cameraBottomInset(botSafe),
       paddingRight: 50,
       durationMs: durationMs,
+      pitch: pitch,
+      bearing: bearing,
     );
   }
 
@@ -1501,36 +1605,101 @@ extension _RideRequestMap on _RideRequestScreenState {
     }
     final pts = s.route!.points;
     if (pts.length < 2) return;
+    // Identity of the route on screen: the controller notifies for tier
+    // taps, surge updates and schedule changes too, and each notify lands
+    // here — without this check every one re-pushed the line and re-flew
+    // the camera (yanking a rider who had panned to inspect the route).
+    final sig = Object.hash(pts.length, pts.first.latitude,
+        pts.first.longitude, pts.last.latitude, pts.last.longitude);
     if (_webRouteDrawn) {
+      if (sig == _webRouteSig && _webRouteLineDrawn) return; // nothing new
+      // A NEW route (edited pickup/dropoff, or the road-snapped points
+      // replacing the placeholder): the old draw timer still holds the OLD
+      // points and 33 ms later would repaint them over the new line.
+      _webRouteAnimTimer?.cancel();
+      _webRouteSig = sig;
+      if (!_webRouteLineDrawn && pts.length >= 3) {
+        // The cinematic ran on the 2-point placeholder and skipped the
+        // line; the real road route just landed — animate it now, mid- or
+        // post-flight, same as native's end-of-cinematic catch.
+        _animateWebRoute(web, pts);
+        return;
+      }
+      if (pts.length < 3) {
+        // Editing flows re-emit the 2-point estimate first. Native never
+        // draws it; drop the stale line and wait for the road route.
+        web.removePolyline('route');
+        _webRouteLineDrawn = false;
+        return;
+      }
       // Re-fetched route (edited pickup/dropoff): setPolyline replaces the
-      // line under the same id, so the new one redraws over the old.
+      // line under the same id, so the new one redraws over the old — and
+      // the pins move to the NEW endpoints with it (they used to stay put).
       web.setPolyline(
         'route',
         [for (final p in pts) (lng: p.longitude, lat: p.latitude)],
         color: '#F0CA3E',
-        width: 4,
+        width: 5,
       );
-      _fitWebRoute(pts, durationMs: 500);
+      web.updateMarkerPosition('pickup', s.pickup!.lng, s.pickup!.lat);
+      web.updateMarkerPosition('dropoff', s.dropoff!.lng, s.dropoff!.lat);
+      // A rider who took the camera keeps it — same rule as every native
+      // auto-frame.
+      if (!_userTookCamera) _fitWebRoute(pts, durationMs: 500);
       return;
     }
+    _webRouteSig = sig;
     _webRouteDrawn = true; // claim before the awaits so ticks don't double-add pins
-    // First draw: grow the line from pickup to dropoff over ~2 s, the
-    // browser equivalent of the native _animateGoldRoute ticker (same
-    // easeOutCubic feel, same gold, same camera fit at the end). A static
-    // line popping in read as "nothing happened" next to iOS.
-    _animateWebRoute(web, pts);
+    // First draw = the browser cinematic, the same sequence native runs in
+    // _startCinematicSequence and in the same order:
+    //   1. pins pop in (CSS twin of the 500 ms TweenSequence),
+    //   2. ONE camera flight to the route frame at pitch 55° / bearing 15°
+    //      over 2.2 s (GL JS fitBounds animates all axes together — the
+    //      browser twin of the unified tilt controller),
+    //   3. the gold line starts drawing 550 ms into the flight,
+    //   4. the floating labels unroll once the line lands (wired at the
+    //      end of _animateWebRoute, exactly like _animateGoldRoute).
     try {
-      // The same two shapes the native map and the driver's offer preview
-      // use: gold disc for the pickup, white circle for the dropoff.
+      // The SAME golden pins Android shows (person at pickup, address-type
+      // icon at dropoff), rendered by the same painter at 2x. Native's
+      // final pop scale is 0.65 of the 80×73.6 logical bitmap → 52×48 CSS
+      // px, tip on the coordinate (anchor bottom = IconAnchor.BOTTOM).
+      final dropoffIcon = _detectDropoffType(s.dropoffLabel);
       final pins = await Future.wait([
-        renderPickupDotBytes(),
-        renderDropoffCircleBytes(),
+        renderCircularPinBytes(
+            icon: CircularPinIcon.person, isPickup: true, radius: 32),
+        renderCircularPinBytes(
+            icon: _pinIconToCircular(dropoffIcon), isPickup: false, radius: 32),
       ]);
       if (!mounted) return;
-      web.addMarker('pickup', s.pickup!.lng, s.pickup!.lat, iconBytes: pins[0]);
-      web.addMarker('dropoff', s.dropoff!.lng, s.dropoff!.lat, iconBytes: pins[1]);
+      web.addMarker('pickup', s.pickup!.lng, s.pickup!.lat,
+          iconBytes: pins[0],
+          popIn: true,
+          widthPx: 52,
+          heightPx: 48,
+          anchor: 'bottom');
+      web.addMarker('dropoff', s.dropoff!.lng, s.dropoff!.lat,
+          iconBytes: pins[1],
+          popIn: true,
+          widthPx: 52,
+          heightPx: 48,
+          anchor: 'bottom');
     } catch (_) {}
-    if (mounted) _fitWebRoute(pts, durationMs: 1200);
+    if (!mounted) return;
+    _fitWebRoute(pts,
+        durationMs: 2200,
+        pitch: _kCinematicPitch,
+        bearing: _kCinematicBearing,
+        paddingTop: 80);
+    // Route draws starting ~25% into the flight, same beat as native.
+    await Future.delayed(const Duration(milliseconds: 550));
+    if (!mounted) return;
+    // Native rule: never draw the 2-point "estimated" placeholder — a
+    // straight diagonal through buildings. The cinematic (camera + pins)
+    // has already run; when the real road route lands, the refetch branch
+    // sees the line was never drawn and animates it, exactly like the
+    // catch at the end of _startCinematicSequence.
+    if (pts.length >= 3) _animateWebRoute(web, pts);
   }
 
   /// Web: progressive route draw — extends the gold polyline a few points
@@ -1539,11 +1708,17 @@ extension _RideRequestMap on _RideRequestScreenState {
   /// interpolation): at route-preview zooms the steps are invisible.
   void _animateWebRoute(WebMapController web, List<LatLng> pts) {
     _webRouteAnimTimer?.cancel();
+    _webRouteLineDrawn = true;
     // Same duration rule as native: ~16 ms per point, clamped 2–4 s.
     final totalMs = (pts.length * 16).clamp(2000, 4000);
     final stopwatch = Stopwatch()..start();
-    web.setPolyline('route', [(lng: pts[0].longitude, lat: pts[0].latitude)],
-        color: '#F0CA3E', width: 4);
+    // Width 5 — same as the native _animateGoldRoute line. Two identical
+    // seed points, not one: a 1-coordinate LineString is invalid GeoJSON
+    // that GL JS refuses to render (native seeds the same way).
+    web.setPolyline('route', [
+      (lng: pts[0].longitude, lat: pts[0].latitude),
+      (lng: pts[0].longitude, lat: pts[0].latitude),
+    ], color: '#F0CA3E', width: 5);
     _webRouteAnimTimer =
         Timer.periodic(const Duration(milliseconds: 33), (timer) {
       if (!mounted) {
@@ -1558,9 +1733,16 @@ extension _RideRequestMap on _RideRequestScreenState {
         'route',
         [for (final p in pts.take(count)) (lng: p.longitude, lat: p.latitude)],
         color: '#F0CA3E',
-        width: 4,
+        width: 5,
       );
-      if (progress >= 1.0) timer.cancel();
+      if (progress >= 1.0) {
+        timer.cancel();
+        // Same beat as native: the floating labels unroll only once a real
+        // line finished drawing (see the NOTE in _startCinematicSequence).
+        unawaited(_syncLabelOffsets().then((_) {
+          if (mounted) _unrollLabels();
+        }));
+      }
     });
   }
 
@@ -1736,7 +1918,13 @@ extension _RideRequestMap on _RideRequestScreenState {
         final pts = s.route?.points ??
             [LatLng(s.pickup!.lat, s.pickup!.lng),
              LatLng(s.dropoff!.lat, s.dropoff!.lng)];
-        _fitWebRoute(pts, durationMs: 900);
+        // Native recenter keeps whatever orientation the camera holds; in
+        // the route-preview phases that is the cinematic's 55°/15°, and
+        // GL JS would silently reset the bearing to 0 without these.
+        _fitWebRoute(pts,
+            durationMs: 1100,
+            pitch: _kCinematicPitch,
+            bearing: _kCinematicBearing);
         return;
       }
       final bounds = LatLngBounds(
@@ -1764,6 +1952,19 @@ extension _RideRequestMap on _RideRequestScreenState {
         _mapCtrl?.flyTo(cam, mapbox.MapAnimationOptions(duration: 1100));
       }
     } else if (_userLocation != null) {
+      // Web: the picker phase shows this button too, and _mapCtrl is null
+      // in the browser — the tap was a silent no-op while Android glided.
+      if (kIsWeb) {
+        _webAutoCameraUntil =
+            DateTime.now().add(const Duration(milliseconds: 1150));
+        _webMapCtrl?.flyTo(
+          lng: _userLocation!.longitude,
+          lat: _userLocation!.latitude,
+          zoom: 15.5,
+          durationMs: 900,
+        );
+        return;
+      }
       _mapCtrl?.flyTo(
         mapbox.CameraOptions(center: mapbox.Point(coordinates: mapbox.Position(_userLocation!.longitude, _userLocation!.latitude)), zoom: 15.5),
         // 500 ms → 900 ms so the re-center glide never feels like a snap.
@@ -1952,15 +2153,28 @@ extension _RideRequestMap on _RideRequestScreenState {
           s = _ctrl.state;
         }
       }
-      if (s.pickup == null && _userLocation != null) {
+      // Any known fix beats bouncing the rider out of the picker: live GPS
+      // first, then the fix the PreloadService cached at app boot. The
+      // bounce below is the worst outcome — a valid Confirm answered with
+      // a pop back to search — so it is strictly the last resort.
+      LatLng? pickupFix = _userLocation;
+      if (s.pickup == null && pickupFix == null) {
+        final lat = LocalCache.get<double>('last_driver_lat');
+        final lng = LocalCache.get<double>('last_driver_lng');
+        if (lat != null && lng != null) {
+          pickupFix = LatLng(lat, lng);
+          debugPrint('[Picker] pickup from cached boot fix $lat,$lng');
+        }
+      }
+      if (s.pickup == null && pickupFix != null) {
         final curLabel = _currentAddress.isNotEmpty
             ? _currentAddress
             : 'Current location';
         _ctrl.setPickup(
           PlaceDetails(
             address: curLabel,
-            lat: _userLocation!.latitude,
-            lng: _userLocation!.longitude,
+            lat: pickupFix.latitude,
+            lng: pickupFix.longitude,
           ),
           curLabel,
         );

@@ -1425,11 +1425,13 @@ extension _HomeScreenWidgets on _HomeScreenState {
     // contexts and two tile caches at once, which is precisely what was
     // crashing the app on iOS. Visible and inert, without the surface.
     //
-    // Also the placeholder on web, BY REQUEST (2026-08-04): the GL JS
-    // mini map with the navy/gold theme read as a black box and the user
-    // asked for the card the browser always had. The web mini map lived
-    // here briefly (commit 47ea7275) — do not resurrect it without asking.
-    if (kIsWeb || _activeRide != null) {
+    // Web history (2026-08-04): briefly reverted to the placeholder when
+    // the GL JS mini map read as a black box — the real culprit was a
+    // LOCAL web build without --dart-define=MAPBOX_TOKEN, which silently
+    // falls back to the CARTO raster basemap where the navy/gold theme
+    // cannot apply. The user wants the live map matching Android, so it is
+    // back; build web WITH the token or you will see CARTO again.
+    if (_activeRide != null) {
       return Container(
         height: Responsive.h(190),
         decoration: neuBox(radius: 24),
@@ -1480,12 +1482,12 @@ extension _HomeScreenWidgets on _HomeScreenState {
               // Torn down while another full screen covers the home, so
               // the rider never has two native Mapbox views alive at once.
               // The dot below keeps painting, so the card never looks dead.
-              // Web never reaches here — the placeholder branch above
-              // returns first (the GL JS mini map was reverted on request).
               Positioned.fill(
                 child: _miniMapSuspended
                     ? const ColoredBox(color: Color(0xFF0B0B0F))
-                    : _homeMiniMapSurface(pos),
+                    : kIsWeb
+                        ? _homeMiniMapWebSurface(pos)
+                        : _homeMiniMapSurface(pos),
               ),
               // The dot, painted by Flutter at the centre the camera is
               // held on. Same reason as the driver's arrow: an annotation
@@ -1569,6 +1571,30 @@ extension _HomeScreenWidgets on _HomeScreenState {
           ),
         ),
       ),
+    );
+  }
+
+  /// The home mini map in the browser: same card, but the surface is the
+  /// GL JS WebMapView (the native MapWidget has no web implementation).
+  /// Gestures stay off — the IgnorePointer above already eats every touch,
+  /// and the camera follows the rider from _recenterHomeMiniMap. With the
+  /// same dark-v11 style and the same navy/gold theme as the phone, this
+  /// card reads identically on web and Android — PROVIDED the web build
+  /// carries --dart-define=MAPBOX_TOKEN (keyless builds fall back to a
+  /// CARTO raster that ignores the theme).
+  Widget _homeMiniMapWebSurface(LatLng pos) {
+    return WebMapView(
+      key: const ValueKey('home_mini_map_web'),
+      initialLng: pos.longitude,
+      initialLat: pos.latitude,
+      initialZoom: 15.0,
+      styleUri: MapboxConfig.styleDark,
+      onControllerCreated: (c) {
+        _homeWebMapCtrl = c;
+        // Same navy/gold the native map wears — the whole point of the
+        // shared theme is that web and Android read as the same place.
+        c.applyNavyGoldTheme();
+      },
     );
   }
 

@@ -27,6 +27,8 @@ class WebMapControllerStub extends WebMapController {
     double paddingBottom = 60,
     double paddingRight = 60,
     int durationMs = 1000,
+    double? pitch,
+    double? bearing,
   }) {}
 
   @override
@@ -46,6 +48,10 @@ class WebMapControllerStub extends WebMapController {
     Uint8List? iconBytes,
     String? iconUrl,
     double rotation = 0,
+    bool popIn = false,
+    double widthPx = 40,
+    double heightPx = 40,
+    String anchor = 'center',
   }) {}
 
   @override
@@ -101,6 +107,9 @@ class WebMapControllerStub extends WebMapController {
   void applyNavyGoldTheme() {}
 
   @override
+  void hidePoiLayers() {}
+
+  @override
   Offset pixelForCoordinate(double lng, double lat) => Offset.zero;
 
   @override
@@ -115,6 +124,8 @@ class WebMapView extends StatelessWidget {
     this.initialLng = -74.006,
     this.initialLat = 40.7128,
     this.initialZoom = 12,
+    this.initialPitch = 0,
+    this.initialBearing = 0,
     this.styleUri,
     this.onControllerCreated,
   });
@@ -122,6 +133,8 @@ class WebMapView extends StatelessWidget {
   final double initialLng;
   final double initialLat;
   final double initialZoom;
+  final double initialPitch;
+  final double initialBearing;
   final String? styleUri;
   final void Function(WebMapController controller)? onControllerCreated;
 

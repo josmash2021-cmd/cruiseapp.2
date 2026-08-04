@@ -46,6 +46,7 @@ import '../services/driver_wait_estimate.dart';
 import '../services/local_data_service.dart';
 import '../services/notification_service.dart';
 import '../services/places_service.dart';
+import '../services/firebase_auth_recovery.dart';
 import '../l10n/app_localizations.dart';
 import '../services/user_session.dart';
 import 'welcome_screen.dart';
@@ -433,6 +434,11 @@ class _HomeScreenState extends State<HomeScreen>
       owner: _mapSurfaceOwner,
       onRevoke: () async {
         if (!mounted || _miniMapSuspended) return;
+        // The GL JS controller dies with the widget — a kept handle would
+        // have the dot's recenter (every GPS frame) writing flyTo into a
+        // removed map, throwing once a second from home underneath
+        // whatever screen took the surface.
+        _homeWebMapCtrl = null;
         setState(() => _miniMapSuspended = true);
         await surfaceRemoved();
       },
@@ -456,6 +462,7 @@ class _HomeScreenState extends State<HomeScreen>
       if (MapSurfaceCoordinator.instance.currentOwner != _mapSurfaceOwner) {
         return;
       }
+      _homeWebMapCtrl = null; // same stale-handle rule as onRevoke above
       setState(() => _miniMapSuspended = true);
       MapSurfaceCoordinator.instance.release(_mapSurfaceOwner);
     });

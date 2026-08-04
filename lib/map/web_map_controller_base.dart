@@ -21,6 +21,12 @@ abstract class WebMapController {
   /// Fired on camera movement. Arguments: (zoom, bearing, pitch).
   void Function(double zoom, double bearing, double pitch)? onCameraMove;
 
+  /// Fires ONLY for camera moves the user's hand caused (drag, scroll-zoom,
+  /// pinch). GL JS fires 'move' for every programmatic flight and even for
+  /// Map.resize(), so screens that watch for "the rider took the camera"
+  /// must listen here, never infer it from [onCameraMove].
+  void Function()? onUserGesture;
+
   /// Animated camera move.
   void flyTo({
     required double lng,
@@ -32,6 +38,10 @@ abstract class WebMapController {
   });
 
   /// Fits the camera so all [points] are visible, with per-edge padding (px).
+  /// [pitch]/[bearing] ride along with the fit when given — GL JS animates
+  /// center+zoom+bearing+pitch in ONE flight, which is what the native
+  /// cinematic does with its unified controller. Omitted, GL JS resets the
+  /// bearing to 0 and keeps the current pitch.
   void fitBounds(
     List<LngLatPoint> points, {
     double paddingTop = 60,
@@ -39,6 +49,8 @@ abstract class WebMapController {
     double paddingBottom = 60,
     double paddingRight = 60,
     int durationMs = 1000,
+    double? pitch,
+    double? bearing,
   });
 
   /// Current zoom level.
@@ -58,6 +70,11 @@ abstract class WebMapController {
   /// Adds (or replaces) a marker. [iconBytes] (PNG) or [iconUrl] (incl. data
   /// URLs) render as a custom element; without either, the default Mapbox
   /// pin is used. [rotation] is degrees, aligned to the map.
+  /// [popIn] plays the native pin-pop on arrival: scale 0.01 → overshoot →
+  /// 1.0, the CSS twin of the ride screens' 500 ms TweenSequence.
+  /// [widthPx]/[heightPx] size the icon in CSS px (2x bitmaps stay crisp);
+  /// [anchor] 'bottom' puts a pin's TIP on the coordinate like the native
+  /// IconAnchor.BOTTOM.
   void addMarker(
     String id,
     double lng,
@@ -65,6 +82,10 @@ abstract class WebMapController {
     Uint8List? iconBytes,
     String? iconUrl,
     double rotation = 0,
+    bool popIn = false,
+    double widthPx = 40,
+    double heightPx = 40,
+    String anchor = 'center',
   });
 
   void updateMarkerPosition(String id, double lng, double lat,
@@ -123,6 +144,12 @@ abstract class WebMapController {
   /// Applies the Cruise navy/gold theme on top of dark-v11, replicating the
   /// values of `lib/config/map_theme.dart` (keep both in sync).
   void applyNavyGoldTheme();
+
+  /// Hide business POIs / transit labels — the web twin of native
+  /// MapTheme.hidePoiLayers. Persistent: survives style reloads and wins
+  /// over the theme's own POI-visible pass. The rider request screen calls
+  /// it so the map shows streets + our pins only, same as Android.
+  void hidePoiLayers();
 
   /// Projects a coordinate to container pixels.
   Offset pixelForCoordinate(double lng, double lat);

@@ -3056,6 +3056,7 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                       styleUri: MapboxConfig.styleDark,
                       onControllerCreated: (c) {
                         c.applyNavyGoldTheme();
+                        c.hidePoiLayers();
                         final routePts = _ctrl.state.route?.points;
                         if (routePts != null && routePts.length >= 2) {
                           final pts = routePts
@@ -3063,17 +3064,43 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                               .toList();
                           c.setPolyline('route', pts,
                               color: '#FFD700', width: 5);
-                          c.fitBounds(pts);
-                        } else if (dropoff != null) {
-                          c.fitBounds([
-                            (lng: pickup.lng, lat: pickup.lat),
-                            (lng: dropoff.lng, lat: dropoff.lat),
+                        }
+                        // Native holds the midpoint at 14.5 and eases the
+                        // tilt 0→20° over 1 s — one GL JS flight does both.
+                        c.flyTo(
+                          lng: midLng,
+                          lat: midLat,
+                          zoom: 14.5,
+                          pitch: 20,
+                          durationMs: 1000,
+                        );
+                        // The golden pins, not GL JS's stock blue teardrop.
+                        unawaited(Future(() async {
+                          final pins = await Future.wait([
+                            renderCircularPinBytes(
+                                icon: CircularPinIcon.person,
+                                isPickup: true,
+                                radius: 32),
+                            renderCircularPinBytes(
+                                icon: _pinIconToCircular(
+                                    _detectDropoffType(_ctrl.state.dropoffLabel)),
+                                isPickup: false,
+                                radius: 32),
                           ]);
-                        }
-                        c.addMarker('pickup', pickup.lng, pickup.lat);
-                        if (dropoff != null) {
-                          c.addMarker('dropoff', dropoff.lng, dropoff.lat);
-                        }
+                          if (!mounted) return;
+                          c.addMarker('pickup', pickup.lng, pickup.lat,
+                              iconBytes: pins[0],
+                              widthPx: 52,
+                              heightPx: 48,
+                              anchor: 'bottom');
+                          if (dropoff != null) {
+                            c.addMarker('dropoff', dropoff.lng, dropoff.lat,
+                                iconBytes: pins[1],
+                                widthPx: 52,
+                                heightPx: 48,
+                                anchor: 'bottom');
+                          }
+                        }));
                       },
                     ),
                   ),

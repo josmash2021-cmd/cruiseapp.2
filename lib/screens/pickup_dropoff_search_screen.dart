@@ -547,11 +547,18 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
           initialDropoffLabel: dropLabel,
           initialDropoffAddress: dropLabel,
           preloadedRoute: preloaded,
-          handoffLat: _handoffLat,
-          handoffLng: _handoffLng,
-          handoffZoom: _handoffZoom,
-          handoffBearing: _handoffBearing,
-          handoffPitch: _handoffPitch,
+          // The cinematic's documented start frame: the DROPOFF pin,
+          // top-down, zoomed in — it tilts/zooms out to the full route from
+          // there. The _handoff* fields were only ever written in the dead
+          // legacy MapPickerScreen block, so this path always passed null
+          // and the sequence started wherever the rider's GPS happened to
+          // be instead. (_handoff* ?? keeps the legacy values meaningful if
+          // that path is ever revived.)
+          handoffLat: _handoffLat ?? dropoff.lat,
+          handoffLng: _handoffLng ?? dropoff.lng,
+          handoffZoom: _handoffZoom ?? 16.0,
+          handoffBearing: _handoffBearing ?? 0.0,
+          handoffPitch: _handoffPitch ?? 0.0,
           // Forward Schedule/Airport context so the destination CTA
           // says "Reserve Now" instead of "Request Ride".
           scheduledAt: widget.scheduledAt,

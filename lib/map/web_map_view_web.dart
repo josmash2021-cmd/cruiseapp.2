@@ -2,6 +2,7 @@
 // pubspec.yaml fija el SDK mínimo en 3.0; este archivo necesita extension
 // types y dart:js_interop modernos, así que eleva su language version
 // sin tocar pubspec. NO usar dart:html / dart:js_util (rompen nativo).
+import 'dart:async';
 import 'dart:convert';
 import 'dart:js_interop';
 import 'dart:ui_web' as ui_web;
@@ -44,7 +45,7 @@ extension type _JSMap._(JSObject _) implements JSObject {
   external _JSSource? getSource(String id);
   external void addSource(String id, JSObject source);
   external JSAny? getLayer(String id);
-  external void addLayer(JSObject layer);
+  external void addLayer(JSObject layer, [JSAny? beforeId]);
   external void removeLayer(String id);
   external void removeSource(String id);
   external JSArray? queryRenderedFeatures(JSAny pointOrBox, JSAny? options);
@@ -64,6 +65,8 @@ extension type _JSMapOptions._(JSObject _) implements JSObject {
   external set style(JSAny style);
   external set center(JSAny lngLat);
   external set zoom(double zoom);
+  external set pitch(double pitch);
+  external set bearing(double bearing);
   external set attributionControl(bool enabled);
 }
 
@@ -73,12 +76,14 @@ extension type _JSMarker._(JSObject _) implements JSObject {
   external _JSMarker setLngLat(JSAny lngLat);
   external _JSMarker addTo(_JSMap map);
   external void remove();
+  external JSObject? getElement();
 }
 
 extension type _JSMarkerOptions._(JSObject _) implements JSObject {
   external set element(JSObject element);
   external set rotation(double degrees);
   external set rotationAlignment(String alignment);
+  external set anchor(String anchor);
 }
 
 extension type _JSSource._(JSObject _) implements JSObject {
@@ -99,6 +104,12 @@ extension type _JSMapMouseEvent._(JSObject _) implements JSObject {
   external _JSLngLat? get lngLat;
 }
 
+extension type _JSMapMoveEvent._(JSObject _) implements JSObject {
+  /// Present only when a real input event (mouse/touch/wheel) drove the
+  /// move; programmatic flights and resize-triggered moves carry none.
+  external JSAny? get originalEvent;
+}
+
 @JS('JSON')
 extension type _JSJson._(JSObject _) implements JSObject {
   external JSAny parse(String text);
@@ -111,6 +122,9 @@ extension type _JSStyleDeclaration._(JSObject _) implements JSObject {
   external set width(String value);
   external set height(String value);
   external set display(String value);
+  external set transition(String value);
+  external set transform(String value);
+  external set transformOrigin(String value);
 }
 
 extension type _JSElement._(JSObject _) implements JSObject {
@@ -158,6 +172,7 @@ const _park = '#0A1128';
 const _water = '#0D1F3F';
 const _building = '#1A2B4D';
 const _poiText = '#A8B0C4';
+const _poiIcon = '#8A94A8';
 const _placeLabel = '#C4CCE0';
 const _roadLabel = '#5A6070';
 
@@ -223,6 +238,9 @@ class _MarkerEntry {
     required this.rotation,
     this.iconBytes,
     this.iconUrl,
+    this.widthPx = 40,
+    this.heightPx = 40,
+    this.anchor = 'center',
   });
 
   late _JSMarker marker;
@@ -231,6 +249,9 @@ class _MarkerEntry {
   double rotation;
   Uint8List? iconBytes;
   String? iconUrl;
+  double widthPx;
+  double heightPx;
+  String anchor;
 }
 
 typedef _PolylineSpec = ({List<LngLatPoint> coords, String color, double width});
@@ -262,6 +283,10 @@ class WebMapControllerWeb extends WebMapController {
     _map.on('load', ((JSAny? _) {
       _styleReady = true;
       _restoreOverlays();
+      // Re-theme here too: if an early 'styledata' flipped readiness while
+      // the style was still half-parsed, the theme's first pass painted a
+      // fraction of the layers — this pass runs against the complete style.
+      if (_navyGoldApplied) _applyThemeNow();
       onReady?.call();
     }).toJS);
 
@@ -270,6 +295,7 @@ class WebMapControllerWeb extends WebMapController {
       _styleReady = true;
       _restoreOverlays();
       if (_navyGoldApplied) _applyThemeNow();
+      if (_poisHidden) _hidePoisNow();
     }).toJS);
 
     // 'load' waits for every tile in the viewport, and a single hanging
@@ -281,6 +307,7 @@ class WebMapControllerWeb extends WebMapController {
       if (!_styleReady) {
         _styleReady = true;
         _restoreOverlays();
+        if (_navyGoldApplied) _applyThemeNow();
       }
     }).toJS);
 
@@ -292,8 +319,14 @@ class WebMapControllerWeb extends WebMapController {
       cb(lngLat.lng, lngLat.lat);
     }).toJS);
 
-    _map.on('move', ((JSAny? _) {
+    _map.on('move', ((JSAny? event) {
       onCameraMove?.call(_map.getZoom(), _map.getBearing(), _map.getPitch());
+      // originalEvent is the difference between the rider's hand and our
+      // own flights/resizes — only the hand reaches onUserGesture.
+      if (event != null &&
+          _JSMapMoveEvent._(event as JSObject).originalEvent != null) {
+        onUserGesture?.call();
+      }
     }).toJS);
   }
 
@@ -308,14 +341,20 @@ class WebMapControllerWeb extends WebMapController {
     double? pitch,
     int durationMs = 1500,
   }) {
-    _map.flyTo(_js({
-      'center': [lng, lat],
-      if (zoom != null) 'zoom': zoom,
-      if (bearing != null) 'bearing': bearing,
-      if (pitch != null) 'pitch': pitch,
-      'duration': durationMs,
-      'essential': true,
-    }) as JSObject);
+    // Guarded: screens keep controller handles past the widget's death
+    // (suspend/remount cycles), and GL JS throws on a removed map. A stale
+    // camera write must be a no-op, never an uncaught JS exception inside
+    // whatever tick issued it.
+    try {
+      _map.flyTo(_js({
+        'center': [lng, lat],
+        if (zoom != null) 'zoom': zoom,
+        if (bearing != null) 'bearing': bearing,
+        if (pitch != null) 'pitch': pitch,
+        'duration': durationMs,
+        'essential': true,
+      }) as JSObject);
+    } catch (_) {}
   }
 
   @override
@@ -326,10 +365,17 @@ class WebMapControllerWeb extends WebMapController {
     double paddingBottom = 60,
     double paddingRight = 60,
     int durationMs = 1000,
+    double? pitch,
+    double? bearing,
   }) {
     if (points.isEmpty) return;
     if (points.length == 1) {
-      flyTo(lng: points.first.lng, lat: points.first.lat, durationMs: durationMs);
+      flyTo(
+          lng: points.first.lng,
+          lat: points.first.lat,
+          pitch: pitch,
+          bearing: bearing,
+          durationMs: durationMs);
       return;
     }
     var minLng = points.first.lng, maxLng = points.first.lng;
@@ -340,22 +386,32 @@ class WebMapControllerWeb extends WebMapController {
       if (p.lat < minLat) minLat = p.lat;
       if (p.lat > maxLat) maxLat = p.lat;
     }
-    _map.fitBounds(
-      _js([
-        [minLng, minLat],
-        [maxLng, maxLat],
-      ]),
-      _js({
-        'padding': {
-          'top': paddingTop,
-          'left': paddingLeft,
-          'bottom': paddingBottom,
-          'right': paddingRight,
-        },
-        'duration': durationMs,
-        'maxZoom': 17,
-      }) as JSObject,
-    );
+    // Same stale-handle guard as flyTo: a write to a removed map is a
+    // no-op, not an uncaught JS exception.
+    try {
+      _map.fitBounds(
+        _js([
+          [minLng, minLat],
+          [maxLng, maxLat],
+        ]),
+        _js({
+          'padding': {
+            'top': paddingTop,
+            'left': paddingLeft,
+            'bottom': paddingBottom,
+            'right': paddingRight,
+          },
+          'duration': durationMs,
+          // No maxZoom cap — native cameraForCoordinatesPadding has none,
+          // and the 17 ceiling framed short trips wider than Android does.
+          // GL JS fitBounds takes full CameraOptions: with these in the bag
+          // the fit flies center+zoom+bearing+pitch as ONE animation — the
+          // browser twin of the native cinematic's unified controller.
+          if (pitch != null) 'pitch': pitch,
+          if (bearing != null) 'bearing': bearing,
+        }) as JSObject,
+      );
+    } catch (_) {}
   }
 
   @override
@@ -376,21 +432,24 @@ class WebMapControllerWeb extends WebMapController {
 
   // ── Markers ───────────────────────────────────────────────────────────
 
-  _JSElement? _iconElement(Uint8List? bytes, String? url) {
+  _JSElement? _iconElement(Uint8List? bytes, String? url,
+      {double widthPx = 40, double heightPx = 40}) {
     if (bytes == null && url == null) return null;
     final img = _document.createElement('img');
     img.src = url ?? 'data:image/png;base64,${base64Encode(bytes!)}';
     img.style
-      ..width = '40px'
-      ..height = '40px'
+      ..width = '${widthPx}px'
+      ..height = '${heightPx}px'
       ..display = 'block';
     return img;
   }
 
   _JSMarker _createJsMarker(_MarkerEntry e) {
     final opts = _JSMarkerOptions._(JSObject());
-    final el = _iconElement(e.iconBytes, e.iconUrl);
+    final el = _iconElement(e.iconBytes, e.iconUrl,
+        widthPx: e.widthPx, heightPx: e.heightPx);
     if (el != null) opts.element = el;
+    if (e.anchor != 'center') opts.anchor = e.anchor;
     if (e.rotation != 0) {
       opts.rotation = e.rotation;
       opts.rotationAlignment = 'map';
@@ -408,6 +467,10 @@ class WebMapControllerWeb extends WebMapController {
     Uint8List? iconBytes,
     String? iconUrl,
     double rotation = 0,
+    bool popIn = false,
+    double widthPx = 40,
+    double heightPx = 40,
+    String anchor = 'center',
   }) {
     removeMarker(id);
     final entry = _MarkerEntry(
@@ -416,9 +479,38 @@ class WebMapControllerWeb extends WebMapController {
       rotation: rotation,
       iconBytes: iconBytes,
       iconUrl: iconUrl,
+      widthPx: widthPx,
+      heightPx: heightPx,
+      anchor: anchor,
     );
     entry.marker = _createJsMarker(entry);
     _markers[id] = entry;
+    if (popIn) _popInMarker(entry);
+  }
+
+  /// CSS twin of the native pin pop (TweenSequence 0.01 → 1.15 → 0.95 → 1
+  /// over 500 ms): the overshooting cubic-bezier lands the same feel in one
+  /// transition. The transform animates the icon INSIDE the marker — GL JS
+  /// positions the marker itself via its own transform, which must not be
+  /// touched.
+  void _popInMarker(_MarkerEntry e) {
+    final el = e.marker.getElement();
+    if (el == null) return;
+    try {
+      final style = _JSElement._(el).style;
+      // Bottom-anchored pins grow from their tip, centered ones from their
+      // middle — matches how the native iconSize scale reads on screen.
+      style.transformOrigin =
+          e.anchor == 'bottom' ? 'center bottom' : 'center';
+      style.transform = 'scale(0.01)';
+      Timer(const Duration(milliseconds: 30), () {
+        try {
+          style.transition =
+              'transform 500ms cubic-bezier(0.34, 1.56, 0.64, 1)';
+          style.transform = 'scale(1)';
+        } catch (_) {}
+      });
+    } catch (_) {}
   }
 
   @override
@@ -480,14 +572,14 @@ class WebMapControllerWeb extends WebMapController {
         // used to never put it back: every later upsert took the same
         // branch, so the line existed as data and never as paint.
         if (_map.getLayer(sourceId) == null) {
-          _map.addLayer(_lineLayerSpec(sourceId, spec));
+          _map.addLayer(_lineLayerSpec(sourceId, spec), _lineBeforeId);
         }
         return;
       }
       _map.addSource(
           sourceId,
           _js({'type': 'geojson', 'data': _feature(spec)}) as JSObject);
-      _map.addLayer(_lineLayerSpec(sourceId, spec));
+      _map.addLayer(_lineLayerSpec(sourceId, spec), _lineBeforeId);
     } catch (e) {
       debugPrint('[WebMap] polyline upsert FAILED $sourceId: $e');
     }
@@ -501,9 +593,17 @@ class WebMapControllerWeb extends WebMapController {
         'paint': {
           'line-color': spec.color,
           'line-width': spec.width,
-          'line-opacity': 0.9,
+          // Full opacity — native annotation lines are opaque unless the
+          // color itself carries alpha; 0.9 read washed-out on the navy.
+          'line-opacity': 1.0,
         },
       }) as JSObject;
+
+  /// Street names must stay readable OVER the route lines, same as native
+  /// (its polyline manager is created below 'road-label'). Null when the
+  /// style has no such layer — addLayer then stacks on top as before.
+  JSAny? get _lineBeforeId =>
+      _map.getLayer('road-label') != null ? 'road-label'.toJS : null;
 
   @override
   bool hasSource(String id) {
@@ -677,7 +777,39 @@ class WebMapControllerWeb extends WebMapController {
     if (_styleReady) _applyThemeNow();
   }
 
+  /// Same list native MapTheme.hidePoiLayers turns off, and applied AFTER
+  /// the theme (which switches POIs visible) — the flag makes the order
+  /// hold across style reloads too.
+  static const _hiddenPoiLayers = [
+    'poi-label', 'poi', 'place-of-worship',
+    'poi-scalerank1', 'poi-scalerank2', 'poi-scalerank3', 'poi-scalerank4',
+    'points-of-interest', 'landmark-icon', 'transit-label',
+  ];
+
+  bool _poisHidden = false;
+
+  @override
+  void hidePoiLayers() {
+    _poisHidden = true;
+    if (_styleReady) _hidePoisNow();
+  }
+
+  void _hidePoisNow() {
+    for (final id in _hiddenPoiLayers) {
+      _layout(id, 'visibility', 'none');
+    }
+  }
+
   void _paint(String layerId, String name, String value) {
+    if (_map.getLayer(layerId) == null) return;
+    try {
+      _map.setPaintProperty(layerId, name, value.toJS);
+    } catch (_) {}
+  }
+
+  /// Numeric twin of [_paint] — opacities and bases are JS numbers, not
+  /// strings, and GL JS rejects a stringified one.
+  void _paintNum(String layerId, String name, double value) {
     if (_map.getLayer(layerId) == null) return;
     try {
       _map.setPaintProperty(layerId, name, value.toJS);
@@ -716,7 +848,7 @@ class WebMapControllerWeb extends WebMapController {
     for (final id in _greyCasings) {
       _paint(id, 'line-color', _greyCase);
     }
-    for (final id in ['road-label', 'road-label-simple']) {
+    for (final id in ['road-label', 'road-label-simple', 'road-label-navigation']) {
       _paint(id, 'text-color', _roadLabel);
     }
     for (final id in ['road-number-shield', 'road-exit-shield']) {
@@ -726,12 +858,28 @@ class WebMapControllerWeb extends WebMapController {
       _paint(id, 'fill-color', _building);
     }
     _paint('building', 'fill-extrusion-color', _building);
+    _paintNum('building', 'fill-extrusion-opacity', 0.85);
+    _paintNum('building', 'fill-extrusion-base', 0);
     for (final id in _poiLayers) {
-      _layout(id, 'visibility', 'visible');
+      // A screen that asked for POIs off keeps them off — the theme's
+      // visible-POI pass must not undo hidePoiLayers on a style reload.
+      if (!_poisHidden) _layout(id, 'visibility', 'visible');
       _paint(id, 'text-color', _poiText);
+      _paint(id, 'icon-color', _poiIcon);
     }
+    if (_poisHidden) _hidePoisNow();
     for (final id in _placeLayers) {
       _paint(id, 'text-color', _placeLabel);
+    }
+    // Traffic layers hidden, same as native (dark-v11 rarely carries them,
+    // but a style swap to a traffic variant must not light them up).
+    for (final id in [
+      'traffic', 'traffic-slow', 'traffic-case',
+      'traffic-moderate', 'traffic-heavy', 'traffic-severe',
+      'traffic-v1', 'traffic-v1-case',
+    ]) {
+      _paintNum(id, 'line-opacity', 0);
+      _layout(id, 'visibility', 'none');
     }
   }
 
@@ -767,6 +915,8 @@ class WebMapView extends StatefulWidget {
     this.initialLng = -74.006,
     this.initialLat = 40.7128,
     this.initialZoom = 12,
+    this.initialPitch = 0,
+    this.initialBearing = 0,
     this.styleUri,
     this.onControllerCreated,
   });
@@ -774,6 +924,12 @@ class WebMapView extends StatefulWidget {
   final double initialLng;
   final double initialLat;
   final double initialZoom;
+
+  /// Boot camera tilt/rotation — native screens boot from a handoff camera
+  /// (often pitched 45°); without these the browser always opened flat and
+  /// north-up regardless of where the previous map left the rider.
+  final double initialPitch;
+  final double initialBearing;
 
   /// Base style; defaults to [MapboxConfig.styleDark] (dark-v11).
   final String? styleUri;
@@ -853,6 +1009,8 @@ class _WebMapViewState extends State<WebMapView> {
     options.center =
         _json.parse(jsonEncode([widget.initialLng, widget.initialLat]));
     options.zoom = widget.initialZoom;
+    if (widget.initialPitch != 0) options.pitch = widget.initialPitch;
+    if (widget.initialBearing != 0) options.bearing = widget.initialBearing;
     options.attributionControl = false;
 
     // Mirror the native maps: lib/config/map_theme.dart sets

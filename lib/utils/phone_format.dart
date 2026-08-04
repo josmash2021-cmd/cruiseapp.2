@@ -2,37 +2,51 @@ import 'package:flutter/services.dart';
 
 /// Shared US phone helpers — live input mask + display format.
 ///
-/// Used by the edit-profile phone field and the forgot-password identifier
-/// field, so both mask a number the same way as it is typed.
+/// Used by the edit-profile phone field, the driver's manage-account
+/// field and the forgot-password identifier field, so every box masks a
+/// number the same way as it is typed. The contract is pinned by
+/// test/phone_format_test.dart.
 
-/// Digits only, without the US country code.
+/// Digits only, with a US country code stripped when there is one.
 String usPhoneDigits(String raw) {
   var d = raw.replaceAll(RegExp(r'\D'), '');
-  if (d.startsWith('1') && d.length > 10) d = d.substring(1);
-  if (d.length > 10) d = d.substring(d.length - 10);
+  if (d.length == 11 && d.startsWith('1')) d = d.substring(1);
   return d;
 }
 
-/// Storage form: E.164 (+1XXXXXXXXXX) — what the backend holds.
-String usPhoneToE164(String raw) {
+/// Display form: +1 (XXX) XXX-XXXX, built progressively — the closing
+/// paren and the dash only appear once there are digits after them, so
+/// half-typed numbers never show punctuation for places not yet typed.
+///
+/// Empty input stays empty. Anything that is not a US number (more than
+/// ten digits after the country-code strip) is returned untouched —
+/// grouping a foreign number as (xxx) xxx-xxxx would be a lie about
+/// where the breaks are.
+String formatUsPhone(String raw) {
   final d = usPhoneDigits(raw);
-  return d.isEmpty ? '' : '+1$d';
-}
+  if (d.isEmpty) return '';
+  if (d.length > 10) return raw;
 
-/// Display form: +1 (XXX) XXX-XXXX. Empty input stays empty.
-String formatUsPhone(String digits) {  if (digits.isEmpty) return '';
   final b = StringBuffer('+1 (');
-  b.write(digits.substring(0, digits.length < 3 ? digits.length : 3));
-  if (digits.length >= 3) b.write(')');
-  if (digits.length > 3) {
-    b.write(' ');
-    b.write(digits.substring(3, digits.length < 6 ? digits.length : 6));
+  b.write(d.substring(0, d.length < 3 ? d.length : 3));
+  if (d.length > 3) {
+    b.write(') ');
+    b.write(d.substring(3, d.length < 6 ? d.length : 6));
   }
-  if (digits.length > 6) {
+  if (d.length > 6) {
     b.write('-');
-    b.write(digits.substring(6));
+    b.write(d.substring(6));
   }
   return b.toString();
+}
+
+/// Storage form: E.164 (+1XXXXXXXXXX) — what the backend holds.
+///
+/// Anything that is not exactly ten digits is refused (empty string):
+/// a half-typed or over-long field must never read as a valid change.
+String usPhoneToE164(String raw) {
+  final d = usPhoneDigits(raw);
+  return d.length == 10 ? '+1$d' : '';
 }
 
 /// Live mask: keeps at most 10 US digits (a leading 1 country code is

@@ -3442,7 +3442,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
         final isPermDenied =
             e is FirebaseException && e.code == 'permission-denied';
         if (isPermDenied || e.toString().contains('permission-denied')) {
-          FirebaseAuth.instance.signInAnonymously().ignore();
+          FirebaseAuthRecovery.ensureSignedIn().ignore();
         }
       },
     );

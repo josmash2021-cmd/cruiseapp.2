@@ -1,22 +1,23 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 
-/// Recovery for a dead anonymous Firebase session.
+import 'api_service.dart';
+
+/// Firebase session management, custom-token based.
 ///
-/// Every `permission-denied` handler in the app follows the same recipe:
-/// "the session expired, re-auth and the listener reconnects", implemented
-/// as `FirebaseAuth.instance.signInAnonymously()`.
+/// Anonymous auth is DISABLED in the Firebase console
+/// (admin-restricted-operation), but every Firestore/RTDB rule reads
+/// `auth != null`. Every `signInAnonymously()` call in the app was
+/// therefore dead code that produced its own Crashlytics group and left
+/// the client without a session — which is what turned chat, the GPS
+/// mirrors and the verification stream into the permission-denied crash
+/// groups that dominate the dashboard (400+ events).
 ///
-/// That call is a NO-OP here. Firebase returns the *existing* anonymous
-/// user when one is already signed in — it does not mint a new session. So
-/// when the anonymous credential goes bad (revoked refresh token, account
-/// wiped server-side, clock skew) the recovery hands the same broken
-/// session straight back, every request keeps failing, and the listener
-/// errors forever. The rider sees "Connection lost — reconnecting…" that
-/// never clears, on full signal.
-///
-/// The only thing that produces a genuinely new session is signing out
-/// first. That is what this does.
+/// The working path: the app's own JWT is exchanged at the backend
+/// (`POST /auth/firebase-token`) for a Firebase custom token, and the
+/// client signs in with THAT. No JWT (signed-out user) or a 503 from the
+/// mint simply means "no Firebase today": callers must degrade to their
+/// backend polling/SSE fallbacks, never crash-loop.
 class FirebaseAuthRecovery {
   FirebaseAuthRecovery._();
 
@@ -25,48 +26,52 @@ class FirebaseAuthRecovery {
 
   /// Minimum gap between attempts. Several listeners fail at the same
   /// instant when a session dies, and each one calls this — without the
-  /// cooldown they would stampede the auth endpoint.
+  /// cooldown they would stampede the backend.
   static const Duration _cooldown = Duration(seconds: 30);
 
-  /// Force a fresh anonymous session. Returns true when one is active
-  /// afterwards.
+  /// True when a Firebase session is active right now.
+  static bool get hasSession => FirebaseAuth.instance.currentUser != null;
+
+  /// Ensure a Firebase session exists, minting a custom token when needed.
   ///
   /// Concurrent callers share a single attempt. Repeat calls inside the
   /// cooldown are skipped and report the current state instead.
-  static Future<bool> refreshAnonymousSession() {
+  static Future<bool> ensureSignedIn() {
     final existing = _inFlight;
     if (existing != null) return existing;
 
+    if (FirebaseAuth.instance.currentUser != null) {
+      return Future.value(true);
+    }
     if (DateTime.now().difference(_lastAttempt) < _cooldown) {
-      return Future.value(FirebaseAuth.instance.currentUser != null);
+      return Future.value(false);
     }
 
-    final attempt = _refresh();
+    final attempt = _signIn();
     _inFlight = attempt;
     return attempt.whenComplete(() => _inFlight = null);
   }
 
-  static Future<bool> _refresh() async {
+  /// Legacy name — every old "recycle the anonymous session" call site
+  /// routes here now.
+  static Future<bool> refreshAnonymousSession() => ensureSignedIn();
+
+  static Future<bool> _signIn() async {
     _lastAttempt = DateTime.now();
     final auth = FirebaseAuth.instance;
     try {
-      // Only anonymous sessions may be recycled. A real signed-in user
-      // hitting permission-denied is a rules problem, and signing them
-      // out would be far worse than the error.
-      final user = auth.currentUser;
-      if (user != null && !user.isAnonymous) {
-        debugPrint('[AuthRecovery] signed-in user denied — not touching '
-            'their session');
-        return true;
+      final token = await ApiService.getFirebaseToken();
+      if (token == null || token.isEmpty) {
+        debugPrint('[AuthRecovery] no custom token (signed out or mint '
+            'unavailable) — Firebase stays offline, fallbacks carry');
+        return false;
       }
-      if (user != null) {
-        await auth.signOut();
-      }
-      await auth.signInAnonymously();
-      debugPrint('[AuthRecovery] fresh anonymous session established');
+      await auth.signInWithCustomToken(token);
+      debugPrint('[AuthRecovery] Firebase session established '
+          '(uid=${auth.currentUser?.uid})');
       return auth.currentUser != null;
     } catch (e) {
-      debugPrint('[AuthRecovery] could not refresh anonymous session: $e');
+      debugPrint('[AuthRecovery] custom-token sign-in failed: $e');
       return false;
     }
   }

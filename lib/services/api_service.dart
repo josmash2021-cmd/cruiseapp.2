@@ -1180,6 +1180,31 @@ class ApiService {
   static DateTime? _dashboardCacheTime;
   static const Duration _dashboardCacheTtl = Duration(seconds: 10);
 
+  /// Exchange the app JWT for a Firebase custom token.
+  ///
+  /// Null when signed out or when the backend cannot mint (503) — the
+  /// caller (FirebaseAuthRecovery) treats that as "no Firebase session
+  /// today" and the app stays on its backend polling/SSE paths.
+  static Future<String?> getFirebaseToken() async {
+    final token = await getToken();
+    if (token == null) return null;
+    try {
+      final res = await _client
+          .post(
+            Uri.parse('$_baseUrl/auth/firebase-token'),
+            headers: _jsonHeaders(token),
+          )
+          .timeout(const Duration(seconds: 10));
+      if (res.statusCode != 200) return null;
+      final body = jsonDecode(res.body) as Map<String, dynamic>;
+      final t = body['token'] as String?;
+      return (t != null && t.isNotEmpty) ? t : null;
+    } catch (e) {
+      debugPrint('[ApiService] getFirebaseToken failed: $e');
+      return null;
+    }
+  }
+
   static Future<Map<String, dynamic>?> getDashboard() async {
     // Return cache if fresh
     if (_dashboardCache != null && _dashboardCacheTime != null) {

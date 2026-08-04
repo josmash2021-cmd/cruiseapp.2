@@ -395,7 +395,7 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
   void _initFirebaseAndListeners(int? tripId, String? sqlDocId, String? fallbackDocId) async {
     // Authenticate so Firestore security rules pass
     if (FirebaseAuth.instance.currentUser == null) {
-      try { await FirebaseAuth.instance.signInAnonymously(); }
+      try { await FirebaseAuthRecovery.ensureSignedIn(); }
       catch (_) { debugPrint('[RiderTracking] Firebase anon auth failed — poll is primary'); }
     }
     if (!mounted) return;
@@ -1431,7 +1431,7 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     _rtdbDriverId = driverId;
     // Ensure Firebase Auth so RTDB rules (auth != null) pass
     if (FirebaseAuth.instance.currentUser == null) {
-      try { await FirebaseAuth.instance.signInAnonymously(); }
+      try { await FirebaseAuthRecovery.ensureSignedIn(); }
       catch (_) { debugPrint('[RiderTracking] Firebase anonymous auth failed'); }
     }
     DateTime? lastRtdbUpdate;

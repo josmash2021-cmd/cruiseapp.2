@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/foundation.dart';
+import 'firebase_auth_recovery.dart';
 
 /// Handles Firebase Storage uploads for permanent photo/document storage.
 /// URLs returned are permanent https://firebasestorage.googleapis.com/... links
@@ -15,7 +16,7 @@ class FirebaseStorageService {
   /// Ensure anonymous Firebase auth is active (required for Storage writes).
   static Future<void> _ensureAuth() async {
     if (FirebaseAuth.instance.currentUser == null) {
-      await FirebaseAuth.instance.signInAnonymously();
+      await FirebaseAuthRecovery.ensureSignedIn();
     }
   }
 

@@ -17,6 +17,7 @@ import '../widgets/verified_avatar.dart';
 import '../utils/responsive.dart';
 import '../utils/name_helper.dart' as nh;
 import '../widgets/dismiss_keyboard.dart';
+import '../services/firebase_auth_recovery.dart';
 
 /// Full-page chat screen — real-time via Firebase RTDB for trip chats,
 /// REST API polling for support chat.
@@ -160,7 +161,7 @@ class _ChatScreenState extends State<ChatScreen> {
     // this only costs a round trip when that session was lost.
     try {
       if (FirebaseAuth.instance.currentUser == null) {
-        await FirebaseAuth.instance.signInAnonymously();
+        await FirebaseAuthRecovery.ensureSignedIn();
       }
     } catch (e) {
       debugPrint('[Chat] Firebase Auth sign-in failed: $e');

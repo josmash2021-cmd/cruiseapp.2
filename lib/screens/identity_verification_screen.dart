@@ -14,6 +14,7 @@ import '../l10n/app_localizations.dart';
 import '../services/api_service.dart';
 import '../services/local_data_service.dart';
 import '../services/user_session.dart';
+import '../services/firebase_auth_recovery.dart';
 
 /// Rider identity verification flow:
 ///  Step 0 — Intro: choose document type
@@ -230,7 +231,7 @@ class _IdentityVerificationScreenState extends State<IdentityVerificationScreen>
     for (int attempt = 0; attempt < 3; attempt++) {
       try {
         if (FirebaseAuth.instance.currentUser == null) {
-          await FirebaseAuth.instance.signInAnonymously();
+          await FirebaseAuthRecovery.ensureSignedIn();
         }
         break; // success
       } catch (e) {

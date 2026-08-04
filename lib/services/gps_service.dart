@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart';
 
 import '../models/lat_lng.dart';
 import '../config/feature_flags.dart';
+import 'firebase_auth_recovery.dart';
 import 'prefs_cache.dart';
 import 'socket_service.dart';
 import 'user_session.dart';
@@ -378,14 +379,9 @@ class GpsService {
   /// came back denied. This is the same defence the Firestore screens
   /// already apply, which RTDB never got.
   Future<bool> _ensureAuthenticated() async {
-    if (FirebaseAuth.instance.currentUser != null) return true;
-    try {
-      await FirebaseAuth.instance.signInAnonymously();
-      return FirebaseAuth.instance.currentUser != null;
-    } catch (e) {
-      debugPrint('[GPS] anonymous sign-in failed: $e');
-      return false;
-    }
+    // Anonymous auth is disabled on this project — the working path is the
+    // backend-minted custom token, centralised in FirebaseAuthRecovery.
+    return FirebaseAuthRecovery.ensureSignedIn();
   }
 
   // ── Helpers ─────────────────────────────────────────────────────────

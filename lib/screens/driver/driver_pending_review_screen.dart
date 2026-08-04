@@ -15,6 +15,7 @@ import 'driver_home_screen.dart';
 import 'driver_profile_photo_screen.dart';
 import 'driver_signup_screen.dart';
 import '../../l10n/app_localizations.dart';
+import '../../services/firebase_auth_recovery.dart';
 
 /// Shown after a driver submits their application.
 /// Polls the backend every 5 seconds for dispatch approval.
@@ -110,7 +111,7 @@ class _DriverPendingReviewScreenState extends State<DriverPendingReviewScreen>
     for (int attempt = 0; attempt < 3; attempt++) {
       try {
         if (FirebaseAuth.instance.currentUser == null) {
-          await FirebaseAuth.instance.signInAnonymously();
+          await FirebaseAuthRecovery.ensureSignedIn();
           debugPrint('[PendingReview] Firebase Auth OK (attempt ${attempt + 1})');
         }
         break; // success

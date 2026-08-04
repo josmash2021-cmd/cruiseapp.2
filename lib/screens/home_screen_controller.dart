@@ -48,7 +48,7 @@ extension _HomeScreenController on _HomeScreenState {
     // Ensure Firebase Auth
     try {
       if (FirebaseAuth.instance.currentUser == null) {
-        await FirebaseAuth.instance.signInAnonymously();
+        await FirebaseAuthRecovery.ensureSignedIn();
       }
     } catch (_) {
       return;
@@ -107,9 +107,41 @@ extension _HomeScreenController on _HomeScreenState {
           }
         }
       }
-    }, onError: (e) {
+    }, onError: (e) async {
       debugPrint('[Verification] Firestream error: $e');
-      // Retry with exponential backoff (max 30s)
+      // permission-denied is NOT transient: without a Firebase session the
+      // rules reject every attempt identically, and the old backoff loop
+      // re-subscribed forever — each denied subscription logging its own
+      // Crashlytics event (the 136-crash group at the top of the
+      // dashboard). Try to establish a session ONCE; if there is none to
+      // be had, stop — _checkBackendVerification() already answers the
+      // same question over HTTP.
+      final denied = e.toString().contains('permission-denied');
+      if (denied) {
+        _verificationRetryCount++;
+        // One recovery attempt, ever: a session that exists but is still
+        // denied means the RULES reject this path — re-subscribing again
+        // would loop at 1 s forever.
+        if (_verificationRetryCount > 1) {
+          debugPrint('[Verification] still denied with a session — rules '
+              'block this path; stream off, backend polling covers it');
+          return;
+        }
+        final ok = await FirebaseAuthRecovery.ensureSignedIn();
+        if (!mounted) return;
+        if (!ok) {
+          debugPrint('[Verification] no Firebase session — stream off, '
+              'backend polling covers verification status');
+          return;
+        }
+        // Fresh session: one immediate re-subscribe, not a backoff loop.
+        _verificationRetryTimer?.cancel();
+        _verificationRetryTimer = Timer(const Duration(seconds: 1), () {
+          if (mounted) _listenVerificationStatus();
+        });
+        return;
+      }
+      // Transient errors (network blips) keep the old backoff.
       _verificationRetryCount++;
       final delay = Duration(seconds: math.min(30, 2 << _verificationRetryCount));
       debugPrint('[Verification] Retrying in ${delay.inSeconds}s (attempt $_verificationRetryCount)');

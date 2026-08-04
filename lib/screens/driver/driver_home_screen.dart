@@ -58,6 +58,7 @@ import '../../widgets/velocity_aware_panel.dart';
 import '../../utils/responsive.dart';
 import '../../utils/name_helper.dart' as nh;
 import '../../utils/driver_location_settings.dart';
+import '../../services/firebase_auth_recovery.dart';
 
 /// Statuses the backend treats as the end of a trip.
 ///
@@ -1563,7 +1564,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   Future<void> _startDocApprovalListener() async {
     try {
       if (FirebaseAuth.instance.currentUser == null) {
-        await FirebaseAuth.instance.signInAnonymously();
+        await FirebaseAuthRecovery.ensureSignedIn();
       }
     } catch (e) {
       debugPrint('[DriverHome] Firebase Auth for doc listener failed: $e');

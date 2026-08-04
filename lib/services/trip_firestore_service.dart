@@ -1,8 +1,8 @@
 import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import '../models/lat_lng.dart';
+import 'firebase_auth_recovery.dart';
 
 /// Writes ride requests directly to the shared Firestore `trips` collection
 /// so Dispatch Admin sees them in real time.
@@ -21,7 +21,7 @@ class TripFirestoreService {
           debugPrint('[Firestore] $label permission-denied (attempt $attempt) — re-authenticating...');
           // Force re-auth and retry
           try {
-            await FirebaseAuth.instance.signInAnonymously();
+            await FirebaseAuthRecovery.ensureSignedIn();
             await Future.delayed(const Duration(milliseconds: 300));
           } catch (_) {}
           continue;

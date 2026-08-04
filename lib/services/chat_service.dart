@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import '../models/chat_message.dart';
 import 'api_service.dart';
+import 'firebase_auth_recovery.dart';
 
 bool _isPermissionDenied(Object e) {
   if (e is FirebaseException) {
@@ -32,19 +33,9 @@ bool _isNoFirebaseSession(Object e) {
 
 /// Sign in if there is no session. Returns false instead of throwing.
 ///
-/// Every caller below used to inline `await signInAnonymously()` inside its
-/// own try, which meant a sign-in failure took the same path as a failed
-/// write and got rethrown.
-Future<bool> _ensureSession() async {
-  if (FirebaseAuth.instance.currentUser != null) return true;
-  try {
-    await FirebaseAuth.instance.signInAnonymously();
-    return FirebaseAuth.instance.currentUser != null;
-  } catch (e) {
-    debugPrint('[ChatService] no Firebase session: $e');
-    return false;
-  }
-}
+/// Anonymous auth is disabled on this project — the working path is the
+/// backend-minted custom token, centralised in [FirebaseAuthRecovery].
+Future<bool> _ensureSession() => FirebaseAuthRecovery.ensureSignedIn();
 
 /// Singleton service for real-time chat between driver and rider using
 /// Firebase Realtime Database. Messages are delivered in < 100ms.

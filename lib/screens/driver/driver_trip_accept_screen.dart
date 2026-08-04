@@ -52,6 +52,7 @@ import '../../services/trip_firestore_service.dart';
 import '../../navigation/nav_state_machine.dart';
 import '../../utils/responsive.dart';
 import '../../utils/name_helper.dart' as nh;
+import '../../services/firebase_auth_recovery.dart';
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  DRIVER TRIP ACCEPT SCREEN  — DoorDash-style trip details sheet
@@ -842,7 +843,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   Future<void> _ensureFirebaseAuth() async {
     if (FirebaseAuth.instance.currentUser == null) {
       try {
-        await FirebaseAuth.instance.signInAnonymously();
+        await FirebaseAuthRecovery.ensureSignedIn();
       } catch (e) {
         debugPrint('[Driver] Firebase re-auth failed: $e');
       }
@@ -1018,7 +1019,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
       // so the snapshot listener recovers on the next server push.
       final isPermDenied = e is FirebaseException && e.code == 'permission-denied';
       if (isPermDenied || e.toString().contains('permission-denied')) {
-        FirebaseAuth.instance.signInAnonymously().ignore();
+        FirebaseAuthRecovery.ensureSignedIn().ignore();
       }
     });
   }

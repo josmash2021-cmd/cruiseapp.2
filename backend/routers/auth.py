@@ -951,6 +951,33 @@ async def refresh_token(request: Request, authorization: str = Header(None), db:
     _security_audit_log("TOKEN_REFRESHED", request.client.host if request.client else "unknown", f"user_id={user.id}")
     return {"access_token": new_access, "refresh_token": new_refresh, "token_type": "bearer"}
 
+@router.post("/auth/firebase-token", dependencies=[Depends(_verify_api_key)])
+async def firebase_token(user: User = Depends(_get_current_user)):
+    """Mint a Firebase custom token for the signed-in user.
+
+    Anonymous Firebase auth is DISABLED in the console (deliberately —
+    admin-restricted-operation), but every Firestore/RTDB rule reads
+    `auth != null`, so clients without a Firebase session were denied on
+    every real-time read/write: the permission-denied crash groups that
+    dominate Crashlytics (400+ events across chat, GPS mirrors and the
+    verification stream). The app's own JWT is the identity; this endpoint
+    exchanges it for a Firebase session the rules accept.
+
+    The uid is `user_{id}` — matches the `user_id`-keyed documents the
+    Firestore mirror writes, so rules can also become per-user later.
+    """
+    try:
+        from firebase_admin import auth as fb_auth
+        token = fb_auth.create_custom_token(f"user_{user.id}")
+        return {"token": token.decode() if isinstance(token, bytes) else token}
+    except Exception as e:
+        # Missing IAM signBlob permission or Admin SDK not initialised —
+        # the client treats 503 as "no Firebase today" and stays on its
+        # backend polling/SSE fallbacks instead of crash-looping.
+        logging.error("[FirebaseToken] mint failed for user %s: %s", user.id, e)
+        raise HTTPException(503, "Firebase token unavailable")
+
+
 @router.get("/auth/me", dependencies=[Depends(_verify_api_key)])
 async def get_me(user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
     # Mark user as online when they call /auth/me (heartbeat)

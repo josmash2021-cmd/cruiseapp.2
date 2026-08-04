@@ -13,6 +13,7 @@ import '../services/local_data_service.dart';
 import '../services/user_session.dart';
 import '../services/preload_service.dart';
 import '../main.dart' show heavyInit;
+import '../services/firebase_auth_recovery.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -466,7 +467,7 @@ class _SplashScreenState extends State<SplashScreen>
     try {
       // Ensure Firebase Auth is active (Firestore rules require auth)
       if (FirebaseAuth.instance.currentUser == null) {
-        await FirebaseAuth.instance.signInAnonymously();
+        await FirebaseAuthRecovery.ensureSignedIn();
       }
       final user = await UserSession.getUser();
       final userIdStr = user?['userId'];

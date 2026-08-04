@@ -42,6 +42,7 @@ import 'services/network_service.dart';
 import 'services/keep_alive_service.dart';
 import 'services/background_service.dart';
 import 'services/analytics_service.dart';
+import 'services/firebase_auth_recovery.dart';
 import 'services/prefs_cache.dart';
 import 'services/socket_service.dart';
 import 'screens/chat_screen.dart';
@@ -678,39 +679,25 @@ Future<bool> _initFirebase() async {
     if (!kIsWeb) FirebaseDatabase.instance.setPersistenceEnabled(true);
 
     // ── Ensure Firebase Auth so RTDB/Firestore rules (auth != null) pass ──
-    // Retry with exponential backoff — don't let the app continue without auth.
-    UserCredential? cred;
-    for (int attempt = 1; attempt <= 3; attempt++) {
-      try {
-        if (FirebaseAuth.instance.currentUser != null) {
-          debugPrint('[Firebase] already authenticated (uid=${FirebaseAuth.instance.currentUser!.uid})');
-          break;
-        }
-        cred = await FirebaseAuth.instance.signInAnonymously();
-        debugPrint('[Firebase] anonymous auth succeeded (uid=${cred.user?.uid})');
-        break;
-      } catch (authErr) {
-        debugPrint('[Firebase] anonymous auth attempt $attempt failed: $authErr');
-        if (attempt < 3) {
-          await Future.delayed(Duration(milliseconds: 500 * attempt));
-        }
-      }
-    }
-
-    if (FirebaseAuth.instance.currentUser == null) {
-      debugPrint('[Firebase] CRITICAL: Could not authenticate after 3 attempts. Firestore will fail.');
+    // Anonymous auth is DISABLED in the console (admin-restricted-operation):
+    // the old 3-attempt signInAnonymously loop here failed on every boot,
+    // left every client without a session, and turned all Firestore/RTDB
+    // access into the permission-denied crash groups on Crashlytics. The
+    // working path is the backend-minted custom token — and it needs the
+    // app JWT, which a signed-out user does not have yet. That is fine:
+    // ensureSignedIn() is retried after login and by every recovery path.
+    final ok = await FirebaseAuthRecovery.ensureSignedIn();
+    if (!ok) {
+      debugPrint('[Firebase] no session yet (signed out or mint '
+          'unavailable) — realtime mirrors stay off, fallbacks carry');
       return false;
     }
 
-    // Auto-reauthenticate if anonymous session expires mid-use
+    // Re-establish the session if it expires mid-use.
     FirebaseAuth.instance.authStateChanges().listen((user) async {
       if (user == null) {
-        debugPrint('[Firebase] auth lost — re-signing in anonymously…');
-        try {
-          await FirebaseAuth.instance.signInAnonymously();
-        } catch (e) {
-          debugPrint('[Firebase] re-auth failed: $e');
-        }
+        debugPrint('[Firebase] auth lost — re-establishing via custom token…');
+        await FirebaseAuthRecovery.ensureSignedIn();
       }
     });
     return true;

@@ -1390,7 +1390,7 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
                           _passwordCtrl.text.contains(_upperRe)),
                       const SizedBox(height: 6),
                       _driverStrengthRow(
-                          r'A special character (!@#$' "'" r's etc.)',
+                          'A special character',
                           _passwordCtrl.text.contains(
                               _specialRe)),
                     ],

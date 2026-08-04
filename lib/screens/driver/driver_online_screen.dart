@@ -36,6 +36,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../../services/map_cache_service.dart';
 import '../../utils/mapbox_safe.dart';
+import '../../utils/route_splice.dart';
 import '../../services/local_cache.dart';
 import '../../services/analytics_service.dart';
 import '../../services/chat_service.dart';
@@ -129,6 +130,25 @@ const _gold = Color(0xFFD4A843);
 const _goldLight = Color(0xFFF5D990);
 const _navyRoute = Color(0xFF5BA3F5);
 const _navyGlow = Color(0x405BA3F5);
+
+// ── Auto-rerouting when the driver leaves the route ──
+/// Perpendicular distance from the active polyline that counts as off-route.
+const double _kOffRouteMeters = 45;
+
+/// Back below this the driver counts as on-route again (hysteresis band, so
+/// GPS noise around the threshold never flaps the state).
+const double _kBackOnRouteMeters = 30;
+
+/// How long the driver must stay off-route before a reroute fires — a red
+/// light or a one-fix GPS spike never reaches this.
+const int _kOffRouteSustainMs = 2500;
+
+/// Minimum seconds between reroute fetches, so a prolonged detour does not
+/// hammer the directions APIs.
+const int _kRerouteCooldownSec = 10;
+
+/// Cross-fade duration (ms) when a re-routed line replaces the old one.
+const int _kRerouteFadeMs = 350;
 
 class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     with TickerProviderStateMixin, WidgetsBindingObserver {
@@ -417,6 +437,17 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   String _navInstruct = '';
   double _navProgress = 0;
   List<LatLng> _routePts = [];
+
+  /// The same route as [_routePts] but with its head left alone.
+  ///
+  /// _trimRouteBehindDriver rewrites `_routePts[0]` to the driver's own
+  /// position on every fix so the line starts exactly under the car. That
+  /// makes `_routePts` useless for measuring how far off-route the driver
+  /// is — the polyline passes through them by construction, so the distance
+  /// is always ~0 and no deviation would ever be detected. This copy keeps
+  /// the road geometry: same length, same vertices, index-aligned (both get
+  /// the identical sublist when the head is trimmed), only [0] differs.
+  List<LatLng> _plannedRoutePts = [];
   Timer? _navTimer;
   bool _isPickupSummary = false;
 
@@ -521,6 +552,15 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   bool _isRerouting = false;
   int _rerouteCount = 0;
   DateTime? _lastRerouteTime;
+
+  /// First moment the smoothed position was seen beyond [_kOffRouteMeters]
+  /// from the active polyline; null while on-route. Sustained presence past
+  /// [_kOffRouteSustainMs] is what fires the reroute — one noisy fix never
+  /// does.
+  DateTime? _offRouteSince;
+
+  /// Drives the reroute cross-fade between the old and new route lines.
+  Timer? _rerouteFadeTimer;
   // â”€â”€ UI animations â”€â”€
   // Deferred to post-frame callback — nullable to guard early dispose.
   AnimationController? _reqCtrl;
@@ -980,6 +1020,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     _scheduledBounceCtrl?.dispose();
     _routeDrawTicker?.stop();
     _routeDrawTicker?.dispose();
+    _rerouteFadeTimer?.cancel();
     _pinPopTicker?.stop();
     _pinPopTicker?.dispose();
     _offerTiltCtrl?.dispose();
@@ -1131,8 +1172,28 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
 
   /// Fetch route points + duration/distance from Directions APIs.
   /// Returns (points, durationSeconds, distanceMeters).
+  ///
+  /// Retried once after a short backoff. When every provider still fails the
+  /// result is an EMPTY point list — never a straight-line stand-in. A line
+  /// that cuts across blocks lies to the driver (it was the line in the bug
+  /// report photo); no line at all is the honest failure, and the pins stay.
   Future<({List<LatLng> pts, double? durSec, double? distM})>
       _fetchRouteWithMetrics(LatLng o, LatLng d) async {
+    for (var attempt = 0; attempt < 2; attempt++) {
+      if (attempt > 0) {
+        await Future.delayed(const Duration(milliseconds: 600));
+        if (!mounted) break;
+      }
+      final r = await _fetchRouteWithMetricsOnce(o, d);
+      if (r.pts.length >= 2) return r;
+    }
+    debugPrint('[Route] _fetchRouteWithMetrics: all providers failed — no line');
+    return (pts: const <LatLng>[], durSec: null, distM: null);
+  }
+
+  /// One pass over the providers: Google → OSRM → Mapbox.
+  Future<({List<LatLng> pts, double? durSec, double? distM})>
+      _fetchRouteWithMetricsOnce(LatLng o, LatLng d) async {
     // Google Directions API
     try {
       final uri =
@@ -1205,15 +1266,9 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
         }
       }
     } catch (_) {}
-    // Straight line fallback — no metrics
-    final pts = List.generate(21, (i) {
-      final t = i / 20;
-      return LatLng(
-        o.latitude + (d.latitude - o.latitude) * t,
-        o.longitude + (d.longitude - o.longitude) * t,
-      );
-    });
-    return (pts: pts, durSec: null, distM: null);
+    // No straight-line fallback here: the caller decides what an empty
+    // route means (draw nothing, keep markers).
+    return (pts: const <LatLng>[], durSec: null, distM: null);
   }
 
   String get _timeStr {

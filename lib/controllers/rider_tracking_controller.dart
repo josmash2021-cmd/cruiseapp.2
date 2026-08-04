@@ -243,7 +243,7 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       _approachRouteTimer?.cancel();
       _approachRouteTimer = Timer(const Duration(seconds: 5), () {
         if (!mounted || _phase != _TrackPhase.arriving) return;
-        if (_approachRouteFetched || _approachRouteFetching) return;
+        if (_approachRouteFetched || _approachRouteFetching || _approachRouteFailed) return;
         // Use persisted driver position if available
         if (_driverPos.latitude != 0 && _driverPos.longitude != 0) {
           debugPrint('[RiderTracking] No GPS in 5s — using persisted driver pos for approach route');
@@ -590,7 +590,10 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     _updateCarSmooth();
 
     // Uber-style: fetch approach route (driver→pickup) on first GPS during arriving
-    if (_phase == _TrackPhase.arriving && !_approachRouteFetched && !_approachRouteFetching) {
+    if (_phase == _TrackPhase.arriving &&
+        !_approachRouteFetched &&
+        !_approachRouteFetching &&
+        !_approachRouteFailed) {
       unawaited(_fetchApproachRoute(ll));
     }
 
@@ -614,8 +617,11 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       // Accept projection when close enough to route (< 150m lateral)
       final snappedPos = _posAtDistUltraSmooth(projectedM.clamp(0.0, _segDist.last)).$1;
       final lateralM = _hav(ll, snappedPos) * 1609.34;
+      // Off-route bookkeeping + auto-reroute trigger. Runs on EVERY fix with
+      // a route on screen, not just past the 150 m visual fallback — the
+      // 45 m threshold with hysteresis lives in _updateOffRouteState.
+      _updateOffRouteState(lateralM, ll);
       if (lateralM < 150) {
-        _offRouteCount = 0; // back on route
         final clampedM = projectedM.clamp(0.0, _segDist.last);
         // 2026-04-27 FIX: was `clampedM >= _traveledM - 5` which silently
         // dropped every GPS update where the driver appeared to retreat
@@ -657,16 +663,10 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
         _directTargetPos = null;
         _directTargetBearing = null;
       } else {
-        // Too far from route — use raw GPS lerp as fallback
+        // Too far from route — use raw GPS lerp as fallback. The reroute
+        // itself was already considered by _updateOffRouteState above.
         _directTargetPos = ll;
         _directTargetBearing = bearing;
-        // Reroute after 3 consecutive off-route GPS updates (~3-5s)
-        // Only during active trip phases (not arriving/arrived)
-        _offRouteCount++;
-        final isOnTrip = _phase == _TrackPhase.onTrip || _phase == _TrackPhase.nearDestination;
-        if (_offRouteCount >= 3 && !_rerouteInProgress && isOnTrip) {
-          _rerouteFromCurrentPos(ll);
-        }
       }
     } else {
       // No route available OR arriving without approach route yet OR driver far from route:
@@ -744,93 +744,84 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     _throttleCam();
   }
 
-  /// Fetch a new route from the driver's current position to the dropoff
-  /// and redraw with animated transition.
+  /// Off-route bookkeeping + auto-reroute trigger.
+  ///
+  /// [lateralM] is the driver's perpendicular distance to the active route
+  /// polyline in meters. Beyond [_kOffRouteMeters], sustained for
+  /// [_kOffRouteSustainMs], a reroute fires; the state re-arms below
+  /// [_kBackOnRouteMeters] so GPS noise around the threshold cannot flap it,
+  /// and [_kRerouteCooldownSec] keeps a long detour from hammering the API.
+  void _updateOffRouteState(double lateralM, LatLng ll) {
+    if (lateralM < _kBackOnRouteMeters) {
+      _offRouteSince = null;
+      return;
+    }
+    if (lateralM <= _kOffRouteMeters) return; // hysteresis band: keep state
+    // Only phases whose on-screen route is the driver's own path reroute:
+    // the approach leg once its road route is on screen (driver → pickup),
+    // and the trip leg (car → dropoff). arrived/completed never do.
+    final canReroute = _phase == _TrackPhase.onTrip ||
+        _phase == _TrackPhase.nearDestination ||
+        (_phase == _TrackPhase.arriving && _approachRouteFetched);
+    if (!canReroute || _rerouteInProgress) return;
+    final now = DateTime.now();
+    _offRouteSince ??= now;
+    if (now.difference(_offRouteSince!).inMilliseconds < _kOffRouteSustainMs) {
+      return;
+    }
+    final last = _lastRerouteAt;
+    if (last != null &&
+        now.difference(last).inSeconds < _kRerouteCooldownSec) {
+      return;
+    }
+    unawaited(_rerouteFromCurrentPos(ll));
+  }
+
+  /// Fetch a new route from the driver's current position to the active
+  /// destination — pickup while the driver is still coming, dropoff once
+  /// the rider is aboard — and splice it into the line on screen.
   Future<void> _rerouteFromCurrentPos(LatLng driverPos) async {
     _rerouteInProgress = true;
-    debugPrint('[RiderTracking] Rerouting from driver pos (${driverPos.latitude}, ${driverPos.longitude})');
+    _lastRerouteAt = DateTime.now();
+    final toPickup = _phase == _TrackPhase.arriving;
+    final dest = toPickup ? widget.pickupLatLng : widget.dropoffLatLng;
+    debugPrint('[RiderTracking] Rerouting from driver pos '
+        '(${driverPos.latitude}, ${driverPos.longitude}) → '
+        '${toPickup ? "pickup" : "dropoff"}');
     try {
       final ds = DirectionsService(ApiKeys.webServices);
       final result = await ds.getRoute(
         origin: driverPos,
-        destination: widget.dropoffLatLng,
+        destination: dest,
       );
       if (result == null || result.points.length < 2 || !mounted) return;
+      // The rider can board (or the driver arrive) while this fetch is in
+      // flight. Splicing a driver→pickup route on top of the trip route —
+      // or the reverse — would put a wrong line on the map, so a leg change
+      // discards this answer; the next off-route check refetches.
+      if ((_phase == _TrackPhase.arriving) != toPickup) {
+        debugPrint('[RiderTracking] Reroute discarded — leg changed mid-fetch');
+        return;
+      }
 
       // Update traffic-aware route duration for ETA calculation
       _routeDurationSec = result.durationSeconds;
 
-      // Fade out old route, then draw new one
-      await _fadeAndRedrawRoute(result.points, driverPos);
+      // Partial splice: the stretch between where the driver left the old
+      // route and where the new route rejoins it is the ONLY geometry that
+      // changes. The already-driven part keeps its usual treatment (erased
+      // behind the car), the untouched tail stays pixel-identical.
+      final spliced = RouteSplice.splice(
+        oldRoute: _routePts,
+        newRoute: result.points,
+        driverPos: driverPos,
+      );
+      await _applyReroutedPolyline(spliced);
     } catch (e) {
       debugPrint('[RiderTracking] Reroute error: $e');
     } finally {
       _rerouteInProgress = false;
-      _offRouteCount = 0;
     }
-  }
-
-  /// Fade old route and animate new route drawing.
-  Future<void> _fadeAndRedrawRoute(List<LatLng> newPoints, LatLng driverPos) async {
-    final polyMgr = _polylineAnnotMgr;
-    if (polyMgr == null) return;
-
-    // 1) Fade out existing route over 400ms
-    if (_remainingRouteAnnot != null) {
-      final startTime = DateTime.now();
-      const fadeDuration = 400;
-      final completer = Completer<void>();
-      Timer.periodic(const Duration(milliseconds: 16), (timer) {
-        if (!mounted) { timer.cancel(); if (!completer.isCompleted) completer.complete(); return; }
-        final elapsed = DateTime.now().difference(startTime).inMilliseconds;
-        final t = (elapsed / fadeDuration).clamp(0.0, 1.0);
-        try {
-          polyMgr.update(_remainingRouteAnnot!..lineOpacity = 1.0 - t);
-        } catch (_) {}
-        if (t >= 1.0) {
-          timer.cancel();
-          try { polyMgr.delete(_remainingRouteAnnot!); } catch (_) {}
-          _remainingRouteAnnot = null;
-          if (!completer.isCompleted) completer.complete();
-        }
-      });
-      await completer.future;
-    }
-
-    // Also remove dimmed route
-    if (_dimmedRouteAnnot != null) {
-      try { polyMgr.delete(_dimmedRouteAnnot!); } catch (_) {}
-      _dimmedRouteAnnot = null;
-    }
-
-    // 2) Update route data.
-    //
-    // Same trap as the approach route, worse here: the Directions call AND
-    // the 400 ms fade above both ran while the driver kept moving, so the
-    // new route's origin is several seconds stale. Resume from where the
-    // car actually is instead of snapping back to it.
-    _routePts = newPoints;
-    _buildSegDist();
-    _syncRouteToMap();
-    _traveledM = _startMOnCurrentRoute();
-    _tgtTraveledM = _traveledM;
-    _directTargetPos = null;
-    _directTargetBearing = null;
-
-    // 3) Draw dimmed background route for the new path
-    final allCoords = _routePts.map((p) => mapbox.Position(p.longitude, p.latitude)).toList();
-    try {
-      _dimmedRouteAnnot = await polyMgr.create(mapbox.PolylineAnnotationOptions(
-        geometry: mapbox.LineString(coordinates: allCoords),
-        lineColor: const Color(0xFFFFD700).withValues(alpha: 0.20).toARGB32(),
-        lineWidth: 5.0,
-        lineJoin: mapbox.LineJoin.ROUND,
-      ));
-    } catch (_) {}
-
-    // 4) Animate new route drawing on top
-    _routeDrawDone = false;
-    _startAnimatedRouteDraw();
   }
 
   /// Push the screen's current route into the modular map component.
@@ -863,22 +854,37 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
 
   /// Fetch road-following route from driver's current position to pickup
   /// for Uber-style approach visualization during arriving phase.
+  ///
+  /// One retry with a short backoff on failure — and if that also fails,
+  /// NO straight-line stand-in: a line that cuts across blocks lies to the
+  /// rider. The dimmed trip route and the pins stay on screen either way.
   Future<void> _fetchApproachRoute(LatLng driverPos) async {
-    if (_approachRouteFetching || _approachRouteFetched) return;
+    if (_approachRouteFetching || _approachRouteFetched || _approachRouteFailed) return;
     _approachRouteFetching = true;
     debugPrint('[RiderTracking] Fetching approach route: driver(${driverPos.latitude.toStringAsFixed(5)},${driverPos.longitude.toStringAsFixed(5)}) → pickup');
     try {
       final ds = DirectionsService(ApiKeys.webServices);
-      final result = await ds.getRoute(
+      var result = await ds.getRoute(
         origin: driverPos,
         destination: widget.pickupLatLng,
       );
+      if ((result == null || result.points.length < 2) && mounted) {
+        await Future.delayed(const Duration(milliseconds: 800));
+        if (mounted) {
+          result = await ds.getRoute(
+            origin: driverPos,
+            destination: widget.pickupLatLng,
+          );
+        }
+      }
       if (result == null || result.points.length < 2 || !mounted) {
         _approachRouteFetching = false;
+        if (mounted) _approachRouteFailed = true;
         return;
       }
       _approachRouteFetched = true;
       _approachRouteFetching = false;
+      _approachRouteFailed = false;
 
       // The straight driver→pickup stopgap line _updateApproachLine drew
       // while this fetch was in flight is superseded by the road route
@@ -961,6 +967,7 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     } catch (e) {
       debugPrint('[RiderTracking] Approach route fetch error: $e');
       _approachRouteFetching = false;
+      _approachRouteFailed = true;
     }
   }
 
@@ -1066,6 +1073,9 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       });
       _confirmPickupShown = false;
       _arrivedNotifSent = false;
+      // The next driver's approach fetch gets a clean slate — a failure
+      // cached against the previous driver must not suppress it.
+      _approachRouteFailed = false;
       _saveRideState();
 
       if (mounted) {
@@ -1252,6 +1262,9 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     // heading; when there never was one, the camera falls back to the route
     // bearing (see updateChaseFrame's routeBearing).
     _approachRouteFetched = false;
+    // A fresh trip leg re-arms the approach fetch for any later hand-back
+    // to the arriving phase; the no-straight-line rule stays regardless.
+    _approachRouteFailed = false;
     // The dimmed driver→pickup line _fetchApproachRoute drew lives in the
     // legacy _approachAnnot field, which the modular _mapRoute component
     // does not track — and _updateApproachLine only ever removes the
@@ -2078,7 +2091,10 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       }
       
       // Fetch approach route from this position to pickup
-      if (_phase == _TrackPhase.arriving && !_approachRouteFetched && !_approachRouteFetching) {
+      if (_phase == _TrackPhase.arriving &&
+          !_approachRouteFetched &&
+          !_approachRouteFetching &&
+          !_approachRouteFailed) {
         unawaited(_fetchApproachRoute(pos));
       }
     } catch (e) {

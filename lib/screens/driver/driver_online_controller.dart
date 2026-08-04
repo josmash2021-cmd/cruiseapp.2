@@ -1080,6 +1080,10 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
 
         _trimRouteBehindDriver(snappedLL);
 
+        // Auto-reroute check: reads the smoothed position, with sustained-
+        // off-route hysteresis and a fetch cooldown. No-op outside nav.
+        _checkOffRouteHysteresis();
+
         // A driver who starts rolling while an offer is up watches the
         // preview keep up: the driver leg refetches from where they
         // actually are, the line shortens behind them, and the card's
@@ -1207,18 +1211,53 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     _navDist = state.distanceRemainingMiles;
     _navProgress = state.progress;
 
-    // Off-route detection & auto-reroute
-    if (state.isOffRoute && !_isRerouting) {
-      final now = DateTime.now();
-      final canReroute = _lastRerouteTime == null ||
-          now.difference(_lastRerouteTime!).inSeconds > 10;
-      if (canReroute && _rerouteCount < 5) {
-        _triggerReroute(pos);
+    // The instantaneous `state.isOffRoute` still drives the red banner via
+    // _navState; the expensive auto-reroute lives in
+    // _checkOffRouteHysteresis (sustained + cooldown), called from the GPS
+    // handler directly so it does not depend on the nav service's state.
+  }
+
+  /// Off-route detection with hysteresis, fed by the SmoothMotion-smoothed
+  /// position (never the raw fix).
+  ///
+  /// Beyond [_kOffRouteMeters] from the active polyline, sustained for
+  /// [_kOffRouteSustainMs], fires a reroute; the state re-arms only below
+  /// [_kBackOnRouteMeters] so GPS noise around the threshold cannot flap it,
+  /// and a red-light stop (distance filter → no fixes → no sustained clock)
+  /// never triggers it. [_kRerouteCooldownSec] between fetches keeps a long
+  /// detour from hammering the directions APIs.
+  void _checkOffRouteHysteresis() {
+    if (_phase != _Phase.enRouteToPickup && _phase != _Phase.inTrip) return;
+    if (_routePts.length < 2 || _isRerouting) return;
+    final probe = _pos;
+    if (probe == null) return;
+    // Measure against the untouched road geometry, NOT _routePts: the trim
+    // rewrites _routePts[0] to the driver's own position on every fix, so
+    // that line runs through them by construction and would report ~0 m
+    // however far off the road they actually are.
+    final against =
+        _plannedRoutePts.length >= 2 ? _plannedRoutePts : _routePts;
+    final offM = RouteSplice.distanceToPolylineM(against, probe);
+    final now = DateTime.now();
+    if (offM > _kOffRouteMeters) {
+      _offRouteSince ??= now;
+      final sustained =
+          now.difference(_offRouteSince!).inMilliseconds >= _kOffRouteSustainMs;
+      final cooledDown = _lastRerouteTime == null ||
+          now.difference(_lastRerouteTime!).inSeconds >= _kRerouteCooldownSec;
+      if (sustained && cooledDown && _rerouteCount < 5) {
+        _triggerReroute(probe);
       }
+    } else if (offM < _kBackOnRouteMeters) {
+      _offRouteSince = null;
     }
   }
 
   /// Reroute from current position to the active destination.
+  ///
+  /// The redraw is a partial splice (see RouteSplice.splice): only the
+  /// stretch between the deviation point and the rejoin point is replaced,
+  /// cross-faded in over the old line — never a full delete-and-repaint.
   Future<void> _triggerReroute(LatLng from) async {
     if (_isRerouting) return;
     _isRerouting = true;
@@ -1227,9 +1266,10 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     debugPrint('Rerouting (#$_rerouteCount)');
     HapticService.mediumImpact();
 
+    final legAtStart = _phase;
     final dest = _phase == _Phase.enRouteToPickup ? _pickupLL : _dropoffLL;
     final routeId = _phase == _Phase.enRouteToPickup ? 'pickup' : 'trip';
-    await _drawRoute(from, dest, routeId, _navyRoute);
+    await _drawRoute(from, dest, routeId, _navyRoute, legAtStart: legAtStart);
     _isRerouting = false;
   }
 
@@ -1375,6 +1415,12 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     // Only trim if we've passed at least 1 point
     if (closestIdx > 0) {
       _routePts = _routePts.sublist(closestIdx);
+      // Same cut on the untouched copy so the two stay index-aligned; it is
+      // what _checkOffRouteHysteresis measures against, since the line below
+      // puts the driver ON _routePts by construction.
+      if (_plannedRoutePts.length > closestIdx) {
+        _plannedRoutePts = _plannedRoutePts.sublist(closestIdx);
+      }
     }
     // Always put driver at front for seamless line
     if (_routePts.isNotEmpty) {
@@ -3078,6 +3124,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       _tripId = null;
       _currentOfferId = null;
       _routePts = [];
+      _plannedRoutePts = [];
       _pendingOffers = [];
     });
     _offerFirstSeenAt.clear();
@@ -3335,6 +3382,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       _tripId = null;
       _currentOfferId = null;
       _routePts = [];
+      _plannedRoutePts = [];
       _pendingOffers = [];
       _offerAcceptState = _OfferAcceptState.normal;
       _acceptingCardId = null;
@@ -3433,7 +3481,33 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
   // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   //  DIRECTIONS API
   // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-  Future<void> _drawRoute(LatLng o, LatLng d, String id, Color c) async {
+  /// Fetch + draw a fresh route from [o] to [d] — the auto-reroute path.
+  ///
+  /// Two attempts with a short backoff. When every provider fails, the line
+  /// on screen is KEPT as-is — the straight-line fallback was removed: a
+  /// line cutting across blocks lies to the driver, and during a reroute
+  /// the old road-following line is still the better answer.
+  ///
+  /// [legAtStart] is the phase the caller was on when it asked. The driver
+  /// can tap Start Ride while the fetch is in flight, and splicing a
+  /// driver→pickup route on top of the trip route would draw a wrong line —
+  /// so a leg change discards the answer and the next off-route check asks
+  /// again.
+  Future<void> _drawRoute(LatLng o, LatLng d, String id, Color c,
+      {_Phase? legAtStart}) async {
+    for (var attempt = 0; attempt < 2; attempt++) {
+      if (attempt > 0) {
+        await Future.delayed(const Duration(milliseconds: 700));
+        if (!mounted) return;
+      }
+      if (await _drawRouteAttempt(o, d, c, legAtStart)) return;
+    }
+    debugPrint('[DriverOnline] _drawRoute: providers failed — line kept');
+  }
+
+  /// One pass over the providers (Google variants → OSRM). True on success.
+  Future<bool> _drawRouteAttempt(
+      LatLng o, LatLng d, Color c, _Phase? legAtStart) async {
     debugPrint(
       'ðŸ—ºï¸ _drawRoute: ${o.latitude},${o.longitude} â†’ ${d.latitude},${d.longitude}',
     );
@@ -3492,16 +3566,31 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
             }
 
             debugPrint('ðŸ—ºï¸ Google route OK: ${pts.length} points');
+            if (legAtStart != null && _phase != legAtStart) {
+              debugPrint('[DriverOnline] reroute discarded — leg changed');
+              return true; // answered, just no longer applicable
+            }
+            // Partial splice: only the stretch between the deviation point
+            // and the rejoin point changes geometry; the rest of the line
+            // on screen is pixel-identical, so the swap redraws nothing
+            // else. The already-driven head keeps being trimmed by
+            // _trimRouteBehindDriver exactly as before.
+            final spliced = RouteSplice.splice(
+              oldRoute: _plannedRoutePts.length >= 2 ? _plannedRoutePts : _routePts,
+              newRoute: pts,
+              driverPos: o,
+            );
             _setState(() {
-              _routePts = pts;
+              _routePts = spliced;
+              _plannedRoutePts = List.of(spliced);
               final distVal = leg['distance']['value'];
               final durVal = leg['duration']['value'];
               _navDist = (distVal is num ? distVal.toDouble() : 0.0) / 1609.34;
               _navEta = ((durVal is num ? durVal.toDouble() : 0.0) / 60).ceil();
               _navInstruct = instr;
             });
-            _setRouteAnnotation(pts, c);
-            return;
+            unawaited(_crossFadeRouteAnnotation(spliced, c));
+            return true;
           }
         }
       } catch (e) {
@@ -3638,23 +3727,31 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
             }
           }
           debugPrint('ðŸ—ºï¸ OSRM route OK: ${pts.length} points');
+          if (legAtStart != null && _phase != legAtStart) {
+            debugPrint('[DriverOnline] reroute discarded — leg changed');
+            return true;
+          }
+          final splicedOsrm = RouteSplice.splice(
+            oldRoute: _plannedRoutePts.length >= 2 ? _plannedRoutePts : _routePts,
+            newRoute: pts,
+            driverPos: o,
+          );
           _setState(() {
-            _routePts = pts;
+            _routePts = splicedOsrm;
+            _plannedRoutePts = List.of(splicedOsrm);
             _navDist = distM / 1609.34;
             _navEta = (durS / 60).ceil().clamp(1, 999);
             _navInstruct = instr;
           });
-          _setRouteAnnotation(pts, c);
-          return;
+          unawaited(_crossFadeRouteAnnotation(splicedOsrm, c));
+          return true;
         }
       }
     } catch (e) {
-      debugPrint('ðŸ—ºï¸ OSRM fallback failed: $e');
+      debugPrint('ðŸ—ºï¸ OSRM fallback failed: $e');
     }
 
-    // Last resort: straight line
-    debugPrint('ðŸ—ºï¸ Using straight-line fallback');
-    _fallbackRoute(o, d, id, c);
+    return false;
   }
 
   List<LatLng> _decodePoly(String enc) {
@@ -3681,17 +3778,64 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     return pts;
   }
 
-  void _fallbackRoute(LatLng a, LatLng b, String id, Color c) {
-    final pts = List.generate(21, (i) {
-      final t = i / 20;
-      return LatLng(
-        a.latitude + (b.latitude - a.latitude) * t,
-        a.longitude + (b.longitude - a.longitude) * t,
-      );
+  /// Cross-fade the active route line onto [pts]: the new line fades in over
+  /// [_kRerouteFadeMs] while the old one fades out and is then deleted.
+  ///
+  /// The old line is never removed before the new one exists, and because
+  /// the splice (RouteSplice.splice) keeps the unaffected geometry
+  /// pixel-identical, the only thing that visibly changes is the re-routed
+  /// stretch. Runs on a plain timer — the Mapbox SDK applies each opacity
+  /// write immediately, no fade support needed from it. The chase camera is
+  /// not touched.
+  Future<void> _crossFadeRouteAnnotation(List<LatLng> pts, Color c) async {
+    final polyMgr = _polylineAnnotMgr;
+    if (polyMgr == null || pts.length < 2) return;
+    final safeGeom = safeLineString(pts);
+    if (safeGeom == null) return;
+    final old = _routeAnnot;
+    if (old == null) {
+      await _setRouteAnnotation(pts, c);
+      return;
+    }
+    mapbox.PolylineAnnotation? fresh;
+    try {
+      fresh = await polyMgr.create(mapbox.PolylineAnnotationOptions(
+        geometry: safeGeom,
+        lineColor: c.toARGB32(),
+        lineWidth: 5.0,
+        lineJoin: mapbox.LineJoin.ROUND,
+        lineOpacity: 0.0,
+      ));
+    } catch (_) {}
+    if (fresh == null) return; // old line stays; _routePts already swapped
+    if (!mounted) {
+      try { await polyMgr.delete(fresh); } catch (_) {}
+      return;
+    }
+    // The per-fix trim (_trimRouteBehindDriver) writes _routeAnnot — point
+    // it at the new line now so the route keeps consuming behind the car
+    // during the fade.
+    _routeAnnot = fresh;
+    _rerouteFadeTimer?.cancel();
+    final sw = Stopwatch()..start();
+    _rerouteFadeTimer =
+        Timer.periodic(const Duration(milliseconds: 33), (timer) {
+      final t = (sw.elapsedMilliseconds / _kRerouteFadeMs).clamp(0.0, 1.0);
+      try {
+        fresh!.lineOpacity = t;
+        polyMgr.update(fresh!);
+      } catch (_) {}
+      try {
+        old.lineOpacity = 1.0 - t;
+        polyMgr.update(old);
+      } catch (_) {}
+      if (t >= 1.0) {
+        timer.cancel();
+        _rerouteFadeTimer = null;
+        try {
+          polyMgr.delete(old);
+        } catch (_) {}
+      }
     });
-    _setState(() {
-      _routePts = pts;
-    });
-    _setRouteAnnotation(pts, c);
   }
 }

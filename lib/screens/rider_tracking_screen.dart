@@ -54,6 +54,7 @@ import '../services/user_session.dart';
 import '../services/network_service.dart';
 import '../services/map_controller_cache.dart';
 import '../services/firebase_auth_recovery.dart';
+import '../utils/route_splice.dart';
 import '../map/tracking_map_annotations.dart';
 import '../map/tracking_map_route.dart';
 import '../map/tracking_map_camera.dart';
@@ -141,6 +142,25 @@ const int _kRouteEraseIntervalMs = 66;
 /// again. Without a resume the camera stayed parked wherever they left it
 /// and the car simply drove off screen.
 const int _kResumeFollowAfterPanMs = 8000;
+
+/// Perpendicular distance from the active route polyline beyond which the
+/// driver counts as off-route (meters).
+const double _kOffRouteMeters = 45;
+
+/// Back below this the driver counts as on-route again — the hysteresis
+/// band that stops GPS noise around the threshold from flapping the state.
+const double _kBackOnRouteMeters = 30;
+
+/// How long the driver must stay off-route before a reroute fires. A red
+/// light or a one-fix GPS spike never reaches this.
+const int _kOffRouteSustainMs = 2500;
+
+/// Minimum seconds between reroute fetches, so a long detour does not
+/// hammer the directions API.
+const int _kRerouteCooldownSec = 10;
+
+/// Cross-fade duration (ms) when a re-routed line replaces the old one.
+const int _kRerouteFadeMs = 350;
 const int _maxPollFailsBeforeBanner = 15;
 
 /// How long every channel must stay silent before the rider is told the
@@ -256,6 +276,10 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   // ── Animated route draw ──
   Ticker? _routeDrawTicker;
   bool _routeDrawDone = false;
+
+  /// Drives the reroute cross-fade between the old and the re-routed line
+  /// (legacy annotation path — the modular component owns its own timer).
+  Timer? _rerouteFadeTimer;
   bool _dropoffPinAdded = false;
 
   _TrackPhase _phase = _TrackPhase.arriving;
@@ -377,7 +401,12 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   static const int _minCarUpdateMs = 33;
 
   // ── Rerouting when driver deviates ──
-  int _offRouteCount = 0; // consecutive off-route GPS updates
+  /// First moment the driver was seen beyond [_kOffRouteMeters] from the
+  /// active polyline; null while on-route. Sustained presence past
+  /// [_kOffRouteSustainMs] is what fires the reroute — a single noisy fix
+  /// or a red-light stop never does.
+  DateTime? _offRouteSince;
+  DateTime? _lastRerouteAt; // cooldown clock between reroute fetches
   bool _rerouteInProgress = false; // guard: prevents concurrent reroute fetches
 
   // ── Real-time tracking: SSE (primary) + Socket.io (GPS) + Firestore/RTDB (backup) ──
@@ -552,6 +581,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
     _carHeartbeatTimer?.cancel();
     // car annotation cleaned up with pointAnnotMgr
     _routeDrawTicker?.dispose();
+    _rerouteFadeTimer?.cancel();
     _driverLocSub?.cancel();
     _rtdbDriverLocSub?.cancel();
     _socketLocationSub?.cancel();
@@ -892,6 +922,11 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   List<LatLng> _tripRoutePts = [];         // stored pickup→dropoff route (for after arriving)
   bool _approachRouteFetched = false;      // guard: approach route already obtained
   bool _approachRouteFetching = false;     // guard: fetch in progress
+  /// True when the approach-route fetch failed even after the retry. The
+  /// straight driver→pickup stopgap line is never drawn as a final state —
+  /// no line (the dimmed trip route + pins stay) is better than a line that
+  /// lies. Reset when the trip starts or a fresh fetch is allowed.
+  bool _approachRouteFailed = false;
 }
 
 // ════════════════════════════════════════════════════════════

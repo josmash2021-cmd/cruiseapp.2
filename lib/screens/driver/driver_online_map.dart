@@ -407,6 +407,10 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
   }
 
   Future<void> _clearRouteAnnotation() async {
+    // A reroute cross-fade in flight owns two lines and a timer that writes
+    // both — stop it before deleting, or it keeps updating dead annotations.
+    _rerouteFadeTimer?.cancel();
+    _rerouteFadeTimer = null;
     final polyMgr = _polylineAnnotMgr;
     if (polyMgr == null) return;
     for (final a in [_routeAnnot, _previewPickupAnnot, _previewDropoffAnnot]) {
@@ -581,8 +585,12 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
   /// [last], so the drawn line touches the markers exactly instead of the
   /// road-snapped points the router returned. Never mutates the input —
   /// cached segment lists are shared.
+  ///
+  /// An empty [seg] stays empty: returning `[first, last]` here would
+  /// resurrect the straight-across-blocks line the fetch layer just refused
+  /// to draw.
   List<LatLng> _anchoredEndpoints(List<LatLng> seg, LatLng first, LatLng last) {
-    if (seg.isEmpty) return [first, last];
+    if (seg.isEmpty) return const [];
     final out = List<LatLng>.of(seg);
     out[0] = first;
     out[out.length - 1] = last;
@@ -1500,8 +1508,28 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     return _onOfferCardTap(offer);
   }
 
-  /// Fetch route points from Google Directions → OSRM → straight line fallback
+  /// Fetch route points from Google Directions → OSRM → Mapbox, retried once
+  /// after a short backoff.
+  ///
+  /// Returns an EMPTY list when every provider fails — the straight-line
+  /// fallback was removed. That line cut across blocks and lied to the
+  /// driver (it is the line in the bug-report photo); no line at all is the
+  /// honest failure. Callers keep the pickup/dropoff markers either way.
   Future<List<LatLng>> _fetchRoutePoints(LatLng o, LatLng d) async {
+    for (var attempt = 0; attempt < 2; attempt++) {
+      if (attempt > 0) {
+        await Future.delayed(const Duration(milliseconds: 600));
+        if (!mounted) break;
+      }
+      final pts = await _fetchRoutePointsOnce(o, d);
+      if (pts.length >= 2) return pts;
+    }
+    debugPrint('[OfferRoute] all providers failed — no route line drawn');
+    return const [];
+  }
+
+  /// One pass over the providers: Google → OSRM → Mapbox.
+  Future<List<LatLng>> _fetchRoutePointsOnce(LatLng o, LatLng d) async {
     List<LatLng>? pts;
     // Google Directions API
     try {
@@ -1567,15 +1595,9 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
         }
       } catch (_) {}
     }
-    // Straight line fallback
-    pts ??= List.generate(21, (i) {
-      final t = i / 20;
-      return LatLng(
-        o.latitude + (d.latitude - o.latitude) * t,
-        o.longitude + (d.longitude - o.longitude) * t,
-      );
-    });
-    return pts;
+    // No straight-line fallback: an empty list means "no route line" — the
+    // markers still draw. See _fetchRoutePoints.
+    return pts ?? const [];
   }
 
   Future<void> _closePreview() async {

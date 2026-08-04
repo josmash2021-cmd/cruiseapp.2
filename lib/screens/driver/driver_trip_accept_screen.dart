@@ -2566,7 +2566,10 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     final pickupPinBytes = results[1] as Uint8List;
     final dropoffPinBytes = results[2] as Uint8List;
 
-    if (_routePoints.length < 2) return;
+    // A failed route fetch leaves _routePoints EMPTY — there is no
+    // straight-line stand-in any more. Do NOT bail out here: the pins and
+    // the camera fit still owe the driver the two endpoints, and every
+    // route draw below is already guarded on `_routePoints.length >= 2`.
 
     // Do NOT force raw pin coordinates — Mapbox Directions API already
     // snaps start/end to the nearest road. Replacing them with the user's
@@ -2814,19 +2817,23 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     c.applyNavyGoldTheme();
     try {
       final pts = _routePoints.length >= 2 ? _routePoints : await _loadRoute();
-      if (!mounted || _webMapCtrl != c || pts.length < 2) return;
+      if (!mounted || _webMapCtrl != c) return;
       _routePoints = pts;
       final pins = await Future.wait([
         renderCircularPinBytes(icon: CircularPinIcon.person, isPickup: true, radius: 32),
         renderCircularPinBytes(icon: CircularPinIcon.flag, isPickup: false, radius: 32),
       ]);
       if (!mounted || _webMapCtrl != c) return;
-      c.setPolyline(
-        'preview-route',
-        pts.map((p) => (lng: p.longitude, lat: p.latitude)).toList(),
-        color: '#FFD700',
-        width: 5,
-      );
+      // pts may legitimately be empty (all providers failed): no line is
+      // drawn then — never a straight stand-in — but the pins still are.
+      if (pts.length >= 2) {
+        c.setPolyline(
+          'preview-route',
+          pts.map((p) => (lng: p.longitude, lat: p.latitude)).toList(),
+          color: '#FFD700',
+          width: 5,
+        );
+      }
       c.addMarker('pickup', widget.pickupLatLng.longitude,
           widget.pickupLatLng.latitude, iconBytes: pins[0]);
       c.addMarker('dropoff', widget.dropoffLatLng.longitude,
@@ -2844,8 +2851,26 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     }
   }
 
-  /// Fetch route points: Google Directions → OSRM → straight line
+  /// Fetch route points: Mapbox → OSRM, retried once after a short backoff.
+  ///
+  /// Returns an EMPTY list when every provider fails — never the two-endpoint
+  /// straight line this used to fall back to. A line cutting across blocks
+  /// lies; the pins and the StaticRoutePreview still render without it.
   Future<List<LatLng>> _fetchRoutePoints(LatLng o, LatLng d) async {
+    for (var attempt = 0; attempt < 2; attempt++) {
+      if (attempt > 0) {
+        await Future.delayed(const Duration(milliseconds: 600));
+        if (!mounted) break;
+      }
+      final pts = await _fetchRoutePointsOnce(o, d);
+      if (pts.length >= 2) return pts;
+    }
+    debugPrint('[DriverTripAccept] route providers failed — no line drawn');
+    return const [];
+  }
+
+  /// One pass over the providers: Mapbox Directions → OSRM.
+  Future<List<LatLng>> _fetchRoutePointsOnce(LatLng o, LatLng d) async {
     // Mapbox Directions API (primary)
     try {
       final mbxUrl = Uri.parse(
@@ -2886,9 +2911,9 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
         }
       }
     } catch (_) {}
-    // Last resort: just 2 endpoints (map will draw a straight line,
-    // but at least it won't create fake waypoints through buildings)
-    return [o, d];
+    // No last-resort straight line: empty means "no route line" — pins and
+    // camera still get drawn by the caller.
+    return const [];
   }
 
   /// Smooth 60fps gold route draw with distance-based interpolation.

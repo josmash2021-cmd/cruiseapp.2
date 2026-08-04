@@ -32,6 +32,9 @@ class TrackingMapRoute {
   Ticker? _routeDrawTicker;
   bool _routeDrawDone = false;
 
+  /// Drives [crossFadeTo]; owns two live annotations while it runs.
+  Timer? _fadeTimer;
+
   DateTime _lastRouteErase = DateTime(2000);
 
   /// True while an erase update is still crossing the platform channel.
@@ -53,6 +56,9 @@ class TrackingMapRoute {
 
   /// Actualiza el manager de anotaciones
   void setAnnotManager(mapbox.PolylineAnnotationManager? mgr) {
+    // Un cross-fade en vuelo escribe dos anotaciones del manager viejo.
+    _fadeTimer?.cancel();
+    _fadeTimer = null;
     _polylineAnnotMgr = mgr;
     _remainingRouteAnnot = null;
     _dimmedRouteAnnot = null;
@@ -98,6 +104,72 @@ class TrackingMapRoute {
       _routeDrawTicker?.stop();
       _routeDrawDone = false;
     }
+  }
+
+  /// Cross-fade la línea brillante hacia [points] — el swap del re-routeo.
+  ///
+  /// La línea nueva se crea con opacidad 0 y sube a 1 durante [fadeMs]
+  /// mientras la vieja baja a 0 y recién ahí se borra: la ruta nunca falta
+  /// de la pantalla ni un frame. Como la geometría entra ya empalmada
+  /// (RouteSplice.splice), lo único que se ve cambiar es el tramo donde el
+  /// conductor se desvió; el resto queda pixel-idéntico. No toca la cámara.
+  Future<void> crossFadeTo(List<LatLng> points, {int fadeMs = 350}) async {
+    if (points.length < 2) return;
+    final mgr = _polylineAnnotMgr;
+    if (mgr == null) return;
+
+    // El dibujo progresivo escribe _remainingRouteAnnot desde su propia
+    // lista capturada: si sigue corriendo, repinta la línea nueva con la
+    // geometría vieja.
+    _routeDrawTicker?.stop();
+    _routeDrawDone = true;
+
+    setActiveRoute(points, resetDraw: false);
+
+    final geom = safeLineString(points);
+    if (geom == null) return;
+
+    final old = _remainingRouteAnnot;
+    if (old == null) {
+      await _createRouteLayer(mgr, geom);
+      return;
+    }
+
+    mapbox.PolylineAnnotation? fresh;
+    try {
+      fresh = await mgr.create(mapbox.PolylineAnnotationOptions(
+        geometry: geom,
+        lineColor: const Color(0xFFFFD700).toARGB32(),
+        lineWidth: 5.0,
+        lineJoin: mapbox.LineJoin.ROUND,
+        lineOpacity: 0.0,
+      ));
+    } catch (e) {
+      debugPrint('[TrackingMapRoute] crossFadeTo create failed: $e');
+    }
+    // Sin línea nueva se queda la vieja: peor sería dejar el mapa sin ruta.
+    if (fresh == null) return;
+
+    // eraseRouteBehindCar escribe _remainingRouteAnnot — apuntarlo ya a la
+    // nueva para que el camino se siga consumiendo bajo el carro durante el
+    // fade.
+    final target = fresh;
+    _remainingRouteAnnot = target;
+
+    _fadeTimer?.cancel();
+    final sw = Stopwatch()..start();
+    _fadeTimer = Timer.periodic(const Duration(milliseconds: 33), (t) {
+      final k = (sw.elapsedMilliseconds / fadeMs).clamp(0.0, 1.0);
+      try {
+        mgr.update(target..lineOpacity = k).catchError((_) {});
+        mgr.update(old..lineOpacity = 1.0 - k).catchError((_) {});
+      } catch (_) {}
+      if (k >= 1.0) {
+        t.cancel();
+        _fadeTimer = null;
+        try { mgr.delete(old).catchError((_) {}); } catch (_) {}
+      }
+    });
   }
 
   /// Dibuja la ruta completa (dimmed) como fondo
@@ -380,6 +452,8 @@ class TrackingMapRoute {
     _routeDrawTicker?.stop();
     _routeDrawTicker?.dispose();
     _routeDrawTicker = null;
+    _fadeTimer?.cancel();
+    _fadeTimer = null;
 
     final mgr = _polylineAnnotMgr;
     if (mgr == null) return;
@@ -401,6 +475,8 @@ class TrackingMapRoute {
 
   /// Reset para recreación del mapa
   void reset() {
+    _fadeTimer?.cancel();
+    _fadeTimer = null;
     _remainingRouteAnnot = null;
     _dimmedRouteAnnot = null;
     _approachAnnot = null;

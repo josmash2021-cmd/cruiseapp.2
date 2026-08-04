@@ -2037,6 +2037,104 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     } catch (_) {}
   }
 
+  /// Adopt a re-routed polyline (already spliced by RouteSplice.splice) as
+  /// the active route, swapping the line on screen without a flicker.
+  ///
+  /// Called by _rerouteFromCurrentPos. The order matters: the data side goes
+  /// first because the projection, the erase-behind-the-car and the ETA all
+  /// read `_routePts`/`_segDist`, and only then the visual swap happens —
+  /// there is never a moment where the route is missing from the map.
+  /// The camera is untouched: the chase frame keeps following the car.
+  Future<void> _applyReroutedPolyline(List<LatLng> spliced) async {
+    if (!mounted || spliced.length < 2) return;
+
+    _routePts = spliced;
+    _buildSegDist();
+    // resetDraw:false — the line is already on screen. Re-arming the
+    // progressive draw would replay the whole "water flowing" reveal from
+    // the start of the route, which is exactly the full repaint this
+    // partial splice exists to avoid.
+    _syncRouteToMap(resetDraw: false);
+    _routeDrawDone = true;
+    // Resume from where the car actually is on the new geometry: the fetch
+    // took a second or two and the driver kept moving the whole time.
+    _traveledM = _startMOnCurrentRoute();
+    _tgtTraveledM = _traveledM;
+    _directTargetPos = null;
+    _directTargetBearing = null;
+
+    if (kIsWeb) {
+      // setPolyline replaces the 'route' source in place — one frame, no
+      // gap, nothing to fade. The next erase tick trims behind the car.
+      _webDrawGoldRoute(_routePts);
+      return;
+    }
+
+    if (_mapRoute != null) {
+      await _mapRoute!.crossFadeTo(_routePts, fadeMs: _kRerouteFadeMs);
+      return;
+    }
+    await _crossFadeRemainingRoute(_routePts);
+  }
+
+  /// Legacy-annotation twin of TrackingMapRoute.crossFadeTo: the new gold
+  /// line comes up from opacity 0 while the old one goes down, and only
+  /// then is the old one deleted.
+  Future<void> _crossFadeRemainingRoute(List<LatLng> pts) async {
+    final mgr = _polylineAnnotMgr;
+    if (mgr == null || pts.length < 2) return;
+    final geom = safeLineString(pts);
+    if (geom == null) return;
+
+    // The progressive draw ticker writes _remainingRouteAnnot from its own
+    // captured coordinate list — left running it repaints the new line with
+    // the old geometry.
+    _routeDrawTicker?.stop();
+
+    final old = _remainingRouteAnnot;
+    if (old == null) {
+      await _createRouteLayers(mgr, geom);
+      return;
+    }
+
+    mapbox.PolylineAnnotation? fresh;
+    try {
+      fresh = await mgr.create(mapbox.PolylineAnnotationOptions(
+        geometry: geom,
+        lineColor: const Color(0xFFFFD700).toARGB32(),
+        lineWidth: 5.0,
+        lineJoin: mapbox.LineJoin.ROUND,
+        lineOpacity: 0.0,
+      ));
+    } catch (_) {}
+    // No new line: keep the old one rather than leaving the map bare.
+    if (fresh == null) return;
+    if (!mounted) {
+      try { await mgr.delete(fresh); } catch (_) {}
+      return;
+    }
+
+    // _eraseRouteBehindCar writes _remainingRouteAnnot — point it at the new
+    // line now so the road keeps being consumed under the car mid-fade.
+    final target = fresh;
+    _remainingRouteAnnot = target;
+
+    _rerouteFadeTimer?.cancel();
+    final sw = Stopwatch()..start();
+    _rerouteFadeTimer = Timer.periodic(const Duration(milliseconds: 33), (t) {
+      final k = (sw.elapsedMilliseconds / _kRerouteFadeMs).clamp(0.0, 1.0);
+      try {
+        mgr.update(target..lineOpacity = k).catchError((_) {});
+        mgr.update(old..lineOpacity = 1.0 - k).catchError((_) {});
+      } catch (_) {}
+      if (k >= 1.0) {
+        t.cancel();
+        _rerouteFadeTimer = null;
+        try { mgr.delete(old).catchError((_) {}); } catch (_) {}
+      }
+    });
+  }
+
   /// Erase the route behind the car: update remaining-route layers to show
   /// only the portion ahead of the current driver position.
   void _eraseRouteBehindCar() {
@@ -2148,8 +2246,13 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     if (now.difference(_lastApproachUpdate).inMilliseconds < 500) return;
     _lastApproachUpdate = now;
 
-    // Only show during arriving phase
-    final shouldShow = _phase == _TrackPhase.arriving;
+    // Only show during arriving phase — and never as a FINAL state. This
+    // straight driver→pickup line is a stopgap while the road route is in
+    // flight; once the fetch has failed for good (_approachRouteFailed) it
+    // would be all the rider ever sees, and a line cutting across blocks
+    // lies about where the driver is coming from. Pull it and leave the
+    // dimmed trip route and the pins to carry the screen.
+    final shouldShow = _phase == _TrackPhase.arriving && !_approachRouteFailed;
 
     if (!shouldShow) {
       // Remove existing approach line
@@ -2696,7 +2799,10 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     if (now.difference(_lastApproachUpdate).inMilliseconds < 500) return;
     _lastApproachUpdate = now;
 
+    // _approachRouteFailed: same rule as native — the straight stopgap is
+    // never the final answer, no line beats a line that lies.
     if (_phase != _TrackPhase.arriving ||
+        _approachRouteFailed ||
         (_animPos.latitude == 0 && _animPos.longitude == 0)) {
       web.removePolyline('approach');
       return;

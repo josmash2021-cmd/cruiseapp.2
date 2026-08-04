@@ -252,14 +252,21 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   List<Map<String, dynamic>> _pendingOffers = [];
   // _offersExpanded removed — cards always visible via PageView
 
+  /// A ride accepted while still driving the current trip (chaining) —
+  /// it starts when this trip wraps up. See _acceptChainedOffer.
+  Map<String, dynamic>? _chainedNextOffer;
+
   // ── Route preview for a tapped offer ──
   Map<String, dynamic>? _previewingOffer;
 
   /// True while a ride offer card is on screen. The top row hides behind
   /// this, and the X that replaces it appears on the same condition, so
   /// the two can never both be showing or both be gone.
-  bool get _offerOnScreen =>
-      _phase == _Phase.searching && _pendingOffers.isNotEmpty;
+  ///
+  /// Any phase, not just searching: outside searching the only offers
+  /// that can be pending are chained ones (the controllers filter), and
+  /// their card shows over the trip UI.
+  bool get _offerOnScreen => _pendingOffers.isNotEmpty;
   bool _offerRouteShown = false; // true after route draw completes
   AnimationController? _routePulseCtrl;
   bool _isPollingOffers = false;
@@ -1642,12 +1649,15 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
               ),
 
             // â”€â”€ Stacked Ride Offer Cards (Spark-style) â”€â”€
-            if (_phase == _Phase.searching && _pendingOffers.isNotEmpty)
+            if (_pendingOffers.isNotEmpty)
               Positioned(
-                // Flush with the bottom edge. This was -30, which hid the
-                // dead space under the old shorter card and now eats the
-                // real one — the card's own padding does that job.
-                bottom: 0,
+                // Flush with the bottom edge while searching. This was -30,
+                // which hid the dead space under the old shorter card and
+                // now eats the real one — the card's own padding does that
+                // job. Outside searching the only pending offers are
+                // chained ones, and the card rides above the nav panel
+                // instead of covering it.
+                bottom: _phase == _Phase.searching ? 0 : _mapBottomPadding,
                 left: 0,
                 right: 0,
                 child: _rideOfferCards(

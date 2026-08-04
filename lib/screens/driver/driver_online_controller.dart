@@ -1611,7 +1611,9 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       debugPrint(
           '[DriverOnline] SSE $reason — falling back to polling, reconnecting in 500ms');
       _sseActive = false;
-      if (mounted && _phase == _Phase.searching) {
+      // Reconnect from any phase: mid-trip the stream is the only channel
+      // a chained offer can arrive on, since the poll timer is parked.
+      if (mounted) {
         _sseReconnectTimer =
             Timer(const Duration(milliseconds: 500), _connectSse);
       }
@@ -1633,8 +1635,16 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
         }
         _sseActive = true;
         debugPrint('SSE offers: ${offers.length}');
-        if (!mounted || _phase != _Phase.searching) return;
-        _applyOffers(offers);
+        if (!mounted) return;
+        // Mid-trip the stream keeps delivering, but only chained offers
+        // (flagged by the backend for a driver about to finish their
+        // current trip) are let through — anything else belongs to a
+        // phase the driver is not in.
+        final visible = _phase == _Phase.searching
+            ? offers
+            : offers.where((o) => o['chained'] == true).toList();
+        if (visible.isEmpty) return;
+        _applyOffers(visible);
       },
       onError: (e) => scheduleReconnect('error: $e'),
       onDone: () => scheduleReconnect('stream ended'),
@@ -1813,7 +1823,11 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     // that is now the intent. It runs only on the first offer of a batch,
     // so a poll that returns the same offer again does not restart the
     // animation under the driver.
-    if (filtered.isNotEmpty) {
+    if (filtered.isNotEmpty && _phase == _Phase.searching) {
+      // The route-draw animation takes over the camera, so it stays a
+      // searching-phase thing: a chained offer arriving mid-trip must not
+      // hijack the active navigation view.
+      //
       // _autoTriggerRoutePreview already existed for exactly this and was
       // left unreferenced when drawing moved to tap-only. It dedups on the
       // offer id, so the SSE push and the poll that follows it cannot both
@@ -1857,8 +1871,14 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     }
     try {
       final offers = await ApiService.getDriverPendingOffers(_driverId!);
-      if (!mounted || _phase != _Phase.searching) return;
-      _applyOffers(offers);
+      if (!mounted) return;
+      // Same rule as the SSE listener: outside the searching phase only
+      // chained offers are surfaced.
+      final visible = _phase == _Phase.searching
+          ? offers
+          : offers.where((o) => o['chained'] == true).toList();
+      if (visible.isEmpty) return;
+      _applyOffers(visible);
     } catch (e) {
       debugPrint('Poll error: $e');
     } finally {
@@ -1872,7 +1892,68 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     });
   }
 
-  Future<void> _acceptOffer(Map<String, dynamic> r) async {
+  /// Chained accept while still driving another trip: lock the ride on
+  /// the backend inside its countdown window, stash it, and let
+  /// [_handoffChainedOffer] run the normal accept flow once the current
+  /// trip leaves the screen. The screen stays with the trip being driven.
+  Future<void> _acceptChainedOffer(Map<String, dynamic> r, int? offerId) async {
+    if (offerId == null || _driverId == null) {
+      _snack('Unable to accept — please try again.');
+      return;
+    }
+    if (_chainedNextOffer != null) {
+      _snack('You already have a next ride booked.');
+      return;
+    }
+    if (_acceptedOfferIds.contains(offerId)) return;
+    _acceptedOfferIds.add(offerId);
+
+    HapticService.heavyImpact();
+    _setState(() {
+      _offerAcceptState = _OfferAcceptState.routing;
+      _acceptingCardId = offerId.toString();
+    });
+    try {
+      await ApiService.acceptRideOffer(offerId: offerId, driverId: _driverId!);
+      _chainedNextOffer = r;
+      _dropPendingOffer(offerId);
+      _snack('Next ride booked — it starts after this dropoff.');
+    } catch (e) {
+      debugPrint('[DriverOnline] chained accept failed: $e');
+      _acceptedOfferIds.remove(offerId);
+      _dropPendingOffer(offerId);
+      _snack('That ride is no longer available.');
+    } finally {
+      if (mounted) {
+        _setState(() {
+          _offerAcceptState = _OfferAcceptState.normal;
+          _acceptingCardId = null;
+        });
+      }
+    }
+  }
+
+  void _dropPendingOffer(int offerId) {
+    final oid = offerId.toString();
+    _setState(() {
+      _pendingOffers = _pendingOffers
+          .where((o) => (o['offer_id'] ?? o['id'] ?? '').toString() != oid)
+          .toList();
+    });
+  }
+
+  /// Hand a previously chained-accepted ride to the normal accept flow.
+  /// Called when the current trip leaves the screen (completed or
+  /// declined) — the phase is back to searching by then.
+  void _handoffChainedOffer() {
+    final next = _chainedNextOffer;
+    if (next == null) return;
+    _chainedNextOffer = null;
+    unawaited(_acceptOffer(next, alreadyAcceptedOnBackend: true));
+  }
+
+  Future<void> _acceptOffer(Map<String, dynamic> r,
+      {bool alreadyAcceptedOnBackend = false}) async {
     debugPrint('[DriverOnline] _acceptOffer called — map=$_map, phase=$_phase');
     debugPrint('[DriverOnline] offer data: ${r.keys.toList()}');
     // Prevent double-tap
@@ -1919,12 +2000,21 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       }
     }
 
+    // Chained accept: an offer that arrived while this driver is still on
+    // another trip (the backend only sends those when the current trip is
+    // about to end). The current trip keeps the screen — the new ride is
+    // locked on the backend now and handed off when this trip wraps up.
+    if (_phase != _Phase.searching) {
+      await _acceptChainedOffer(r, offerId);
+      return;
+    }
+
     // C5 fix: idempotent guard keyed on offerId. If the same offer is
     // delivered twice by the SSE layer (or re-emitted from a stale stream
     // that slipped past the generation check in _connectSse), the second
     // call here is dropped silently instead of firing a second backend
     // accept request.
-    if (offerId != null) {
+    if (offerId != null && !alreadyAcceptedOnBackend) {
       if (_acceptedOfferIds.contains(offerId)) {
         debugPrint(
             '[DriverOnline] duplicate accept dropped for offer=$offerId');
@@ -1948,6 +2038,9 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     try {
       debugPrint('[DriverOnline] ▶ STEP 1: creating acceptFuture');
       final acceptFuture = (() async {
+        // A chained handoff was already accepted on the backend when the
+        // driver tapped the card mid-trip — do not accept it twice.
+        if (alreadyAcceptedOnBackend) return true;
         if (offerId != null && _driverId != null) {
           debugPrint(
               '[DriverOnline] ▶ STEP 1a: calling acceptRideOffer(offerId=$offerId)');
@@ -2932,6 +3025,8 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       _animateToPosition(_pos!, zoom: 15.5, bearing: 0, tilt: 0);
     }
     _startPolling();
+    // A ride accepted mid-trip while this one was being driven starts now.
+    _handoffChainedOffer();
   }
 
   Future<void> _complete() async {
@@ -2995,12 +3090,17 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     _startPolling();
     // Refresh earnings from API so weekly total stays in sync
     _loadAllEarnings();
+    // A ride accepted mid-trip while this one was being driven starts now.
+    _handoffChainedOffer();
   }
 
   void _goOffline() {
     if (!mounted) return;
-    // Block going offline while an offer is visible
-    if (_pendingOffers.isNotEmpty || _previewingOffer != null) {
+    // Block going offline while an offer is visible or a chained ride is
+    // already booked for when the current trip ends.
+    if (_pendingOffers.isNotEmpty ||
+        _previewingOffer != null ||
+        _chainedNextOffer != null) {
       HapticService.heavyImpact();
       showDialog(
         context: context,

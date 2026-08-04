@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException, Header, Request, Query, Body
 from fastapi.responses import JSONResponse, FileResponse, Response, StreamingResponse
-from sqlalchemy import select, func, and_, text
+from sqlalchemy import select, func, and_, or_, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from models.database import (
     get_db, SessionLocal, User, Trip, DispatchOffer, Vehicle,
@@ -55,6 +55,20 @@ _CASCADE_WAIT_SECONDS = OFFER_TIMEOUT_SECONDS  # 45s — matches the driver UI c
 # Bounded: max 1,000 entries, 5-minute TTL
 _route_cache = TTLCache[tuple, tuple](ttl_seconds=300, max_size=1000, name="route_cache")
 _ROUTE_CACHE_TTL = 300.0  # 5 minutes — routes don't change rapidly
+
+# Trip statuses that mark a driver as busy. Hoisted to module level so the
+# candidate filter and the "chained" flag on the offer payload share one
+# definition of what an active trip is.
+_ACTIVE_TRIP_STATUSES = [
+    "accepted", "driver_en_route", "driver_arriving",
+    "arrived", "in_trip", "in_progress",
+]
+
+# Chaining: a driver whose active trip ends this close to where they are
+# now (haversine, live position -> that trip's dropoff) is treated as free
+# for the next offer — the ride is stacked behind the one they are about
+# to finish, the way Uber chains back-to-back trips.
+_CHAIN_MAX_REMAINING_KM = 1.6  # 1 mile
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -206,17 +220,38 @@ async def _find_nearest_drivers(
     min_lng = pickup_lng - delta_lng
     max_lng = pickup_lng + delta_lng
 
-    # Exclude drivers with active trips — subquery for efficiency
-    active_trip_statuses = [
-        "accepted", "driver_en_route", "driver_arriving",
-        "arrived", "in_trip", "in_progress",
-    ]
-    busy_subq = (
-        select(Trip.driver_id)
-        .where(
-            and_(Trip.driver_id.isnot(None), Trip.status.in_(active_trip_statuses))
+    # Drivers with an active trip are busy — EXCEPT the ones about to
+    # finish. A driver whose current trip's dropoff lies within ~1 mile of
+    # where they are now (haversine from their live position to that
+    # trip's dropoff) stays in the pool and gets the next ride offered as
+    # a chained one, stacked behind the trip they are finishing. An active
+    # trip with no usable dropoff, or one further out, still blocks —
+    # that driver is genuinely busy.
+    chain_remaining_km = (
+        6371.0 * func.acos(
+            func.least(1.0, func.greatest(-1.0,
+                func.cos(func.radians(User.lat))
+                * func.cos(func.radians(Trip.dropoff_lat))
+                * func.cos(func.radians(Trip.dropoff_lng) - func.radians(User.lng))
+                + func.sin(func.radians(User.lat))
+                * func.sin(func.radians(Trip.dropoff_lat))
+            ))
         )
-        .scalar_subquery()
+    )
+    still_busy = (
+        select(Trip.id)
+        .where(
+            and_(
+                Trip.driver_id == User.id,
+                Trip.status.in_(_ACTIVE_TRIP_STATUSES),
+                or_(
+                    Trip.dropoff_lat.is_(None),
+                    Trip.dropoff_lng.is_(None),
+                    chain_remaining_km >= _CHAIN_MAX_REMAINING_KM,
+                ),
+            )
+        )
+        .exists()
     )
 
     # Drivers already holding an offer they have not answered yet.
@@ -244,7 +279,7 @@ async def _find_nearest_drivers(
         User.lng <= max_lng,
         User.last_active_at.isnot(None),
         User.last_active_at >= active_cutoff,
-        ~User.id.in_(busy_subq),
+        ~still_busy,
         # One ride at a time on screen. A driver already looking at an
         # offer is not a candidate for the next trip: ten riders ordering
         # at once used to put ten cards on one phone, and accepting one
@@ -372,7 +407,165 @@ async def _find_nearest_drivers(
             len(drivers), vehicle_tiers.normalize_tier(vehicle_type),
         )
 
+    # The list is haversine-ordered so far. Re-order these few finalists
+    # by real driving time to the pickup when the ETA provider answers;
+    # any failure keeps the distance order (fail-open).
+    if len(drivers) > 1:
+        drivers = await _order_by_driver_eta(drivers, pickup_lat, pickup_lng)
+
     return drivers
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  Ordering candidates by real driving time, not crow-flies distance
+# ══════════════════════════════════════════════════════════════════════════════
+#
+# Haversine says who is closest as the crow flies; the rider cares who
+# ARRIVES first. The candidate list still comes from the SQL haversine
+# filter above (top ~10) — this only re-orders those finalists by driving
+# time to the pickup, using the same Google key the geocoder and the
+# offer-route fetcher already use. One Distance Matrix request carries
+# every candidate at once (many origins, one destination), so the whole
+# step is a single HTTP call per dispatch, not one per driver.
+#
+# Fail-open everywhere: no key, a timeout, a provider error, or a single
+# unroutable candidate all mean "keep the haversine order" — dispatch must
+# never depend on a third-party API being alive.
+
+_ETA_CACHE_TTL_SECONDS = 60.0
+_ETA_TOTAL_TIMEOUT_S = 4.0
+
+# (driver_id, pickup cell) -> driving seconds. 60 s is short enough that a
+# moving driver's answer stays honest, long enough that a cascade walking
+# its candidates does not re-ask for the same pickup every round.
+_eta_cache: TTLCache[tuple, float] = TTLCache(
+    ttl_seconds=_ETA_CACHE_TTL_SECONDS, max_size=2000, name="dispatch_eta_cache",
+)
+
+
+def _eta_cell(lat: float, lng: float) -> tuple[int, int]:
+    """~0.5 km grid cell for the pickup — requests from the same block
+    share one cached ETA instead of one call each."""
+    return (int(lat / 0.005), int(lng / 0.005))
+
+
+async def _fetch_etas_to_pickup(
+    drivers: list, pickup_lat: float, pickup_lng: float,
+) -> dict[int, float] | None:
+    """Driving seconds driver -> pickup for each candidate, from one Google
+    Distance Matrix request (batch: many origins, one destination).
+
+    Returns a {driver_id: seconds} dict, or None when the provider cannot
+    answer for EVERY candidate — a partial ranking is worse than none, so
+    the caller then keeps the haversine order. Never raises.
+    """
+    if not GOOGLE_MAPS_API_KEY:
+        return None
+
+    import urllib.parse
+    import urllib.request
+
+    origins = "|".join(f"{d.lat},{d.lng}" for d in drivers)
+    url = "https://maps.googleapis.com/maps/api/distancematrix/json?" + urllib.parse.urlencode({
+        "origins": origins,
+        "destinations": f"{pickup_lat},{pickup_lng}",
+        "mode": "driving",
+        "key": GOOGLE_MAPS_API_KEY,
+    })
+
+    def _fetch():
+        with urllib.request.urlopen(url, timeout=_ETA_TOTAL_TIMEOUT_S) as resp:
+            return json.loads(resp.read().decode())
+
+    try:
+        data = await asyncio.wait_for(
+            asyncio.get_running_loop().run_in_executor(None, _fetch),
+            timeout=_ETA_TOTAL_TIMEOUT_S + 0.5,
+        )
+    except Exception as exc:
+        logging.warning("[Dispatch] ETA matrix request failed: %s", exc)
+        return None
+
+    if not isinstance(data, dict) or data.get("status") != "OK":
+        logging.warning(
+            "[Dispatch] ETA matrix answered status=%s",
+            data.get("status") if isinstance(data, dict) else "no-payload",
+        )
+        return None
+
+    rows = data.get("rows") or []
+    if len(rows) < len(drivers):
+        logging.warning(
+            "[Dispatch] ETA matrix returned %d rows for %d candidates",
+            len(rows), len(drivers),
+        )
+        return None
+
+    etas: dict[int, float] = {}
+    for d, row in zip(drivers, rows):
+        elements = (row or {}).get("elements") or []
+        if not elements or elements[0].get("status") != "OK":
+            # One unroutable candidate poisons the comparison — fall back.
+            logging.info(
+                "[Dispatch] ETA matrix element not OK for driver %s", d.id,
+            )
+            return None
+        etas[d.id] = float((elements[0].get("duration") or {}).get("value") or 0.0)
+    return etas
+
+
+async def _order_by_driver_eta(
+    drivers: list, pickup_lat: float, pickup_lng: float,
+) -> list:
+    """Re-order dispatch candidates by driving time to the pickup.
+
+    Returns the input list unchanged (haversine order) whenever the
+    provider cannot answer — fail-open by construction.
+    """
+    if len(drivers) < 2:
+        return drivers
+    try:
+        cell = _eta_cell(pickup_lat, pickup_lng)
+        etas: dict[int, float] = {}
+        missing = []
+        for d in drivers:
+            hit = _eta_cache.get((d.id, cell))
+            if hit is None:
+                missing.append(d)
+            else:
+                etas[d.id] = hit
+
+        if missing:
+            fetched = await _fetch_etas_to_pickup(missing, pickup_lat, pickup_lng)
+            if fetched is None:
+                logging.info(
+                    "[Dispatch] haversine fallback: ETA provider unavailable "
+                    "for %d candidate(s)", len(missing),
+                )
+                return drivers
+            for did, secs in fetched.items():
+                _eta_cache[(did, cell)] = secs
+            etas.update(fetched)
+
+        if any(d.id not in etas for d in drivers):
+            logging.info("[Dispatch] haversine fallback: incomplete ETA coverage")
+            return drivers
+
+        ordered = sorted(
+            drivers,
+            key=lambda d: (
+                etas[d.id],
+                _haversine(pickup_lat, pickup_lng, d.lat or 0, d.lng or 0),
+            ),
+        )
+        logging.info(
+            "[Dispatch] ETA ordering used: %s",
+            ", ".join(f"driver {d.id} {etas[d.id]:.0f}s" for d in ordered),
+        )
+        return ordered
+    except Exception as exc:
+        logging.warning("[Dispatch] haversine fallback: ETA ordering failed: %s", exc)
+        return drivers
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -461,6 +654,23 @@ async def _send_offer_to_driver(
     _pending_cache.pop(driver.id, None)
     estimated_driver_fare = round(float(trip.fare or 0.0) * DRIVER_SHARE_RATE, 2)
 
+    # Chaining: a driver offered a ride while still finishing another one
+    # gets the offer flagged so the app can show it over the trip screen
+    # instead of waiting for them to go idle.
+    chained = False
+    try:
+        _active_cnt = await db.execute(
+            select(func.count(Trip.id)).where(
+                and_(
+                    Trip.driver_id == driver.id,
+                    Trip.status.in_(_ACTIVE_TRIP_STATUSES),
+                )
+            )
+        )
+        chained = int(_active_cnt.scalar() or 0) > 0
+    except Exception as _ce:
+        logging.warning("[Dispatch] chained-flag lookup failed: %s", _ce)
+
     # Compute rider's trip history, rating, and "new rider" flag so the
     # driver card shows the right label:
     #   - rides_count == 0  →  "New rider" (first request ever)
@@ -501,6 +711,7 @@ async def _send_offer_to_driver(
         "rider_is_new": rider_rides_count == 0,
         "created_at": offer.created_at.isoformat() if offer.created_at else None,
         "offer_timeout_seconds": OFFER_TIMEOUT_SECONDS,
+        "chained": chained,
         **_trip_dict(trip),
         "fare": estimated_driver_fare,
         "driver_earnings": estimated_driver_fare,
@@ -511,7 +722,8 @@ async def _send_offer_to_driver(
             driver.fcm_token,
             title="New Ride Offer",
             body="A rider needs a ride -- open Cruise to accept.",
-            data={"type": "new_offer", "trip_id": str(trip.id), "offer_id": str(offer.id)},
+            data={"type": "new_offer", "trip_id": str(trip.id), "offer_id": str(offer.id),
+                  "chained": "1" if chained else "0"},
             is_offer=True,
         ))
 
@@ -1318,6 +1530,22 @@ async def get_driver_pending(driver_id: int = Query(...), user: User = Depends(_
     )
     rows = result.all()
 
+    # Chaining: when this driver is still on another trip, any pending
+    # offer is a chained one — the app shows it over the trip screen.
+    _chained = False
+    try:
+        _active_cnt = await db.execute(
+            select(func.count(Trip.id)).where(
+                and_(
+                    Trip.driver_id == driver_id,
+                    Trip.status.in_(_ACTIVE_TRIP_STATUSES),
+                )
+            )
+        )
+        _chained = int(_active_cnt.scalar() or 0) > 0
+    except Exception as _ce:
+        logging.warning("[get_driver_pending] chained-flag lookup failed: %s", _ce)
+
     # Rider reputation for the driver's trip screen.
     #
     # It was never sent, so the driver app defaulted rider_rating to 0 and
@@ -1371,6 +1599,7 @@ async def get_driver_pending(driver_id: int = Query(...), user: User = Depends(_
             "rider_photo_url": rider_photo_url,
             "created_at": offer.created_at.isoformat() if offer.created_at else None,
             "offer_timeout_seconds": OFFER_TIMEOUT_SECONDS,
+            "chained": _chained,
             **_trip_dict(trip),
             "fare": estimated_driver_fare,
             "driver_earnings": estimated_driver_fare,

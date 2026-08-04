@@ -471,6 +471,9 @@ class NotificationService {
           _offerSoundPlaying = false;
           return;
         }
+        // Dip the driver's music/video ONLY while the cue sounds — the
+        // resting session mixes at full volume (user spec 2026-08-04).
+        _quietly(duckForOfferCue(), 'duck');
         // Fire-and-forget seek+resume — never await platform channel calls
         // to avoid blocking the UI thread / causing 1-second freezes.
         //
@@ -486,10 +489,14 @@ class NotificationService {
           _quietly(_offerPlayer.resume(), 'resume');
           if (i < 2) await Future.delayed(const Duration(seconds: 2));
         }
-        // Reset guard after last sound finishes (~2s)
-        Future.delayed(const Duration(seconds: 2), () => _offerSoundPlaying = false);
+        // Reset guard + lift the duck after the last repeat finishes (~2s)
+        Future.delayed(const Duration(seconds: 2), () {
+          _offerSoundPlaying = false;
+          _quietly(restoreAfterOfferCue(), 'unduck');
+        });
       } catch (e) {
         _offerSoundPlaying = false;
+        _quietly(restoreAfterOfferCue(), 'unduck');
         debugPrint('[NotificationService] playOfferSound error: $e');
       }
     });

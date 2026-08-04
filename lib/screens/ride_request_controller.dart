@@ -2186,8 +2186,29 @@ extension _RideRequestController on _RideRequestScreenState {
       // simulate a payment without a real card on file.
       showTestMode: true,
     );
+    // The sheet's Cruise Balance toggle may have changed — refresh the
+    // discount preview either way before reading the result.
+    unawaited(_loadCruiseCashBalance());
     if (picked == null || !mounted) return;
-    
+
+    // Refresh the linked-methods set from prefs BEFORE the contains()
+    // check below: a card added inside the sheet wrote
+    // linkPaymentMethod('credit_card') to storage, but this in-memory set
+    // was loaded at screen init — stale, it bounced the rider into the
+    // full-screen CreditCardScreen right after a successful in-sheet add
+    // (duplicate SetupIntent on the same card). Prefs only, deliberately
+    // NOT _loadLinkedPayments(): its backend restore could clobber the
+    // just-saved default with a 30s-stale cached response.
+    final linkedNow = await LocalDataService.getLinkedPaymentMethods();
+    final cardLast4 = await LocalDataService.getCreditCardLast4();
+    final cardBrand = await LocalDataService.getCreditCardBrand();
+    if (!mounted) return;
+    _setState(() {
+      _linkedPaymentMethods = linkedNow;
+      _savedCardLast4 = cardLast4;
+      _savedCardBrand = cardBrand;
+    });
+
     // Handle Tap to Pay selection
     if (picked == PaymentMethodId.tapToPay) {
       _setState(() => _selectedPaymentMethod = PaymentMethodId.tapToPay);

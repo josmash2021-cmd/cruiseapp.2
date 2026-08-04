@@ -874,6 +874,15 @@ class _RideRequestScreenState extends State<RideRequestScreen>
   /// backend still applies it at dispatch time regardless of the UI.
   Future<void> _loadCruiseCashBalance() async {
     try {
+      // Payment-sheet toggle: with Cruise Balance off, the preview shows
+      // no discount (the balance is simply not offered to this ride).
+      final useBalance = await LocalDataService.getUseCruiseCash();
+      if (!useBalance) {
+        if (mounted && _cruiseCashCents != 0) {
+          setState(() => _cruiseCashCents = 0);
+        }
+        return;
+      }
       final res = await ApiService.getMyReferralInfo();
       final cents = (res['balance_cents'] as num?)?.toInt() ?? 0;
       if (mounted && cents != _cruiseCashCents) {

@@ -10,6 +10,7 @@ import '../services/local_data_service.dart';
 import '../l10n/app_localizations.dart';
 import '../widgets/neu_style.dart';
 import 'credit_card_screen.dart';
+import 'ride_payment_sheet.dart';
 
 // ═══════════════════════════════════════════════════════════════════
 //  Payment Method — Grid 2×2 de tarjetas cuadradas como en la web de Shopify
@@ -37,42 +38,21 @@ class PaymentMethodId {
 }
 
 /// Opens the payment method picker and returns the selected method id.
+///
+/// Since 2026-08-04 this is the Uber-style bottom sheet
+/// (ride_payment_sheet.dart), not the old full-screen 2×2 grid. The
+/// contract is unchanged: resolves with a PaymentMethodId.* string, or
+/// null when dismissed. RidePaymentMethodScreen below is kept as the
+/// grid fallback but has no callers on this path anymore.
 Future<String?> showRidePaymentMethodPicker(
   BuildContext context, {
   required String currentMethod,
   bool showTestMode = false,
 }) {
-  return Navigator.of(context).push<String>(
-    PageRouteBuilder(
-      opaque: false,
-      barrierColor: Colors.black.withValues(alpha: 0.4),
-      transitionDuration: const Duration(milliseconds: 380),
-      reverseTransitionDuration: const Duration(milliseconds: 260),
-      pageBuilder: (_, anim, __) => RidePaymentMethodScreen(
-        currentMethod: currentMethod,
-        showTestMode: showTestMode,
-      ),
-      transitionsBuilder: (_, anim, __, child) {
-        // Web: cubic-bezier(.33,1,.68,1), 380ms, translateY(14→0) + scale(.985→1).
-        final curved = CurvedAnimation(
-          parent: anim,
-          curve: const Cubic(0.33, 1, 0.68, 1),
-        );
-        return FadeTransition(
-          opacity: curved,
-          child: SlideTransition(
-            position: Tween<Offset>(
-              begin: const Offset(0, 0.04),
-              end: Offset.zero,
-            ).animate(curved),
-            child: ScaleTransition(
-              scale: Tween<double>(begin: 0.985, end: 1.0).animate(curved),
-              child: child,
-            ),
-          ),
-        );
-      },
-    ),
+  return showCruisePaymentSheet(
+    context,
+    currentMethod: currentMethod,
+    showTestMode: showTestMode,
   );
 }
 
@@ -227,25 +207,6 @@ class _RidePaymentMethodScreenState extends State<RidePaymentMethodScreen>
     setState(() => _selected = id);
   }
 
-  bool _savingDefault = false;
-
-  /// Keep this method for future rides, then leave.
-  Future<void> _saveAsDefault() async {
-    if (_selected.isEmpty || _savingDefault) return;
-    setState(() => _savingDefault = true);
-    HapticService.mediumImpact();
-    await LocalDataService.setDefaultPaymentMethod(_selected);
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(S.of(context).savedAsDefaultPayment),
-        behavior: SnackBarBehavior.floating,
-        duration: const Duration(seconds: 2),
-      ),
-    );
-    Navigator.of(context).pop(_selected);
-  }
-
   bool _linkingBank = false;
 
   /// Opens the native Stripe Financial Connections sheet to link a bank
@@ -371,8 +332,8 @@ class _RidePaymentMethodScreenState extends State<RidePaymentMethodScreen>
             _Header(
               title: s.paymentMethodTitle,
               // Carries the choice back for THIS ride. Nothing is
-              // written to storage on this path — leaving without pressing
-              // "set as default" is how the rider says "just this once".
+              // written to storage on this path — only Continue below
+              // persists the choice as the default.
               onBack: () => Navigator.of(context)
                   .pop(_selected.isEmpty ? null : _selected),
             ),
@@ -506,11 +467,13 @@ class _RidePaymentMethodScreenState extends State<RidePaymentMethodScreen>
               ),
             ),
 
-            // ── Confirm + keep ──
+            // ── Confirm ──
             //
-            // Two buttons, two decisions: Continuar takes the selected
-            // method for THIS ride and leaves; Set as default also keeps
-            // it for the next ones. Both slide up only once something is
+            // One button at the bottom (user spec 2026-08-04: the "Set as
+            // default" button is gone — Continue replaces it). Continue
+            // confirms the selected method for this ride AND quietly keeps
+            // it as the default for the next ones, so the choice sticks
+            // without a second decision. Slides up only once something is
             // selected — a button that materialises under the thumb is a
             // button people press by accident.
             AnimatedSize(
@@ -523,79 +486,46 @@ class _RidePaymentMethodScreenState extends State<RidePaymentMethodScreen>
                       top: false,
                       child: Padding(
                         padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            // Continuar: confirm for this ride, don't
-                            // touch the stored default.
-                            GestureDetector(
-                              onTap: () {
-                                HapticService.selectionClick();
-                                Navigator.of(context).pop(_selected);
-                              },
-                              child: Container(
-                                height: 52,
-                                alignment: Alignment.center,
-                                decoration: BoxDecoration(
-                                  color: _gold,
-                                  borderRadius: BorderRadius.circular(16),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: _gold.withValues(alpha: 0.3),
-                                      offset: const Offset(0, 4),
-                                      blurRadius: 12,
-                                    ),
-                                  ],
-                                ),
-                                child: Text(
-                                  S.of(context).continueBtn,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(
-                                    color: Color(0xFF1A1400),
-                                    fontSize: 15,
-                                    fontWeight: FontWeight.w800,
-                                  ),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(height: 10),
-                            GestureDetector(
-                          onTap: _savingDefault ? null : _saveAsDefault,
+                        child: GestureDetector(
+                          onTap: () {
+                            HapticService.selectionClick();
+                            // Fire-and-forget: persisting the default must
+                            // never delay the pop. Storage uses
+                            // 'credit_card' (what the request screen
+                            // restores); the picker contract returns
+                            // 'card' — same mapping the live sheet does.
+                            LocalDataService.setDefaultPaymentMethod(
+                                _selected == PaymentMethodId.card
+                                    ? 'credit_card'
+                                    : _selected);
+                            Navigator.of(context).pop(_selected);
+                          },
                           child: Container(
                             height: 52,
                             alignment: Alignment.center,
                             decoration: BoxDecoration(
-                              color: _gold.withValues(alpha: 0.12),
+                              color: _gold,
                               borderRadius: BorderRadius.circular(16),
-                              border: Border.all(
-                                color: _gold.withValues(alpha: 0.45),
-                              ),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(Icons.push_pin_rounded,
-                                    color: _gold, size: 17),
-                                const SizedBox(width: 8),
-                                Flexible(
-                                  child: Text(
-                                    S.of(context).setAsDefaultPayment,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: TextStyle(
-                                      color: _gold,
-                                      fontSize: 14,
-                                      fontWeight: FontWeight.w700,
-                                    ),
-                                  ),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: _gold.withValues(alpha: 0.3),
+                                  offset: const Offset(0, 4),
+                                  blurRadius: 12,
                                 ),
                               ],
                             ),
+                            child: Text(
+                              S.of(context).continueBtn,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: Color(0xFF1A1400),
+                                fontSize: 15,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
                           ),
                         ),
-                          ],
-                          ),
                       ),
                     ),
             ),

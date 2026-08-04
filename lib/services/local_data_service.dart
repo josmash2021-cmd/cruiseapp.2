@@ -518,6 +518,20 @@ class LocalDataService {
     await _p.setString(_defaultPaymentKey, id);
   }
 
+  // ── Cruise Balance toggle (payment sheet) ──
+  //
+  // UI preference only for now: the preview zeroes the Cruise Cash
+  // discount when off, but the backend still auto-applies the balance at
+  // dispatch time (apply_cruise_cash_to_fare has no opt-out flag yet).
+  static const String _useCruiseCashKey = 'use_cruise_cash';
+
+  static Future<bool> getUseCruiseCash() async =>
+      _p.getBool(_useCruiseCashKey) ?? true;
+
+  static Future<void> setUseCruiseCash(bool v) async {
+    await _p.setBool(_useCruiseCashKey, v);
+  }
+
   static Future<void> linkPaymentMethod(String id) async {
     final prefs = _p;
     final current = prefs.getStringList(_linkedPaymentsKey) ?? [];

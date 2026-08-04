@@ -23,6 +23,9 @@ TWILIO_PROXY_PHONE_NUMBER = os.getenv("TWILIO_PROXY_PHONE_NUMBER", "")
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 _HAS_CLAUDE = bool(ANTHROPIC_API_KEY)
 
+# ── SerpAPI (Google results via serpapi.com) ──
+SERPAPI_API_KEY = os.getenv("SERPAPI_API_KEY", "")
+
 # ── OTP ──
 _otp_store: dict = {}
 _OTP_TTL = 300

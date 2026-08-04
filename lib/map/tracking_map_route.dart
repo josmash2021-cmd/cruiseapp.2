@@ -135,26 +135,36 @@ class TrackingMapRoute {
       return;
     }
 
+    // Freeze the erase across the create() await. _routePts ya es la ruta
+    // nueva pero _remainingRouteAnnot sigue siendo la línea VIEJA: un tick
+    // de erase cayendo dentro de esta ventana escribiría la geometría nueva
+    // sobre la línea vieja a opacidad plena — el tramo cambia de golpe un
+    // frame antes del fade y el cross-fade queda mezclando dos geometrías
+    // idénticas (invisible). eraseRouteBehindCar ya respeta _eraseBusy.
     mapbox.PolylineAnnotation? fresh;
+    _eraseBusy = true;
     try {
-      fresh = await mgr.create(mapbox.PolylineAnnotationOptions(
-        geometry: geom,
-        lineColor: const Color(0xFFFFD700).toARGB32(),
-        lineWidth: 5.0,
-        lineJoin: mapbox.LineJoin.ROUND,
-        lineOpacity: 0.0,
-      ));
-    } catch (e) {
-      debugPrint('[TrackingMapRoute] crossFadeTo create failed: $e');
+      try {
+        fresh = await mgr.create(mapbox.PolylineAnnotationOptions(
+          geometry: geom,
+          lineColor: const Color(0xFFFFD700).toARGB32(),
+          lineWidth: 5.0,
+          lineJoin: mapbox.LineJoin.ROUND,
+          lineOpacity: 0.0,
+        ));
+      } catch (e) {
+        debugPrint('[TrackingMapRoute] crossFadeTo create failed: $e');
+      }
+      // eraseRouteBehindCar escribe _remainingRouteAnnot — apuntarlo ya a la
+      // nueva para que el camino se siga consumiendo bajo el carro durante el
+      // fade.
+      if (fresh != null) _remainingRouteAnnot = fresh;
+    } finally {
+      _eraseBusy = false;
     }
     // Sin línea nueva se queda la vieja: peor sería dejar el mapa sin ruta.
     if (fresh == null) return;
-
-    // eraseRouteBehindCar escribe _remainingRouteAnnot — apuntarlo ya a la
-    // nueva para que el camino se siga consumiendo bajo el carro durante el
-    // fade.
     final target = fresh;
-    _remainingRouteAnnot = target;
 
     _fadeTimer?.cancel();
     final sw = Stopwatch()..start();

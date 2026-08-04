@@ -789,6 +789,26 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
           try {
             await polyMgr.update(annot);
           } catch (_) {}
+        } else if (annot == null && polyMgr != null && safeGeom != null) {
+          // The initial gloss draw was skipped (route fetch failed when the
+          // offer arrived, so there was nothing to draw). This refresh just
+          // fetched real geometry — update-only would silently drop it and
+          // the preview would stay lineless despite the successful fetch.
+          try {
+            final created =
+                await polyMgr.create(mapbox.PolylineAnnotationOptions(
+              geometry: safeGeom,
+              lineColor: const Color(0xFFFFD700).toARGB32(),
+              lineWidth: 4.0,
+              lineJoin: mapbox.LineJoin.ROUND,
+            ));
+            if (_previewingOffer != null && mounted) {
+              _previewPickupAnnot = created;
+            } else {
+              // Preview dismissed while create() was in flight.
+              try { await polyMgr.delete(created); } catch (_) {}
+            }
+          } catch (_) {}
         }
       }
       _setState(() {});

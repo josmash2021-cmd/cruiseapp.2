@@ -774,6 +774,11 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
         now.difference(last).inSeconds < _kRerouteCooldownSec) {
       return;
     }
+    // Re-arm the sustain clock for the NEXT deviation. Without this, a
+    // driver who never dips under 30 m of the new line (failed fetch, GPS
+    // bias on a parallel road) keeps a stale timestamp and a single noisy
+    // fix would fire the next reroute the moment the cooldown lapses.
+    _offRouteSince = null;
     unawaited(_rerouteFromCurrentPos(ll));
   }
 
@@ -804,9 +809,6 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
         return;
       }
 
-      // Update traffic-aware route duration for ETA calculation
-      _routeDurationSec = result.durationSeconds;
-
       // Partial splice: the stretch between where the driver left the old
       // route and where the new route rejoins it is the ONLY geometry that
       // changes. The already-driven part keeps its usual treatment (erased
@@ -817,6 +819,24 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
         driverPos: driverPos,
       );
       await _applyReroutedPolyline(spliced);
+
+      // ETA base. result.durationSeconds covers ONLY the fresh
+      // driver→destination stretch, but the spliced polyline still carries
+      // the already-driven head, so the ETA formula's remaining-fraction is
+      // < 1. Storing the raw value would discount the remaining time TWICE
+      // (10 min left at 60% driven showed as 4 min). Rescale to the
+      // full-route equivalent so duration × fraction == the router's answer
+      // at this instant and keeps decaying as the car advances. In the
+      // no-rejoin wholesale-replacement case _traveledM ≈ 0 and the scale
+      // is ≈ 1 — the raw value, unchanged.
+      final dur = result.durationSeconds;
+      final total = _segDist.isNotEmpty ? _segDist.last : 0.0;
+      final remainM = (total - _traveledM).clamp(0.0, total);
+      if (dur != null && dur > 0 && remainM > 1.0) {
+        _routeDurationSec = (dur * total / remainM).round();
+      } else {
+        _routeDurationSec = dur;
+      }
     } catch (e) {
       debugPrint('[RiderTracking] Reroute error: $e');
     } finally {
@@ -1076,6 +1096,11 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       // The next driver's approach fetch gets a clean slate — a failure
       // cached against the previous driver must not suppress it.
       _approachRouteFailed = false;
+      // Same clean slate for the off-route clock: it was measured against
+      // the PREVIOUS driver's approach polyline and must not let the new
+      // driver's first noisy fix skip the 2.5 s sustain.
+      _offRouteSince = null;
+      _lastRerouteAt = null;
       _saveRideState();
 
       if (mounted) {
@@ -1265,6 +1290,15 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     // A fresh trip leg re-arms the approach fetch for any later hand-back
     // to the arriving phase; the no-straight-line rule stays regardless.
     _approachRouteFailed = false;
+    // The off-route clock was measured against the APPROACH polyline. It
+    // survives the arrived phase untouched (the hysteresis band and the
+    // !canReroute early-return both keep the timestamp), so without this
+    // reset the trip leg's first >45 m fix — common right at boarding,
+    // with the pin off-road and GPS still settling — would pass the 2.5 s
+    // sustain instantly against a minutes-old timestamp and fire a reroute
+    // from a noise position, killing the trip route's progressive draw.
+    _offRouteSince = null;
+    _lastRerouteAt = null;
     // The dimmed driver→pickup line _fetchApproachRoute drew lives in the
     // legacy _approachAnnot field, which the modular _mapRoute component
     // does not track — and _updateApproachLine only ever removes the
@@ -1341,6 +1375,14 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
           // erased behind the car. This only refreshes the geometry the
           // erase is computed against; redrawing would flash it.
           _syncRouteToMap(resetDraw: false);
+          // The fresh route starts AT the driver, so progress along it
+          // restarts near zero. Keeping the old _traveledM (absolute along
+          // the previous, longer polyline) shrank the remaining fraction
+          // toward 0 — ETA pinned at the 1-min clamp and the phase flipped
+          // to nearDestination early — and the max() ratchet in the GPS
+          // handler then blocked any downward correction.
+          _traveledM = _startMOnCurrentRoute();
+          _tgtTraveledM = _traveledM;
           // Recalculate ETA with fresh traffic data
           final fraction = ((_segDist.last - _traveledM) / _segDist.last).clamp(0.0, 1.0);
           _etaMinutes = (_routeDurationSec! * fraction / 60.0).ceil().clamp(1, 999);

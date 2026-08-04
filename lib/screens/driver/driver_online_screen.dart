@@ -1109,6 +1109,15 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
             results[0] as ({List<LatLng> pts, double? durSec, double? distM});
         final seg2 =
             results[1] as ({List<LatLng> pts, double? durSec, double? distM});
+        // A failed fetch returns EMPTY points. Caching that would pin the
+        // failure for the offer's whole lifetime — line 1073 skips any oid
+        // already cached and the tap path trusts the cache — so a 1-second
+        // network blip meant a permanently lineless preview. No entry means
+        // the next prefetch pass (or the tap itself) fetches fresh.
+        if (seg1.pts.length < 2 || seg2.pts.length < 2) {
+          debugPrint('[OfferRoute] prefetch incomplete for $oid — not cached');
+          return;
+        }
         _routeCache[oid] = _CachedOfferRoute(
           segOne: seg1.pts,
           segTwo: seg2.pts,

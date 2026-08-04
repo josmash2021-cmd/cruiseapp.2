@@ -2063,6 +2063,32 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     _directTargetPos = null;
     _directTargetBearing = null;
 
+    // Arriving-leg reroute: the 20%-alpha approach underlay _fetchApproachRoute
+    // drew still traces the ORIGINAL road. Nothing else can fix it —
+    // _updateApproachLine early-returns once the road route is fetched, and
+    // the annotation is otherwise only deleted at arrived/trip start — so
+    // left alone the rider watches a dim gold line diverge onto streets the
+    // driver abandoned. Move it onto the spliced geometry; if the update
+    // fails, drop it (per the Mapbox dedup rule: never trust a failed
+    // update to have left the old visual in place).
+    if (_phase == _TrackPhase.arriving && _approachAnnot != null) {
+      final mgr = _polylineAnnotMgr;
+      final geom = safeLineString(_routePts);
+      if (mgr != null && geom != null) {
+        final annot = _approachAnnot!;
+        try {
+          annot.geometry = geom;
+          mgr.update(annot).catchError((_) {
+            _approachAnnot = null;
+            mgr.delete(annot).catchError((_) {});
+          });
+        } catch (_) {
+          _approachAnnot = null;
+          try { mgr.delete(annot).catchError((_) {}); } catch (_) {}
+        }
+      }
+    }
+
     if (kIsWeb) {
       // setPolyline replaces the 'route' source in place — one frame, no
       // gap, nothing to fade. The next erase tick trims behind the car.
@@ -2097,27 +2123,36 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
       return;
     }
 
+    // Freeze the erase across the create() await: _routePts is already the
+    // new geometry but _remainingRouteAnnot is still the OLD line, and an
+    // erase tick landing in this window would snap the old line onto the
+    // new route at full opacity — a hard cut one frame before the fade,
+    // which then blends two identical geometries (invisible).
     mapbox.PolylineAnnotation? fresh;
+    _routeEraseBusy = true;
     try {
-      fresh = await mgr.create(mapbox.PolylineAnnotationOptions(
-        geometry: geom,
-        lineColor: const Color(0xFFFFD700).toARGB32(),
-        lineWidth: 5.0,
-        lineJoin: mapbox.LineJoin.ROUND,
-        lineOpacity: 0.0,
-      ));
-    } catch (_) {}
+      try {
+        fresh = await mgr.create(mapbox.PolylineAnnotationOptions(
+          geometry: geom,
+          lineColor: const Color(0xFFFFD700).toARGB32(),
+          lineWidth: 5.0,
+          lineJoin: mapbox.LineJoin.ROUND,
+          lineOpacity: 0.0,
+        ));
+      } catch (_) {}
+      // _eraseRouteBehindCar writes _remainingRouteAnnot — point it at the
+      // new line now so the road keeps being consumed under the car mid-fade.
+      if (fresh != null && mounted) _remainingRouteAnnot = fresh;
+    } finally {
+      _routeEraseBusy = false;
+    }
     // No new line: keep the old one rather than leaving the map bare.
     if (fresh == null) return;
     if (!mounted) {
       try { await mgr.delete(fresh); } catch (_) {}
       return;
     }
-
-    // _eraseRouteBehindCar writes _remainingRouteAnnot — point it at the new
-    // line now so the road keeps being consumed under the car mid-fade.
     final target = fresh;
-    _remainingRouteAnnot = target;
 
     _rerouteFadeTimer?.cancel();
     final sw = Stopwatch()..start();

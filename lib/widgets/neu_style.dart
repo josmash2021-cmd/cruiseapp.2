@@ -43,3 +43,44 @@ BoxDecoration neuBox({
     width: borderWidth,
   ),
 );
+
+/// Full-page neu backdrop: [neuBase] under the same fine dot grid the
+/// home screen carries. Shared (rule 18: shared system, not local
+/// helpers) — use it anywhere a page should match home's speckled
+/// ground instead of a flat color.
+class NeuDotsBackdrop extends StatelessWidget {
+  const NeuDotsBackdrop({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return const RepaintBoundary(
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          ColoredBox(color: neuBase),
+          CustomPaint(painter: _NeuDotsPainter()),
+        ],
+      ),
+    );
+  }
+}
+
+/// Fine, even dot grid — pure paint, no assets, no animation.
+class _NeuDotsPainter extends CustomPainter {
+  const _NeuDotsPainter();
+
+  static const double spacing = 26.0;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()..color = Colors.white.withValues(alpha: 0.05);
+    for (var y = spacing / 2; y < size.height; y += spacing) {
+      for (var x = spacing / 2; x < size.width; x += spacing) {
+        canvas.drawCircle(Offset(x, y), 1.0, paint);
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(_NeuDotsPainter old) => false;
+}

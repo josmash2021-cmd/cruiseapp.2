@@ -367,7 +367,11 @@ class _AccountScreenState extends State<AccountScreen> with SecureScreenMixin {
 
     return Scaffold(
       backgroundColor: neuBase,
-      body: SafeArea(
+      body: Stack(
+        children: [
+          // Same fine dot grid as home (user spec 2026-08-04).
+          const Positioned.fill(child: NeuDotsBackdrop()),
+          SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.symmetric(horizontal: 24),
           child: Column(
@@ -487,6 +491,8 @@ class _AccountScreenState extends State<AccountScreen> with SecureScreenMixin {
             ],
           ),
         ),
+          ),
+        ],
       ),
     );
   }

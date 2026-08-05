@@ -2539,43 +2539,11 @@ class RideCarIcon extends StatelessWidget {
 }
 
 
-/// Home backdrop: a fine dot grid over the base colour, behind every
-/// card on the page. Pure paint, no assets, no animation.
+/// Home backdrop — now the shared [NeuDotsBackdrop] (neu_style.dart), so
+/// other pages (Choose ride type) carry the identical speckled ground.
 class _HomeBackdrop extends StatelessWidget {
   const _HomeBackdrop();
 
   @override
-  Widget build(BuildContext context) {
-    return const RepaintBoundary(
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
-          ColoredBox(color: neuBase),
-          CustomPaint(painter: _HomeDotsPainter()),
-        ],
-      ),
-    );
-  }
-}
-
-
-/// Fine, even dot grid — the same speckled texture the fleet cards
-/// carry, scaled up to the whole page.
-class _HomeDotsPainter extends CustomPainter {
-  const _HomeDotsPainter();
-
-  static const double spacing = 26.0;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()..color = Colors.white.withValues(alpha: 0.05);
-    for (var y = spacing / 2; y < size.height; y += spacing) {
-      for (var x = spacing / 2; x < size.width; x += spacing) {
-        canvas.drawCircle(Offset(x, y), 1.0, paint);
-      }
-    }
-  }
-
-  @override
-  bool shouldRepaint(_HomeDotsPainter old) => false;
+  Widget build(BuildContext context) => const NeuDotsBackdrop();
 }

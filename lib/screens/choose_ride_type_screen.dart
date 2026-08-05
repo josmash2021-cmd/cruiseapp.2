@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 
-import '../config/app_theme.dart';
 import '../l10n/app_localizations.dart';
 import '../widgets/neu_style.dart';
 
@@ -47,7 +46,6 @@ class _ChooseRideTypeScreenState extends State<ChooseRideTypeScreen>
 
   @override
   Widget build(BuildContext context) {
-    final c = AppColors.of(context);
     final s = S.of(context);
 
     return Scaffold(
@@ -55,12 +53,9 @@ class _ChooseRideTypeScreenState extends State<ChooseRideTypeScreen>
       body: SafeArea(
         child: Stack(
           children: [
-            // ─── Solid neumorphic base background ───
-            Positioned.fill(
-              child: Container(
-                color: neuBase,
-              ),
-            ),
+            // ─── Neu base + the same fine dot grid the home screen has
+            //     (user spec 2026-08-04) ───
+            const Positioned.fill(child: NeuDotsBackdrop()),
             // ─── Subtle gold glow overlay ───
             Positioned.fill(
               child: IgnorePointer(

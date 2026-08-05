@@ -31,7 +31,9 @@ import '../../l10n/app_localizations.dart';
 import '../../models/lat_lng.dart';
 import '../../map/map_surface_coordinator.dart';
 import '../../map/web_map_view.dart';
+import '../../config/api_keys.dart';
 import '../../navigation/car_icon_loader.dart';
+import '../../services/places_service.dart';
 import '../../services/resilient_position_stream.dart';
 import '../../utils/driver_location_settings.dart';
 import '../../utils/mapbox_safe.dart';
@@ -234,6 +236,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   String _stopLabel = '';
   LatLng? _dropoffOverride;
   Timer? _routeBannerTimer;
+  bool _proposalDeclineShown = false;
   mapbox.PointAnnotation? _stopPinAnnot;
 
   /// Every consumer reads the dropoff through this: a mid-trip
@@ -1041,6 +1044,21 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
       // The rider added a stop or moved the destination mid-trip.
       _applyRouteChangeFromDoc(data);
 
+      // Fase 2: the rider answered our proposal with a decline.
+      final prc = data['pending_route_change'];
+      if (prc is Map &&
+          (prc['proposed_by'] ?? '') == 'driver' &&
+          (prc['status'] ?? '') == 'declined' &&
+          !_proposalDeclineShown) {
+        _proposalDeclineShown = true;
+        ScaffoldMessenger.maybeOf(context)?.showSnackBar(SnackBar(
+            content: Text(S.of(context).riderDeclinedProposal),
+            behavior: SnackBarBehavior.floating));
+        unawaited(_writeTripDoc(
+            {'pending_route_change': FieldValue.delete()},
+            'clear declined proposal'));
+      }
+
       if (_riderConfirmedPickup || _rideStarted) return;
       if (data['rider_confirmed_pickup'] == true && !_riderConfirmedPickup) {
         HapticService.mediumImpact();
@@ -1380,6 +1398,41 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     // Masked call via the Twilio bridge — the rider's real number is never
     // exposed to the driver (nor the driver's to the rider).
     await MaskedCallService.callCounterparty(tripId: widget.tripId, role: 'driver');
+  }
+
+  // ═══ Fase 2: the driver PROPOSES a route change ═══
+  //
+  // The proposal is a Firestore-only handshake: this app writes
+  // pending_route_change to the trip doc, the rider's tracking screen
+  // quotes it with its own anchored pricing and shows the confirm
+  // sheet, and the COMMIT still goes through the rider-authorized
+  // backend endpoints — the driver never touches the money path.
+  Future<void> _openProposeRouteChange({required bool isStop}) async {
+    HapticService.selectionClick();
+    final det = await showModalBottomSheet<PlaceDetails>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => _ProposeSearchSheet(
+        isStop: isStop,
+        near: widget.driverPos,
+      ),
+    );
+    if (det == null || !mounted) return;
+    _proposalDeclineShown = false;
+    unawaited(_writeTripDoc({
+      'pending_route_change': {
+        'type': isStop ? 'add_stop' : 'change_destination',
+        'lat': det.lat,
+        'lng': det.lng,
+        'label': det.address,
+        'proposed_by': 'driver',
+        'status': 'proposed',
+      },
+    }, 'route proposal'));
+    ScaffoldMessenger.maybeOf(context)?.showSnackBar(SnackBar(
+        content: Text(S.of(context).proposalSentToRider),
+        behavior: SnackBarBehavior.floating));
   }
 
   // ═══ Mid-trip route changes pushed by the rider (multi-stop v1) ═══
@@ -2158,6 +2211,21 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
         // All three go straight into the support chat with the problem
         // already stated, instead of opening a second form to pick a reason
         // from. The reason lists still exist for the cancel flow below.
+        // Fase 2 (2026-08-05): the DRIVER proposes a stop or a new
+        // destination; the RIDER gets the confirm sheet and pays. This
+        // menu only exists during a live trip, so no extra gating.
+        _SheetItem(Icons.add_location_alt_rounded,
+            S.of(context).addStopLabel,
+            S.of(context).riderConfirmsAndPays, () {
+          Navigator.pop(context);
+          _openProposeRouteChange(isStop: true);
+        }),
+        _SheetItem(Icons.edit_location_alt_outlined,
+            S.of(context).changeDestination,
+            S.of(context).riderConfirmsAndPays, () {
+          Navigator.pop(context);
+          _openProposeRouteChange(isStop: false);
+        }),
         _SheetItem(Icons.trip_origin, S.of(context).problemWithPickup,
             S.of(context).problemWithPickupSubtitle,
             () {
@@ -4770,6 +4838,178 @@ class _LockedSlideButton extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  Fase 2 — address search sheet for the driver's route-change proposal.
+//  Pops the picked PlaceDetails; the caller writes the Firestore
+//  proposal. Same dark/gold idiom as every other sheet on this screen.
+// ═══════════════════════════════════════════════════════════════════
+class _ProposeSearchSheet extends StatefulWidget {
+  final bool isStop;
+  final LatLng near;
+  const _ProposeSearchSheet({required this.isStop, required this.near});
+
+  @override
+  State<_ProposeSearchSheet> createState() => _ProposeSearchSheetState();
+}
+
+class _ProposeSearchSheetState extends State<_ProposeSearchSheet> {
+  final TextEditingController _ctrl = TextEditingController();
+  Timer? _debounce;
+  List<PlaceSuggestion> _suggestions = [];
+  bool _searching = false;
+  bool _resolving = false;
+
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  void _onChanged(String q) {
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 420), () async {
+      if (!mounted || q.trim().length < 3) return;
+      setState(() => _searching = true);
+      try {
+        final res = await PlacesService(ApiKeys.webServices).autocomplete(
+          q,
+          latitude: widget.near.latitude,
+          longitude: widget.near.longitude,
+        );
+        if (!mounted) return;
+        setState(() {
+          _suggestions = res;
+          _searching = false;
+        });
+      } catch (e) {
+        debugPrint('[Propose] autocomplete failed: $e');
+        if (mounted) setState(() => _searching = false);
+      }
+    });
+  }
+
+  Future<void> _pick(PlaceSuggestion sg) async {
+    if (_resolving) return;
+    setState(() => _resolving = true);
+    try {
+      PlaceDetails? det;
+      if (sg.lat != null && sg.lng != null) {
+        det = PlaceDetails(
+            address: sg.description, lat: sg.lat!, lng: sg.lng!);
+      } else {
+        det = await PlacesService(ApiKeys.webServices).details(sg.placeId);
+      }
+      if (!mounted) return;
+      if (det != null) {
+        Navigator.of(context).pop(det);
+        return;
+      }
+    } catch (e) {
+      debugPrint('[Propose] details failed: $e');
+    }
+    if (mounted) setState(() => _resolving = false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final s = S.of(context);
+    final mq = MediaQuery.of(context);
+    return Container(
+      decoration: neuBox(radius: 24).copyWith(
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(26)),
+      ),
+      padding: EdgeInsets.fromLTRB(
+          18, 14, 18, mq.viewInsets.bottom + mq.padding.bottom + 16),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Center(
+            child: Container(
+              width: 40,
+              height: 4,
+              margin: const EdgeInsets.only(bottom: 12),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.18),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          ),
+          Text(
+            widget.isStop ? s.addStopLabel : s.changeDestination,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 17,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            s.riderConfirmsAndPays,
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.5),
+              fontSize: 12.5,
+            ),
+          ),
+          const SizedBox(height: 14),
+          Container(
+            decoration: neuBox(radius: 14, pressed: true),
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: TextField(
+              controller: _ctrl,
+              autofocus: true,
+              onChanged: _onChanged,
+              style: const TextStyle(color: Colors.white, fontSize: 14.5),
+              decoration: InputDecoration(
+                border: InputBorder.none,
+                icon: Icon(Icons.search_rounded,
+                    color: Colors.white.withValues(alpha: 0.4), size: 20),
+                hintText:
+                    widget.isStop ? s.addStopHint : s.newDestinationHint,
+                hintStyle:
+                    TextStyle(color: Colors.white.withValues(alpha: 0.35)),
+              ),
+            ),
+          ),
+          if (_searching || _resolving) ...[
+            const SizedBox(height: 8),
+            const LinearProgressIndicator(
+              minHeight: 2,
+              color: Color(0xFFE8C547),
+              backgroundColor: Colors.transparent,
+            ),
+          ],
+          for (final sg in _suggestions.take(5))
+            InkWell(
+              onTap: () => _pick(sg),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 11),
+                child: Row(
+                  children: [
+                    Icon(Icons.place_outlined,
+                        color: Colors.white.withValues(alpha: 0.45),
+                        size: 18),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        sg.description,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                            color: Colors.white, fontSize: 13.5),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }

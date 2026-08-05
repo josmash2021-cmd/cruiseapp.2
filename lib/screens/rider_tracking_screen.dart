@@ -355,6 +355,9 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   String _committedStopLabel = '';
   LatLng? _dropoffOverride;
   mapbox.PointAnnotation? _stopAnnot;
+  // Fase 2: driver-proposed route change (confirm sheet latches).
+  bool _proposalSheetOpen = false;
+  String? _handledProposalKey;
   int _cancelOverlayPhase = 0; // 0=hidden, 1=cancelling(spinner), 2=done(checkmark)
 
   // ── Mutable driver photo URL (updated from Firestore) ──

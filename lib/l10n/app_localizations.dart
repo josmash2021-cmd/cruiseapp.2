@@ -1894,6 +1894,22 @@ class S {
   String get routeChangeFailed => _es
       ? 'No se pudo actualizar la ruta. Intenta de nuevo.'
       : 'Could not update the route. Try again.';
+  // Fase 2: the driver proposes, the rider confirms and pays.
+  String get driverProposesStop => _es
+      ? 'Tu driver propone agregar una parada'
+      : 'Your driver proposes adding a stop';
+  String get driverProposesDestination => _es
+      ? 'Tu driver propone un nuevo destino'
+      : 'Your driver proposes a new destination';
+  // (decline ya existe más arriba — se reutiliza)
+  String get proposalSentToRider => _es
+      ? 'Propuesta enviada — esperando confirmación del rider'
+      : 'Proposal sent — waiting for your rider to confirm';
+  String get riderDeclinedProposal =>
+      _es ? 'El rider no aceptó el cambio' : 'The rider declined the change';
+  String get riderConfirmsAndPays => _es
+      ? 'El rider confirma y paga el ajuste'
+      : 'Your rider confirms and pays the adjustment';
   // Selected vehicle card when the tier has nobody nearby.
   String get noDriversNearArea =>
       _es ? 'No hay drivers cerca de tu área' : 'No drivers near your area';

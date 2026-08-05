@@ -828,6 +828,21 @@ extension _RiderTrackingDriverInfoCard on _RiderTrackingScreenState {
       ),
     );
     if (ok != true || !mounted) return;
+    await _commitRouteChangeCore();
+  }
+
+  /// The API call + map choreography, shared by the rider's own flow
+  /// (after its Are-you-sure dialog) and the driver-proposal sheet
+  /// (whose Confirm button IS the consent).
+  Future<void> _commitRouteChangeCore() async {
+    final det = _rcPicked;
+    final cents = _rcQuoteCents;
+    final tripId = widget.tripId;
+    if (det == null || cents == null || tripId == null || _rcCommitting) {
+      return;
+    }
+    final s = S.of(context);
+    final isStop = _supportPage == 2;
     _setState(() => _rcCommitting = true);
     try {
       if (isStop) {
@@ -859,6 +874,7 @@ extension _RiderTrackingDriverInfoCard on _RiderTrackingScreenState {
           content:
               Text(isStop ? s.stopAddedToast : s.destinationChangedToast),
           behavior: SnackBarBehavior.floating));
+      _writePendingProposal(null); // clear any driver proposal it answered
       unawaited(_applyCommittedRouteChange(det, isStop: isStop));
     } catch (e) {
       debugPrint('[RouteChange] commit failed: $e');
@@ -868,6 +884,202 @@ extension _RiderTrackingDriverInfoCard on _RiderTrackingScreenState {
             content: Text(s.routeChangeFailed),
             behavior: SnackBarBehavior.floating));
       }
+    }
+  }
+
+  // ═══ Fase 2: the DRIVER proposed a route change ═══
+
+  /// null clears the field; a map writes it (declined answers).
+  void _writePendingProposal(Map<String, dynamic>? value) {
+    final fs = widget.firestoreTripId;
+    final tid = widget.tripId;
+    final docId =
+        (fs != null && fs.isNotEmpty) ? fs : (tid != null ? 'sql_$tid' : null);
+    if (docId == null) return;
+    FirebaseFirestore.instance
+        .collection('trips')
+        .doc(docId)
+        .set({'pending_route_change': value ?? FieldValue.delete()},
+            SetOptions(merge: true))
+        .catchError((Object e) {
+      debugPrint('[Proposal] pending write failed: $e');
+    });
+  }
+
+  /// Called from the trip-doc stream: show the confirm sheet ONCE per
+  /// distinct proposal, quote it with the same anchored pricing the
+  /// rider's own flow uses, and commit through the same endpoints.
+  void _handleDriverProposal(Map<String, dynamic> data) {
+    if (!mounted || _phase == _TrackPhase.completed) return;
+    final prc = data['pending_route_change'];
+    if (prc is! Map) return;
+    if ((prc['proposed_by'] ?? '') != 'driver') return;
+    if ((prc['status'] ?? '') != 'proposed') return;
+    final lat = (prc['lat'] as num?)?.toDouble();
+    final lng = (prc['lng'] as num?)?.toDouble();
+    if (lat == null || lng == null) return;
+    final isStop = (prc['type'] ?? '') != 'change_destination';
+    if (isStop && _committedStop != null) return; // one stop per trip
+    final key = '${prc['type']}|$lat|$lng';
+    if (_proposalSheetOpen || _handledProposalKey == key) return;
+    _handledProposalKey = key;
+    unawaited(_showDriverProposalSheet(
+        isStop: isStop,
+        lat: lat,
+        lng: lng,
+        label: (prc['label'] ?? '').toString()));
+  }
+
+  Future<void> _showDriverProposalSheet({
+    required bool isStop,
+    required double lat,
+    required double lng,
+    required String label,
+  }) async {
+    if (!mounted) return;
+    _proposalSheetOpen = true;
+    HapticService.mediumImpact();
+    int? cents;
+    try {
+      _supportPage = isStop ? 2 : 3; // _rcQuote keys stop-vs-dest off this
+      cents = await _rcQuote(PlaceDetails(address: label, lat: lat, lng: lng));
+    } catch (e) {
+      debugPrint('[Proposal] quote failed: $e');
+    } finally {
+      _supportPage = 0;
+    }
+    if (!mounted) {
+      _proposalSheetOpen = false;
+      return;
+    }
+    final s = S.of(context);
+    String money = '';
+    if (cents != null) {
+      final amt = '\$${(cents.abs() / 100).toStringAsFixed(2)}';
+      money = isStop
+          ? s.stopExtraCharge(amt)
+          : (cents >= 0 ? s.destChargeUp(amt) : s.destChargeDown(amt));
+    }
+    final ok = await showModalBottomSheet<bool>(
+      context: context,
+      isDismissible: false,
+      enableDrag: false,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Container(
+        decoration: neuBox(radius: 24).copyWith(
+          borderRadius:
+              const BorderRadius.vertical(top: Radius.circular(26)),
+        ),
+        padding: EdgeInsets.fromLTRB(
+            20, 14, 20, MediaQuery.of(ctx).padding.bottom + 16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                margin: const EdgeInsets.only(bottom: 12),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.18),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            Text(
+              isStop ? s.driverProposesStop : s.driverProposesDestination,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 16,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              label,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 13.5,
+                  fontWeight: FontWeight.w600),
+            ),
+            if (money.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Text(
+                money,
+                style: TextStyle(
+                    color: AppColors.kGold,
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w600,
+                    height: 1.35),
+              ),
+            ],
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Expanded(
+                  child: GestureDetector(
+                    onTap: () => Navigator.of(ctx).pop(false),
+                    child: Container(
+                      height: 46,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(
+                            color: Colors.white.withValues(alpha: 0.25)),
+                      ),
+                      child: Text(
+                        s.decline,
+                        style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.75),
+                            fontSize: 14.5,
+                            fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: GestureDetector(
+                    onTap: () => Navigator.of(ctx).pop(true),
+                    child: Container(
+                      height: 46,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: AppColors.kGold,
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      child: Text(
+                        s.confirm,
+                        style: const TextStyle(
+                            color: Color(0xFF1A1400),
+                            fontSize: 14.5,
+                            fontWeight: FontWeight.w800),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+    _proposalSheetOpen = false;
+    if (!mounted) return;
+    if (ok == true) {
+      _supportPage = isStop ? 2 : 3;
+      _rcPicked = PlaceDetails(address: label, lat: lat, lng: lng);
+      _rcQuoteCents = cents ?? (isStop ? 250 : 0);
+      await _commitRouteChangeCore();
+      _supportPage = 0;
+    } else {
+      _writePendingProposal({
+        'proposed_by': 'driver',
+        'status': 'declined',
+      });
     }
   }
 

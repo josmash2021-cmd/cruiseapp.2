@@ -1002,6 +1002,9 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
 
   /// Process trip status changes from Firestore.
   void _onTripStatusUpdate(Map<String, dynamic> data) {
+    // Fase 2: a driver-proposed stop/destination rides the same doc.
+    _handleDriverProposal(data);
+
     // Start RTDB listener if we have a driverId
     var did = data['driverId']?.toString() ?? data['driver_id']?.toString() ?? '';
     // Strip legacy "sql_" prefix so RTDB path matches driver_locations/{intId}

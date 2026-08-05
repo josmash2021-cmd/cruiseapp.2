@@ -599,6 +599,12 @@ extension _RideRequestController on _RideRequestScreenState {
           _waitRefreshTimer = null;
           // Trigger cinematic sequence on searching phase open
           _replayCinematicIfRouteAvailable();
+          // Entering the search is an explicit auto-frame moment: clear
+          // the rider-took-camera latch or a pan made while choosing a
+          // vehicle leaves the route half off-screen for the whole search
+          // (user report 2026-08-04). They can still pan afterwards —
+          // the latch re-arms on the next gesture.
+          _userTookCamera = false;
           // Frame the full route ONCE for the search, then hold it.
           _animateSearchCameraToAngle(0);
         }
@@ -629,15 +635,11 @@ extension _RideRequestController on _RideRequestScreenState {
             vsync: this,
             duration: const Duration(milliseconds: 2000),
           )..repeat();
-          // Map tilt: 0° → 20° over 1s
-          _dfTiltCtrl?.dispose();
-          _dfTiltCtrl = AnimationController(
-            vsync: this,
-            duration: const Duration(milliseconds: 1000),
-          );
-          _dfTiltAnim = Tween<double>(begin: 0.0, end: 20.0).animate(
-            CurvedAnimation(parent: _dfTiltCtrl!, curve: Curves.easeInOutCubic),
-          );
+          // The overlay no longer mounts its own map (that was the black
+          // screen) — the LIVE main map glides to the route midpoint with
+          // the 20° tilt instead, one flight doing what the old per-frame
+          // tilt controller did.
+          _dfFlyMainCamera();
           _dfMsgIndex = 0;
           _dfMsgTimer?.cancel();
           _dfMsgTimer = Timer.periodic(
@@ -1700,6 +1702,13 @@ extension _RideRequestController on _RideRequestScreenState {
         // "rider dismissed the OS sheet": tapping Request Ride with the bank
         // selected did nothing at all — no trip, no charge, no error.
         return _confirmBankAccount(amountCents, option);
+      case 'cruise_cash':
+        // Fully covered by the balance — no hold to place; the backend
+        // debits Cruise Cash at dispatch (apply_cruise_cash_to_fare).
+        // The Request button is disabled while the balance falls short
+        // (_cruiseCashShort), so false here only guards a race where the
+        // balance changed under us.
+        return Future.value(_cruiseCashCents >= amountCents);
       default:
         // Unrecognised payment method — never allow payment to proceed silently.
         debugPrint('[Payment] _confirmNativePayment: unknown method "$_selectedPaymentMethod"');
@@ -2169,6 +2178,37 @@ extension _RideRequestController on _RideRequestScreenState {
     );
   }
 
+  /// Driver Found: glide the LIVE main map to the route midpoint with the
+  /// celebratory 20° tilt. Replaces the overlay's former private map —
+  /// one surface, no black init window, no two-surface iOS crash.
+  void _dfFlyMainCamera() {
+    final pickup = _ctrl.state.pickup;
+    final dropoff = _ctrl.state.dropoff;
+    if (pickup == null) return;
+    final midLat =
+        dropoff != null ? (pickup.lat + dropoff.lat) / 2 : pickup.lat;
+    final midLng =
+        dropoff != null ? (pickup.lng + dropoff.lng) / 2 : pickup.lng;
+    if (kIsWeb) {
+      _webMapCtrl?.flyTo(
+          lng: midLng, lat: midLat, zoom: 14.5, pitch: 20, durationMs: 1000);
+      return;
+    }
+    final mc = _mapCtrl;
+    if (mc == null) return;
+    unawaited(mc
+        .flyTo(
+          mapbox.CameraOptions(
+            center:
+                mapbox.Point(coordinates: mapbox.Position(midLng, midLat)),
+            zoom: 14.5,
+            pitch: 20.0,
+          ),
+          mapbox.MapAnimationOptions(duration: 1000),
+        )
+        .catchError((_) {}));
+  }
+
   Future<void> _showPaymentMethodPicker(AppColors c, RideOption? option) async {
     // Full-screen payment method picker (2×2 grid) — matches the
     // Shopify widget's pay overlay.
@@ -2466,6 +2506,12 @@ extension _RideRequestController on _RideRequestScreenState {
   Future<bool> _processPaymentWithSelectedMethod(int amountCents, RideOption option) async {
     final isTestMode = _selectedPaymentMethod == 'test_mode';
     if (isTestMode) return true;
+    if (_selectedPaymentMethod == 'cruise_cash') {
+      // No hold/charge at request time — the backend debits the balance
+      // at dispatch. Full coverage was checked at the Request button;
+      // re-check defensively in case the balance moved.
+      return _cruiseCashCents >= amountCents;
+    }
     
     final isNativePay = !AppConfig.sandboxPayments &&
         (_selectedPaymentMethod == 'apple_pay' ||
@@ -2738,6 +2784,10 @@ void _showPaymentMethodPickerLegacy(AppColors c, RideOption? option) {
       case 'apple_pay':
       case 'google_pay':
       case 'tap_to_pay':
+      // Whether the balance actually covers the fare is a separate gate
+      // on the Request button (_cruiseCashShort) — the method itself is
+      // always "present".
+      case 'cruise_cash':
         return true;
       case 'credit_card':
         return _linkedPaymentMethods.contains('credit_card') &&
@@ -2772,6 +2822,8 @@ void _showPaymentMethodPickerLegacy(AppColors c, RideOption? option) {
             : 'Bank Account';
       case 'test_mode':
         return loc.testModeLabel;
+      case 'cruise_cash':
+        return '${loc.cruiseCash} — \$${(_cruiseCashCents / 100.0).toStringAsFixed(2)}';
       default:
         return AppPlatform.isIOS ? 'Apple Pay' : 'Google Pay';
     }

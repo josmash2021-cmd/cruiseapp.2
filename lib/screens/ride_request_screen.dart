@@ -874,15 +874,10 @@ class _RideRequestScreenState extends State<RideRequestScreen>
   /// backend still applies it at dispatch time regardless of the UI.
   Future<void> _loadCruiseCashBalance() async {
     try {
-      // Payment-sheet toggle: with Cruise Balance off, the preview shows
-      // no discount (the balance is simply not offered to this ride).
-      final useBalance = await LocalDataService.getUseCruiseCash();
-      if (!useBalance) {
-        if (mounted && _cruiseCashCents != 0) {
-          setState(() => _cruiseCashCents = 0);
-        }
-        return;
-      }
+      // Always the real balance: since 2026-08-04 the sheet's toggle
+      // selects Cruise Cash as the PAYMENT METHOD (exclusive with the
+      // other rows), and the Request button needs the true balance to
+      // decide whether it covers the fare.
       final res = await ApiService.getMyReferralInfo();
       final cents = (res['balance_cents'] as num?)?.toInt() ?? 0;
       if (mounted && cents != _cruiseCashCents) {
@@ -1026,13 +1021,15 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                   child: CircularProgressIndicator(color: Color(0xFFE8C547), strokeWidth: 2),
                 ),
               )
-            // The Driver Found overlay brings its own full-screen map. Held
-            // mounted underneath it, that is two live Mapbox surfaces — the
-            // iOS crash where the app closes — and this one is completely
-            // hidden behind the overlay anyway. The overlay auto-navigates
-            // to tracking a moment later, so it is never remounted.
-            else if ((_driverFoundVisible && _ctrl.state.driver != null) ||
-                !_mapMounted)
+            // The Driver Found overlay used to bring its OWN full-screen
+            // map, and the base map was swapped for this black box to
+            // avoid two live Mapbox surfaces (the iOS crash). The overlay
+            // map took longer to init than the overlay lived, so the
+            // rider saw a BLACK SCREEN instead of "driver found" (user
+            // report 2026-08-04). The overlay now draws its scrim over
+            // THIS live map (one surface, no black window) — only a real
+            // unmount blacks the slot.
+            else if (!_mapMounted)
               const ColoredBox(color: Color(0xFF07080D))
             // Same reason as the driver's online screen: Mapbox GL JS in the
             // browser, the native SDK everywhere else.
@@ -1341,10 +1338,19 @@ class _RideRequestScreenState extends State<RideRequestScreen>
             // on screen, so the rider can re-frame as many times as they
             // like. It used to be gated on _userMovedMap, which the
             // recenter itself cleared, so it vanished on first tap.
+            //
+            // Right edge, riding just ABOVE the bottom sheet (user spec
+            // 2026-08-04 — was top-right). AnimatedPositioned so it
+            // travels with the sheet's own 380ms grow/shrink instead of
+            // teleporting when a tier is picked.
             if (phase != RiderPhase.idle)
-              Positioned(
-                top: topPad + 8,
+              AnimatedPositioned(
+                duration: const Duration(milliseconds: 380),
+                curve: Curves.easeInOutCubicEmphasized,
                 right: 12,
+                bottom:
+                    (_sheetHeightPx > 0 ? _sheetHeightPx + _sheetScreenGap : 160) +
+                        14,
                 child: AnimatedScale(
                   scale: 1.0,
                   duration: const Duration(milliseconds: 200),

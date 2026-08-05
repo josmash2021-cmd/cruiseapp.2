@@ -1863,6 +1863,9 @@ class S {
       _es ? 'Agregar tarjeta de débito/crédito' : 'Add Debit/Credit Card';
   // Payment bottom sheet (Uber-style picker, 2026-08-04)
   String get moreOptions => _es ? 'Más opciones' : 'More options';
+  // Selected vehicle card when the tier has nobody nearby.
+  String get noDriversNearArea =>
+      _es ? 'No hay drivers cerca de tu área' : 'No drivers near your area';
   // Brand names — stay in English in both languages, like "Cruise Cash".
   String get cruiseBalance => 'Cruise Balance';
   String get cardEntryMobileOnly => _es

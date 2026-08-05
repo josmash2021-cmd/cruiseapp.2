@@ -404,6 +404,20 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                     const SizedBox(height: 10),
                   ],
 
+                  // Grabber bar — same affordance as the home sheet
+                  // (user spec 2026-08-04).
+                  Center(
+                    child: Container(
+                      width: 44,
+                      height: 4,
+                      margin: const EdgeInsets.only(bottom: 10),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.18),
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ),
+
                   // .vipRide__pricesHeader — centered title row with
                   // optional Airport / 10% OFF pills to the side.
                   // Title is Flexible + ellipsis so it truncates instead
@@ -480,6 +494,11 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                       const SizedBox(width: 32),
                     ],
                   ),
+                  const SizedBox(height: 10),
+                  // Hairline divider under the title (rule-18 idiom).
+                  Container(
+                      height: 1,
+                      color: Colors.white.withValues(alpha: 0.05)),
                   const SizedBox(height: 10),
 
                   // Grid of ride cards - 1:1 with web design.
@@ -767,6 +786,12 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                       ),
                     ),
                     const SizedBox(height: 8),
+                    // Hairline divider between the payment row and the
+                    // Request button (user spec 2026-08-04).
+                    Container(
+                        height: 1,
+                        color: Colors.white.withValues(alpha: 0.05)),
+                    const SizedBox(height: 8),
                     _StaggeredFade(
                       key: ValueKey('req_${option.id}'),
                       delayMs: 400,
@@ -784,10 +809,15 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                         // drawn from placeholders when the route has not
                         // produced any, so without this the rider could send
                         // a request against a tier priced at nothing.
+                        // Cruise Cash as the method: requestable only
+                        // while the balance covers the FULL fare (user
+                        // spec 2026-08-04 — "no tiene dinero, botón
+                        // desactivado").
                         enabled: !_isProcessingPayment &&
                             _hasAnyPaymentMethod &&
                             !_noDriversNearby &&
-                            faresReady,
+                            faresReady &&
+                            !_cruiseCashShort(option),
                         isLoading: _isProcessingPayment,
                         // "Reserve Now" for both scheduled rides AND
                         // airport bookings (both go through pre-pickup
@@ -822,6 +852,17 @@ extension _RideRequestWidgets on _RideRequestScreenState {
           ),
         ),
       );
+  }
+
+  /// True when Cruise Cash is the selected method but the balance does
+  /// not cover this option's (promo-adjusted) fare — the Request/Reserve
+  /// button is disabled in that state instead of letting a request start
+  /// that no method can pay for.
+  bool _cruiseCashShort(RideOption opt) {
+    if (_selectedPaymentMethod != 'cruise_cash') return false;
+    final double price =
+        widget.applyPromo ? opt.priceEstimate * 0.9 : opt.priceEstimate;
+    return _cruiseCashCents < (price * 100).round();
   }
 
   /// Gap between the sheet and the screen's bottom edge: 24 px while the
@@ -1102,9 +1143,9 @@ extension _RideRequestWidgets on _RideRequestScreenState {
     // numbers are the ones to nudge if the pill reads high or low.
     const double pinOnScreenHalfWidth = 28.0;
     const double pinHeadLift = 34.0; // head centre above the tip
-    // Air between pin and pill (user spec 2026-08-04: first "a bit more
-    // to the side" than the original 10, then "not so separated" — 14).
-    const double sideGap = 14.0;
+    // Air between pin and pill — practically touching (user spec
+    // 2026-08-04, third iteration: "al lado de los pines, no separado").
+    const double sideGap = 6.0;
     // Pill height is deterministic: 5px padding top/bottom + the taller
     // of the 19px icon chip and the kind+address stack (~22px), + border.
     const double pillHeight = 34.0;
@@ -1521,7 +1562,18 @@ extension _RideRequestWidgets on _RideRequestScreenState {
       decoration: neuBox(radius: 24),
       child: Padding(
         padding: EdgeInsets.fromLTRB(8 * s, pad, 8 * s, pad),
-        child: Column(
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            // Per-tier Faster marker, corner at the title's level — lit
+            // ONLY when a driver of THIS tier is ≤5 min out (user spec
+            // 2026-08-04: per category, never one driver lighting all).
+            Positioned(
+              top: -2,
+              right: -2,
+              child: _gridFasterBadge(opt, s),
+            ),
+            Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             // Vehicle name on top — home screen style.
@@ -1592,8 +1644,34 @@ extension _RideRequestWidgets on _RideRequestScreenState {
               ),
             ),
           ],
+            ),
+          ],
         ),
       ),
+    );
+  }
+
+  /// Tiny per-tier Faster marker on a grid tile. Cache-only, like the
+  /// wait text right under it: tiles rebuild on every collapse-animation
+  /// frame and a build must never start network work (_gridWaitRangeText
+  /// already triggers the shared per-tier fetch).
+  Widget _gridFasterBadge(RideOption opt, double s) {
+    final pickup = _ctrl.state.pickup;
+    if (pickup == null) return const SizedBox.shrink();
+    final est = DriverWaitEstimate.cached(pickup.lat, pickup.lng,
+        tier: _tierKeyForOption(opt));
+    final show = est != null && est.hasDrivers && est.minMinutes <= 5;
+    return AnimatedSwitcher(
+      duration: const Duration(milliseconds: 300),
+      switchOutCurve: Curves.easeInCubic,
+      child: show
+          ? Transform.scale(
+              key: const ValueKey('grid-faster'),
+              scale: (0.78 * s).clamp(0.60, 0.80),
+              alignment: Alignment.topRight,
+              child: const FasterBadge(),
+            )
+          : const SizedBox.shrink(key: ValueKey('grid-faster-off')),
     );
   }
 
@@ -1634,7 +1712,11 @@ extension _RideRequestWidgets on _RideRequestScreenState {
       );
       return '';
     }
-    if (est.driverCount == 0) return S.of(context).noDriversAvailable;
+    // Grid tiles carry ONLY each tier's distance estimate (user spec
+    // 2026-08-04) — an empty line when that tier has nobody out there.
+    // The "no drivers near your area" sentence belongs to the SELECTED
+    // card, where there is room for it to be an answer.
+    if (est.driverCount == 0) return '';
     return est.rangeLabel;
   }
 
@@ -2105,8 +2187,10 @@ extension _RideRequestWidgets on _RideRequestScreenState {
         if (est == null) return const SizedBox(height: 34);
 
         final none = est.driverCount == 0;
+        // "near your area", not "available right now" — user spec
+        // 2026-08-04, this sentence lives only on the selected card.
         final text = none
-            ? S.of(context).noDriversAvailable
+            ? S.of(context).noDriversNearArea
             : est.rangeLabel;
 
         return AnimatedSwitcher(
@@ -2986,6 +3070,26 @@ extension _RideRequestWidgets on _RideRequestScreenState {
 
   Widget _paymentLogoWidget(String id, double size) {
     switch (id) {
+      case 'cruise_cash':
+        return Container(
+          width: size,
+          height: size,
+          decoration: BoxDecoration(
+            color: Colors.black,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+                color: const Color(0xFFE8C547).withValues(alpha: 0.5),
+                width: 1),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(4),
+            child: Image.asset(
+              'assets/images/cruise_logo.png',
+              fit: BoxFit.contain,
+              cacheWidth: 80,
+            ),
+          ),
+        );
       case 'apple_pay':
         return Container(
           width: size,
@@ -3208,163 +3312,14 @@ extension _RideRequestWidgets on _RideRequestScreenState {
           child: Stack(
             fit: StackFit.expand,
             children: [
-              // ── Full-screen Mapbox map background with tilt + route + pins ──
-              if (pickup != null && kIsWeb)
-                // The native MapWidget has no web implementation — GL JS
-                // takes over in the browser with the same route + pins.
-                IgnorePointer(
-                  child: RepaintBoundary(
-                    child: WebMapView(
-                      key: const ValueKey('driver_found_map_web'),
-                      initialLng: midLng,
-                      initialLat: midLat,
-                      initialZoom: 14.5,
-                      styleUri: MapboxConfig.styleDark,
-                      onControllerCreated: (c) {
-                        c.applyNavyGoldTheme();
-                        c.hidePoiLayers();
-                        final routePts = _ctrl.state.route?.points;
-                        if (routePts != null && routePts.length >= 2) {
-                          final pts = routePts
-                              .map((p) => (lng: p.longitude, lat: p.latitude))
-                              .toList();
-                          c.setPolyline('route', pts,
-                              color: '#FFD700', width: 5);
-                        }
-                        // Native holds the midpoint at 14.5 and eases the
-                        // tilt 0→20° over 1 s — one GL JS flight does both.
-                        c.flyTo(
-                          lng: midLng,
-                          lat: midLat,
-                          zoom: 14.5,
-                          pitch: 20,
-                          durationMs: 1000,
-                        );
-                        // The golden pins, not GL JS's stock blue teardrop.
-                        unawaited(Future(() async {
-                          final pins = await Future.wait([
-                            renderCircularPinBytes(
-                                icon: CircularPinIcon.person,
-                                isPickup: true,
-                                radius: 32),
-                            renderCircularPinBytes(
-                                icon: _pinIconToCircular(
-                                    _detectDropoffType(_ctrl.state.dropoffLabel)),
-                                isPickup: false,
-                                radius: 32),
-                          ]);
-                          if (!mounted) return;
-                          c.addMarker('pickup', pickup.lng, pickup.lat,
-                              iconBytes: pins[0],
-                              widthPx: 52,
-                              heightPx: 48,
-                              anchor: 'bottom');
-                          if (dropoff != null) {
-                            c.addMarker('dropoff', dropoff.lng, dropoff.lat,
-                                iconBytes: pins[1],
-                                widthPx: 52,
-                                heightPx: 48,
-                                anchor: 'bottom');
-                          }
-                        }));
-                      },
-                    ),
-                  ),
-                )
-              else if (pickup != null)
-                IgnorePointer(
-                  child: RepaintBoundary(
-                    child: mapbox.MapWidget(
-                      textureView: true,
-                      styleUri: MapboxConfig.styleDark,
-                      cameraOptions: mapbox.CameraOptions(
-                        center: mapbox.Point(
-                          coordinates: mapbox.Position(midLng, midLat),
-                        ),
-                        zoom: 14.5,
-                        pitch: 0.0,
-                      ),
-                      onMapCreated: (ctrl) async {
-                        _dfMapCtrl = ctrl;
-                        await MapTheme.applyNavyGold(ctrl);
-                        ctrl.scaleBar.updateSettings(
-                            mapbox.ScaleBarSettings(enabled: false));
-                        ctrl.compass.updateSettings(
-                            mapbox.CompassSettings(enabled: false));
-                        ctrl.attribution.updateSettings(
-                            mapbox.AttributionSettings(enabled: false));
-                        ctrl.logo.updateSettings(
-                            mapbox.LogoSettings(enabled: false));
-
-                        // Animate tilt 0° → 20°
-                        if (_dfTiltAnim != null && _dfTiltCtrl != null) {
-                          _dfTiltAnim!.addListener(() {
-                            _dfMapCtrl?.setCamera(
-                              mapbox.CameraOptions(pitch: _dfTiltAnim!.value),
-                            );
-                          });
-                          _dfTiltCtrl!.forward();
-                        }
-
-                        // Add route polyline
-                        final routePts = _ctrl.state.route?.points;
-                        if (routePts != null && routePts.length >= 2) {
-                          final polyMgr = await ctrl.annotations
-                              .createPolylineAnnotationManager();
-                          final coords = routePts
-                              .map((p) =>
-                                  mapbox.Position(p.longitude, p.latitude))
-                              .toList();
-                          final routeGeo = safeLineString(routePts);
-                          if (routeGeo != null) {
-                            await polyMgr.create(mapbox.PolylineAnnotationOptions(
-                              geometry: routeGeo,
-                              lineColor: const Color(0xFFFFD700).toARGB32(),
-                              lineWidth: 5.0,
-                              lineJoin: mapbox.LineJoin.ROUND,
-                            ));
-                          }
-                        }
-
-                        // Add smart pins (pickup + dropoff)
-                        final pointMgr = await ctrl.annotations
-                            .createPointAnnotationManager();
-                        try { await ctrl.style.setStyleLayerProperty(pointMgr.id, 'icon-pitch-alignment', 'viewport'); } catch (_) {}
-                        try { await ctrl.style.setStyleLayerProperty(pointMgr.id, 'icon-allow-overlap', true); } catch (_) {}
-                        try { await ctrl.style.setStyleLayerProperty(pointMgr.id, 'icon-ignore-placement', true); } catch (_) {}
-                        try { await ctrl.style.setStyleLayerProperty(pointMgr.id, 'icon-anchor', 'bottom'); } catch (_) {}
-                        final pickupBytes =
-                            await renderCircularPinBytes(icon: CircularPinIcon.person, isPickup: true, radius: 44);
-                        final pickupPoint = safePoint(pickup.lng, pickup.lat);
-                        if (pickupPoint != null) {
-                          await pointMgr.create(mapbox.PointAnnotationOptions(
-                            geometry: pickupPoint,
-                            image: pickupBytes,
-                            iconSize: 0.65,
-                            iconAnchor: mapbox.IconAnchor.BOTTOM,
-                            iconOffset: [0, 0],
-                          ));
-                        }
-                        if (dropoff != null) {
-                          final dropoffBytes =
-                              await renderCircularPinBytes(icon: CircularPinIcon.home, isPickup: false, radius: 44);
-                          final dropoffPoint = safePoint(dropoff.lng, dropoff.lat);
-                          if (dropoffPoint != null) {
-                            await pointMgr.create(mapbox.PointAnnotationOptions(
-                              geometry: dropoffPoint,
-                              image: dropoffBytes,
-                              iconSize: 0.65,
-                              iconAnchor: mapbox.IconAnchor.BOTTOM,
-                              iconOffset: [0, 0],
-                            ));
-                          }
-                        }
-                      },
-                    ),
-                  ),
-                )
-              else
-                const ColoredBox(color: Color(0xFF0A0A1A)),
+              // No map of its own — the overlay used to mount a second
+              // full-screen Mapbox surface here while the base map was
+              // swapped for a black box (two live surfaces crash iOS).
+              // The surface never finished initialising inside the
+              // overlay's 1.8s lifetime, so the rider saw pure black
+              // instead of "driver found" (user report 2026-08-04).
+              // The scrim below now sits over the LIVE main map, whose
+              // camera _dfFlyMainCamera() sends to the route midpoint.
               // ── Subtle gradient overlay (let map show through, like Trip Accepted) ──
               Positioned.fill(
                 child: DecoratedBox(

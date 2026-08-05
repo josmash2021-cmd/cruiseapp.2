@@ -1879,9 +1879,38 @@ extension _RideRequestMap on _RideRequestScreenState {
           },
         ),
       ),
-    ).whenComplete(() {
+    ).then((result) {
       // Reset flag whenever tracking screen is popped (including back gesture or cancel)
       _ctrl.isOnTrackingScreen = false;
+      // The driver handed the trip back — glide straight back into the
+      // "Looking for your driver" state (user spec 2026-08-04): same
+      // trip, dispatch is already re-offering it.
+      if (result == 'driver_released' && mounted) {
+        _resumeSearchingAfterRelease();
+      }
+    });
+  }
+
+  /// Re-enter the searching phase after the assigned driver released the
+  /// trip. The searching-phase handler re-arms its card, timers, cinematic
+  /// and camera when it sees _searchingShowMap false; the delayed second
+  /// frame covers the map surface remounting after the tracking screen's
+  /// pop (its own map owned the GPU meanwhile).
+  void _resumeSearchingAfterRelease() {
+    if (!mounted) return;
+    debugPrint('[RideRequest] Driver released — resuming searching state');
+    _driverFoundVisible = false;
+    _navigatingToTracking = false;
+    _searchingShowMap = false;
+    // Entering searching is an explicit auto-frame moment.
+    _userTookCamera = false;
+    _ctrl.resumeSearchingAfterDriverRelease();
+    Future.delayed(const Duration(milliseconds: 900), () {
+      if (!mounted) return;
+      if (_ctrl.state.phase == RiderPhase.searchingDriver) {
+        _replayCinematicIfRouteAvailable();
+        _animateSearchCameraToAngle(0);
+      }
     });
   }
 

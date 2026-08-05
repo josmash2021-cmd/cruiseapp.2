@@ -602,16 +602,22 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
     // Miami-market cards run ~8% above Birmingham's; everywhere else 1.0.
     final plat = _state.pickup?.lat ?? 0;
     final plng = _state.pickup?.lng ?? 0;
-    final stateMult =
-        (plat >= 24.3 && plat <= 31.1 && plng >= -87.7 && plng <= -79.8)
-            ? 1.08
-            : 1.0;
+    final inFlorida =
+        plat >= 24.3 && plat <= 31.1 && plng >= -87.7 && plng <= -79.8;
+    final stateMult = inFlorida ? 1.08 : 1.0;
     double anchoredTotal(String tier) {
       final r = anchorRates(tier);
       final anchor =
           (r.$1 + miles * r.$2 + mins * r.$3 + r.$4) * stateMult;
       return anchor > r.$5 ? anchor : r.$5;
     }
+
+    // Florida launch promo (user spec 2026-08-04): $5 off EVERY trip whose
+    // pickup is in Florida, taken off the FINAL price (after airport and
+    // surge) so the discount the rider sees is exactly five dollars.
+    // Floored at $3 so a short trip can never go free or negative.
+    double flDiscount(double v) =>
+        inFlorida ? math.max(v - 5.0, 3.0) : v;
 
     // Airport surcharge: +$8 flat + 15% uplift, on top of the anchor.
     final airportTrip =
@@ -632,7 +638,7 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
         id: 'suburban',
         name: 'VIP',
         description: 'Spacious • Leather • Snacks & Drinks',
-        priceEstimate: _round(withAirport(anchoredTotal('black')) * surge),
+        priceEstimate: _round(flDiscount(withAirport(anchoredTotal('black')) * surge)),
         etaMinutes: baseDuration + 3,
         icon: '🚐',
         capacity: 7,
@@ -645,7 +651,7 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
         id: 'suv_xl',
         name: 'SUV XL',
         description: 'Up to 6 • XL luggage • Climate',
-        priceEstimate: _round(withAirport(anchoredTotal('premium')) * surge),
+        priceEstimate: _round(flDiscount(withAirport(anchoredTotal('premium')) * surge)),
         etaMinutes: baseDuration + 2,
         icon: '🚙',
         capacity: 6,
@@ -655,7 +661,7 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
         id: 'camry',
         name: 'Sedan',
         description: 'Comfort • Climate • Charger',
-        priceEstimate: _round(withAirport(anchoredTotal('compact')) * surge),
+        priceEstimate: _round(flDiscount(withAirport(anchoredTotal('compact')) * surge)),
         etaMinutes: baseDuration + 2,
         icon: '🚙',
         capacity: 4,
@@ -665,7 +671,7 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
         id: 'fusion',
         name: 'Comfort',
         description: 'Clean • Safe • Efficient',
-        priceEstimate: _round(withAirport(anchoredTotal('standard')) * surge),
+        priceEstimate: _round(flDiscount(withAirport(anchoredTotal('standard')) * surge)),
         etaMinutes: baseDuration,
         icon: '🚗',
         capacity: 4,
@@ -1091,6 +1097,22 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
   void forcePhase(RiderPhase phase) {
     _state = _state.copyWith(phase: phase);
     notifyListeners();
+  }
+
+  /// The assigned driver handed the trip back to dispatch (release).
+  /// Same trip id — the backend already set it to `requested` and is
+  /// re-cascading. Reset the match so the poll + Firestore listener can
+  /// deliver the NEXT acceptance, and put the phase back to searching so
+  /// the request screen re-enters its "Looking for your driver" state.
+  void resumeSearchingAfterDriverRelease() {
+    _driverMatched = false;
+    _isRequesting = false;
+    _state = _state.copyWith(phase: RiderPhase.searchingDriver);
+    notifyListeners();
+    final tid = _state.tripId;
+    // _startDispatchPolling cancels its previous timer/listeners first —
+    // safe to re-arm even if one survived the tracking screen.
+    if (tid != null) _startDispatchPolling(tid);
   }
 
   /// Called by the UI after the "Driver Found" overlay finishes.

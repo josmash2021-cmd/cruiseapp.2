@@ -144,6 +144,11 @@ MIGRATIONS = [
     ("referrals", "referrer_paid", "BOOLEAN DEFAULT FALSE"),
     ("referrals", "referee_paid", "BOOLEAN DEFAULT FALSE"),
     ("referrals", "qualified_at", "TIMESTAMP WITH TIME ZONE"),
+    # Multi-stop v1 (2026-08-05): JSON array of at most one extra stop —
+    # [{"lat", "lng", "label", "extra_cents", "added_at"}]. TEXT, not
+    # JSONB: every reader parses it app-side and TEXT keeps the column
+    # trivially portable.
+    ("trips", "stops", "TEXT"),
 ]
 
 TZ_UPGRADES = [

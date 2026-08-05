@@ -11,6 +11,7 @@ from models.database import (
     ActionRequest, SupportChat,
 )
 from models.schemas import CreateTripIn, AcceptTripIn
+from pydantic import BaseModel
 from utils.security import (
     _get_current_user, _verify_api_key, _security_audit_log,
 )
@@ -836,6 +837,152 @@ async def refund_trip_endpoint(
     except _stripe_mod.error.StripeError as e:
         logging.error("[Refund] Stripe error for trip %s: %s", trip.id, e)
         raise HTTPException(400, str(getattr(e, "user_message", None) or e))
+
+
+# ═══════════════════════════════════════════════════════════════════
+#  MID-TRIP ROUTE CHANGES (multi-stop v1, 2026-08-05)
+#
+#  The rider adds ONE extra stop, or moves the destination, while the
+#  trip is live. The client computes the street-routed extra with the
+#  same anchored per-mile/per-minute rates it priced the trip with
+#  (Directions delta + $2.50 stop fee) — the server clamps money to an
+#  honest band, persists, folds it into `fare`, mirrors to Firestore
+#  (routeVersion bump) and pushes the driver a high-priority FCM so a
+#  driver inside Google Maps comes back to Cruise.
+# ═══════════════════════════════════════════════════════════════════
+
+class TripStopIn(BaseModel):
+    lat: float
+    lng: float
+    label: str = ""
+    extra_cents: int = 250
+
+
+class TripDestinationIn(BaseModel):
+    lat: float
+    lng: float
+    label: str = ""
+    new_fare: Optional[float] = None
+
+
+# Statuses in which the route may still change. `completed`/`cancelled`
+# are terminal; `requested` has no driver to notify and the rider can
+# simply cancel and re-request there.
+_ROUTE_CHANGE_STATUSES = ("accepted", "driver_en_route", "arrived", "in_trip")
+
+
+async def _notify_driver_route_change(db, trip, title: str, body_text: str):
+    """FCM to the driver — high priority so a phone sitting in Google
+    Maps surfaces the banner; tapping it lands back in the Cruise trip."""
+    if not trip.driver_id:
+        return
+    drv = (await db.execute(select(User).where(User.id == trip.driver_id))).scalar_one_or_none()
+    if drv and drv.fcm_token:
+        _safe_create_task(_send_fcm_push_async(
+            drv.fcm_token,
+            title=title,
+            body=body_text,
+            data={"type": "route_change", "trip_id": str(trip.id)},
+        ))
+
+
+@router.post("/trips/{trip_id}/stops", dependencies=[Depends(_verify_api_key)])
+async def add_trip_stop(trip_id: int, body: TripStopIn,
+                        user: User = Depends(_get_current_user),
+                        db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(Trip).where(Trip.id == trip_id).with_for_update())
+    trip = result.scalar_one_or_none()
+    if not trip:
+        raise HTTPException(404, "Trip not found")
+    if trip.rider_id != user.id and user.role not in ("admin", "dispatch"):
+        raise HTTPException(403, "Not your trip")
+    if (trip.status or "") not in _ROUTE_CHANGE_STATUSES:
+        raise HTTPException(409, f"Trip cannot add a stop from status {trip.status}")
+    if not (-90.0 <= body.lat <= 90.0 and -180.0 <= body.lng <= 180.0):
+        raise HTTPException(400, "Invalid coordinates")
+    existing = []
+    if trip.stops:
+        try:
+            existing = json.loads(trip.stops) or []
+        except Exception:
+            existing = []
+    if existing:
+        raise HTTPException(409, "Trip already has a stop (one per trip)")
+
+    # Money band: floor at the $2.50 stop fee, cap at $200 of extra —
+    # outside that the client math is broken, not the road.
+    extra = int(body.extra_cents)
+    if extra < 250:
+        extra = 250
+    if extra > 20000:
+        raise HTTPException(400, "Stop extra out of range")
+
+    stop = {
+        "lat": body.lat,
+        "lng": body.lng,
+        "label": (body.label or "").strip()[:200],
+        "extra_cents": extra,
+        "added_at": utc_now().isoformat(),
+    }
+    trip.stops = json.dumps([stop])
+    trip.fare = round((trip.fare or 0.0) + extra / 100.0, 2)
+    await db.commit()
+
+    if _HAS_FIRESTORE:
+        try:
+            firestore_sync.sync_trip_route_change(
+                trip.id, stops=[stop], fare=trip.fare, change_type="stop_added")
+        except Exception as e:
+            logging.error("[Stops] Firestore sync failed for %s: %s", trip.id, e)
+    await _notify_driver_route_change(
+        db, trip, "New stop added",
+        stop["label"] or "The rider added a stop — open Cruise")
+    logging.info("[Stops] Trip %s: stop added (+$%.2f) by user %s",
+                 trip.id, extra / 100.0, user.id)
+    return {"status": "ok", "stops": [stop], "fare": trip.fare}
+
+
+@router.patch("/trips/{trip_id}/destination", dependencies=[Depends(_verify_api_key)])
+async def change_trip_destination(trip_id: int, body: TripDestinationIn,
+                                  user: User = Depends(_get_current_user),
+                                  db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(Trip).where(Trip.id == trip_id).with_for_update())
+    trip = result.scalar_one_or_none()
+    if not trip:
+        raise HTTPException(404, "Trip not found")
+    if trip.rider_id != user.id and user.role not in ("admin", "dispatch"):
+        raise HTTPException(403, "Not your trip")
+    if (trip.status or "") not in _ROUTE_CHANGE_STATUSES:
+        raise HTTPException(409, f"Trip cannot change destination from status {trip.status}")
+    if not (-90.0 <= body.lat <= 90.0 and -180.0 <= body.lng <= 180.0):
+        raise HTTPException(400, "Invalid coordinates")
+
+    trip.dropoff_lat = body.lat
+    trip.dropoff_lng = body.lng
+    if (body.label or "").strip():
+        trip.dropoff_address = body.label.strip()[:300]
+    if body.new_fare is not None:
+        # Full re-price from the client's anchored math; same honest band
+        # every fare in this codebase lives in.
+        if not (3.0 <= body.new_fare <= 500.0):
+            raise HTTPException(400, "Fare out of range")
+        trip.fare = round(body.new_fare, 2)
+    await db.commit()
+
+    if _HAS_FIRESTORE:
+        try:
+            firestore_sync.sync_trip_route_change(
+                trip.id,
+                dropoff={"lat": body.lat, "lng": body.lng, "label": trip.dropoff_address},
+                fare=trip.fare,
+                change_type="destination_changed")
+        except Exception as e:
+            logging.error("[Stops] Firestore sync failed for %s: %s", trip.id, e)
+    await _notify_driver_route_change(
+        db, trip, "Destination changed",
+        trip.dropoff_address or "The rider changed the destination — open Cruise")
+    logging.info("[Stops] Trip %s: destination changed by user %s", trip.id, user.id)
+    return {"status": "ok", "dropoff_address": trip.dropoff_address, "fare": trip.fare}
 
 
 @router.get("/trips/{trip_id}/fare-breakdown", dependencies=[Depends(_verify_api_key)])

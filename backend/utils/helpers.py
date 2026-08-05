@@ -304,6 +304,9 @@ def _trip_dict(t) -> dict:
             "guest_first_name": getattr(t, "guest_first_name", None),
             "guest_last_name": getattr(t, "guest_last_name", None),
             "guest_phone": getattr(t, "guest_phone", None),
+            # Multi-stop v1: JSON string ([{"lat","lng","label",...}]) or
+            # None. Passed through raw — every client parses it.
+            "stops": getattr(t, "stops", None),
         }
         # Compute derived distance/duration from pickup/dropoff coordinates
         # so the frontend always has values even when raw DB columns are NULL.

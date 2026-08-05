@@ -292,6 +292,12 @@ class Trip(Base):
     wait_time_charge = Column(Float, default=0.0)
     distance = Column(Float, nullable=True)
     duration = Column(Integer, nullable=True)
+    # Multi-stop v1 (2026-08-05): JSON array of at most ONE extra stop the
+    # rider added mid-trip — [{"lat","lng","label","extra_cents","added_at"}].
+    # The stop's extra is already folded into `fare` when the row is
+    # written; this column exists so both apps can draw and announce it.
+    # Migration: migrate.py ("trips", "stops", "TEXT").
+    stops = Column(Text, nullable=True)
     # VIP drink selection
     vip_drink_selected = Column(String(100), nullable=True)
     vip_drink_selected_at = Column(DateTime(timezone=True), nullable=True)

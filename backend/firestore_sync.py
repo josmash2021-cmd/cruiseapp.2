@@ -890,6 +890,34 @@ def sync_trip_status(trip_id: int, status: str,
         log.error("❌ Trip status sync failed for %d: %s", trip_id, e)
 
 
+def sync_trip_route_change(trip_id: int, *, stops=None, dropoff=None,
+                           fare=None, change_type: str = "stop_added"):
+    """Mid-trip route change (2026-08-05): an extra stop the rider added,
+    or a new destination. Writes the new geometry + fare and bumps
+    routeVersion so both live screens react the moment the merge lands —
+    the driver's top banner + mini-map redraw, the rider's new pin and
+    route crossfade."""
+    _ensure_init()
+    if _db is None:
+        return
+    data = {"routeVersion": _ts(), "routeChangeType": change_type}
+    if stops is not None:
+        data["stops"] = stops  # list of {lat, lng, label, extra_cents}
+    if dropoff is not None:
+        data["dropoff_lat"] = dropoff["lat"]
+        data["dropoff_lng"] = dropoff["lng"]
+        data["dropoff_address"] = dropoff.get("label") or ""
+        data["dropoffAddress"] = data["dropoff_address"]
+    if fare is not None:
+        data["fare"] = fare
+    try:
+        _retry_sync(lambda: _db.collection("trips")
+                    .document(f"sql_{trip_id}").set(data, merge=True))
+        log.info("🔄 Synced route change sql_%d (%s)", trip_id, change_type)
+    except Exception as e:
+        log.error("❌ Route-change sync failed for %d: %s", trip_id, e)
+
+
 def sync_trip_released(trip_id: int):
     """Put a trip back in the dispatch queue and strip its driver.
 

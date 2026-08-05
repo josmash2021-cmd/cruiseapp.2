@@ -2205,11 +2205,13 @@ async def web_booking_cancel(booking_id: int, request: Request, db: AsyncSession
         try:
             import stripe as _stripe_mod
             if trip.payment_status == "held":
-                # Uncaptured hold: cancel to release funds immediately
-                _stripe_mod.PaymentIntent.cancel(trip.stripe_payment_intent_id)
+                # Uncaptured hold: settle through the shared helper —
+                # partial-captures any cancellation fee and releases the
+                # remainder instantly (2026-08-05).
+                from routers.trips import _release_or_capture_fee_on_cancel
+                new_payment_status = await _release_or_capture_fee_on_cancel(trip)
                 refunded = True
-                new_payment_status = "cancelled"
-                logging.info("[WebCancel] trip=%d hold cancelled via Stripe", trip.id)
+                logging.info("[WebCancel] trip=%d hold settled via Stripe (%s)", trip.id, new_payment_status)
             elif trip.payment_status == "paid":
                 # Already captured: create a refund
                 _stripe_mod.Refund.create(

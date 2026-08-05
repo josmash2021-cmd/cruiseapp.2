@@ -224,17 +224,30 @@ class WaitTimeoutAgent:
         if wait_fee > 0:
             trip.cancellation_fee = wait_fee
             trip.wait_time_charge = wait_fee
-            # Credit the driver their 70% share of the no-show fee using the
-            # same 70/30 ledger split as completed-trip fares.
-            if trip.driver_id:
-                try:
-                    from routers.trips import _credit_driver_cancellation_fee
-                    await _credit_driver_cancellation_fee(db, trip)
-                except Exception as e:
-                    logger.warning(
-                        "[WaitTimeout] Driver fee credit failed for trip #%d: %s",
-                        trip.id, e,
-                    )
+
+        # Settle the payment hold NOW (2026-08-05): partial-capture the
+        # no-show fee (finally collected) and release the remainder
+        # instantly — this path used to leave the hold pinned to the
+        # rider's card for ~7 days and credit the driver a fee that was
+        # never charged.
+        try:
+            from routers.trips import _release_or_capture_fee_on_cancel
+            trip.payment_status = await _release_or_capture_fee_on_cancel(trip)
+        except Exception as e:
+            logger.warning(
+                "[WaitTimeout] hold settle failed for trip #%d: %s", trip.id, e)
+
+        # Credit the driver their 70% share of the no-show fee using the
+        # same 70/30 ledger split as completed-trip fares.
+        if wait_fee > 0 and trip.driver_id:
+            try:
+                from routers.trips import _credit_driver_cancellation_fee
+                await _credit_driver_cancellation_fee(db, trip)
+            except Exception as e:
+                logger.warning(
+                    "[WaitTimeout] Driver fee credit failed for trip #%d: %s",
+                    trip.id, e,
+                )
 
         logger.warning(
             "[WaitTimeout] Cancelling trip #%d — driver waited %d min (threshold: %d min), "

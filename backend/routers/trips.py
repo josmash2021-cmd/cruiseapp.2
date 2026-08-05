@@ -619,6 +619,92 @@ async def accept_trip(trip_id: int, body: AcceptTripIn, user: User = Depends(_ge
 
     return _trip_dict_for_user(trip, user)
 
+async def _release_or_capture_fee_on_cancel(trip) -> str:
+    """Settle a cancelled trip's HOLD in one Stripe call (2026-08-05).
+
+    fee > 0  → PARTIAL CAPTURE of exactly the cancellation fee: the fee
+               is actually collected (it used to be credited to the
+               driver without ever charging the rider) and Stripe
+               releases the REMAINDER instantly — no refund, no days of
+               waiting.
+    fee == 0 → cancel the PaymentIntent: full release, instant.
+
+    Returns the new payment_status. Never raises — a cancelled trip must
+    finish cancelling even when Stripe is down; the fallback status
+    'pending_refund' flags the hold for manual review instead of leaving
+    it silently pinned to the rider's card for ~7 days.
+
+    Call this from EVERY path that sets status='cancelled' while a hold
+    may exist: rider cancel, dispatch-panel cancel (PATCH /status), the
+    wait-timeout no-show agent and the scheduler auto-cancels. Before
+    this helper only the rider path released holds.
+    """
+    if not (_HAS_STRIPE and trip.stripe_payment_intent_id):
+        return trip.payment_status or "cancelled"
+    if trip.payment_status not in ("held", "unpaid"):
+        return trip.payment_status or "cancelled"
+
+    loop = asyncio.get_event_loop()
+    pi_id = trip.stripe_payment_intent_id
+    fee_cents = int(round(float(trip.cancellation_fee or 0.0) * 100))
+    if 0 < fee_cents < 50:
+        fee_cents = 50  # Stripe minimum charge
+
+    try:
+        existing = await asyncio.wait_for(
+            loop.run_in_executor(
+                None, _stripe_mod.PaymentIntent.retrieve, pi_id),
+            timeout=10.0,
+        )
+    except Exception as e:
+        logging.warning("[CancelHold] retrieve failed for trip %s: %s", trip.id, e)
+        return "pending_refund"
+
+    status = getattr(existing, "status", "")
+    if status != "requires_capture":
+        # ACH mid-flight, already captured, or already cancelled — the
+        # dedicated cancel/refund branches of each caller handle these.
+        if status == "canceled":
+            return "cancelled"
+        if status == "processing":
+            return "pending_refund"
+        return trip.payment_status or "cancelled"
+
+    authorized = int(getattr(existing, "amount", 0) or 0)
+    if fee_cents > 0:
+        try:
+            capture_amount = min(fee_cents, authorized) if authorized else fee_cents
+            await asyncio.wait_for(
+                loop.run_in_executor(
+                    None,
+                    lambda: _stripe_mod.PaymentIntent.capture(
+                        pi_id, amount_to_capture=capture_amount),
+                ),
+                timeout=10.0,
+            )
+            logging.info(
+                "[CancelHold] trip %s: fee $%.2f captured, remainder released instantly",
+                trip.id, capture_amount / 100.0)
+            return "paid"
+        except Exception as e:
+            logging.warning(
+                "[CancelHold] partial capture failed for trip %s (%s) — releasing full hold, fee uncollected",
+                trip.id, e)
+            # Fall through to the plain release: freeing the rider's money
+            # beats collecting our fee.
+    try:
+        await asyncio.wait_for(
+            loop.run_in_executor(
+                None, _stripe_mod.PaymentIntent.cancel, pi_id),
+            timeout=10.0,
+        )
+        logging.info("[CancelHold] trip %s: hold released", trip.id)
+        return "cancelled"
+    except Exception as e:
+        logging.warning("[CancelHold] release failed for trip %s: %s", trip.id, e)
+        return "pending_refund"
+
+
 async def _charge_trip(trip, db: AsyncSession) -> dict:
     """Charge the rider's default Stripe payment method for a completed trip.
     If a payment hold (authorization) exists, capture it instead of creating a new charge.
@@ -640,14 +726,86 @@ async def _charge_trip(trip, db: AsyncSession) -> dict:
                 timeout=10.0,
             )
             if existing.status == "requires_capture":
+                # Capture the FINAL fare, not blindly the authorized amount
+                # (2026-08-05). The fare can move after the hold: a mid-trip
+                # stop or wait fees push it UP, a closer destination pulls
+                # it DOWN. Capturing the raw hold overcharged the second
+                # case; Stripe cannot capture more than authorized in the
+                # first, so the shortfall is charged off-session below.
+                fare_cents = max(int(round(float(trip.fare or 0) * 100)), 50)
+                authorized = int(getattr(existing, "amount", 0) or 0)
+                capture_amount = min(fare_cents, authorized) if authorized else fare_cents
                 intent = await asyncio.wait_for(
                     asyncio.get_event_loop().run_in_executor(
-                        None, _stripe_mod.PaymentIntent.capture, trip.stripe_payment_intent_id),
+                        None,
+                        lambda: _stripe_mod.PaymentIntent.capture(
+                            trip.stripe_payment_intent_id,
+                            amount_to_capture=capture_amount),
+                    ),
                     timeout=10.0,
                 )
                 trip.payment_status = "paid" if intent.status == "succeeded" else "failed"
                 await db.commit()
-                logging.info("[Capture] Trip %s hold captured - status: %s", trip.id, intent.status)
+                logging.info(
+                    "[Capture] Trip %s hold captured $%.2f of $%.2f authorized (fare $%.2f) - status: %s",
+                    trip.id, capture_amount / 100.0, authorized / 100.0,
+                    fare_cents / 100.0, intent.status)
+
+                # Fare grew past the hold — collect the shortfall on the
+                # saved method. Best-effort: a failed top-up never unpays
+                # the captured part; it is logged loudly for review.
+                shortfall = fare_cents - authorized
+                if intent.status == "succeeded" and authorized and shortfall >= 50:
+                    try:
+                        pm_r = await db.execute(
+                            select(RiderPaymentMethod).where(
+                                RiderPaymentMethod.user_id == trip.rider_id,
+                                RiderPaymentMethod.method_type == "stripe_card",
+                                RiderPaymentMethod.stripe_pm_id.isnot(None),
+                            ).order_by(
+                                RiderPaymentMethod.is_default.desc(),
+                                RiderPaymentMethod.created_at.asc(),
+                            )
+                        )
+                        pm_extra = pm_r.scalars().first()
+                        rider_r = await db.execute(
+                            select(User).where(User.id == trip.rider_id))
+                        rider_row = rider_r.scalar_one_or_none()
+                        customer_id = getattr(rider_row, "stripe_customer_id", None)
+                        if pm_extra:
+                            extra_intent = await asyncio.wait_for(
+                                asyncio.get_event_loop().run_in_executor(
+                                    None,
+                                    lambda: _stripe_mod.PaymentIntent.create(
+                                        amount=shortfall,
+                                        currency="usd",
+                                        payment_method=pm_extra.stripe_pm_id,
+                                        **({"customer": customer_id} if customer_id else {}),
+                                        confirm=True,
+                                        off_session=True,
+                                        automatic_payment_methods={
+                                            "enabled": True,
+                                            "allow_redirects": "never"},
+                                        metadata={
+                                            "trip_id": str(trip.id),
+                                            "rider_id": str(trip.rider_id),
+                                            "kind": "fare_shortfall"},
+                                    ),
+                                ),
+                                timeout=15.0,
+                            )
+                            logging.info(
+                                "[Capture] Trip %s shortfall $%.2f charged - status: %s",
+                                trip.id, shortfall / 100.0, extra_intent.status)
+                        else:
+                            logging.warning(
+                                "[Capture] Trip %s shortfall $%.2f UNCOLLECTED - no saved card",
+                                trip.id, shortfall / 100.0)
+                    except Exception as extra_err:
+                        logging.warning(
+                            "[Capture] Trip %s shortfall $%.2f UNCOLLECTED: %s",
+                            trip.id, shortfall / 100.0, extra_err)
+
                 return {"status": intent.status, "payment_intent_id": intent.id, "amount": intent.amount}
             elif existing.status == "succeeded":
                 trip.payment_status = "paid"
@@ -1485,8 +1643,23 @@ async def update_trip_status(trip_id: int, status: str = Query(...), user: User 
                 await _send_fcm_push_async(rider.fcm_token, title="Trip Canceled",
                     body="Your trip has been canceled.",
                     data={"type": "trip_canceled", "trip_id": str(trip_id)})
-    except Exception as _fcm_err:
-        logging.warning("[FCM] Rider push failed: %s", _fcm_err)
+    except Exception as _fcm_err_inner:
+        logging.warning("[FCM] Rider push failed: %s", _fcm_err_inner)
+
+    # Dispatch-panel / status-endpoint cancels never touched the hold —
+    # it sat pinned on the rider's card for ~7 days. Settle it here the
+    # same way the dedicated cancel endpoint does (2026-08-05).
+    try:
+        if canonical_new == "cancelled" and trip.payment_status in ("held", "unpaid") \
+                and trip.stripe_payment_intent_id:
+            new_ps = await _release_or_capture_fee_on_cancel(trip)
+            if new_ps != trip.payment_status:
+                trip.payment_status = new_ps
+                await db.commit()
+    except Exception as _settle_err:
+        logging.warning(
+            "[CancelHold] status-endpoint settle failed for trip %s: %s",
+            trip_id, _settle_err)
 
     # --- n8n webhook triggers ===
     if canonical_new == "completed":
@@ -1636,15 +1809,12 @@ async def cancel_trip(trip_id: int, request: Request, user: User = Depends(_get_
         logging.info("[Dispatch] Cancelled stale offer id=%d for cancelled trip %d", stale_offer.id, trip.id)
 
     # ---"= REFUND LOGIC ==="=
-    # If a hold exists but was not yet captured, cancel it to release funds.
+    # Hold not yet captured: ONE Stripe call settles it — partial-capture
+    # exactly the cancellation fee (finally collected; it used to be
+    # credited to the driver without ever charging the rider) and the
+    # remainder releases instantly, or a plain cancel when fee == 0.
     if trip.payment_status == "held" and trip.stripe_payment_intent_id and _HAS_STRIPE:
-        try:
-            _stripe_mod.PaymentIntent.cancel(trip.stripe_payment_intent_id)
-            trip.payment_status = "cancelled"
-            logging.info("[Cancel] Trip %d hold cancelled (pi=%s)", trip_id, trip.stripe_payment_intent_id)
-        except Exception as e:
-            logging.warning("[Cancel] Failed to cancel hold for trip %d: %s", trip_id, e)
-            trip.payment_status = "pending_refund"
+        trip.payment_status = await _release_or_capture_fee_on_cancel(trip)
     # If rider was already charged, issue refund (full or less cancellation fee)
     elif trip.payment_status == "paid" and trip.stripe_payment_intent_id and _HAS_STRIPE:
         try:

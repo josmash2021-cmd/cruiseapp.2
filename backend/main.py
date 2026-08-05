@@ -1223,6 +1223,13 @@ async def _scheduled_ride_dispatcher():
                         trip.status = "cancelled"
                         trip.cancel_reason = "auto:scheduler_expired_no_driver"
                         trip.updated_at = datetime.now(timezone.utc)
+                        # Release the payment hold NOW instead of letting it
+                        # pin the rider's card for ~7 days (2026-08-05).
+                        try:
+                            from routers.trips import _release_or_capture_fee_on_cancel
+                            trip.payment_status = await _release_or_capture_fee_on_cancel(trip)
+                        except Exception as _hold_err:
+                            logging.warning("[AutoCancel/Scheduler] hold settle failed trip=%d: %s", trip.id, _hold_err)
                         await db.commit()
                         logging.warning(
                             "[AutoCancel/Scheduler] trip=%d prev_status=%r driver_id=%s "
@@ -1514,6 +1521,12 @@ async def _scheduled_ride_reminder_loop():
                         trip.status = "cancelled"
                         trip.cancel_reason = "auto:reminder_past_scheduled_no_pickup"
                         trip.updated_at = datetime.now(timezone.utc)
+                        # Same instant hold release as the scheduler path.
+                        try:
+                            from routers.trips import _release_or_capture_fee_on_cancel
+                            trip.payment_status = await _release_or_capture_fee_on_cancel(trip)
+                        except Exception as _hold_err:
+                            logging.warning("[AutoCancel/Reminder] hold settle failed trip=%d: %s", trip.id, _hold_err)
                         await db.commit()
                         logging.warning(
                             "[AutoCancel/Reminder] trip=%d prev_status=%r driver_id=%s "

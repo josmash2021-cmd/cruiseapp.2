@@ -293,16 +293,16 @@ _TIER_ALIASES: dict[str, tuple[str, ...]] = {
 }
 
 
-# Who may serve a request for each tier, product rule 2026-08-02:
-# a driver is offered exactly the work their own tier says, with one
-# exception — a Black car also sees Premium requests, because a Black
-# cabin serves a Premium rider without complaint. Nothing else crosses:
-# Premium drivers get Premium only, Compact get Compact only, Standard
-# get Standard only. Read from the driver's seat that is: Black gets
-# Black + Premium work, Premium gets Premium work, and the rest stay
-# in their lane.
+# Who may serve a request for each tier, product rule 2026-08-04:
+# read from the driver's seat — Standard drivers get Standard work
+# only; Compact drivers get Compact AND Standard; Premium drivers get
+# Premium only; Black drivers get Black AND Premium. Keyed by the
+# REQUESTED tier, that inverts to the map below: a Standard request may
+# go to a Standard or a Compact car, a Compact request to Compact cars
+# only, a Premium request to Premium or Black cars, a Black request to
+# Black cars only.
 _REQUEST_RULE: dict[str, tuple[str, ...]] = {
-    TIER_STANDARD: (TIER_STANDARD,),
+    TIER_STANDARD: (TIER_STANDARD, TIER_COMPACT),
     TIER_COMPACT: (TIER_COMPACT,),
     TIER_PREMIUM: (TIER_PREMIUM, TIER_BLACK),
     TIER_BLACK: (TIER_BLACK,),

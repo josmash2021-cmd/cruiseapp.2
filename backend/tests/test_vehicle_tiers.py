@@ -119,11 +119,12 @@ CASES = [
     ("comfort to standard is not an upgrade, it is a rename",
      vt.is_upgrade("comfort", vt.TIER_STANDARD), False),
 
-    # ── Who may take which request: own tier only, Black also Premium ──
+    # ── Who may take which request (2026-08-04): Compact also serves
+    #    Standard; Black also serves Premium; nothing else crosses ──
     ("a Standard request reaches Standard cars",
      vt.TIER_STANDARD in vt.eligible_tiers(vt.TIER_STANDARD), True),
-    ("a Standard request does NOT reach Compact (own tier only)",
-     vt.TIER_COMPACT in vt.eligible_tiers(vt.TIER_STANDARD), False),
+    ("a Standard request ALSO reaches Compact (Compact serves Standard)",
+     vt.TIER_COMPACT in vt.eligible_tiers(vt.TIER_STANDARD), True),
     ("a Standard request does not reach Premium",
      vt.TIER_PREMIUM in vt.eligible_tiers(vt.TIER_STANDARD), False),
     ("a Standard request does not reach Black",

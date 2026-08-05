@@ -92,11 +92,32 @@ class RouteSplice {
     required List<LatLng> newRoute,
     required LatLng driverPos,
     double rejoinMeters = 15.0,
+    double maxHeadGapMeters = 300.0,
   }) {
     if (newRoute.length < 2) return List.of(oldRoute);
     if (oldRoute.length < 2) return List.of(newRoute);
 
     final devIdx = closestSegmentIndex(oldRoute, driverPos);
+
+    // The spliced line jumps from the old route straight to
+    // newRoute.first (the driver's position). At normal off-route
+    // distances the erase-behind-the-car hides that connector; past a
+    // few hundred meters (a GPS teleport, a route computed against a
+    // stale driver position) the premise of a partial splice is broken
+    // and the connector would paint as a long straight line across the
+    // map. Replace wholesale then — a full repaint of the fresh road is
+    // always correct and can never draw a connector. Legs with no erase
+    // at all (the arriving approach) must not splice in the first
+    // place; the caller replaces wholesale there.
+    //
+    // Measured from the driver's PROJECTION on the deviation segment —
+    // the true off-route distance — not from the segment's start vertex,
+    // which can sit hundreds of meters up the road on sparse polylines.
+    final devProj = projectOnSegment(
+        newRoute.first, oldRoute[devIdx], oldRoute[devIdx + 1]);
+    if (haversineM(devProj, newRoute.first) > maxHeadGapMeters) {
+      return List.of(newRoute);
+    }
 
     for (var j = 0; j < newRoute.length; j++) {
       final np = newRoute[j];

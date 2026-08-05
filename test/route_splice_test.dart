@@ -134,6 +134,23 @@ void main() {
       expect(spliced.contains(newRoute[1]), isTrue);
     });
 
+    test('driver far beyond maxHeadGap → wholesale, never a connector', () {
+      // Driver 0.01° lat (~1.1 km) off the plan: keeping the old head
+      // would paint a kilometre-long straight connector on legs with no
+      // erase. The splice must hand back the fresh route untouched.
+      final newRoute = [
+        const LatLng(33.01, -86.970),
+        const LatLng(33.005, -86.950),
+        const LatLng(33.00005, -86.940), // ends ~5 m off the old line
+      ];
+      final spliced = RouteSplice.splice(
+        oldRoute: oldRoute,
+        newRoute: newRoute,
+        driverPos: const LatLng(33.01, -86.970),
+      );
+      expect(spliced, newRoute);
+    });
+
     test('degenerate inputs fall back to the usable route', () {
       final newRoute = [const LatLng(33.0, -86.9), const LatLng(33.0, -86.8)];
       expect(

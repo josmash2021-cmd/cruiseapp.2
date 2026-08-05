@@ -813,11 +813,20 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       // route and where the new route rejoins it is the ONLY geometry that
       // changes. The already-driven part keeps its usual treatment (erased
       // behind the car), the untouched tail stays pixel-identical.
-      final spliced = RouteSplice.splice(
-        oldRoute: _routePts,
-        newRoute: result.points,
-        driverPos: driverPos,
-      );
+      //
+      // ARRIVING is the exception (user report 2026-08-04, the "straight
+      // line" screenshot): that leg has no erase-behind-the-car, so the
+      // splice's head→driver connector stays VISIBLE — the old road plus
+      // a long straight jump doubling back over the map. Replace the
+      // whole line there; the crossfade repaints the fresh driver→pickup
+      // road and a full repaint can never draw a connector.
+      final spliced = toPickup
+          ? result.points
+          : RouteSplice.splice(
+              oldRoute: _routePts,
+              newRoute: result.points,
+              driverPos: driverPos,
+            );
       await _applyReroutedPolyline(spliced);
 
       // ETA base. result.durationSeconds covers ONLY the fresh
@@ -1071,46 +1080,24 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       }
       if (_backInQueueShown) return;
       _backInQueueShown = true;
-      debugPrint('[RiderTracking] ↩️ TRIP RETURNED TO DISPATCH — finding a new driver');
+      debugPrint('[RiderTracking] ↩️ TRIP RETURNED TO DISPATCH — back to searching');
 
-      // Drop the old driver everywhere: the map car, the live GPS feed, and
-      // the card. Leaving any of it up tells the rider to look for a car
-      // that was reassigned.
+      // Drop the old driver's live feed before leaving — the screen is
+      // about to pop, but a late RTDB event must not repaint a car that
+      // was reassigned.
       _rtdbDriverLocSub?.cancel();
       _rtdbDriverLocSub = null;
       _rtdbDriverId = null;
       _mapCar?.clear();
 
-      // The driver's name, plate and photo arrive as widget parameters, so
-      // they cannot be blanked from here. _searchingNewDriver is what the
-      // build method keys off to stop showing them.
-      _setState(() {
-        _phase = _TrackPhase.arriving;
-        _etaMinutes = 0;
-        _distanceMiles = 0;
-        _searchingNewDriver = true;
-        _showPickupOverlay = false;
-      });
-      _confirmPickupShown = false;
-      _arrivedNotifSent = false;
-      // The next driver's approach fetch gets a clean slate — a failure
-      // cached against the previous driver must not suppress it.
-      _approachRouteFailed = false;
-      // Same clean slate for the off-route clock: it was measured against
-      // the PREVIOUS driver's approach polyline and must not let the new
-      // driver's first noisy fix skip the 2.5 s sustain.
-      _offRouteSince = null;
-      _lastRerouteAt = null;
-      _saveRideState();
-
+      // Back to the ride request screen's "Looking for your driver" card
+      // (user spec 2026-08-04) — it used to stay HERE with a blanked
+      // driver card, which read as broken. The pop result tells
+      // _goToTracking's continuation to re-enter the searching phase and
+      // re-arm the dispatch poll; dispatch is already re-cascading the
+      // same trip to the next driver.
       if (mounted) {
-        ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-          SnackBar(
-            content: Text(S.of(context).lookingForAnotherDriver),
-            behavior: SnackBarBehavior.floating,
-            duration: const Duration(seconds: 5),
-          ),
-        );
+        Navigator.of(context).maybePop('driver_released');
       }
       return;
     }

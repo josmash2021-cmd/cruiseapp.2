@@ -567,6 +567,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   @override
   void dispose() {
     MapSurfaceCoordinator.instance.release(_mapSurfaceOwner);
+    _tripRouteRetryTimer?.cancel();
     if (_networkListener != null) {
       NetworkService().onlineNotifier.removeListener(_networkListener!);
       _networkListener = null;
@@ -930,6 +931,10 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
 
   // ── Approach route: driver→pickup (Uber-style) ──
   List<LatLng> _tripRoutePts = [];         // stored pickup→dropoff route (for after arriving)
+  // Road-route recovery when the first pickup→dropoff fetch fails — the
+  // straight two-point fallback is banned (see _initRoute).
+  int _tripRouteRetries = 0;
+  Timer? _tripRouteRetryTimer;
   bool _approachRouteFetched = false;      // guard: approach route already obtained
   bool _approachRouteFetching = false;     // guard: fetch in progress
   /// True when the approach-route fetch failed even after the retry. The

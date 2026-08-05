@@ -499,6 +499,51 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     );
   }
 
+  /// Road-route recovery: retries the pickup→dropoff fetch every 10 s (max
+  /// 6) after a failed first ask. When it lands it becomes the stored trip
+  /// route — and the ACTIVE line too if the rider is already aboard. Until
+  /// then the map simply has no trip line, which is honest; a straight
+  /// two-point line across the city is not.
+  void _scheduleTripRouteRetry() {
+    if (_tripRouteRetries >= 6) return;
+    _tripRouteRetryTimer?.cancel();
+    _tripRouteRetryTimer = Timer(const Duration(seconds: 10), () async {
+      if (!mounted || _tripRoutePts.length >= 2) return;
+      _tripRouteRetries++;
+      try {
+        final r = await DirectionsService(ApiKeys.webServices).getRoute(
+          origin: widget.pickupLatLng,
+          destination: widget.dropoffLatLng,
+        );
+        if (!mounted) return;
+        final pts = r?.points;
+        if (pts != null && pts.length >= 2) {
+          final road = List<LatLng>.from(pts);
+          road[0] = widget.pickupLatLng;
+          road[road.length - 1] = widget.dropoffLatLng;
+          _tripRoutePts = road;
+          _mapRoute?.initRoute(
+            routePoints: road,
+            pickupLatLng: widget.pickupLatLng,
+            dropoffLatLng: widget.dropoffLatLng,
+          );
+          if (_phase == _TrackPhase.onTrip ||
+              _phase == _TrackPhase.nearDestination) {
+            _routePts = List<LatLng>.from(road);
+            _buildSegDist();
+            _syncRouteToMap();
+          }
+          debugPrint(
+              '[RiderTracking] trip route recovered on retry $_tripRouteRetries');
+          return;
+        }
+      } catch (e) {
+        debugPrint('[RiderTracking] trip route retry failed: $e');
+      }
+      _scheduleTripRouteRetry();
+    });
+  }
+
   Future<void> _initRoute() async {
     // 1) Get the trip route (pickup → dropoff)
     List<LatLng> tripRoute = [];
@@ -513,7 +558,12 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
       if (r != null && mounted) tripRoute = r.points;
     }
     if (tripRoute.isEmpty) {
-      tripRoute = [widget.pickupLatLng, widget.dropoffLatLng];
+      // NO straight-line stand-in (project rule — the user's "línea
+      // recta" screenshot was exactly this two-point fallback becoming
+      // the trip line). An empty route draws nothing — every consumer
+      // guards on length >= 2 — and the retry below keeps asking the
+      // router until the real road geometry lands.
+      _scheduleTripRouteRetry();
     }
 
     // Snap the polyline endpoints to the EXACT pickup/dropoff coordinates.

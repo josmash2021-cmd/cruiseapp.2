@@ -1042,6 +1042,11 @@ async def migrate_postgres(conn):
         ("trips", "share_token", "VARCHAR(100)"),
         ("trips", "share_expires_at", "TIMESTAMP WITH TIME ZONE"),
         ("trips", "waypoints", "TEXT"),
+        # Multi-stop v1 (2026-08-05). NOTE: BOOT runs THIS list — a column
+        # added only to migrate.py's MIGRATIONS never reaches production
+        # (that runner is manual). The 2026-08-05 outage was exactly that:
+        # the ORM selected trips.stops while only migrate.py knew about it.
+        ("trips", "stops", "TEXT"),
         ("trips", "pet_friendly", "BOOLEAN DEFAULT FALSE"),
         ("trips", "ac_guaranteed", "BOOLEAN DEFAULT FALSE"),
         ("trips", "silent_ride", "BOOLEAN DEFAULT FALSE"),

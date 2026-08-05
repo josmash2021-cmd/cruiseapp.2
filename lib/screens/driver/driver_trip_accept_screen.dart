@@ -31,9 +31,11 @@ import '../../l10n/app_localizations.dart';
 import '../../models/lat_lng.dart';
 import '../../map/map_surface_coordinator.dart';
 import '../../map/web_map_view.dart';
+import '../../navigation/car_icon_loader.dart';
 import '../../services/resilient_position_stream.dart';
 import '../../utils/driver_location_settings.dart';
 import '../../utils/mapbox_safe.dart';
+import '../../utils/smooth_motion.dart';
 import '../../services/map_controller_cache.dart';
 import '../chat_screen.dart';
 import '../help_screen.dart';
@@ -156,9 +158,9 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   // ── VIP complimentary drink (null = not VIP or rider hasn't chosen yet) ──
   String? _complimentaryDrink;
 
-  // ── Tilt animation ──
+  // ── Tilt animation (controller kept for dispose symmetry; the mini map
+  //    is fixed top-down since 2026-08-04 and never tilts) ──
   late final AnimationController _tiltCtrl;
-  late final Animation<double>   _tiltAnim;
 
   // ── Smooth route draw ──
   Ticker? _routeDrawTicker;
@@ -174,18 +176,27 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   // ── Mini map animation already played flag ──
   bool _miniMapAnimDone = false;
 
-  // ── Camera angle cycling (every 10s, smooth bearing+pitch) ──
-  static const _cameraAngles = <(double, double)>[
-    (40.0, 12.0),
-    (34.0, -30.0),
-    (44.0, 25.0),
-    (38.0, -10.0),
-  ];
+  // ── Live car on the mini map (2026-08-04) ──
+  // Its own annotation manager: the car rotates WITH the map (map-aligned)
+  // while the pins stay upright (viewport-aligned on _annotMgr).
+  mapbox.PointAnnotationManager? _carMgr;
+  mapbox.PointAnnotation? _carAnnot;
+  Uint8List? _carBytes;
+  StreamSubscription<Position>? _carGpsSub;
+  final SmoothMotion _carMotion = SmoothMotion();
+  Ticker? _carTicker;
+  Duration _carLastTick = Duration.zero;
+  bool _carUpdateInFlight = false;
+  DateTime _lastEraseAt = DateTime.fromMillisecondsSinceEpoch(0);
+  int _eraseHintIdx = 0;
+  bool _pickupPopped = false;
+  mapbox.PolylineAnnotation? _sweepAnnot;
+  LatLng? _prevCarFix;
+
+  // ── Camera angle cycling removed 2026-08-04 (top-down only). The timer
+  //    and controller stay declared for their dispose calls.
   Timer? _camCycleTimer;
-  int _camCycleIdx = 0;
   AnimationController? _camCycleCtrl;
-  Animation<double>? _camPitchAnim;
-  Animation<double>? _camBearingAnim;
 
   // ── Continuous GPS → GpsService (keeps RTDB live for rider tracking) ──
   ResilientPositionStream? _liveGps;
@@ -368,15 +379,12 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
       end: Offset.zero,
     ).animate(CurvedAnimation(parent: _slideCtrl, curve: Curves.easeOutCubic));
 
-    // Tilt controller: smooth 0° → 40° camera tilt
+    // Tilt controller: created only for dispose symmetry — the mini map
+    // is fixed top-down since 2026-08-04 and never tilts.
     _tiltCtrl = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1400),
     );
-    _tiltAnim = Tween<double>(begin: 0.0, end: 40.0).animate(
-      CurvedAnimation(parent: _tiltCtrl, curve: Curves.easeInOutCubic),
-    );
-    _tiltCtrl.addListener(_applyMapTilt);
 
     // Button fade controller for Start Trip → Continue/Directions transition
     _btnFadeCtrl = AnimationController(
@@ -558,6 +566,9 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     _fadeCtrl.dispose();
     _slideCtrl.dispose();
     _tiltCtrl.dispose();
+    _carGpsSub?.cancel();
+    _carTicker?.stop();
+    _carTicker?.dispose();
     _btnFadeCtrl.dispose();
     _finishFadeCtrl.dispose();
     _shimmerCtrl.dispose();
@@ -990,21 +1001,16 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
         // already up, since that notice lives on the online screen.
         if (!mounted) return;
         try {
-          Navigator.of(context).pushAndRemoveUntil(
-            PageRouteBuilder(
-              pageBuilder: (_, __, ___) =>
-                  const DriverOnlineScreen(showCancelledNotice: true),
-              transitionsBuilder: (_, anim, __, child) =>
-                  FadeTransition(opacity: anim, child: child),
-              transitionDuration: const Duration(milliseconds: 400),
-            ),
-            (route) => route.isFirst, // keep only the very first route (usually home)
-          );
+          _exitAfterRemoteCancel();
         } catch (e) {
           debugPrint('[Driver] cancel-navigate failed: $e');
         }
         return;
       }
+
+      // Dispatch advanced the trip (arrived / start trip from the panel)
+      // — morph the action button to the matching stage.
+      _applyRemoteStage(status);
 
       if (_riderConfirmedPickup || _rideStarted) return;
       if (data['rider_confirmed_pickup'] == true && !_riderConfirmedPickup) {
@@ -1081,19 +1087,13 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
 
           if (!mounted) return;
           try {
-            Navigator.of(context).pushAndRemoveUntil(
-              PageRouteBuilder(
-                pageBuilder: (_, __, ___) =>
-                    const DriverOnlineScreen(showCancelledNotice: true),
-                transitionsBuilder: (_, anim, __, child) =>
-                    FadeTransition(opacity: anim, child: child),
-                transitionDuration: const Duration(milliseconds: 400),
-              ),
-              (route) => route.isFirst,
-            );
+            _exitAfterRemoteCancel();
           } catch (e) {
             debugPrint('[Driver] poll-cancel-navigate failed: $e');
           }
+        } else {
+          // Dispatch advanced the trip while the Firestore stream lagged.
+          _applyRemoteStage(status);
         }
       } on ApiException catch (e) {
         // A 404 is not transient: the trip does not exist server-side at
@@ -1107,16 +1107,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
           _statusPollTimer?.cancel();
           _riderConfirmSub?.cancel();
           try {
-            Navigator.of(context).pushAndRemoveUntil(
-              PageRouteBuilder(
-                pageBuilder: (_, __, ___) =>
-                    const DriverOnlineScreen(showCancelledNotice: true),
-                transitionsBuilder: (_, anim, __, child) =>
-                    FadeTransition(opacity: anim, child: child),
-                transitionDuration: const Duration(milliseconds: 400),
-              ),
-              (route) => route.isFirst,
-            );
+            _exitAfterRemoteCancel();
           } catch (navErr) {
             debugPrint('[Driver] 404-navigate failed: $navErr');
           }
@@ -2602,18 +2593,19 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     // ── If returning (animation already played), show final state instantly ──
     if (_miniMapAnimDone || widget.arrivedAtPickup) {
       _miniMapAnimDone = true;
+      // Top-down eagle view only (user spec 2026-08-04 — the tilt is gone).
       final cam = await ctrl.cameraForCoordinateBounds(
         bounds,
         mapbox.MbxEdgeInsets(top: 60, left: 50, bottom: 70, right: 50),
         prettBearing,
-        40,
+        0,
         null, null,
       );
       if (!mounted) return;
       // Reduce zoom by 0.5 to ensure route is fully visible with padding
       final targetZoom = ((cam.zoom ?? 13) - 0.5).clamp(10.0, 14.0);
       ctrl.setCamera(mapbox.CameraOptions(
-        center: cam.center, zoom: targetZoom, bearing: prettBearing, pitch: 40.0,
+        center: cam.center, zoom: targetZoom, bearing: prettBearing, pitch: 0.0,
       ));
       // Place pins + route instantly
       final pickupPoint = safePoint(widget.pickupLatLng.longitude, widget.pickupLatLng.latitude);
@@ -2623,12 +2615,12 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
         final pins = await Future.wait([
           _annotMgr!.create(mapbox.PointAnnotationOptions(
             geometry: pickupPoint,
-            image: pickupPinBytes, iconSize: 0.86, iconAnchor: mapbox.IconAnchor.BOTTOM,
+            image: pickupPinBytes, iconSize: 0.62, iconAnchor: mapbox.IconAnchor.BOTTOM,
             iconOffset: const [0.0, 0.0],
           )),
           _annotMgr!.create(mapbox.PointAnnotationOptions(
             geometry: dropoffPoint,
-            image: dropoffPinBytes, iconSize: 0.86, iconAnchor: mapbox.IconAnchor.BOTTOM,
+            image: dropoffPinBytes, iconSize: 0.62, iconAnchor: mapbox.IconAnchor.BOTTOM,
             iconOffset: const [0.0, 0.0],
           )),
         ]);
@@ -2641,12 +2633,19 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
             _routeAnnot = await _polyMgr!.create(mapbox.PolylineAnnotationOptions(
               geometry: safeGeom,
               lineColor: const Color(0xFFFFD700).toARGB32(),
-              lineWidth: 5.0,
+              lineWidth: 3.5,
               lineJoin: mapbox.LineJoin.ROUND,
             ));
           } catch (_) {}
         }
       }
+      // Resume mid-trip: the pickup already happened — no pin to pop.
+      if (_rideStarted && _pinAnnots.isNotEmpty) {
+        _pickupPopped = true;
+        final pickupPin = _pinAnnots.removeAt(0);
+        try { await _annotMgr?.delete(pickupPin); } catch (_) {}
+      }
+      unawaited(_startMiniMapCar());
       return;
     }
 
@@ -2695,11 +2694,11 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
       final t = (pinSw.elapsedMilliseconds / pinMs).clamp(0.0, 1.0);
       double scale;
       if (t < 0.6) {
-        scale = Curves.easeOutCubic.transform(t / 0.6) * 0.98;
+        scale = Curves.easeOutCubic.transform(t / 0.6) * 0.70;
       } else if (t < 0.85) {
-        scale = 0.98 - 0.12 * Curves.easeInOut.transform((t - 0.6) / 0.25);
+        scale = 0.70 - 0.08 * Curves.easeInOut.transform((t - 0.6) / 0.25);
       } else {
-        scale = 0.86;
+        scale = 0.62;
       }
       for (final pin in _pinAnnots) {
         pin.iconSize = scale;
@@ -2730,7 +2729,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
               _routeAnnot ??= await _polyMgr!.create(mapbox.PolylineAnnotationOptions(
                 geometry: safeGeom,
                 lineColor: const Color(0xFFFFD700).toARGB32(),
-                lineWidth: 5.0,
+                lineWidth: 3.5,
                 lineJoin: mapbox.LineJoin.ROUND,
               ));
             } catch (_) {}
@@ -2740,59 +2739,277 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     }
     if (!mounted) return;
 
-    // STEP 4: Camera tilt 0° → 40° (always fires even if route draw failed)
-    await Future.delayed(const Duration(milliseconds: 200));
-    if (mounted) _tiltCtrl.forward(from: 0);
-
+    // Top-down eagle view only — the 0°→40° tilt and the 10 s camera
+    // cycle are gone (user spec 2026-08-04: no map-tilting animations).
     _miniMapAnimDone = true;
-    _startCameraCycle();
+    unawaited(_startMiniMapCar());
   }
 
-  void _startCameraCycle() {
-    _camCycleTimer?.cancel();
-    _camCycleIdx = 0;
-    _camCycleTimer = Timer.periodic(const Duration(seconds: 10), (_) {
-      _camCycleIdx++;
-      _animateCameraToAngle(_camCycleIdx);
-    });
+  // Camera cycle + tilt functions removed 2026-08-04: the mini map is a
+  // fixed top-down eagle view now (user spec — no tilting animations).
+
+  // ═══ Live car + route erase + pickup pop-out + light sweep ═══
+
+  /// The driver's own car on the mini map, gliding through SmoothMotion
+  /// (rule 13) — never hopping fix to fix.
+  Future<void> _startMiniMapCar() async {
+    final ctrl = _map;
+    if (ctrl == null || !mounted || kIsWeb) return;
+    if (_carMgr != null) return;
+    try {
+      _carMgr = await ctrl.annotations.createPointAnnotationManager();
+      try {
+        await ctrl.style.setStyleLayerProperty(_carMgr!.id, 'icon-rotation-alignment', 'map');
+        await ctrl.style.setStyleLayerProperty(_carMgr!.id, 'icon-allow-overlap', true);
+        await ctrl.style.setStyleLayerProperty(_carMgr!.id, 'icon-ignore-placement', true);
+      } catch (_) {}
+      _carBytes ??= await CarIconLoader.loadUberBytes(rideType: widget.vehicleType);
+      if (!mounted || _carBytes == null || _carMgr == null) return;
+      final p0 = safePoint(widget.driverPos.longitude, widget.driverPos.latitude);
+      if (p0 == null) return;
+      _carMotion.setTarget(widget.driverPos.latitude, widget.driverPos.longitude);
+      _carAnnot = await _carMgr!.create(mapbox.PointAnnotationOptions(
+        geometry: p0,
+        image: _carBytes!,
+        iconSize: 0.30,
+        iconRotate: 0,
+      ));
+      _carGpsSub?.cancel();
+      _carGpsSub = Geolocator.getPositionStream(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.bestForNavigation,
+          distanceFilter: 3,
+        ),
+      ).listen((pos) {
+        if (!mounted) return;
+        double? brg;
+        final prev = _prevCarFix;
+        final here = LatLng(pos.latitude, pos.longitude);
+        if (prev != null && _haversineMeters(prev, here) > 2) {
+          brg = Geolocator.bearingBetween(
+              prev.latitude, prev.longitude, pos.latitude, pos.longitude);
+        }
+        _prevCarFix = here;
+        _carMotion.setTarget(pos.latitude, pos.longitude,
+            bearing: brg, accuracyM: pos.accuracy);
+        _ensureCarTicker();
+      }, onError: (Object e) {
+        debugPrint('[DriverTrip] mini-map car stream error: $e');
+      });
+      _ensureCarTicker();
+    } catch (e) {
+      debugPrint('[DriverTrip] mini-map car setup failed: $e');
+    }
   }
 
-  void _animateCameraToAngle(int idx) {
-    if (_map == null || !mounted) return;
-    final ai = idx % _cameraAngles.length;
-    final (targetPitch, targetBearing) = _cameraAngles[ai];
+  void _ensureCarTicker() {
+    _carTicker ??= createTicker(_onCarTick);
+    if (!_carTicker!.isActive) {
+      _carLastTick = Duration.zero;
+      _carTicker!.start();
+    }
+  }
 
-    final prevPitch = _camPitchAnim?.value ?? _tiltAnim.value;
-    final prevBearing = _camBearingAnim?.value ?? 0.0;
+  void _onCarTick(Duration elapsed) {
+    if (!mounted) {
+      _carTicker?.stop();
+      return;
+    }
+    final dt = _carLastTick == Duration.zero
+        ? 0.016
+        : (elapsed - _carLastTick).inMicroseconds / 1e6;
+    _carLastTick = elapsed;
+    _carMotion.tick(dt.clamp(0.0, 0.1));
+    final lat = _carMotion.lat, lng = _carMotion.lng;
+    final annot = _carAnnot;
+    final mgr = _carMgr;
+    if (lat == null || lng == null || annot == null || mgr == null) return;
+    if (!_carUpdateInFlight) {
+      final p = safePoint(lng, lat);
+      if (p != null) {
+        _carUpdateInFlight = true;
+        annot.geometry = p;
+        annot.iconRotate = _carMotion.bearing;
+        mgr
+            .update(annot)
+            .catchError((_) {})
+            .whenComplete(() => _carUpdateInFlight = false);
+      }
+    }
+    // Erase the line behind the car once the rider is aboard — the
+    // geometry IPC is throttled to ~6 Hz, the car itself stays 60 fps.
+    if (_rideStarted &&
+        _routeAnnot != null &&
+        DateTime.now().difference(_lastEraseAt).inMilliseconds > 160) {
+      _lastEraseAt = DateTime.now();
+      _eraseRouteBehindCar(LatLng(lat, lng));
+    }
+  }
 
-    // Reuse existing controller instead of disposing & re-creating each cycle
-    _camCycleCtrl?.removeListener(_applyCamCycle);
-    _camCycleCtrl ??= AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1800),
+  /// Trim the gold line to [car → dropoff]. Monotonic: the erase index
+  /// never walks backwards, so GPS wander cannot resurrect eaten road.
+  void _eraseRouteBehindCar(LatLng car) {
+    final pts = _routePoints;
+    final annot = _routeAnnot;
+    final mgr = _polyMgr;
+    if (annot == null || mgr == null || pts.length < 2) return;
+    var best = double.infinity;
+    var bestIdx = _eraseHintIdx;
+    final from = (_eraseHintIdx - 5).clamp(0, pts.length - 1);
+    for (var i = from; i < pts.length; i++) {
+      final d = _haversineMeters(car, pts[i]);
+      if (d < best) {
+        best = d;
+        bestIdx = i;
+      }
+    }
+    if (best > 120) return; // off the drawn road — leave the line alone
+    if (bestIdx < _eraseHintIdx) bestIdx = _eraseHintIdx;
+    _eraseHintIdx = bestIdx;
+    if (bestIdx >= pts.length - 1) return;
+    final geom = safeLineString(<LatLng>[car, ...pts.sublist(bestIdx + 1)]);
+    if (geom == null) return;
+    annot.geometry = geom;
+    mgr.update(annot).catchError((_) {});
+  }
+
+  /// Rider aboard: the pickup pin pops OUT, then a light travels the
+  /// pickup→dropoff line — the line is already there, only the light
+  /// sweeps it (user spec 2026-08-04). Nothing is destroyed.
+  void _onRideStartedMiniMap() {
+    if (_pickupPopped) return;
+    _pickupPopped = true;
+    unawaited(_popOutPickupPin());
+    unawaited(_runRouteLightSweep());
+  }
+
+  Future<void> _popOutPickupPin() async {
+    final mgr = _annotMgr;
+    if (mgr == null || _pinAnnots.isEmpty || !mounted) return;
+    final pin = _pinAnnots.removeAt(0); // pickup is created first
+    const ms = 320;
+    final sw = Stopwatch()..start();
+    try {
+      await Future.doWhile(() async {
+        await Future.delayed(const Duration(milliseconds: 16));
+        if (!mounted) return false;
+        final t = (sw.elapsedMilliseconds / ms).clamp(0.0, 1.0);
+        // Swell 0.62 → 0.85, then shrink to nothing.
+        final sc = t < 0.35
+            ? 0.62 + 0.23 * Curves.easeOut.transform(t / 0.35)
+            : 0.85 * (1 - Curves.easeIn.transform((t - 0.35) / 0.65));
+        pin.iconSize = sc.clamp(0.01, 1.0);
+        try {
+          await mgr.update(pin);
+        } catch (_) {
+          return false;
+        }
+        return t < 1.0;
+      });
+    } catch (_) {}
+    try {
+      await mgr.delete(pin);
+    } catch (_) {}
+  }
+
+  Future<void> _runRouteLightSweep() async {
+    final mgr = _polyMgr;
+    final pts = List<LatLng>.of(_routePoints);
+    if (mgr == null || pts.length < 2 || !mounted) return;
+    const ms = 1400;
+    final sw = Stopwatch()..start();
+    try {
+      await Future.doWhile(() async {
+        await Future.delayed(const Duration(milliseconds: 24));
+        if (!mounted) return false;
+        final t = Curves.easeInOutCubic
+            .transform((sw.elapsedMilliseconds / ms).clamp(0.0, 1.0));
+        final n = (pts.length * t).round().clamp(2, pts.length);
+        final geom = safeLineString(pts.sublist(0, n));
+        if (geom != null) {
+          try {
+            if (_sweepAnnot == null) {
+              _sweepAnnot = await mgr.create(mapbox.PolylineAnnotationOptions(
+                geometry: geom,
+                lineColor: const Color(0xFFFFF3B0).toARGB32(),
+                lineWidth: 4.5,
+                lineJoin: mapbox.LineJoin.ROUND,
+              ));
+            } else {
+              _sweepAnnot!.geometry = geom;
+              await mgr.update(_sweepAnnot!);
+            }
+          } catch (_) {
+            return false;
+          }
+        }
+        return sw.elapsedMilliseconds < ms;
+      });
+      // Hold the lit line a beat, then the base gold line carries on.
+      await Future.delayed(const Duration(milliseconds: 350));
+    } catch (_) {}
+    final sweep = _sweepAnnot;
+    _sweepAnnot = null;
+    if (sweep != null) {
+      try {
+        await mgr.delete(sweep);
+      } catch (_) {}
+    }
+  }
+
+  /// Dispatch advanced the trip from the panel — mirror it locally so the
+  /// action button morphs to the matching stage (the AnimatedSwitcher on
+  /// the phase router does the silk).
+  void _applyRemoteStage(String rawStatus) {
+    if (_tripFinished || !mounted) return;
+    const arrivedAliases = {'arrived', 'driver_arrived', 'arrived_pickup', 'arrived_at_pickup'};
+    const inTripAliases = {'in_trip', 'on_trip', 'in_progress', 'rider_onboard', 'trip_started'};
+    final status = rawStatus.trim().toLowerCase();
+    var changed = false;
+    if (inTripAliases.contains(status) && !_rideStarted) {
+      _arrivedConfirmed = true;
+      _arrivedSlidDone = true;
+      _nearPickup = true;
+      _rideStarted = true;
+      _startRideSlidDone = true;
+      changed = true;
+      _startDropoffProximityDetection();
+      _onRideStartedMiniMap();
+    } else if (arrivedAliases.contains(status) && !_arrivedConfirmed) {
+      _arrivedConfirmed = true;
+      _arrivedSlidDone = true;
+      _nearPickup = true;
+      changed = true;
+    }
+    if (changed) {
+      debugPrint('[DriverTrip] remote stage → $status (dispatch advanced the trip)');
+      HapticService.mediumImpact();
+      setState(() {});
+    }
+  }
+
+  /// Leave after a remote cancel. When the online screen is right
+  /// underneath (the normal accept flow) POP back to it — it re-acquires
+  /// the map surface on our dispose and handles the 'cancelled' result
+  /// with its gold toast: nothing destroyed, nothing rebuilt. Orphan
+  /// entry points (resume-from-home, push notification) keep the
+  /// rebuild fallback.
+  void _exitAfterRemoteCancel() {
+    final nav = Navigator.of(context);
+    if (nav.canPop()) {
+      nav.pop('cancelled');
+      return;
+    }
+    nav.pushAndRemoveUntil(
+      PageRouteBuilder(
+        pageBuilder: (_, __, ___) =>
+            const DriverOnlineScreen(showCancelledNotice: true),
+        transitionsBuilder: (_, anim, __, child) =>
+            FadeTransition(opacity: anim, child: child),
+        transitionDuration: const Duration(milliseconds: 400),
+      ),
+      (route) => route.isFirst,
     );
-    _camCycleCtrl!.reset();
-    _camPitchAnim = Tween<double>(begin: prevPitch, end: targetPitch).animate(
-      CurvedAnimation(parent: _camCycleCtrl!, curve: Curves.easeInOutCubic),
-    );
-    _camBearingAnim = Tween<double>(begin: prevBearing, end: targetBearing).animate(
-      CurvedAnimation(parent: _camCycleCtrl!, curve: Curves.easeInOutCubic),
-    );
-    _camCycleCtrl!.addListener(_applyCamCycle);
-    _camCycleCtrl!.forward();
-  }
-
-  void _applyCamCycle() {
-    if (_map == null || !mounted) return;
-    _map!.setCamera(mapbox.CameraOptions(
-      pitch: _camPitchAnim?.value,
-      bearing: _camBearingAnim?.value,
-    ));
-  }
-
-  void _applyMapTilt() {
-    if (_map == null || !mounted) return;
-    _map!.setCamera(mapbox.CameraOptions(pitch: _tiltAnim.value));
   }
 
   /// Compute overall bearing of the route (start → end) for camera orientation.
@@ -2934,7 +3151,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     _routeAnnot = await polyMgr.create(mapbox.PolylineAnnotationOptions(
       geometry: initSafe,
       lineColor: const Color(0xFFFFD700).toARGB32(),
-      lineWidth: 5.0,
+      lineWidth: 3.5,
       lineJoin: mapbox.LineJoin.ROUND,
     ));
     if (!mounted || _routeAnnot == null) return;
@@ -3106,6 +3323,8 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
       backgroundColor: _bg,
       body: Stack(
         children: [
+          // Same fine dot grid as the rider's home (user spec 2026-08-04).
+          const Positioned.fill(child: NeuDotsBackdrop()),
           SlideTransition(
         position: _slideAnim,
         child: FadeTransition(
@@ -3114,7 +3333,8 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
           children: [
             // ── Header ────────────────────────────────────────────────────
             Container(
-              color: _bg,
+              // Transparent so the page's dot backdrop shows through.
+              color: Colors.transparent,
               padding: EdgeInsets.fromLTRB(Responsive.w(16), top + 10, Responsive.w(16), Responsive.h(14)),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -3239,7 +3459,9 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(18),
                   child: SizedBox(
-                    height: Responsive.h(190),
+                    // Taller (was 190) — more of the trip in view (user
+                    // spec 2026-08-04).
+                    height: Responsive.h(240),
                     child: Stack(
                       children: [
                         // The live preview is back. It takes the app's one
@@ -3546,7 +3768,25 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
                     duration: const Duration(milliseconds: 350),
                     switchInCurve: Curves.easeOut,
                     switchOutCurve: Curves.easeIn,
-                    child: _buildCurrentPhaseWidget(),
+                    child: AnimatedSwitcher(
+                      // The stage swap is felt, not snapped — whether the
+                      // driver slid it or dispatch advanced it remotely.
+                      duration: const Duration(milliseconds: 420),
+                      switchInCurve: Curves.easeOutCubic,
+                      switchOutCurve: Curves.easeInCubic,
+                      transitionBuilder: (child, anim) => FadeTransition(
+                        opacity: anim,
+                        child: ScaleTransition(
+                          scale: Tween<double>(begin: 0.96, end: 1.0)
+                              .animate(anim),
+                          child: child,
+                        ),
+                      ),
+                      child: KeyedSubtree(
+                        key: ValueKey(_actionStageKey()),
+                        child: _buildCurrentPhaseWidget(),
+                      ),
+                    ),
                   ),
                   // Cancel trip moved into the support sheet — see
                   // _showSafetySupportMenu. It used to sit right under the slider,
@@ -3671,6 +3911,17 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
       ],
       ),
     ));
+  }
+
+  /// One key per stage so the AnimatedSwitcher cross-fades exactly when
+  /// the stage really changes.
+  String _actionStageKey() {
+    if (_rideStarted && _nearDropoff) return 'finish';
+    if (_rideStarted) return 'finish_locked';
+    if (_arrivedConfirmed) return 'start_ride';
+    if (_tripStarted && _nearPickup) return 'arrived';
+    if (_tripStarted) return 'arrived_locked';
+    return 'start_trip';
   }
 
   // ── Phase router: returns the correct widget for the current state ────
@@ -3961,6 +4212,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
         Future.delayed(const Duration(milliseconds: 300), () {
           if (!mounted) return;
           setState(() => _rideStarted = true);
+          _onRideStartedMiniMap();
           _startDropoffProximityDetection();
           _updateTripInTrip();
           // Navigate immediately — route fetch runs in background

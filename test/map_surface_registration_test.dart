@@ -22,7 +22,9 @@ void main() {
   const allowed = <String, String>{
     // `part of` a screen that does claim it.
     'lib/screens/home_screen_widgets.dart': 'part of home_screen.dart',
-    'lib/screens/ride_request_widgets.dart': 'part of ride_request_screen.dart',
+    // ride_request_widgets.dart left this list 2026-08-04: the Driver
+    // Found overlay's own MapWidget is gone (it scrims over the live
+    // main map instead — the black-screen fix).
     'lib/screens/driver/driver_online_widgets.dart':
         'part of driver_online_screen.dart',
     'lib/widgets/tracking/tracking_map_view.dart':

@@ -35,6 +35,11 @@ class PaymentMethodId {
   static const bank = 'bank_account';
   static const tapToPay = 'tap_to_pay';
   static const test = 'test_mode';
+
+  /// Pay the ride with the Cruise Cash balance (sheet toggle). Only
+  /// requestable while the balance covers the full fare — the Request
+  /// button is disabled otherwise.
+  static const cruiseCash = 'cruise_cash';
 }
 
 /// Opens the payment method picker and returns the selected method id.

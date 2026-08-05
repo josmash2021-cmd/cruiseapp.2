@@ -90,7 +90,6 @@ class _CruisePaymentSheetState extends State<_CruisePaymentSheet> {
   String? _bankLast4;
   String? _bankName;
   int _cashCents = 0;
-  bool _useBalance = true;
   bool _saving = false;
   bool _linkingBank = false;
 
@@ -120,10 +119,6 @@ class _CruisePaymentSheetState extends State<_CruisePaymentSheet> {
   }
 
   Future<void> _loadEverything() async {
-    unawaited(LocalDataService.getUseCruiseCash().then((v) {
-      if (mounted) setState(() => _useBalance = v);
-    }));
-
     // Local single-card cache first so the row is instant, then the
     // backend list replaces it (all cards, default first).
     final localLast4 = await LocalDataService.getCreditCardLast4();
@@ -409,7 +404,20 @@ class _CruisePaymentSheetState extends State<_CruisePaymentSheet> {
               key: ValueKey('page$_page'),
               padding: EdgeInsets.fromLTRB(
                   20, 10, 20, 16 + mq.viewPadding.bottom),
-              child: _page == 0 ? _buildListPage() : _buildAddCardPage(),
+              // BOTH pages hold the same 72%-of-screen height (user spec
+              // 2026-08-04: switching to add-card must not collapse the
+              // sheet) — each page's flexible filler pushes its buttons
+              // to the bottom edge.
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  minHeight: mq.size.height * 0.72 -
+                      (26 + 16 + mq.viewPadding.bottom),
+                ),
+                child: IntrinsicHeight(
+                  child:
+                      _page == 0 ? _buildListPage() : _buildAddCardPage(),
+                ),
+              ),
             ),
           ),
         ),
@@ -427,37 +435,10 @@ class _CruisePaymentSheetState extends State<_CruisePaymentSheet> {
       children: [
         _grabber(),
         const SizedBox(height: 10),
-        Row(
-          children: [
-            _roundButton(Icons.close_rounded,
-                () => Navigator.of(context).pop()),
-            const Spacer(),
-            // "+ Add" — jumps straight to the in-sheet card form.
-            GestureDetector(
-              onTap: () {
-                HapticService.selectionClick();
-                setState(() => _page = 1);
-              },
-              child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.07),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Text(
-                  '+  ${s.addCard}',
-                  style: const TextStyle(
-                    fontFamily: 'Poppins',
-                    color: Colors.white,
-                    fontSize: 13.5,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
+        // Just the close button — the corner "+ Add card" pill is gone
+        // (user spec 2026-08-04); the Add Debit/Credit Card row below is
+        // the one way into the card form.
+        _roundButton(Icons.close_rounded, () => Navigator.of(context).pop()),
         const SizedBox(height: 18),
 
         // ── Cruise Balance ──
@@ -474,11 +455,17 @@ class _CruisePaymentSheetState extends State<_CruisePaymentSheet> {
                 ),
               ),
             ),
+            // The toggle IS a payment-method choice (user spec
+            // 2026-08-04): ON selects Cruise Cash and unmarks every row
+            // below; picking any row flips it back off. Whether the
+            // balance actually covers the fare is enforced at the
+            // Request/Reserve button, not here.
             Switch(
-              value: _useBalance,
+              value: _selected == PaymentMethodId.cruiseCash,
               onChanged: (v) {
                 HapticService.selectionClick();
-                setState(() => _useBalance = v);
+                setState(() =>
+                    _selected = v ? PaymentMethodId.cruiseCash : '');
                 unawaited(LocalDataService.setUseCruiseCash(v));
               },
               activeThumbColor: Colors.black,
@@ -498,8 +485,10 @@ class _CruisePaymentSheetState extends State<_CruisePaymentSheet> {
               '${s.cruiseCash}: \$${(_cashCents / 100.0).toStringAsFixed(2)}',
               style: TextStyle(
                 fontFamily: 'Poppins',
-                color: Colors.white
-                    .withValues(alpha: _useBalance ? 0.95 : 0.4),
+                color: Colors.white.withValues(
+                    alpha: _selected == PaymentMethodId.cruiseCash
+                        ? 0.95
+                        : 0.4),
                 fontSize: 14.5,
                 fontWeight: FontWeight.w600,
               ),
@@ -522,6 +511,9 @@ class _CruisePaymentSheetState extends State<_CruisePaymentSheet> {
         const SizedBox(height: 4),
         ..._methodRows(s),
         const SizedBox(height: 18),
+        // Filler so Save rides the sheet's bottom edge — the sheet is
+        // min-height'd taller than its content.
+        const Expanded(child: SizedBox.shrink()),
 
         // ── Save ──
         GestureDetector(
@@ -562,10 +554,9 @@ class _CruisePaymentSheetState extends State<_CruisePaymentSheet> {
   List<Widget> _methodRows(S s) {
     final rows = <Widget>[];
 
-    // Platform pay — Apple on iOS (and web, where the sheet is
-    // preview-only anyway), Google on Android. Same gating as the old
-    // full-screen grid.
-    if (AppPlatform.isIOS || kIsWeb) {
+    // Platform pay — Apple ONLY on iOS (user spec 2026-08-04: never on
+    // Android, and not in the web preview either), Google on Android.
+    if (AppPlatform.isIOS) {
       rows.add(_methodRow(
         selected: _selected == PaymentMethodId.apple,
         leading: _logoTile(
@@ -607,7 +598,8 @@ class _CruisePaymentSheetState extends State<_CruisePaymentSheet> {
       ));
     }
 
-    // Bank — linked selects, unlinked starts the linking flow.
+    // Bank — linked selects (radio); unlinked starts the linking flow,
+    // so it reads as navigation: chevron, like the add-card row.
     rows.add(_methodRow(
       selected: _selected == PaymentMethodId.bank,
       leading: _logoTile(
@@ -618,6 +610,7 @@ class _CruisePaymentSheetState extends State<_CruisePaymentSheet> {
       label: _bankLast4 != null
           ? '${_bankName ?? 'Bank'} •••• $_bankLast4'
           : 'Bank Account',
+      trailingChevron: _bankLast4 == null,
       onTap: _bankLast4 != null
           ? () => _pick(PaymentMethodId.bank)
           : _linkBank,
@@ -896,6 +889,9 @@ class _CruisePaymentSheetState extends State<_CruisePaymentSheet> {
         _formField(_zipCtrl, s.zipPostalCode, Icons.place_outlined,
             keyboard: TextInputType.number),
         const SizedBox(height: 20),
+        // Filler so Add card + Cancel ride the bottom edge and the sheet
+        // keeps the list page's height instead of collapsing.
+        const Expanded(child: SizedBox.shrink()),
 
         GestureDetector(
           onTap: _canAddCard ? _submitCard : null,

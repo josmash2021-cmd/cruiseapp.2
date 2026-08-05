@@ -24,6 +24,12 @@ import '../l10n/app_localizations.dart';
 /// If the driver starts the trip first, this screen auto-dismisses with a
 /// confirmation message: "Tu driver confirmó que ya estás en el auto".
 class RiderConfirmPickupScreen extends StatefulWidget {
+  /// Bumped by the tracking screen the instant the DRIVER presses Start
+  /// (in_trip lands): the overlay flips to its green "driver detected"
+  /// state immediately, and the caller fades the whole page out right
+  /// after — found, then gone, never a snap (user spec 2026-08-05).
+  static final ValueNotifier<int> externalStartPulse = ValueNotifier<int>(0);
+
   const RiderConfirmPickupScreen({
     super.key,
     required this.driverName,
@@ -152,6 +158,7 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
   @override
   void initState() {
     super.initState();
+    RiderConfirmPickupScreen.externalStartPulse.addListener(_onExternalStart);
 
     // ── Wait time policy per tier (Uber/Lyft inspired) ──
     //
@@ -607,8 +614,16 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
     return 'standard';
   }
 
+  void _onExternalStart() {
+    if (!mounted || _driverDetected) return;
+    HapticService.heavyImpact();
+    setState(() => _driverDetected = true);
+  }
+
   @override
   void dispose() {
+    RiderConfirmPickupScreen.externalStartPulse
+        .removeListener(_onExternalStart);
     _waitTimer?.cancel();
     _tripSub?.cancel();
     _riderGpsSub?.cancel();

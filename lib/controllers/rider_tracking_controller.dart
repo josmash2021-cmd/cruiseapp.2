@@ -1318,18 +1318,26 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     _popOutPickupPin();
     if (_showPickupOverlay) {
       _confirmPickupShown = false;
-      // Fade out the overlay smoothly before removing it from the tree
-      // Guard: only reverse if the controller is completed (overlay fully shown).
-      // If it's already animating or dismissed, skip to avoid conflicts.
-      if (_pickupOverlayCtrl.status == AnimationStatus.completed ||
-          _pickupOverlayCtrl.status == AnimationStatus.forward) {
-        _pickupOverlayCtrl.reverse().then((_) {
-          if (mounted) _setState(() => _showPickupOverlay = false);
-        });
-      } else {
-        // Already dismissed or reversing — just hide immediately
-        _setState(() => _showPickupOverlay = false);
-      }
+      // The driver pressed Start: flash "driver detectado" (green) on the
+      // Find-My overlay FIRST, then fade the page out — found, then gone,
+      // never a snap (user spec 2026-08-05). The 900 ms beat is what
+      // makes it read as an answer instead of the screen vanishing.
+      RiderConfirmPickupScreen.externalStartPulse.value++;
+      Future.delayed(const Duration(milliseconds: 900), () {
+        if (!mounted || !_showPickupOverlay) return;
+        // Guard: only reverse if the controller is completed (overlay
+        // fully shown). If it's already animating or dismissed, skip to
+        // avoid conflicts.
+        if (_pickupOverlayCtrl.status == AnimationStatus.completed ||
+            _pickupOverlayCtrl.status == AnimationStatus.forward) {
+          _pickupOverlayCtrl.reverse().then((_) {
+            if (mounted) _setState(() => _showPickupOverlay = false);
+          });
+        } else {
+          // Already dismissed or reversing — just hide immediately
+          _setState(() => _showPickupOverlay = false);
+        }
+      });
     }
     _startRideAnimationDone = false;
     _startStartRideAnimation();

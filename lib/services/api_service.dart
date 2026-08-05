@@ -3720,6 +3720,58 @@ class ApiService {
   //  TRIP CHARGE
   // ═══════════════════════════════════════════════════════
 
+  /// Multi-stop v1 (2026-08-05): add ONE extra stop to a live trip. The
+  /// extra was quoted client-side from the street-routed delta
+  /// (stop_pricing.dart); the backend clamps it to its honest band and
+  /// folds it into the fare.
+  static Future<Map<String, dynamic>> addTripStop({
+    required int tripId,
+    required double lat,
+    required double lng,
+    required String label,
+    required int extraCents,
+  }) async {
+    final h = await _authHeaders();
+    final res = await _client
+        .post(
+          Uri.parse('$_baseUrl/trips/$tripId/stops'),
+          headers: h,
+          body: jsonEncode({
+            'lat': lat,
+            'lng': lng,
+            'label': label,
+            'extra_cents': extraCents,
+          }),
+        )
+        .timeout(const Duration(seconds: 15));
+    return _parse(res);
+  }
+
+  /// Move a live trip's destination. [newFare] is the full re-priced
+  /// fare (old fare + signed street-routed delta, floored at \$3).
+  static Future<Map<String, dynamic>> changeTripDestination({
+    required int tripId,
+    required double lat,
+    required double lng,
+    required String label,
+    double? newFare,
+  }) async {
+    final h = await _authHeaders();
+    final res = await _client
+        .patch(
+          Uri.parse('$_baseUrl/trips/$tripId/destination'),
+          headers: h,
+          body: jsonEncode({
+            'lat': lat,
+            'lng': lng,
+            'label': label,
+            if (newFare != null) 'new_fare': newFare,
+          }),
+        )
+        .timeout(const Duration(seconds: 15));
+    return _parse(res);
+  }
+
   /// Charge the rider's saved default card for a completed trip.
   /// Returns the charge result: {status, payment_intent_id, amount, error?}
   static Future<Map<String, dynamic>> chargeTrip(int tripId) async {

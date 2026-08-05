@@ -9,6 +9,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kDebugMode, kIsWeb;
 import 'package:flutter/scheduler.dart';
 import '../services/haptic_service.dart';
+import '../services/places_service.dart';
+import '../utils/stop_pricing.dart';
 import 'package:flutter/services.dart' show rootBundle, SystemUiOverlayStyle;
 import 'package:geolocator/geolocator.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' as mapbox;
@@ -336,7 +338,23 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   late Animation<double> _pickupOverlayFade;
 
   // ── More-menu dropdown & cancel overlay ──
-  bool _showMoreMenu = false;
+  // ── Mid-trip route change (multi-stop v1, 2026-08-05) ──
+  // The bottom card morphs between these pages — the old floating
+  // support box is gone. 0 driver card · 1 support options ·
+  // 2 add stop · 3 change destination.
+  int _supportPage = 0;
+  final TextEditingController _rcSearchCtrl = TextEditingController();
+  Timer? _rcDebounce;
+  List<PlaceSuggestion> _rcSuggestions = [];
+  bool _rcSearching = false;
+  PlaceDetails? _rcPicked;
+  int? _rcQuoteCents;
+  bool _rcQuoting = false;
+  bool _rcCommitting = false;
+  LatLng? _committedStop;
+  String _committedStopLabel = '';
+  LatLng? _dropoffOverride;
+  mapbox.PointAnnotation? _stopAnnot;
   int _cancelOverlayPhase = 0; // 0=hidden, 1=cancelling(spinner), 2=done(checkmark)
 
   // ── Mutable driver photo URL (updated from Firestore) ──
@@ -568,6 +586,8 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   void dispose() {
     MapSurfaceCoordinator.instance.release(_mapSurfaceOwner);
     _tripRouteRetryTimer?.cancel();
+    _rcDebounce?.cancel();
+    _rcSearchCtrl.dispose();
     if (_networkListener != null) {
       NetworkService().onlineNotifier.removeListener(_networkListener!);
       _networkListener = null;
@@ -812,7 +832,34 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
                   // the search state instead until a new driver is assigned.
                   child: _searchingNewDriver
                       ? _buildSearchingDriverCard()
-                      : _buildDriverCard(),
+                      : AnimatedSize(
+                          duration: const Duration(milliseconds: 420),
+                          curve: Curves.easeInOutCubicEmphasized,
+                          alignment: Alignment.bottomCenter,
+                          child: AnimatedSwitcher(
+                            duration: const Duration(milliseconds: 340),
+                            switchInCurve: Curves.easeOutCubic,
+                            switchOutCurve: Curves.easeInCubic,
+                            transitionBuilder: (child, anim) =>
+                                FadeTransition(
+                              opacity: anim,
+                              child: SlideTransition(
+                                position: Tween<Offset>(
+                                  begin: const Offset(0, 0.04),
+                                  end: Offset.zero,
+                                ).animate(anim),
+                                child: child,
+                              ),
+                            ),
+                            child: _supportPage == 0
+                                ? KeyedSubtree(
+                                    key: const ValueKey('driver-card'),
+                                    child: _buildDriverCard())
+                                : _supportPage == 1
+                                    ? _buildSupportPanel()
+                                    : _buildRouteChangePanel(),
+                          ),
+                        ),
                 ),
               ),
               // Offline banner
@@ -831,17 +878,8 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
                   right: 24,
                   child: _buildConnectionLostBanner(),
                 ),
-              // MORE menu overlay (tap-away dismisses)
-              if (_showMoreMenu) ...[
-                Positioned.fill(
-                  child: GestureDetector(
-                    onTap: () => setState(() => _showMoreMenu = false),
-                    behavior: HitTestBehavior.opaque,
-                    child: const ColoredBox(color: Colors.transparent),
-                  ),
-                ),
-                _buildMoreMenuOverlay(bottomPad),
-              ],
+              // The floating support box is gone (2026-08-05): the bottom
+              // card itself morphs into the Safety & Support panel.
               // CANCEL overlay (blur + spinner / checkmark)
               if (_cancelOverlayPhase > 0) _buildCancelOverlay(),
               // CONFIRM PICKUP overlay — shown inline when driver arrives

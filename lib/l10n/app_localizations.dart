@@ -1863,6 +1863,37 @@ class S {
       _es ? 'Agregar tarjeta de débito/crédito' : 'Add Debit/Credit Card';
   // Payment bottom sheet (Uber-style picker, 2026-08-04)
   String get moreOptions => _es ? 'Más opciones' : 'More options';
+  // Driver trip screen: arrived, rider not aboard yet (2026-08-05).
+  String get waitingForYourRider =>
+      _es ? 'Esperando a tu pasajero…' : 'Waiting for your rider…';
+
+  // Multi-stop v1 (2026-08-05)
+  String get addStopLabel => _es ? 'Agregar parada' : 'Add stop';
+  String get addStopHint =>
+      _es ? 'Escribe la dirección de tu parada' : 'Type your stop address';
+  String get newDestinationHint =>
+      _es ? 'Escribe tu nuevo destino' : 'Type your new destination';
+  String get areYouSureTitle => _es ? '¿Estás seguro?' : 'Are you sure?';
+  String stopExtraCharge(String amount) => _es
+      ? 'Se debitará un extra de $amount de tu método de pago al agregar esta parada.'
+      : 'An extra $amount will be charged to your payment method for this stop.';
+  String destChargeUp(String amount) => _es
+      ? 'Tu tarifa subirá $amount con el nuevo destino.'
+      : 'Your fare will go up by $amount with the new destination.';
+  String destChargeDown(String amount) => _es
+      ? 'Tu tarifa bajará $amount con el nuevo destino.'
+      : 'Your fare will go down by $amount with the new destination.';
+  String get stopAddedToast =>
+      _es ? 'Parada agregada al viaje' : 'Stop added to your trip';
+  String get destinationChangedToast =>
+      _es ? 'Destino actualizado' : 'Destination updated';
+  String get newStopBanner => _es ? 'Nueva parada' : 'New stop';
+  String get destinationChangedBanner =>
+      _es ? 'Destino cambiado' : 'Destination changed';
+  String get stopLabelShort => _es ? 'PARADA' : 'STOP';
+  String get routeChangeFailed => _es
+      ? 'No se pudo actualizar la ruta. Intenta de nuevo.'
+      : 'Could not update the route. Try again.';
   // Selected vehicle card when the tier has nobody nearby.
   String get noDriversNearArea =>
       _es ? 'No hay drivers cerca de tu área' : 'No drivers near your area';

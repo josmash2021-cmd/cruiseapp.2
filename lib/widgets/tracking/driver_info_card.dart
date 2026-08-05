@@ -393,16 +393,17 @@ extension _RiderTrackingDriverInfoCard on _RiderTrackingScreenState {
   Widget _buildMoreMenuButton() {
     final d = Responsive.w(40);
     return GestureDetector(
-      onTap: () => _setState(() => _showMoreMenu = !_showMoreMenu),
+      onTap: () => _setState(
+          () => _supportPage = _supportPage == 0 ? 1 : 0),
       child: Container(
         width: d, height: d,
         // Open state pops OUT of the well (pressed: false) so the button
-        // visibly holds the menu it opened.
+        // visibly holds the panel it opened.
         decoration: neuBox(
           radius: d / 2,
-          pressed: !_showMoreMenu,
+          pressed: _supportPage == 0,
           borderColor: AppColors.kGold
-              .withValues(alpha: _showMoreMenu ? 0.8 : 0.35),
+              .withValues(alpha: _supportPage != 0 ? 0.8 : 0.35),
         ),
         // Support agent, not three dots: this is where the rider reaches
         // help, and an ellipsis promises nothing.
@@ -412,78 +413,614 @@ extension _RiderTrackingDriverInfoCard on _RiderTrackingScreenState {
     );
   }
 
-  /// Menu that opens UPWARD from the driver card, which now lives at the
-  /// bottom of the screen. It used to drop down from the top card.
-  Widget _buildMoreMenuOverlay(double bottomPad) {
-    final bottom = bottomPad + 16 + _bottomCardHeight + 8;
-    return Positioned(
-      bottom: bottom,
-      right: 16,
-      child: TweenAnimationBuilder<double>(
-        tween: Tween(begin: 0.0, end: 1.0),
-        duration: const Duration(milliseconds: 200),
-        curve: Curves.easeOutCubic,
-        // Rises into place (+8 → 0) instead of dropping, matching the
-        // direction it now opens from.
-        builder: (context, value, child) => Transform.translate(
-          offset: Offset(0, 8 * (1 - value)),
-          child: Opacity(opacity: value, child: child),
-        ),
-        child: Container(
-          width: 220,
-          decoration: neuBox(
-            radius: 16,
-            borderColor: AppColors.kGold.withValues(alpha: 0.2),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
+  // ═══ Safety & Support panel — the bottom card TRANSFORMED (2026-08-05) ═══
+
+  BoxDecoration get _panelShell => neuBox(radius: 24).copyWith(
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(26)),
+      );
+
+  Widget _buildSupportPanel() {
+    final s = S.of(context);
+    return Container(
+      key: const ValueKey('support-panel'),
+      decoration: _panelShell,
+      padding: EdgeInsets.fromLTRB(
+          16, 14, 16, MediaQuery.of(context).padding.bottom + 14),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
             children: [
-              _buildMenuItem(
-                icon: Icons.report_problem_outlined,
-                label: S.of(context).problemWithTrip,
-                color: AppColors.kGold,
-                onTap: () {
-                  _setState(() => _showMoreMenu = false);
-                  _openSupportChat();
-                },
+              Icon(Icons.support_agent_rounded,
+                  color: AppColors.kGold, size: 20),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  s.safetyAndSupport,
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: Responsive.sp(16),
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
               ),
-              _menuDivider(),
-              _buildMenuItem(
-                icon: Icons.edit_location_alt_outlined,
-                label: S.of(context).changeDestination,
-                color: AppColors.kGold,
-                onTap: () {
-                  _setState(() => _showMoreMenu = false);
-                  _requestDestinationChange();
-                },
-              ),
-              _menuDivider(),
-              // Red, and last of the urgent group: 911 is not a thing to
-              // hit by accident while reaching for support.
-              _buildMenuItem(
-                icon: Icons.emergency_outlined,
-                label: S.of(context).call911,
-                color: const Color(0xFFEF4444),
-                onTap: () {
-                  _setState(() => _showMoreMenu = false);
-                  _callEmergency();
-                },
-              ),
-              _menuDivider(),
-              _buildMenuItem(
-                icon: Icons.headset_mic_outlined,
-                label: S.of(context).contactSupport,
-                color: AppColors.kGold,
-                onTap: () {
-                  _setState(() => _showMoreMenu = false);
-                  _openSupportChat();
-                },
+              GestureDetector(
+                onTap: () => _setState(() => _supportPage = 0),
+                child: Container(
+                  width: 34,
+                  height: 34,
+                  decoration: neuBox(radius: 17, pressed: true),
+                  child: const Icon(Icons.close_rounded,
+                      color: Colors.white, size: 18),
+                ),
               ),
             ],
           ),
-        ),
+          const SizedBox(height: 6),
+          _buildMenuItem(
+            icon: Icons.report_problem_outlined,
+            label: S.of(context).problemWithTrip,
+            color: AppColors.kGold,
+            onTap: () {
+              _setState(() => _supportPage = 0);
+              _openSupportChat();
+            },
+          ),
+          _menuDivider(),
+          _buildMenuItem(
+            icon: Icons.add_location_alt_outlined,
+            label: s.addStopLabel,
+            color: AppColors.kGold,
+            onTap: () => _openRouteChangePage(2),
+          ),
+          _menuDivider(),
+          _buildMenuItem(
+            icon: Icons.edit_location_alt_outlined,
+            label: s.changeDestination,
+            color: AppColors.kGold,
+            onTap: () => _openRouteChangePage(3),
+          ),
+          _menuDivider(),
+          _buildMenuItem(
+            icon: Icons.emergency_outlined,
+            label: s.call911,
+            color: const Color(0xFFEF4444),
+            onTap: () {
+              _setState(() => _supportPage = 0);
+              _callEmergency();
+            },
+          ),
+          _menuDivider(),
+          _buildMenuItem(
+            icon: Icons.headset_mic_outlined,
+            label: s.contactSupport,
+            color: AppColors.kGold,
+            onTap: () {
+              _setState(() => _supportPage = 0);
+              _openSupportChat();
+            },
+          ),
+        ],
       ),
     );
+  }
+
+  void _openRouteChangePage(int page) {
+    _rcSearchCtrl.clear();
+    _rcSuggestions = [];
+    _rcPicked = null;
+    _rcQuoteCents = null;
+    _setState(() => _supportPage = page);
+  }
+
+  Widget _buildRouteChangePanel() {
+    final s = S.of(context);
+    final isStop = _supportPage == 2;
+    final mq = MediaQuery.of(context);
+    return Container(
+      key: ValueKey('route-change-$_supportPage'),
+      decoration: _panelShell,
+      // viewInsets so the panel rides the keyboard while typing.
+      padding: EdgeInsets.fromLTRB(
+          16, 14, 16, mq.viewInsets.bottom + mq.padding.bottom + 14),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              GestureDetector(
+                onTap: () => _setState(() => _supportPage = 1),
+                child: Container(
+                  width: 34,
+                  height: 34,
+                  decoration: neuBox(radius: 17, pressed: true),
+                  child: const Icon(Icons.arrow_back_rounded,
+                      color: Colors.white, size: 18),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  isStop ? s.addStopLabel : s.changeDestination,
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: Responsive.sp(16),
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Container(
+            decoration: neuBox(radius: 14, pressed: true),
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: TextField(
+              controller: _rcSearchCtrl,
+              autofocus: true,
+              onChanged: _rcOnQueryChanged,
+              style: const TextStyle(color: Colors.white, fontSize: 14.5),
+              decoration: InputDecoration(
+                border: InputBorder.none,
+                icon: Icon(Icons.search_rounded,
+                    color: Colors.white.withValues(alpha: 0.4), size: 20),
+                hintText: isStop ? s.addStopHint : s.newDestinationHint,
+                hintStyle:
+                    TextStyle(color: Colors.white.withValues(alpha: 0.35)),
+              ),
+            ),
+          ),
+          if (_rcSearching || _rcQuoting) ...[
+            const SizedBox(height: 8),
+            const LinearProgressIndicator(
+              minHeight: 2,
+              color: Color(0xFFE8C547),
+              backgroundColor: Colors.transparent,
+            ),
+          ],
+          // Suggestions — up to 4, tap to quote.
+          for (final sg in _rcSuggestions.take(4)) ...[
+            InkWell(
+              onTap: () => _rcPick(sg),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                child: Row(
+                  children: [
+                    Icon(Icons.place_outlined,
+                        color: Colors.white.withValues(alpha: 0.45),
+                        size: 18),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        sg.description,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                            color: Colors.white, fontSize: 13.5),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            _menuDivider(),
+          ],
+          // Quote + confirm
+          if (_rcPicked != null && _rcQuoteCents != null) ...[
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: AppColors.kGold.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(
+                    color: AppColors.kGold.withValues(alpha: 0.45)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    _rcPicked!.address,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.w600),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    isStop
+                        ? s.stopExtraCharge(
+                            '\$${(_rcQuoteCents!.abs() / 100).toStringAsFixed(2)}')
+                        : (_rcQuoteCents! >= 0
+                            ? s.destChargeUp(
+                                '\$${(_rcQuoteCents! / 100).toStringAsFixed(2)}')
+                            : s.destChargeDown(
+                                '\$${(_rcQuoteCents!.abs() / 100).toStringAsFixed(2)}')),
+                    style: TextStyle(
+                        color: AppColors.kGold,
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w600,
+                        height: 1.35),
+                  ),
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    width: double.infinity,
+                    child: GestureDetector(
+                      onTap: _rcCommitting ? null : _confirmRouteChange,
+                      child: Container(
+                        height: 46,
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          color: AppColors.kGold,
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        child: _rcCommitting
+                            ? const SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(
+                                    strokeWidth: 2.2,
+                                    color: Color(0xFF1A1400)),
+                              )
+                            : Text(
+                                S.of(context).confirm,
+                                style: const TextStyle(
+                                    color: Color(0xFF1A1400),
+                                    fontSize: 14.5,
+                                    fontWeight: FontWeight.w800),
+                              ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  void _rcOnQueryChanged(String q) {
+    _rcDebounce?.cancel();
+    _rcDebounce = Timer(const Duration(milliseconds: 420), () async {
+      if (!mounted || q.trim().length < 3) return;
+      _setState(() => _rcSearching = true);
+      try {
+        final near =
+            _driverPos.latitude != 0 ? _driverPos : widget.pickupLatLng;
+        final res = await PlacesService(ApiKeys.webServices).autocomplete(
+          q,
+          latitude: near.latitude,
+          longitude: near.longitude,
+        );
+        if (!mounted) return;
+        _setState(() {
+          _rcSuggestions = res;
+          _rcSearching = false;
+        });
+      } catch (e) {
+        debugPrint('[RouteChange] autocomplete failed: $e');
+        if (mounted) _setState(() => _rcSearching = false);
+      }
+    });
+  }
+
+  Future<void> _rcPick(PlaceSuggestion sg) async {
+    FocusScope.of(context).unfocus();
+    _setState(() {
+      _rcQuoting = true;
+      _rcSuggestions = [];
+      _rcSearchCtrl.text = sg.description;
+    });
+    try {
+      PlaceDetails? det;
+      if (sg.lat != null && sg.lng != null) {
+        det = PlaceDetails(
+            address: sg.description, lat: sg.lat!, lng: sg.lng!);
+      } else {
+        det = await PlacesService(ApiKeys.webServices).details(sg.placeId);
+      }
+      if (det == null) throw Exception('no place details');
+      final cents = await _rcQuote(det);
+      if (!mounted) return;
+      _setState(() {
+        _rcPicked = det;
+        _rcQuoteCents = cents;
+        _rcQuoting = false;
+      });
+    } catch (e) {
+      debugPrint('[RouteChange] quote failed: $e');
+      if (mounted) {
+        _setState(() => _rcQuoting = false);
+        ScaffoldMessenger.maybeOf(context)?.showSnackBar(SnackBar(
+            content: Text(S.of(context).routeChangeFailed),
+            behavior: SnackBarBehavior.floating));
+      }
+    }
+  }
+
+  LatLng get _currentDropoffLL => _dropoffOverride ?? widget.dropoffLatLng;
+
+  /// Street-routed delta for the picked place, priced with the SAME
+  /// anchored per-mile/per-minute rates the trip carries
+  /// (stop_pricing.dart). Stop page → extra cents (≥ \$2.50);
+  /// destination page → SIGNED fare delta cents.
+  Future<int> _rcQuote(PlaceDetails det) async {
+    final ds = DirectionsService(ApiKeys.webServices);
+    final onTripNow = _phase == _TrackPhase.onTrip ||
+        _phase == _TrackPhase.nearDestination;
+    final origin = (onTripNow && _driverPos.latitude != 0)
+        ? _driverPos
+        : widget.pickupLatLng;
+    final dest = _currentDropoffLL;
+    final base = await ds.getRoute(origin: origin, destination: dest);
+    final baseMi = (base?.distanceMeters ?? 0) / 1609.344;
+    final baseMin = ((base?.durationSeconds ?? 0) / 60.0).ceil();
+    if (_supportPage == 2) {
+      final stopLL = LatLng(det.lat, det.lng);
+      final leg1 = await ds.getRoute(origin: origin, destination: stopLL);
+      final leg2 = await ds.getRoute(origin: stopLL, destination: dest);
+      if (leg1 == null || leg2 == null) throw Exception('no route');
+      final mi =
+          (leg1.distanceMeters + leg2.distanceMeters) / 1609.344 - baseMi;
+      final mins = (((leg1.durationSeconds ?? 0) +
+                      (leg2.durationSeconds ?? 0)) /
+                  60.0)
+              .ceil() -
+          baseMin;
+      return stopExtraCents(
+          tier: widget.rideName, deltaMiles: mi, deltaMins: mins);
+    }
+    final nr = await ds.getRoute(
+        origin: origin, destination: LatLng(det.lat, det.lng));
+    if (nr == null) throw Exception('no route');
+    final mi = nr.distanceMeters / 1609.344 - baseMi;
+    final mins = ((nr.durationSeconds ?? 0) / 60.0).ceil() - baseMin;
+    return destinationDeltaCents(
+        tier: widget.rideName, deltaMiles: mi, deltaMins: mins);
+  }
+
+  Future<void> _confirmRouteChange() async {
+    final det = _rcPicked;
+    final cents = _rcQuoteCents;
+    final tripId = widget.tripId;
+    if (det == null || cents == null || tripId == null || _rcCommitting) {
+      return;
+    }
+    final s = S.of(context);
+    final isStop = _supportPage == 2;
+    final amt = '\$${(cents.abs() / 100).toStringAsFixed(2)}';
+    final msg = isStop
+        ? s.stopExtraCharge(amt)
+        : (cents >= 0 ? s.destChargeUp(amt) : s.destChargeDown(amt));
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1C1C24),
+        shape:
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        title: Text(s.areYouSureTitle,
+            style: const TextStyle(
+                color: Colors.white, fontWeight: FontWeight.w800)),
+        content: Text('${det.address}\n\n$msg',
+            style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.8), height: 1.4)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text(s.cancel,
+                style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.6))),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text(s.confirm,
+                style: const TextStyle(
+                    color: Color(0xFFE8C547),
+                    fontWeight: FontWeight.w800)),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    _setState(() => _rcCommitting = true);
+    try {
+      if (isStop) {
+        await ApiService.addTripStop(
+          tripId: tripId,
+          lat: det.lat,
+          lng: det.lng,
+          label: det.address,
+          extraCents: cents,
+        );
+      } else {
+        final newFare =
+            (widget.price + cents / 100.0).clamp(3.0, 500.0).toDouble();
+        await ApiService.changeTripDestination(
+          tripId: tripId,
+          lat: det.lat,
+          lng: det.lng,
+          label: det.address,
+          newFare: newFare,
+        );
+      }
+      if (!mounted) return;
+      HapticService.mediumImpact();
+      _setState(() {
+        _rcCommitting = false;
+        _supportPage = 0;
+      });
+      ScaffoldMessenger.maybeOf(context)?.showSnackBar(SnackBar(
+          content:
+              Text(isStop ? s.stopAddedToast : s.destinationChangedToast),
+          behavior: SnackBarBehavior.floating));
+      unawaited(_applyCommittedRouteChange(det, isStop: isStop));
+    } catch (e) {
+      debugPrint('[RouteChange] commit failed: $e');
+      if (mounted) {
+        _setState(() => _rcCommitting = false);
+        ScaffoldMessenger.maybeOf(context)?.showSnackBar(SnackBar(
+            content: Text(s.routeChangeFailed),
+            behavior: SnackBarBehavior.floating));
+      }
+    }
+  }
+
+  /// Backend committed — now the map: stop pin (same golden circle the
+  /// dropoff wears) or moved dropoff pin, the new line crossfaded in by
+  /// the same path every reroute takes, and a smooth zoom-out that shows
+  /// the whole new plan before the chase camera takes over again.
+  Future<void> _applyCommittedRouteChange(PlaceDetails det,
+      {required bool isStop}) async {
+    final target = LatLng(det.lat, det.lng);
+    if (isStop) {
+      _committedStop = target;
+      _committedStopLabel = det.address;
+      unawaited(_drawStopPin(target));
+    } else {
+      _dropoffOverride = target;
+      unawaited(_moveDropoffPin(target));
+    }
+    try {
+      final ds = DirectionsService(ApiKeys.webServices);
+      final onTripNow = _phase == _TrackPhase.onTrip ||
+          _phase == _TrackPhase.nearDestination;
+      final origin = (onTripNow && _driverPos.latitude != 0)
+          ? _driverPos
+          : widget.pickupLatLng;
+      final dest = _currentDropoffLL;
+      List<LatLng> pts = [];
+      final stop = _committedStop;
+      if (stop != null) {
+        final l1 = await ds.getRoute(origin: origin, destination: stop);
+        final l2 = await ds.getRoute(origin: stop, destination: dest);
+        if (l1 != null && l2 != null) {
+          pts = [...l1.points, ...l2.points.skip(1)];
+        }
+      } else {
+        final r = await ds.getRoute(origin: origin, destination: dest);
+        if (r != null) pts = r.points;
+      }
+      if (!mounted || pts.length < 2) return;
+      _tripRoutePts = List<LatLng>.from(pts);
+      await _applyReroutedPolyline(pts);
+      _zoomOutForRouteChange(
+          [origin, if (stop != null) stop, dest, ...pts]);
+    } catch (e) {
+      debugPrint('[RouteChange] redraw failed: $e');
+    }
+  }
+
+  Future<void> _drawStopPin(LatLng p) async {
+    try {
+      final bytes = await renderCircularPinBytes(
+          icon: CircularPinIcon.flag, isPickup: false, radius: 32);
+      if (!mounted) return;
+      if (kIsWeb) {
+        _webMapCtrl?.addMarker('stop', p.longitude, p.latitude,
+            iconBytes: bytes, widthPx: 52, heightPx: 48, anchor: 'bottom');
+        return;
+      }
+      final mgr = _pointAnnotMgr;
+      final geom = safePoint(p.longitude, p.latitude);
+      if (mgr == null || geom == null) return;
+      final old = _stopAnnot;
+      if (old != null) {
+        _stopAnnot = null;
+        try {
+          await mgr.delete(old);
+        } catch (_) {}
+      }
+      _stopAnnot = await mgr.create(mapbox.PointAnnotationOptions(
+        geometry: geom,
+        image: bytes,
+        iconSize: 0.86,
+        iconAnchor: mapbox.IconAnchor.BOTTOM,
+      ));
+    } catch (e) {
+      debugPrint('[RouteChange] stop pin failed: $e');
+    }
+  }
+
+  Future<void> _moveDropoffPin(LatLng p) async {
+    try {
+      if (kIsWeb) {
+        final bytes = await renderCircularPinBytes(
+            icon: CircularPinIcon.home, isPickup: false, radius: 32);
+        _webMapCtrl?.removeMarker('dropoff');
+        _webMapCtrl?.addMarker('dropoff', p.longitude, p.latitude,
+            iconBytes: bytes, widthPx: 52, heightPx: 48, anchor: 'bottom');
+        return;
+      }
+      final mgr = _pointAnnotMgr;
+      final annot = _dropoffAnnot;
+      final geom = safePoint(p.longitude, p.latitude);
+      if (mgr == null || annot == null || geom == null) return;
+      annot.geometry = geom;
+      mgr.update(annot).catchError((_) {});
+    } catch (_) {}
+  }
+
+  /// One smooth wide shot of the whole new plan, then hand the camera
+  /// back to the chase — nothing is rebuilt, only flown.
+  void _zoomOutForRouteChange(List<LatLng> pts) {
+    if (pts.length < 2) return;
+    _userControllingCamera = true;
+    if (kIsWeb) {
+      _webFitRouteBounds();
+    } else {
+      final mc = _map;
+      if (mc != null) {
+        double minLat = 90, maxLat = -90, minLng = 180, maxLng = -180;
+        for (final p in pts) {
+          if (p.latitude < minLat) minLat = p.latitude;
+          if (p.latitude > maxLat) maxLat = p.latitude;
+          if (p.longitude < minLng) minLng = p.longitude;
+          if (p.longitude > maxLng) maxLng = p.longitude;
+        }
+        unawaited(() async {
+          try {
+            final cam = await mc.cameraForCoordinateBounds(
+              mapbox.CoordinateBounds(
+                southwest: mapbox.Point(
+                    coordinates: mapbox.Position(minLng, minLat)),
+                northeast: mapbox.Point(
+                    coordinates: mapbox.Position(maxLng, maxLat)),
+                infiniteBounds: false,
+              ),
+              mapbox.MbxEdgeInsets(
+                  top: _topCardHeight + 90,
+                  left: 60,
+                  bottom: _bottomCardHeight + 90,
+                  right: 60),
+              0,
+              0,
+              null,
+              null,
+            );
+            await mc.flyTo(
+              mapbox.CameraOptions(
+                  center: cam.center,
+                  zoom: cam.zoom,
+                  bearing: 0,
+                  pitch: 0),
+              mapbox.MapAnimationOptions(duration: 1400),
+            );
+          } catch (e) {
+            debugPrint('[RouteChange] zoom-out failed: $e');
+          }
+        }());
+      }
+    }
+    Future.delayed(const Duration(seconds: 5), () {
+      if (!mounted) return;
+      _recenter();
+    });
   }
 
   Widget _buildMenuItem({

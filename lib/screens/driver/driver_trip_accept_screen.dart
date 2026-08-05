@@ -229,6 +229,29 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   Timer? _statusPollTimer;
   bool _isPollingTripStatus = false; // prevents overlapping in-flight requests
 
+  // ── Mid-trip route change from the rider (multi-stop v1) ──
+  LatLng? _stopLatLng;
+  String _stopLabel = '';
+  LatLng? _dropoffOverride;
+  Timer? _routeBannerTimer;
+  mapbox.PointAnnotation? _stopPinAnnot;
+
+  /// Every consumer reads the dropoff through this: a mid-trip
+  /// destination change re-aims proximity detection, navigation and the
+  /// mini map without touching the immutable widget param.
+  LatLng get _dropoffLL => _dropoffOverride ?? widget.dropoffLatLng;
+
+  // ── "Passenger confirmed" banner above the action button ──
+  bool _confirmBannerShow = false;
+  Timer? _confirmBannerTimer;
+
+  // Fallback for the Waiting-for-rider stage: a rider on an old build (or
+  // with dead GPS) never writes rider_confirmed_pickup, and the driver
+  // must never be locked out of starting the ride. After 90 s in the
+  // arrived state the Start button unlocks regardless.
+  bool _waitingOverride = false;
+  Timer? _waitingOverrideTimer;
+
   // ── Driver pre-pickup cancel (POST /trips/{id}/driver-cancel) ──
   bool _driverCancelling = false;
   LatLng? _lastDriverPos; // latest live GPS fix, for the cancel audit trail
@@ -304,9 +327,9 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   double get _tripKm {
     const r = 6371.0;
     final lat1 = widget.pickupLatLng.latitude  * math.pi / 180;
-    final lat2 = widget.dropoffLatLng.latitude * math.pi / 180;
-    final dLat = (widget.dropoffLatLng.latitude  - widget.pickupLatLng.latitude)  * math.pi / 180;
-    final dLng = (widget.dropoffLatLng.longitude - widget.pickupLatLng.longitude) * math.pi / 180;
+    final lat2 = _dropoffLL.latitude * math.pi / 180;
+    final dLat = (_dropoffLL.latitude  - widget.pickupLatLng.latitude)  * math.pi / 180;
+    final dLng = (_dropoffLL.longitude - widget.pickupLatLng.longitude) * math.pi / 180;
     final a = math.sin(dLat / 2) * math.sin(dLat / 2) +
         math.cos(lat1) * math.cos(lat2) *
         math.sin(dLng / 2) * math.sin(dLng / 2);
@@ -566,6 +589,9 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     _fadeCtrl.dispose();
     _slideCtrl.dispose();
     _tiltCtrl.dispose();
+    _confirmBannerTimer?.cancel();
+    _routeBannerTimer?.cancel();
+    _waitingOverrideTimer?.cancel();
     _carGpsSub?.cancel();
     _carTicker?.stop();
     _carTicker?.dispose();
@@ -736,12 +762,12 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     }
     if (needsDropoff) {
       final resolved = await _reverseGeocode(
-          widget.dropoffLatLng.latitude, widget.dropoffLatLng.longitude);
+          _dropoffLL.latitude, _dropoffLL.longitude);
       if (mounted) {
         setState(() {
           _dropoffAddr = resolved ??
-              '${widget.dropoffLatLng.latitude.toStringAsFixed(5)}, '
-              '${widget.dropoffLatLng.longitude.toStringAsFixed(5)}';
+              '${_dropoffLL.latitude.toStringAsFixed(5)}, '
+              '${_dropoffLL.longitude.toStringAsFixed(5)}';
         });
       }
     }
@@ -791,7 +817,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   // ── Navigate to dropoff (ride started) ─────────────────────────────────
   void _goNavigateDropoff({bool overview = false}) {
     HapticService.mediumImpact();
-    _openNativeMaps(widget.dropoffLatLng);
+    _openNativeMaps(_dropoffLL);
   }
 
   // ── GPS proximity detection for DROPOFF ─────────────────────────────────
@@ -813,7 +839,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   }
 
   void _checkDropoffProximity(LatLng driverPos) {
-    final distM = _haversineMeters(driverPos, widget.dropoffLatLng);
+    final distM = _haversineMeters(driverPos, _dropoffLL);
     if (distM <= _dropoffRadiusMeters && !_nearDropoff) {
       setState(() => _nearDropoff = true);
       HapticService.heavyImpact();
@@ -1012,11 +1038,15 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
       // — morph the action button to the matching stage.
       _applyRemoteStage(status);
 
+      // The rider added a stop or moved the destination mid-trip.
+      _applyRouteChangeFromDoc(data);
+
       if (_riderConfirmedPickup || _rideStarted) return;
       if (data['rider_confirmed_pickup'] == true && !_riderConfirmedPickup) {
         HapticService.mediumImpact();
         if (mounted) {
           setState(() => _riderConfirmedPickup = true);
+          _showConfirmBanner();
         }
       }
     }, onError: (e) {
@@ -1154,8 +1184,8 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
             riderPhotoUrl: _normalizedPhotoUrl(widget.riderPhotoUrl) ?? '',
             riderId: widget.riderId,
             fare: widget.fare,
-            dropoffLat: widget.dropoffLatLng.latitude,
-            dropoffLng: widget.dropoffLatLng.longitude,
+            dropoffLat: _dropoffLL.latitude,
+            dropoffLng: _dropoffLL.longitude,
           ),
           transitionsBuilder: (_, anim, __, child) => FadeTransition(
             opacity: CurvedAnimation(parent: anim, curve: Curves.easeInOutCubic),
@@ -1270,8 +1300,8 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
             riderPhotoUrl: _normalizedPhotoUrl(widget.riderPhotoUrl) ?? '',
             riderId: widget.riderId,
             fare: widget.fare,
-            dropoffLat: widget.dropoffLatLng.latitude,
-            dropoffLng: widget.dropoffLatLng.longitude,
+            dropoffLat: _dropoffLL.latitude,
+            dropoffLng: _dropoffLL.longitude,
           ),
           transitionsBuilder: (_, anim, __, child) => FadeTransition(
             opacity: CurvedAnimation(parent: anim, curve: Curves.easeInOutCubic),
@@ -1352,12 +1382,244 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     await MaskedCallService.callCounterparty(tripId: widget.tripId, role: 'driver');
   }
 
+  // ═══ Mid-trip route changes pushed by the rider (multi-stop v1) ═══
+
+  void _applyRouteChangeFromDoc(Map<String, dynamic> data) {
+    if (_tripFinished || !mounted) return;
+    // New stop — applied once.
+    final stops = data['stops'];
+    if (stops is List && stops.isNotEmpty && _stopLatLng == null) {
+      final st = stops.first;
+      if (st is Map) {
+        final lat = (st['lat'] as num?)?.toDouble();
+        final lng = (st['lng'] as num?)?.toDouble();
+        if (lat != null && lng != null) {
+          final label = (st['label'] ?? '').toString();
+          setState(() {
+            _stopLatLng = LatLng(lat, lng);
+            _stopLabel = label;
+          });
+          _showRouteChangeBanner(S.of(context).newStopBanner, label);
+          unawaited(_redrawMiniMapForRouteChange());
+        }
+      }
+    }
+    // Destination moved (>50 m from what we're steering to).
+    final dLat = (data['dropoff_lat'] as num?)?.toDouble();
+    final dLng = (data['dropoff_lng'] as num?)?.toDouble();
+    if (dLat != null && dLng != null) {
+      final next = LatLng(dLat, dLng);
+      if (_haversineMeters(_dropoffLL, next) > 50) {
+        final addr =
+            (data['dropoff_address'] ?? data['dropoffAddress'] ?? '')
+                .toString();
+        setState(() {
+          _dropoffOverride = next;
+          if (addr.isNotEmpty) _dropoffAddr = addr;
+        });
+        _showRouteChangeBanner(
+            S.of(context).destinationChangedBanner, addr);
+        unawaited(_redrawMiniMapForRouteChange());
+      }
+    }
+  }
+
+  /// Top in-app notification — slides in, auto-hides after 6 s.
+  void _showRouteChangeBanner(String title, String body) {
+    HapticService.heavyImpact();
+    final sm = ScaffoldMessenger.maybeOf(context);
+    if (sm == null) return;
+    sm.clearMaterialBanners();
+    sm.showMaterialBanner(MaterialBanner(
+      backgroundColor: const Color(0xFF1C1C24),
+      dividerColor: Colors.transparent,
+      leading: Icon(Icons.add_location_alt_rounded, color: _gold, size: 24),
+      content: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(title,
+              style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w800,
+                  fontSize: 15)),
+          if (body.isNotEmpty)
+            Text(body,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.65),
+                    fontSize: 12.5)),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => sm.clearMaterialBanners(),
+          child: Text('OK',
+              style:
+                  TextStyle(color: _gold, fontWeight: FontWeight.w800)),
+        ),
+      ],
+    ));
+    _routeBannerTimer?.cancel();
+    _routeBannerTimer = Timer(const Duration(seconds: 6), () {
+      try {
+        sm.clearMaterialBanners();
+      } catch (_) {}
+    });
+  }
+
+  /// New legs pickup → (stop) → dropoff, the line's geometry swapped in
+  /// place, the stop pin dropped once, the dropoff pin moved if needed,
+  /// and one smooth reframe over the whole new plan. Nothing rebuilt.
+  Future<void> _redrawMiniMapForRouteChange() async {
+    if (kIsWeb) return;
+    final ctrl = _map;
+    if (ctrl == null || !mounted) return;
+    try {
+      List<LatLng> pts;
+      final stop = _stopLatLng;
+      if (stop != null) {
+        final l1 = await _fetchRoutePoints(widget.pickupLatLng, stop);
+        final l2 = await _fetchRoutePoints(stop, _dropoffLL);
+        pts = [...l1, ...l2.skip(1)];
+      } else {
+        pts = await _fetchRoutePoints(widget.pickupLatLng, _dropoffLL);
+      }
+      if (!mounted || pts.length < 2) return;
+      _routePoints = pts;
+      _eraseHintIdx = 0;
+      final geom = safeLineString(pts);
+      if (geom != null && _routeAnnot != null && _polyMgr != null) {
+        _routeAnnot!.geometry = geom;
+        _polyMgr!.update(_routeAnnot!).catchError((_) {});
+      }
+      if (stop != null && _stopPinAnnot == null && _annotMgr != null) {
+        final bytes = await renderCircularPinBytes(
+            icon: CircularPinIcon.flag, isPickup: false, radius: 32);
+        final p = safePoint(stop.longitude, stop.latitude);
+        if (p != null && mounted && _annotMgr != null) {
+          _stopPinAnnot = await _annotMgr!.create(
+            mapbox.PointAnnotationOptions(
+              geometry: p,
+              image: bytes,
+              iconSize: 0.62,
+              iconAnchor: mapbox.IconAnchor.BOTTOM,
+            ),
+          );
+        }
+      }
+      if (_dropoffOverride != null &&
+          _pinAnnots.isNotEmpty &&
+          _annotMgr != null) {
+        final annot = _pinAnnots.last; // dropoff is created last
+        final p = safePoint(_dropoffLL.longitude, _dropoffLL.latitude);
+        if (p != null) {
+          annot.geometry = p;
+          _annotMgr!.update(annot).catchError((_) {});
+        }
+      }
+      double minLat = 90, maxLat = -90, minLng = 180, maxLng = -180;
+      for (final p in [
+        widget.pickupLatLng,
+        if (stop != null) stop,
+        _dropoffLL,
+        ...pts,
+      ]) {
+        if (p.latitude < minLat) minLat = p.latitude;
+        if (p.latitude > maxLat) maxLat = p.latitude;
+        if (p.longitude < minLng) minLng = p.longitude;
+        if (p.longitude > maxLng) maxLng = p.longitude;
+      }
+      final prettBearing = (_routeBearing(pts) + 15.0) % 360;
+      final cam = await ctrl.cameraForCoordinateBounds(
+        mapbox.CoordinateBounds(
+          southwest:
+              mapbox.Point(coordinates: mapbox.Position(minLng, minLat)),
+          northeast:
+              mapbox.Point(coordinates: mapbox.Position(maxLng, maxLat)),
+          infiniteBounds: false,
+        ),
+        mapbox.MbxEdgeInsets(top: 60, left: 50, bottom: 70, right: 50),
+        prettBearing,
+        0,
+        null,
+        null,
+      );
+      if (!mounted) return;
+      final targetZoom = ((cam.zoom ?? 13) - 0.5).clamp(9.0, 14.0);
+      await ctrl.flyTo(
+        mapbox.CameraOptions(
+            center: cam.center,
+            zoom: targetZoom,
+            bearing: prettBearing,
+            pitch: 0.0),
+        mapbox.MapAnimationOptions(duration: 1200),
+      );
+    } catch (e) {
+      debugPrint('[DriverTrip] route-change redraw failed: $e');
+    }
+  }
+
+  void _showConfirmBanner() {
+    _confirmBannerTimer?.cancel();
+    setState(() => _confirmBannerShow = true);
+    _confirmBannerTimer = Timer(const Duration(seconds: 5), () {
+      if (mounted) setState(() => _confirmBannerShow = false);
+    });
+  }
+
+  /// Arrived, rider not aboard yet: a calm non-tappable pill. The moment
+  /// the rider's own proximity detection writes rider_confirmed_pickup
+  /// (their Find-My screen fires at ~2.5 m), the stage key changes and
+  /// the AnimatedSwitcher morphs this into the pulsing Start Ride.
+  Widget _buildSlideWaitingForRider() {
+    _armWaitingOverride();
+    return Stack(
+      key: const ValueKey('waiting_rider'),
+      children: [
+        Container(
+          height: 62,
+          width: double.infinity,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: _gold.withValues(alpha: 0.14),
+            borderRadius: BorderRadius.circular(31),
+            border: Border.all(color: _gold.withValues(alpha: 0.38)),
+          ),
+          child: Text(
+            S.of(context).waitingForYourRider,
+            style: TextStyle(
+              color: _gold,
+              fontSize: 16,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+        _buildShimmerOverlay(62),
+      ],
+    );
+  }
+
+  void _armWaitingOverride() {
+    if (_waitingOverride || _waitingOverrideTimer != null) return;
+    _waitingOverrideTimer = Timer(const Duration(seconds: 90), () {
+      if (mounted) setState(() => _waitingOverride = true);
+    });
+  }
+
   // ── Helpers ───────────────────────────────────────────────────────────────
   String _timeLabel() {
     // Compute arrival ETA based on phase:
-    // Before ride started → ETA to pickup (widget.etaMinutes)
+    // Before ride started → ETA to pickup, from the driver's LIVE
+    //   distance when GPS has reported one (0.4 mi/min ≈ urban 24 mph —
+    //   same constant the rider tracking uses); the dispatch estimate
+    //   only until then. So "by 1:58" moves with the car, not with the
+    //   number dispatch guessed at accept time (user spec 2026-08-05).
     // After ride started  → ETA to dropoff (_tripEta)
-    final etaMins = _rideStarted ? _tripEta : widget.etaMinutes;
+    final liveToPickup = _milesToPickup != null
+        ? (_milesToPickup! / 0.4).ceil().clamp(1, 999)
+        : widget.etaMinutes;
+    final etaMins = _rideStarted ? _tripEta : liveToPickup;
     final arrival = DateTime.now().add(Duration(minutes: etaMins));
     int h = arrival.hour % 12;
     if (h == 0) h = 12;
@@ -1437,7 +1699,8 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
             borderColor: _gold.withValues(alpha: 0.55),
             borderWidth: 1.2,
           ),
-          child: Icon(icon, color: _gold, size: 18),
+          // White icons on the gold-ringed discs (user spec 2026-08-05).
+          child: Icon(icon, color: Colors.white, size: 18),
         ),
       );
 
@@ -1696,7 +1959,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
 
   // ── Navigation app integration ───────────────────────────────────────────
   void _showNavigationSheet({required bool isPickup}) {
-    final coords = isPickup ? widget.pickupLatLng : widget.dropoffLatLng;
+    final coords = isPickup ? widget.pickupLatLng : _dropoffLL;
     final address = isPickup ? _pickupAddr : _dropoffAddr;
     final bot = MediaQuery.of(context).padding.bottom;
     showModalBottomSheet(
@@ -2484,13 +2747,13 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     if (widget.routePoints != null && widget.routePoints!.length >= 8) {
       final cached = List<LatLng>.from(widget.routePoints!);
       final startMatchesPickup = _haversineMeters(cached.first, widget.pickupLatLng) <= 120;
-      final endMatchesDropoff = _haversineMeters(cached.last, widget.dropoffLatLng) <= 120;
+      final endMatchesDropoff = _haversineMeters(cached.last, _dropoffLL) <= 120;
       if (startMatchesPickup && endMatchesDropoff) {
         return cached;
       }
     }
     // Fetch fresh routed geometry for the mini-map details view.
-    return _fetchRoutePoints(widget.pickupLatLng, widget.dropoffLatLng);
+    return _fetchRoutePoints(widget.pickupLatLng, _dropoffLL);
   }
 
   // onMapCreated — capture controller + disable all gestures for preview perf.
@@ -2571,7 +2834,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     final allPoints = [
       widget.driverPos,
       widget.pickupLatLng,
-      widget.dropoffLatLng,
+      _dropoffLL,
       ..._routePoints,
     ];
     double minLat = 90, maxLat = -90, minLng = 180, maxLng = -180;
@@ -2609,7 +2872,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
       ));
       // Place pins + route instantly
       final pickupPoint = safePoint(widget.pickupLatLng.longitude, widget.pickupLatLng.latitude);
-      final dropoffPoint = safePoint(widget.dropoffLatLng.longitude, widget.dropoffLatLng.latitude);
+      final dropoffPoint = safePoint(_dropoffLL.longitude, _dropoffLL.latitude);
       _pinAnnots.clear();
       if (_annotMgr != null && pickupPoint != null && dropoffPoint != null) {
         final pins = await Future.wait([
@@ -2668,7 +2931,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
 
     // STEP 2: Pins pop in (scale 0 → 1.0 with spring)
     final pickupPoint = safePoint(widget.pickupLatLng.longitude, widget.pickupLatLng.latitude);
-    final dropoffPoint = safePoint(widget.dropoffLatLng.longitude, widget.dropoffLatLng.latitude);
+    final dropoffPoint = safePoint(_dropoffLL.longitude, _dropoffLL.latitude);
     _pinAnnots.clear();
     if (_annotMgr != null && pickupPoint != null && dropoffPoint != null) {
       final pins = await Future.wait([
@@ -3054,14 +3317,14 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
       }
       c.addMarker('pickup', widget.pickupLatLng.longitude,
           widget.pickupLatLng.latitude, iconBytes: pins[0]);
-      c.addMarker('dropoff', widget.dropoffLatLng.longitude,
-          widget.dropoffLatLng.latitude, iconBytes: pins[1]);
+      c.addMarker('dropoff', _dropoffLL.longitude,
+          _dropoffLL.latitude, iconBytes: pins[1]);
       // Same content as the native fit: driver + pickup + dropoff + route,
       // with extra bottom padding so the "N min trip" chip never covers it.
       c.fitBounds([
         (lng: widget.driverPos.longitude, lat: widget.driverPos.latitude),
         (lng: widget.pickupLatLng.longitude, lat: widget.pickupLatLng.latitude),
-        (lng: widget.dropoffLatLng.longitude, lat: widget.dropoffLatLng.latitude),
+        (lng: _dropoffLL.longitude, lat: _dropoffLL.latitude),
         ...pts.map((p) => (lng: p.longitude, lat: p.latitude)),
       ], paddingTop: 60, paddingLeft: 50, paddingBottom: 70, paddingRight: 50);
     } catch (e) {
@@ -3462,7 +3725,12 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
                     // Taller (was 190) — more of the trip in view (user
                     // spec 2026-08-04).
                     height: Responsive.h(240),
+                    width: double.infinity,
+                    // expand: every child fills the card edge to edge —
+                    // the map can never letterbox inside its box (user
+                    // report 2026-08-05: "no puede dejar marcos").
                     child: Stack(
+                      fit: StackFit.expand,
                       children: [
                         // The live preview is back. It takes the app's one
                         // native Mapbox surface — but it asks for it first
@@ -3477,8 +3745,8 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
                           StaticRoutePreview(
                             pickupLat: widget.pickupLatLng.latitude,
                             pickupLng: widget.pickupLatLng.longitude,
-                            dropoffLat: widget.dropoffLatLng.latitude,
-                            dropoffLng: widget.dropoffLatLng.longitude,
+                            dropoffLat: _dropoffLL.latitude,
+                            dropoffLng: _dropoffLL.longitude,
                             route: _routePoints,
                           )
                         // Mapbox GL JS in the browser, the native SDK
@@ -3514,40 +3782,11 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
                               onStyleLoadedListener: _onStyleLoaded,
                             ),
                           ),
-                        // 3D fade vignette — top edge
-                        Positioned(
-                          top: 0, left: 0, right: 0,
-                          height: 28,
-                          child: DecoratedBox(
-                            decoration: BoxDecoration(
-                              gradient: LinearGradient(
-                                begin: Alignment.topCenter,
-                                end: Alignment.bottomCenter,
-                                colors: [
-                                  Colors.black.withValues(alpha: 0.45),
-                                  Colors.transparent,
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
-                        // 3D fade vignette — bottom edge
-                        Positioned(
-                          bottom: 0, left: 0, right: 0,
-                          height: 36,
-                          child: DecoratedBox(
-                            decoration: BoxDecoration(
-                              gradient: LinearGradient(
-                                begin: Alignment.bottomCenter,
-                                end: Alignment.topCenter,
-                                colors: [
-                                  Colors.black.withValues(alpha: 0.55),
-                                  Colors.transparent,
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
+                        // The 3D fade vignettes that darkened the top and
+                        // bottom edges are gone (user spec 2026-08-05):
+                        // they sold the old tilted look, but on a flat
+                        // top-down map they read as dark FRAMES over the
+                        // box the map is supposed to fill completely.
                         // Trip time, with the distance to pickup stacked
                         // underneath it.
                         //
@@ -3637,12 +3876,10 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
                     : _showNavigationSheet(isPickup: true),
                 onLongPress: () => _copyAddress(S.of(context).pickupAddressLabel, _pickupAddr),
                 child: _infoRow(
-                  // Open ring for the origin, filled square for the
-                  // destination further down — the pairing every modern
-                  // ride app uses. A map pin for the pickup and a flag for
-                  // the dropoff were two unrelated metaphors that both just
-                  // meant "a place".
-                  Icons.trip_origin,
+                  // Map pin for the pickup, flag pin for the dropoff —
+                  // the same icon pair the rider's map labels carry
+                  // (user spec 2026-08-05: pins, not a ring/square).
+                  Icons.place_rounded,
                   _gold,
                   S.of(context).pickupLabel,
                   _resolvingAddresses && _pickupAddr.isEmpty
@@ -3652,6 +3889,26 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
                 ),
               ),
             ),
+            // ── Stop card (rider added mid-trip) — slides in animated ──
+            AnimatedSize(
+              duration: const Duration(milliseconds: 420),
+              curve: Curves.easeInOutCubicEmphasized,
+              alignment: Alignment.topCenter,
+              child: _stopLatLng == null
+                  ? const SizedBox.shrink()
+                  : Padding(
+                      padding: EdgeInsets.fromLTRB(Responsive.w(16), 0,
+                          Responsive.w(16), Responsive.h(10)),
+                      child: _infoRow(
+                        Icons.add_location_alt_rounded,
+                        _gold,
+                        S.of(context).stopLabelShort,
+                        _stopLabel.isEmpty ? '—' : _stopLabel,
+                        iconSize: 16,
+                      ),
+                    ),
+            ),
+
             // ── Dropoff address card + hanging instructions ───────────────
             // Hidden until the rider is aboard. On the way to pickup the
             // only address that matters is the pickup, and showing both
@@ -3662,11 +3919,11 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
                 padding: EdgeInsets.fromLTRB(Responsive.w(16), 0, Responsive.w(16), 0),
                 child: GestureDetector(
                   onTap: () => AppPlatform.isIOS
-                      ? _openAppleMaps(widget.dropoffLatLng)
+                      ? _openAppleMaps(_dropoffLL)
                       : _showNavigationSheet(isPickup: false),
                   onLongPress: () => _copyAddress(S.of(context).dropoffAddressLabel, _dropoffAddr),
                   child: _infoRow(
-                    Icons.square_rounded,
+                    Icons.flag_rounded,
                     _gold,
                     S.of(context).dropOffLabel,
                     _resolvingAddresses && _dropoffAddr.isEmpty
@@ -3685,69 +3942,9 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
             ],
             const SizedBox(height: 10),
 
-            // ── Rider confirmed notification ──
-            if (_riderConfirmedPickup)
-              Padding(
-                padding: EdgeInsets.fromLTRB(Responsive.w(16), 8, Responsive.w(16), 0),
-                child: Row(
-                  children: [
-                    Icon(Icons.check_circle_rounded, color: _gold, size: 18),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        S.of(context).passengerConfirmedOnboard,
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                          color: _gold,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-
-            // ── Real-time messages from rider ──
-            StreamBuilder<int>(
-              stream: ChatService().unreadCountStream(
-                rideId: widget.tripId.toString(),
-                readerRole: 'driver',
-              ),
-              builder: (context, snap) {
-                final count = snap.data ?? 0;
-                if (count == 0) return const SizedBox.shrink();
-                return GestureDetector(
-                  onTap: _openChat,
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 300),
-                    margin: EdgeInsets.fromLTRB(Responsive.w(16), 8, Responsive.w(16), 0),
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                    decoration: BoxDecoration(
-                      color: _gold.withValues(alpha: 0.10),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: _gold.withValues(alpha: 0.40)),
-                    ),
-                    child: Row(
-                      children: [
-                        Icon(Icons.message_rounded, color: _gold, size: 18),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Text(
-                            S.of(context).newMessagesFromRider(count),
-                            style: const TextStyle(
-                              color: _gold,
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                        Icon(Icons.chevron_right, color: _gold.withValues(alpha: 0.6), size: 18),
-                      ],
-                    ),
-                  ),
-                );
-              },
-            ),
+            // The "new message from rider" box is gone (user spec
+            // 2026-08-05) — the badge on the message disc already
+            // carries the unread count.
 
             const Spacer(),
 
@@ -3764,6 +3961,39 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
+                  // "Passenger confirmed they are in your vehicle" — right
+                  // above the action button, gone by itself after 5 s
+                  // (user spec 2026-08-05).
+                  AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 450),
+                    switchInCurve: Curves.easeOutCubic,
+                    switchOutCurve: Curves.easeInCubic,
+                    child: _confirmBannerShow
+                        ? Padding(
+                            key: const ValueKey('confirm-banner'),
+                            padding: const EdgeInsets.only(bottom: 12),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(Icons.check_circle_rounded,
+                                    color: _gold, size: 18),
+                                const SizedBox(width: 8),
+                                Flexible(
+                                  child: Text(
+                                    S.of(context).passengerConfirmedOnboard,
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w600,
+                                      color: _gold,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          )
+                        : const SizedBox.shrink(
+                            key: ValueKey('confirm-banner-off')),
+                  ),
                   AnimatedSwitcher(
                     duration: const Duration(milliseconds: 350),
                     switchInCurve: Curves.easeOut,
@@ -3918,7 +4148,11 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   String _actionStageKey() {
     if (_rideStarted && _nearDropoff) return 'finish';
     if (_rideStarted) return 'finish_locked';
-    if (_arrivedConfirmed) return 'start_ride';
+    if (_arrivedConfirmed) {
+      return (_riderConfirmedPickup || _waitingOverride)
+          ? 'start_ride'
+          : 'waiting_rider';
+    }
     if (_tripStarted && _nearPickup) return 'arrived';
     if (_tripStarted) return 'arrived_locked';
     return 'start_trip';
@@ -3934,9 +4168,13 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     if (_rideStarted && !_nearDropoff) {
       return _buildSlideFinishTripLocked();
     }
-    // Phase 4: Arrived confirmed, ride not started → second Start Trip
+    // Phase 4: Arrived confirmed, ride not started. Until the rider's
+    // proximity confirmation lands (or the 90 s fallback), the button
+    // reads "Waiting for your rider" and cannot be pressed.
     if (_arrivedConfirmed && !_rideStarted) {
-      return _buildSlideStartRide();
+      return (_riderConfirmedPickup || _waitingOverride)
+          ? _buildSlideStartRide()
+          : _buildSlideWaitingForRider();
     }
     // Phase 3: Near pickup, not confirmed → Arrived slider
     if (_tripStarted && _nearPickup && !_arrivedConfirmed) {
@@ -4196,7 +4434,18 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   Widget _buildSlideStartRide() {
     final done = _startRideSlidDone;
     final pressed = _startRidePressed && !done;
-    return GestureDetector(
+    // The 1.6 s breathing pulse that says "the rider is here — go".
+    // _shimmerAnim already loops for the slide buttons, so it drives
+    // this too: no extra ticker.
+    return AnimatedBuilder(
+      animation: _shimmerAnim,
+      builder: (context, child) {
+        final eligible = !done && _riderConfirmedPickup;
+        final w = (math.sin(_shimmerAnim.value * math.pi * 2) + 1) / 2;
+        final sc = eligible ? 1.0 + 0.018 * w : 1.0;
+        return Transform.scale(scale: sc, child: child);
+      },
+      child: GestureDetector(
       key: const ValueKey('tap_start_ride'),
       behavior: HitTestBehavior.opaque,
       onTapDown: done ? null : (_) => setState(() => _startRidePressed = true),
@@ -4216,7 +4465,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
           _startDropoffProximityDetection();
           _updateTripInTrip();
           // Navigate immediately — route fetch runs in background
-          _openNativeMaps(widget.dropoffLatLng);
+          _openNativeMaps(_dropoffLL);
         });
       },
       child: AnimatedScale(
@@ -4254,6 +4503,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
           ),
         ),
       ),
+    ),
     );
   }
 

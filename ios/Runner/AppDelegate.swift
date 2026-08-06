@@ -201,8 +201,22 @@ final class CruiseLiveActivityManager {
         // staleDate: the offer expires on its own, and a card still
         // showing a ride the driver can no longer take is worse than no
         // card. iOS dims it at that point without another round trip.
-        await a.update(.init(
-          state: state, staleDate: Date().addingTimeInterval(45)))
+        //
+        // The alert is what makes this VISIBLE. A plain update is silent by
+        // design: iOS refreshes the content in place, leaves the Dynamic
+        // Island collapsed and plays nothing — so a driver on their home
+        // screen saw only the little dot and never knew a ride had come in.
+        // An AlertConfiguration is what breaks the island out to its
+        // expanded form, raises the banner on the lock screen, and makes the
+        // handset sound. Without one there is no notification, only a
+        // repaint nobody is looking at.
+        let alert = AlertConfiguration(
+          title: "New ride offer",
+          body: "\(fare) · \(perHour)",
+          sound: .default)
+        await a.update(
+          .init(state: state, staleDate: Date().addingTimeInterval(45)),
+          alertConfiguration: alert)
       }
     }
   }

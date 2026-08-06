@@ -257,35 +257,26 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
                               // had no way to learn that instant cashout
                               // existed. A row that is not set up says so and
                               // offers to be — the absence is information too.
-                              Container(
-                                decoration: neuBox(radius: 20),
-                                padding:
-                                    const EdgeInsets.symmetric(horizontal: 16),
-                                child: Column(
-                                  children: [
-                                    _destinationRow(
-                                      icon: Icons.flash_on_rounded,
-                                      title: s.payoutExpressPay,
-                                      emptyDesc: s.payoutExpressPayDesc,
-                                      method: _methodOfType('debit_card'),
-                                      statusLabel: s.payoutOnRequest,
-                                      onTap: _connectDebitCard,
-                                    ),
-                                    Divider(
-                                      height: 1,
-                                      color:
-                                          Colors.white.withValues(alpha: 0.05),
-                                    ),
-                                    _destinationRow(
-                                      icon: Icons.calendar_month_rounded,
-                                      title: s.payoutWeekly,
-                                      emptyDesc: s.payoutWeeklyDesc,
-                                      method: _methodOfType('bank_account'),
-                                      statusLabel: s.payoutActive,
-                                      onTap: _connectBankAccount,
-                                    ),
-                                  ],
-                                ),
+                              // Two separate cards now, not one box split by
+                              // a hairline: each row carries its own surface,
+                              // so a card inside a card would double the
+                              // shadow and read as a seam.
+                              _destinationRow(
+                                icon: Icons.flash_on_rounded,
+                                title: s.payoutExpressPay,
+                                emptyDesc: s.payoutExpressPayDesc,
+                                method: _methodOfType('debit_card'),
+                                statusLabel: s.payoutOnRequest,
+                                onTap: _connectDebitCard,
+                              ),
+                              const SizedBox(height: 10),
+                              _destinationRow(
+                                icon: Icons.calendar_month_rounded,
+                                title: s.payoutWeekly,
+                                emptyDesc: s.payoutWeeklyDesc,
+                                method: _methodOfType('bank_account'),
+                                statusLabel: s.payoutActive,
+                                onTap: _connectBankAccount,
                               ),
                               // Anything the two rows are not already showing
                               // — a driver who linked a second card — still
@@ -360,14 +351,27 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
             },
       child: Opacity(
         opacity: _busy ? 0.5 : 1,
-        child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 16),
+        // Its own card, sized like the saved-method one below it: a 48 pt
+        // icon well, 16 of padding, radius 20. These two rows are the main
+        // thing on the screen and used to be the smallest thing on it —
+        // thinner and flatter than the card that appears once a bank is
+        // attached, so the screen read as a list of settings rather than the
+        // two places a driver gets paid.
+        child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: neuBox(radius: 20),
         child: Row(
           children: [
-            Icon(
-              icon,
-              size: 20,
-              color: linked ? _gold : Colors.white.withValues(alpha: 0.45),
+            Container(
+              width: 48,
+              height: 48,
+              alignment: Alignment.center,
+              decoration: neuBox(radius: 15, pressed: true),
+              child: Icon(
+                icon,
+                size: 22,
+                color: linked ? _gold : Colors.white.withValues(alpha: 0.45),
+              ),
             ),
             const SizedBox(width: 14),
             Expanded(
@@ -378,8 +382,8 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
                     title,
                     style: const TextStyle(
                       color: _text,
-                      fontSize: 15,
-                      fontWeight: FontWeight.w600,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
                     ),
                   ),
                   const SizedBox(height: 3),
@@ -388,8 +392,8 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.4),
-                      fontSize: 12.5,
+                      color: Colors.white.withValues(alpha: 0.45),
+                      fontSize: 13.5,
                     ),
                   ),
                 ],

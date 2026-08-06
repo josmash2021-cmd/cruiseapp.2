@@ -3341,8 +3341,10 @@ class S {
   String get accountNumbersDoNotMatch =>
       _es ? 'Los números no coinciden' : "The numbers don't match";
   String get bankNumbersNeverStored => _es
-      ? 'Tus números van directo a Stripe. Cruise nunca los guarda ni los ve.'
-      : 'Your numbers go straight to Stripe. Cruise never stores or sees them.';
+      ? 'Toda tu información viaja cifrada y protegida. Cruise nunca guarda ni '
+          've los números de tu cuenta.'
+      : 'All your information is encrypted and protected. Cruise never stores '
+          'or sees your account numbers.';
 
   /// Shown when the driver is sent to Stripe to finish verifying their
   /// account before a bank can be linked.

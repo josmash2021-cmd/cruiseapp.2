@@ -48,6 +48,19 @@ class _AccountScreenState extends State<AccountScreen> with SecureScreenMixin {
   bool _isVerified = false;
   bool _emailVerified = false;
 
+  /// What the drivers have scored this rider, and how many of them have.
+  ///
+  /// Null until /auth/me answers. A rider with no ratings yet is shown as new
+  /// rather than as a perfect 5.0 — the column defaults to 5.0 in the
+  /// database, so printing it unqualified would invent a reputation nobody
+  /// earned.
+  double? _rating;
+  int _ratingsCount = 0;
+
+  /// Whether /auth/me has answered. A null [_rating] means "nobody has rated
+  /// you" once this is true, and "we have not asked yet" while it is false.
+  bool _ratingLoaded = false;
+
   @override
   void initState() {
     super.initState();
@@ -90,11 +103,66 @@ class _AccountScreenState extends State<AccountScreen> with SecureScreenMixin {
       if (me != null && mounted) {
         setState(() {
           _emailVerified = me['email_verified'] == true;
+          // Already in this response — /auth/me computes it alongside the
+          // profile — and was being thrown away with the rest of the payload.
+          _rating = (me['average_rating'] as num?)?.toDouble();
+          _ratingsCount = (me['ratings_count'] as num?)?.toInt() ?? 0;
+          _ratingLoaded = true;
         });
       }
     } catch (_) {
       // Silently ignore — cached data is still showing
     }
+  }
+
+  /// The score the drivers have given this rider, under their name.
+  ///
+  /// Three states, on purpose. Until /auth/me answers there is nothing to say,
+  /// so the row holds its height rather than flashing a placeholder number
+  /// that then changes — hence the separate _ratingLoaded flag: the backend
+  /// returns a null score for "nobody has rated you", which is a different
+  /// answer from "we have not asked yet" and must not render the same.
+  ///
+  /// With no ratings recorded it says "new rider". The database column
+  /// defaults to 5.0, so printing the raw value would hand someone a perfect
+  /// score they were never given. Only a real, counted average gets a star.
+  Widget _buildRiderRating(AppColors c) {
+    if (!_ratingLoaded) return const SizedBox(height: 18);
+    final r = _rating;
+    if (r == null || _ratingsCount <= 0) {
+      return SizedBox(
+        height: 18,
+        child: Text(
+          S.of(context).newRiderLabel,
+          style: TextStyle(
+            fontSize: 13.5,
+            fontWeight: FontWeight.w600,
+            color: c.textSecondary,
+          ),
+        ),
+      );
+    }
+    return SizedBox(
+      height: 18,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.star_rounded, size: 17, color: _gold),
+          const SizedBox(width: 4),
+          Text(
+            // One decimal, because that is exactly what the backend sends:
+            // _compute_user_rating already rounds to 1. Asking for two would
+            // print a digit the server never computed.
+            r.toStringAsFixed(1),
+            style: TextStyle(
+              fontSize: 14.5,
+              fontWeight: FontWeight.w700,
+              color: c.textPrimary,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   void _openSettings() async {
@@ -439,17 +507,25 @@ class _AccountScreenState extends State<AccountScreen> with SecureScreenMixin {
                   const SizedBox(width: 18),
                   // Name — fills available width, auto-sizes for long names
                   Expanded(
-                    child: Text(
-                      fullName,
-                      style: TextStyle(
-                        fontSize: fullName.length > 18 ? 26 : 30,
-                        fontWeight: FontWeight.w800,
-                        color: c.textPrimary,
-                        letterSpacing: -0.5,
-                        height: 1.15,
-                      ),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          fullName,
+                          style: TextStyle(
+                            fontSize: fullName.length > 18 ? 26 : 30,
+                            fontWeight: FontWeight.w800,
+                            color: c.textPrimary,
+                            letterSpacing: -0.5,
+                            height: 1.15,
+                          ),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 6),
+                        _buildRiderRating(c),
+                      ],
                     ),
                   ),
                 ],

@@ -126,14 +126,22 @@ class TripFirestoreService {
   }
 
   /// Cancel a trip from the passenger side.
+  ///
+  /// Goes through [_withAuthRetry] like every other mutation here: an
+  /// expired Firebase session surfaces as permission-denied, and this was
+  /// the one write that let that reach the caller as an unhandled
+  /// FirebaseException instead of re-authenticating and retrying.
   static Future<void> cancelTrip(String tripId) async {
-    await _trips.doc(tripId).update({
-      'status': 'cancelled',
-      'cancelledBy': 'rider',
-      'cancellationReason': 'rider_cancelled',
-      'cancelReason': 'Cancelled by passenger',
-      'cancelledAt': FieldValue.serverTimestamp(),
-    });
+    await _withAuthRetry(
+      () => _trips.doc(tripId).update({
+        'status': 'cancelled',
+        'cancelledBy': 'rider',
+        'cancellationReason': 'rider_cancelled',
+        'cancelReason': 'Cancelled by passenger',
+        'cancelledAt': FieldValue.serverTimestamp(),
+      }),
+      label: 'cancelTrip',
+    );
   }
 
   // ─── Real-time sync: push backend status changes to Firestore ───
@@ -246,8 +254,22 @@ class TripFirestoreService {
         'driverLng': lng,
         'driverBearing': bearing,
       });
-    } catch (_) {}
+      _locationWriteFailed = false;
+    } catch (e) {
+      // Once per failure streak, not once per write: this runs at 2 Hz, so
+      // logging every failure would bury the rest of the log. Silence was
+      // worse though — when this starts failing the rider's map simply
+      // freezes and nothing anywhere says why.
+      if (!_locationWriteFailed) {
+        _locationWriteFailed = true;
+        debugPrint('[TripFirestore] driver location write failing: $e');
+      }
+    }
   }
+
+  /// True while [syncDriverLocation] is in a run of failures, so the log
+  /// line above is written once per outage rather than twice a second.
+  static bool _locationWriteFailed = false;
 
   /// Clear live driver-location fields from Firestore once the trip is over.
   static Future<void> clearDriverLocation(String tripId) async {
@@ -257,7 +279,9 @@ class TripFirestoreService {
         'driverLng': FieldValue.delete(),
         'driverBearing': FieldValue.delete(),
       });
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('[TripFirestore] clearDriverLocation failed: $e');
+    }
   }
 
   /// Stream of driver [LatLng] positions from Firestore — use on rider side.

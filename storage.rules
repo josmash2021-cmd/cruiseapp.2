@@ -2,8 +2,22 @@ rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
 
+    // The signed-in user's uid is 'user_{backend user id}', minted by
+    // create_custom_token in backend/routers/auth.py. Every ownership check
+    // below leans on the client writing that same shape into the path; see
+    // the note on /photos for the one place it does not.
+
     // Profile photos — authenticated users can upload/read, but NEVER delete
     // Photos are PERMANENT — they survive logouts, app updates, and device changes
+    //
+    // Ownership is NOT enforced here, and cannot be: the client writes
+    // photos/{role}s/{userId}/profile.jpg, so {userFolder} binds to the
+    // literal "riders" or "drivers" and the owning id lands inside the
+    // recursive wildcard, which rules cannot destructure or compare.
+    // Closing this means re-keying uploads under photos/{uid}/ plus a
+    // backfill and a dual-read window for clients already in the field — a
+    // migration, not a rule edit. Until then any signed-in user can
+    // overwrite any profile photo.
     match /photos/{userFolder}/{allPaths=**} {
       allow read: if request.auth != null;
       allow create,update: if request.auth != null
@@ -12,21 +26,44 @@ service firebase.storage {
       allow delete: if false;  // ⚠️ NEVER allow deletion — photos are permanent
     }
 
-    // Verification documents — authenticated users can upload/read
+    // Verification documents — driver's licence and ID.
+    //
+    // {userFolder} is 'user_{id}' (uploadDocumentPhoto in
+    // firebase_storage_service.dart) and the uid is 'user_{id}', so
+    // ownership IS expressible here, unlike /photos above.
+    //
+    // create only, never update or delete. The previous `allow write`
+    // covered all three, so any signed-in user could overwrite another
+    // driver's identity evidence with their own, or delete it. Filenames
+    // carry a millisecond timestamp, so every upload is a new object and
+    // the client never needs update; nothing in the app deletes these.
+    //
+    // Read deliberately stays at "any signed-in user". The dispatch panel
+    // reviews these through the client SDK with no reviewer claim on its
+    // token, so narrowing read to the owner would lock reviewers out of
+    // driver approval. Closing it needs a custom claim minted alongside the
+    // token in auth.py — Storage rules cannot read the Firestore admins/
+    // collection.
     match /documents/{userFolder}/{allPaths=**} {
       allow read: if request.auth != null;
-      allow write: if request.auth != null
+      allow create: if request.auth != null
+                   && request.auth.uid == userFolder
                    && request.resource.size < 10 * 1024 * 1024
                    && (request.resource.contentType.matches('image/.*')
                        || request.resource.contentType == 'application/pdf');
+      allow update, delete: if false;
     }
 
-    // Liveness videos — authenticated users can upload/read
+    // Liveness videos — same ownership rule as documents. Nothing in the
+    // Flutter app writes this prefix today, so the tightening cannot break
+    // a live upload path.
     match /videos/{userFolder}/{allPaths=**} {
       allow read: if request.auth != null;
-      allow write: if request.auth != null
+      allow create: if request.auth != null
+                   && request.auth.uid == userFolder
                    && request.resource.size < 50 * 1024 * 1024
                    && request.resource.contentType.matches('video/.*');
+      allow update, delete: if false;
     }
 
     // Deny all other paths

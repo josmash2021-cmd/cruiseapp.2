@@ -694,7 +694,8 @@ Future<bool> _initFirebase() async {
     }
 
     // Re-establish the session if it expires mid-use.
-    FirebaseAuth.instance.authStateChanges().listen((user) async {
+    unawaited(_fbAuthStateSub?.cancel());
+    _fbAuthStateSub = FirebaseAuth.instance.authStateChanges().listen((user) async {
       if (user == null) {
         debugPrint('[Firebase] auth lost — re-establishing via custom token…');
         await FirebaseAuthRecovery.ensureSignedIn();
@@ -706,6 +707,19 @@ Future<bool> _initFirebase() async {
     return false;
   }
 }
+
+/// The long-lived stream listeners [heavyInit] and the early Firebase init
+/// attach.
+///
+/// Held so they can be cancelled before being re-attached. Neither function
+/// runs only once: SplashScreen is pushed again on every logout (see
+/// account_screen, driver_menu_screen, privacy_screen), and each pass used
+/// to add another listener to the same stream. After three logout/login
+/// cycles in one process a single ride offer produced three notifications
+/// and three screen pushes.
+StreamSubscription<RemoteMessage>? _fcmOnMessageSub;
+StreamSubscription<RemoteMessage>? _fcmOpenedAppSub;
+StreamSubscription<User?>? _fbAuthStateSub;
 
 /// Heavy async init that runs while the splash animation plays.
 /// Called from SplashScreen.initState().
@@ -785,7 +799,8 @@ Future<void> heavyInit() async {
           // rotation (covers restarts with an active session).
           unawaited(NotificationService.registerTokenWithBackend());
 
-          FirebaseMessaging.onMessage.listen((RemoteMessage message) {
+          unawaited(_fcmOnMessageSub?.cancel());
+          _fcmOnMessageSub = FirebaseMessaging.onMessage.listen((RemoteMessage message) {
             final type = message.data['type'] as String? ?? 'general';
             // For driver ride offers: always use clean title/body — never show price or address
             final bool isOffer = type == 'trip_offer' || type == 'new_offer';
@@ -910,7 +925,9 @@ Future<void> heavyInit() async {
             }
           });
           // Handle notification tap when app is backgrounded
-          FirebaseMessaging.onMessageOpenedApp.listen(_handleNotificationTap);
+          unawaited(_fcmOpenedAppSub?.cancel());
+          _fcmOpenedAppSub =
+              FirebaseMessaging.onMessageOpenedApp.listen(_handleNotificationTap);
           // Handle notification tap when app was fully terminated
           FirebaseMessaging.instance.getInitialMessage().then((msg) {
             if (msg != null) {

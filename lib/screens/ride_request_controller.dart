@@ -336,11 +336,24 @@ extension _RideRequestController on _RideRequestScreenState {
   ///
   /// `widget.pickerMode` is checked as well as the phase because the phase is
   /// only set in a post-frame callback, and the last-known fix can beat it.
-  bool get _gpsMayMoveCamera =>
-      !widget.pickerMode &&
-      _ctrl.state.phase != RiderPhase.pickingLocation &&
-      _ctrl.state.route == null &&
-      !_userTookCamera;
+  bool get _gpsMayMoveCamera {
+    final allowed = !widget.pickerMode &&
+        _ctrl.state.phase != RiderPhase.pickingLocation &&
+        _ctrl.state.route == null &&
+        !_userTookCamera;
+    // Instrumented because the rider still reports the picker camera
+    // snapping back on a build that HAS this guard. If a reproduction shows
+    // no line from here, the mover is not _initLocation and the hunt goes
+    // elsewhere; if it shows one, the guard is being defeated and this says
+    // by which term.
+    if (allowed && (widget.pickerMode ||
+        _ctrl.state.phase == RiderPhase.pickingLocation)) {
+      debugPrint('[RideRequest] GPS camera move ALLOWED during picker — '
+          'pickerMode=${widget.pickerMode} phase=${_ctrl.state.phase} '
+          'route=${_ctrl.state.route != null} took=$_userTookCamera');
+    }
+    return allowed;
+  }
 
   Future<void> _initLocation() async {
     try {

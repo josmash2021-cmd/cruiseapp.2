@@ -1939,6 +1939,11 @@ extension _RideRequestMap on _RideRequestScreenState {
   /// flies to the rider. Safe to call repeatedly — it holds no state, so
   /// the button behind it stays live for as many taps as the rider wants.
   Future<void> _recenterMap() async {
+    // Logged for the same hunt as _gpsMayMoveCamera: this is the other thing
+    // that can fly the picker to the rider's own position, and it should only
+    // ever run from a tap on the recenter button.
+    debugPrint('[RideRequest] _recenterMap() — phase=${_ctrl.state.phase} '
+        'pickerMode=${widget.pickerMode}');
     // The rider explicitly asked us to re-frame — hand the camera back to
     // the automatic fits.
     _userTookCamera = false;

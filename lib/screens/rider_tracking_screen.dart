@@ -145,7 +145,15 @@ const int _kRouteEraseIntervalMs = 66;
 /// the car drives off screen; too short and a deliberate zoom gets undone
 /// while they are still reading it. 15 s is long enough to look around, and
 /// the recenter pill is there for anyone who wants the route back sooner.
-const int _kResumeFollowAfterPanMs = 15000;
+/// How long the rider keeps the camera after panning before the framer takes
+/// it back.
+///
+/// Was 15s. A car at 50 km/h covers about 200 m in that time, so one pan —
+/// or one stray gesture — left the rider looking at a frame the car had
+/// already driven out of, with the route running off the edge and no vehicle
+/// anywhere on screen. Five seconds is long enough to read a street name and
+/// short enough that the ride cannot disappear while you do it.
+const int _kResumeFollowAfterPanMs = 5000;
 
 /// Perpendicular distance from the active route polyline beyond which the
 /// driver counts as off-route (meters).

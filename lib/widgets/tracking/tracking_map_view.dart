@@ -838,10 +838,23 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     final isOnTrip =
         _phase == _TrackPhase.onTrip || _phase == _TrackPhase.nearDestination;
     if (isOnTrip || _phase == _TrackPhase.arriving) {
-      // Both framed phases: drop the smoothing and let the next tick fly to
-      // the live fit, so "recenter" always means the whole remaining route
-      // back on screen — no matter where the rider had dragged the map.
+      // Drop the smoothing so the framer re-seeds from the live fit instead
+      // of resuming from where the rider left the map.
       _mapCamera?.resetFollowFraming();
+      // Then frame it here and now, rather than waiting for the framer to
+      // seed on some later tick. The button says "show route"; it has to
+      // answer with the route, immediately and in one move — resuming the
+      // follow and letting it converge is what made it read as the camera
+      // going back to chasing the car.
+      final pts = isOnTrip ? _tripFramePoints() : _approachFramePoints();
+      final mq = MediaQuery.maybeOf(context);
+      if (_mapCamera != null && mq != null && pts.isNotEmpty) {
+        _mapCamera!.fitBounds(
+          points: pts,
+          topPadding: mq.padding.top + 10 + _topCardHeight + 32,
+          bottomPadding: mq.padding.bottom + 16 + _bottomCardHeight + 32,
+        );
+      }
       return;
     }
     _fitRouteBounds();
@@ -859,6 +872,13 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
   /// gesture ever happening. A gesture callback cannot lie.
   void _onUserPannedMap() {
     if (!_userControllingCamera) {
+      // Logged because the rider reports the camera handing itself over
+      // without being touched. These are gesture callbacks, so they should
+      // not fire for our own per-frame writes — if this line shows up in a
+      // session where nobody touched the map, the listener is the liar and
+      // the fix belongs here rather than in the framer.
+      debugPrint('[Tracking] rider took the camera (pan/zoom gesture) — '
+          'follow paused for ${_kResumeFollowAfterPanMs}ms');
       _userControllingCamera = true;
       _mapCamera?.stopNavigationChase();
       // Raises the recenter button. The flag flips twice a ride at most, so

@@ -121,6 +121,37 @@ def _create_driver_connect_account(_stripe, email: str, **extra):
         return _mk({"card_payments": {"requested": True}, "transfers": {"requested": True}})
 
 
+async def _usable_connect_id(_stripe, user, db) -> str:
+    """The driver's Connect id, guaranteed reachable by THIS Stripe key.
+
+    A stored id can go dead. The commonest way is a test/live mix-up — an
+    account minted with a test key does not exist in live mode at all — and
+    the platform then gets:
+
+        The provided key 'sk_live_...' does not have access to account
+        'acct_...' (or that account does not exist).
+
+    That error surfaced on the driver's Submit, on a form they had just
+    filled in correctly, with no way forward: the id was wrong and nothing
+    ever replaced it. Retrieving it first turns a permanent dead end into a
+    one-time recreate.
+    """
+    cid = user.stripe_connect_id
+    if cid:
+        try:
+            _stripe.Account.retrieve(cid)
+            return cid
+        except Exception as e:
+            logging.warning(
+                "[Connect] stored account %s is unreachable with this key (%s) "
+                "— creating a fresh one for user %s", cid, str(e)[:160], user.id)
+    acct = _create_driver_connect_account(_stripe, user.email)
+    user.stripe_connect_id = acct["id"]
+    await db.commit()
+    logging.info("[Connect] user %s re-linked to %s", user.id, acct["id"])
+    return acct["id"]
+
+
 def _get_driver_rate(vehicle_type: str | None) -> float:
     """Return the driver share rate for the given vehicle type."""
     return vehicle_tiers.driver_share(vehicle_type)
@@ -837,10 +868,11 @@ async def create_driver_financial_connections_session(
     try:
         import stripe as _stripe
         _stripe.api_key = STRIPE_SECRET
+        _cid = await _usable_connect_id(_stripe, user, db)
         session = _stripe.financial_connections.Session.create(
             account_holder={
                 "type": "account",
-                "account": user.stripe_connect_id,
+                "account": _cid,
             },
             # `payment_method` only. `balances` and `ownership` are separate
             # Financial Connections products that a platform has to register
@@ -862,7 +894,7 @@ async def create_driver_financial_connections_session(
         return {
             "client_secret": session.client_secret,
             "session_id": session.id,
-            "stripe_account_id": user.stripe_connect_id,
+            "stripe_account_id": _cid,
         }
     except _stripe.error.StripeError as e:
         logging.error("[DriverFC] Session creation failed: %s", e)
@@ -1386,8 +1418,11 @@ async def add_debit_card_payout(
     try:
         import stripe as _stripe
         _stripe.api_key = STRIPE_SECRET
+        # Heal a dead id before using it, or the driver gets "key does not
+        # have access to account" on a form they filled in correctly.
+        _cid = await _usable_connect_id(_stripe, user, db)
         ext = _stripe.Account.create_external_account(
-            user.stripe_connect_id,
+            _cid,
             external_account=card_token,
             default_for_currency=set_default,
         )
@@ -1480,8 +1515,11 @@ async def add_bank_account_payout(
     try:
         import stripe as _stripe
         _stripe.api_key = STRIPE_SECRET
+        # Heal a dead id before using it, or the driver gets "key does not
+        # have access to account" on a form they filled in correctly.
+        _cid = await _usable_connect_id(_stripe, user, db)
         ext = _stripe.Account.create_external_account(
-            user.stripe_connect_id,
+            _cid,
             external_account=bank_token,
             default_for_currency=set_default,
         )

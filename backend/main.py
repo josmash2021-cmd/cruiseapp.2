@@ -139,7 +139,7 @@ from utils.security import (
 from utils.helpers import (
     utc_now, utc_today_start, utc_days_ago, utc_month_start, utc_year_start,
     _haversine, _user_dict, _trip_dict, _vehicle_dict, _doc_dict, _support_msg_dict,
-    ACTIVE_ACCOUNT_STATUSES,
+    ACTIVE_ACCOUNT_STATUSES, _safe_create_task,
 )
 from services.fcm_service import _send_fcm_push
 from services.email_sms_service import _send_email
@@ -164,12 +164,298 @@ def _next_tuesday_2am() -> datetime:
     )
     return target
 
+# ── Weekly auto-payout ────────────────────────────────────────────────────
+#
+# Real money leaves the platform here, so everything below follows one rule:
+# it is always better to pay a driver LATE than to pay them TWICE.
+#
+# The old order of operations was: insert the Cashout row, call Stripe, then
+# commit. Railway sends SIGTERM on every redeploy, and a SIGTERM landing
+# between the Stripe call and the commit left the transfer done and the
+# database untouched — the row rolled back and pending_balance was never
+# zeroed — so the NEXT run paid the whole balance a second time. The Stripe
+# idempotency key did not stop that: it was stamped with the calendar date,
+# and the next run happens on a different date.
+#
+# The database is written FIRST now:
+#
+#   1. CLAIM    under a row lock, insert the Cashout as "processing" and zero
+#               pending_balance, then COMMIT. This is the point of no return:
+#               from here the money is spoken for and no later run can claim
+#               it again.
+#   2. TRANSFER call Stripe, off the event loop.
+#   3. SETTLE   mark the row "completed"; or, ONLY for errors Stripe answered
+#               with a definitive rejection, "failed" + hand the balance back.
+#
+# An interruption anywhere after step 1 leaves the row in "processing", and
+# the driver earnings ledger in routers/drivers.py already treats that as
+# money spent (it sums every cashout whose status is not "failed"). So the
+# stuck state costs a manual reconciliation and never a double payment.
+# _report_stuck_payouts() below is the alarm for exactly that state.
+#
+# LIMITATION, stated plainly: closing a stuck row automatically would need
+# the Stripe transfer id persisted on the cashout, and there is no column for
+# it. Adding one is a schema change and out of scope here, so the recovery is
+# a loud ERROR log naming the cashout id and the idempotency key, not code.
+
+# A claim older than this that is still "processing" was interrupted.
+_PAYOUT_STUCK_AFTER_MINUTES = 30
+# How long a cancelled payout may keep running to finish writing its result.
+# Kept well under the shutdown budget: the platform SIGKILLs a container that
+# takes too long to exit, and being killed here is no worse than being killed
+# anywhere else — the claim is already committed either way.
+_PAYOUT_SETTLE_GRACE = 8.0
+# True only while a driver is mid claim→transfer→settle (read by shutdown).
+_payout_in_flight = False
+
+
+def _iso_week_stamp(dt: datetime) -> str:
+    """'2026W32' — the ISO year+week a payout logically belongs to."""
+    iso = dt.isocalendar()
+    return f"{iso[0]}W{iso[1]:02d}"
+
+
+async def _report_stuck_payouts() -> None:
+    """Log every payout claim that never reached a terminal state.
+
+    Read-only. This is the alarm for an interrupted run: the driver's balance
+    is claimed but nothing here can tell whether Stripe moved the money, so a
+    human has to look the transfer up and close the row.
+    """
+    cutoff = datetime.now(timezone.utc) - timedelta(minutes=_PAYOUT_STUCK_AFTER_MINUTES)
+    try:
+        async with SessionLocal() as db:
+            rows = (
+                await db.execute(
+                    select(Cashout)
+                    .where(Cashout.status == "processing", Cashout.created_at < cutoff)
+                    .order_by(Cashout.id.asc())
+                    .limit(50)
+                )
+            ).scalars().all()
+    except Exception as e:
+        logging.error("[AutoPayout] stuck-payout scan failed: %s", e)
+        return
+
+    for c in rows:
+        created = c.created_at
+        logging.error(
+            "[AutoPayout] STUCK PAYOUT — cashout #%s driver=%s $%.2f claimed=%s is still "
+            "'processing'. The balance is claimed and will NOT be paid again "
+            "automatically. Look up idempotency_key=%s in Stripe: if the transfer "
+            "exists set the row to 'completed', if it does not set it to 'failed' and "
+            "add $%.2f back to the driver's pending_balance.",
+            c.id, c.user_id, float(c.amount or 0.0),
+            created.isoformat() if created else "?",
+            f"auto_payout_{c.user_id}_{_iso_week_stamp(created)}" if created else "?",
+            float(c.amount or 0.0),
+        )
+
+
+async def _release_payout_claim(driver_id: int, cashout_id: int, amount: float) -> None:
+    """Undo a claim Stripe definitively refused: mark it failed, give the money back.
+
+    Called ONLY for an error Stripe answered with a 4xx — the request reached
+    Stripe and was rejected, so no transfer exists. A connection error or a 5xx
+    is NOT this: those are ambiguous, and handing the balance back on an
+    ambiguous error is precisely how a driver gets paid twice.
+    """
+    async with SessionLocal() as db:
+        try:
+            c = await db.get(Cashout, cashout_id)
+            if c is None or c.status != "processing":
+                logging.error(
+                    "[AutoPayout] refusing to release cashout #%s — it is %r, not 'processing'",
+                    cashout_id, getattr(c, "status", None),
+                )
+                return
+            c.status = "failed"  # 'failed' rows are excluded from the earnings ledger
+            drv = (
+                await db.execute(
+                    select(User).where(User.id == driver_id).with_for_update()
+                )
+            ).scalar_one_or_none()
+            if drv is not None:
+                drv.pending_balance = round(float(drv.pending_balance or 0.0) + amount, 2)
+            await db.commit()
+            logging.warning(
+                "[AutoPayout] cashout #%s marked failed — $%.2f returned to driver %s",
+                cashout_id, amount, driver_id,
+            )
+        except Exception as e:
+            await db.rollback()
+            logging.error(
+                "[AutoPayout] could not release claim for cashout #%s (driver %s, $%.2f): %s "
+                "— the row stays 'processing', reconcile by hand",
+                cashout_id, driver_id, amount, e,
+            )
+
+
+async def _transfer_and_settle(
+    driver_id: int, cashout_id: int, amount: float,
+    connect_id: str, idem_key: str, fcm_token, _s,
+) -> None:
+    """Steps 2 and 3: send the money, then record what happened."""
+
+    def _create_transfer():
+        return _s.Transfer.create(
+            # int() alone truncates (12.34 * 100 is 1233.9999... in binary
+            # float), quietly shaving a cent off every payout while the full
+            # balance was zeroed. Round first.
+            amount=max(int(round(amount * 100)), 50),
+            currency="usd",
+            destination=connect_id,
+            description=f"Cruise weekly auto-payout — cashout #{cashout_id}",
+            metadata={"cashout_id": str(cashout_id), "driver_id": str(driver_id)},
+            idempotency_key=idem_key,
+        )
+
+    try:
+        # The Stripe SDK is synchronous. Called directly it froze the whole
+        # event loop for the round-trip, once per driver, serially.
+        transfer = await asyncio.to_thread(_create_transfer)
+    except Exception as e:
+        http_status = getattr(e, "http_status", None)
+        definitely_rejected = isinstance(http_status, int) and 400 <= http_status < 500
+        if definitely_rejected:
+            logging.error(
+                "[AutoPayout] Stripe rejected driver %s cashout #%s (HTTP %s): %s "
+                "— balance returned",
+                driver_id, cashout_id, http_status, e,
+            )
+            await _release_payout_claim(driver_id, cashout_id, amount)
+        else:
+            logging.error(
+                "[AutoPayout] Stripe call for driver %s cashout #%s ($%.2f) failed with NO "
+                "definitive answer (%s). The transfer may or may not have gone through, so "
+                "the balance stays claimed and the row stays 'processing'. Reconcile against "
+                "idempotency_key=%s.",
+                driver_id, cashout_id, amount, e, idem_key,
+            )
+        return
+
+    try:
+        transfer_id = transfer["id"]
+    except Exception:
+        transfer_id = getattr(transfer, "id", None)
+
+    async with SessionLocal() as db:
+        try:
+            c = await db.get(Cashout, cashout_id)
+            if c is not None and c.status != "completed":
+                c.status = "completed"
+                await db.commit()
+        except Exception as e:
+            await db.rollback()
+            logging.error(
+                "[AutoPayout] transfer %s SUCCEEDED for driver %s but cashout #%s could not "
+                "be marked completed: %s — the balance is correctly claimed, only the row "
+                "status is wrong; fix it by hand",
+                transfer_id, driver_id, cashout_id, e,
+            )
+
+    logging.info(
+        "[AutoPayout] Driver %s — $%.2f — transfer %s", driver_id, amount, transfer_id
+    )
+    if fcm_token:
+        try:
+            _send_fcm_push(
+                fcm_token,
+                title="💰 Payout Sent!",
+                body=f"${amount:.2f} has been transferred to your bank account.",
+                data={"type": "auto_payout", "amount": str(amount)},
+            )
+        except Exception as e:
+            logging.warning("[AutoPayout] payout push failed for driver %s: %s", driver_id, e)
+
+
+async def _payout_one_driver(driver_id: int, _s) -> None:
+    """Claim → transfer → settle for exactly one driver."""
+    global _payout_in_flight
+
+    # ── 1. CLAIM (committed before a cent moves) ──────────────────────────
+    async with SessionLocal() as db:
+        drv = (
+            await db.execute(
+                # Row-level lock, taken and released inside this one short
+                # transaction. skip_locked means a concurrent run walks past a
+                # driver somebody else is already claiming instead of blocking.
+                select(User).where(User.id == driver_id).with_for_update(skip_locked=True)
+            )
+        ).scalar_one_or_none()
+        if drv is None:
+            logging.info("[AutoPayout] driver %s is locked by another run — skipping", driver_id)
+            return
+        # Re-read under the lock rather than trusting the list this run was
+        # built from: a concurrent run may already have claimed this balance,
+        # in which case pending_balance is now 0 and there is nothing to send.
+        amount = round(float(drv.pending_balance or 0.0), 2)
+        if amount <= 1.0 or not drv.stripe_connect_id:
+            return
+        cashout = Cashout(user_id=drv.id, amount=amount, status="processing")
+        db.add(cashout)
+        drv.pending_balance = 0.0
+        await db.commit()
+        cashout_id = int(cashout.id)
+        connect_id = drv.stripe_connect_id
+        fcm_token = drv.fcm_token
+        claimed_at = getattr(cashout, "created_at", None) or datetime.now(timezone.utc)
+
+    # The idempotency key identifies the LOGICAL payout, not the attempt.
+    #
+    # It was driver + calendar date, which only ever protected against a
+    # duplicate inside the same day — the exact case that a crash-and-retry
+    # does not fall into. Driver + ISO week matches the schedule the payout
+    # actually runs on (one run per driver per week, Tuesday 02:00 UTC), so
+    # every retry of the same week's payout carries the same key. The week is
+    # taken from the CLAIM ROW's timestamp, not from "now", so a retry stays
+    # bound to the run it belongs to instead of drifting into the next week.
+    #
+    # Deliberately NOT keyed on cashout.id: the whole failure being fixed is a
+    # second attempt for the same week, and a second attempt means a second
+    # cashout row, so a row-scoped key would collide with nothing and pay
+    # twice. A week-scoped key errs the other way — if two claims for one
+    # driver ever existed in one week, Stripe returns the first transfer
+    # instead of creating a second. That direction is an underpayment, which
+    # is visible and repairable; the other direction is money that is gone.
+    #
+    # Note this key is a SECOND line of defence only. Stripe retains
+    # idempotency keys for about 24 hours, so it cannot stop a retry a week
+    # later on its own. The committed claim above is what actually guarantees
+    # the balance is never claimed twice.
+    idem_key = f"auto_payout_{driver_id}_{_iso_week_stamp(claimed_at)}"
+
+    # ── 2+3. TRANSFER and SETTLE, shielded ────────────────────────────────
+    # Shutdown must not sever this in half. If SIGTERM arrives while Stripe is
+    # in flight, the shielded task keeps going and gets a bounded grace period
+    # to write down what happened.
+    _payout_in_flight = True
+    inner = asyncio.ensure_future(
+        _transfer_and_settle(driver_id, cashout_id, amount, connect_id, idem_key, fcm_token, _s)
+    )
+    try:
+        await asyncio.shield(inner)
+    except asyncio.CancelledError:
+        try:
+            await asyncio.wait_for(asyncio.shield(inner), _PAYOUT_SETTLE_GRACE)
+        except BaseException:
+            logging.error(
+                "[AutoPayout] shutdown interrupted cashout #%s (driver %s, $%.2f) before it "
+                "could be settled. The row stays 'processing' and the balance stays claimed, "
+                "so it will NOT be paid again automatically — look up idempotency_key=%s in "
+                "Stripe and close the row by hand.",
+                cashout_id, driver_id, amount, idem_key,
+            )
+        raise
+    finally:
+        _payout_in_flight = False
+
+
 async def _auto_payout_all_drivers():
     """Transfer pending_balance to every eligible driver via Stripe Connect."""
     if not STRIPE_SECRET:
         logging.warning("[AutoPayout] STRIPE_SECRET not configured — skipping")
         return
-    logging.info("[AutoPayout] Starting weekly payout run")
     try:
         import stripe as _s
         _s.api_key = STRIPE_SECRET
@@ -177,65 +463,53 @@ async def _auto_payout_all_drivers():
         logging.error("[AutoPayout] Stripe import failed: %s", e)
         return
 
-    # Stamps the idempotency keys below. Every worker that reaches this run
-    # computes the same date, so Stripe collapses duplicate transfers for the
-    # same driver in the same week into one.
-    run_day = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    # Surface anything a previous run left half-finished before adding to it.
+    await _report_stuck_payouts()
 
-    async with SessionLocal() as db:
-        result = await db.execute(
-            select(User)
-            .where(
-                and_(
-                    User.role == "driver",
-                    User.stripe_connect_id.isnot(None),
-                    User.pending_balance > 1.0,
-                )
-            )
-            # Row-level lock: a second run cannot read the same balance while
-            # this one is still deciding what to send. skip_locked means a
-            # concurrent run walks past claimed drivers instead of blocking.
-            .with_for_update(skip_locked=True)
+    # Leadership is re-checked here, not just at boot. If this process quietly
+    # lost the advisory lock, another one is the leader and will run its own
+    # payout — this one must not also run. Re-acquiring is the same authority
+    # the election uses, so a transient blip does not cost a whole week.
+    if not _is_scheduler_leader and not await _try_become_scheduler_leader():
+        logging.error(
+            "[AutoPayout] this process does not hold the scheduler lock — skipping the run "
+            "rather than risking a second payer"
         )
-        drivers = result.scalars().all()
-        logging.info("[AutoPayout] %d driver(s) eligible for payout", len(drivers))
+        return
 
-        for drv in drivers:
-            amount = round(drv.pending_balance, 2)
-            try:
-                cashout = Cashout(user_id=drv.id, amount=amount)
-                db.add(cashout)
-                await db.flush()  # get cashout.id
-
-                transfer = _s.Transfer.create(
-                    amount=max(int(amount * 100), 50),
-                    currency="usd",
-                    destination=drv.stripe_connect_id,
-                    description=f"Cruise weekly auto-payout — cashout #{cashout.id}",
-                    metadata={"cashout_id": str(cashout.id), "driver_id": str(drv.id)},
-                    # Last line of defence for real money. Keyed on driver +
-                    # run date, NOT on cashout.id, which differs per attempt
-                    # and would therefore let a duplicate run pay twice.
-                    idempotency_key=f"auto_payout_{drv.id}_{run_day}",
-                )
-                cashout.status = "completed"
-                drv.pending_balance = 0.0
-                await db.commit()
-                logging.info(
-                    "[AutoPayout] Driver %s — $%.2f — transfer %s",
-                    drv.id, amount, transfer["id"],
-                )
-                # Push notification
-                if drv.fcm_token:
-                    _send_fcm_push(
-                        drv.fcm_token,
-                        title="💰 Payout Sent!",
-                        body=f"${amount:.2f} has been transferred to your bank account.",
-                        data={"type": "auto_payout", "amount": str(amount)},
+    logging.info("[AutoPayout] Starting weekly payout run")
+    async with SessionLocal() as db:
+        # IDs only, no locks held across the run: locks live inside each
+        # driver's own short transaction below. The old code held a
+        # FOR UPDATE over the whole loop, but committed inside it, so every
+        # lock was released after the first driver anyway.
+        driver_ids = (
+            await db.execute(
+                select(User.id)
+                .where(
+                    and_(
+                        User.role == "driver",
+                        User.stripe_connect_id.isnot(None),
+                        User.pending_balance > 1.0,
                     )
-            except Exception as e:
-                await db.rollback()
-                logging.error("[AutoPayout] Failed for driver %s: %s", drv.id, e)
+                )
+                .order_by(User.id.asc())
+            )
+        ).scalars().all()
+
+    logging.info("[AutoPayout] %d driver(s) eligible for payout", len(driver_ids))
+    for _idx, driver_id in enumerate(driver_ids):
+        try:
+            await _payout_one_driver(int(driver_id), _s)
+        except asyncio.CancelledError:
+            logging.error(
+                "[AutoPayout] run interrupted — the remaining %d driver(s) keep their "
+                "balance and are paid on the next run",
+                len(driver_ids) - _idx - 1,
+            )
+            raise
+        except Exception as e:
+            logging.error("[AutoPayout] Failed for driver %s: %s", driver_id, e)
 
 # ── Single-leader election for background tasks ──────────────────────────
 # Uvicorn runs multiple worker PROCESSES (UVICORN_WORKERS). Each one executes
@@ -250,45 +524,179 @@ async def _auto_payout_all_drivers():
 # A session-scoped Postgres advisory lock is the right primitive here: it is
 # held by ONE connection, needs no table, and the database releases it
 # automatically if the process dies, so a respawned worker can take over.
-_leader_conn = None  # kept open for the process lifetime — do not close
+_leader_conn = None  # released on shutdown, never handed back to the pool
+_is_scheduler_leader = False  # True only while this process holds the lock
+_leader_guard = None  # asyncio.Lock, created lazily (see _get_leader_guard)
+
+
+def _get_leader_guard() -> asyncio.Lock:
+    """Serialise election attempts inside this process.
+
+    Two callers race for leadership now (the boot path and the watchdog, plus
+    the payout run's re-check). Without this they could both call
+    engine.connect() and stomp _leader_conn, leaking the connection that owns
+    the lock. Created lazily so no event loop is needed at import time.
+    """
+    global _leader_guard
+    if _leader_guard is None:
+        _leader_guard = asyncio.Lock()
+    return _leader_guard
 
 
 async def _try_become_scheduler_leader() -> bool:
     """True if THIS worker process should run the background schedulers.
 
     Returns True on SQLite (tests, local single-process runs) since there are
-    no sibling workers to race with.
+    no sibling workers to race with. Safe to call repeatedly: a process that
+    already holds the lock short-circuits, and a process that does not either
+    takes it or leaves empty-handed.
     """
-    global _leader_conn
+    global _leader_conn, _is_scheduler_leader
     if IS_SQLITE:
+        _is_scheduler_leader = True
         return True
-    try:
-        # Raw asyncpg-level connection outside the pool: an advisory lock lives
-        # as long as its connection, so it must not be handed back to the pool
-        # and reused by an unrelated query.
-        _leader_conn = await engine.connect()
-        got = await _leader_conn.scalar(
-            text("SELECT pg_try_advisory_lock(:k)"), {"k": _SCHEDULER_LOCK_KEY}
-        )
-        if got:
-            logging.info("[Leader] This worker owns the background schedulers")
+    async with _get_leader_guard():
+        if _is_scheduler_leader and _leader_conn is not None:
             return True
-        await _leader_conn.close()
-        _leader_conn = None
-        logging.info("[Leader] Another worker owns the schedulers — standing by")
-        return False
-    except Exception as e:
-        # Never let lock trouble take the API down. Failing closed (no
-        # schedulers) is safer than two workers racing over real money: a
-        # missed payout run is recoverable, a doubled one is not.
-        logging.error("[Leader] Advisory lock failed, skipping schedulers: %s", e)
-        if _leader_conn is not None:
+        conn = None
+        try:
+            # Raw connection outside the pool: an advisory lock lives as long
+            # as its connection, so it must not be handed back to the pool and
+            # reused by an unrelated query.
+            conn = await engine.connect()
+            got = await conn.scalar(
+                text("SELECT pg_try_advisory_lock(:k)"), {"k": _SCHEDULER_LOCK_KEY}
+            )
+            if got:
+                # End the implicit transaction that SELECT opened. A
+                # connection parked "idle in transaction" for days is what
+                # idle_in_transaction_session_timeout and every pooler reaper
+                # go looking for, and killing it would drop the lock. The lock
+                # itself is SESSION-scoped (pg_advisory_lock, not the _xact_
+                # variant), so committing here does not release it.
+                try:
+                    await conn.rollback()
+                except Exception:
+                    pass
+                _leader_conn = conn
+                _is_scheduler_leader = True
+                logging.info("[Leader] This worker owns the background schedulers")
+                return True
+            await conn.close()
+            logging.info("[Leader] Another worker owns the schedulers — standing by")
+            return False
+        except Exception as e:
+            # Never let lock trouble take the API down. Failing closed (no
+            # schedulers) is safer than two workers racing over real money: a
+            # missed payout run is recoverable, a doubled one is not.
+            logging.error("[Leader] Advisory lock failed, skipping schedulers: %s", e)
+            if conn is not None:
+                try:
+                    await conn.close()
+                except Exception:
+                    pass
+            return False
+
+
+# How often leadership is re-checked. Long enough to be free, short enough
+# that a container that lost the boot race takes over within a minute of the
+# previous one exiting.
+_LEADER_CHECK_INTERVAL = 60
+
+
+async def _leader_watchdog():
+    """Keep exactly one process owning the schedulers, for as long as it runs.
+
+    Two states used to be unrecoverable without a manual redeploy:
+
+      * A process that LOST the election at boot never tried again. Railway
+        overlaps containers during a deploy, so the outgoing container still
+        holds the lock while the new one starts — the new one lost the race
+        and then stood by forever. Ghost cleanup, the weekly payout, backups,
+        audit retention, the nightly reconcile and the scheduled-ride
+        dispatcher simply did not run until somebody deployed again.
+      * A LEADER whose lock connection dropped (Postgres restart, pooler
+        eviction, network blip) silently stopped being the leader. Postgres
+        releases an advisory lock with its connection, and nobody ever took it.
+
+    On not creating a second leader — the property that matters more than any
+    of the above: the advisory lock is the authority, exactly one connection
+    can hold it, and this loop only ever starts the schedulers after
+    pg_try_advisory_lock has itself returned true. _start_scheduler_agents()
+    is once-per-process, so re-acquiring the lock in a process that is already
+    running the agents starts nothing a second time.
+
+    The one case this does NOT fully resolve is a leader that loses the lock
+    and cannot retake it: its agents keep running while another process may
+    have taken over. Stopping and restarting live agents to close that window
+    is more dangerous than the window itself, so the choice here is a loud
+    ERROR instead — plus _auto_payout_all_drivers() re-checks leadership at
+    run time, which keeps the money path single-writer regardless, and the
+    per-driver claim in the payout makes even a concurrent run non-duplicating.
+    """
+    global _is_scheduler_leader, _leader_conn
+    while True:
+        await asyncio.sleep(_LEADER_CHECK_INTERVAL)
+        try:
+            if not _is_scheduler_leader:
+                if await _try_become_scheduler_leader():
+                    logging.warning("[Leader] took over the background schedulers")
+                    await _start_scheduler_agents()
+                continue
+
+            # Leader: is the connection that holds the lock still alive?
             try:
-                await _leader_conn.close()
-            except Exception:
-                pass
-            _leader_conn = None
-        return False
+                if _leader_conn is None:
+                    raise RuntimeError("leader connection is gone")
+                await _leader_conn.scalar(text("SELECT 1"))
+                # Leave it idle, not idle-in-transaction (see the acquire path).
+                try:
+                    await _leader_conn.rollback()
+                except Exception:
+                    pass
+                continue  # still healthy
+            except Exception as e:
+                logging.error("[Leader] lock connection is not usable: %s", e)
+
+            _is_scheduler_leader = False
+            old_conn, _leader_conn = _leader_conn, None
+            if old_conn is not None:
+                try:
+                    await old_conn.close()
+                except Exception:
+                    pass
+
+            if await _try_become_scheduler_leader():
+                logging.warning(
+                    "[Leader] lock connection replaced — leadership retained, "
+                    "agents left running untouched"
+                )
+            else:
+                logging.error(
+                    "[Leader] LOST the scheduler lock and could not retake it. The "
+                    "background schedulers in THIS process are still running while another "
+                    "process may now be the leader. Payouts are still single-writer (the "
+                    "run re-checks the lock and every payout claims its balance in the "
+                    "database first), but redeploy to return to one leader."
+                )
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            logging.error("[Leader] watchdog iteration failed: %s", e)
+
+
+async def _release_scheduler_leadership() -> None:
+    """Drop the advisory lock on shutdown so the next container can take it."""
+    global _leader_conn, _is_scheduler_leader
+    _is_scheduler_leader = False
+    conn, _leader_conn = _leader_conn, None
+    if conn is None:
+        return
+    try:
+        await conn.close()
+        logging.info("[Leader] scheduler lock released")
+    except Exception as e:
+        logging.warning("[Leader] releasing the scheduler lock failed: %s", e)
 
 
 # Arbitrary but fixed application-wide key for the scheduler lock.
@@ -297,6 +705,13 @@ _SCHEDULER_LOCK_KEY = 771_120_045
 
 async def _schedule_weekly_payouts():
     """Background loop: sleep until next Tuesday 02:00 UTC, run payouts, repeat."""
+    # A redeploy that interrupted a payout run is worth hearing about now,
+    # not next Tuesday — this is the closest thing to a boot-time alarm the
+    # payout has. Read-only, so it cannot make anything worse.
+    try:
+        await _report_stuck_payouts()
+    except Exception as e:
+        logging.error("[AutoPayout] boot-time stuck scan failed: %s", e)
     while True:
         target = _next_tuesday_2am()
         wait_secs = (target - datetime.now(timezone.utc)).total_seconds()
@@ -307,6 +722,173 @@ async def _schedule_weekly_payouts():
         await asyncio.sleep(max(wait_secs, 0))
         await _auto_payout_all_drivers()
         await asyncio.sleep(60)  # prevent tight re-entry at the same second
+
+
+# ── Background task registry ─────────────────────────────────────────────
+# Every loop below used to be launched with a bare asyncio.create_task() and
+# then forgotten: no reference was kept (so the garbage collector was free to
+# drop a running task), and shutdown cancelled none of them. On SIGTERM the
+# engine was disposed underneath twelve loops that were still mid-query.
+#
+# _safe_create_task (utils/helpers.py) already holds a strong reference and
+# logs whatever a task dies of, so it is reused here rather than growing a
+# second mechanism; this list adds only the handle needed to cancel them.
+_BACKGROUND_TASKS: List[asyncio.Task] = []
+
+
+def _spawn_background(coro, name: str) -> asyncio.Task:
+    """Start a long-lived background loop and remember it for shutdown."""
+    task = _safe_create_task(coro, name=name)
+    _BACKGROUND_TASKS.append(task)
+    return task
+
+
+async def _shutdown_background_tasks(timeout: float = 10.0) -> None:
+    """Cancel every registered loop and give it a moment to unwind.
+
+    MUST run before the SQLAlchemy engine is disposed: a task cancelled after
+    disposal wakes up on a dead engine. The brief wait is what lets a loop
+    finish the statement it is in the middle of instead of being severed —
+    and, for a payout caught mid-transfer, what lets its shielded settle write
+    land before the process goes (see _payout_one_driver).
+    """
+    tasks = [t for t in _BACKGROUND_TASKS if not t.done()]
+    _BACKGROUND_TASKS.clear()
+    if not tasks:
+        return
+    for t in tasks:
+        t.cancel()
+    try:
+        _, pending = await asyncio.wait(tasks, timeout=timeout)
+    except Exception as e:  # pragma: no cover - defensive
+        logging.warning("[Shutdown] waiting on background tasks failed: %s", e)
+        return
+    if pending:
+        logging.warning(
+            "[Shutdown] %d background task(s) did not stop within %.0fs: %s",
+            len(pending), timeout,
+            ", ".join(sorted((t.get_name() or "unnamed") for t in pending)),
+        )
+    else:
+        logging.info("[Shutdown] %d background task(s) stopped cleanly", len(tasks))
+    if _payout_in_flight:
+        logging.error(
+            "[Shutdown] a driver payout was STILL in flight when shutdown stopped waiting "
+            "— look for the [AutoPayout] line naming the cashout left in 'processing'"
+        )
+
+
+# Set the instant the schedulers are started, so they can never be started a
+# second time in one process (a re-election in a process that is already the
+# leader must be a no-op). Checked and set with no await in between, which in
+# a single-threaded event loop makes it atomic.
+_scheduler_agents_started = False
+
+
+async def _start_scheduler_agents() -> None:
+    """Start every leader-only background agent, staggered.
+
+    The stagger used to sit in lifespan() BEFORE its yield. ASGI startup has
+    to complete before uvicorn serves anything, so those three sleeps kept the
+    container from answering /ping for 30s on top of DB init — against a
+    120s healthcheck budget that the last deploy needed four attempts to meet.
+
+    The stagger itself is worth keeping: it stops a dozen loops from opening
+    connections in the same instant at boot. It just has no business running
+    before the app is allowed to serve traffic, so it lives here, in a task.
+
+    Start ORDER is unchanged from the original phases. Nothing here depends on
+    anything else here — they are independent periodic loops — so the order is
+    a courtesy to the connection pool, not a requirement.
+    """
+    global _scheduler_agents_started
+    if _scheduler_agents_started:
+        return
+    _scheduler_agents_started = True
+
+    # Phase 2: Critical background agents only (5s delay)
+    await asyncio.sleep(5)
+    wait_timeout_agent.set_db_session_maker(SessionLocal)
+    await wait_timeout_agent.start()
+    logging.info("[Lifespan] Phase 2 agents started (wait_timeout)")
+
+    # Phase 3: Low-priority agents (staggered, 15s apart)
+    await asyncio.sleep(10)
+    ghost_driver_agent.set_db_session_maker(SessionLocal)
+    await ghost_driver_agent.start()
+    safety_monitor_agent.set_db_session_maker(SessionLocal)
+    await safety_monitor_agent.start()
+    logging.info("[Lifespan] Phase 3 agents started (ghost_driver, safety_monitor)")
+
+    # Phase 4: Periodic tasks (30s delay) — full set with DB-smart intervals
+    await asyncio.sleep(15)
+    _spawn_background(_audit_flush_loop(), "audit_flush")
+    _spawn_background(_audit_retention_loop(), "audit_retention")
+    _spawn_background(_scheduled_ride_dispatcher(), "scheduled_ride_dispatcher")
+    _spawn_background(_scheduled_ride_reminder_loop(), "scheduled_ride_reminder")
+    _spawn_background(_rating_aftermath_loop(), "rating_aftermath")
+    logging.info("[Lifespan] Phase 4 periodic tasks started")
+
+    # Re-enabled agents with longer intervals to reduce PgBouncer churn
+    _spawn_background(_schedule_weekly_payouts(), "weekly_payouts")
+    _spawn_background(_backup_scheduler(), "backup_scheduler")
+    _spawn_background(run_proactive_agent_loop(), "proactive_support")
+    _spawn_background(_scheduled_rides_available_notify_loop(), "scheduled_rides_notify")
+    _spawn_background(_nightly_reconcile_loop(), "nightly_reconcile")
+    _spawn_background(_driver_referral_expiry_loop(), "driver_referral_expiry")
+
+    # Class-based autonomous agents
+    document_expiry_agent.set_db_session_maker(SessionLocal)
+    await document_expiry_agent.start()
+
+    background_recheck_agent.set_db_session_maker(SessionLocal)
+    await background_recheck_agent.start()
+
+    document_approval_agent.set_db_session_maker(SessionLocal)
+    await document_approval_agent.start()
+
+    rating_moderator_agent.set_db_session_maker(SessionLocal)
+    await rating_moderator_agent.start()
+
+    cruise_level_agent.set_db_session_maker(SessionLocal)
+    await cruise_level_agent.start()
+
+    chat_retention_agent.set_db_session_maker(SessionLocal)
+    await chat_retention_agent.start()
+    logging.info("[Lifespan] Class-based agents started")
+
+    _spawn_background(_cache_sweep(), "cache_sweep")
+
+    logging.info("🚀 Cruise backend FULLY OPERATIONAL — all agents active")
+
+
+async def _cache_sweep():
+    """Sweep the in-process caches every 60s."""
+    while True:
+        await asyncio.sleep(60)
+        try:
+            sweep_caches()
+        except Exception:
+            pass
+
+
+async def _scheduler_bootstrap() -> None:
+    """Contest the leadership, then keep contesting it for as long as we run."""
+    # Started FIRST, and in leader and non-leader alike: the leader watches its
+    # lock, everyone else waits for it to come free. Starting it after the
+    # election would tie the watchdog's existence to a path that takes 30s of
+    # deliberate stagger to return — and that can itself fail.
+    _spawn_background(_leader_watchdog(), "leader_watchdog")
+    try:
+        if await _try_become_scheduler_leader():
+            await _start_scheduler_agents()
+        else:
+            logging.info("[Lifespan] Not the scheduler leader — serving requests only")
+    except asyncio.CancelledError:
+        raise
+    except Exception as e:
+        logging.error("[Lifespan] Scheduler bootstrap failed: %s", e, exc_info=True)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -441,89 +1023,31 @@ async def lifespan(app: FastAPI):
         await security_guardian.start_heartbeat()
         logging.info("[Lifespan] Phase 1 agents started (guardian, security)")
 
-        # ── Scheduler leadership ──
+        # ── Scheduler leadership + the rest of the agents ──
         # Everything from here down is a periodic background loop, and uvicorn
         # runs several worker PROCESSES that each execute this function. Every
-        # loop below therefore ran once per worker — including the weekly
-        # payout, which read the same pending_balance in both workers and
-        # transferred it twice. Only the leader runs them now.
-        if not await _try_become_scheduler_leader():
-            logging.info("[Lifespan] Not the scheduler leader — serving requests only")
-            yield
-            # Tear down only what this worker actually started (Phase 1).
-            await security_guardian.stop_heartbeat()
-            await guardian_agent.stop()
-            return
-
-        # Phase 2: Critical background agents only (5s delay)
-        await asyncio.sleep(5)
-        wait_timeout_agent.set_db_session_maker(SessionLocal)
-        await wait_timeout_agent.start()
-        logging.info("[Lifespan] Phase 2 agents started (wait_timeout)")
-
-        # Phase 3: Low-priority agents (staggered, 15s apart)
-        await asyncio.sleep(10)
-        ghost_driver_agent.set_db_session_maker(SessionLocal)
-        await ghost_driver_agent.start()
-        safety_monitor_agent.set_db_session_maker(SessionLocal)
-        await safety_monitor_agent.start()
-        logging.info("[Lifespan] Phase 3 agents started (ghost_driver, safety_monitor)")
-
-        # Phase 4: Periodic tasks (30s delay) — full set with DB-smart intervals
-        await asyncio.sleep(15)
-        asyncio.create_task(_audit_flush_loop())
-        asyncio.create_task(_audit_retention_loop())
-        asyncio.create_task(_scheduled_ride_dispatcher())
-        asyncio.create_task(_scheduled_ride_reminder_loop())
-        asyncio.create_task(_rating_aftermath_loop())
-        logging.info("[Lifespan] Phase 4 periodic tasks started")
-
-        # Re-enabled agents with longer intervals to reduce PgBouncer churn
-        asyncio.create_task(_schedule_weekly_payouts())
-        asyncio.create_task(_backup_scheduler())
-        asyncio.create_task(run_proactive_agent_loop())
-        asyncio.create_task(_scheduled_rides_available_notify_loop())
-        asyncio.create_task(_nightly_reconcile_loop())
-        asyncio.create_task(_driver_referral_expiry_loop())
-
-        # Class-based autonomous agents
-        document_expiry_agent.set_db_session_maker(SessionLocal)
-        await document_expiry_agent.start()
-
-        background_recheck_agent.set_db_session_maker(SessionLocal)
-        await background_recheck_agent.start()
-
-        document_approval_agent.set_db_session_maker(SessionLocal)
-        await document_approval_agent.start()
-
-        rating_moderator_agent.set_db_session_maker(SessionLocal)
-        await rating_moderator_agent.start()
-
-        cruise_level_agent.set_db_session_maker(SessionLocal)
-        await cruise_level_agent.start()
-
-        chat_retention_agent.set_db_session_maker(SessionLocal)
-        await chat_retention_agent.start()
-        logging.info("[Lifespan] Class-based agents started")
-
-        # Cache sweep every 60s
-        async def _cache_sweep():
-            while True:
-                await asyncio.sleep(60)
-                try:
-                    sweep_caches()
-                except Exception:
-                    pass
-        asyncio.create_task(_cache_sweep())
-
-        logging.info("🚀 Cruise backend FULLY OPERATIONAL — all agents active")
+        # loop therefore ran once per worker — including the weekly payout,
+        # which read the same pending_balance in both workers and transferred
+        # it twice. Only the leader runs them.
+        #
+        # Handed to a task rather than awaited: ASGI lifespan startup must
+        # finish before uvicorn serves a single request, and the election plus
+        # the 30s of deliberate stagger inside it used to run before the yield
+        # below — 30s of a 120s deploy healthcheck budget spent not answering
+        # /ping, on top of a DB init that can itself take ~87s.
+        _spawn_background(_scheduler_bootstrap(), "scheduler_bootstrap")
     else:
         logging.error("[Lifespan] Agents NOT started because DB initialization failed")
 
     yield
-    # Cleanup
+    # ── Cleanup ──
+    # Background loops FIRST: they hold sessions, and cancelling them after the
+    # engine is disposed wakes them up on a dead engine mid-statement.
+    await _shutdown_background_tasks()
     await security_guardian.stop_heartbeat()
     await guardian_agent.stop()
+    # Safe on agents this process never started — stop() is a no-op without a
+    # task, and a non-leader only ever started the Phase 1 pair above.
     await ghost_driver_agent.stop()
     await safety_monitor_agent.stop()
     await document_expiry_agent.stop()
@@ -532,6 +1056,13 @@ async def lifespan(app: FastAPI):
     await rating_moderator_agent.stop()
     await wait_timeout_agent.stop()
     await chat_retention_agent.stop()
+    # Started with the others but never stopped, so its loop outlived the
+    # engine on every redeploy.
+    await cruise_level_agent.stop()
+    # Hand the advisory lock back before the engine goes, so the container
+    # replacing this one can take over on its first attempt instead of waiting
+    # for Postgres to notice the connection died.
+    await _release_scheduler_leadership()
     # Dispose SQLAlchemy engine to close all pooled connections gracefully
     try:
         from models.database import engine as _engine
@@ -1006,6 +1537,24 @@ async def ping():
     """Ultra-fast connectivity check — no DB, no auth, no overhead."""
     return {"status": "ok"}
 
+
+def _api_key_ok(provided: str) -> bool:
+    """Constant-time API key check.
+
+    `provided != API_KEY` returns as soon as two bytes differ, so how long the
+    comparison takes tells the caller how much of the key they got right — a
+    key is guessable one character at a time from timing alone. compare_digest
+    always looks at everything.
+
+    An unset API_KEY denies. utils.security refuses to boot without one, so
+    this should be unreachable — but the comparison it replaces would have
+    GRANTED in that state ("" != "" is False, i.e. a request with no key at
+    all passing the check), and a fallback should fail the safe way.
+    """
+    if not API_KEY:
+        return False
+    return hmac.compare_digest(str(provided or ""), str(API_KEY))
+
 # -- Full Diagnostics Endpoint --------------------------------------------
 # NOTE: this used to be registered on "/health", but routers/system.py also
 # declares GET /health and is included first (see include_router above), so
@@ -1014,7 +1563,7 @@ async def ping():
 @app.get("/health/full")
 async def health_full(x_api_key: str = Header(default="")):
     # Fast path: public response — no DB, instant
-    if x_api_key != API_KEY:
+    if not _api_key_ok(x_api_key):
         return {
             "status": "ok",
             "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -1080,7 +1629,7 @@ async def health_full(x_api_key: str = Header(default="")):
 async def security_health(x_api_key: str = Header(default="")):
     """Security Guardian status — detailed threat monitoring info.
     Protected by API key for production safety."""
-    if x_api_key != API_KEY:
+    if not _api_key_ok(x_api_key):
         raise HTTPException(403, "Forbidden")
     
     status = security_guardian.get_status()
@@ -1097,7 +1646,7 @@ async def security_health(x_api_key: str = Header(default="")):
 async def guardian_health(x_api_key: str = Header(default="")):
     """Guardian Agent status — system health, connections, memory, data integrity.
     Protected by API key for production safety."""
-    if x_api_key != API_KEY:
+    if not _api_key_ok(x_api_key):
         raise HTTPException(403, "Forbidden")
     
     return guardian_agent.get_status()
@@ -1107,7 +1656,7 @@ async def guardian_health(x_api_key: str = Header(default="")):
 async def agents_health(x_api_key: str = Header(default="")):
     """All autonomous agents status — ghost cleanup, safety, docs, ratings.
     Protected by API key for production safety."""
-    if x_api_key != API_KEY:
+    if not _api_key_ok(x_api_key):
         raise HTTPException(403, "Forbidden")
     return {
         "ghost_driver": ghost_driver_agent.get_status(),
@@ -1123,7 +1672,7 @@ async def agents_health(x_api_key: str = Header(default="")):
 @app.post("/admin/run-migrations")
 async def run_migrations(x_api_key: str = Header(default="")):
     """Run PostgreSQL column migrations manually. Call once to fix missing columns."""
-    if x_api_key != API_KEY:
+    if not _api_key_ok(x_api_key):
         raise HTTPException(403, "Forbidden")
     if IS_SQLITE:
         return {"ok": False, "message": "Only needed for PostgreSQL"}
@@ -1140,7 +1689,7 @@ async def run_migrations(x_api_key: str = Header(default="")):
 @app.post("/admin/create-schema")
 async def create_schema(x_api_key: str = Header(default="")):
     """Create all database tables from scratch. EMERGENCY USE ONLY."""
-    if x_api_key != API_KEY:
+    if not _api_key_ok(x_api_key):
         raise HTTPException(403, "Forbidden")
     if IS_SQLITE:
         return {"ok": False, "message": "Only needed for PostgreSQL"}
@@ -1256,7 +1805,12 @@ async def _scheduled_ride_dispatcher():
                         # Update Firestore
                         if _HAS_FIRESTORE:
                             try:
-                                firestore_sync.sync_trip_status(trip.id, "canceled")
+                                # Canonical spelling, two Ls — the same one the
+                                # sync_scheduled_ride call below already uses and the
+                                # one every client string-compares against.
+                                # firestore_sync normalises the one-L form, but the
+                                # caller should not be relying on that.
+                                firestore_sync.sync_trip_status(trip.id, "cancelled")
                                 firestore_sync.sync_scheduled_ride(
                                     trip_id=trip.id, rider_id=trip.rider_id,
                                     status="cancelled",
@@ -1553,7 +2107,12 @@ async def _scheduled_ride_reminder_loop():
                         # Update Firestore
                         if _HAS_FIRESTORE:
                             try:
-                                firestore_sync.sync_trip_status(trip.id, "canceled")
+                                # Canonical spelling, two Ls — the same one the
+                                # sync_scheduled_ride call below already uses and the
+                                # one every client string-compares against.
+                                # firestore_sync normalises the one-L form, but the
+                                # caller should not be relying on that.
+                                firestore_sync.sync_trip_status(trip.id, "cancelled")
                                 firestore_sync.sync_scheduled_ride(
                                     trip_id=trip.id, rider_id=trip.rider_id,
                                     status="cancelled",
@@ -1942,9 +2501,36 @@ async def _nightly_reconcile_loop():
         await asyncio.sleep(86400)
 
 
+def _firestore_ping() -> None:
+    """One write to the Firestore ping document. Raises if Firestore is down."""
+    import firestore_sync as _fs
+    _fs._db.collection("_ping").document("watchdog").set(
+        {"ts": datetime.now(timezone.utc).isoformat()}, merge=True
+    )
+
+
+def _firestore_force_reconnect() -> None:
+    """Ask firestore_sync for a genuine re-initialisation.
+
+    Written against the CONTRACT, not against a particular signature: whether
+    the repair is reconnect(), _ensure_init(force=True) or the plain no-op
+    _ensure_init(), the caller cannot tell from the return value whether
+    anything was actually fixed. The ping afterwards is what decides.
+    """
+    import firestore_sync as _fs
+    reconnect = getattr(_fs, "reconnect", None)
+    if callable(reconnect):
+        reconnect()
+        return
+    try:
+        _fs._ensure_init(force=True)
+    except TypeError:
+        # Older signature without the force flag.
+        _fs._ensure_init()
+
+
 async def _connection_watchdog():
     """Monitors DB + Firebase every 30 s and auto-reconnects on failure."""
-    global _HAS_FIRESTORE
     await asyncio.sleep(15)  # Give server time to fully start
     while True:
         try:
@@ -1972,24 +2558,28 @@ async def _connection_watchdog():
             # ── Firebase health check ────────────────────
             if _HAS_FIRESTORE:
                 try:
-                    import firestore_sync as _fs
-                    _fs._db.collection("_ping").document("watchdog").set(
-                        {"ts": datetime.now(timezone.utc).isoformat()}, merge=True
-                    )
+                    _firestore_ping()
                     _watchdog_stats["firebase_failures"] = 0
                 except Exception as _e:
                     _watchdog_stats["firebase_failures"] += 1
                     logging.error("[Watchdog] Firebase unreachable (fail #%d): %s",
                                   _watchdog_stats["firebase_failures"], _e)
                     if _watchdog_stats["firebase_failures"] >= 2:
+                        # Only the ping proves anything. The old code called
+                        # _ensure_init(), which returns immediately once the
+                        # client exists, then logged "✅ Firebase reconnected"
+                        # and cleared the failure counter — so a real outage
+                        # repaired nothing, reported success every 30s, and
+                        # never counted a single failure again.
                         try:
-                            import firestore_sync as _fs
-                            _fs._ensure_init()
-                            _watchdog_stats["firebase_reconnects"] += 1
-                            _watchdog_stats["firebase_failures"] = 0
-                            logging.info("[Watchdog] ✅ Firebase reconnected")
+                            _firestore_force_reconnect()
+                            _firestore_ping()
                         except Exception as _re:
                             logging.error("[Watchdog] ❌ Firebase reconnect failed: %s", _re)
+                        else:
+                            _watchdog_stats["firebase_reconnects"] += 1
+                            _watchdog_stats["firebase_failures"] = 0
+                            logging.info("[Watchdog] ✅ Firebase reconnected (verified by ping)")
         except Exception as _outer:
             logging.error("[Watchdog] Unexpected error: %s", _outer)
 

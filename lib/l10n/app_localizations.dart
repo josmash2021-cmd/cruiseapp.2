@@ -3315,6 +3315,12 @@ class S {
   /// rider has panned or pinched.
   String get recenterRoute => _es ? 'Ver ruta' : 'Show route';
 
+  /// Shown when the driver is sent to Stripe to finish verifying their
+  /// account before a bank can be linked.
+  String get verifyIdentityToGetPaid => _es
+      ? 'Verifica tu cuenta con Stripe y vuelve para agregar tu banco'
+      : 'Verify your account with Stripe, then come back to add your bank';
+
   /// Shown when the call button cannot dial — no number on the trip, or the
   /// handset has no phone app. Silence there read as a frozen button.
   String get callDriverUnavailable => _es

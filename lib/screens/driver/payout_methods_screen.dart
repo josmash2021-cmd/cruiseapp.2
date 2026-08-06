@@ -6,6 +6,8 @@ import 'package:flutter_stripe/flutter_stripe.dart' as stripe;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../l10n/app_localizations.dart';
+import 'package:url_launcher/url_launcher.dart';
+
 import '../../services/api_service.dart';
 import '../../services/haptic_service.dart';
 import '../../services/user_session.dart';
@@ -815,6 +817,42 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
 
     setState(() => _busy = true);
     try {
+      // ── Stripe Connect onboarding comes first ──────────────────────────
+      //
+      // The bank sheet cannot open on a Restricted account, and every account
+      // this app creates starts Restricted: the backend calls Account.create
+      // when the driver first reaches this screen, which mints an Express
+      // account with no identity, no tax details and nothing submitted.
+      // Financial Connections then refuses the session and the driver got
+      // "Failed to add method" with no way forward — every account in the
+      // Stripe dashboard sat Restricted, none ever Enabled.
+      //
+      // The backend has always had the onboarding link (AccountLink with
+      // type="account_onboarding") and ApiService has always had the call.
+      // Nothing invoked it: `getStripeConnectLink` had no caller anywhere in
+      // the app. This is that missing step.
+      final status = await ApiService.getStripeConnectStatus();
+      if (!mounted) return;
+      final ready = status['payouts_enabled'] == true;
+      if (!ready) {
+        final url = await ApiService.getStripeConnectLink();
+        if (!mounted) return;
+        final opened = await launchUrl(
+          Uri.parse(url),
+          mode: LaunchMode.externalApplication,
+        );
+        if (!mounted) return;
+        // The same link resumes a half-finished account, so a driver who
+        // backs out partway can tap this again and carry on where they were.
+        _snack(
+          opened
+              ? S.of(context).verifyIdentityToGetPaid
+              : S.of(context).failedToAddMethod,
+          error: !opened,
+        );
+        return;
+      }
+
       final session = await ApiService.createDriverFinancialConnectionsSession();
       if (!mounted) return;
 

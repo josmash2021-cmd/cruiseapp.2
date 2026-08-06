@@ -81,7 +81,28 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       if (!mounted) return;
       // Fire-and-forget: these must not block the UI thread
       unawaited(_locate());
-      unawaited(Future.microtask(_verifyAndGoOnline));
+      // Coming back to a shift that never stopped: already approved, so the
+      // screen opens in the searching state instead of replaying the
+      // go-online sequence and its spinner.
+      //
+      // The backend registration still runs. It is the only caller of
+      // startOnline(), of the persistent online notification and of the
+      // scheduled-rides topic subscription, so skipping it left a resumed
+      // driver with no Live Activity to update when an offer arrived. It is
+      // also the only thing that sets _approvalGatePassed, and
+      // _goOnlineBackend bails on a false gate — so without this both
+      // recovery paths that call it (network recovery below, driver-id
+      // recovery in _poll) were dead for the rest of the session.
+      //
+      // SSE is already connected by _startPolling above; connecting again
+      // here would only tear that one down a generation later.
+      if (widget.resuming) {
+        _approvalGatePassed = true;
+        _setState(() => _isGoingOnline = false);
+        _goOnlineBackend();
+      } else {
+        unawaited(Future.microtask(_verifyAndGoOnline));
+      }
     });
 
     // Listen for network recovery — proactively reconnect SSE + re-register
@@ -150,6 +171,107 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       return;
     }
     _goOnlineBackend();
+  }
+
+  /// Id of the offer whose card is at the head of the stack, or null when
+  /// there is none.
+  String? get _headOfferId => _pendingOffers.isEmpty
+      ? null
+      : (_pendingOffers.first['offer_id'] ?? _pendingOffers.first['id'])
+          ?.toString();
+
+  /// Point the iOS Live Activity at the offer at the head of
+  /// [_pendingOffers], or — with no offer — at whether the driver is
+  /// driving someone or waiting for the next ride.
+  ///
+  /// Derived from those two pieces of state rather than pushed from each
+  /// path that changes them: accept, chained accept, decline, rider-cancel
+  /// and trip-complete all empty the offer list in their own `setState`, and
+  /// all but one of them used to forget the island — so a ride the driver
+  /// had already accepted stayed on their lock screen for the whole trip.
+  /// The clock calls this too, so a path added later that forgets
+  /// self-corrects within five seconds.
+  ///
+  /// [force] re-sends the same state, for when an offer's road metrics land
+  /// after its card was first drawn from the haversine fallback.
+  void _syncOfferLiveActivity({bool force = false}) {
+    if (!mounted) return; // _offerLiveActivityFields reads S.of(context)
+    final head = _headOfferId;
+    // 'online' reads "receiving trips", which is a false statement to leave
+    // on the lock screen of someone with a passenger in the car.
+    final next = head != null
+        ? 'offer:$head'
+        : (_phase == _Phase.searching ? 'online' : 'on_trip');
+    if (next == _islandState && !force) return;
+    _islandState = next;
+    if (head == null) {
+      unawaited(LiveActivityService.updateStatus(next));
+      return;
+    }
+    final la = _offerLiveActivityFields(_pendingOffers.first);
+    unawaited(LiveActivityService.showOffer(
+      fare: la['fare']!,
+      perHour: la['perHour']!,
+      miles: la['miles']!,
+      minutes: la['minutes']!,
+    ));
+  }
+
+  /// The four strings the iOS offer card shows, built from the same
+  /// numbers as the in-app offer card: the fare, what the ride pays per
+  /// hour of the driver's time (drive-to-pickup included, because that
+  /// time is spent whether or not it is paid), and the totals for distance
+  /// and time. Real Directions metrics when the route cache has them, the
+  /// same haversine fallback the card uses when it does not.
+  ///
+  /// Formatted here rather than in Swift so both surfaces read from one
+  /// place — a second formatter is a second place for the driver's pay to
+  /// disagree with itself.
+  Map<String, String> _offerLiveActivityFields(Map<String, dynamic> offer) {
+    final fare = _safeDouble(offer['fare']);
+    final pickupLat = _safeDouble(offer['pickup_lat']);
+    final pickupLng = _safeDouble(offer['pickup_lng']);
+    final dropoffLL =
+        LatLng(_safeDouble(offer['dropoff_lat']), _safeDouble(offer['dropoff_lng']));
+    final pickupLL = LatLng(pickupLat, pickupLng);
+    final offerId = (offer['offer_id'] ?? offer['id'] ?? '${pickupLat}_$pickupLng')
+        .toString();
+
+    final cached = _routeCache[offerId];
+    int etaToPickup;
+    int tripEta;
+    double distToPickupMi;
+    double tripDistMi;
+    if (cached?.driverToPickupKm != null && cached?.pickupToDropoffKm != null) {
+      etaToPickup = (cached!.driverToPickupMin ?? 1).ceil().clamp(1, 99);
+      distToPickupMi = cached.driverToPickupKm! * 0.621371;
+      tripEta = (cached.pickupToDropoffMin ?? 1).ceil().clamp(1, 99);
+      tripDistMi = cached.pickupToDropoffKm! * 0.621371;
+    } else {
+      var dtp = _pos != null ? _hav(_pos!, pickupLL) : 0.0;
+      if (!dtp.isFinite) dtp = 0;
+      var trip = _hav(pickupLL, dropoffLL);
+      if (!trip.isFinite) trip = 0;
+      etaToPickup = (dtp * 1000 / 17.88 / 60).ceil().clamp(1, 99);
+      tripEta = (trip * 1000 / 17.88 / 60).ceil().clamp(1, 99);
+      distToPickupMi = dtp * 0.621371;
+      tripDistMi = trip * 0.621371;
+    }
+
+    final totalMin = (etaToPickup + tripEta).clamp(1, 999);
+    final hourly = fare / (totalMin / 60.0);
+    // Same strings the card builds from the same numbers: two decimals on
+    // the rate, and offerDuration so an 80-minute ride reads "1 h 20 min"
+    // on the lock screen too, rather than the "80 min" the driver would
+    // have had to divide in their head. "mi" is left as-is in both
+    // languages, matching offerAway/offerTrip.
+    final s = S.of(context);
+    return {
+      'fare': '\$${fare.toStringAsFixed(2)}',
+      'perHour': s.offerHourlyRateShort(hourly.toStringAsFixed(2)),
+      'miles': '${(distToPickupMi + tripDistMi).toStringAsFixed(1)} mi',
+      'minutes': s.offerDuration(totalMin),
+    };
   }
 
   /// Start a periodic timer to refresh earnings every 45 seconds.
@@ -943,6 +1065,9 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       AnalyticsService.instance.logDriverOnline();
       // iOS: Cruise logo in the Dynamic Island while online (no-op elsewhere)
       LiveActivityService.startOnline();
+      // What that call just put on the island, so the next reconcile does
+      // not re-send it.
+      _islandState = 'online';
       // Show persistent notification (fire-and-forget, non-blocking)
       NotificationService.showDriverOnlineNotification();
       // Subscribe to scheduled rides topic — receives FCM when new
@@ -971,6 +1096,10 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     AnalyticsService.instance.logDriverOffline();
     // iOS: dismiss the Dynamic Island activity (no-op elsewhere)
     LiveActivityService.stop();
+    // The activity is gone, so there is nothing on the island to reconcile
+    // against; leaving the last state set would have the next sync push an
+    // update to an activity that no longer exists.
+    _islandState = null;
     NotificationService.cancelDriverOnlineNotification();
     NotificationService.cancelOfferNotifications();
     // Unsubscribe from scheduled rides topic when going offline.
@@ -1862,6 +1991,19 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
         if (filtered.isEmpty && hadOffers) _hideFindingBar = false;
       });
     }
+    // The lock-screen card, so a driver who is inside another app sees the
+    // ride without going back to Cruise. After the list is assigned, not
+    // inside the isNewFirstOffer block above: the card is drawn from the
+    // head of _pendingOffers, which is only correct once _pendingOffers is
+    // the list that just arrived.
+    _syncOfferLiveActivity();
+    // Fetches both legs of every offer off any frame callback. The
+    // cinematic that draws the route runs from addPostFrameCallback, and
+    // iOS renders no frames while the app is in another app — so it only
+    // started once the driver came back, and they watched the route being
+    // built instead of finding it built. This puts the road in _routeCache
+    // while they are still outside; the cinematic then has its data and
+    // only has to animate.
     _preFetchOfferRoutes(filtered);
 
     // The route draws itself as the card arrives: camera to fit, then the
@@ -1899,6 +2041,10 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
           _driverId = id;
           debugPrint('âœ… Recovered driverId during polling');
           _goOnlineBackend(); // Re-establish online status
+          // _connectSse bails when _driverId is null, so the connection
+          // attempted at boot never happened. Without this the driver runs
+          // on the 5s poll for the life of the screen.
+          _connectSse();
         }
       } catch (_) {}
       if (_driverId == null) {
@@ -1938,7 +2084,11 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
 
   void _startClock() {
     _clock = Timer.periodic(const Duration(seconds: 5), (_) {
-      if (mounted) _setState(() => _online += const Duration(seconds: 5));
+      if (!mounted) return;
+      _setState(() => _online += const Duration(seconds: 5));
+      // Backstop for the island: no-op whenever it already agrees with the
+      // head of the offer list, which is the normal case.
+      _syncOfferLiveActivity();
     });
   }
 
@@ -1990,6 +2140,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
           .where((o) => (o['offer_id'] ?? o['id'] ?? '').toString() != oid)
           .toList();
     });
+    _syncOfferLiveActivity();
   }
 
   /// Hand a previously chained-accepted ride to the normal accept flow.
@@ -2217,6 +2368,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       _posStream = null;
 
       _setState(() => _pendingOffers = []);
+      _syncOfferLiveActivity();
       _routeCache.clear();
       _expandedOfferIds.clear();
       _offerFirstSeenAt.clear();
@@ -3067,6 +3219,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       _currentOfferId = null;
       _pendingOffers = [];
     });
+    _syncOfferLiveActivity();
     _offerFirstSeenAt.clear();
     _offerCardHeights.clear();
     _syncSearchPulse();
@@ -3131,6 +3284,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       _plannedRoutePts = [];
       _pendingOffers = [];
     });
+    _syncOfferLiveActivity();
     _offerFirstSeenAt.clear();
     _offerCardHeights.clear();
     _syncSearchPulse();
@@ -3392,6 +3546,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       _acceptingCardId = null;
     });
     if (!mounted) return;
+    _syncOfferLiveActivity();
     _syncSearchPulse();
     _clearAllAnnotations();
     if (_pos != null) {

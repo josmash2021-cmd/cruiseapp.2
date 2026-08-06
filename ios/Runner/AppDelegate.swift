@@ -40,12 +40,23 @@ import ActivityKit
       }
       let args = call.arguments as? [String: Any]
       let status = args?["status"] as? String ?? "online"
+      let fare = args?["fare"] as? String ?? ""
+      let perHour = args?["perHour"] as? String ?? ""
+      let miles = args?["miles"] as? String ?? ""
+      let minutes = args?["minutes"] as? String ?? ""
       switch call.method {
       case "start":
         CruiseLiveActivityManager.shared.start(status: status)
         result(true)
       case "update":
         CruiseLiveActivityManager.shared.update(status: status)
+        result(true)
+      case "offer":
+        // A ride offer came in — put it on the running activity. `true`
+        // here means the call was accepted, not that the island changed:
+        // the work is enqueued and ActivityKit can still refuse it.
+        CruiseLiveActivityManager.shared.offer(
+          fare: fare, perHour: perHour, miles: miles, minutes: minutes)
         result(true)
       case "stop":
         CruiseLiveActivityManager.shared.stop()
@@ -123,7 +134,10 @@ final class CruiseLiveActivityManager {
           content: .init(state: state, staleDate: nil)
         )
       } catch {
-        // Denied in Settings, backgrounded, or system limit — nothing to do.
+        // Denied in Settings, backgrounded, or system limit. Logged because
+        // a start that quietly failed is why offer() later finds nothing
+        // running.
+        NSLog("[LiveActivity] start failed: %@", "\(error)")
       }
     }
   }
@@ -133,6 +147,51 @@ final class CruiseLiveActivityManager {
     enqueue {
       for a in Activity<CruiseActivityAttributes>.activities {
         await a.update(.init(state: state, staleDate: nil))
+      }
+    }
+  }
+
+  /// A ride offer came in — show it on the Live Activity the shift
+  /// already started.
+  ///
+  /// The `live.isEmpty` branch is a last resort, not the normal path.
+  /// On iOS 16.x `Activity.request` only succeeds while the app is in the
+  /// foreground; from the background it throws
+  /// `ActivityAuthorizationError.visibility` (background starts arrived in
+  /// iOS 17, and only for apps with an active background session). So the
+  /// fallback covers "the app is open and somehow has no activity", and is
+  /// a logged no-op in exactly the case — driver inside another app — where
+  /// an offer card would matter most. The activity has to be started when
+  /// the shift starts, which is what `start()` is for.
+  func offer(fare: String, perHour: String, miles: String, minutes: String) {
+    guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
+    let state = CruiseActivityAttributes.ContentState(
+      status: "offer", since: Date(),
+      fare: fare, perHour: perHour, miles: miles, minutes: minutes)
+    enqueue {
+      let live = Activity<CruiseActivityAttributes>.activities
+      if live.isEmpty {
+        // Nothing to update: the shift never started one, or iOS ended it.
+        // Try anyway — it works when the app is foregrounded — and say so
+        // in the log when it does not, instead of reporting a card the
+        // driver cannot see.
+        do {
+          self.activity = try Activity.request(
+            attributes: CruiseActivityAttributes(),
+            content: .init(state: state, staleDate: nil))
+        } catch {
+          NSLog("[LiveActivity] offer: no running activity and request "
+            + "failed (backgrounded on iOS 16, denied in Settings, or "
+            + "over the system limit): %@", "\(error)")
+        }
+        return
+      }
+      for a in live {
+        // staleDate: the offer expires on its own, and a card still
+        // showing a ride the driver can no longer take is worse than no
+        // card. iOS dims it at that point without another round trip.
+        await a.update(.init(
+          state: state, staleDate: Date().addingTimeInterval(45)))
       }
     }
   }

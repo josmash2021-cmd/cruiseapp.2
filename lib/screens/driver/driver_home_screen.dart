@@ -1688,7 +1688,12 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       PageRouteBuilder(
         opaque: true,
         pageBuilder: (ctx, anim1, anim2) => DriverOnlineScreen(
-            photoUrl: _photoUrl, initialPos: _currentLatLng, initialHeading: 0),
+            photoUrl: _photoUrl,
+            initialPos: _currentLatLng,
+            initialHeading: 0,
+            // Already online — this is Resume, not Go. The screen skips the
+            // whole go-online handshake and opens straight in searching.
+            resuming: _isStillOnline),
         transitionDuration: const Duration(milliseconds: 420),
         reverseTransitionDuration: const Duration(milliseconds: 300),
         transitionsBuilder: (ctx2, anim, anim2b, child) {
@@ -3565,14 +3570,33 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                           children: [
                             Opacity(
                               opacity: (1 - morph * 1.6).clamp(0.0, 1.0),
-                              child: Text(
-                                'GO',
-                                maxLines: 1,
-                                style: TextStyle(
-                                  color: fgColor,
-                                  fontSize: ui.lerpDouble(22, 14, morph),
-                                  fontWeight: FontWeight.w900,
-                                  letterSpacing: 1.2,
+                              // A driver who never went offline is not
+                              // starting a shift, they are stepping back
+                              // into one — so the circle says RESUME, the
+                              // same word the expanded pill has always used
+                              // in that state (user spec 2026-08-06).
+                              // Scale-down rather than a smaller fixed size:
+                              // the circle was cut for two letters, and
+                              // REANUDAR is eight.
+                              child: FittedBox(
+                                fit: BoxFit.scaleDown,
+                                child: Text(
+                                  (_activeTripData != null || _isStillOnline)
+                                      ? S.of(context).resumeOnline
+                                      : 'GO',
+                                  maxLines: 1,
+                                  style: TextStyle(
+                                    color: fgColor,
+                                    fontSize: ui.lerpDouble(
+                                        (_activeTripData != null ||
+                                                _isStillOnline)
+                                            ? 15
+                                            : 22,
+                                        14,
+                                        morph),
+                                    fontWeight: FontWeight.w900,
+                                    letterSpacing: 1.2,
+                                  ),
                                 ),
                               ),
                             ),

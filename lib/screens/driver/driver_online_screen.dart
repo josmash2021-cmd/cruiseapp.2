@@ -97,12 +97,21 @@ class DriverOnlineScreen extends StatefulWidget {
   /// way, because the notice lives here and a pushAndRemoveUntil cannot
   /// carry state over.
   final bool showCancelledNotice;
+
+  /// The driver never went offline — they just stepped back to the home
+  /// screen and are coming straight back. The whole go-online handshake
+  /// (approval check + register online + the "GOING ONLINE" state) is for
+  /// a driver who is offline; replaying it here made returning to a shift
+  /// already in progress look like starting one, and told the backend to
+  /// go online for a driver who never stopped being online.
+  final bool resuming;
   const DriverOnlineScreen({
     super.key,
     this.initialPos,
     this.initialHeading = 0,
     this.photoUrl,
     this.showCancelledNotice = false,
+    this.resuming = false,
   });
   @override
   State<DriverOnlineScreen> createState() => _DriverOnlineScreenState();
@@ -272,6 +281,13 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   // â”€â”€ Pending ride offers (stacked cards, Spark-style) â”€â”€
   List<Map<String, dynamic>> _pendingOffers = [];
   // _offersExpanded removed — cards always visible via PageView
+
+  /// What the iOS Live Activity is currently showing: `offer:<id>`,
+  /// `on_trip`, `online`, or null while there is no activity at all.
+  /// Compared by _syncOfferLiveActivity against the state derived from
+  /// [_pendingOffers] and [_phase], so the island follows from those two
+  /// rather than from each path remembering to update it.
+  String? _islandState;
 
   /// A ride accepted while still driving the current trip (chaining) —
   /// it starts when this trip wraps up. See _acceptChainedOffer.
@@ -1131,6 +1147,12 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
           pickupToDropoffMin: seg2.durSec != null ? seg2.durSec! / 60.0 : null,
           pickupToDropoffKm: seg2.distM != null ? seg2.distM! / 1000.0 : null,
         );
+        // The lock-screen card was drawn from the haversine fallback while
+        // this was in flight — straight-line miles run 20-40% short, which
+        // inflates the hourly rate. Now that the road numbers are in, send
+        // them, or the island and the card quote different pay for the same
+        // ride for as long as the offer stands.
+        if (_headOfferId == oid) _syncOfferLiveActivity(force: true);
         if (_pendingOffers.isNotEmpty) setState(() {});
       }).catchError((_) {});
 

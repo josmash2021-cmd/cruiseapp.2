@@ -937,8 +937,10 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     // the same size on screen, but a ~1:1 bitmap on a 3× Android phone
     // instead of the fuzzy 3× upscale the 55 px render produced.
     final pinResults = await Future.wait([
-      renderPickupRingBytes(rasterScale: kEndpointRasterScale),
-      renderDropoffRingDotBytes(rasterScale: kEndpointRasterScale),
+      renderPickupRingBytes(
+          size: kOfferEndpointSize, rasterScale: kEndpointRasterScale),
+      renderDropoffRingDotBytes(
+          size: kOfferEndpointSize, rasterScale: kEndpointRasterScale),
     ]);
     final Uint8List pickupPinImg = pinResults[0];
     final Uint8List dropoffPinImg = pinResults[1];
@@ -1109,8 +1111,8 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     // The same pair as the native preview: hollow gold ring for the
     // pickup, white ring with a solid dot for the dropoff.
     final pinResults = await Future.wait([
-      renderPickupRingBytes(),
-      renderDropoffRingDotBytes(),
+      renderPickupRingBytes(size: kOfferEndpointSize),
+      renderDropoffRingDotBytes(size: kOfferEndpointSize),
     ]);
     if (!mounted || _previewingOffer == null) return;
     web.addMarker('offerPickup', pickupLL.longitude, pickupLL.latitude,

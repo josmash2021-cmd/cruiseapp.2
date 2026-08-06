@@ -36,6 +36,14 @@ Future<Uint8List> renderPickupDotBytes({double size = 26, double rasterScale = 1
 Future<Uint8List> renderDropoffCircleBytes({double size = 26, double rasterScale = 1.0}) =>
     _render(size, fill: Colors.white, rasterScale: rasterScale);
 
+/// On-screen diameter of the route endpoints on the driver's offer map.
+///
+/// The 26 px default read as a speck at offer zoom — next to the car badge
+/// the driver could not tell where the ride starts and ends without reading
+/// the card. Both the native and the web path take this so the two builds
+/// draw the same marker.
+const double kOfferEndpointSize = 38;
+
 /// Driver offer map only: the pickup is a hollow ring — no fill, just the
 /// band. (The rider's receipt uses the solid beads above; the driver asked
 /// for the inverted pair on this page.)

@@ -3119,6 +3119,11 @@ class S {
       ? '\$$amount/h estimado por este viaje'
       : '\$$amount/hr est. rate for this ride';
 
+  /// The same figure as [offerHourlyRate] with the sentence stripped, for
+  /// the Dynamic Island, where the full phrase has nowhere to go.
+  String offerHourlyRateShort(String amount) =>
+      _es ? '\$$amount/h' : '\$$amount/hr';
+
   /// Minutes, but hours once there are 60 of them. "78 min" is a number
   /// the driver has to divide in their head while a car is waiting.
   String offerDuration(int minutes) {
@@ -3309,6 +3314,11 @@ class S {
   /// Tracking map: puts the whole remaining route back on screen after the
   /// rider has panned or pinched.
   String get recenterRoute => _es ? 'Ver ruta' : 'Show route';
+
+  /// Find-My pickup screen: what the compass arrow is for.
+  String get findDriverFollowArrow => _es
+      ? 'Encuentra a tu conductor siguiendo la flecha'
+      : 'Find your driver by following the arrow';
 
   // ── Face Liveness Screen (new step keys) ──────────────────────────────────
   String get centerYourFace => _es ? 'Centra tu rostro' : 'Center your face';

@@ -1100,7 +1100,18 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       // re-arm the dispatch poll; dispatch is already re-cascading the
       // same trip to the next driver.
       if (mounted) {
-        _nav?.maybePop('driver_released');
+        // pop, NOT maybePop. This screen's build is wrapped in
+        // PopScope(canPop: false) (rider_tracking_screen.dart), and a route
+        // whose popDisposition is doNotPop makes maybePop skip the pop
+        // entirely and just invoke onPopInvokedWithResult — which here calls
+        // _navigateToHome(). So this line has never handed 'driver_released'
+        // to anyone: the rider went Home, Home asked the backend, the backend
+        // answered with this still-active trip, and tracking reopened. That
+        // is the loop, and it only ever ended by killing the app.
+        //
+        // An explicit pop does not consult canPop, so the result is really
+        // delivered to whoever pushed this screen.
+        _nav?.pop('driver_released');
       }
       return;
     }
@@ -1242,35 +1253,20 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
         return;
       }
 
-      if (cancelledByDriver) {
-        // A driver cancel is NOT the end of the trip. POST /driver-cancel
-        // sets driver_id = None and status = "requested" and re-cascades to
-        // the next driver (backend/routers/trips.py) — the trip stays in
-        // _ACTIVE_TRIP_STATUSES the whole time.
-        //
-        // Treating it as terminal is what produced the loop the rider
-        // reported: the dialog sent them home with pushAndRemoveUntil, home
-        // asked the backend for the active trip, the backend correctly
-        // answered with this very trip, tracking reopened, saw the driver
-        // cancel again, and sent them home again — for ever, because nothing
-        // in that circle can cancel a trip the rider is not allowed to
-        // cancel from here. Only killing the app broke it.
-        //
-        // So it takes the same exit as a dispatch hand-back: pop with
-        // 'driver_released' and let ride_request_map re-enter the searching
-        // card while dispatch finds the next driver.
-        if (_backInQueueShown) return;
-        _backInQueueShown = true;
-        debugPrint('[RiderTracking] driver cancelled — trip is back in the '
-            'dispatch pool, returning to the searching card');
-        _rtdbDriverLocSub?.cancel();
-        _rtdbDriverLocSub = null;
-        _rtdbDriverId = null;
-        _mapCar?.clear();
-        if (mounted) _nav?.maybePop('driver_released');
-        return;
-      }
-
+      // NOTE: there is deliberately no `cancelledByDriver` branch here.
+      //
+      // A previous attempt added one, and it was wrong at both ends. This
+      // whole block only runs when the status IS "cancelled", but
+      // POST /driver-cancel sets status = "requested" and re-cascades — so
+      // the branch never fired for the case it was written for. That case is
+      // owned by the back-in-queue handler further up, which sees the
+      // "requested" status directly.
+      //
+      // What it did fire on was terminal cancels whose free-text reason
+      // happens to contain "driver": the ghost agent writes
+      // "auto:driver_abandoned_no_replacement" for a trip it has genuinely
+      // killed. Those riders were handed a "looking for a driver" card for a
+      // ride that no longer exists.
       if (!_cancelDialogShown) {
         // C3 fix: capture the localised string BEFORE any async gap so we
         // never touch `context` from a stale closure.

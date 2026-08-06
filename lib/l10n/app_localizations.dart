@@ -3315,6 +3315,12 @@ class S {
   /// rider has panned or pinched.
   String get recenterRoute => _es ? 'Ver ruta' : 'Show route';
 
+  /// Shown when the call button cannot dial — no number on the trip, or the
+  /// handset has no phone app. Silence there read as a frozen button.
+  String get callDriverUnavailable => _es
+      ? 'No se puede llamar al conductor ahora mismo'
+      : "Can't call the driver right now";
+
   /// Find-My pickup screen: what the compass arrow is for.
   String get findDriverFollowArrow => _es
       ? 'Encuentra a tu conductor siguiendo la flecha'

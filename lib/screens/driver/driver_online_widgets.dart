@@ -11,6 +11,13 @@ const double _kBarTipH = 13.0;
 /// and the address. Fixed so the marker beside it can be centred exactly.
 const double _kOfferStopH = 34.0;
 
+/// A small extra lift under the offer card, on top of whatever the safe-area
+/// rule below works out per platform (driver request 2026-08-06: "just a
+/// little higher"). Kept separate from that rule so the gesture-inset and
+/// Android nav-bar reasoning stays readable, and so this is the one number
+/// to touch if it wants nudging again.
+const double _kOfferCardLift = 12.0;
+
 // ══════════════════════════════════════════════════════════════
 //  WIDGETS — UI builders, panels, overlays, cards, sheets
 // ══════════════════════════════════════════════════════════════
@@ -747,9 +754,10 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
       // Accept button ended up drawn behind the nav bar and untappable.
       // There the card clears the bar entirely.
       padding: EdgeInsets.only(
-          bottom: bot > 0
-              ? (!kIsWeb && Platform.isAndroid ? bot : bot * 0.3)
-              : 10),
+          bottom: (bot > 0
+                  ? (!kIsWeb && Platform.isAndroid ? bot : bot * 0.3)
+                  : 10) +
+              _kOfferCardLift),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [

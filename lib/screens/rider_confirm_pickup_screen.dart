@@ -737,15 +737,47 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
     );
   }
 
+  /// Dial the driver.
+  ///
+  /// Every failure used to be a silent `return`: no number on the trip, or
+  /// launchUrl refusing, and the rider just tapped a button that did nothing
+  /// — indistinguishable from the app being frozen. launchUrl also reports
+  /// failure by RETURNING false, not by throwing, so the old try/catch could
+  /// not have caught the common case.
   Future<void> _callDriver() async {
     HapticService.lightImpact();
-    final phone = widget.driverPhone;
-    if (phone == null || phone.isEmpty) return;
+    final phone = widget.driverPhone?.trim() ?? '';
+    if (phone.isEmpty) {
+      debugPrint('[ConfirmPickup] call: trip carries no driver phone');
+      _showCallFailed();
+      return;
+    }
     try {
-      await launchUrl(Uri.parse('tel:$phone'));
+      final ok = await launchUrl(
+        Uri.parse('tel:$phone'),
+        mode: LaunchMode.externalApplication,
+      );
+      if (!ok) {
+        debugPrint('[ConfirmPickup] call: no handler for tel:');
+        _showCallFailed();
+      }
     } catch (e) {
       debugPrint('[ConfirmPickup] call failed: $e');
+      _showCallFailed();
     }
+  }
+
+  void _showCallFailed() {
+    if (!mounted) return;
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    if (messenger == null) return;
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(S.of(context).callDriverUnavailable),
+        backgroundColor: const Color(0xFF1A1A1F),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
   }
 
   /// The Find-My particle ring with the compass needle at its centre.
@@ -889,9 +921,20 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
                     // The insets ride on this Padding rather than on a
                     // SizedBox at each end of the Column: spaceBetween would
                     // have opened one of its gaps around them.
+                    //
+                    // Top is a plain 8, not pad.top + 8. SafeArea above has
+                    // already moved the content clear of the status bar, so
+                    // adding the inset again counted it twice — about 59 pt of
+                    // dead air over the header on an Island phone, which is
+                    // the gap the driver asked to close (2026-08-06).
+                    //
+                    // The bottom keeps its inset for now: the same double
+                    // count is there, but unwinding it walks the chat and call
+                    // buttons down toward the home indicator, which nobody
+                    // asked for.
                     child: Padding(
                       padding: EdgeInsets.only(
-                          top: pad.top + 8, bottom: pad.bottom + 16),
+                          top: 8, bottom: pad.bottom + 16),
                       child: Column(
                         // Header, ring, bottom block — with the leftover
                         // height split into the same two gaps the pair of

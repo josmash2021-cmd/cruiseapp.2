@@ -805,11 +805,27 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
     // Everything below (the Financial Connections sheet) stays as the
     // fallback for a driver who would rather pick their bank by logging into
     // it, and for the case where Stripe rejects a manually typed account.
+    // One bank at a time. If there is already one attached this is an edit,
+    // and the old row goes once the new one is safely in — never before, or a
+    // failure halfway would leave the driver with no payout destination at
+    // all and the weekly transfer nowhere to land.
+    final existing = _methodOfType('bank_account');
     final added = await Navigator.of(context).push<bool>(
-      MaterialPageRoute(builder: (_) => const AddBankAccountScreen()),
+      MaterialPageRoute(
+        builder: (_) => AddBankAccountScreen(replacing: existing != null),
+      ),
     );
     if (!mounted) return;
     if (added == true) {
+      final oldId = existing?['id'];
+      if (oldId is int) {
+        try {
+          await ApiService.deletePayoutMethod(oldId);
+        } catch (e) {
+          debugPrint('[Payout] could not remove the replaced bank: $e');
+        }
+      }
+      if (!mounted) return;
       _snack(S.of(context).bankAccountLinked);
       await _loadMethods();
       return;

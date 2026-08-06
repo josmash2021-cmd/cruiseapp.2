@@ -1411,9 +1411,9 @@ class S {
   String get payoutYourMethods =>
       _es ? 'Tus métodos de cobro' : 'Your payout methods';
   String get payoutMethodsIntro => _es
-      ? 'Tus ganancias se depositan cada martes, salvo que pidas retirarlas '
+      ? 'Tus ganancias se depositan cada miércoles, salvo que pidas retirarlas '
           'antes con Retiro exprés.'
-      : 'Your earnings are deposited every Tuesday, unless you ask to cash '
+      : 'Your earnings are deposited every Wednesday, unless you ask to cash '
           'out sooner with Express Pay.';
   String get payoutExpressPay => _es ? 'Retiro exprés' : 'Express Pay';
   String get payoutWeekly => _es ? 'Pago semanal' : 'Weekly payouts';
@@ -1424,7 +1424,7 @@ class S {
       ? 'Cobra cuando quieras, con una comisión'
       : 'Cash out whenever you like, for a fee';
   String get payoutWeeklyDesc =>
-      _es ? 'Cada martes, sin comisión' : 'Every Tuesday, no fee';
+      _es ? 'Cada miércoles, sin comisión' : 'Every Wednesday, no fee';
   String payoutEndingIn(String last4) =>
       _es ? 'Terminada en •$last4' : 'Ending in •$last4';
 
@@ -1439,7 +1439,7 @@ class S {
       _es ? 'Actualizar cuenta bancaria' : 'Update bank account';
   String get payoutUpdateBankDesc => _es
       ? 'Con el Pago semanal enviamos tus ganancias a esta cuenta cada '
-          'martes, sin comisión de retiro.'
+          'miércoles, sin comisión de retiro.'
       : 'With Weekly payouts we send your earnings to this bank account '
           'every Tuesday, with no cashout fee.';
   String get payoutKeepSecure =>
@@ -3321,6 +3321,11 @@ class S {
   // ── Driver: add bank account for weekly payouts ──
   String get addBankAccountTitle =>
       _es ? 'Agrega tu banco' : 'Add your bank';
+  String get editBankAccountTitle =>
+      _es ? 'Edita tu banco' : 'Edit bank account';
+  String get editBankAccountSubtitle => _es
+      ? 'La cuenta que guardes aquí reemplaza a la anterior.'
+      : 'The account you save here replaces the previous one.';
   String get addBankAccountSubtitle => _es
       ? 'Tus ganancias de la semana llegan aquí cada miércoles, sin comisión.'
       : 'Your weekly earnings land here every Wednesday, with no fee.';

@@ -18,7 +18,12 @@ import '../../widgets/neu_style.dart';
 /// into fields we then transmit ourselves would put Cruise inside the
 /// compliance scope those digits carry.
 class AddBankAccountScreen extends StatefulWidget {
-  const AddBankAccountScreen({super.key});
+  const AddBankAccountScreen({super.key, this.replacing = false});
+
+  /// A bank is already attached, so this is a replacement rather than a first
+  /// setup. Only the wording changes here — the swap itself is the caller's
+  /// job, since only it knows which method to remove.
+  final bool replacing;
 
   @override
   State<AddBankAccountScreen> createState() => _AddBankAccountScreenState();
@@ -146,7 +151,7 @@ class _AddBankAccountScreenState extends State<AddBankAccountScreen> {
           padding: const EdgeInsets.fromLTRB(20, 4, 20, 32),
           children: [
             Text(
-              s.addBankAccountTitle,
+              widget.replacing ? s.editBankAccountTitle : s.addBankAccountTitle,
               style: const TextStyle(
                 color: Colors.white,
                 fontSize: 30,
@@ -156,7 +161,9 @@ class _AddBankAccountScreenState extends State<AddBankAccountScreen> {
             ),
             const SizedBox(height: 8),
             Text(
-              s.addBankAccountSubtitle,
+              widget.replacing
+                  ? s.editBankAccountSubtitle
+                  : s.addBankAccountSubtitle,
               style: TextStyle(
                 color: Colors.white.withValues(alpha: 0.55),
                 fontSize: 14,

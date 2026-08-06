@@ -265,19 +265,25 @@ async def _check_fcm() -> dict:
     """
     def _probe() -> dict:
         import firebase_admin
-        if not firebase_admin._apps:
-            return {"ok": False, "error": "FCM not initialized"}
-        app = firebase_admin.get_app()
-
+        # fcm_enabled() FIRST, before looking at _apps.
+        #
+        # Firebase initialises lazily: in a container that has not served a
+        # trip yet nothing has created the default app, so an _apps check up
+        # front returned "not initialized" and left early — skipping the one
+        # call that knows how to initialise it. The result was a check that
+        # went red on every fresh deploy and could not tell "no push has been
+        # needed yet" apart from "pushes are broken", which is the exact
+        # question it exists to answer. It also explained the silence in the
+        # logs: fcm_service never ran, so it never reported why.
         try:
             from services.fcm_service import fcm_enabled
             sends_enabled = fcm_enabled()
         except Exception as e:
-            return {
-                "ok": False,
-                "error": f"fcm_enabled() probe failed: {e}",
-                "project_id": app.project_id,
-            }
+            return {"ok": False, "error": f"fcm_enabled() probe failed: {e}"}
+
+        if not firebase_admin._apps:
+            return {"ok": False, "error": "FCM not initialized"}
+        app = firebase_admin.get_app()
 
         if not sends_enabled:
             return {

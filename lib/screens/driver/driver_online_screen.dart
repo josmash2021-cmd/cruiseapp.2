@@ -966,6 +966,18 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
       DriverBackgroundService().stop();
       // Reset sound guards so offer sounds play correctly after app resumes
       NotificationService.resetSoundGuards();
+      // Let the offer route draw itself again.
+      //
+      // The progressive draw is an animation, and backgrounding stops it
+      // mid-stroke: what is left on the map is the fraction that had been
+      // laid down, a line that follows no road and reaches neither pin. On
+      // resume the same offer arrives again, _autoTriggerRoutePreview sees
+      // its own id in this latch and returns, and that broken stroke stays
+      // until the countdown kills the card. Clearing the latch lets the next
+      // _applyOffers redraw it whole. It is per-offer, so this cannot loop:
+      // the redraw sets it straight back.
+      _lastAutoTriggeredOfferId = null;
+      _offerRouteShown = false;
       _startPolling(); // _startPolling already calls _connectSse()
       _startClock();
       _startEarningsRefresh();

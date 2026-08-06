@@ -1,0 +1,97 @@
+# Docker only reads .dockerignore from the BUILD CONTEXT ROOT. railway.toml
+# points dockerfilePath at backend/Dockerfile while the Dockerfile itself does
+# `COPY backend/requirements.txt .`, so the context is this directory — which
+# means backend/.dockerignore has never been applied to a single build.
+#
+# It matters because `railway up --detach` uploads the local filesystem rather
+# than the git tree, so .gitignore does not protect that path. Without this
+# file, `COPY backend/ .` pulls in __pycache__, tests, logs and a ~700 MB
+# backend/.venv, and the two deploy routes (git push vs railway up) do not
+# produce the same image.
+#
+# Keep this in sync with backend/.dockerignore, which stays for anyone who
+# builds with backend/ as the context directly.
+
+# ── Version control ──
+.git/
+.gitignore
+.gitattributes
+.github/
+
+# ── Python ──
+**/__pycache__/
+**/*.py[cod]
+**/*.so
+backend/.venv/
+backend/venv/
+backend/env/
+.venv/
+venv/
+
+# ── The Flutter app: never part of the backend image ──
+lib/
+ios/
+android/
+web/
+windows/
+macos/
+linux/
+test/
+assets/
+build/
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+pubspec.lock
+*.iml
+
+# ── Backend test + build artifacts ──
+backend/tests/
+backend/.pytest_cache/
+backend/htmlcov/
+backend/.coverage
+backend/build/
+backend/dist/
+backend/*.egg-info/
+test_all_out*.txt
+_test_results.txt
+
+# ── Secrets and local config: must never enter an image layer ──
+.env
+.env.*
+!.env.template
+backend/.env
+backend/.env.*
+**/serviceAccountKey.json
+android/local.properties
+
+# ── Backups and dumps (the volume holds these, not the image) ──
+backend/backups/
+*.backup
+*.dump
+
+# ── Logs and scratch ──
+**/*.log
+live_log.txt
+audit_latest*.txt
+*.hprof
+
+# ── User uploads: cloud storage owns these ──
+backend/photos/
+backend/static/photos/
+backend/uploads/
+
+# ── Editor / OS ──
+.vscode/
+.idea/
+.claude/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# ── Docs: not needed at runtime ──
+*.md
+!README.md
+*.bat

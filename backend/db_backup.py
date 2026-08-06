@@ -15,7 +15,33 @@ from db_url import resolve_database_url
 
 logger = logging.getLogger(__name__)
 
-BACKUP_DIR = Path(os.path.dirname(os.path.abspath(__file__))) / "backups"
+def _resolve_backup_dir() -> Path:
+    """Where the pg_dumps live.
+
+    On the Railway volume, not next to the source. This used to resolve to
+    /app/backups — the container filesystem — while the volume is mounted at
+    /app/data, so every redeploy destroyed all 28 dumps. A disaster-recovery
+    store that cannot survive a deploy is worse than none, because
+    get_status() then reports zero backups and that is indistinguishable
+    from the backup job being broken.
+
+    Falls back to the old location only if the volume is not writable, so a
+    misconfigured VOLUME_PATH degrades to today's behaviour instead of
+    crashing the backup task.
+    """
+    candidate = (os.getenv("VOLUME_PATH", "").strip() or "/app/data")
+    try:
+        d = Path(candidate) / "backups"
+        d.mkdir(parents=True, exist_ok=True)
+        if os.access(d, os.W_OK):
+            return d
+        logger.warning("[Backup] %s is not writable — falling back to ephemeral storage", d)
+    except Exception as e:
+        logger.warning("[Backup] volume path %s unusable (%s) — falling back to ephemeral storage", candidate, e)
+    return Path(os.path.dirname(os.path.abspath(__file__))) / "backups"
+
+
+BACKUP_DIR = _resolve_backup_dir()
 BACKUP_INTERVAL_HOURS = 12      # Run every 12 hours (was 6h) — reduced for NullPool/PgBouncer efficiency
 MAX_BACKUPS = 28                # Keep 7 days Ã— 4 backups/day
 

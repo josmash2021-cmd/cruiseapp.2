@@ -32,7 +32,7 @@ from services.guest_link_service import link_guest_trips_to_user
 from services.socketio_service import notify_user
 from utils.n8n_trigger import trigger_welcome_email, trigger_driver_onboarding
 from config import (
-    _otp_store, _OTP_TTL, PHOTOS_DIR, PUBLIC_URL,
+    _otp_store, _OTP_TTL, PHOTOS_DIR, UPLOADS_DIR, PUBLIC_URL,
     _otp_attempt_tracker, _MAX_OTP_ATTEMPTS, _OTP_ATTEMPT_WINDOW,
     TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_PHONE_NUMBER, TWILIO_SERVICE_SID,
     EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, EMAILJS_PUBLIC_KEY, EMAILJS_PRIVATE_KEY,
@@ -1617,8 +1617,10 @@ async def web_get_chat(trip_id: int, request: Request, db: AsyncSession = Depend
 
 
 # -- Photo Upload / Serve ------------------------------
-PHOTOS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "photos")
-os.makedirs(PHOTOS_DIR, exist_ok=True)
+# PHOTOS_DIR comes from config (imported at the top of this module) and is
+# already created there. It used to be rebound here to
+# dirname(routers/auth.py)/photos — /app/routers/photos — which is not the
+# directory anything serves from, so uploads landed where no reader looks.
 
 @router.post("/auth/photo", dependencies=[Depends(_verify_api_key)])
 async def upload_photo(request: Request, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
@@ -2050,7 +2052,11 @@ async def submit_verification(request: Request, user: User = Depends(_get_curren
     # Save verification photos if provided (non-fatal - disk may be unavailable on Railway)
     saved_urls = {}
     try:
-        docs_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "uploads", "documents")
+        # UPLOADS_DIR from config, not dirname(__file__): this resolved to
+        # /app/routers/uploads/documents while GET /uploads/documents/{name}
+        # serves from /app/uploads/documents, so every licence and selfie a
+        # driver submitted came back 404 in the review panel.
+        docs_dir = os.path.join(UPLOADS_DIR, "documents")
         os.makedirs(docs_dir, exist_ok=True)
     except Exception as e:
         logging.warning("[Verify] Cannot create uploads dir: %s", e)

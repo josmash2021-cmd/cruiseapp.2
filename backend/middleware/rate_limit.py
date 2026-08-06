@@ -115,8 +115,32 @@ rate_limiter = RateLimiter()
 # ── Redis integration (optional) ──────────────────────────────────────
 # When REDIS_URL is available we transparently upgrade to the Redis-backed
 # limiter so that multi-instance deployments share state.
+#
+# WHY THE WRAPPER, AND WHY THE SWAP HAPPENS HERE
+#
+# main.py binds this module's singleton ONCE, at import time:
+#     from middleware.rate_limit import rate_limiter as _tiered_rate_limiter
+# It holds a direct reference to the object. Rebinding this module global
+# later would therefore have no effect on the live request path, so the
+# resilience cannot live in a factory that swaps instances at runtime - it
+# has to live INSIDE the object that main.py already points at. Hence
+# ResilientRateLimiter: one stable object whose behaviour degrades and
+# recovers internally.
+#
+# The previous code swapped in a bare RedisRateLimiter here and had no
+# fallback, while the "ping first, else in-memory" factory in
+# redis_rate_limit.get_rate_limiter() was never called by anything. When
+# Railway's Redis restarted, ConnectionError escaped the limiter, escaped
+# main.py's `except HTTPException`, and crash_protection_middleware turned
+# EVERY request into a 500 - login, trip create, driver accept, Stripe
+# webhooks. That factory is now a delegator to this singleton; there is one
+# mechanism, not two.
 
 _redis_limiter = None
+
+# How long to stop touching Redis after a failure before probing again. Keeps
+# a dead Redis from adding a connect attempt to every single request.
+_REDIS_RETRY_COOLDOWN = 10.0
 
 
 def _get_redis_url() -> str | None:
@@ -126,37 +150,129 @@ def _get_redis_url() -> str | None:
     return os.environ.get("REDIS_TLS_URL")
 
 
+class ResilientRateLimiter:
+    """Redis-backed limiter that degrades to in-memory instead of failing.
+
+    Contract note: check() is a coroutine, matching RedisRateLimiter. main.py
+    handles both sync and async limiters via inspect.isawaitable(), so this is
+    safe for the existing call sites.
+    """
+
+    def __init__(
+        self,
+        redis_limiter,
+        memory_limiter: RateLimiter,
+        retry_cooldown: float = _REDIS_RETRY_COOLDOWN,
+    ) -> None:
+        self._redis_limiter = redis_limiter
+        self._memory = memory_limiter
+        self._retry_cooldown = retry_cooldown
+        self._degraded = False
+        self._degraded_since = 0.0
+        self._next_probe = 0.0
+        self._degradations = 0
+
+    @property
+    def _requests(self) -> dict[str, list[float]]:
+        """Expose the fallback's state so tests/conftest can reset counters."""
+        return self._memory._requests
+
+    async def check(
+        self,
+        key: str,
+        max_requests: int = 60,
+        window_seconds: int = 60,
+    ) -> None:
+        """Rate-limit *key*, falling back to in-memory if Redis misbehaves."""
+        now = time.time()
+
+        # In an outage window: skip Redis entirely until the next probe.
+        if self._degraded and now < self._next_probe:
+            self._memory.check(key, max_requests, window_seconds)
+            return
+
+        try:
+            await self._redis_limiter.check(key, max_requests, window_seconds)
+        except HTTPException:
+            # A real 429 verdict. Redis is healthy - let it through.
+            if self._degraded:
+                self._mark_recovered()
+            raise
+        except Exception as e:
+            # FAIL OPEN on the Redis backend: rate limiting is a protection,
+            # not a correctness invariant. Never let it take the site down.
+            self._mark_degraded(e, now)
+            self._memory.check(key, max_requests, window_seconds)
+            return
+
+        if self._degraded:
+            self._mark_recovered()
+
+    def _mark_degraded(self, exc: Exception, now: float) -> None:
+        """Enter/extend the degraded window, logging ONCE per outage."""
+        self._next_probe = now + self._retry_cooldown
+        if self._degraded:
+            return  # already logged for this outage - do not flood at request rate
+        self._degraded = True
+        self._degraded_since = now
+        self._degradations += 1
+        logger.error(
+            "[RateLimit] Redis unavailable (%s) - degrading to in-memory limiting. "
+            "Further failures silenced until recovery.",
+            exc,
+        )
+
+    def _mark_recovered(self) -> None:
+        downtime = time.time() - self._degraded_since
+        self._degraded = False
+        self._next_probe = 0.0
+        logger.info(
+            "[RateLimit] Redis recovered after %.1fs - resuming distributed limiting.",
+            downtime,
+        )
+
+    def get_stats(self) -> dict:
+        """Return diagnostic info for /health endpoints."""
+        return {
+            "backend": "redis",
+            "connected": not self._degraded,
+            "degraded": self._degraded,
+            "degradations": self._degradations,
+            "tracked_keys": len(self._memory._requests),
+        }
+
+
 def _try_redis_limiter():
     """Attempt to instantiate the Redis-backed limiter.  Returns None on failure."""
     global _redis_limiter
     if _redis_limiter is not None:
         return _redis_limiter
 
-    redis_url = _get_redis_url()
-    if not redis_url:
+    if not _get_redis_url():
         return None
 
     try:
-        from middleware.redis_rate_limit import RedisRateLimiter
-        import redis.asyncio as aioredis
+        from middleware.redis_rate_limit import RedisRateLimiter, _create_redis_client
 
-        client = aioredis.from_url(
-            redis_url,
-            decode_responses=True,
-            socket_connect_timeout=5,
-            socket_keepalive=True,
-            health_check_interval=30,
+        client = _create_redis_client()
+        if client is None:
+            return None
+        # from_url() is lazy: this client has NOT connected yet and we cannot
+        # await a ping at import time. Connectivity is proven by the first
+        # real check(); until then ResilientRateLimiter carries the risk.
+        _redis_limiter = ResilientRateLimiter(
+            redis_limiter=RedisRateLimiter(redis_client=client),
+            memory_limiter=rate_limiter,
         )
-        _redis_limiter = RedisRateLimiter(redis_client=client)
-        logger.info("[RateLimit] Redis limiter initialised (%s)", redis_url.split("@")[-1])
+        logger.info("[RateLimit] Redis limiter initialised (with in-memory fallback)")
         return _redis_limiter
     except Exception as e:
         logger.warning("[RateLimit] Redis limiter init failed: %s", e)
         return None
 
 
-# Attempt lazy upgrade once at import time.  If Redis is not reachable the
-# in-memory singleton remains active.
+# Attempt lazy upgrade once at import time.  If Redis is not configured the
+# in-memory singleton remains active, unchanged.
 _redis_candidate = _try_redis_limiter()
 if _redis_candidate is not None:
     rate_limiter = _redis_candidate

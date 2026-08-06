@@ -70,6 +70,22 @@ ENV UVICORN_WORKERS=1
 ENV UVICORN_TIMEOUT_KEEP_ALIVE=75
 ENV UVICORN_LIMIT_CONCURRENCY=2000
 
+# Proxy trust boundary. See the --forwarded-allow-ips note on the CMD below
+# before changing this value.
+#
+# Railway terminates TLS at its own edge proxy and forwards over the private
+# network, so the peer address uvicorn sees is the proxy, not the user: in
+# production every client_ip logged was 100.64.0.4 ... 100.64.0.23. That is
+# Railway's carrier-grade NAT range (100.64.0.0/10, RFC 6598). Uvicorn
+# defaults to trusting only 127.0.0.1, so it refused to honour the real
+# client address in X-Forwarded-For and EVERY user collapsed onto ~20 IPs -
+# sharing one 100 req/min bucket, and making IP bans and the login lockout
+# hit random innocent slices of the user base.
+#
+# 127.0.0.1 is kept so the container's own loopback probe keeps uvicorn's
+# default behaviour. Override in Railway if the internal range ever changes.
+ENV FORWARDED_ALLOW_IPS=100.64.0.0/10,127.0.0.1
+
 # Copy application code
 COPY backend/ .
 
@@ -80,13 +96,46 @@ RUN echo "=== Files in /app ===" && ls -la /app && \
 
 EXPOSE 8000
 
-# Health check for Railway
+# Health check for Docker (Railway runs its own probe against railway.toml's
+# healthcheckPath=/ping, so this is belt-and-braces).
+# Shell form on purpose: ${PORT} must expand at RUNTIME. This used to hardcode
+# 8000 while CMD binds ${PORT:-8000}, so the probe checked the wrong port on
+# any platform that assigns one.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/ping', timeout=5)" || exit 1
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:${PORT:-8000}/ping', timeout=5)" || exit 1
 
 # Start with optimized uvicorn settings
-# --workers: see the UVICORN_WORKERS block above — it is 1 on purpose
+# --workers: see the UVICORN_WORKERS block above — it is 1 on purpose. The
+#   fallback is :-1, NOT :-2. An unset or EMPTY UVICORN_WORKERS (an empty
+#   value in the Railway dashboard makes ${VAR:-N} fall through) must not be
+#   able to silently start a second worker: the event bus and Socket.io rooms
+#   are process-local, so that breaks realtime in a way that looks like a
+#   Firebase bug rather than a config bug.
 # --timeout-keep-alive 75: Keep connections alive for SSE/WebSocket
 # --limit-concurrency 2000: Handle many concurrent riders/drivers
-# --loop uvloop: Faster event loop (if available)
-CMD ["sh", "-c", "exec uvicorn main:socket_app --host 0.0.0.0 --port ${PORT:-8000} --workers ${UVICORN_WORKERS:-2} --timeout-keep-alive ${UVICORN_TIMEOUT_KEEP_ALIVE:-75} --limit-concurrency ${UVICORN_LIMIT_CONCURRENCY:-2000}"]
+# --proxy-headers + --forwarded-allow-ips: honour X-Forwarded-For from
+#   Railway's proxy so per-IP rate limits, IP bans and the login brute-force
+#   lockout apply to the real client instead of to ~20 shared proxy IPs.
+#
+#   SECURITY - trust boundary. Trusting X-Forwarded-For means trusting
+#   whoever can set it. The trust boundary here is the network peer: uvicorn
+#   only reads the header when the TCP peer is inside FORWARDED_ALLOW_IPS.
+#   Railway's proxy is the only thing that can reach this container's port,
+#   and it appends the real client address to the chain, so trusting that
+#   range is correct. A direct attacker cannot forge a peer address.
+#
+#   We deliberately do NOT use the "*" wildcard. In uvicorn 0.31.0
+#   (see requirements.txt) the two settings behave very differently:
+#     - "*"  -> always_trust, and get_trusted_client_host() returns
+#              x_forwarded_for[0], the LEFTMOST entry. That value is fully
+#              client-controlled, so any user could send
+#              "X-Forwarded-For: 1.2.3.4" and pick their own identity -
+#              trivially evading rate limits and IP bans.
+#     - CIDR -> walks the chain in REVERSE and returns the first host NOT in
+#              the trusted set, i.e. the address Railway itself appended.
+#              A spoofed prefix is ignored.
+#   So the narrow range is not merely tighter, it is the setting that
+#   actually defeats spoofing. Its failure mode is also safe: if Railway ever
+#   moves off 100.64.0.0/10 the header is simply not trusted and we are back
+#   to today's behaviour (proxy IP as client) - degraded, never broken.
+CMD ["sh", "-c", "exec uvicorn main:socket_app --host 0.0.0.0 --port ${PORT:-8000} --workers ${UVICORN_WORKERS:-1} --timeout-keep-alive ${UVICORN_TIMEOUT_KEEP_ALIVE:-75} --limit-concurrency ${UVICORN_LIMIT_CONCURRENCY:-2000} --proxy-headers --forwarded-allow-ips \"${FORWARDED_ALLOW_IPS:-100.64.0.0/10,127.0.0.1}\""]

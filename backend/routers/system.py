@@ -1,5 +1,6 @@
 """System administration endpoints — health, metrics, API key rotation."""
 
+import asyncio
 import os
 import time
 import logging
@@ -29,42 +30,144 @@ class HealthResponse(BaseModel):
     checks: dict
 
 
+# ── Hardening notes for GET /health ───────────────────────────────────
+#
+# This endpoint is UNAUTHENTICATED and is listed in main.py's _HOT_PATHS,
+# which means it bypasses BOTH rate limiters. Anyone who knows the URL can
+# loop it. Three consequences had to be closed off:
+#
+# 1. It blocked the event loop. _check_stripe() and _check_twilio() call
+#    SYNCHRONOUS network clients (stripe.Balance.retrieve(),
+#    client.api.accounts(sid).fetch()) from inside `async def`, pinning the
+#    single uvicorn worker for the full round trip. They now run in a thread
+#    with a hard timeout.
+# 2. It amplified. One request in became five third-party requests out, on an
+#    unthrottled path, burning Stripe/Twilio quota. Results are now cached, so
+#    a flood costs at most one dependency sweep per _HEALTH_CACHE_TTL.
+# 3. It leaked. Raw exception strings from SQLAlchemy/asyncpg routinely carry
+#    host, port, database name and username. The public body now carries only
+#    {"ok": bool} per dependency; detail goes to the server log.
+#
+# Railway's healthcheckPath is /ping (railway.toml), NOT /health, so this
+# endpoint is not load-bearing for deploys. The response SHAPE is unchanged
+# because something external may be scraping it, and no auth was added for
+# the same reason - main.py's /health/full remains the API-key-gated place
+# to get detail.
+_HEALTH_CACHE_TTL = 30.0   # seconds; dependency results reused this long
+_DEP_TIMEOUT = 2.0         # seconds; per-dependency ceiling
+
+_health_cache: Optional[dict] = None
+_health_cache_at: float = 0.0
+_health_lock = asyncio.Lock()
+
+
+def _public_checks(checks: dict) -> dict:
+    """Strip internal detail from dependency results.
+
+    Any entry carrying an "ok" flag is reduced to exactly {"ok": bool}, which
+    drops "error" (raw exception text: DSNs, credentials, hostnames) and
+    "project_id". Entries without an "ok" key - cache, rate_limiter - are
+    pure counters and pass through so the response shape is preserved.
+    """
+    public: dict = {}
+    for name, result in checks.items():
+        if isinstance(result, dict) and "ok" in result:
+            public[name] = {"ok": bool(result.get("ok"))}
+        else:
+            public[name] = result
+    return public
+
+
+def _log_check_failures(checks: dict) -> None:
+    """Log dependency failure detail server-side (once per cache refresh)."""
+    for name, result in checks.items():
+        if isinstance(result, dict) and result.get("ok") is False:
+            logger.warning(
+                "[Health] dependency %s unhealthy: %s",
+                name, str(result.get("error", "unknown"))[:200],
+            )
+
+
+async def _dependency_checks() -> dict:
+    """Return dependency results, cached for _HEALTH_CACHE_TTL seconds.
+
+    Single-flight: concurrent callers arriving on a cold cache wait on the
+    lock and reuse one sweep rather than each firing their own.
+    """
+    global _health_cache, _health_cache_at
+
+    now = time.monotonic()
+    cached = _health_cache
+    if cached is not None and (now - _health_cache_at) < _HEALTH_CACHE_TTL:
+        return cached
+
+    async with _health_lock:
+        # Re-check: another caller may have refreshed while we waited.
+        now = time.monotonic()
+        if _health_cache is not None and (now - _health_cache_at) < _HEALTH_CACHE_TTL:
+            return _health_cache
+
+        names = ("database", "redis", "stripe", "twilio", "fcm")
+        results = await asyncio.gather(
+            _check_database(),
+            _check_redis(),
+            _check_stripe(),
+            _check_twilio(),
+            _check_fcm(),
+            return_exceptions=True,
+        )
+        checks: dict = {}
+        for name, result in zip(names, results):
+            if isinstance(result, BaseException):
+                checks[name] = {"ok": False, "error": f"{type(result).__name__}: {result}"}
+            else:
+                checks[name] = result
+
+        _health_cache = checks
+        _health_cache_at = time.monotonic()
+        _log_check_failures(checks)
+        return checks
+
+
 @router.get("/health", response_model=HealthResponse)
 async def health_check(request: Request):
     """Deep health check with external service connectivity."""
-    checks = {
-        "database": await _check_database(),
-        "redis": await _check_redis(),
-        "stripe": await _check_stripe(),
-        "twilio": await _check_twilio(),
-        "fcm": await _check_fcm(),
-        "cache": cache_stats(),
-        "rate_limiter": rate_limiter.get_stats(),
-    }
-    
+    # copy(): the cached dict is shared, so the live counters below must not
+    # be written into it.
+    checks = dict(await _dependency_checks())
+    checks["cache"] = cache_stats()
+    checks["rate_limiter"] = rate_limiter.get_stats()
+
     # Overall status: degraded if any critical check fails
     critical = ["database"]
     failed_critical = [c for c in critical if not checks[c].get("ok", False)]
-    
+
     status = "degraded" if failed_critical else "ok"
-    
+
     return HealthResponse(
         status=status,
         timestamp=datetime.now(timezone.utc).isoformat(),
-        checks=checks,
+        checks=_public_checks(checks),
     )
 
 
 async def _check_database() -> dict:
-    """Check database connectivity."""
+    """Check database connectivity.
+
+    Detail in the returned dict is for server-side logging only - the public
+    response is sanitised by _public_checks().
+    """
     try:
-        async with SessionLocal() as db:
-            from sqlalchemy import text
-            result = await db.execute(text("SELECT 1"))
-            row = result.fetchone()
-            if row:
-                return {"ok": True}
-            return {"ok": False, "error": "No row returned"}
+        async with asyncio.timeout(_DEP_TIMEOUT):
+            async with SessionLocal() as db:
+                from sqlalchemy import text
+                result = await db.execute(text("SELECT 1"))
+                row = result.fetchone()
+                if row:
+                    return {"ok": True}
+                return {"ok": False, "error": "No row returned"}
+    except asyncio.TimeoutError:
+        return {"ok": False, "error": f"timeout after {_DEP_TIMEOUT}s"}
     except Exception as e:
         return {"ok": False, "error": str(e)}
 
@@ -73,54 +176,121 @@ async def _check_redis() -> dict:
     """Check Redis connectivity."""
     try:
         from services.redis_cache import _get_redis
-        redis = await _get_redis()
-        if redis is None:
-            return {"ok": False, "error": "Redis not configured or unavailable"}
-        await redis.ping()
+        async with asyncio.timeout(_DEP_TIMEOUT):
+            redis = await _get_redis()
+            if redis is None:
+                return {"ok": False, "error": "Redis not configured or unavailable"}
+            await redis.ping()
         return {"ok": True}
+    except asyncio.TimeoutError:
+        return {"ok": False, "error": f"timeout after {_DEP_TIMEOUT}s"}
     except Exception as e:
         return {"ok": False, "error": str(e)}
 
 
 async def _check_stripe() -> dict:
-    """Check Stripe API connectivity."""
-    try:
+    """Check Stripe API connectivity.
+
+    stripe-python is a SYNCHRONOUS client. Called directly from `async def`
+    it blocks the single uvicorn worker for the whole round trip, so an
+    unauthenticated /health flood could stall all trip traffic. Run it in a
+    worker thread with a hard timeout instead.
+
+    Caveat: a thread cannot be cancelled, so on timeout the call keeps
+    running in the executor until the socket returns. The result is
+    discarded. Bounded by the /health cache, that is at most one stray
+    thread per _HEALTH_CACHE_TTL, not one per request.
+    """
+    api_key = os.getenv("STRIPE_SECRET_KEY", "")
+    if not api_key:
+        return {"ok": False, "error": "No API key"}
+
+    def _probe() -> None:
         import stripe
-        stripe.api_key = os.getenv("STRIPE_SECRET_KEY", "")
-        if not stripe.api_key:
-            return {"ok": False, "error": "No API key"}
-        # Lightweight check: list balance (fast, no objects created)
+        stripe.api_key = api_key
+        # Lightweight check: retrieve balance (fast, no objects created)
         stripe.Balance.retrieve()
+
+    try:
+        await asyncio.wait_for(asyncio.to_thread(_probe), timeout=_DEP_TIMEOUT)
         return {"ok": True}
+    except asyncio.TimeoutError:
+        return {"ok": False, "error": f"timeout after {_DEP_TIMEOUT}s"}
     except Exception as e:
         return {"ok": False, "error": str(e)}
 
 
 async def _check_twilio() -> dict:
-    """Check Twilio API connectivity."""
-    try:
+    """Check Twilio API connectivity.
+
+    Same blocking-client problem as Stripe - see _check_stripe().
+    """
+    sid = os.getenv("TWILIO_ACCOUNT_SID", "")
+    token = os.getenv("TWILIO_AUTH_TOKEN", "")
+    if not sid or not token:
+        return {"ok": False, "error": "No credentials"}
+
+    def _probe() -> None:
         from twilio.rest import Client
-        sid = os.getenv("TWILIO_ACCOUNT_SID", "")
-        token = os.getenv("TWILIO_AUTH_TOKEN", "")
-        if not sid or not token:
-            return {"ok": False, "error": "No credentials"}
+        # Twilio's HTTP client logs full request/response headers at DEBUG.
+        # On a public, unthrottled endpoint that dumps auth-adjacent headers
+        # into the logs at request rate. Scoped to Twilio's own logger only.
+        logging.getLogger("twilio.http_client").setLevel(logging.WARNING)
         client = Client(sid, token)
         # Lightweight: fetch account info
         client.api.accounts(sid).fetch()
+
+    try:
+        await asyncio.wait_for(asyncio.to_thread(_probe), timeout=_DEP_TIMEOUT)
         return {"ok": True}
+    except asyncio.TimeoutError:
+        return {"ok": False, "error": f"timeout after {_DEP_TIMEOUT}s"}
     except Exception as e:
         return {"ok": False, "error": str(e)}
 
 
 async def _check_fcm() -> dict:
-    """Check Firebase/FCM connectivity."""
-    try:
+    """Check Firebase/FCM deliverability.
+
+    This used to assert only that `firebase_admin._apps` was non-empty - that
+    an app OBJECT exists. services/fcm_service.py gates real sends behind its
+    own flag, so /health could report {"fcm": {"ok": true}} while every ride
+    offer was being dropped with no log: a health check that stays green
+    during the exact outage it exists to detect.
+
+    fcm_enabled() reports whether pushes will actually be delivered, so we
+    consult it as well. It is imported lazily and run off the event loop -
+    when Firebase is down it may attempt a (throttled) real init, which is
+    not work we want inline on an unauthenticated endpoint.
+    """
+    def _probe() -> dict:
         import firebase_admin
         if not firebase_admin._apps:
             return {"ok": False, "error": "FCM not initialized"}
-        # Try to get default app
         app = firebase_admin.get_app()
+
+        try:
+            from services.fcm_service import fcm_enabled
+            sends_enabled = fcm_enabled()
+        except Exception as e:
+            return {
+                "ok": False,
+                "error": f"fcm_enabled() probe failed: {e}",
+                "project_id": app.project_id,
+            }
+
+        if not sends_enabled:
+            return {
+                "ok": False,
+                "error": "Firebase app exists but fcm_service reports sends disabled",
+                "project_id": app.project_id,
+            }
         return {"ok": True, "project_id": app.project_id}
+
+    try:
+        return await asyncio.wait_for(asyncio.to_thread(_probe), timeout=_DEP_TIMEOUT)
+    except asyncio.TimeoutError:
+        return {"ok": False, "error": f"timeout after {_DEP_TIMEOUT}s"}
     except Exception as e:
         return {"ok": False, "error": str(e)}
 

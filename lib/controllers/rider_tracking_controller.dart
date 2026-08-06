@@ -1242,6 +1242,35 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
         return;
       }
 
+      if (cancelledByDriver) {
+        // A driver cancel is NOT the end of the trip. POST /driver-cancel
+        // sets driver_id = None and status = "requested" and re-cascades to
+        // the next driver (backend/routers/trips.py) — the trip stays in
+        // _ACTIVE_TRIP_STATUSES the whole time.
+        //
+        // Treating it as terminal is what produced the loop the rider
+        // reported: the dialog sent them home with pushAndRemoveUntil, home
+        // asked the backend for the active trip, the backend correctly
+        // answered with this very trip, tracking reopened, saw the driver
+        // cancel again, and sent them home again — for ever, because nothing
+        // in that circle can cancel a trip the rider is not allowed to
+        // cancel from here. Only killing the app broke it.
+        //
+        // So it takes the same exit as a dispatch hand-back: pop with
+        // 'driver_released' and let ride_request_map re-enter the searching
+        // card while dispatch finds the next driver.
+        if (_backInQueueShown) return;
+        _backInQueueShown = true;
+        debugPrint('[RiderTracking] driver cancelled — trip is back in the '
+            'dispatch pool, returning to the searching card');
+        _rtdbDriverLocSub?.cancel();
+        _rtdbDriverLocSub = null;
+        _rtdbDriverId = null;
+        _mapCar?.clear();
+        if (mounted) _nav?.maybePop('driver_released');
+        return;
+      }
+
       if (!_cancelDialogShown) {
         // C3 fix: capture the localised string BEFORE any async gap so we
         // never touch `context` from a stale closure.

@@ -868,8 +868,17 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
         );
         if (!mounted) return;
         if (done == true) {
-          // Straight on to the bank form rather than making them find the
-          // button again.
+          // Stripe's onboarding collects a bank account of its own as part of
+          // the requirements, so by the time it hands the driver back there
+          // is often nothing left to ask. Re-read the methods first and only
+          // show our form if it really did not come back with one —
+          // otherwise we would make them type the same account twice.
+          await _loadMethods();
+          if (!mounted) return;
+          if (_methodOfType('bank_account') != null) {
+            _snack(S.of(context).bankAccountLinked);
+            return;
+          }
           await _connectBankAccount();
           return;
         }

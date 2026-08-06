@@ -72,8 +72,11 @@ private struct OfferEndCap: View {
 
 private struct OfferRouteBar: View {
   var compact: Bool = false
-  private var cap: CGFloat { compact ? 22 : 30 }
-  private var line: CGFloat { compact ? 4 : 5 }
+  // 28/38, was 22/30 (driver request 2026-08-06). The line thickens with
+  // them so the bar keeps its proportions instead of the caps looking stuck
+  // onto a thread.
+  private var cap: CGFloat { compact ? 28 : 38 }
+  private var line: CGFloat { compact ? 5 : 6 }
 
   var body: some View {
     HStack(spacing: 0) {

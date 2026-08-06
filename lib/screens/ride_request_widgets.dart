@@ -59,7 +59,7 @@ extension _RideRequestWidgets on _RideRequestScreenState {
               children: [
                 // ── Back arrow ──
                 GestureDetector(
-                  onTap: () => Navigator.of(context).pop(),
+                  onTap: () => _nav?.pop(),
                   child: Container(
                     width: 44,
                     height: 44,
@@ -1565,14 +1565,9 @@ extension _RideRequestWidgets on _RideRequestScreenState {
         child: Stack(
           clipBehavior: Clip.none,
           children: [
-            // Per-tier Faster marker, corner at the title's level — lit
-            // ONLY when a driver of THIS tier is ≤5 min out (user spec
-            // 2026-08-04: per category, never one driver lighting all).
-            Positioned(
-              top: -2,
-              right: -2,
-              child: _gridFasterBadge(opt, s),
-            ),
+            // No Faster badge on a closed tile (user spec 2026-08-06): the
+            // grid says the tier and its wait, and the badge belongs to the
+            // open card, where it sits on the "2-4 min away" line.
             Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
@@ -1648,30 +1643,6 @@ extension _RideRequestWidgets on _RideRequestScreenState {
           ],
         ),
       ),
-    );
-  }
-
-  /// Tiny per-tier Faster marker on a grid tile. Cache-only, like the
-  /// wait text right under it: tiles rebuild on every collapse-animation
-  /// frame and a build must never start network work (_gridWaitRangeText
-  /// already triggers the shared per-tier fetch).
-  Widget _gridFasterBadge(RideOption opt, double s) {
-    final pickup = _ctrl.state.pickup;
-    if (pickup == null) return const SizedBox.shrink();
-    final est = DriverWaitEstimate.cached(pickup.lat, pickup.lng,
-        tier: _tierKeyForOption(opt));
-    final show = est != null && est.hasDrivers && est.minMinutes <= 5;
-    return AnimatedSwitcher(
-      duration: const Duration(milliseconds: 300),
-      switchOutCurve: Curves.easeInCubic,
-      child: show
-          ? Transform.scale(
-              key: const ValueKey('grid-faster'),
-              scale: (0.78 * s).clamp(0.60, 0.80),
-              alignment: Alignment.topRight,
-              child: const FasterBadge(),
-            )
-          : const SizedBox.shrink(key: ValueKey('grid-faster-off')),
     );
   }
 

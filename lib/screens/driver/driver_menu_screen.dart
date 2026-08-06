@@ -313,7 +313,13 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
     final s = S.of(context);
     return Scaffold(
       backgroundColor: neuBase,
-      body: Column(
+      // Same dotted backdrop as the rider's home. On a flat neuBase the
+      // neumorphic cards float on nothing; the dots give the surface they
+      // are pressed into, which is the whole point of the style.
+      body: Stack(
+        children: [
+          const Positioned.fill(child: NeuDotsBackdrop()),
+          Column(
         children: [
           // ── Top bar ──
           Container(
@@ -501,6 +507,8 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
             ),
           ),
         ],
+      ),
+      ],
       ),
     );
   }

@@ -1031,7 +1031,12 @@ class _SettingsScreenState extends State<_SettingsScreen> {
 
     return Scaffold(
       backgroundColor: neuBase,
-      body: SafeArea(
+      // Same dotted backdrop as the rider's home, so the neumorphic
+      // cards sit on a surface instead of floating on flat black.
+      body: Stack(
+        children: [
+          const Positioned.fill(child: NeuDotsBackdrop()),
+          SafeArea(
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 24),
           child: Column(
@@ -1153,6 +1158,8 @@ class _SettingsScreenState extends State<_SettingsScreen> {
             ],
           ),
         ),
+      ),
+        ],
       ),
     );
   }

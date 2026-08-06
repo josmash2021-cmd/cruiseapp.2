@@ -140,10 +140,12 @@ const double _kCarAnnotScale = 0.55;  // PointAnnotation icon scale (smaller for
 /// of queueing writes the SDK would drop (project rule 25).
 const int _kRouteEraseIntervalMs = 66;
 
-/// How long after the rider's last map drag the chase camera takes over
-/// again. Without a resume the camera stayed parked wherever they left it
-/// and the car simply drove off screen.
-const int _kResumeFollowAfterPanMs = 8000;
+/// How long after the rider's last map gesture the framer takes the camera
+/// back. Without a resume the camera stays parked wherever they left it and
+/// the car drives off screen; too short and a deliberate zoom gets undone
+/// while they are still reading it. 15 s is long enough to look around, and
+/// the recenter pill is there for anyone who wants the route back sooner.
+const int _kResumeFollowAfterPanMs = 15000;
 
 /// Perpendicular distance from the active route polyline beyond which the
 /// driver counts as off-route (meters).
@@ -188,6 +190,16 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
     with TickerProviderStateMixin {
   void _setState(VoidCallback fn) { if (mounted) setState(fn); }
 
+  // See CLAUDE.md rule 26: outside build(), `.of(context)` is a crash waiting
+  // for a route transition — the element loses its parent the instant it is
+  // deactivated, while `mounted` stays true until the end of the frame, and
+  // the framework's `!` throws in release only. Everything here runs from
+  // timers, listeners, awaits and sheet callbacks, so it all goes through
+  // maybeOf: a dead context makes the call the no-op it already was.
+  NavigatorState? get _nav => mounted ? Navigator.maybeOf(context) : null;
+  ScaffoldMessengerState? get _messenger =>
+      mounted ? ScaffoldMessenger.maybeOf(context) : null;
+
   /// Identifies this screen to [MapSurfaceCoordinator].
   ///
   /// This is pushed on top of the booking screen, which keeps its own
@@ -225,7 +237,6 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   DateTime _lastWebCamMove = DateTime(2000);
   /// True once the web chase has flown in behind the car for this trip;
   /// reset whenever the phase leaves onTrip so a re-entry glides again.
-  bool _webChaseEntered = false;
   /// Last bearing pushed to the web car marker; < 0 = not created yet.
   double _webCarBearing = -1;
   mapbox.PointAnnotationManager? _pointAnnotMgr;  // for pins (icon-anchor: bottom)
@@ -700,21 +711,16 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   // Smooth camera follow (for real-time tracking after animation)
   bool _shouldFollowDriver = true;
   Timer? _cameraFollowTimer;
-  bool _useNavCamera = true; // When true: heading-up chase with a gentle 20° tilt
+  // The heading-up chase camera (and the flags that sequenced its intro
+  // swing) is gone from the rider's screen: both halves of the ride now run
+  // the continuous route framer in _onCameraTick. TrackingMapCamera still
+  // carries updateChaseFrame for whoever wants a driving view — the rider,
+  // who is reading rather than steering, asked to see the whole route.
 
-  /// Set when the chase camera is being handed back after a rider pan
-  /// (auto-resume), so the next [startNavigationChase] keeps easing from
-  /// its held state instead of replaying the full intro swing. The swing
-  /// is for entrances (phase flip into onTrip), not resumes.
-  bool _chaseResumedFromPan = false;
-
-  /// True once the full intro swing has played for this trip. The swing is
-  /// for the FIRST entry into the trip only: when the map surface is
-  /// recreated mid-trip (fresh TrackingMapCamera, _navChaseActive = false)
-  /// or the chase is handed back while already onTrip/nearDestination, the
-  /// camera just keeps easing from its held state instead of swinging
-  /// around again.
-  bool _chaseIntroPlayedForTrip = false;
+  /// Phase the route framer is currently seeded for. A change means the
+  /// frame is about to become a different one (driver→pickup vs
+  /// driver→dropoff), so the smoothing is dropped and re-seeded.
+  _TrackPhase? _framedPhase;
 
   // No camera Ticker of its own: the chase camera runs on _interpTicker,
   // the same frame that moves the car. Two tickers writing to one platform
@@ -865,6 +871,25 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
                         ),
                 ),
               ),
+              // Recenter — rides just above the bottom card, and only while
+              // the rider holds the camera. _buildResumeButton had been
+              // written but never mounted: once they panned or pinched, the
+              // only way back to the full route was to wait out the
+              // auto-resume, which is the "I can't get the whole route back"
+              // half of the camera report.
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: _bottomCardHeight + 14,
+                child: IgnorePointer(
+                  ignoring: !_userControllingCamera,
+                  child: AnimatedOpacity(
+                    opacity: _userControllingCamera ? 1 : 0,
+                    duration: const Duration(milliseconds: 220),
+                    child: _buildResumeButton(),
+                  ),
+                ),
+              ),
               // Offline banner
               Positioned(
                 top: topPad,
@@ -952,7 +977,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
               if (mounted) {
                 await _pickupOverlayCtrl.reverse();
                 if (!mounted) return;
-                Navigator.of(context).pushNamedAndRemoveUntil('/home', (route) => false);
+                _nav?.pushNamedAndRemoveUntil('/home', (route) => false);
               }
             },
           ),

@@ -260,7 +260,8 @@ extension _RiderTrackingDriverInfoCard on _RiderTrackingScreenState {
                     // dead for as long as the network took. ChatScreen
                     // resolves the id itself when it is not supplied.
                     if (!mounted) return;
-                    final nav = Navigator.of(context);
+                    final nav = _nav;
+                    if (nav == null) return;
                     final userIdFuture = ApiService.getCurrentUserId();
                     nav.push(
                       chatOpenRoute(
@@ -338,7 +339,7 @@ extension _RiderTrackingDriverInfoCard on _RiderTrackingScreenState {
     final name = nh.displayName(widget.driverName, widget.rideName);
     final tripId = widget.tripId;
     if (tripId == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      _messenger?.showSnackBar(
         SnackBar(
           content: Text('${S.of(context).phoneNotAvailable} - $name'),
           // Uses global snackBarTheme
@@ -349,7 +350,7 @@ extension _RiderTrackingDriverInfoCard on _RiderTrackingScreenState {
 
     final ok = await MaskedCallService.callCounterparty(tripId: tripId, role: 'rider');
     if (!ok && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      _messenger?.showSnackBar(
         SnackBar(
           content: Text('${S.of(context).phoneNotAvailable} - $name'),
           // Uses global snackBarTheme
@@ -1414,7 +1415,7 @@ extension _RiderTrackingDriverInfoCard on _RiderTrackingScreenState {
   }
 
   void _openSupportChat() {
-    Navigator.of(context).push(
+    _nav?.push(
       slideFromRightRoute(
         ChatScreen(
           recipientName: 'Support',

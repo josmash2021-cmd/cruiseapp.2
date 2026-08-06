@@ -1100,7 +1100,7 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       // re-arm the dispatch poll; dispatch is already re-cascading the
       // same trip to the next driver.
       if (mounted) {
-        Navigator.of(context).maybePop('driver_released');
+        _nav?.maybePop('driver_released');
       }
       return;
     }
@@ -1578,7 +1578,7 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
   void _goToRating() {
     if (!mounted) return;
     // Navigate to rating with smooth fade transition
-    Navigator.of(context).pushReplacement(
+    _nav?.pushReplacement(
       PageRouteBuilder(
         pageBuilder: (_, __, ___) => RiderRatingScreen(
           driverName: widget.driverName,
@@ -2064,7 +2064,7 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
 
   void _navigateToHome() {
     _saveRideState();
-    Navigator.of(context).pushAndRemoveUntil(
+    _nav?.pushAndRemoveUntil(
       PageRouteBuilder(
         pageBuilder: (_, __, ___) => const HomeScreen(),
         transitionsBuilder: (_, a, __, child) =>

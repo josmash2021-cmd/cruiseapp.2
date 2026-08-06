@@ -468,12 +468,17 @@ extension _RiderTrackingPhaseIndicator on _RiderTrackingScreenState {
                 ),
               ],
             ),
-            child: const Row(
+            child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(Icons.my_location_rounded, color: Color(0xFFD4AF37), size: 14),
-                SizedBox(width: 6),
-                Text('Resume', style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600)),
+                const Icon(Icons.my_location_rounded,
+                    color: Color(0xFFD4AF37), size: 14),
+                const SizedBox(width: 6),
+                Text(S.of(context).recenterRoute,
+                    style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600)),
               ],
             ),
           ),

@@ -244,11 +244,22 @@ class TrackingMapCamera {
   /// the animation it is chasing.
   bool _frameInFlight = false;
 
-  // ── Approach framing (driver on the way to the pickup) ──
-  // Null until the first frame seeds it from the real span, so the view
-  // opens already correct instead of gliding in from a default zoom.
-  double? _approachZoom;
-  DateTime? _lastApproachFrameAt;
+  // ── Continuous route framing (approach AND trip) ──
+  // Null until the first frame seeds it, so the view opens already correct
+  // instead of gliding in from a default zoom. The target (the bounding box
+  // of the car, the pin it is driving to, and the road between them) is
+  // recomputed a few times a second; the camera glides toward it every
+  // frame, which is what makes the zoom tighten smoothly as the gap closes.
+  double? _followZoom;
+  LatLng? _followCenter;
+  DateTime? _lastFollowFrameAt;
+  LatLng? _followTargetCenter;
+  double _followTargetZoom = 15.0;
+  DateTime? _lastFollowTargetAt;
+
+  /// While a re-entry flyTo is still landing. Per-frame writes during it
+  /// would fight the animation and land the camera short.
+  DateTime? _followSettleUntil;
 
   bool get isNavChaseActive => _navChaseActive;
 
@@ -274,11 +285,23 @@ class TrackingMapCamera {
     );
   }
 
-  /// True once [updateApproachFrame] owns the camera. Callers use this to
+  /// True once [updateFollowFrame] owns the camera. Callers use this to
   /// stand down their one-shot bounds fits, exactly as they already do for
   /// the navigation chase — a flyTo landing on top of a per-frame
   /// setCamera is a visible fight.
-  bool get isApproachFramingActive => _approachZoom != null;
+  bool get isFollowFramingActive => _followZoom != null;
+
+  /// Hands the frame back after the rider had the camera (pan, pinch, or the
+  /// recenter button). The smoothed values are dropped so the next frame
+  /// re-seeds from the live fit and glides in with one flyTo — resuming from
+  /// the stale internal position would snap the map out from under them.
+  void resetFollowFraming() {
+    _followZoom = null;
+    _followCenter = null;
+    _followTargetCenter = null;
+    _lastFollowTargetAt = null;
+    _followSettleUntil = null;
+  }
 
   // ── Chase intro: the camera swings in behind the car ──
   //
@@ -320,9 +343,8 @@ class TrackingMapCamera {
   void startNavigationChase({bool replayIntro = true}) {
     _navChaseActive = true;
     _lastNavFrameAt = null;
-    // Leaving the approach phase — re-seed if we ever come back to it.
-    _approachZoom = null;
-    _lastApproachFrameAt = null;
+    // Leaving the framed phases — re-seed if we ever come back to them.
+    resetFollowFraming();
     // The swing is for entries, not resumes: every auto-resume after a pan
     // used to replay the whole intro, and from the rider's seat that reads
     // as the camera "changing shot" out of nowhere. A resume just keeps
@@ -386,39 +408,106 @@ class TrackingMapCamera {
   /// removed for jumping the camera every few seconds. This moves a
   /// fraction of the way toward the target zoom on every frame, so the
   /// tightening is continuous and never reads as a jump.
-  void updateApproachFrame({
-    required LatLng driverPos,
-    required LatLng pickupPos,
+  /// Keeps [points] — the car, the pin it is driving to, and the road
+  /// between them — inside the visible box, tightening continuously as the
+  /// gap closes. Used for both halves of the ride: driver → pickup while the
+  /// rider waits, driver → dropoff once they are aboard.
+  ///
+  /// This used to frame the car and the pin as a two-point span, which is
+  /// only the same thing when the road between them is a straight line. On
+  /// every real route the road bulges outside that box and the rider saw a
+  /// yellow line leaving the screen; and once the two points converged the
+  /// span hit its floor and the zoom raced to maximum, which is the "stuck
+  /// zoomed on the pickup" report. Framing the actual polyline fixes both.
+  void updateFollowFrame({
+    required List<LatLng> points,
     required Size screenSize,
     required double topPadding,
     required double bottomPadding,
+    double minZoom = 10.5,
+    double maxZoom = 16.5,
   }) {
-    if (_map == null) return;
-    if (driverPos.latitude == 0 && driverPos.longitude == 0) return;
+    if (_map == null || points.isEmpty) return;
 
     final now = DateTime.now();
-    final dtSec = _lastApproachFrameAt == null
+    final dtSec = _lastFollowFrameAt == null
         ? 0.0
-        : now.difference(_lastApproachFrameAt!).inMilliseconds / 1000.0;
-    _lastApproachFrameAt = now;
+        : now.difference(_lastFollowFrameAt!).inMilliseconds / 1000.0;
+    _lastFollowFrameAt = now;
     double tf(double base) =>
         1.0 - math.pow(1.0 - base, (dtSec.clamp(0.0, 0.1) * 60)).toDouble();
 
-    // Midpoint: both the car and the pin stay framed the whole way in.
-    final centerLat = (driverPos.latitude + pickupPos.latitude) / 2;
-    final centerLng = (driverPos.longitude + pickupPos.longitude) / 2;
+    // The fit is recomputed a few times a second — walking a 500-vertex
+    // route 60 times a second buys nothing the eye can see — while the
+    // glide below runs every frame.
+    if (_followTargetCenter == null ||
+        _lastFollowTargetAt == null ||
+        now.difference(_lastFollowTargetAt!).inMilliseconds >= 350) {
+      _lastFollowTargetAt = now;
+      double minLat = points.first.latitude, maxLat = minLat;
+      double minLng = points.first.longitude, maxLng = minLng;
+      for (final p in points) {
+        if (p.latitude == 0 && p.longitude == 0) continue; // unseeded
+        minLat = math.min(minLat, p.latitude);
+        maxLat = math.max(maxLat, p.latitude);
+        minLng = math.min(minLng, p.longitude);
+        maxLng = math.max(maxLng, p.longitude);
+      }
+      _followTargetCenter = LatLng((minLat + maxLat) / 2, (minLng + maxLng) / 2);
+      // zoomToFitSpan reads the two corners as a bounding box, which is
+      // exactly what these are.
+      _followTargetZoom = zoomToFitSpan(
+        LatLng(minLat, minLng),
+        LatLng(maxLat, maxLng),
+        screenSize,
+        topPadding,
+        bottomPadding,
+        minZoom: minZoom,
+        maxZoom: maxZoom,
+      );
+    }
 
-    final targetZoom = _zoomToFitSpan(
-      driverPos,
-      pickupPos,
-      screenSize,
-      topPadding,
-      bottomPadding,
+    final target = _followTargetCenter!;
+
+    // First frame of a phase, or the rider just handed the camera back:
+    // glide there once with flyTo. A per-frame setCamera from an internal
+    // position the rider has since dragged away from would snap.
+    if (_followZoom == null || _followCenter == null) {
+      _followZoom = _followTargetZoom;
+      _followCenter = target;
+      _followSettleUntil = now.add(const Duration(milliseconds: 900));
+      try {
+        _map!
+            .flyTo(
+              mapbox.CameraOptions(
+                center: mapbox.Point(
+                  coordinates:
+                      mapbox.Position(target.longitude, target.latitude),
+                ),
+                zoom: _followTargetZoom,
+                bearing: 0,
+                pitch: 0,
+              ),
+              mapbox.MapAnimationOptions(duration: 850),
+            )
+            .catchError((Object e) {
+          debugPrint('[TrackingMapCamera] follow flyTo failed: $e');
+        });
+      } catch (e) {
+        debugPrint('[TrackingMapCamera] follow flyTo error: $e');
+      }
+      return;
+    }
+    if (_followSettleUntil != null && now.isBefore(_followSettleUntil!)) return;
+    _followSettleUntil = null;
+
+    final k = tf(0.06);
+    _followZoom = _followZoom! + (_followTargetZoom - _followZoom!) * k;
+    _followCenter = LatLng(
+      _followCenter!.latitude + (target.latitude - _followCenter!.latitude) * k,
+      _followCenter!.longitude +
+          (target.longitude - _followCenter!.longitude) * k,
     );
-    // First frame snaps; every frame after glides 6% of the remaining gap.
-    _approachZoom = _approachZoom == null
-        ? targetZoom
-        : _approachZoom! + (targetZoom - _approachZoom!) * tf(0.06);
 
     if (_frameInFlight) return;
     _frameInFlight = true;
@@ -427,11 +516,13 @@ class TrackingMapCamera {
           .setCamera(
         mapbox.CameraOptions(
           center: mapbox.Point(
-            coordinates: mapbox.Position(centerLng, centerLat),
+            coordinates: mapbox.Position(
+              _followCenter!.longitude,
+              _followCenter!.latitude,
+            ),
           ),
-          zoom: _approachZoom,
-          // Flat and north-up while waiting: a tilted, rotating map is
-          // disorienting when you are standing still reading it.
+          zoom: _followZoom,
+          // Flat and north-up: the rider is reading a route, not driving it.
           bearing: 0,
           pitch: 0,
         ),
@@ -439,23 +530,14 @@ class TrackingMapCamera {
           .then((_) {
         _frameInFlight = false;
       }).catchError((e) {
-        debugPrint('[TrackingMapCamera] approach setCamera failed: $e');
+        debugPrint('[TrackingMapCamera] follow setCamera failed: $e');
         _frameInFlight = false;
       });
     } catch (e) {
-      debugPrint('[TrackingMapCamera] approach setCamera error: $e');
+      debugPrint('[TrackingMapCamera] follow setCamera error: $e');
       _frameInFlight = false;
     }
   }
-
-  double _zoomToFitSpan(
-    LatLng a,
-    LatLng b,
-    Size screen,
-    double topPadding,
-    double bottomPadding,
-  ) =>
-      zoomToFitSpan(a, b, screen, topPadding, bottomPadding);
 
   void stopNavigationChase() {
     _navChaseActive = false;

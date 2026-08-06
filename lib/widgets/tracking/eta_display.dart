@@ -467,7 +467,7 @@ extension _RiderTrackingEtaDisplay on _RiderTrackingScreenState {
                     }
                     if (!mounted) return;
                     // Navigate to rider home with smooth fade
-                    Navigator.of(context).pushAndRemoveUntil(
+                    _nav?.pushAndRemoveUntil(
                       PageRouteBuilder(
                         pageBuilder: (_, __, ___) => const HomeScreen(),
                         transitionsBuilder: (_, anim, __, child) {

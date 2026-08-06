@@ -24,7 +24,7 @@ extension _RiderTrackingActionButtons on _RiderTrackingScreenState {
     try {
       await ApiService.requestTripCancel(tripId: widget.tripId!);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      _messenger?.showSnackBar(
         SnackBar(
           content: Text(S.of(context).cancelRequestSentToSupport),
           behavior: SnackBarBehavior.floating,
@@ -33,7 +33,7 @@ extension _RiderTrackingActionButtons on _RiderTrackingScreenState {
     } catch (e) {
       debugPrint('[RiderTracking] requestTripCancel(${widget.tripId}) failed: $e');
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      _messenger?.showSnackBar(
         SnackBar(
           content: Text(S.of(context).cancelOnServerFailedActive),
           backgroundColor: Colors.orange.shade800,
@@ -58,7 +58,7 @@ extension _RiderTrackingActionButtons on _RiderTrackingScreenState {
     if (!backendOk && mounted) {
       // Show a warning but continue the flow so the rider isn't stuck.
       // Backend will eventually reconcile via the dispatch auto-cancel loop.
-      ScaffoldMessenger.of(context).showSnackBar(
+      _messenger?.showSnackBar(
         SnackBar(
           content: Text(S.of(context).cancelRequestRetryBackground),
           backgroundColor: Colors.orange.shade800,
@@ -76,7 +76,7 @@ extension _RiderTrackingActionButtons on _RiderTrackingScreenState {
     await Future.delayed(const Duration(milliseconds: 1500));
     if (!mounted) return;
     widget.onTripComplete?.call();
-    Navigator.of(context).pushAndRemoveUntil(
+    _nav?.pushAndRemoveUntil(
       PageRouteBuilder(
         pageBuilder: (_, __, ___) => const HomeScreen(),
         transitionsBuilder: (_, a, __, child) =>
@@ -197,7 +197,7 @@ extension _RiderTrackingActionButtons on _RiderTrackingScreenState {
     // a button that silently ignores a tap reads as broken.
     if (widget.tripId == null) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
+        _messenger?.showSnackBar(
           SnackBar(
             content: Text(S.of(context).couldNotShareTripError('no trip')),
             behavior: SnackBarBehavior.floating,
@@ -212,7 +212,7 @@ extension _RiderTrackingActionButtons on _RiderTrackingScreenState {
       final shareUrl = result['share_url'] as String?;
       if (shareUrl == null) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
+          _messenger?.showSnackBar(
             SnackBar(
               content: Text(S.of(context).couldNotShareTripError('no link')),
               behavior: SnackBarBehavior.floating,
@@ -233,7 +233,7 @@ extension _RiderTrackingActionButtons on _RiderTrackingScreenState {
       AnalyticsService.instance.logEvent('trip_shared');
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      _messenger?.showSnackBar(
         SnackBar(
           content: Text(S.of(context).couldNotShareTripError(e.toString())),
           behavior: SnackBarBehavior.floating,
@@ -306,7 +306,7 @@ extension _RiderTrackingActionButtons on _RiderTrackingScreenState {
                     Navigator.of(ctx).pop();
                     if (!mounted) return;
                     widget.onTripComplete?.call();
-                    Navigator.of(context).pushAndRemoveUntil(
+                    _nav?.pushAndRemoveUntil(
                       PageRouteBuilder(
                         pageBuilder: (_, __, ___) => const HomeScreen(),
                         transitionsBuilder: (_, a, __, child) =>
@@ -414,7 +414,7 @@ extension _RiderTrackingActionButtons on _RiderTrackingScreenState {
                   onPressed: () {
                     Navigator.pop(ctx);
                     // Navigate to contact support
-                    Navigator.of(context).push(
+                    _nav?.push(
                       slideFromRightRoute(
                         const ChatScreen(
                           recipientName: 'Support',
@@ -553,7 +553,8 @@ extension _RiderTrackingActionButtons on _RiderTrackingScreenState {
     // Capture the messenger BEFORE the async gap so we still have a
     // valid handle even if the parent navigates away while the IIFE
     // is awaiting the network call.
-    final messenger = ScaffoldMessenger.of(context);
+    final messenger = _messenger;
+    if (messenger == null) return;
     final dispatchNotifiedText = S.of(context).dispatchNotifiedSnack;
     // Fire-and-forget: create the action request. The support chat still
     // opens regardless so the rider can add context.
@@ -577,7 +578,7 @@ extension _RiderTrackingActionButtons on _RiderTrackingScreenState {
       }
     }());
     if (!mounted) return;
-    Navigator.of(context).push(
+    _nav?.push(
       slideFromRightRoute(
         ChatScreen(
           recipientName: 'Support',

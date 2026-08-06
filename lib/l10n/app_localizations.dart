@@ -3306,6 +3306,10 @@ class S {
   String get remainingLabel => _es ? 'restante' : 'remaining';
   String get resumeNav => _es ? 'Reanudar' : 'Resume';
 
+  /// Tracking map: puts the whole remaining route back on screen after the
+  /// rider has panned or pinched.
+  String get recenterRoute => _es ? 'Ver ruta' : 'Show route';
+
   // ── Face Liveness Screen (new step keys) ──────────────────────────────────
   String get centerYourFace => _es ? 'Centra tu rostro' : 'Center your face';
   String get turnHeadRight =>

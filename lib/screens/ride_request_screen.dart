@@ -30,6 +30,7 @@ import '../services/api_service.dart';
 import '../services/driver_wait_estimate.dart';
 import '../services/directions_service.dart';
 import '../services/local_data_service.dart';
+import '../services/user_session.dart';
 import '../services/local_cache.dart';
 import '../services/payment_service.dart';
 import '../services/analytics_service.dart';
@@ -480,6 +481,91 @@ class _RideRequestScreenState extends State<RideRequestScreen>
   /// away from paying by a method they had not agreed to. An empty value
   /// makes the row read "Choose a payment method", which is the truth.
   String _selectedPaymentMethod = '';
+
+  /// The one account allowed to pay with Test Mode: App Review needs a way
+  /// to complete a ride without a real card on file, and no real rider
+  /// should ever be offered a payment option that moves no money.
+  static const String _kTestModeAccount = 'applereview@cruiseinride.com';
+
+  /// True only while that account is signed in. Resolved once at init.
+  ///
+  /// Read this for anything the rider only looks at. Anything that decides
+  /// whether money moves must go through [_isTestModeActive] instead: this
+  /// field is still false while the resolution is in flight.
+  bool _testModeAllowed = false;
+
+  /// The one resolution, shared by every caller. Two unawaited copies used
+  /// to settle in whatever order they liked.
+  Future<bool>? _testModeGate;
+
+  /// Never completes with an error: a gate that throws is a gate some
+  /// caller's catch block turns into a free ride.
+  Future<bool> _ensureTestModeResolved() =>
+      _testModeGate ??= _resolveTestModeAccount().catchError((Object e) {
+        debugPrint('[RideRequest] test mode gate threw — denied: $e');
+        return false;
+      });
+
+  /// The single place that decides a ride may skip the charge. The backend
+  /// has no test_mode branch at all, so nothing downstream re-checks this.
+  Future<bool> _isTestModeActive() async {
+    final allowed = await _ensureTestModeResolved();
+    if (!mounted) return false;
+    return allowed && _selectedPaymentMethod == 'test_mode';
+  }
+
+  Future<bool> _resolveTestModeAccount() async {
+    bool allowed = false;
+    try {
+      final user = await UserSession.getUser();
+      final email = (user?['email'] ?? '').trim().toLowerCase();
+      allowed = email == _kTestModeAccount;
+    } catch (e) {
+      debugPrint('[RideRequest] test mode account unreadable — denied: $e');
+    }
+    if (!allowed) {
+      // Clearing only the field left the key in prefs, so the selection came
+      // back on the next launch and the gate had nothing to catch it.
+      try {
+        if (await LocalDataService.getDefaultPaymentMethod() == 'test_mode') {
+          await LocalDataService.setDefaultPaymentMethod('');
+        }
+      } catch (e) {
+        debugPrint('[RideRequest] stored test mode not cleared: $e');
+      }
+    }
+    if (!mounted) return allowed;
+    if (allowed != _testModeAllowed) _setState(() => _testModeAllowed = allowed);
+    // Someone who had Test Mode selected before this gate existed would
+    // keep a stored method the picker no longer offers, leaving Request
+    // Ride pointed at a payment that cannot be charged.
+    if (!allowed && _selectedPaymentMethod == 'test_mode') {
+      _setState(() => _selectedPaymentMethod = '');
+    }
+    return allowed;
+  }
+
+  Future<void> _restoreDefaultPaymentMethod() async {
+    String? stored;
+    try {
+      stored = await LocalDataService.getDefaultPaymentMethod();
+    } catch (e) {
+      debugPrint('[RideRequest] default payment method not restored: $e');
+      return;
+    }
+    if (!mounted) return;
+    final id = stored;
+    if (id == null || id.isEmpty) return;
+    // Ordered on purpose: this restore and the gate resolution were both
+    // unawaited futures, so whichever landed last won, and a stored
+    // 'test_mode' landing second put the free ride back on the button.
+    if (id == 'test_mode') {
+      final allowed = await _ensureTestModeResolved();
+      if (!mounted || !allowed) return;
+    }
+    _setState(() => _selectedPaymentMethod = id);
+  }
+
   Set<String> _linkedPaymentMethods = {};
   String? _savedCardLast4;
   String? _savedCardBrand;
@@ -657,10 +743,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
     // found here was asked for. Nothing found means nothing preselected,
     // and the row says "Choose a payment method" — which is the honest
     // state for a rider who has never told us how they want to pay.
-    unawaited(LocalDataService.getDefaultPaymentMethod().then((id) {
-      if (!mounted || id == null || id.isEmpty) return;
-      setState(() => _selectedPaymentMethod = id);
-    }));
+    unawaited(_restoreDefaultPaymentMethod());
 
     // Load Cruise Cash balance once so the picked vehicle card can show
     // the discount preview. Fire-and-forget — failure is silent (the
@@ -838,6 +921,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
     }
     // GoldLocationDot replaced by LocationPuck — no dot annotation needed
     _loadLinkedPayments();
+    unawaited(_ensureTestModeResolved());
     _loadPinIcon();
 
     // ── In-place map picker bootstrap ─────────────────────────────────
@@ -1290,11 +1374,31 @@ class _RideRequestScreenState extends State<RideRequestScreen>
               // Bottom floating "Set your drop-off" card — lifted a touch
               // off the edge so it floats over the map like the rest of
               // the panels instead of hugging the bezel.
+              //
+              // The recenter button rides in this same block, directly
+              // above the card. The screen-level one is anchored to
+              // _sheetHeightPx, which nothing reports during the picker —
+              // it fell back to a fixed 160 and landed ON the card, over
+              // the address row.
               Positioned(
                 left: 10,
                 right: 10,
                 bottom: 28,
-                child: _buildPickerFooter(),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.only(right: 2, bottom: 12),
+                      child: _circleButton(
+                        icon: Icons.my_location_rounded,
+                        onTap: _recenterMap,
+                        c: c,
+                      ),
+                    ),
+                    _buildPickerFooter(),
+                  ],
+                ),
               ),
             ],
 
@@ -1343,7 +1447,18 @@ class _RideRequestScreenState extends State<RideRequestScreen>
             // 2026-08-04 — was top-right). AnimatedPositioned so it
             // travels with the sheet's own 380ms grow/shrink instead of
             // teleporting when a tier is picked.
-            if (phase != RiderPhase.idle)
+            //
+            // Only for the phases whose panel actually reports its height.
+            // The picker and the searching card carry their own copy of
+            // this button, welded above their own card: anchoring them to
+            // _sheetHeightPx left the button floating in the middle of the
+            // map (stale height) or sitting on top of the card (no report
+            // at all).
+            if (phase != RiderPhase.idle &&
+                phase != RiderPhase.pickingLocation &&
+                phase != RiderPhase.requesting &&
+                phase != RiderPhase.searchingDriver &&
+                phase != RiderPhase.driverAssigned)
               AnimatedPositioned(
                 duration: const Duration(milliseconds: 380),
                 curve: Curves.easeInOutCubicEmphasized,

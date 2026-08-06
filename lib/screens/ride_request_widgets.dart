@@ -1565,9 +1565,12 @@ extension _RideRequestWidgets on _RideRequestScreenState {
         child: Stack(
           clipBehavior: Clip.none,
           children: [
-            // No Faster badge on a closed tile (user spec 2026-08-06): the
-            // grid says the tier and its wait, and the badge belongs to the
-            // open card, where it sits on the "2-4 min away" line.
+            // No Faster badge on a closed tile (user spec 2026-08-06). A
+            // tile this size has room for the tier, its car and its wait,
+            // and nothing else: under the minutes the badge landed on top
+            // of them, and the corner treatment it replaced was the one
+            // that started this. It lives on the open card, on the
+            // "2-4 min away" line.
             Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
@@ -2656,7 +2659,25 @@ extension _RideRequestWidgets on _RideRequestScreenState {
         opacity: _searchingShowMap ? 1.0 : 0.0,
         child: IgnorePointer(
           ignoring: !_searchingShowMap,
-          child: _SheetSizeReporter(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              // Recenter, welded directly above this card instead of
+              // anchored to _sheetHeightPx — that height still held the
+              // choose-a-vehicle sheet here, which parked the button in the
+              // middle of the map, nowhere near the card it belongs to.
+              // Outside the reporter below, so the camera's bottom inset
+              // keeps measuring the card alone.
+              Padding(
+                padding: const EdgeInsets.only(right: 2, bottom: 12),
+                child: _circleButton(
+                  icon: Icons.my_location_rounded,
+                  onTap: _recenterMap,
+                  c: c,
+                ),
+              ),
+              _SheetSizeReporter(
             onChanged: _onSheetHeightChanged,
             child: Container(
             decoration: BoxDecoration(
@@ -2997,6 +3018,8 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                 ),
             ),
           ),
+          ),
+            ],
           ),
         ),
       ),

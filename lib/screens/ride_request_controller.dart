@@ -1154,10 +1154,16 @@ extension _RideRequestController on _RideRequestScreenState {
     RideOption? option,
     void Function(void Function()) setSheetState,
   ) async {
+    // Resolved before the re-entrancy guard, never between it and
+    // _rideFlowLocked: an await in that gap spans event-loop turns while the
+    // lock still reads false, so a second tap walks straight into the charge.
+    final bool isTestMode = await _isTestModeActive();
+    if (!mounted) return;
+
     if (_rideFlowLocked || _isProcessingPayment) return;
 
     // Validate payment method exists before proceeding
-    if (!_hasAnyPaymentMethod && _selectedPaymentMethod != 'test_mode') {
+    if (!_hasAnyPaymentMethod && !isTestMode) {
       _showAddPaymentMethodDialog();
       return;
     }
@@ -1232,10 +1238,19 @@ extension _RideRequestController on _RideRequestScreenState {
   /// Processes payment directly from the route preview sheet.
   Future<void> _startRideDirectly(AppColors c, RideOption? option) async {
     if (option == null) return;
+
+    // Resolved once, and before the re-entrancy guard below — never between
+    // that guard and _rideFlowLocked. An await in that gap spans event-loop
+    // turns while the lock still reads false, so a second tap walks straight
+    // into the charge. Every branch further down that skips the charge reads
+    // this same answer instead of re-testing the selected id.
+    final bool isTestMode = await _isTestModeActive();
+    if (!mounted) return;
+
     if (_rideFlowLocked || _isProcessingPayment) return;
 
     // Validate payment method exists before proceeding
-    if (!_hasAnyPaymentMethod && _selectedPaymentMethod != 'test_mode') {
+    if (!_hasAnyPaymentMethod && !isTestMode) {
       _showAddPaymentMethodDialog();
       return;
     }
@@ -1261,9 +1276,6 @@ extension _RideRequestController on _RideRequestScreenState {
     try {
       final nav = _nav;
       if (nav == null) return;
-
-      // Test mode: skip payment entirely
-      final bool isTestMode = _selectedPaymentMethod == 'test_mode';
 
       // Native pay (Apple/Google Pay/PayPal): OS sheet must appear first.
       // Card / sandbox: payment runs inside the searching screen animation.
@@ -2248,10 +2260,10 @@ extension _RideRequestController on _RideRequestScreenState {
     final picked = await showRidePaymentMethodPicker(
       context,
       currentMethod: current,
-      // Test mode always visible — matches the web widget where the
-      // Modo de Prueba tile is always in the picker so operators can
-      // simulate a payment without a real card on file.
-      showTestMode: true,
+      // Test Mode is for App Review only (user spec 2026-08-06). It used
+      // to be in every rider's picker — a tile that completes a ride
+      // without charging anything, one tap away for anyone.
+      showTestMode: _testModeAllowed,
     );
     // The sheet's Cruise Balance toggle may have changed — refresh the
     // discount preview either way before reading the result.
@@ -2531,7 +2543,8 @@ extension _RideRequestController on _RideRequestScreenState {
 
   /// Processes payment with currently selected method
   Future<bool> _processPaymentWithSelectedMethod(int amountCents, RideOption option) async {
-    final isTestMode = _selectedPaymentMethod == 'test_mode';
+    final isTestMode = await _isTestModeActive();
+    if (!mounted) return false;
     if (isTestMode) return true;
     if (_selectedPaymentMethod == 'cruise_cash') {
       // No hold/charge at request time — the backend debits the balance
@@ -2584,7 +2597,7 @@ void _showPaymentMethodPickerLegacy(AppColors c, RideOption? option) {
         true,
       ),
       ('paypal', 'PayPal', true),
-      ('test_mode', 'Test Mode', true),
+      if (_testModeAllowed) ('test_mode', 'Test Mode', true),
     ];
 
     showModalBottomSheet(
@@ -2800,7 +2813,11 @@ void _showPaymentMethodPickerLegacy(AppColors c, RideOption? option) {
   /// that can't actually be charged.
   bool get _hasAnyPaymentMethod {
     switch (_selectedPaymentMethod) {
+      // Test Mode moves no money, so it counts as a method only for the one
+      // account allowed to use it — otherwise a stale selection enables
+      // Request Ride for a rider who has nothing on file.
       case 'test_mode':
+        return _testModeAllowed;
       case 'paypal':
       case 'apple_pay':
       case 'google_pay':

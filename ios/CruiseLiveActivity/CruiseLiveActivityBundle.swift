@@ -100,7 +100,9 @@ private struct OfferCard: View {
   var compact: Bool = false
 
   var body: some View {
-    VStack(alignment: .leading, spacing: compact ? 8 : 12) {
+    // 14/18, was 8/12: the money row sat almost on top of the route bar,
+    // which read as one crowded block instead of two things to look at.
+    VStack(alignment: .leading, spacing: compact ? 14 : 18) {
       HStack(alignment: .center, spacing: 10) {
         CruiseLogoView(size: compact ? 26 : 34)
         // The money the driver is being offered, in the size Uber gives
@@ -125,7 +127,10 @@ private struct OfferCard: View {
             .minimumScaleFactor(0.75)
             .padding(.horizontal, compact ? 6 : 10)
             .padding(.vertical, compact ? 3 : 5)
-            .background(Capsule().fill(cruiseGold))
+            // Rounded rect, not a Capsule: at this height a capsule reads
+            // as a lozenge and fights the squarer card around it.
+            .background(RoundedRectangle(cornerRadius: compact ? 7 : 9)
+              .fill(cruiseGold))
         }
         Spacer(minLength: 4)
         VStack(alignment: .trailing, spacing: 1) {
@@ -212,7 +217,11 @@ struct CruiseLiveActivityWidget: Widget {
           DynamicIslandExpandedRegion(.bottom) {
             OfferCard(state: state, compact: true)
               .padding(.horizontal, 4)
-              .padding(.top, 2)
+              // Lifted off both edges. The money row was sitting almost on
+              // the island's rim, which is what made the whole thing read as
+              // one squashed oval rather than a card.
+              .padding(.top, 8)
+              .padding(.bottom, 6)
           }
         } compactLeading: {
           CruiseLogoView(size: 23)

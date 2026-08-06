@@ -3315,6 +3315,27 @@ class S {
   /// rider has panned or pinched.
   String get recenterRoute => _es ? 'Ver ruta' : 'Show route';
 
+  // ── Driver: add bank account for weekly payouts ──
+  String get addBankAccountTitle =>
+      _es ? 'Agrega tu banco' : 'Add your bank';
+  String get addBankAccountSubtitle => _es
+      ? 'Tus ganancias de la semana llegan aquí cada miércoles, sin comisión.'
+      : 'Your weekly earnings land here every Wednesday, with no fee.';
+  String get accountHolderName =>
+      _es ? 'Nombre del titular' : 'Name of account holder';
+  String get routingNumberInvalid => _es
+      ? 'Ese routing number no es válido'
+      : "That routing number isn't valid";
+  String get bankAccountNumber =>
+      _es ? 'Número de cuenta' : 'Bank account number';
+  String get reenterAccountNumber =>
+      _es ? 'Repite el número de cuenta' : 'Re-enter account number';
+  String get accountNumbersDoNotMatch =>
+      _es ? 'Los números no coinciden' : "The numbers don't match";
+  String get bankNumbersNeverStored => _es
+      ? 'Tus números van directo a Stripe. Cruise nunca los guarda ni los ve.'
+      : 'Your numbers go straight to Stripe. Cruise never stores or sees them.';
+
   /// Shown when the driver is sent to Stripe to finish verifying their
   /// account before a bank can be linked.
   String get verifyIdentityToGetPaid => _es

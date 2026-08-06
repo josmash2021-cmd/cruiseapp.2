@@ -8,6 +8,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../l10n/app_localizations.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import 'add_bank_account_screen.dart';
+
 import '../../services/api_service.dart';
 import '../../services/haptic_service.dart';
 import '../../services/user_session.dart';
@@ -792,6 +794,24 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
     HapticService.mediumImpact();
     if (kIsWeb) {
       _snack(S.of(context).bankLinkMobileOnly, error: true);
+      return;
+    }
+
+    // Our own form, full screen: routing, account, re-enter. The driver
+    // asked for the numbers to be typed here rather than in a Stripe sheet,
+    // and that is safe because the digits go from the SDK straight to Stripe
+    // — AddBankAccountScreen posts only the resulting btok_ back to us.
+    //
+    // Everything below (the Financial Connections sheet) stays as the
+    // fallback for a driver who would rather pick their bank by logging into
+    // it, and for the case where Stripe rejects a manually typed account.
+    final added = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(builder: (_) => const AddBankAccountScreen()),
+    );
+    if (!mounted) return;
+    if (added == true) {
+      _snack(S.of(context).bankAccountLinked);
+      await _loadMethods();
       return;
     }
 

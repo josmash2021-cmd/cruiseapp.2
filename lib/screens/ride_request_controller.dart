@@ -321,6 +321,27 @@ extension _RideRequestController on _RideRequestScreenState {
 
   // ── Location ──
 
+  /// Whether the GPS resolution in [_initLocation] is allowed to move the
+  /// camera. It resolves the rider's own position, which is only ever a
+  /// sensible place to point the map at when nothing else owns the frame.
+  ///
+  /// Never during the pin-drop picker. The rider is choosing a point that by
+  /// definition is not where they are standing, and the screen was handed a
+  /// handoff camera to boot at — so flying to their GPS there is wrong every
+  /// time, not just sometimes. `route == null` alone did not cover it: the
+  /// route is still being fetched while the picker opens, so the guard was
+  /// wide open, and the last-known fix lands within milliseconds. A rider who
+  /// started dragging immediately had the map yanked back mid-gesture by a
+  /// `setCamera` — instant, no animation, which is why it read as a snap.
+  ///
+  /// `widget.pickerMode` is checked as well as the phase because the phase is
+  /// only set in a post-frame callback, and the last-known fix can beat it.
+  bool get _gpsMayMoveCamera =>
+      !widget.pickerMode &&
+      _ctrl.state.phase != RiderPhase.pickingLocation &&
+      _ctrl.state.route == null &&
+      !_userTookCamera;
+
   Future<void> _initLocation() async {
     try {
       // The empty booking sheet starts here.
@@ -384,19 +405,22 @@ extension _RideRequestController on _RideRequestScreenState {
         // then the route may already be framed, and this late flight would
         // yank the camera off it. Also mark the move as ours: unmarked it
         // used to read as a rider pan and disable every later auto-frame.
-        if (_ctrl.state.route == null && !_userTookCamera) {
+        if (_gpsMayMoveCamera) {
           _webAutoCameraUntil =
               DateTime.now().add(const Duration(milliseconds: 1050));
           _webMapCtrl?.flyTo(
               lng: center.longitude, lat: center.latitude, zoom: 15.5,
               durationMs: 800);
+          // Was outside the guard entirely. Harmless only by accident —
+          // _mapCtrl is null on web, so it never fired here — but it is the
+          // same unconditional teleport the guard above exists to prevent.
+          _mapCtrl?.setCamera(mapbox.CameraOptions(
+            center: mapbox.Point(
+              coordinates: mapbox.Position(center.longitude, center.latitude),
+            ),
+            zoom: 15.5,
+          ));
         }
-        _mapCtrl?.setCamera(mapbox.CameraOptions(
-          center: mapbox.Point(
-            coordinates: mapbox.Position(center.longitude, center.latitude),
-          ),
-          zoom: 15.5,
-        ));
         // Reverse geocode the fix so the pickup label isn't a lie — the
         // seed path keeps the sheet's default label instead.
         if (fix != null) {
@@ -465,7 +489,11 @@ extension _RideRequestController on _RideRequestScreenState {
           // moved the map (picker drag included) it belongs to them. This
           // unguarded write used to teleport the camera back to the rider
           // whenever the last-known fix landed between cinematic ticks.
-          if (_ctrl.state.route == null && !_userTookCamera) {
+          //
+          // This is the one the rider felt in the drop-off picker: cached, so
+          // it answers in milliseconds, and instant, so it does not glide —
+          // it snaps.
+          if (_gpsMayMoveCamera) {
             _mapCtrl?.setCamera(mapbox.CameraOptions(
               center: mapbox.Point(coordinates: mapbox.Position(lastLl.longitude, lastLl.latitude)),
               zoom: 15.5,
@@ -493,7 +521,7 @@ extension _RideRequestController on _RideRequestScreenState {
       // settled on the route frame (this abandoned it and glided to the
       // pickup at street zoom — the "animation destroyed, map parked at the
       // pickup" report). Same rule as above and as the web branch.
-      if (_ctrl.state.route == null && !_userTookCamera) {
+      if (_gpsMayMoveCamera) {
         _mapCtrl?.flyTo(
           mapbox.CameraOptions(center: mapbox.Point(coordinates: mapbox.Position(ll.longitude, ll.latitude)), zoom: 15.5),
           mapbox.MapAnimationOptions(duration: 800),

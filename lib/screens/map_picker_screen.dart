@@ -55,6 +55,10 @@ class _MapPickerScreenState extends State<MapPickerScreen>
   bool _loading = false;
   bool _geocodeFailed = false;
   LatLng _center = const LatLng(40.7128, -74.0060);
+
+  /// Set the first time the rider pans or zooms. From then on the camera is
+  /// theirs and [_resolveGpsCenter] must not fly it anywhere.
+  bool _userMovedMap = false;
   Timer? _debounce;
   int _geocodeGen = 0; // generation counter to cancel stale requests
   late final AnimationController _settleCtrl;
@@ -95,6 +99,18 @@ class _MapPickerScreenState extends State<MapPickerScreen>
         locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
       ).timeout(const Duration(seconds: 5));
       if (!mounted) return;
+      // A high-accuracy fix can take the whole 5s. If the rider has already
+      // started aiming the map in the meantime, this flight is not a helpful
+      // default any more — it is the map being pulled out of their hands.
+      //
+      // _center is left alone too, not just the camera: once the rider has
+      // aimed, the camera is what Confirm commits, and overwriting the centre
+      // here would hand them an address for a place they never pointed at.
+      if (_userMovedMap) {
+        debugPrint('[MapPicker] GPS fix arrived after the rider moved the '
+            'map — keeping their camera and centre');
+        return;
+      }
       _center = LatLng(pos.latitude, pos.longitude);
       // Same fix on the web surface — the native controller is null there.
       _webMapCtrl?.flyTo(
@@ -115,8 +131,10 @@ class _MapPickerScreenState extends State<MapPickerScreen>
           mapbox.MapAnimationOptions(duration: 800),
         );
       }
-    } catch (_) {
-      // GPS unavailable — keep default center
+    } catch (e) {
+      // Not fatal — the default centre still works — but silence here meant
+      // a picker that opened on the wrong city looked like a map bug.
+      debugPrint('[MapPicker] GPS centre unavailable, keeping default: $e');
     }
   }
 
@@ -201,8 +219,16 @@ class _MapPickerScreenState extends State<MapPickerScreen>
     final map = _mapCtrl;
     if (map == null) return;
     map.getCameraState().then((state) {
+      // The screen can pop while this platform call is in flight; writing the
+      // centre afterwards would leave Confirm holding a coordinate from a
+      // camera nobody is looking at any more.
+      if (!mounted) return;
       final coords = state.center.coordinates;
       _center = LatLng(coords.lat.toDouble(), coords.lng.toDouble());
+    }).catchError((Object e) {
+      // Was an unhandled async error: getCameraState throws once the surface
+      // is gone, and _center then silently kept a stale value.
+      debugPrint('[MapPicker] camera read failed: $e');
     });
   }
 
@@ -469,6 +495,10 @@ class _MapPickerScreenState extends State<MapPickerScreen>
               onControllerCreated: (c) {
                 _webMapCtrl = c;
                 c.applyNavyGoldTheme();
+                // Only the hand reaches onUserGesture; onCameraMove below
+                // also fires for our own flights and would latch on the very
+                // move the latch exists to stop.
+                c.onUserGesture = () => _userMovedMap = true;
                 c.onCameraMove = (_, __, ___) {
                   final ctr = c.getCenter();
                   _center = LatLng(ctr.lat, ctr.lng);
@@ -509,6 +539,15 @@ class _MapPickerScreenState extends State<MapPickerScreen>
               onStyleLoadedListener: (_) async {
                 if (_mapCtrl != null) await MapTheme.applyNavyGold(_mapCtrl!);
               },
+              // The picker's whole job is letting the rider aim the map, so
+              // the moment they touch it the camera is theirs. Without this
+              // the GPS resolution below could still be in flight — up to 5s
+              // — and its flyTo tore the map out from under the drag.
+              // onCameraChangeListener cannot serve here: it also fires for
+              // our own flights, so it would latch on the very move it is
+              // meant to prevent.
+              onScrollListener: (_) => _userMovedMap = true,
+              onZoomListener: (_) => _userMovedMap = true,
               onCameraChangeListener: _onCameraChanged,
               onMapIdleListener: _onMapIdle,
             ),

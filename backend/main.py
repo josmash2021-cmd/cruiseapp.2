@@ -153,13 +153,17 @@ from config import (
 # ── Tiered rate limiter (auth vs general API) ─────────────────
 from middleware.rate_limit import rate_limiter as _tiered_rate_limiter
 
-# Payday. Monday is 0, so Wednesday is 2 (driver request 2026-08-06 — it ran
-# on Tuesday before). Named rather than inlined into the `% 7` because the day
-# is a business decision and was previously findable only by reading the
-# arithmetic. Times are UTC: 02:00 UTC is Tuesday 21:00 in Alabama, so a
-# Wednesday run lands late Tuesday evening local — worth knowing before moving
-# it again.
-_PAYOUT_WEEKDAY = 2
+# When the transfer is SENT, which is not when the driver sees the money.
+#
+# The week worked is Monday to Sunday. The run goes out Monday (weekday 0),
+# and a US bank credit takes about two business days, so it lands Wednesday —
+# which is the day the driver was promised. Setting this to Wednesday, as it
+# briefly was, would have paid them on Friday.
+#
+# Monday is 0. 02:00 UTC is Sunday 21:00 in Alabama, so the run fires late
+# Sunday evening local — after the week it is paying for has closed, which is
+# the point.
+_PAYOUT_WEEKDAY = 0
 _PAYOUT_HOUR_UTC = 2
 
 
@@ -714,7 +718,7 @@ _SCHEDULER_LOCK_KEY = 771_120_045
 
 
 async def _schedule_weekly_payouts():
-    """Background loop: sleep until the next payday (Wednesday 02:00 UTC), run payouts, repeat."""
+    """Background loop: sleep until the next run (Monday 02:00 UTC, lands Wednesday), run payouts, repeat."""
     # A redeploy that interrupted a payout run is worth hearing about now,
     # not next Tuesday — this is the closest thing to a boot-time alarm the
     # payout has. Read-only, so it cannot make anything worse.

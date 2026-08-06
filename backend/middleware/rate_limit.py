@@ -171,6 +171,8 @@ class ResilientRateLimiter:
         self._degraded_since = 0.0
         self._next_probe = 0.0
         self._degradations = 0
+        self._next_degraded_log = 0.0
+        self._degraded_log_interval = 60.0
 
     @property
     def _requests(self) -> dict[str, list[float]]:
@@ -202,6 +204,15 @@ class ResilientRateLimiter:
             # FAIL OPEN on the Redis backend: rate limiting is a protection,
             # not a correctness invariant. Never let it take the site down.
             self._mark_degraded(e, now)
+            # Throw the connection away rather than let the next probe pick the
+            # same broken socket back out of the pool — without this the
+            # limiter degrades once and never recovers.
+            reset = getattr(self._redis_limiter, "reset", None)
+            if reset is not None:
+                try:
+                    await reset()
+                except Exception:
+                    pass
             self._memory.check(key, max_requests, window_seconds)
             return
 
@@ -209,17 +220,27 @@ class ResilientRateLimiter:
             self._mark_recovered()
 
     def _mark_degraded(self, exc: Exception, now: float) -> None:
-        """Enter/extend the degraded window, logging ONCE per outage."""
+        """Enter/extend the degraded window, logging at a bounded rate."""
         self._next_probe = now + self._retry_cooldown
         if self._degraded:
-            return  # already logged for this outage - do not flood at request rate
+            # Still down. Silence at request rate, but not for ever: one line
+            # per outage left a stuck degradation undiagnosable — the reason it
+            # was not recovering was exactly the thing being suppressed.
+            if now >= self._next_degraded_log:
+                self._next_degraded_log = now + self._degraded_log_interval
+                logger.error(
+                    "[RateLimit] still degraded after %.0fs - Redis says: %s",
+                    now - self._degraded_since, exc,
+                )
+            return
         self._degraded = True
         self._degraded_since = now
         self._degradations += 1
+        self._next_degraded_log = now + self._degraded_log_interval
         logger.error(
             "[RateLimit] Redis unavailable (%s) - degrading to in-memory limiting. "
-            "Further failures silenced until recovery.",
-            exc,
+            "Repeating at most every %.0fs until it recovers.",
+            exc, self._degraded_log_interval,
         )
 
     def _mark_recovered(self) -> None:

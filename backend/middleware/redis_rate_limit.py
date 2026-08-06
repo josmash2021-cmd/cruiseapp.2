@@ -33,7 +33,18 @@ logger = logging.getLogger(__name__)
 # path of EVERY request, so a hung Redis must never stall the event loop: we
 # would rather lose distributed limiting for a few seconds than add this
 # latency to every trip create and driver accept.
-_DEFAULT_OP_TIMEOUT = 0.5
+#
+# It MUST stay above _CONNECT_TIMEOUT. At 0.5s against a 5s connect timeout,
+# any request that had to open a fresh connection was cancelled by the outer
+# wait_for before the socket finished connecting — and a wait_for that fires
+# mid-pipeline leaves that pooled connection half-written, so the next probe
+# reused a poisoned connection and failed the same way. The limiter degraded
+# within minutes of deploy and never recovered.
+_DEFAULT_OP_TIMEOUT = 2.0
+
+# Connect must fail *inside* the operation budget, so a connect problem is
+# reported as a connect error rather than as an outer cancellation.
+_CONNECT_TIMEOUT = 1.0
 
 
 def _op_timeout() -> float:
@@ -146,6 +157,23 @@ class RedisRateLimiter:
                 detail="Too many requests. Please try again later.",
             )
 
+    async def reset(self) -> None:
+        """Drop every pooled connection so the next attempt reconnects clean.
+
+        A timeout that fires mid-pipeline leaves that connection half-written.
+        redis-py hands it straight back to the pool, so without this the next
+        probe picks up the same broken socket and fails identically — which is
+        how the limiter degraded once and then stayed degraded for good. Best
+        effort: this runs on the failure path and must never raise.
+        """
+        pool = getattr(self._redis, "connection_pool", None)
+        if pool is None:
+            return
+        try:
+            await pool.disconnect(inuse_connections=True)
+        except Exception as e:
+            logger.debug("[RateLimit] pool reset failed (non-fatal): %s", e)
+
     def get_stats(self) -> dict:
         """Return diagnostic info for /health endpoints."""
         return {
@@ -172,7 +200,7 @@ def _create_redis_client():
         client = aioredis.from_url(
             redis_url,
             decode_responses=True,
-            socket_connect_timeout=5,
+            socket_connect_timeout=min(_CONNECT_TIMEOUT, _op_timeout()),
             # Bound reads/writes too, not just connect: without this a
             # half-open socket to a restarting Redis blocks until the OS
             # gives up. asyncio.wait_for in check() is the outer guard.

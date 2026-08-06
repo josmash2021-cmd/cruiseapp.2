@@ -96,6 +96,14 @@ def _create_driver_connect_account(_stripe, email: str, **extra):
         "payouts": {"schedule": {"interval": "daily"}},
     }
 
+    # A driver is a person, not a company. Without this Stripe does not know
+    # that and opens onboarding with "Business details" — industry, product
+    # description, "how do you charge your customers" — which is nonsense to
+    # someone who just drives, and is half of why these accounts stall.
+    # Callers that already pass it (the older onboarding route) win via the
+    # setdefault, so nothing is overridden.
+    extra.setdefault("business_type", "individual")
+
     def _mk(caps):
         return _stripe.Account.create(
             type="express", email=email or "", capabilities=caps,

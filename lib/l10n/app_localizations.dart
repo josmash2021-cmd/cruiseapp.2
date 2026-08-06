@@ -3315,6 +3315,9 @@ class S {
   /// rider has panned or pinched.
   String get recenterRoute => _es ? 'Ver ruta' : 'Show route';
 
+  String get verifyYourIdentity =>
+      _es ? 'Verifica tu identidad' : 'Verify your identity';
+
   // ── Driver: add bank account for weekly payouts ──
   String get addBankAccountTitle =>
       _es ? 'Agrega tu banco' : 'Add your bank';

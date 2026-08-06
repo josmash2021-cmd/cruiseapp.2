@@ -6,9 +6,9 @@ import 'package:flutter_stripe/flutter_stripe.dart' as stripe;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../l10n/app_localizations.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import 'add_bank_account_screen.dart';
+import 'stripe_onboarding_screen.dart';
 
 import '../../services/api_service.dart';
 import '../../services/haptic_service.dart';
@@ -857,19 +857,25 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
       if (!ready) {
         final url = await ApiService.getStripeConnectLink();
         if (!mounted) return;
-        final opened = await launchUrl(
-          Uri.parse(url),
-          mode: LaunchMode.externalApplication,
+        // In our own frame, not the browser. Handing the driver to Safari in
+        // the middle of getting paid is where they lose the thread; this
+        // keeps our header and back button around Stripe's page, and returns
+        // true the moment Stripe redirects to one of our return URLs.
+        final done = await Navigator.of(context).push<bool>(
+          MaterialPageRoute(
+            builder: (_) => StripeOnboardingScreen(url: url),
+          ),
         );
         if (!mounted) return;
-        // The same link resumes a half-finished account, so a driver who
-        // backs out partway can tap this again and carry on where they were.
-        _snack(
-          opened
-              ? S.of(context).verifyIdentityToGetPaid
-              : S.of(context).failedToAddMethod,
-          error: !opened,
-        );
+        if (done == true) {
+          // Straight on to the bank form rather than making them find the
+          // button again.
+          await _connectBankAccount();
+          return;
+        }
+        // Backed out partway. The same link resumes a half-finished
+        // account, so tapping again carries on where they left off.
+        _snack(S.of(context).verifyIdentityToGetPaid);
         return;
       }
 

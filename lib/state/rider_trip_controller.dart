@@ -1138,7 +1138,17 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
 
   // ─── Cancel ─────────────────────────────────────────────────
 
-  void cancelRide() {
+  /// Cancel before a driver is matched.
+  ///
+  /// Awaitable on purpose. The backend call used to sit inside an unawaited
+  /// `Future.delayed`, so the local phase flipped to cancelled while the
+  /// request was still in flight — and the caller reset the controller
+  /// immediately after, wiping `_state.tripId`. If that request then failed,
+  /// the fallback had no id left to escalate with and the cancel was simply
+  /// lost: the trip stayed `requested` on the server, and the next time the
+  /// rider opened the app the active-trip restore put them straight back
+  /// into "matching you with a ride" for a ride they had cancelled.
+  Future<void> cancelRide() async {
     // Cancel policy (2026-04-11): the rider may only directly cancel
     // a trip BEFORE a driver has been assigned. If a driver is already
     // matched, the rider must request cancellation through dispatch
@@ -1164,34 +1174,37 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
 
     // Cancel on backend if we have a trip ID
     final tripId = _state.tripId;
-    if (tripId != null) {
-      // Check one more time before actually cancelling — Firestore might have
-      // just written a driver match in the last 100ms.
-      Future.delayed(const Duration(milliseconds: 100), () async {
-        if (_driverMatched) {
-          debugPrint(
-              '[RiderTrip] cancelRide() driver matched during 300ms grace — routing to request-cancel');
-          _routeCancelToDispatch('rider_cancel_after_match_grace');
-          return;
-        }
-        try {
-          await ApiService.cancelTrip(tripId);
-        } catch (e) {
-          debugPrint('[RiderTrip] cancelTrip failed: $e');
-          // Backend rejected the cancel because a driver was assigned in
-          // the same instant — fall through to the dispatch escalation
-          // path so the cancel intent isn't lost.
-          _routeCancelToDispatch('rider_cancel_backend_409');
-          return;
-        }
-      });
-    }
 
+    // Local phase first so the UI closes instantly — the rider tapped cancel
+    // and should not watch a spinner while the network decides.
     _state = _state.copyWith(phase: RiderPhase.cancelled);
     notifyListeners();
-
-    // Clear trip from cache
     unawaited(CacheService.clearActiveTrip());
+
+    if (tripId == null) return;
+
+    // Awaited from here down. The caller resets this controller as soon as we
+    // return, so anything left in flight loses the id it needs.
+    //
+    // Check once more before cancelling — Firestore might have written a
+    // driver match in the last 100ms.
+    await Future.delayed(const Duration(milliseconds: 100));
+    if (_driverMatched) {
+      debugPrint('[RiderTrip] cancelRide() driver matched during the grace '
+          'window — routing to request-cancel');
+      _routeCancelToDispatch('rider_cancel_after_match_grace', tripId: tripId);
+      return;
+    }
+    try {
+      await ApiService.cancelTrip(tripId);
+      debugPrint('[RiderTrip] trip $tripId cancelled on the backend');
+    } catch (e) {
+      debugPrint('[RiderTrip] cancelTrip failed: $e');
+      // Backend rejected the cancel because a driver was assigned in
+      // the same instant — fall through to the dispatch escalation
+      // path so the cancel intent isn't lost.
+      _routeCancelToDispatch('rider_cancel_backend_409', tripId: tripId);
+    }
   }
 
   /// Escalation helper: when the rider taps Cancel after a driver has
@@ -1199,9 +1212,14 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
   /// create a backend ActionRequest so dispatch sees the request, and
   /// keep the local phase active so the rider stays on the tracking
   /// flow until dispatch confirms or rejects.
-  void _routeCancelToDispatch(String reason) {
-    final tripId = _state.tripId;
-    if (tripId == null) {
+  /// [tripId] is passed explicitly by callers that may have already had the
+  /// controller reset underneath them — reading `_state.tripId` here was how
+  /// a failed cancel lost the very trip it was escalating.
+  void _routeCancelToDispatch(String reason, {int? tripId}) {
+    // Copied into a final local: a mutable parameter does not type-promote
+    // inside the closure below, and the closure is what actually sends it.
+    final int? id = tripId ?? _state.tripId;
+    if (id == null) {
       _state = _state.copyWith(phase: RiderPhase.cancelled);
       notifyListeners();
       return;
@@ -1209,11 +1227,11 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
     unawaited(() async {
       try {
         await ApiService.requestTripCancel(
-          tripId: tripId,
+          tripId: id,
           reason: reason,
           urgency: 'normal',
         );
-        debugPrint('[RiderTrip] request-cancel posted for trip $tripId');
+        debugPrint('[RiderTrip] request-cancel posted for trip $id');
       } catch (e) {
         debugPrint('[RiderTrip] request-cancel failed: $e');
       }

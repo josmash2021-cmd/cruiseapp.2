@@ -2914,7 +2914,7 @@ void _showPaymentMethodPickerLegacy(AppColors c, RideOption? option) {
     }
   }
 
-  void _cancelSearching() {
+  Future<void> _cancelSearching() async {
     _riderInitiatedCancel = true;
     _cancelDialogShown = false;
     _searchMapTimer?.cancel();
@@ -2948,7 +2948,11 @@ void _showPaymentMethodPickerLegacy(AppColors c, RideOption? option) {
     }
     // Clean up map annotations so route/pins don't persist
     _cleanupMapAnnotations();
-    _ctrl.cancelRide();
+    // Awaited before reset(): reset() clears the trip id, and cancelRide needs
+    // it to reach the backend. Firing both together left the trip `requested`
+    // on the server whenever the request lost the race, so the next launch
+    // restored the ride the rider had just cancelled.
+    await _ctrl.cancelRide();
     _ctrl.reset();
     _navigatingToTracking = false;
   }

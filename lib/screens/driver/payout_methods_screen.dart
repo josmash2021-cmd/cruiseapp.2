@@ -820,9 +820,18 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
 
       final clientSecret = (session['client_secret'] ?? '').toString();
       if (clientSecret.isEmpty) {
+        // Was indistinguishable from every other failure: the driver saw the
+        // same "Failed to add method" whether Stripe refused, the sheet was
+        // dismissed, or the server answered 200 with nothing usable in it.
+        // Only this branch means "the session came back empty", and it is
+        // the one that points at the backend rather than at Stripe.
+        debugPrint('[Payout] FC session had no client_secret — keys: '
+            '${session.keys.toList()}');
         _snack(S.of(context).failedToAddMethod, error: true);
         return;
       }
+      debugPrint('[Payout] FC session ok — account='
+          '${session['stripe_account_id']} secret=${clientSecret.length} chars');
 
       // The session belongs to the driver's connected account, not to the
       // platform — the backend builds it with

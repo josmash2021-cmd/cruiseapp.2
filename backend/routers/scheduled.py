@@ -1,5 +1,6 @@
 """Scheduled rides marketplace — drivers browse & claim future rides."""
 
+import asyncio
 import logging
 from datetime import datetime, timedelta, timezone
 from typing import Optional
@@ -10,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.database import get_db, User, Trip, DispatchOffer, Vehicle
 from utils.security import _verify_api_key, _get_current_user
-from utils.helpers import utc_now, _haversine, _trip_dict, ACTIVE_ACCOUNT_STATUSES
+from utils.helpers import utc_now, _haversine, _trip_dict, ACTIVE_ACCOUNT_STATUSES, _safe_create_task
 from services.fcm_service import _send_fcm_push_async
 from services.sms_service import notify_guest_driver_assigned
 from services.email_service import email_guest_driver_assigned
@@ -23,6 +24,67 @@ DRIVER_SHARE_RATE = 0.70
 LOCKOUT_MINUTES = 30
 # Minimum advance for marketplace (rides closer than this go through auto-dispatch)
 MIN_ADVANCE_MINUTES = 30
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#  Firestore mirroring — the rider's screen watches trips/sql_<id>
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#
+# `sync_scheduled_ride` writes the `scheduled_rides` collection, which the
+# rider's tracking screen does NOT listen to — it listens to `trips/sql_<id>`.
+# Every status change on a scheduled ride therefore has to be mirrored into
+# the `trips` collection as well, or the rider's screen silently goes stale.
+# These helpers are additive: the `scheduled_rides` writes stay exactly as
+# they were.
+
+
+async def _bg_mirror_trip_status(trip_id: int, status: str, **driver_fields) -> None:
+    """Mirror a scheduled-ride status change into trips/sql_<id>.
+
+    Runs as a background task so a Firestore hiccup can never fail the API
+    request. Failures are logged, never swallowed.
+
+    Off the loop via to_thread: firebase_admin is synchronous gRPC, so calling
+    it straight from this coroutine would stall every other request for the
+    length of the round trip — the same reason update_trip_status uses
+    run_in_executor (routers/trips.py).
+    """
+    try:
+        await asyncio.to_thread(
+            firestore_sync.sync_trip_status, trip_id, status, **driver_fields
+        )
+    except Exception as e:
+        logging.error(
+            "[Scheduled] Firestore trips/sql_%s status mirror to '%s' failed: %s",
+            trip_id, status, e,
+        )
+
+
+async def _bg_mirror_trip_released(trip_id: int, status: str = "scheduled") -> None:
+    """Strip the driver from trips/sql_<id>, then restore the real status.
+
+    `sync_trip_status` can only ever ADD driver fields, so it cannot undo an
+    assignment — a released trip keeps rendering driverName/driverPhone/plate
+    on the rider's screen forever. `sync_trip_released` is the only thing that
+    nulls them out, but it hardcodes status="requested"; a released *scheduled*
+    ride is back to "scheduled", so we re-assert the correct status right after.
+    Both writes are merge=True, so the ordering holds.
+    """
+    try:
+        await asyncio.to_thread(firestore_sync.sync_trip_released, trip_id)
+    except Exception as e:
+        logging.error(
+            "[Scheduled] Firestore trips/sql_%s driver-release failed: %s", trip_id, e,
+        )
+        return
+    try:
+        await asyncio.to_thread(firestore_sync.sync_trip_status, trip_id, status)
+    except Exception as e:
+        logging.error(
+            "[Scheduled] Firestore trips/sql_%s status restore to '%s' failed "
+            "(driver fields WERE cleared): %s",
+            trip_id, status, e,
+        )
 
 
 def _driver_position(user: User, lat: float, lng: float) -> tuple[float, float]:
@@ -265,11 +327,17 @@ async def claim_scheduled_trip(
         rider = rider_r.scalar_one_or_none()
         if rider and rider.fcm_token:
             driver_name = f"{user.first_name or ''} {user.last_name or ''}".strip() or "Tu conductor"
-            _send_fcm_push_async(
-                token=rider.fcm_token,
-                title="Conductor asignado a tu viaje reservado",
-                body=f"{driver_name} ha aceptado tu viaje programado. Te notificaremos cuando este en camino.",
-                data={"type": "scheduled_claimed", "trip_id": str(trip.id)},
+            # Fire-and-forget: the rider is a third party to this request and the
+            # response makes no delivery claim, so a slow token must not stall the
+            # driver's claim. _safe_create_task keeps a strong ref and logs failures.
+            _safe_create_task(
+                _send_fcm_push_async(
+                    token=rider.fcm_token,
+                    title="Conductor asignado a tu viaje reservado",
+                    body=f"{driver_name} ha aceptado tu viaje programado. Te notificaremos cuando este en camino.",
+                    data={"type": "scheduled_claimed", "trip_id": str(trip.id)},
+                ),
+                name=f"scheduled_claim_push_{trip.id}",
             )
     except Exception as e:
         logging.warning("[Scheduled] FCM notify rider failed: %s", e)
@@ -278,11 +346,13 @@ async def claim_scheduled_trip(
     # ride from the marketplace — fires the same "driver_assigned" templates
     # as an immediate dispatch accept, so guests get the conductor/vehicle card
     # the moment the driver confirms, not when the scheduler activates the trip.
+    _claim_vehicle = None  # also feeds the trips/sql_<id> mirror below
     try:
         veh_r = await db.execute(
             select(Vehicle).where(Vehicle.user_id == user.id).limit(1)
         )
         _veh_for_notif = veh_r.scalar_one_or_none()
+        _claim_vehicle = _veh_for_notif
         class _VehStub:
             year = ""
             make = ""
@@ -327,8 +397,30 @@ async def claim_scheduled_trip(
                 dropoff_lng=trip.dropoff_lng or 0,
                 fare=trip.fare or 0,
             )
-        except Exception:
-            pass
+        except Exception as e:
+            logging.error("[Scheduled] scheduled_rides sync on claim failed for trip %s: %s", trip.id, e)
+
+        # …and mirror into trips/sql_<id>, which is what the rider's tracking
+        # screen actually listens to. Without this the rider never learns a
+        # driver was assigned — the doc keeps its pre-claim status and has no
+        # driver fields at all, so the later "driver_en_route" write lands on a
+        # document with no driver name, phone or plate to render.
+        _safe_create_task(
+            _bg_mirror_trip_status(
+                trip.id,
+                "scheduled_accepted",
+                driver_id=user.id,
+                driver_name=f"{user.first_name or ''} {user.last_name or ''}".strip(),
+                driver_phone=user.phone or "",
+                driver_photo_url=getattr(user, "photo_url", None) or None,
+                vehicle_make=getattr(_claim_vehicle, "make", None) or None,
+                vehicle_model=getattr(_claim_vehicle, "model", None) or None,
+                vehicle_color=getattr(_claim_vehicle, "color", None) or None,
+                vehicle_plate=getattr(_claim_vehicle, "plate", None) or None,
+                vehicle_year=getattr(_claim_vehicle, "year", None) or None,
+            ),
+            name=f"scheduled_claim_trip_mirror_{trip.id}",
+        )
 
     return {
         "ok": True,
@@ -425,21 +517,27 @@ async def start_scheduled_trip(
         rider_r = await db.execute(select(User).where(User.id == trip.rider_id))
         rider = rider_r.scalar_one_or_none()
         if rider and rider.fcm_token:
-            _send_fcm_push_async(
-                token=rider.fcm_token,
-                title="Tu conductor esta en camino",
-                body="Tu conductor ha iniciado el viaje y esta en camino al punto de recogida.",
-                data={"type": "driver_en_route", "trip_id": str(trip.id)},
+            # Fire-and-forget — the rider is a third party to this request and
+            # the response makes no delivery claim.
+            _safe_create_task(
+                _send_fcm_push_async(
+                    token=rider.fcm_token,
+                    title="Tu conductor esta en camino",
+                    body="Tu conductor ha iniciado el viaje y esta en camino al punto de recogida.",
+                    data={"type": "driver_en_route", "trip_id": str(trip.id)},
+                ),
+                name=f"scheduled_start_push_{trip.id}",
             )
     except Exception as e:
         logging.warning("[Scheduled] FCM notify rider start failed: %s", e)
 
-    # Firestore sync
+    # Firestore sync — already targets the `trips` collection (correct), moved
+    # off the request path so a Firestore hiccup cannot delay or fail the start.
     if _HAS_FIRESTORE:
-        try:
-            firestore_sync.sync_trip_status(trip.id, "driver_en_route")
-        except Exception:
-            pass
+        _safe_create_task(
+            _bg_mirror_trip_status(trip.id, "driver_en_route"),
+            name=f"scheduled_start_trip_mirror_{trip.id}",
+        )
 
     return {"ok": True, "trip_id": trip.id, "status": "driver_en_route"}
 
@@ -475,11 +573,16 @@ async def cancel_claimed_scheduled_trip(
         rider_r = await db.execute(select(User).where(User.id == trip.rider_id))
         rider = rider_r.scalar_one_or_none()
         if rider and rider.fcm_token:
-            _send_fcm_push_async(
-                token=rider.fcm_token,
-                title="Conductor cancelado",
-                body="Tu conductor ha cancelado el viaje reservado. Estamos buscando otro conductor.",
-                data={"type": "scheduled_driver_cancelled", "trip_id": str(trip.id)},
+            # Fire-and-forget — the rider is a third party to this request and
+            # the response makes no delivery claim.
+            _safe_create_task(
+                _send_fcm_push_async(
+                    token=rider.fcm_token,
+                    title="Conductor cancelado",
+                    body="Tu conductor ha cancelado el viaje reservado. Estamos buscando otro conductor.",
+                    data={"type": "scheduled_driver_cancelled", "trip_id": str(trip.id)},
+                ),
+                name=f"scheduled_cancel_push_{trip.id}",
             )
     except Exception as e:
         logging.warning("[Scheduled] FCM notify rider cancel failed: %s", e)
@@ -490,8 +593,21 @@ async def cancel_claimed_scheduled_trip(
             firestore_sync.sync_scheduled_ride(
                 trip_id=trip.id, rider_id=trip.rider_id, status="scheduled",
             )
-        except Exception:
-            pass
+        except Exception as e:
+            logging.error(
+                "[Scheduled] scheduled_rides sync on driver-cancel failed for trip %s: %s",
+                trip.id, e,
+            )
+
+        # The DB just set driver_id=None / status="scheduled", but trips/sql_<id>
+        # still reads driver_en_route and still carries driverId, driverName,
+        # driverPhone and vehicle_plate — sync_trip_status can only ADD driver
+        # fields, never clear them. Without this release the rider keeps watching
+        # a driver who dropped the ride and is never coming.
+        _safe_create_task(
+            _bg_mirror_trip_released(trip.id, "scheduled"),
+            name=f"scheduled_cancel_trip_release_{trip.id}",
+        )
 
     return {"ok": True, "trip_id": trip.id, "status": "scheduled"}
 
@@ -618,16 +734,29 @@ async def drop_scheduled_trip(
         except Exception as e:
             logging.warning("[ScheduledDrop] Firestore sync failed: %s", e)
 
+        # …and clear the driver off trips/sql_<id>, which is the document the
+        # rider's tracking screen listens to. Same reasoning as the cancel path:
+        # only sync_trip_released can null out driverName/driverPhone/plate.
+        _safe_create_task(
+            _bg_mirror_trip_released(trip.id, "scheduled"),
+            name=f"scheduled_drop_trip_release_{trip.id}",
+        )
+
     # Notify rider — their driver stepped away, another will pick up
     try:
         rider_r = await db.execute(select(User).where(User.id == trip.rider_id))
         rider = rider_r.scalar_one_or_none()
         if rider and rider.fcm_token:
-            _send_fcm_push_async(
-                token=rider.fcm_token,
-                title="Buscando otro conductor",
-                body="Tu viaje reservado volvio al marketplace. Te asignaremos un nuevo conductor en breve.",
-                data={"type": "scheduled_driver_dropped", "trip_id": str(trip.id)},
+            # Fire-and-forget — the rider is a third party to this request and
+            # the response makes no delivery claim.
+            _safe_create_task(
+                _send_fcm_push_async(
+                    token=rider.fcm_token,
+                    title="Buscando otro conductor",
+                    body="Tu viaje reservado volvio al marketplace. Te asignaremos un nuevo conductor en breve.",
+                    data={"type": "scheduled_driver_dropped", "trip_id": str(trip.id)},
+                ),
+                name=f"scheduled_drop_push_{trip.id}",
             )
     except Exception as e:
         logging.warning("[ScheduledDrop] FCM notify rider failed: %s", e)

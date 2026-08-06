@@ -923,13 +923,19 @@ async def admin_review_verification(user_id: int, request: Request, db: AsyncSes
                 title = "Verification Update"
                 body = reason or "Your verification was not approved. Please try again."
                 payload_type = "driver_rejected" if is_driver else "rider_rejected"
+            # NOTE: the `await` that used to sit here made this
+            # _safe_create_task(None) — _send_fcm_push_async returns None — which
+            # raised TypeError on every approval and got logged by the handler
+            # below as "FCM push failed", masking the real outcome and skipping
+            # the info log. Pass the coroutine itself, as the log wording implies.
             _safe_create_task(
-                await _send_fcm_push_async(
+                _send_fcm_push_async(
                     user.fcm_token,
                     title,
                     body,
                     {"type": payload_type, "user_id": str(user_id), "reason": reason or ""},
-                )
+                ),
+                name=f"admin_verify_push_{user_id}",
             )
             logging.info("[ADMIN-VERIFY] FCM push queued for user %d (%s)", user_id, action)
     except Exception as e:
@@ -1518,9 +1524,13 @@ async def admin_send_notification(
         raise HTTPException(404, "User not found")
     if not user.fcm_token:
         raise HTTPException(400, "User has no FCM token registered")
-    _send_fcm_push_async(user.fcm_token, title, body, data)
-    logging.info("[Admin] Push notification sent to user %d", user_id)
-    return {"ok": True}
+    # Awaited (not fire-and-forget): this endpoint reports back to the operator,
+    # so the response must not return before the push has actually been handed
+    # to FCM. _send_fcm_push_async swallows FCM errors internally, so delivery
+    # is still not *confirmed* — the wording below reflects only what we know.
+    await _send_fcm_push_async(user.fcm_token, title, body, data)
+    logging.info("[Admin] Push notification dispatched to FCM for user %d", user_id)
+    return {"ok": True, "delivery": "dispatched"}
 
 
 @router.post("/admin/notifications/broadcast/drivers", dependencies=[Depends(_require_dispatch_auth)])
@@ -1541,12 +1551,19 @@ async def admin_broadcast_drivers(
         )
     )
     drivers = result.scalars().all()
-    sent = 0
+    # Fire-and-forget per recipient: one slow/stale token must not stall the
+    # whole broadcast request. Delivery is therefore NOT confirmed here —
+    # the counter below is "queued", not "delivered".
+    queued = 0
     for driver in drivers:
-        _send_fcm_push_async(driver.fcm_token, title, body, data)
-        sent += 1
-    logging.info("[Admin] Broadcast sent to %d online drivers", sent)
-    return {"ok": True, "sent": sent}
+        _safe_create_task(
+            _send_fcm_push_async(driver.fcm_token, title, body, data),
+            name=f"admin_broadcast_driver_{driver.id}",
+        )
+        queued += 1
+    logging.info("[Admin] Broadcast queued for %d online drivers", queued)
+    # "sent" kept for backwards compatibility with the dispatch panel.
+    return {"ok": True, "sent": queued, "queued": queued, "delivery": "queued"}
 
 
 @router.post("/admin/notifications/broadcast/riders", dependencies=[Depends(_require_dispatch_auth)])
@@ -1566,12 +1583,17 @@ async def admin_broadcast_riders(
         )
     )
     riders = result.scalars().all()
-    sent = 0
+    # Fire-and-forget per recipient — see admin_broadcast_drivers for rationale.
+    queued = 0
     for rider in riders:
-        _send_fcm_push_async(rider.fcm_token, title, body, data)
-        sent += 1
-    logging.info("[Admin] Broadcast sent to %d riders", sent)
-    return {"ok": True, "sent": sent}
+        _safe_create_task(
+            _send_fcm_push_async(rider.fcm_token, title, body, data),
+            name=f"admin_broadcast_rider_{rider.id}",
+        )
+        queued += 1
+    logging.info("[Admin] Broadcast queued for %d riders", queued)
+    # "sent" kept for backwards compatibility with the dispatch panel.
+    return {"ok": True, "sent": queued, "queued": queued, "delivery": "queued"}
 
 
 # ══════════════════════════════════════════════════════════

@@ -39,6 +39,7 @@ from models.database import (
     get_db,
 )
 from utils.security import _get_current_user, _verify_api_key
+from utils.helpers import _safe_create_task
 from services.fcm_service import _send_fcm_push_async
 
 router = APIRouter()
@@ -302,18 +303,23 @@ async def bump_driver_referral_progress(
                 ref.qualified_at = now
                 ref.paid_at = now
 
-                # FCM push — best-effort, swallow errors.
+                # FCM push — best-effort, swallow errors. Fire-and-forget so a
+                # slow token cannot stall the trip-completion path this runs on;
+                # _safe_create_task keeps a strong ref and logs any failure.
                 if referrer.fcm_token:
                     try:
-                        _send_fcm_push_async(
-                            referrer.fcm_token,
-                            "Referral bonus earned!",
-                            f"You just earned ${bonus_dollars:.0f} from a "
-                            "driver you referred. Cash out anytime.",
-                            data={
-                                "type": "driver_referral_qualified",
-                                "amount_cents": str(ref.bonus_amount_cents),
-                            },
+                        _safe_create_task(
+                            _send_fcm_push_async(
+                                referrer.fcm_token,
+                                "Referral bonus earned!",
+                                f"You just earned ${bonus_dollars:.0f} from a "
+                                "driver you referred. Cash out anytime.",
+                                data={
+                                    "type": "driver_referral_qualified",
+                                    "amount_cents": str(ref.bonus_amount_cents),
+                                },
+                            ),
+                            name=f"driver_referral_bonus_push_{referrer.id}",
                         )
                     except Exception as e:
                         logging.warning(

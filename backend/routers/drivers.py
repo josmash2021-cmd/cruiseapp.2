@@ -184,22 +184,26 @@ async def update_driver_location(driver_id: int, body: DriverLocationIn, user: U
             heading=getattr(body, 'heading', 0.0),
             speed=getattr(body, 'speed', 0.0),
         ))
-        # RTDB fallback — write driver location so riders on Firebase channel can see it
-        if _HAS_FIRESTORE:
-            try:
-                import firebase_admin
-                from firebase_admin import db
-                rtdb_ref = db.reference(f'driver_locations/{driver_id}')
-                rtdb_ref.set({
-                    'lat': body.lat,
-                    'lng': body.lng,
-                    'heading': getattr(body, 'heading', 0.0),
-                    'speed': getattr(body, 'speed', 0.0),
-                    'timestamp': int(time.time() * 1000),
-                    'is_online': body.is_online,
-                })
-            except Exception as _rtdb_err:
-                logger.debug("RTDB driver location write failed: %s", _rtdb_err)
+        # RTDB `driver_locations/{driver_id}` is owned by the DRIVER APP, not by
+        # this endpoint. lib/services/gps_service.dart writes that node directly
+        # (~800ms) and the rider reads it in rider_tracking_controller.dart /
+        # home_screen_controller.dart, so the channel already works end to end.
+        #
+        # A backend copy of that write used to live here and had never once run:
+        # firebase_admin's db.reference() needs the `databaseURL` app option,
+        # which neither init sets, so every call raised
+        # ValueError('Invalid database URL: "None"') and was swallowed at DEBUG,
+        # below the deployed log level. Rather than switch it on — it would add a
+        # synchronous RTDB round-trip to the hottest endpoint in the system, on
+        # the event loop, duplicating a write the client already makes at a
+        # higher rate — the dead block is gone. Nothing server-side reads this
+        # node. If a server-written copy is ever genuinely needed, add
+        # `databaseURL` (https://cruise-af9f1-default-rtdb.firebaseio.com, see
+        # lib/firebase_options.dart) to the init in firestore_sync and do the
+        # write off-thread via run_in_executor.
+        #
+        # Bonus hazard removed: `from firebase_admin import db` rebound the
+        # `db: AsyncSession` parameter for the rest of this function.
 
     # Update Redis Geo for fast nearby queries
     try:

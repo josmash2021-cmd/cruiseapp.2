@@ -228,17 +228,24 @@ async def credit_referrer_if_qualified(
         # Failures are tolerated (no FCM token, network blip, etc.).
         try:
             from services.fcm_service import _send_fcm_push_async
+            from utils.helpers import _safe_create_task
             from sqlalchemy import select as _sel
             from models.database import User as _U
             _r = await db.execute(_sel(_U).where(_U.id == ref.referrer_id))
             _ru = _r.scalar_one_or_none()
             if _ru and _ru.fcm_token:
-                _send_fcm_push_async(
-                    _ru.fcm_token,
-                    "🎉 You earned $50 Cruise Cash!",
-                    "Your referral completed 2 qualifying rides. Spend it on any trip.",
-                    data={"type": "cruise_cash_earned",
-                          "amount_cents": str(bonus_cents)},
+                # Fire-and-forget: this runs inside the trip-completion path, so
+                # a slow token must not stall it. _safe_create_task keeps a
+                # strong reference and logs any failure.
+                _safe_create_task(
+                    _send_fcm_push_async(
+                        _ru.fcm_token,
+                        "🎉 You earned $50 Cruise Cash!",
+                        "Your referral completed 2 qualifying rides. Spend it on any trip.",
+                        data={"type": "cruise_cash_earned",
+                              "amount_cents": str(bonus_cents)},
+                    ),
+                    name=f"referral_bonus_push_{ref.referrer_id}",
                 )
         except Exception as e:
             logging.warning("[referrals] FCM notify failed for referrer %s: %s",

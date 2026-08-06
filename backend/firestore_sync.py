@@ -9,7 +9,7 @@ Each document uses the SQLite row ID as the Firestore document ID (prefixed
 with "sql_" to avoid collisions with any Firestore-native docs).
 """
 
-import os, logging, asyncio, time
+import os, logging, asyncio, time, threading
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -26,16 +26,72 @@ _bucket = None  # Firebase Storage bucket
 _KEY_PATH = os.path.join(os.path.dirname(__file__), "serviceAccountKey.json")
 _STORAGE_BUCKET = "cruise-af9f1.firebasestorage.app"
 
-def _ensure_init():
+# Guards the check-then-act in _ensure_init. This module is called from the
+# executor pool, not just the loop, so two worker threads used to be able to
+# pass the `_db is None` check together and both reach initialize_app: the
+# loser got "The default Firebase app already exists", which was logged as
+# "❌ Firestore init failed" and cost that thread its write.
+# A plain threading.Lock (not asyncio) for exactly that reason. Nothing held
+# under it makes a network call, so it cannot stall the pool.
+_INIT_LOCK = threading.Lock()
+
+# Wall-clock ceiling for a single Firestore RPC. Without it a wedged gRPC
+# channel hangs the calling worker (and any request waiting on it) forever.
+try:
+    _FS_TIMEOUT = float(os.getenv("FIRESTORE_TIMEOUT_SECONDS", "10"))
+except (TypeError, ValueError):
+    _FS_TIMEOUT = 10.0
+
+
+def _ensure_init(force: bool = False):
     """Initialise Firebase Admin SDK once.
-    
+
     Tries (in order):
     1. serviceAccountKey.json file (local dev)
     2. FIREBASE_SERVICE_ACCOUNT env var (Railway/production) — JSON string
+
+    Args:
+        force: tear the existing app down (firebase_admin.delete_app) and
+            genuinely re-initialise. Default False keeps the historical
+            behaviour EXACTLY — return immediately once _db is set — so no
+            existing caller changes semantics. Pass True only from a watchdog
+            that has already proved Firestore is unreachable: it invalidates
+            every client handle, so in-flight writes on other threads fail.
     """
     global _db, _fs_db, _bucket
-    if _db is not None:
+    if _db is not None and not force:
         return
+    with _INIT_LOCK:
+        # Re-check under the lock — another thread may have finished while we
+        # waited, in which case there is nothing left to do.
+        if _db is not None and not force:
+            return
+        if force:
+            _teardown_app()
+        _init_locked()
+
+
+def _teardown_app():
+    """Delete the default Firebase app so the next init really re-creates it.
+
+    Must be called with _INIT_LOCK held.
+    """
+    global _db, _fs_db, _bucket
+    _db = None
+    _fs_db = None
+    _bucket = None
+    try:
+        firebase_admin.delete_app(firebase_admin.get_app())
+        log.warning("♻️  Firebase default app deleted — forcing re-initialisation")
+    except ValueError:
+        pass  # no app to delete; nothing to undo
+    except Exception as e:
+        log.error("❌ Firebase app teardown failed: %s", e)
+
+
+def _init_locked():
+    """Body of the original _ensure_init. Must run with _INIT_LOCK held."""
+    global _db, _fs_db, _bucket
     try:
         # Already initialized by another module?
         firebase_admin.get_app()
@@ -91,8 +147,35 @@ def _ensure_init():
         except Exception as e:
             log.warning("⚠️  Firebase Storage bucket init failed: %s", e)
         log.info("✅ Firestore sync initialised (project: %s)", cred.project_id)
+    except ValueError as e:
+        # "The default Firebase app already exists" — another module (e.g.
+        # services/fcm_service) created it between our get_app() check and
+        # here. That is a success: adopt the existing app instead of dropping
+        # this thread's write, which is what the old code did.
+        try:
+            firebase_admin.get_app()
+            _db = firestore.client()
+            _fs_db = _db
+            try:
+                _bucket = storage.bucket(_STORAGE_BUCKET)
+            except Exception as _be:
+                log.warning("⚠️  Firebase Storage bucket init failed: %s", _be)
+            log.info("✅ Firestore sync adopted an app initialised elsewhere")
+        except Exception:
+            log.error("❌ Firestore init failed: %s", e)
     except Exception as e:
         log.error("❌ Firestore init failed: %s", e)
+
+
+def reconnect() -> bool:
+    """Force a genuine Firebase re-initialisation. Returns True if usable after.
+
+    Additive helper for the health watchdog: plain `_ensure_init()` is a no-op
+    once `_db` is set, so calling it after a Firestore outage repaired nothing
+    while still logging success. This tears the app down first.
+    """
+    _ensure_init(force=True)
+    return _db is not None
 
 
 def _ts(dt: Optional[datetime] = None):
@@ -282,12 +365,15 @@ def sync_driver_location(user_id: int, lat: float, lng: float, is_online: bool):
         return
     doc_id = f"sql_{user_id}"
     try:
+        # Hottest write in the file (every GPS heartbeat, per driver). It runs
+        # on the executor pool, so a wedged gRPC channel would pin one pool
+        # thread per heartbeat until the pool starved — hence the timeout.
         _db.collection("drivers").document(doc_id).set({
             "isOnline": is_online,
             "lat": lat,
             "lng": lng,
             "lastSeen": _ts(),
-        }, merge=True)
+        }, merge=True, timeout=_FS_TIMEOUT)
     except Exception as e:
         log.error("❌ Driver location sync failed for %d: %s", user_id, e)
 
@@ -660,7 +746,7 @@ def get_account_status(user_id: int, collection: str = "clients") -> str:
         return None
     doc_id = f"sql_{user_id}"
     try:
-        doc = _db.collection(collection).document(doc_id).get()
+        doc = _db.collection(collection).document(doc_id).get(timeout=_FS_TIMEOUT)
         if doc.exists:
             return doc.to_dict().get("status", "active")
     except Exception as e:
@@ -670,11 +756,33 @@ def get_account_status(user_id: int, collection: str = "clients") -> str:
 
 # ── Retry helper for critical Firestore writes ────────────
 
+def _backoff(delay: float) -> None:
+    """Sleep between retries — but NEVER on the event loop thread.
+
+    _retry_sync runs mostly on executor threads (where blocking is fine and
+    intended), but several callers invoke the sync_* helpers directly from
+    async code. There, time.sleep froze the entire process for up to 1.5s per
+    failing write — every request, every SSE stream, everyone. When we detect
+    a running loop in this thread we retry immediately instead of sleeping;
+    losing the back-off is far cheaper than stalling the loop.
+    """
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        time.sleep(delay)  # plain worker thread — safe to block
+        return
+    log.warning(
+        "Firestore retry back-off skipped (%.1fs) — called on the event loop thread; "
+        "wrap this sync_* call in run_in_executor",
+        delay,
+    )
+
+
 def _retry_sync(fn, max_retries=2):
     """Call *fn* up to *max_retries+1* times with back-off.
 
-    Uses synchronous sleep because the Firebase Admin SDK calls here are
-    synchronous (they block on gRPC internally).
+    The Firebase Admin SDK calls here are synchronous (they block on gRPC
+    internally); the back-off itself is loop-aware — see _backoff.
     """
     for attempt in range(max_retries + 1):
         try:
@@ -685,7 +793,7 @@ def _retry_sync(fn, max_retries=2):
                 log.error("Firestore sync failed after %d attempts: %s", max_retries + 1, e)
                 raise
             else:
-                time.sleep(0.5 * (attempt + 1))
+                _backoff(0.5 * (attempt + 1))
 
 
 # ═══════════════════════════════════════════════════════════
@@ -745,7 +853,8 @@ def sync_trip(trip_id: int, rider_id: int, rider_name: str, rider_phone: str,
     if driver_photo_url:
         data["driverPhotoUrl"] = driver_photo_url
     try:
-        _retry_sync(lambda: _db.collection("trips").document(doc_id).set(data, merge=True))
+        _retry_sync(lambda: _db.collection("trips").document(doc_id).set(
+            data, merge=True, timeout=_FS_TIMEOUT))
         log.info("🔄 Synced trip sql_%d → Firestore (status=%s)", trip_id, status)
     except Exception as e:
         log.error("❌ Trip sync failed for %d: %s", trip_id, e)
@@ -825,6 +934,10 @@ def sync_trip_status(trip_id: int, status: str,
     now = _ts()
     # Normalise incoming status to canonical values before writing to Firestore.
     # This ensures the Flutter listener only ever sees one spelling per state.
+    # Kept in sync with _STATUS_ALIASES in routers/trips.py — this map used to
+    # be a subset of it, so an alias the HTTP layer understood would have been
+    # mirrored raw into Firestore and matched nothing in the Flutter listener.
+    # Defence in depth: callers normalise too, this must keep doing so anyway.
     _canonical = {
         "driver_arrived": "arrived",
         "arrived_pickup": "arrived",
@@ -833,7 +946,11 @@ def sync_trip_status(trip_id: int, status: str,
         "rider_onboard": "in_trip",
         "on_trip": "in_trip",
         "trip_started": "in_trip",
+        "rider_no_show": "cancelled",
         "canceled": "cancelled",
+        "driver_arriving": "driver_en_route",
+        "en_route_to_pickup": "driver_en_route",
+        "driver_assigned": "accepted",
     }
     status = _canonical.get(status, status)
     data["status"] = status
@@ -884,7 +1001,8 @@ def sync_trip_status(trip_id: int, status: str,
     if payment_status is not None:
         data["payment_status"] = payment_status
     try:
-        _retry_sync(lambda: _db.collection("trips").document(doc_id).set(data, merge=True))
+        _retry_sync(lambda: _db.collection("trips").document(doc_id).set(
+            data, merge=True, timeout=_FS_TIMEOUT))
         log.info("🔄 Synced trip status sql_%d → %s", trip_id, status)
     except Exception as e:
         log.error("❌ Trip status sync failed for %d: %s", trip_id, e)
@@ -912,7 +1030,7 @@ def sync_trip_route_change(trip_id: int, *, stops=None, dropoff=None,
         data["fare"] = fare
     try:
         _retry_sync(lambda: _db.collection("trips")
-                    .document(f"sql_{trip_id}").set(data, merge=True))
+                    .document(f"sql_{trip_id}").set(data, merge=True, timeout=_FS_TIMEOUT))
         log.info("🔄 Synced route change sql_%d (%s)", trip_id, change_type)
     except Exception as e:
         log.error("❌ Route-change sync failed for %d: %s", trip_id, e)
@@ -949,7 +1067,8 @@ def sync_trip_released(trip_id: int):
         "releasedAt": _ts(),
     }
     try:
-        _retry_sync(lambda: _db.collection("trips").document(doc_id).set(data, merge=True))
+        _retry_sync(lambda: _db.collection("trips").document(doc_id).set(
+            data, merge=True, timeout=_FS_TIMEOUT))
         log.info("🔄 Released trip sql_%d back to dispatch", trip_id)
     except Exception as e:
         log.error("❌ Trip release sync failed for %d: %s", trip_id, e)

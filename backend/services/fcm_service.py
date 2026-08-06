@@ -1,33 +1,179 @@
 """Cruise App — FCM push notification service."""
 
 import logging
+import os
+import threading
+import time
 
-# Check if Firebase Admin is available (initialized by firestore_sync or main app)
-_HAS_FIREBASE = False
-try:
-    import firebase_admin
-    if firebase_admin._apps:
-        _HAS_FIREBASE = True
-        logging.info("[FCM] Firebase Admin already initialized — FCM enabled")
-    else:
-        # Try to initialize if not done yet
-        import os
-        from firebase_admin import credentials
-        sa_raw = os.getenv("FIREBASE_SERVICE_ACCOUNT", "")
-        if sa_raw:
-            import json, base64
+# ── Firebase availability ────────────────────────────────────────
+# This used to be decided ONCE at import time, reading only the
+# FIREBASE_SERVICE_ACCOUNT env var. This module is imported (via
+# proactive_support_agent) BEFORE anything initialises Firebase, so on any
+# host that carries backend/serviceAccountKey.json instead of the env var the
+# flag latched False for the whole process life: Firestore worked, every push
+# was dropped, and nothing said why. It is now re-evaluated lazily, so the
+# moment firestore_sync (or anyone else) initialises the default app, FCM
+# starts working — and if nobody does, this module loads the SAME credentials
+# firestore_sync does (file path first, then env var, base64 or raw JSON).
+_HAS_FIREBASE = False          # cached POSITIVE result only; False = "not confirmed yet"
+_INIT_LOCK = threading.Lock()
+_LAST_INIT_ATTEMPT = 0.0       # monotonic; throttles credential loading
+_INIT_RETRY_SECONDS = 30.0
+
+# backend/serviceAccountKey.json — same file firestore_sync._KEY_PATH prefers.
+# (__file__ is backend/services/fcm_service.py, hence the double dirname.)
+_KEY_PATH = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    "serviceAccountKey.json",
+)
+# Matches firestore_sync._STORAGE_BUCKET. Only used if THIS module ends up
+# being the one that creates the default app, so that whoever initialises
+# first leaves identical app options behind.
+_STORAGE_BUCKET = "cruise-af9f1.firebasestorage.app"
+
+# Dropped-push accounting — a skipped send must never be invisible again.
+_drop_counts: dict = {}
+_last_drop_log = 0.0
+_DROP_LOG_INTERVAL = 60.0      # seconds between WARNING lines (first drop logs immediately)
+
+
+def _load_credentials():
+    """Load a firebase_admin Certificate the same way firestore_sync does.
+
+    Order: backend/serviceAccountKey.json, then FIREBASE_SERVICE_ACCOUNT
+    (base64-encoded JSON or raw JSON). Never logs credential contents.
+    """
+    from firebase_admin import credentials
+    if os.path.exists(_KEY_PATH):
+        try:
+            return credentials.Certificate(_KEY_PATH)
+        except Exception as e:
+            logging.error("[FCM] serviceAccountKey.json unusable: %s", e)
+    sa_raw = os.getenv("FIREBASE_SERVICE_ACCOUNT", "")
+    if sa_raw:
+        import json, base64
+        try:
             try:
                 sa_json = base64.b64decode(sa_raw).decode("utf-8")
             except Exception:
                 sa_json = sa_raw
-            cred = credentials.Certificate(json.loads(sa_json))
-            firebase_admin.initialize_app(cred)
+            return credentials.Certificate(json.loads(sa_json))
+        except Exception as e:
+            logging.error("[FCM] FIREBASE_SERVICE_ACCOUNT unusable: %s", e)
+    return None
+
+
+def _has_firebase() -> bool:
+    """True when the Firebase default app exists (initialising it if needed).
+
+    Cheap on the hot path: one dict lookup once the answer is True. When it is
+    False the real work is throttled to once per _INIT_RETRY_SECONDS so a
+    credential-less deploy cannot spend the CPU of every push retrying.
+    """
+    global _HAS_FIREBASE, _LAST_INIT_ATTEMPT
+    if _HAS_FIREBASE:
+        return True
+    try:
+        import firebase_admin
+    except Exception as e:
+        logging.warning("[FCM] firebase_admin import failed: %s", e)
+        return False
+    if firebase_admin._apps:
+        _HAS_FIREBASE = True
+        logging.info("[FCM] Firebase Admin available — FCM enabled")
+        return True
+    if (time.monotonic() - _LAST_INIT_ATTEMPT) < _INIT_RETRY_SECONDS and _LAST_INIT_ATTEMPT:
+        return False
+    with _INIT_LOCK:
+        # Re-check under the lock: another thread may have just won this race.
+        if _HAS_FIREBASE:
+            return True
+        if firebase_admin._apps:
             _HAS_FIREBASE = True
-            logging.info("[FCM] Firebase Admin initialized from env var — FCM enabled")
-        else:
-            logging.warning("[FCM] No Firebase credentials — push notifications disabled")
-except Exception as _e:
-    logging.warning("[FCM] Firebase Admin not available: %s", _e)
+            logging.info("[FCM] Firebase Admin available — FCM enabled")
+            return True
+        if (time.monotonic() - _LAST_INIT_ATTEMPT) < _INIT_RETRY_SECONDS and _LAST_INIT_ATTEMPT:
+            return False
+        _LAST_INIT_ATTEMPT = time.monotonic()
+        # Prefer letting firestore_sync own the init so app options (storage
+        # bucket) stay consistent with the rest of the backend.
+        try:
+            import firestore_sync as _fs
+            _fs._ensure_init()
+            if firebase_admin._apps:
+                _HAS_FIREBASE = True
+                logging.info("[FCM] Firebase Admin initialised by firestore_sync — FCM enabled")
+                return True
+        except Exception as e:
+            logging.warning("[FCM] firestore_sync init delegation failed: %s", e)
+        try:
+            cred = _load_credentials()
+        except Exception as e:
+            # This runs on the caller's thread (sometimes a request handler);
+            # it must never raise out of here and turn a missed push into a 500.
+            logging.error("[FCM] credential load raised: %s", e)
+            return False
+        if cred is None:
+            logging.warning(
+                "[FCM] No Firebase credentials (serviceAccountKey.json or "
+                "FIREBASE_SERVICE_ACCOUNT) — push notifications DISABLED, retrying in %ds",
+                int(_INIT_RETRY_SECONDS),
+            )
+            return False
+        try:
+            firebase_admin.initialize_app(cred, {'storageBucket': _STORAGE_BUCKET})
+            _HAS_FIREBASE = True
+            logging.info("[FCM] Firebase Admin initialised from credentials — FCM enabled")
+            return True
+        except ValueError:
+            # "default app already exists" — someone initialised between our
+            # check and this call. That is a success, not a failure.
+            if firebase_admin._apps:
+                _HAS_FIREBASE = True
+                logging.info("[FCM] Firebase Admin initialised concurrently — FCM enabled")
+                return True
+            return False
+        except Exception as e:
+            logging.error("[FCM] Firebase init failed: %s", e)
+            return False
+
+
+def fcm_enabled() -> bool:
+    """Public probe for health checks: is FCM actually able to send right now?
+
+    /health used to test `firebase_admin._apps` directly, which reported ok
+    while this module was dropping every push.
+    """
+    return _has_firebase()
+
+
+def _reset_if_app_gone(err_msg: str) -> None:
+    """Drop the cached positive when the default app was torn down under us.
+
+    firestore_sync.reconnect() deletes and re-creates the app; a send racing
+    that would otherwise leave this module convinced Firebase is fine forever.
+    """
+    global _HAS_FIREBASE
+    if "default Firebase app does not exist" in err_msg:
+        _HAS_FIREBASE = False
+
+
+def _log_drop(reason: str) -> None:
+    """Record a dropped push and log it at WARNING, rate-limited.
+
+    First drop of a reason logs immediately; after that at most one line per
+    _DROP_LOG_INTERVAL, carrying the running totals so nothing is lost.
+    """
+    global _last_drop_log
+    _drop_counts[reason] = _drop_counts.get(reason, 0) + 1
+    now = time.monotonic()
+    if _drop_counts[reason] == 1 or (now - _last_drop_log) >= _DROP_LOG_INTERVAL:
+        _last_drop_log = now
+        logging.warning(
+            "[FCM] push DROPPED (%s) — totals since boot: %s",
+            reason,
+            ", ".join(f"{k}={v}" for k, v in sorted(_drop_counts.items())),
+        )
 
 # Main event loop reference — captured by _send_fcm_push_async so the
 # stale-token cleanup can schedule coroutines thread-safely from the
@@ -44,8 +190,12 @@ async def send_to_topic_async(topic: str, title: str, body: str, data: dict = No
 
 
 def _send_to_topic(topic: str, title: str, body: str, data: dict = None) -> None:
-    """Send FCM message to a topic. Silently skips if Firebase not available."""
-    if not _HAS_FIREBASE or not topic:
+    """Send FCM message to a topic. Skips (and logs) if Firebase not available."""
+    if not topic:
+        _log_drop("empty topic")
+        return
+    if not _has_firebase():
+        _log_drop("firebase unavailable (topic)")
         return
     try:
         from firebase_admin import messaging as _fcm
@@ -69,6 +219,7 @@ def _send_to_topic(topic: str, title: str, body: str, data: dict = None) -> None
         _fcm.send(msg)
         logging.info("[FCM] Topic push sent to '%s'", topic)
     except Exception as _e:
+        _reset_if_app_gone(str(_e))
         logging.warning("[FCM] Topic push to '%s' failed: %s", topic, _e)
 
 
@@ -83,12 +234,18 @@ async def _send_fcm_push_async(token: str, title: str, body: str, data: dict = N
 
 
 def _send_fcm_push(token: str, title: str, body: str, data: dict = None, is_offer: bool = False):
-    """Send FCM push notification. Silently skips if Firebase not available.
+    """Send FCM push notification. Skips (and logs) if Firebase not available.
 
     Set is_offer=True for ride offer notifications — uses cruise_offers channel
     which has fullScreenIntent and max priority on Android.
     """
-    if not _HAS_FIREBASE or not token:
+    if not token:
+        # Common and expected (user never registered a device), so it is
+        # counted rather than logged line-by-line — see _log_drop.
+        _log_drop("missing device token")
+        return
+    if not _has_firebase():
+        _log_drop("firebase unavailable")
         return
     # Auto-detect offer push from data payload so callers that don't pass the
     # is_offer flag still get the priority behaviour (FCM channels, sound, etc.)
@@ -153,6 +310,7 @@ def _send_fcm_push(token: str, title: str, body: str, data: dict = None, is_offe
             except Exception as _clean_err:
                 logging.warning("[FCM] stale-token cleanup failed: %s", _clean_err)
         else:
+            _reset_if_app_gone(_msg)
             logging.warning("[FCM] Push failed: %s", _msg)
 
 

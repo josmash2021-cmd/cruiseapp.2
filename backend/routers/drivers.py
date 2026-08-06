@@ -57,6 +57,43 @@ PLATFORM_COMMISSION_RATE = 0.30
 DRIVER_SHARE_RATE = 0.70
 
 
+def _create_driver_connect_account(_stripe, email: str, **extra):
+    """Create a driver's Express account as a RECIPIENT, not a merchant.
+
+    A driver never charges anyone. The platform charges the rider, transfers
+    the driver's share, and the driver withdraws it to a bank (weekly) or to
+    a debit card (instant). Both are external_accounts — money out. So
+    `transfers` is the capability they need.
+
+    `card_payments` means "this account will charge cards", i.e. a business,
+    and asking for it makes Stripe underwrite every driver as one: merchant
+    category, statement descriptor, business details. That is why every
+    connected account in the dashboard sits Restricted.
+
+    The pair stays as a fallback because a platform not yet approved for
+    transfers-only is refused outright ("Your platform needs approval for
+    accounts to have requested the `transfers` capability without the
+    `card_payments` capability"). Ask for the right thing; if this platform
+    has not been approved yet, fall back rather than fail to create the
+    account. The day Stripe approves transfers-only, new drivers get the
+    light onboarding with no code change.
+    """
+    def _mk(caps):
+        return _stripe.Account.create(
+            type="express", email=email or "", capabilities=caps, **extra)
+
+    try:
+        acct = _mk({"transfers": {"requested": True}})
+        logging.info("[Connect] account created transfers-only (recipient)")
+        return acct
+    except Exception as e:
+        logging.warning(
+            "[Connect] transfers-only refused (%s) — falling back to "
+            "card_payments+transfers. Ask Stripe support to approve "
+            "transfers-only to drop the merchant onboarding.", str(e)[:200])
+        return _mk({"card_payments": {"requested": True}, "transfers": {"requested": True}})
+
+
 def _get_driver_rate(vehicle_type: str | None) -> float:
     """Return the driver share rate for the given vehicle type."""
     return vehicle_tiers.driver_share(vehicle_type)
@@ -711,20 +748,7 @@ async def create_stripe_connect_link(
         import stripe as _stripe
         _stripe.api_key = STRIPE_SECRET
         if not user.stripe_connect_id:
-            account = _stripe.Account.create(
-                type="express",
-                email=user.email or "",
-                # Both, not just transfers. Stripe refuses a platform
-                # asking for `transfers` alone without prior approval:
-                # "Your platform needs approval for accounts to have
-                # requested the `transfers` capability without the
-                # `card_payments` capability." Requesting the pair is
-                # the standard Express setup and needs no approval.
-                capabilities={
-                    "card_payments": {"requested": True},
-                    "transfers": {"requested": True},
-                },
-            )
+            account = _create_driver_connect_account(_stripe, user.email)
             user.stripe_connect_id = account["id"]
             await db.commit()
         link = _stripe.AccountLink.create(
@@ -776,20 +800,7 @@ async def create_driver_financial_connections_session(
         try:
             import stripe as _stripe
             _stripe.api_key = STRIPE_SECRET
-            account = _stripe.Account.create(
-                type="express",
-                email=user.email or "",
-                # Both, not just transfers. Stripe refuses a platform
-                # asking for `transfers` alone without prior approval:
-                # "Your platform needs approval for accounts to have
-                # requested the `transfers` capability without the
-                # `card_payments` capability." Requesting the pair is
-                # the standard Express setup and needs no approval.
-                capabilities={
-                    "card_payments": {"requested": True},
-                    "transfers": {"requested": True},
-                },
-            )
+            account = _create_driver_connect_account(_stripe, user.email)
             user.stripe_connect_id = account["id"]
             await db.commit()
         except Exception as e:
@@ -1332,20 +1343,7 @@ async def add_debit_card_payout(
         try:
             import stripe as _stripe
             _stripe.api_key = STRIPE_SECRET
-            account = _stripe.Account.create(
-                type="express",
-                email=user.email or "",
-                # Both, not just transfers. Stripe refuses a platform
-                # asking for `transfers` alone without prior approval:
-                # "Your platform needs approval for accounts to have
-                # requested the `transfers` capability without the
-                # `card_payments` capability." Requesting the pair is
-                # the standard Express setup and needs no approval.
-                capabilities={
-                    "card_payments": {"requested": True},
-                    "transfers": {"requested": True},
-                },
-            )
+            account = _create_driver_connect_account(_stripe, user.email)
             user.stripe_connect_id = account["id"]
             await db.commit()
             logging.info("[StripeConnect] Auto-created account %s for driver %s", account["id"], user.id)
@@ -1429,20 +1427,7 @@ async def add_bank_account_payout(
         try:
             import stripe as _stripe
             _stripe.api_key = STRIPE_SECRET
-            account = _stripe.Account.create(
-                type="express",
-                email=user.email or "",
-                # Both, not just transfers. Stripe refuses a platform
-                # asking for `transfers` alone without prior approval:
-                # "Your platform needs approval for accounts to have
-                # requested the `transfers` capability without the
-                # `card_payments` capability." Requesting the pair is
-                # the standard Express setup and needs no approval.
-                capabilities={
-                    "card_payments": {"requested": True},
-                    "transfers": {"requested": True},
-                },
-            )
+            account = _create_driver_connect_account(_stripe, user.email)
             user.stripe_connect_id = account["id"]
             await db.commit()
             logging.info(
@@ -2570,13 +2555,8 @@ async def stripe_connect_onboard(user: User = Depends(_get_current_user), db: As
     if user.stripe_connect_id:
         account_id = user.stripe_connect_id
     else:
-        account = _stripe_mod.Account.create(
-            type="express",
-            country="US",
-            email=user.email,
-            capabilities={"card_payments": {"requested": True}, "transfers": {"requested": True}},
-            business_type="individual",
-        )
+        account = _create_driver_connect_account(
+            _stripe_mod, user.email, country="US", business_type="individual")
         account_id = account.id
         user.stripe_connect_id = account_id
         await db.commit()

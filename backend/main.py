@@ -153,14 +153,24 @@ from config import (
 # ── Tiered rate limiter (auth vs general API) ─────────────────
 from middleware.rate_limit import rate_limiter as _tiered_rate_limiter
 
-def _next_tuesday_2am() -> datetime:
-    """Return the next Tuesday at 02:00 UTC (or today if it's Tuesday and before 2 AM)."""
+# Payday. Monday is 0, so Wednesday is 2 (driver request 2026-08-06 — it ran
+# on Tuesday before). Named rather than inlined into the `% 7` because the day
+# is a business decision and was previously findable only by reading the
+# arithmetic. Times are UTC: 02:00 UTC is Tuesday 21:00 in Alabama, so a
+# Wednesday run lands late Tuesday evening local — worth knowing before moving
+# it again.
+_PAYOUT_WEEKDAY = 2
+_PAYOUT_HOUR_UTC = 2
+
+
+def _next_payout_run() -> datetime:
+    """Return the next payday at 02:00 UTC (or today if it is payday and before 2 AM)."""
     now = datetime.now(timezone.utc)
-    days_ahead = (1 - now.weekday()) % 7  # 1 = Tuesday
-    if days_ahead == 0 and now.hour >= 2:
+    days_ahead = (_PAYOUT_WEEKDAY - now.weekday()) % 7
+    if days_ahead == 0 and now.hour >= _PAYOUT_HOUR_UTC:
         days_ahead = 7
     target = (now + timedelta(days=days_ahead)).replace(
-        hour=2, minute=0, second=0, microsecond=0
+        hour=_PAYOUT_HOUR_UTC, minute=0, second=0, microsecond=0
     )
     return target
 
@@ -704,7 +714,7 @@ _SCHEDULER_LOCK_KEY = 771_120_045
 
 
 async def _schedule_weekly_payouts():
-    """Background loop: sleep until next Tuesday 02:00 UTC, run payouts, repeat."""
+    """Background loop: sleep until the next payday (Wednesday 02:00 UTC), run payouts, repeat."""
     # A redeploy that interrupted a payout run is worth hearing about now,
     # not next Tuesday — this is the closest thing to a boot-time alarm the
     # payout has. Read-only, so it cannot make anything worse.
@@ -713,7 +723,7 @@ async def _schedule_weekly_payouts():
     except Exception as e:
         logging.error("[AutoPayout] boot-time stuck scan failed: %s", e)
     while True:
-        target = _next_tuesday_2am()
+        target = _next_payout_run()
         wait_secs = (target - datetime.now(timezone.utc)).total_seconds()
         logging.info(
             "[AutoPayout] Next run scheduled at %s (in %.0f s)",

@@ -78,9 +78,28 @@ def _create_driver_connect_account(_stripe, email: str, **extra):
     account. The day Stripe approves transfers-only, new drivers get the
     light onboarding with no code change.
     """
+    # Pin the payout schedule instead of inheriting Stripe's default.
+    #
+    # The platform transfers on Monday; this decides when that balance leaves
+    # the driver's Stripe account for their bank. `daily` means "as soon as
+    # each amount clears", which on a US bank is about two business days —
+    # Monday out, Wednesday in, which is the day they were promised.
+    #
+    # NOT `weekly`: a weekly schedule anchored to Monday can miss its own
+    # cutoff for a transfer landing that same morning and hold the money a
+    # further seven days. Daily has no cutoff to miss.
+    #
+    # It was working out to roughly this already, but by Stripe's default
+    # rather than by our choice — so a change on their side would have moved
+    # payday with no change on ours.
+    _payout_settings = {
+        "payouts": {"schedule": {"interval": "daily"}},
+    }
+
     def _mk(caps):
         return _stripe.Account.create(
-            type="express", email=email or "", capabilities=caps, **extra)
+            type="express", email=email or "", capabilities=caps,
+            settings=_payout_settings, **extra)
 
     try:
         acct = _mk({"transfers": {"requested": True}})
@@ -1365,6 +1384,18 @@ async def add_debit_card_payout(
             default_for_currency=set_default,
         )
         ext_id = ext.get("id") or ""
+        # Accounts created before the schedule was pinned still carry
+        # Stripe's default, so bring them in line the moment a payout
+        # destination is attached. Best effort: a failure here must not cost
+        # the driver the account they just linked.
+        try:
+            _stripe.Account.modify(
+                user.stripe_connect_id,
+                settings={"payouts": {"schedule": {"interval": "daily"}}},
+            )
+        except Exception as sched_err:
+            logging.warning("[Payout] could not pin payout schedule for %s: %s",
+                            user.stripe_connect_id, str(sched_err)[:200])
         brand = (ext.get("brand") or "Card").title()
         last4 = ext.get("last4") or "----"
         display = f"{brand} ····{last4}  [ext:{ext_id}]"
@@ -1447,6 +1478,18 @@ async def add_bank_account_payout(
             default_for_currency=set_default,
         )
         ext_id = ext.get("id") or ""
+        # Accounts created before the schedule was pinned still carry
+        # Stripe's default, so bring them in line the moment a payout
+        # destination is attached. Best effort: a failure here must not cost
+        # the driver the account they just linked.
+        try:
+            _stripe.Account.modify(
+                user.stripe_connect_id,
+                settings={"payouts": {"schedule": {"interval": "daily"}}},
+            )
+        except Exception as sched_err:
+            logging.warning("[Payout] could not pin payout schedule for %s: %s",
+                            user.stripe_connect_id, str(sched_err)[:200])
         bank_name = (ext.get("bank_name") or "Bank").title()
         last4 = ext.get("last4") or "----"
         display = f"{bank_name} ····{last4}  [ext:{ext_id}]"

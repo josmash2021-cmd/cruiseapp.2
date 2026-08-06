@@ -282,6 +282,12 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   List<Map<String, dynamic>> _pendingOffers = [];
   // _offersExpanded removed — cards always visible via PageView
 
+  /// True once the "you are online" indicators are up — the iOS Live
+  /// Activity and the persistent notification. Both used to hang off the
+  /// `.then` of the go-online network call, so any path that did not reach
+  /// it left the driver with nothing on either platform.
+  bool _presenceShown = false;
+
   /// What the iOS Live Activity is currently showing: `offer:<id>`,
   /// `on_trip`, `online`, or null while there is no activity at all.
   /// Compared by _syncOfferLiveActivity against the state derived from

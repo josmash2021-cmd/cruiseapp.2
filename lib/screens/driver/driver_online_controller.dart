@@ -96,6 +96,10 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       //
       // SSE is already connected by _startPolling above; connecting again
       // here would only tear that one down a generation later.
+      // Up front, on both paths. The driver is on the online screen, so the
+      // lock screen should say so now rather than after a network round trip
+      // that may never complete.
+      _showOnlinePresence();
       if (widget.resuming) {
         _approvalGatePassed = true;
         _setState(() => _isGoingOnline = false);
@@ -1025,6 +1029,32 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     }
   }
 
+  /// Raise the "you are online" indicators: the iOS Live Activity and the
+  /// persistent notification Android shows while the app is away.
+  ///
+  /// Deliberately NOT gated on the go-online network call. Both of these
+  /// used to live in that call's `.then`, which meant one HTTP round trip
+  /// decided whether the driver saw anything at all on either platform —
+  /// and five separate paths skipped it silently: no driver id yet, the
+  /// approval gate not passed, no GPS fix yet, a resumed shift (which never
+  /// called it), and a failed request whose retry only fires while the phase
+  /// is still `searching`.
+  ///
+  /// This screen only exists while the driver is online, so being mounted is
+  /// the condition. Idempotent, so boot, the backend callback and the clock
+  /// can all call it.
+  void _showOnlinePresence() {
+    if (!mounted || _presenceShown) return;
+    _presenceShown = true;
+    debugPrint('[DriverOnline] raising online presence '
+        '(live activity + persistent notification)');
+    // iOS only — a silent no-op on Android, where the notification below is
+    // what the driver actually sees.
+    LiveActivityService.startOnline();
+    _islandState = 'online';
+    NotificationService.showDriverOnlineNotification();
+  }
+
   void _goOnlineBackend() {
     // _isGoingOnline is already set to true by _verifyAndGoOnline() before
     // calling this method. The guard below would incorrectly skip if it were
@@ -1061,15 +1091,12 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       isOnline: true,
     ).then((_) {
       _isGoingOnline = false;
-      debugPrint('âœ… Driver online successfully');
+      debugPrint('[DriverOnline] backend registered this driver online');
       AnalyticsService.instance.logDriverOnline();
-      // iOS: Cruise logo in the Dynamic Island while online (no-op elsewhere)
-      LiveActivityService.startOnline();
-      // What that call just put on the island, so the next reconcile does
-      // not re-send it.
-      _islandState = 'online';
-      // Show persistent notification (fire-and-forget, non-blocking)
-      NotificationService.showDriverOnlineNotification();
+      // Idempotent — this is the happy path, but _showOnlinePresence is also
+      // driven from boot and from the clock so the indicators no longer
+      // depend on this callback being reached.
+      _showOnlinePresence();
       // Subscribe to scheduled rides topic — receives FCM when new
       // scheduled trips enter the marketplace.
       FirebaseMessaging.instance
@@ -1100,6 +1127,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     // against; leaving the last state set would have the next sync push an
     // update to an activity that no longer exists.
     _islandState = null;
+    _presenceShown = false;
     NotificationService.cancelDriverOnlineNotification();
     NotificationService.cancelOfferNotifications();
     // Unsubscribe from scheduled rides topic when going offline.
@@ -2086,8 +2114,11 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     _clock = Timer.periodic(const Duration(seconds: 5), (_) {
       if (!mounted) return;
       _setState(() => _online += const Duration(seconds: 5));
-      // Backstop for the island: no-op whenever it already agrees with the
-      // head of the offer list, which is the normal case.
+      // Backstops. Both are no-ops once the state already agrees, which is
+      // the normal case — they exist so a path that skips the happy route
+      // self-corrects within five seconds instead of leaving the driver with
+      // a blank lock screen for the whole shift.
+      _showOnlinePresence();
       _syncOfferLiveActivity();
     });
   }

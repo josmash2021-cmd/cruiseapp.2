@@ -121,7 +121,14 @@ final class CruiseLiveActivityManager {
   }
 
   func start(status: String) {
-    guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
+    guard ActivityAuthorizationInfo().areActivitiesEnabled else {
+      // Silent until now, and indistinguishable from our code never running.
+      // This is the switch under Settings > Cruise > Live Activities: when it
+      // is off nothing we do here can put anything on the lock screen.
+      NSLog("[LiveActivity] start refused: Live Activities are disabled for "
+        + "this app in Settings — nothing will appear on the lock screen")
+      return
+    }
     let state = CruiseActivityAttributes.ContentState(status: status, since: Date())
     enqueue {
       // End stale ones (e.g. left over from a force-killed session).
@@ -164,7 +171,11 @@ final class CruiseLiveActivityManager {
   /// an offer card would matter most. The activity has to be started when
   /// the shift starts, which is what `start()` is for.
   func offer(fare: String, perHour: String, miles: String, minutes: String) {
-    guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
+    guard ActivityAuthorizationInfo().areActivitiesEnabled else {
+      NSLog("[LiveActivity] offer refused: Live Activities are disabled for "
+        + "this app in Settings — the ride card cannot be shown")
+      return
+    }
     let state = CruiseActivityAttributes.ContentState(
       status: "offer", since: Date(),
       fare: fare, perHour: perHour, miles: miles, minutes: minutes)

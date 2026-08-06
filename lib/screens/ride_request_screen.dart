@@ -1325,7 +1325,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                         if (phase != RiderPhase.pickingLocation) {
                           _ctrl.reset();
                         }
-                        Navigator.of(context).pop();
+                        _nav?.pop();
                       },
                       c: c,
                     ),

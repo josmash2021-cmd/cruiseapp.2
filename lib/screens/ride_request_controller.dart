@@ -8,9 +8,27 @@ final _last4Re = RegExp(r'(\d{4})$');
 
 extension _RideRequestController on _RideRequestScreenState {
 
+  // `Navigator.of` ends in `return navigator!` and `ScaffoldMessenger.of` in
+  // `dependOnInheritedWidgetOfExactType<_ScaffoldMessengerScope>()!`. The
+  // assert that explains the mistake is compiled out of release, so a context
+  // whose element is DEACTIVATED — the route is mid-pop while a cancel or
+  // payment callback is still running, and `mounted` is still true because
+  // dispose() has not run yet — makes the lookup return null and the `!`
+  // throw "Null check operator used on a null value". Both statics are small
+  // enough for AOT to inline, so Crashlytics blamed this file instead of the
+  // framework (iOS 1.0.9+542, cancel + payment flows).
+  //
+  // Every navigation and snackbar here goes through these: on a dead context
+  // the call becomes the no-op it already was semantically.
+  NavigatorState? get _nav => mounted ? Navigator.maybeOf(context) : null;
+  NavigatorState? get _rootNav =>
+      mounted ? Navigator.maybeOf(context, rootNavigator: true) : null;
+  ScaffoldMessengerState? get _messenger =>
+      mounted ? ScaffoldMessenger.maybeOf(context) : null;
+
   /// Shows an error SnackBar with a Retry action button (8-second duration).
   void _showRetrySnackBar(String message, VoidCallback onRetry) {
-    ScaffoldMessenger.of(context).showSnackBar(
+    _messenger?.showSnackBar(
       SnackBar(
         content: Text(message),
         duration: const Duration(seconds: 8),
@@ -48,7 +66,7 @@ extension _RideRequestController on _RideRequestScreenState {
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
+            onPressed: () => Navigator.maybeOf(ctx)?.pop(),
             child: Text(
               s.cancel,
               style: TextStyle(color: Colors.white.withValues(alpha: 0.6)),
@@ -56,7 +74,7 @@ extension _RideRequestController on _RideRequestScreenState {
           ),
           TextButton(
             onPressed: () {
-              Navigator.of(ctx).pop();
+              Navigator.maybeOf(ctx)?.pop();
               _openCreditCardScreen(AppColors.of(context), null);
             },
             child: const Text(
@@ -412,12 +430,12 @@ extension _RideRequestController on _RideRequestScreenState {
               content: Text(S.of(ctx).locationPermissionPermanentlyDeniedMsg),
               actions: [
                 TextButton(
-                  onPressed: () => Navigator.pop(ctx),
+                  onPressed: () => Navigator.maybeOf(ctx)?.pop(),
                   child: Text(S.of(ctx).cancel),
                 ),
                 TextButton(
                   onPressed: () {
-                    Navigator.pop(ctx);
+                    Navigator.maybeOf(ctx)?.pop();
                     openAppSettings();
                   },
                   child: Text(S.of(ctx).openSettings),
@@ -686,7 +704,7 @@ extension _RideRequestController on _RideRequestScreenState {
           _cancelDialogShown = false;
           _ctrl.reset();
           if (mounted) {
-            Navigator.of(context).pushAndRemoveUntil(
+            _nav?.pushAndRemoveUntil(
               smoothFadeRoute(const HomeScreen()),
               (_) => false,
             );
@@ -749,7 +767,7 @@ extension _RideRequestController on _RideRequestScreenState {
               ),
             );
             _ctrl.reset();
-            Navigator.of(context).pushAndRemoveUntil(
+            _nav?.pushAndRemoveUntil(
               smoothFadeRoute(const HomeScreen()),
               (_) => false,
             );
@@ -775,8 +793,10 @@ extension _RideRequestController on _RideRequestScreenState {
                 cancelCodeForDialog,
                 rawReason: rawReasonForDialog,
               );
+          final cancelNav = _rootNav;
+          if (cancelNav == null) return;
           showDialog(
-            context: context,
+            context: cancelNav.context,
             barrierDismissible: false,
             builder: (dialogCtx) => AlertDialog(
               shape: RoundedRectangleBorder(
@@ -794,10 +814,10 @@ extension _RideRequestController on _RideRequestScreenState {
                 TextButton(
                   onPressed: () {
                     _cancelDialogShown = false;
-                    Navigator.of(dialogCtx).pop();
+                    Navigator.maybeOf(dialogCtx)?.pop();
                     _ctrl.reset();
                     if (mounted) {
-                      Navigator.of(context).pushAndRemoveUntil(
+                      _nav?.pushAndRemoveUntil(
                         smoothFadeRoute(const HomeScreen()),
                         (_) => false,
                       );
@@ -826,7 +846,9 @@ extension _RideRequestController on _RideRequestScreenState {
   // ── Search screen ──
 
   Future<void> _openSearch() async {
-    final result = await Navigator.of(context).push<Map<String, dynamic>>(
+    final nav = _nav;
+    if (nav == null) return;
+    final result = await nav.push<Map<String, dynamic>>(
       scaleExpandRoute(
         PickupDropoffSearchScreen(
           initialPickupText: _currentAddress,
@@ -871,7 +893,7 @@ extension _RideRequestController on _RideRequestScreenState {
     switch (phase) {
       case RiderPhase.previewRoute:
       case RiderPhase.selectingRide:
-        final screenH = MediaQuery.of(context).size.height;
+        final screenH = (MediaQuery.maybeOf(context)?.size.height ?? 800.0);
         final h = (screenH * 0.45).clamp(280.0, 420.0);
         return h + bottomPad;
       case RiderPhase.requesting:
@@ -1023,7 +1045,7 @@ extension _RideRequestController on _RideRequestScreenState {
                     // Payment method selector — gray "Payment Method" button
                     GestureDetector(
                       onTap: () {
-                        Navigator.pop(ctx);
+                        Navigator.maybeOf(ctx)?.pop();
                         _showPaymentMethodPicker(c, option);
                       },
                       child: Container(
@@ -1170,7 +1192,7 @@ extension _RideRequestController on _RideRequestScreenState {
         setSheetState(() => _isProcessingPayment = false);
         _setState(() => _isProcessingPayment = false);
         debugPrint('Payment error: $e');
-        Navigator.of(context).pop(); // close payment modal
+        _nav?.pop(); // close payment modal
         _setState(() => _showPaymentDeclinedBanner = true);
         _showRetrySnackBar(
           S.of(context).paymentDeclinedMsg,
@@ -1182,7 +1204,7 @@ extension _RideRequestController on _RideRequestScreenState {
       if (!mounted) return;
       setSheetState(() => _isProcessingPayment = false);
       _setState(() => _isProcessingPayment = false);
-      Navigator.of(context).pop();
+      _nav?.pop();
       if (widget.applyPromo) await LocalDataService.setPromoUsed();
       AnalyticsService.instance.logRideRequested(
         option?.name ?? 'unknown',
@@ -1237,7 +1259,8 @@ extension _RideRequestController on _RideRequestScreenState {
     });
 
     try {
-      final nav = Navigator.of(context);
+      final nav = _nav;
+      if (nav == null) return;
 
       // Test mode: skip payment entirely
       final bool isTestMode = _selectedPaymentMethod == 'test_mode';
@@ -1385,7 +1408,7 @@ extension _RideRequestController on _RideRequestScreenState {
         _ctrl.reset();
         // Navigate to home screen after cancel
         if (mounted) {
-          Navigator.of(context).pushAndRemoveUntil(
+          _nav?.pushAndRemoveUntil(
             smoothFadeRoute(const HomeScreen()),
             (_) => false,
           );
@@ -1485,7 +1508,7 @@ extension _RideRequestController on _RideRequestScreenState {
         if (isClientError) {
           _ctrl.reset();
           final msg = rawReason ?? S.of(context).tripCancelled;
-          ScaffoldMessenger.of(context).showSnackBar(
+          _messenger?.showSnackBar(
             SnackBar(
               behavior: SnackBarBehavior.floating,
               backgroundColor: const Color(0xFF1a1a1a),
@@ -1555,13 +1578,13 @@ extension _RideRequestController on _RideRequestScreenState {
               ),
             ),
           );
-          Navigator.of(context).pushAndRemoveUntil(
+          _nav?.pushAndRemoveUntil(
             smoothFadeRoute(const HomeScreen()),
             (_) => false,
           );
           return;
         }
-        Navigator.of(context).pushAndRemoveUntil(
+        _nav?.pushAndRemoveUntil(
           smoothFadeRoute(const HomeScreen()),
           (_) => false,
         );
@@ -1572,8 +1595,10 @@ extension _RideRequestController on _RideRequestScreenState {
                 cancelCode,
                 rawReason: rawReason,
               );
+          final rootNav = _rootNav;
+          if (rootNav == null) return;
           showDialog(
-            context: Navigator.of(context, rootNavigator: true).context,
+            context: rootNav.context,
             barrierDismissible: true,
             builder: (dialogCtx) => AlertDialog(
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
@@ -1585,7 +1610,7 @@ extension _RideRequestController on _RideRequestScreenState {
                     style: const TextStyle(fontSize: 17))),
               ]),
               content: Text(localizedBody, style: const TextStyle(fontSize: 15)),
-              actions: [TextButton(onPressed: () => Navigator.of(dialogCtx).pop(), child: Text(S.of(context).okBtn))],
+              actions: [TextButton(onPressed: () => Navigator.maybeOf(dialogCtx)?.pop(), child: Text(S.of(context).okBtn))],
             ),
           );
         });
@@ -1607,14 +1632,14 @@ extension _RideRequestController on _RideRequestScreenState {
             : (rawReason ?? S.of(context).tripCancelled);
         _ctrl.reset();
         // Navigate home cleanly
-        final navRoot = Navigator.of(context, rootNavigator: true);
-        Navigator.of(context).pushAndRemoveUntil(
+        final navRoot = _rootNav;
+        _nav?.pushAndRemoveUntil(
           smoothFadeRoute(const HomeScreen()),
           (_) => false,
         );
         // Show dialog on home screen after a short delay
         Future.delayed(const Duration(milliseconds: 600), () {
-          if (!navRoot.mounted) return;
+          if (navRoot == null || !navRoot.mounted) return;
           showDialog(
             context: navRoot.context,
             barrierDismissible: true,
@@ -1631,7 +1656,7 @@ extension _RideRequestController on _RideRequestScreenState {
               content: Text(displayMsg, style: const TextStyle(fontSize: 15)),
               actions: [
                 TextButton(
-                  onPressed: () => Navigator.of(dialogCtx).pop(),
+                  onPressed: () => Navigator.maybeOf(dialogCtx)?.pop(),
                   child: Text(S.of(context).ok),
                 ),
               ],
@@ -1860,7 +1885,9 @@ extension _RideRequestController on _RideRequestScreenState {
   Future<bool> _confirmPayPal(int amountCents) async {
     late final bool? result;
     try {
-      result = await Navigator.of(context).push<bool>(
+      final nav = _nav;
+      if (nav == null) return false;
+      result = await nav.push<bool>(
         slideFromRightRoute(
           PayPalCheckoutScreen(
             amount: (amountCents / 100).toStringAsFixed(2),
@@ -1996,7 +2023,7 @@ extension _RideRequestController on _RideRequestScreenState {
       
       // Validar que scheduledAt no sea null
       if (state.scheduledAt == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
+        _messenger?.showSnackBar(
           SnackBar(
             content: Text(S.of(context).pleaseSelectDateTime),
             backgroundColor: Colors.red,
@@ -2008,7 +2035,7 @@ extension _RideRequestController on _RideRequestScreenState {
       // Validar que no sea en el pasado
       final now = DateTime.now();
       if (state.scheduledAt!.isBefore(now)) {
-        ScaffoldMessenger.of(context).showSnackBar(
+        _messenger?.showSnackBar(
           SnackBar(
             content: Text(S.of(context).cannotSchedulePast),
             backgroundColor: Colors.red,
@@ -2020,7 +2047,7 @@ extension _RideRequestController on _RideRequestScreenState {
       // Validar que sea al menos 30 minutos en el futuro
       final minAdvance = now.add(const Duration(minutes: 30));
       if (state.scheduledAt!.isBefore(minAdvance)) {
-        ScaffoldMessenger.of(context).showSnackBar(
+        _messenger?.showSnackBar(
           SnackBar(
             content: Text(S.of(context).schedule30MinAdvance),
             backgroundColor: Colors.red,
@@ -2032,7 +2059,7 @@ extension _RideRequestController on _RideRequestScreenState {
       // Validar que no sea más de 30 días en el futuro
       final maxAdvance = now.add(const Duration(days: 30));
       if (state.scheduledAt!.isAfter(maxAdvance)) {
-        ScaffoldMessenger.of(context).showSnackBar(
+        _messenger?.showSnackBar(
           SnackBar(
             content: Text(S.of(context).scheduleMax30Days),
             backgroundColor: Colors.red,
@@ -2070,7 +2097,7 @@ extension _RideRequestController on _RideRequestScreenState {
 
       // Navigate to animated confirmation screen
       HapticService.heavyImpact();
-      Navigator.of(context).pushAndRemoveUntil(
+      _nav?.pushAndRemoveUntil(
         PageRouteBuilder(
           transitionDuration: const Duration(milliseconds: 400),
           pageBuilder: (_, __, ___) => RideBookingConfirmedScreen(
@@ -2161,7 +2188,7 @@ extension _RideRequestController on _RideRequestScreenState {
                       borderRadius: BorderRadius.circular(14),
                     ),
                   ),
-                  onPressed: () => Navigator.pop(ctx),
+                  onPressed: () => Navigator.maybeOf(ctx)?.pop(),
                   child: Text(
                     S.of(context).tryAgain,
                     style: const TextStyle(
@@ -2605,7 +2632,7 @@ void _showPaymentMethodPickerLegacy(AppColors c, RideOption? option) {
                     onTap: enabled
                         ? () {
                             _setState(() => _selectedPaymentMethod = id);
-                            Navigator.pop(ctx);
+                            Navigator.maybeOf(ctx)?.pop();
                           }
                         : null,
                     child: Opacity(
@@ -2705,10 +2732,8 @@ void _showPaymentMethodPickerLegacy(AppColors c, RideOption? option) {
                 // Manage payment accounts link
                 GestureDetector(
                   onTap: () async {
-                    Navigator.pop(ctx);
-                    await Navigator.of(
-                      context,
-                    ).push(slideFromRightRoute(const PaymentAccountsScreen()));
+                    Navigator.maybeOf(ctx)?.pop();
+                    await _nav?.push(slideFromRightRoute(const PaymentAccountsScreen()));
                     await _loadLinkedPayments();
                     if (mounted) _showPaymentSheet(c, option);
                   },
@@ -2737,9 +2762,7 @@ void _showPaymentMethodPickerLegacy(AppColors c, RideOption? option) {
   }
 
   Future<void> _openCreditCardScreen(AppColors c, RideOption? option) async {
-    final result = await Navigator.of(
-      context,
-    ).push<String>(slideFromRightRoute(const CreditCardScreen()));
+    final result = await _nav?.push<String>(slideFromRightRoute(const CreditCardScreen()));
     if (result != null && result.isNotEmpty) {
       String brand = 'card';
       String last4 = result;
@@ -2763,9 +2786,7 @@ void _showPaymentMethodPickerLegacy(AppColors c, RideOption? option) {
     AppColors c,
     RideOption? option,
   ) async {
-    await Navigator.of(
-      context,
-    ).push(slideFromRightRoute(const PaymentAccountsScreen()));
+    await _nav?.push(slideFromRightRoute(const PaymentAccountsScreen()));
     await _loadLinkedPayments();
     if (mounted) _showPaymentSheet(c, option);
   }
@@ -3029,7 +3050,7 @@ void _showPaymentMethodPickerLegacy(AppColors c, RideOption? option) {
                 children: [
                   Expanded(
                     child: GestureDetector(
-                      onTap: () => Navigator.of(ctx).pop(),
+                      onTap: () => Navigator.maybeOf(ctx)?.pop(),
                       child: Container(
                         height: 48,
                         alignment: Alignment.center,
@@ -3049,11 +3070,11 @@ void _showPaymentMethodPickerLegacy(AppColors c, RideOption? option) {
                   Expanded(
                     child: GestureDetector(
                       onTap: () {
-                        Navigator.of(ctx).pop();
+                        Navigator.maybeOf(ctx)?.pop();
                         _cancelSearching();
                         // Navigate to home screen with fade transition
                         if (mounted) {
-                          Navigator.of(context).pushAndRemoveUntil(
+                          _nav?.pushAndRemoveUntil(
                             smoothFadeRoute(const HomeScreen()),
                             (_) => false,
                           );

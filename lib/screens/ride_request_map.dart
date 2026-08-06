@@ -94,7 +94,7 @@ extension _RideRequestMap on _RideRequestScreenState {
   /// When [labelOnLeft] is true:  label on LEFT, pin on RIGHT (dropoff default).
   /// The canvas is padded so the pin tip is at exact bottom-center,
   /// allowing `iconAnchor: BOTTOM` with zero offset.
-  Future<(Uint8List, Offset, Uint8List)> _buildPinWithLabel({
+  Future<(Uint8List, Offset, Uint8List)?> _buildPinWithLabel({
     required String text,
     bool isPickup = true,
     String? etaText,
@@ -281,18 +281,20 @@ extension _RideRequestMap on _RideRequestScreenState {
     // Anchor: pin tip is now at bottom-center by construction
     const anchorOffset = Offset(0.5, 1.0);
 
-    final rawBytes = bytes!.buffer.asUint8List();
+    if (bytes == null) return null; // raster context gone — next pass retries
+    final rawBytes = bytes.buffer.asUint8List();
     return (rawBytes, anchorOffset, rawBytes);
   }
 
   /// Render a standalone circular pin (no label) as raw bytes.
-  Future<(Uint8List, Uint8List)> _buildStandalonePin({
+  Future<(Uint8List, Uint8List)?> _buildStandalonePin({
     _PinIcon icon = _PinIcon.none,
     bool isPickup = true,
   }) async {
     // Airport: clean departure icon only
     if (icon == _PinIcon.airplane) {
       final bytes = await _buildAirportIconBytes(100);
+      if (bytes == null) return null; // raster context gone — retry next pass
       return (bytes, bytes);
     }
     final bytes = await renderCircularPinBytes(
@@ -304,7 +306,8 @@ extension _RideRequestMap on _RideRequestScreenState {
   }
 
   /// Render a clean golden flight_takeoff icon (no background shape).
-  Future<Uint8List> _buildAirportIconBytes(double dim) async {
+  /// Null when the raster context is gone (backgrounded mid-render).
+  Future<Uint8List?> _buildAirportIconBytes(double dim) async {
     final recorder = ui.PictureRecorder();
     final canvas = Canvas(recorder, Rect.fromLTWH(0, 0, dim, dim));
 
@@ -347,7 +350,8 @@ extension _RideRequestMap on _RideRequestScreenState {
     final picture = recorder.endRecording();
     final img = await picture.toImage(dim.toInt(), dim.toInt());
     final byteData = await img.toByteData(format: ui.ImageByteFormat.png);
-    return byteData!.buffer.asUint8List();
+    if (byteData == null) return null; // raster context gone
+    return byteData.buffer.asUint8List();
   }
 
   /// Draw a teardrop location pin.
@@ -701,7 +705,10 @@ extension _RideRequestMap on _RideRequestScreenState {
     // This is the framed view with pitch 55°, big bottom inset for
     // the card, and the route fully visible above it.
     if (!mounted) { _cinematicRunning = false; return; }
-    final mq = MediaQuery.of(context);
+    final mq = MediaQuery.maybeOf(context);
+    // Deactivated element: same unwind as the !mounted guard above, or the
+    // flag stays true and the next route never animates.
+    if (mq == null) { _cinematicRunning = false; return; }
     // Measured sheet height once it has laid out — the 42% estimate
     // undershoots the real panel once a tier is picked (detail row +
     // payment row + Request Ride), and the route's tail slid under the
@@ -890,7 +897,7 @@ extension _RideRequestMap on _RideRequestScreenState {
     // settled — the rider watched the finished frame "restart" for no
     // visual gain.
     if (mounted && _sheetHeightPx > 0 && _ctrl.state.route != null) {
-      final botSafe = MediaQuery.of(context).padding.bottom;
+      final botSafe = (MediaQuery.maybeOf(context)?.padding.bottom ?? 0.0);
       if ((_cameraBottomInset(botSafe) - cardInset).abs() > 40) {
         _fitRoute(List<LatLng>.from(_ctrl.state.route!.points),
             preserveCamera: true);
@@ -980,7 +987,8 @@ extension _RideRequestMap on _RideRequestScreenState {
       if (p.longitude > maxLng) maxLng = p.longitude;
     }
 
-    final mq = MediaQuery.of(context);
+    final mq = MediaQuery.maybeOf(context);
+    if (mq == null) return;
     // Keep the whole route visible above the searching-status card —
     // measured once the card has laid out, estimated before that.
     final bottomInset = _sheetHeightPx > 0
@@ -1511,7 +1519,7 @@ extension _RideRequestMap on _RideRequestScreenState {
     // the sheet's top edge (user report, 2026-08-04) instead of living
     // comfortably in the visible map area.
     if (_sheetHeightPx <= 0) {
-      final screenH = MediaQuery.of(context).size.height;
+      final screenH = (MediaQuery.maybeOf(context)?.size.height ?? 800.0);
       return (screenH * 0.35).clamp(190.0, 320.0) + botSafe + 70;
     }
     return _sheetHeightPx + _sheetScreenGap + 70;
@@ -1578,7 +1586,7 @@ extension _RideRequestMap on _RideRequestScreenState {
       double paddingTop = 70}) {
     final web = _webMapCtrl;
     if (web == null || pts.isEmpty) return;
-    final botSafe = MediaQuery.of(context).padding.bottom;
+    final botSafe = (MediaQuery.maybeOf(context)?.padding.bottom ?? 0.0);
     // This move is ours — onCameraMove must not read it as a rider gesture.
     _webAutoCameraUntil =
         DateTime.now().add(Duration(milliseconds: durationMs + 250));
@@ -1755,7 +1763,7 @@ extension _RideRequestMap on _RideRequestScreenState {
       if (p.longitude < minLng) minLng = p.longitude;
       if (p.longitude > maxLng) maxLng = p.longitude;
     }
-    final botPad = MediaQuery.of(context).padding.bottom;
+    final botPad = (MediaQuery.maybeOf(context)?.padding.bottom ?? 0.0);
     final phase = _ctrl.state.phase;
     // Keep the route framed in the visible map area above the sheet —
     // measured once the panel has laid out, estimated before that.
@@ -1847,7 +1855,9 @@ extension _RideRequestMap on _RideRequestScreenState {
     if (_driverFoundVisible) {
       _setState(() => _driverFoundVisible = false);
     }
-    Navigator.of(context).push(
+    final nav = _nav;
+    if (nav == null) return;
+    nav.push(
       slideUpFadeRoute(
         RiderTrackingScreen(
           pickupLatLng: LatLng(s.pickup!.lat, s.pickup!.lng),
@@ -1874,8 +1884,8 @@ extension _RideRequestMap on _RideRequestScreenState {
             LocalDataService.clearActiveRide();
             // Pop RiderTrackingScreen, then pop RideRequestScreen
             // to return to HomeScreen (Where to? + car options)
-            Navigator.of(context).pop(); // pop tracking
-            Navigator.of(context).pop(); // pop ride request → back to home
+            _nav?.pop(); // pop tracking
+            _nav?.pop(); // pop ride request → back to home
           },
         ),
       ),
@@ -1970,7 +1980,7 @@ extension _RideRequestMap on _RideRequestScreenState {
         mapbox.Point(coordinates: mapbox.Position(bounds.southwest.longitude, bounds.southwest.latitude)),
         mapbox.Point(coordinates: mapbox.Position(bounds.northeast.longitude, bounds.northeast.latitude)),
       ];
-      final botSafe = MediaQuery.of(context).padding.bottom;
+      final botSafe = (MediaQuery.maybeOf(context)?.padding.bottom ?? 0.0);
       final bottomPad = _cameraBottomInset(botSafe);
       final cam = await _mapCtrl?.cameraForCoordinatesPadding(
         coords, mapbox.CameraOptions(),
@@ -2211,8 +2221,9 @@ extension _RideRequestMap on _RideRequestScreenState {
       }
       if (s.pickup == null || s.dropoff == null) {
         _ctrl.startLocationSelection();
-        if (mounted && Navigator.of(context).canPop()) {
-          Navigator.of(context).pop();
+        final popNav = _nav;
+        if (popNav != null && popNav.canPop()) {
+          popNav.pop();
           return;
         }
       }

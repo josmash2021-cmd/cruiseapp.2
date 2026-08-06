@@ -2060,7 +2060,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     // during the first layout. On web show the GL JS WebMapView instead,
     // same pattern as the rider home mini map.
     if (kIsWeb) {
-      final webPos = _currentLatLng ?? const LatLng(40.7128, -74.0060);
+      final webPos = _currentLatLng ?? const LatLng(33.5186, -86.8104);
       return Container(
         decoration: neuBox(radius: 24),
         clipBehavior: Clip.antiAlias,
@@ -2093,7 +2093,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     }
     // FIX: Always show map, even if GPS hasn't loaded yet. Use default location
     // and move camera when GPS arrives. Prevents blank screen on slow GPS.
-    final pos = _currentLatLng ?? const LatLng(40.7128, -74.0060);
+    final pos = _currentLatLng ?? const LatLng(33.5186, -86.8104);
 
     return RepaintBoundary(
       child: LayoutBuilder(

@@ -54,7 +54,12 @@ class _MapPickerScreenState extends State<MapPickerScreen>
   bool _addressIsPlaceholder = true;
   bool _loading = false;
   bool _geocodeFailed = false;
-  LatLng _center = const LatLng(40.7128, -74.0060);
+  // Birmingham, the same seed preload_service and the request flow already
+  // use. This was New York — a default nobody chose, a thousand miles from
+  // every real user, so the map opened over Manhattan and then jumped to
+  // Alabama the moment GPS answered. That jump is what reads as the map
+  // resetting itself.
+  LatLng _center = const LatLng(33.5186, -86.8104);
 
   /// Set the first time the rider pans or zooms. From then on the camera is
   /// theirs and [_resolveGpsCenter] must not fly it anywhere.

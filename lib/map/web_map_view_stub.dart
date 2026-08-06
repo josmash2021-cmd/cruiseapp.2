@@ -121,8 +121,8 @@ class WebMapControllerStub extends WebMapController {
 class WebMapView extends StatelessWidget {
   const WebMapView({
     super.key,
-    this.initialLng = -74.006,
-    this.initialLat = 40.7128,
+    this.initialLng = -86.8104,
+    this.initialLat = 33.5186,
     this.initialZoom = 12,
     this.initialPitch = 0,
     this.initialBearing = 0,

@@ -83,6 +83,16 @@ def _get_cors_origins():
         return [
             "https://cruiseapp2-production.up.railway.app",
             "https://cruiseinride.com",
+            # The Flutter web build served from a developer's machine. The
+            # browser sends this Origin, it was not on the list, and the CORS
+            # layer answered 403 to the WebSocket handshake *before* connect()
+            # ever looked at the token — every socket from the local review
+            # build was rejected while the phones (no Origin header) went
+            # through. Auth is unchanged: the JWT check in connect() still
+            # decides who gets in, so this only stops the rejection from
+            # happening one layer too early.
+            "http://localhost:8080",
+            "http://127.0.0.1:8080",
         ]
 
     # Development / unknown environment — allow all

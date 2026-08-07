@@ -222,10 +222,16 @@ class _DriverPendingReviewScreenState extends State<DriverPendingReviewScreen>
     final verificationStatus = data['verificationStatus'] as String? ?? '';
     final approvalStatus = data['approvalStatus'] as String? ?? '';
 
+    // Only the markers the dispatch decision itself writes may open this
+    // gate: the backend's write_approval sets all of these atomically, and
+    // nowhere else. `status == 'active'` used to count — but that is
+    // ACCOUNT status, rewritten by sync_driver on every routine sync
+    // (signup, location, profile), so a brand-new driver who was never
+    // reviewed got walked straight into the "approved" cinematic.
+    // `isVerified` is mirrored by those same routine syncs, so it goes too:
+    // isApproved + the *Status fields cover every real approval.
     final isApproved = driverStatus == 'approved' ||
         status == 'approved' ||
-        status == 'active' ||
-        data['isVerified'] == true ||
         data['isApproved'] == true ||
         verificationStatus == 'approved' ||
         approvalStatus == 'approved';

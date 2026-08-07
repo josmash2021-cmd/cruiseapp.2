@@ -527,17 +527,15 @@ class _SplashScreenState extends State<SplashScreen>
     final driverStatus = (d['driver_status'] as String? ?? '').toLowerCase().trim();
     final verificationStatus = (d['verificationStatus'] as String? ?? '').toLowerCase().trim();
     final approvalStatus = (d['approvalStatus'] as String? ?? '').toLowerCase().trim();
+    // Same rule as the pending-review gate: only markers written by the
+    // dispatch decision (backend write_approval sets them atomically).
+    // 'active'/'online'/'clear' are ACCOUNT states that routine driver
+    // syncs write for people who were never reviewed — counting them let
+    // unapproved drivers skip the pending screen straight into the app.
     return driverStatus == 'approved' ||
         status == 'approved' ||
-        status == 'active' ||
-        status == 'online' ||
-        status == 'clear' ||
-        status == 'verified' ||
-        d['isVerified'] == true ||
         d['isApproved'] == true ||
         verificationStatus == 'approved' ||
-        verificationStatus == 'active' ||
-        verificationStatus == 'clear' ||
         approvalStatus == 'approved';
   }
 

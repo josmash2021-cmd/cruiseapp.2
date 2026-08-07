@@ -329,6 +329,19 @@ async def create_trip(body: CreateTripIn, user: User = Depends(_get_current_user
                 "No payment method on file. Please add a card in Payment Methods before booking.",
             )
 
+    # A rider books only once the account is approved — identity captured is
+    # not enough. Covers immediate, scheduled AND airport rides: all three
+    # are created through this endpoint. The app gates the same flows in the
+    # UI; this is the server-side door, so a raw API call cannot skip it.
+    if user.role == "rider" and not (
+        user.is_verified or user.verification_status == "approved"
+    ):
+        raise HTTPException(
+            403,
+            "Your account is not approved yet. Complete verification and wait "
+            "for approval before requesting rides.",
+        )
+
     data = body.model_dump()
     # SECURITY: Force rider_id to be the authenticated user (prevent spoofing)
     data["rider_id"] = user.id

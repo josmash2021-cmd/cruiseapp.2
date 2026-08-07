@@ -122,6 +122,10 @@ async def test_rider(db):
         password_hash=pw_hash,
         role="rider",
         status="active",
+        # Approved — POST /trips refuses unapproved riders now, and the
+        # fixture's job is a rider who can book.
+        is_verified=True,
+        verification_status="approved",
         created_at=datetime.now(timezone.utc),
     )
     db.add(user)

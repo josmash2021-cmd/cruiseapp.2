@@ -470,8 +470,14 @@ extension _HomeScreenWidgets on _HomeScreenState {
     final searching = _pendingSearchTripId != null && !active;
     final imminent = _hasImminentRide;
     final zoneBlocked = !_serviceZoneActive && _activeServiceStates.isNotEmpty;
-    final verificationBlocked =
-        !_isVerified && !active && _verificationResolved;
+    // Approval, not just on-device verification, unlocks booking — and the
+    // card starts BLOCKED, not open: `_verificationResolved` used to hold
+    // the gate open while the status was still loading, which is exactly
+    // when a just-registered rider got a live "Where to?" card. The one
+    // cost is a reinstalled approved rider seeing the verify card for the
+    // second the backend check takes to answer "approved" — it replaces
+    // itself, no tap needed.
+    final verificationBlocked = !active && _verificationStatus != 'approved';
     final disabled = !active && !imminent && (zoneBlocked || verificationBlocked);
     return GestureDetector(
       onTap: () async {

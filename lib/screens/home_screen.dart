@@ -571,13 +571,22 @@ class _HomeScreenState extends State<HomeScreen>
     }
   }
 
-  /// Returns true if the rider is identity-verified.
+  /// Returns true if the rider may book: identity captured AND the account
+  /// approved. Approval, not just verification — a rider who finished the
+  /// KYC steps at signup but is still waiting on dispatch used to pass this
+  /// gate and book rides with the account unreviewed.
   /// If not verified, shows the verification flow and returns false.
   Future<bool> _ensureVerified() async {
     final verified = await LocalDataService.isIdentityVerified();
     if (verified) {
-      if (!_isVerified && mounted) setState(() => _isVerified = true);
-      return true;
+      if (_verificationStatus == 'approved') {
+        if (!_isVerified && mounted) setState(() => _isVerified = true);
+        return true;
+      }
+      // Verified on device, not yet approved — the answer is "wait", not
+      // the verification flow again.
+      if (mounted) _showApprovalRequiredDialog();
+      return false;
     }
     if (!mounted) return false;
     // Biometric consent gate (BIPA-style informed consent): show the
@@ -599,6 +608,46 @@ class _HomeScreenState extends State<HomeScreen>
       return true;
     }
     return false;
+  }
+
+  /// Told to a rider whose identity is captured but whose account is still
+  /// waiting on approval: booking stays locked, and re-opening the KYC flow
+  /// would not change that.
+  void _showApprovalRequiredDialog() {
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1C1E24),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+        ),
+        title: Row(
+          children: [
+            const Icon(Icons.hourglass_top_rounded, color: Color(0xFFE8C547)),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                S.of(ctx).accountPendingTitle,
+                style: const TextStyle(color: Colors.white, fontSize: 16),
+              ),
+            ),
+          ],
+        ),
+        content: Text(
+          S.of(ctx).accountPendingDesc,
+          style: const TextStyle(color: Colors.white70, fontSize: 14),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: Text(
+              S.of(ctx).ok,
+              style: const TextStyle(color: Color(0xFFE8C547)),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _fetchCurrentLocation() async {
@@ -1386,6 +1435,12 @@ class _HomeScreenState extends State<HomeScreen>
     // or skip a step. Released in finally so every early return + back
     // pop + uncaught navigator error still frees the lock.
     if (_openingScheduleFlow) return;
+    // Gate BEFORE the picker: an unapproved rider never reaches the
+    // Airport/Schedule page at all. This used to be checked after the
+    // calendar, so the whole flow looked open to accounts that cannot
+    // actually book.
+    if (!await _ensureVerified()) return;
+    if (!mounted) return;
     _openingScheduleFlow = true;
     try {
       // First show Airport/Schedule choice — now a full-screen picker

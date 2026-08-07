@@ -1,5 +1,4 @@
 import 'dart:async';
-import '../utils/app_platform.dart';
 import 'package:audioplayers/audioplayers.dart';
 
 import 'audio_session_config.dart';
@@ -19,7 +18,7 @@ import 'package:timezone/timezone.dart' as tz;
 /// Channels:
 ///   cruise_premium   — general notifications (cruise_notification.wav)
 ///   cruise_offers    — trip offer notifications (cruise_offer.wav, max priority)
-///   cruise_status    — driver online persistent/ongoing notification (silent)
+///   cruise_status    — retired; was the driver-online persistent notification
 ///   cruise_reminders — scheduled ride reminders
 ///
 /// In-app sounds (audioplayers):
@@ -526,55 +525,9 @@ class NotificationService {
 
   // ── Driver online persistent notification ────────────────────────────
 
-  /// Show a silent ongoing notification when driver goes online.
-  /// This acts as a foreground-service anchor on Android, keeping the
-  /// app process alive so GPS and SSE keep working in the background.
-  ///
-  /// On iOS this is a NO-OP because:
-  /// 1. iOS does not require a foreground-service notification
-  /// 2. The notification would show in the iOS notification center
-  ///    and annoy the driver while they are actively using the app.
-  static Future<void> showDriverOnlineNotification() async {
-    if (!_initialized) await init();
-
-    // iOS: skip entirely — no foreground-service requirement and the
-    // notification would appear in the system tray while the driver
-    // is actively looking at the online screen.
-    if (AppPlatform.isIOS) {
-      debugPrint('[NotificationService] driver online notification skipped on iOS');
-      return;
-    }
-
-    const androidDetails = AndroidNotificationDetails(
-      'cruise_status',
-      'Driver Status',
-      channelDescription: 'Keeps Cruise active while you are online',
-      importance: Importance.low,
-      priority: Priority.low,
-      ongoing: true,          // Cannot be dismissed by swipe
-      autoCancel: false,
-      playSound: false,
-      enableVibration: false,
-      icon: '@mipmap/ic_launcher',
-      color: Color(0xFFE8C547),
-      showProgress: false,
-      styleInformation: BigTextStyleInformation(
-        'You are online and receiving trip offers.',
-        contentTitle: 'Cruise — You\'re Online',
-        summaryText: 'Tap to open',
-      ),
-    );
-
-    await _plugin.show(
-      id: _driverOnlineId,
-      title: 'Cruise — You\'re Online',
-      body: 'You are online and receiving trip offers.',
-      notificationDetails: const NotificationDetails(android: androidDetails),
-      payload: 'driver_online',
-    );
-
-    debugPrint('[NotificationService] driver online notification shown');
-  }
+  // The persistent "Cruise — You're Online" tray notification was retired
+  // (showDriverOnlineNotification is gone). The background service keeps
+  // its own silent entry, which is the one that anchors the process.
 
   /// Remove the driver online persistent notification.
   static Future<void> cancelDriverOnlineNotification() async {

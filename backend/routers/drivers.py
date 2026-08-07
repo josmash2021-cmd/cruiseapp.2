@@ -2623,21 +2623,11 @@ async def reevaluate_driver_tier(db: AsyncSession, driver_id: int):
     # A rename is not news. Only tell the driver when the tier actually
     # moved up the ladder — `comfort` becoming `standard` is the same
     # tier under a new name and the same flat 70%.
+    #
+    # The "Upgraded to …" push was retired: the tier change is visible the
+    # next time they open the vehicle screen, and the tray stays quiet.
     if not vehicle_tiers.is_upgrade(old_tier, new_tier):
         return
-    try:
-        drv_r = await db.execute(select(User).where(User.id == driver_id))
-        drv = drv_r.scalar_one_or_none()
-        if drv and drv.fcm_token:
-            label = _TIER_LABELS.get(new_tier, new_tier.title())
-            await _send_fcm_push_async(
-                drv.fcm_token,
-                title=f"Upgraded to {label}",
-                body=f"Your vehicle qualifies for {label} rides — a bigger share of every fare.",
-                data={"type": "tier_upgrade", "tier": new_tier},
-            )
-    except Exception:
-        pass
 
 
 # ═══════════════════════════════════════════════════════════════

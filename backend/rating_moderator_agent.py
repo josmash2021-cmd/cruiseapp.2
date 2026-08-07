@@ -388,47 +388,14 @@ class RatingModeratorAgent:
             logger.warning("[RatingMod] Suspension push failed: %s", e)
 
     def _send_excellence_push(self, driver, avg_rating: float, total: int):
-        try:
-            if not driver.fcm_token:
-                return
-            from services.fcm_service import _send_fcm_push
-            _send_fcm_push(
-                driver.fcm_token,
-                title="🌟 ¡Eres un Top Driver!",
-                body=(
-                    f"Tu rating es {avg_rating:.1f} con {total}+ viajes. "
-                    "¡Felicidades! Eres uno de nuestros mejores conductores. "
-                    "Pronto tendrás beneficios exclusivos."
-                ),
-                data={
-                    "type": "top_driver",
-                    "avg_rating": f"{avg_rating:.2f}",
-                    "driver_id": str(driver.id),
-                },
-            )
-        except Exception as e:
-            logger.warning("[RatingMod] Excellence push failed: %s", e)
+        # "¡Eres un Top Driver!" push retired — the tray stays quiet.
+        # No-op rather than deleted: the test suite patches this by name.
+        return
 
     def _send_recovery_push(self, driver, avg_rating: float):
-        try:
-            if not driver.fcm_token:
-                return
-            from services.fcm_service import _send_fcm_push
-            _send_fcm_push(
-                driver.fcm_token,
-                title="✅ ¡Tu cuenta ha sido restaurada!",
-                body=(
-                    f"Tu rating mejoró a {avg_rating:.1f}. "
-                    "Ya no estás en probatoria. ¡Sigue así!"
-                ),
-                data={
-                    "type": "rating_restored",
-                    "avg_rating": f"{avg_rating:.2f}",
-                    "driver_id": str(driver.id),
-                },
-            )
-        except Exception as e:
-            logger.warning("[RatingMod] Recovery push failed: %s", e)
+        # "¡Tu cuenta ha sido restaurada!" push retired — no-op kept for
+        # the test suite, which patches this method by name.
+        return
 
     async def _send_suspension_sms(self, driver, avg_rating: float):
         try:

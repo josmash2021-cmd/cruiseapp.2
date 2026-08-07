@@ -839,22 +839,8 @@ async def _auto_cascade(trip_id: int, first_offer_id: int, first_driver_id: int)
                     trip_id, current_offer_id, _CASCADE_WAIT_SECONDS, attempt + 1,
                 )
 
-                # Notify the timed-out driver
-                timed_out_driver_result = await db.execute(
-                    select(User).where(User.id == offer.driver_id)
-                )
-                timed_out_driver = timed_out_driver_result.scalar_one_or_none()
-                if timed_out_driver and timed_out_driver.fcm_token:
-                    _safe_create_task(_send_fcm_push_async(
-                        timed_out_driver.fcm_token,
-                        title="Offer Expired",
-                        body="The ride offer was not accepted in time and has been reassigned.",
-                        data={
-                            "type": "offer_expired",
-                            "offer_id": str(offer.id),
-                            "trip_id": str(trip_id),
-                        },
-                    ))
+                # The timed-out driver is no longer told — the "Offer Expired"
+                # push was retired (drivers asked for a quieter tray).
 
                 # Find next closest driver, excluding all tried drivers
                 next_drivers = await _find_nearest_drivers(
@@ -1558,16 +1544,7 @@ async def get_driver_pending(driver_id: int = Query(...), user: User = Depends(_
                 "[Dispatch] Offer %d (trip %d) for driver %d expired after >5 min -- marking expired and cascading",
                 stale_offer.id, stale_offer.trip_id, driver_id,
             )
-            # Notify the timed-out driver via FCM
-            timed_out_driver_result = await db.execute(select(User).where(User.id == driver_id))
-            timed_out_driver = timed_out_driver_result.scalar_one_or_none()
-            if timed_out_driver and timed_out_driver.fcm_token:
-                _send_fcm_push(
-                    timed_out_driver.fcm_token,
-                    title="Offer Expired",
-                    body="The ride offer was not accepted in time and has been reassigned.",
-                    data={"type": "offer_expired", "offer_id": str(stale_offer.id), "trip_id": str(stale_offer.trip_id)},
-                )
+            # No "Offer Expired" push — that notification was retired.
         if stale_rows:
             await db.commit()
             # NOTE: Cascade reassignment disabled here to prevent race condition

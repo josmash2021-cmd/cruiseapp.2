@@ -88,6 +88,12 @@ _BAND_COPY = {
 }
 
 
+# Rating-band pushes retired by product decision: the driver reads these in
+# the notifications page, they no longer buzz the phone. The in-app record
+# below is untouched — this set only mutes the FCM half.
+_PUSH_MUTED = {TYPE_WARNING, TYPE_DANGER, TYPE_SUSPENDED, TYPE_RESTORED}
+
+
 async def notify(db, user: User, notif_type: str, title: str, body: str,
                   data: dict | None = None) -> None:
     """Write the in-app notification, then try the push.
@@ -103,6 +109,8 @@ async def notify(db, user: User, notif_type: str, title: str, body: str,
         notif_type=notif_type,
         data=json.dumps(data) if data else None,
     ))
+    if notif_type in _PUSH_MUTED:
+        return
     if not user.fcm_token:
         return
     try:

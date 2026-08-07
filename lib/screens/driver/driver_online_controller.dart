@@ -1046,13 +1046,13 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
   void _showOnlinePresence() {
     if (!mounted || _presenceShown) return;
     _presenceShown = true;
-    debugPrint('[DriverOnline] raising online presence '
-        '(live activity + persistent notification)');
-    // iOS only — a silent no-op on Android, where the notification below is
-    // what the driver actually sees.
+    debugPrint('[DriverOnline] raising online presence (live activity)');
+    // iOS only — a silent no-op on Android.
     LiveActivityService.startOnline();
     _islandState = 'online';
-    NotificationService.showDriverOnlineNotification();
+    // The persistent "You're Online" tray notification was retired — the
+    // background-service notification is the one that anchors Android, and
+    // two silent entries said the same thing.
   }
 
   void _goOnlineBackend() {

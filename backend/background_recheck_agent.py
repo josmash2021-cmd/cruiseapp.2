@@ -236,26 +236,13 @@ class BackgroundRecheckAgent:
     # ── Notifications (same mechanisms as document_expiry_agent) ──────
 
     def _send_recheck_push(self, driver):
-        """Push: periodic re-check required."""
-        try:
-            if not driver.fcm_token:
-                return
-            from services.fcm_service import _send_fcm_push
-            _send_fcm_push(
-                driver.fcm_token,
-                title="🔍 Verificación de antecedentes periódica",
-                body=(
-                    "Tu verificación de antecedentes (cada 3 años) está "
-                    "disponible. Revisa tu correo para completar la "
-                    "invitación de Checkr."
-                ),
-                data={
-                    "type": "background_recheck_due",
-                    "driver_id": str(driver.id),
-                },
-            )
-        except Exception as e:
-            logger.warning("[BGRecheck] Re-check push failed for #%d: %s", driver.id, e)
+        """Push: periodic re-check required.
+
+        Retired — the re-check invitation arrives by Checkr's own email, so
+        this push only duplicated it. Kept as a no-op because the test
+        suite patches this method by name.
+        """
+        return
 
     def _send_suspension_push(self, driver, days_overdue: int):
         """Push: account suspended for overdue re-check."""

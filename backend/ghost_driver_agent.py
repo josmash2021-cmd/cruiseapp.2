@@ -6,7 +6,8 @@ a heartbeat in 20+ minutes. These ghosts waste dispatch offers, increase
 rider wait times, and degrade the matching algorithm.
 
 Actions:
-1. WARN  — After 15 min inactive, send FCM push: "Are you still driving?"
+1. WARN  — After 15 min inactive, mark warned (the "Are you still
+   driving?" push was retired — drivers asked for a quieter tray).
 2. OFFLINE — After 20 min inactive, auto-mark offline + log + alert admin
 3. TRACK  — Maintain metrics: ghosts found, warnings sent, forced-offline count
 
@@ -241,9 +242,8 @@ class GhostDriverAgent:
                             driver.first_name,
                             (now - last_active).total_seconds() / 60,
                         )
-
-                        if driver.fcm_token:
-                            self._send_warning_push(driver)
+                        # No push here any more: "¿Sigues disponible?" was
+                        # retired. The offline action below still happens.
 
                 else:
                     # Driver is active — clear any previous warning / recovery state
@@ -356,27 +356,10 @@ class GhostDriverAgent:
                 self._stats["recovery_reoffered"] += 1
                 _recovery_phase[driver.id] = "reoffer"
 
-                # Create DispatchOffer for new driver
+                # Create DispatchOffer for new driver. The reoffer reaches
+                # them through the normal offer stream — the "URGENT: trip
+                # reassigned" push was retired.
                 await self._create_reoffer(db, trip, new_driver)
-
-                # Push urgent offer to new driver
-                if new_driver.fcm_token:
-                    try:
-                        from services.fcm_service import _send_fcm_push
-                        _send_fcm_push(
-                            new_driver.fcm_token,
-                            title="URGENT: trip reassigned",
-                            body="Viaje reasignado por abandono del conductor anterior. "
-                                 "Trip reassigned — previous driver went offline.",
-                            data={
-                                "type": "urgent_reoffer",
-                                "trip_id": str(trip.id),
-                                "action": "view_offer",
-                            },
-                            is_offer=True,
-                        )
-                    except Exception as _pe:
-                        logger.warning("[GhostRecovery] new-driver push failed: %s", _pe)
 
                 # Notify rider: searching for new driver
                 await self._notify_rider_reoffer(db, trip)
@@ -411,24 +394,8 @@ class GhostDriverAgent:
             self._stats["recovery_warned"] += 1
             _recovery_phase[driver.id] = "warn"
 
-            if driver.fcm_token:
-                try:
-                    from services.fcm_service import _send_fcm_push
-                    _send_fcm_push(
-                        driver.fcm_token,
-                        title="¿Sigues ahí? / Are you still there?",
-                        body="Estás perdiendo tu viaje activo. "
-                             "You're losing your active trip. "
-                             "Abre la app ahora.",
-                        data={
-                            "type": "ghost_recovery_warn",
-                            "trip_id": str(trip.id),
-                            "action": "return_to_trip",
-                        },
-                        is_offer=True,
-                    )
-                except Exception as _pe:
-                    logger.warning("[GhostRecovery] warn push failed driver=%d: %s", driver.id, _pe)
+            # The "¿Sigues ahí?" push was retired — the recovery itself
+            # (reoffer / cancel) is unchanged.
 
     async def _find_replacement_driver(self, db, trip, exclude_id: int):
         """Find the nearest online driver (other than the ghost) for a reoffer."""
@@ -504,24 +471,6 @@ class GhostDriverAgent:
                 )
         except Exception as e:
             logger.warning("[GhostRecovery] rider cancel notify failed trip=%d: %s", trip.id, e)
-
-    def _send_warning_push(self, driver):
-        """Send 'are you still driving?' push notification."""
-        try:
-            from services.fcm_service import _send_fcm_push
-            _send_fcm_push(
-                driver.fcm_token,
-                title="¿Sigues disponible?",
-                body="No hemos detectado actividad en 15 minutos. "
-                     "Toca aquí para seguir recibiendo viajes.",
-                data={
-                    "type": "ghost_warning",
-                    "action": "keep_online",
-                    "driver_id": str(driver.id),
-                },
-            )
-        except Exception as e:
-            logger.warning("[GhostDriver] Warning push failed for #%d: %s", driver.id, e)
 
     def _send_offline_push(self, driver):
         """Notify driver they've been set offline."""

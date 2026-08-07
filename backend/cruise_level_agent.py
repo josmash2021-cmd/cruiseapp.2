@@ -121,38 +121,12 @@ async def evaluate_driver_level(db, driver_id: int) -> Optional[str]:
 
 
 def _send_level_push(driver, promoted: bool, new_tier: str, completed_trips: int, avg_rating: float):
-    """Send FCM push notification for level change."""
-    if not driver.fcm_token:
-        return
-    try:
-        from services.fcm_service import _send_fcm_push
+    """Level-change push — retired.
 
-        tier_display = new_tier.capitalize()
-        if promoted:
-            title = f"🎉 Congratulations! You're now {tier_display}!"
-            body = (
-                f"You've been promoted to {tier_display} level with "
-                f"{completed_trips} trips and {avg_rating:.1f}★ rating. "
-                "Keep up the great work!"
-            )
-            notif_type = "level_up"
-        else:
-            title = f"Your Cruise Level changed to {tier_display}"
-            body = (
-                f"Your level is now {tier_display}. "
-                f"Current stats: {completed_trips} trips, {avg_rating:.1f}★. "
-                "Complete more trips and maintain your rating to level up!"
-            )
-            notif_type = "level_down"
-
-        _send_fcm_push(
-            driver.fcm_token,
-            title=title,
-            body=body,
-            data={"type": notif_type, "new_level": new_tier},
-        )
-    except Exception as e:
-        logger.warning("[CruiseLevel] FCM push failed for driver %d: %s", driver.id, e)
+    The level still updates in the app; the phone no longer buzzes about
+    it. Kept as a no-op so the two call sites need no change.
+    """
+    return
 
 
 class CruiseLevelAgent:

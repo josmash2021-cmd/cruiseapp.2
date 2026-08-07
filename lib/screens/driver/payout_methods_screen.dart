@@ -7,7 +7,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../l10n/app_localizations.dart';
 
-import 'add_bank_account_screen.dart';
 import 'stripe_onboarding_screen.dart';
 
 import '../../services/api_service.dart';
@@ -19,12 +18,14 @@ import '../../widgets/neu_style.dart';
 ///
 /// Two destinations the driver can attach to their Connect account:
 ///
-///   1. **Connect bank account** — opens the Stripe Financial Connections
-///      sheet via the native SDK (`collectBankAccountToken`) using the
-///      `client_secret` minted by `POST /drivers/financial-connections`.
-///      Stripe returns a `btok_...`; the backend attaches it as an
-///      external_account, which is where the weekly Tuesday ACH payout
-///      lands. Account and routing numbers never reach our servers.
+///   1. **Connect bank account** — our accounts are Stripe-hosted
+///      (controller.requirement_collection == 'stripe'), and Stripe refuses
+///      every API write to their external accounts, so banks are collected
+///      by Stripe's own windows: hosted onboarding while the account is not
+///      payout-ready, the Express dashboard after. Both attach the bank
+///      automatically; when the window closes the app mirrors what Stripe
+///      holds (`POST /drivers/payout-methods/sync-from-stripe`). That is
+///      where the weekly Monday ACH payout lands.
 ///
 ///   2. **Add debit card** — a `CardField` sheet tokenizes the PAN
 ///      client-side (`createToken` with `currency: usd`, which is what
@@ -47,8 +48,8 @@ class PayoutMethodsScreen extends StatefulWidget {
 /// The gold of the payout sub-flow, declared once for the whole file.
 ///
 /// 0xFFE8C547, not the 0xFFD4A843 this file used to carry: everything the
-/// screen pushes or is pushed from — AddBankAccountScreen,
-/// StripeOnboardingScreen, the cash-out page and its success screen — is on
+/// screen pushes or is pushed from — StripeOnboardingScreen, the cash-out
+/// page and its success screen — is on
 /// E8C547, so the old value changed gold one tap into the flow. (Much of the
 /// rest of the driver app is still on D4A843; this unifies the payout flow,
 /// not the app.)
@@ -1078,197 +1079,75 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
     }
   }
 
-  /// Link a bank account for the weekly payout.
+  /// Add or change the bank the weekly payout lands on.
   ///
-  /// Primary path is our own full-screen form (AddBankAccountScreen) — the
-  /// digits go from the Stripe SDK straight to Stripe and only the btok_
-  /// comes back. The Financial Connections sheet stays as the fallback for
-  /// a driver who would rather pick their bank by logging into it. Either
-  /// way the backend attaches the token as the Connect external_account the
-  /// Monday payout transfer lands on.
+  /// There is no typed form, and that is Stripe's rule rather than a
+  /// missing feature: our connected accounts are Stripe-hosted
+  /// (controller.requirement_collection == 'stripe'), and Stripe refuses
+  /// EVERY API write to their external accounts — both token contexts
+  /// bounce with oauth_not_supported (proven against live mode,
+  /// 2026-08-07). Banks get onto the account only through Stripe's own
+  /// windows, which attach them automatically: hosted onboarding while the
+  /// account is not payout-ready, the Express dashboard once it is. Both
+  /// still let the driver TYPE routing + account numbers by hand — manual
+  /// entry is Stripe's built-in fallback — the digits just live in
+  /// Stripe's frame, never in ours. When the window closes we mirror what
+  /// Stripe holds into our list.
   Future<void> _connectBankAccount() async {
     HapticService.mediumImpact();
     if (kIsWeb) {
       _snack(S.of(context).bankLinkMobileOnly, error: true);
       return;
     }
-
-    // Stripe Connect onboarding comes BEFORE any bank form.
-    //
-    // Every account this app creates starts Restricted: Account.create
-    // mints an Express account with no identity, no tax details and nothing
-    // submitted, and until onboarding clears that, the transfers capability
-    // is inactive. A bank attached in that state links "successfully" — and
-    // then every Monday transfer bounces with a 4xx, the balance is handed
-    // back, and the driver is never paid nor told why. Verify the account
-    // can actually receive money first.
-    //
-    // The backend has always had the onboarding link (AccountLink with
-    // type="account_onboarding") and ApiService has always had the call;
-    // the FC-only path below already did this check — the manual form did
-    // not, which is the hole this closes.
+    setState(() => _busy = true);
     try {
+      final hadBank = _methodOfType('bank_account') != null;
       final status = await ApiService.getStripeConnectStatus();
       if (!mounted) return;
       final ready = status['payouts_enabled'] == true;
       if (!ready) {
+        // Not payout-ready yet: hosted onboarding collects identity AND the
+        // bank in one flow and attaches the bank itself at the end. The
+        // same link resumes a half-finished account, so a driver who backs
+        // out carries on where they left off.
         final url = await ApiService.getStripeConnectLink();
         if (!mounted) return;
-        // In our own frame, not the browser. Handing the driver to Safari in
-        // the middle of getting paid is where they lose the thread; this
-        // keeps our header and back button around Stripe's page, and returns
-        // true the moment Stripe redirects to one of our return URLs.
-        final done = await Navigator.of(context).push<bool>(
+        await Navigator.of(context).push<bool>(
           MaterialPageRoute(
             builder: (_) => StripeOnboardingScreen(url: url),
           ),
         );
+      } else {
+        // Payout-ready already: the Express dashboard is the only surface
+        // Stripe allows to add, change or remove a payout bank now.
+        final url = await ApiService.getStripeConnectDashboardLink();
         if (!mounted) return;
-        if (done == true) {
-          // Stripe's onboarding collects a bank account of its own as part of
-          // the requirements, so by the time it hands the driver back there
-          // is often nothing left to ask. Re-read the methods first and only
-          // show our form if it really did not come back with one —
-          // otherwise we would make them type the same account twice.
-          await _loadMethods();
-          if (!mounted) return;
-          if (_methodOfType('bank_account') != null) {
-            _snack(S.of(context).bankAccountLinked);
-            return;
-          }
-          // Ready now — re-enter so the status check above gates what shows.
-          await _connectBankAccount();
+        if (url.isEmpty) {
+          _snack(S.of(context).failedToAddMethod, error: true);
           return;
         }
-        // Backed out partway. The same link resumes a half-finished
-        // account, so tapping again carries on where they left off.
-        _snack(S.of(context).verifyIdentityToGetPaid);
-        return;
-      }
-    } catch (e) {
-      // A network blip must not block the form: without the check we cannot
-      // know onboarding is missing, so proceed — worst case is the previous
-      // behavior, a bank attached to an account that still needs onboarding.
-      debugPrint('[Payout] connect status check failed, continuing to form: $e');
-    }
-
-    // Our own form, full screen: routing, account, re-enter. The driver
-    // asked for the numbers to be typed here rather than in a Stripe sheet,
-    // and that is safe because the digits go from the SDK straight to Stripe
-    // — AddBankAccountScreen posts only the resulting btok_ back to us.
-    //
-    // Everything below (the Financial Connections sheet) stays as the
-    // fallback for a driver who would rather pick their bank by logging into
-    // it, and for the case where Stripe rejects a manually typed account.
-    // One bank at a time. If there is already one attached this is an edit,
-    // and the old row goes once the new one is safely in — never before, or a
-    // failure halfway would leave the driver with no payout destination at
-    // all and the weekly transfer nowhere to land.
-    final existing = _methodOfType('bank_account');
-    final added = await Navigator.of(context).push<bool>(
-      MaterialPageRoute(
-        builder: (_) => AddBankAccountScreen(replacing: existing != null),
-      ),
-    );
-    if (!mounted) return;
-    if (added == true) {
-      final oldId = existing?['id'];
-      if (oldId is int) {
-        try {
-          await ApiService.deletePayoutMethod(oldId);
-        } catch (e) {
-          debugPrint('[Payout] could not remove the replaced bank: $e');
-        }
-      }
-      if (!mounted) return;
-      _snack(S.of(context).bankAccountLinked);
-      await _loadMethods();
-      return;
-    }
-
-    // Straight to Stripe. There used to be an explanatory sheet in between
-    // — heading, terms, security note, then a button that opened Stripe —
-    // but the row that got here is already labelled "Add a bank account"
-    // and the card above it already says what it is for, so the sheet was
-    // one more tap between the driver and getting paid.
-    //
-    // The routing and account numbers are typed into Stripe's own window
-    // and never touch this app. That is not a shortcut: taking them in our
-    // own fields would put the app inside the compliance scope those
-    // numbers carry, for no gain the driver would ever see.
-    setState(() => _busy = true);
-    try {
-      // Onboarding was already verified above — by the time this fallback
-      // opens, the account can receive transfers.
-      final session = await ApiService.createDriverFinancialConnectionsSession();
-      if (!mounted) return;
-
-      final clientSecret = (session['client_secret'] ?? '').toString();
-      if (clientSecret.isEmpty) {
-        // Was indistinguishable from every other failure: the driver saw the
-        // same "Failed to add method" whether Stripe refused, the sheet was
-        // dismissed, or the server answered 200 with nothing usable in it.
-        // Only this branch means "the session came back empty", and it is
-        // the one that points at the backend rather than at Stripe.
-        debugPrint('[Payout] FC session had no client_secret — keys: '
-            '${session.keys.toList()}');
-        _snack(S.of(context).failedToAddMethod, error: true);
-        return;
-      }
-      debugPrint('[Payout] FC session ok — account='
-          '${session['stripe_account_id']} secret=${clientSecret.length} chars');
-
-      // The session belongs to the driver's connected account, not to the
-      // platform — the backend builds it with
-      // `account_holder: {type: "account", account: <connect id>}`. Without
-      // telling the SDK which account it is acting for, it asks the
-      // platform about a session the platform does not own, and the sheet
-      // never opens: "Failed to add method", with a 200 OK in the server
-      // log a second earlier.
-      //
-      // The backend has been returning stripe_account_id all along, and
-      // ApiService even documents it in the return type. Nothing read it.
-      final accountId = (session['stripe_account_id'] ?? '').toString();
-      final previousAccount = stripe.Stripe.stripeAccountId;
-      final stripe.FinancialConnectionTokenResult result;
-      try {
-        if (accountId.isNotEmpty) {
-          stripe.Stripe.stripeAccountId = accountId;
-        }
-        result = await stripe.Stripe.instance.collectBankAccountToken(
-          clientSecret: clientSecret,
+        await Navigator.of(context).push<bool>(
+          MaterialPageRoute(
+            builder: (_) => StripeOnboardingScreen(url: url),
+          ),
         );
-      } finally {
-        // Put it back. Leaving it set would point every later Stripe call
-        // — the rider's payment sheet included — at this driver's account.
-        stripe.Stripe.stripeAccountId = previousAccount;
       }
       if (!mounted) return;
-
-      final bankToken = result.token.id ?? '';
-      if (bankToken.isEmpty) {
-        // Sheet completed without producing a token (e.g. the driver backed
-        // out on the final step). Nothing to attach.
-        return;
+      // Whatever happened inside Stripe's window, the truth lives on their
+      // side — mirror it, then reload so the card shows what Stripe holds.
+      try {
+        await ApiService.syncPayoutMethodsFromStripe();
+      } catch (e) {
+        debugPrint('[Payout] sync after Stripe window failed: $e');
       }
-
-      await ApiService.addBankAccountPayout(
-        bankToken: bankToken,
-        setDefault: _methods.isEmpty,
-      );
       if (!mounted) return;
-      _snack(S.of(context).bankAccountLinked);
       await _loadMethods();
-    } on stripe.StripeException catch (e) {
-      if (e.error.code == stripe.FailureCode.Canceled) return; // user dismissed
-      debugPrint('[Payout] Bank link Stripe error: ${e.error}');
       if (!mounted) return;
-      _snack(
-        e.error.localizedMessage ?? S.of(context).failedToAddMethod,
-        error: true,
-      );
+      if (!hadBank && _methodOfType('bank_account') != null) {
+        _snack(S.of(context).bankAccountLinked);
+      }
     } catch (e) {
-      debugPrint('[Payout] Bank link error: $e');
+      debugPrint('[Payout] bank link flow error: $e');
       if (!mounted) return;
       _snack(
         e is ApiException ? e.message : S.of(context).failedToAddMethod,

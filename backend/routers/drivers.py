@@ -1798,6 +1798,116 @@ async def add_debit_card_payout(
 #  PLAID  (stub)
 # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
+async def _mirror_bank_payout_methods(db, user, banks: list) -> list:
+    """Mirror Stripe-side bank external accounts into local PayoutMethod rows.
+
+    Our connected accounts are Stripe-hosted
+    (``controller.requirement_collection == 'stripe'``), and on those Stripe
+    forbids attaching/detaching banks through the API at all — every attempt
+    bounces with ``oauth_not_supported``. Banks get onto the account only
+    through Stripe's own windows (hosted onboarding, Financial Connections
+    inside it, the Express dashboard), which attach them automatically. So
+    Stripe is the source of truth and this is the reconciliation: whatever
+    Stripe shows, the driver sees in the app.
+
+    Add-missing only, keyed on the ``[ext:ba_xxx]`` marker in display_name —
+    a row the driver deleted locally comes back while Stripe still holds the
+    bank, which is exactly right: the money would still land there. The
+    local default honors Stripe's ``default_for_currency`` when no default
+    exists yet.
+    """
+    created = []
+    if not banks:
+        return created
+    rs = await db.execute(select(PayoutMethod).where(PayoutMethod.user_id == user.id))
+    rows = rs.scalars().all()
+    known = set()
+    for r in rows:
+        name = r.display_name or ""
+        if "[ext:" in name and name.endswith("]"):
+            known.add(name.split("[ext:")[1][:-1])
+    has_default = any(bool(r.is_default) for r in rows)
+
+    # Stripe's default first, so it claims the local default when none exists.
+    ordered = sorted(banks, key=lambda b: not b.get("default_for_currency"))
+    for b in ordered:
+        ext_id = b.get("id") or ""
+        if not ext_id or ext_id in known:
+            continue
+        bank_name = (b.get("bank_name") or "Bank").title()
+        last4 = b.get("last4") or "----"
+        pm = PayoutMethod(
+            user_id=user.id,
+            method_type="bank_account",
+            display_name=f"{bank_name} ····{last4}  [ext:{ext_id}]",
+            is_default=not has_default,
+        )
+        has_default = True
+        db.add(pm)
+        created.append(pm)
+    if created:
+        await db.commit()
+        logging.info(
+            "[Payout] mirrored %d Stripe-side bank(s) into local rows for user %s",
+            len(created), user.id,
+        )
+    return created
+
+
+@router.post("/drivers/payout-methods/sync-from-stripe", dependencies=[Depends(_verify_api_key)])
+async def sync_payout_methods_from_stripe(user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
+    """Reconcile the local payout-method list with what Stripe actually holds.
+
+    The app calls this after any Stripe-hosted window (onboarding, Express
+    dashboard) closes: those windows attach banks to the connected account
+    by themselves, and this is how the driver sees them in the app.
+    """
+    if (user.role or "").lower() != "driver":
+        raise HTTPException(403, "Only drivers can sync payout methods")
+    if not STRIPE_SECRET:
+        raise HTTPException(503, "Stripe not configured on this server")
+    if user.stripe_connect_id:
+        try:
+            import stripe as _stripe
+            _stripe.api_key = STRIPE_SECRET
+            cid = await _usable_connect_id(_stripe, user, db)
+            banks = _stripe.Account.list_external_accounts(
+                cid, object="bank_account", limit=10,
+            ).get("data", [])
+            await _mirror_bank_payout_methods(db, user, banks)
+        except Exception as e:
+            # A sync must never break the screen that called it — the local
+            # list is still returned below, just stale.
+            logging.warning("[Payout] sync-from-stripe failed for user %s: %s", user.id, e)
+    result = await db.execute(select(PayoutMethod).where(PayoutMethod.user_id == user.id))
+    return [{"id": p.id, "method_type": p.method_type, "display_name": p.display_name, "is_default": p.is_default} for p in result.scalars().all()]
+
+
+@router.post("/drivers/stripe-connect/login-link", dependencies=[Depends(_verify_api_key)])
+async def stripe_connect_login_link(user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
+    """Deep-link into the driver's Express dashboard.
+
+    On Stripe-hosted accounts that dashboard is the ONLY surface that can
+    add, change or remove a payout bank once onboarding is done — the API
+    refuses external-account writes on them (oauth_not_supported).
+    """
+    if (user.role or "").lower() != "driver":
+        raise HTTPException(403, "Only drivers can open the payout dashboard")
+    if not STRIPE_SECRET:
+        raise HTTPException(503, "Stripe not configured on this server")
+    if not user.stripe_connect_id:
+        raise HTTPException(400, "No Stripe Connect account yet")
+    try:
+        import stripe as _stripe
+        _stripe.api_key = STRIPE_SECRET
+        cid = await _usable_connect_id(_stripe, user, db)
+        link = _stripe.Account.create_login_link(cid)
+        return {"url": link["url"]}
+    except Exception as e:
+        logging.error("[StripeConnect] login link failed for user %s: %s", user.id, e)
+        raise HTTPException(500, f"Stripe error: {str(e)[:400]}")
+
+
 @router.post("/drivers/payout-methods/bank-account", dependencies=[Depends(_verify_api_key)])
 async def add_bank_account_payout(
     body: dict = Body(...),
@@ -1848,11 +1958,45 @@ async def add_bank_account_payout(
         # Heal a dead id before using it, or the driver gets "key does not
         # have access to account" on a form they filled in correctly.
         _cid = await _usable_connect_id(_stripe, user, db)
-        ext = _stripe.Account.create_external_account(
-            _cid,
-            external_account=bank_token,
-            default_for_currency=set_default,
-        )
+        try:
+            ext = _stripe.Account.create_external_account(
+                _cid,
+                external_account=bank_token,
+                default_for_currency=set_default,
+            )
+        except Exception as attach_err:
+            # Stripe-hosted accounts (requirement_collection == 'stripe')
+            # refuse API attaches outright — oauth_not_supported, proven
+            # against live mode on 2026-08-07. Old app builds still land
+            # here with a token: if Stripe's own windows already put a bank
+            # on the account, mirror it and answer success instead of
+            # failing a bank that is, in fact, attached.
+            _msg = str(attach_err)
+            if "oauth_not_supported" not in _msg and "required permissions" not in _msg:
+                raise
+            logging.warning(
+                "[StripeBankAccount] API attach refused for user %s (%s) — "
+                "falling back to the Stripe-side mirror", user.id, _msg[:160],
+            )
+            banks = _stripe.Account.list_external_accounts(
+                _cid, object="bank_account", limit=10,
+            ).get("data", [])
+            await _mirror_bank_payout_methods(db, user, banks)
+            rs = await db.execute(
+                select(PayoutMethod).where(
+                    PayoutMethod.user_id == user.id,
+                    PayoutMethod.method_type == "bank_account",
+                )
+            )
+            row = rs.scalars().first()
+            if row is None:
+                raise  # nothing on Stripe either — the failure is real
+            return {
+                "id": row.id,
+                "method_type": row.method_type,
+                "display_name": row.display_name,
+                "is_default": row.is_default,
+            }
         ext_id = ext.get("id") or ""
         # Accounts created before the schedule was pinned still carry
         # Stripe's default, so bring them in line the moment a payout

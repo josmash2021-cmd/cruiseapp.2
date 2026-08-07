@@ -2648,6 +2648,41 @@ class ApiService {
     return _parse(res);
   }
 
+  /// Mirror whatever banks Stripe holds on the driver's Connect account
+  /// into our payout-method list. Called after any Stripe-hosted window
+  /// closes — those windows attach banks to the account without telling
+  /// us, and on our Stripe-hosted accounts the API attach is refused
+  /// outright (oauth_not_supported), so mirroring is the only way the
+  /// driver ever sees their bank in the app.
+  static Future<List<Map<String, dynamic>>> syncPayoutMethodsFromStripe() async {
+    final token = await getToken();
+    if (token == null) return [];
+    final res = await _client
+        .post(
+          Uri.parse('$_baseUrl/drivers/payout-methods/sync-from-stripe'),
+          headers: _jsonHeaders(token),
+        )
+        .timeout(const Duration(seconds: 15));
+    if (res.statusCode != 200) return [];
+    return (jsonDecode(res.body) as List).cast<Map<String, dynamic>>();
+  }
+
+  /// Deep link into the driver's Express dashboard — the only surface
+  /// Stripe allows for adding, changing or removing a payout bank on our
+  /// Stripe-hosted connected accounts once onboarding is done.
+  static Future<String> getStripeConnectDashboardLink() async {
+    final token = await getToken();
+    if (token == null) throw ApiException(401, 'Not logged in');
+    final res = await _client
+        .post(
+          Uri.parse('$_baseUrl/drivers/stripe-connect/login-link'),
+          headers: _jsonHeaders(token),
+        )
+        .timeout(const Duration(seconds: 15));
+    final data = _parse(res);
+    return (data['url'] ?? '').toString();
+  }
+
   // ═══════════════════════════════════════════════════════
   //  PLAID BANK LINKING
   // ═══════════════════════════════════════════════════════

@@ -295,7 +295,20 @@ def _send_fcm_push(token: str, title: str, body: str, data: dict = None, is_offe
                     channel_id=channel_id,
                     visibility="public",
                     default_vibrate_timings=True,
-                    notification_priority="PRIORITY_MAX" if is_offer else "PRIORITY_HIGH",
+                    # `priority`, not `notification_priority`, and a bare
+                    # word, not a prefixed one — the SDK builds
+                    # 'PRIORITY_' + value.upper() itself when it encodes.
+                    #
+                    # Passing the wire name raised TypeError inside this very
+                    # constructor, which is one call, so the whole Message
+                    # was never built and send() never ran: every push died
+                    # here, on BOTH platforms, with the APNs block below
+                    # never reached. Drivers sat online and no offer ever
+                    # arrived while the app was in the background.
+                    #
+                    # This was already fixed once in b4a7ae83 and a later
+                    # latency commit put it back. Hence the test.
+                    priority="max" if is_offer else "high",
                 ),
             ),
             apns=_fcm.APNSConfig(

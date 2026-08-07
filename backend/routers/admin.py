@@ -1913,9 +1913,18 @@ async def admin_health_dashboard(db: AsyncSession = Depends(get_db)):
         driver_earn_today = round(float(today_row.driver_earn or 0.0), 2)
         platform_earn_today = round(float(today_row.platform_earn or 0.0), 2)
 
-        # ---- Money: pending cashouts -----------------------------------
+        # ---- Money: cashouts still in flight ----------------------------
+        #
+        # "pending" is the column default and nothing writes it any more:
+        # the weekly scheduler opens rows at "processing" and the cash-out
+        # endpoint does too, settling them to "completed" or "scheduled".
+        # Counting only "pending" pinned this tile at 0 exactly as the two
+        # states worth watching appeared — a payout stuck mid-flight is the
+        # one money alert an operator actually needs.
         pending_cashouts = (await db.execute(
-            select(func.count(Cashout.id)).where(Cashout.status == "pending")
+            select(func.count(Cashout.id)).where(
+                Cashout.status.in_(("pending", "processing"))
+            )
         )).scalar() or 0
 
         # ---- Alerts -----------------------------------------------------

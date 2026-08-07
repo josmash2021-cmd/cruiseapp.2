@@ -320,8 +320,8 @@ DEFAULT_CACHE_ENTRIES: list[dict] = [
         "category": "driver",
         "triggers_en": ["how much do i earn", "earnings breakdown", "my earnings", "how pay works", "driver pay"],
         "triggers_es": ["cuanto gano", "desglose de ganancias", "mis ganancias", "como funciona el pago", "pago de conductor"],
-        "response_en": "Your earnings consist of the base fare, distance and time rates, plus any tips and surge bonuses. You can view your detailed earnings in the app under Earnings. Payouts are processed weekly on Tuesdays to your linked bank account or PayPal.",
-        "response_es": "Sus ganancias consisten en la tarifa base, tarifas de distancia y tiempo, más propinas y bonos de demanda alta. Puede ver sus ganancias detalladas en la app en Ganancias. Los pagos se procesan semanalmente los martes a su cuenta bancaria o PayPal vinculada.",
+        "response_en": "Your earnings consist of the base fare, distance and time rates, plus any tips and surge bonuses. You can view your detailed earnings in the app under Earnings. Payouts run automatically every Monday to your linked bank account and take 2-3 business days to arrive. You can also cash out any time to a linked debit card for a 1.5% fee (minimum $0.50, $50 minimum cashout).",
+        "response_es": "Sus ganancias consisten en la tarifa base, tarifas de distancia y tiempo, más propinas y bonos de demanda alta. Puede ver sus ganancias detalladas en la app en Ganancias. Los pagos salen automáticamente cada lunes a su cuenta bancaria vinculada y tardan 2-3 días hábiles en llegar. También puede retirar cuando quiera a una tarjeta de débito vinculada por una comisión de 1.5% (mínimo $0.50, retiro mínimo $50).",
         "source": "manual", "active": True, "use_count": 0,
     },
     {
@@ -329,8 +329,8 @@ DEFAULT_CACHE_ENTRIES: list[dict] = [
         "category": "driver",
         "triggers_en": ["when do i get paid", "payout schedule", "payment not received", "missing payout", "late payment"],
         "triggers_es": ["cuando me pagan", "calendario de pagos", "no recibi pago", "pago faltante", "pago atrasado"],
-        "response_en": "Payouts are processed every Tuesday and typically arrive within 1-2 business days. If your payout hasn't arrived by Thursday, check your bank account details in the app. If everything looks correct, I can escalate this to our payments team.",
-        "response_es": "Los pagos se procesan cada martes y generalmente llegan en 1-2 días hábiles. Si su pago no ha llegado para el jueves, verifique sus datos bancarios en la app. Si todo se ve correcto, puedo escalar esto a nuestro equipo de pagos.",
+        "response_en": "Weekly payouts run every Monday and typically arrive within 2-3 business days. If yours hasn't arrived by Thursday, check your bank account details in the app. If everything looks correct, I can escalate this to our payments team.",
+        "response_es": "Los pagos semanales salen cada lunes y suelen llegar en 2-3 días hábiles. Si el suyo no ha llegado para el jueves, verifique sus datos bancarios en la app. Si todo se ve correcto, puedo escalar esto a nuestro equipo de pagos.",
         "source": "manual", "active": True, "use_count": 0,
     },
     {

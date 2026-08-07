@@ -155,8 +155,15 @@ WHAT YOU CANNOT DO:
 
   static const _driverKnowledge = '''
 WHAT YOU KNOW ABOUT THE APP (DRIVER):
-- Driver earnings: per-trip fare, tips, surge bonuses, weekly payouts (Tuesdays)
-- Payout methods: bank account, PayPal via Stripe Connect
+- Driver earnings: per-trip fare, tips, surge bonuses, weekly payouts (Mondays)
+- Weekly payout: automatic, free, every Monday to the linked bank account;
+  it takes 2-3 business days to arrive
+- Instant cashout: the driver can cash out any time to a linked DEBIT CARD
+  for a 1.5% fee (minimum \$0.50), minimum \$50 per cashout. The card must
+  have been linked for 7 days first — Stripe verifies it in that window.
+  Money reaches the card in minutes.
+- Payout methods: bank account (weekly) and debit card (instant), both via
+  Stripe Connect
 - Driver documents: license, insurance, registration, vehicle inspection
 - Vehicle requirements: 4-door, 2010 or newer, clean title, working AC
 - Driver levels: XP system, cruise levels
@@ -177,7 +184,8 @@ WHAT YOU CAN HELP WITH:
 WHAT YOU CANNOT DO:
 - Cannot adjust completed trip fares
 - Cannot change rider ratings
-- Cannot process instant payouts
+- Cannot trigger a payout yourself — the driver taps Instant Cash out in
+  Earnings; explain the fee, the \$50 minimum and the 7-day card wait
 - Cannot approve documents (handled by verification team)
 ''';
 

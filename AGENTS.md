@@ -1,96 +1,94 @@
-# AGENTS.md — CruiseApp Agent Navigation Index
+# AGENTS.md — Cerebro de navegación Kimi · CruiseApp
 
-> **Purpose:** Quick-reference index for AI coding agents working on this repository.  
-> **Rule:** Read this file first, then consult `PROJECT_MAP.md` before any edit.
-
----
-
-## 📚 Memory Files (Read before editing)
-
-| File | Why read it |
-|------|-------------|
-| [`PROJECT_MAP.md`](./PROJECT_MAP.md) | **Complete file map.** Every folder, every important file, its editability status (🔴 NO TOUCH / 🟡 CAREFUL / 🟢 EDITABLE), and security notes. |
-| [`SECURITY_ACTIONS.md`](./SECURITY_ACTIONS.md) | Security audit results: what was fixed, what is pending, and how to rotate secrets. |
-| [`CLAUDE.md`](./CLAUDE.md) | Project bible: stack, trip lifecycle, conventions, known bugs, agent commands (`/ship`, `/deploy-back`), learned patterns. |
-| [`PROJECT_MEMORY.md`](./PROJECT_MEMORY.md) | Secondary architecture memory (99 screens, 29 services). May be slightly outdated; verify against code. |
+> **Propósito:** trabajar con el mapa ya conocido, SIN gastar tokens explorando.
+> Este archivo se carga solo en cada sesión — cada línea cuesta tokens siempre, así que es denso a propósito.
+> **Regla de oro:** si el flujo está en el mapa de abajo, ve DIRECTO a los archivos listados. No lances agentes de exploración ni leas carpetas enteras para territorio ya mapeado.
 
 ---
 
-## 🚦 Edit Safety Rules
+## ⚡ Workflow token-eficiente
 
-1. **If a file is marked 🔴 in `PROJECT_MAP.md` → DO NOT EDIT without explicit user approval.**
-2. **If a file is marked 🟡 → Edit only if you fully understand the blast radius.**
-3. **If a file is marked 🟢 → Safe to edit; still follow conventions below.**
-
-### Never edit without approval
-- `pubspec.yaml`, `codemagic.yaml`, `shorebird.yaml`, `railway.toml`
-- `firebase.json`, `.firebaserc`, `database.rules.json`, `firestore.rules`, `storage.rules`
-- `android/app/build.gradle.kts` (signing config)
-- `ios/Runner.xcodeproj/` (codesign)
-- `backend/models/database.py` without a migration plan
-- `backend/utils/security.py` without regression tests
-- `backend/migrations/*.py` that have already run in production
-- `docs/privacy_policy.md`, `docs/rider_terms_of_service.md`, `docs/driver_terms_of_service.md`, `docs/driver_agreement.md` (legal documents); `docs/archive/terms_of_service_alabama_legacy.md` is the superseded Alabama ToS — do not restore or reference it
-- `.github/copilot-instructions.md`, `.github/agents/*.md`, `.github/workflows/*.yml`
-
-### Always do this
-- Run `flutter analyze` after editing `.dart` files (hooks do this automatically).
-- Run `pytest backend/tests/` after editing Python files.
-- Use `try/finally` + `.dispose()` in Flutter controllers.
-- Use Pydantic validation for all FastAPI inputs.
-- Use SQLAlchemy ORM or `text()` with named parameters (never string-concat SQL).
-- Keep code bilingual (Spanish/English) as per project convention.
-- Never commit secrets (`lib/config/env.dart`, `.env`, `backend/.env`, `*.jks`).
+1. Lee la tarea → ubica el flujo en el mapa → lee SOLO los archivos/funciones listados (`Read` con `line_offset`, no archivos completos de 3,000 líneas).
+2. Agente `explore`: SOLO para flujos NO mapeados aquí. Nunca para "confirmar" lo que este mapa ya dice.
+3. El mapa dice DÓNDE; antes de editar lee igual la región exacta (los números de línea se mueven con cada commit). La forma de trabajar NO cambia: diffs mínimos, estilo del archivo, verificación obligatoria.
+4. Verificación tras editar: `flutter analyze` (Dart) · `cd backend && ./.venv/Scripts/python.exe -m pytest tests/ -q` (Python).
+5. `CLAUDE.md` (biblia: stack, trip lifecycle, 29 patrones aprendidos) y `PROJECT_MAP.md` (estatus 🔴/🟡/🟢 de cada archivo): léelos SOLO si el flujo no está mapeado aquí o dudas del estatus de un archivo raro. Ya no son lectura obligatoria de cada sesión.
+6. Antes de commitear: `git status` — el usuario suele tener WIP propio sin commitear; no arrastres archivos ajenos al commit (si no hay forma, decláralo en el mensaje). Nunca commitees `.claude/scheduled_tasks.lock`. Mensajes en español, estilo conventional (`fix(fcm): ...`). Push al remote después de cada change set (preferencia durable del usuario).
 
 ---
 
-## 🗂️ Folder Responsibilities
+## 🧠 Mapa de flujos — dónde está cada cosa
 
-| Folder | What lives here | Typical edits |
-|--------|-----------------|---------------|
-| `lib/screens/` | Flutter UI (80+ screens) | Add/modify UI flows, fix layout bugs |
-| `lib/services/` | Business logic / API clients | Fix API calls, add endpoints, patch caching |
-| `lib/models/` | Dart data models | Add fields, update `fromJson`/`toJson` |
-| `lib/map/` | Mapbox unified engine | Map layers, camera, tracking |
-| `lib/widgets/` | Reusable widgets | UI components, animations |
-| `lib/config/` | App config, themes, flags | Feature flags, theme tweaks |
-| `lib/navigation/` | Driver navigation state machine | Trip-phase logic, car rendering |
-| `backend/routers/` | FastAPI endpoints | Add endpoints, fix business logic |
-| `backend/services/` | Backend business services | Notifications, caching, AI, SMS |
-| `backend/models/` | SQLAlchemy + Pydantic | Schema changes (with migration!) |
-| `backend/utils/` | Security, helpers, encryption | Utilities, security hardening |
-| `backend/tests/` | Pytest suite | Add regression tests |
-| `backend/scripts/` | One-off utility scripts | Data backfills, admin scripts |
-| `docs/` | Documentation | Technical guides, setup docs |
-| `assets/` | Images, sounds, fonts, configs | Add/replace assets |
-| `android/`, `ios/`, `web/`, `linux/`, `macos/`, `windows/` | Platform configs | Platform-specific fixes only |
+**Push de oferta al driver (Issue 1, arreglado 2026-08-07)**
+- Backend: `backend/routers/dispatch.py` → `_send_offer_to_driver` (~L575-800): crea DispatchOffer, re-verifica `is_online` antes de enviar, SSE + FCM con body `"$ fare · $/hr · mi · min"`. `_auto_cascade` (~L751): 45 s × máx 10 drivers.
+- Payload FCM/APNs: `backend/services/fcm_service.py` → `_send_fcm_push` (~L236-372): canales `cruise_offers` (max) / `cruise_premium`, sonido `cruise_online`, TTL 45 s, APNs time-sensitive para ofertas. Test guardián: `backend/tests/test_fcm_message_builds.py`.
+- App: `lib/main.dart` — bg handler (~L133-219: ofertas retornan temprano, las dibuja el OS), foreground (~L922-1045), tap routing (`_handleDriverRideOffer` ~L222). `lib/services/notification_service.dart` — canales (~L278-329), `showOfferNotification` (~L453-518, fullScreenIntent, timeSensitive).
+- Token: `NotificationService.ensureTokenRegistered` → `POST /auth/fcm-token`. SSE en vivo: `ApiService.streamDriverOffers` → `driver_online_controller._applyOffers`.
+- iOS Live Activity: `ios/Runner/AppDelegate.swift` `CruiseLiveActivityManager` + `lib/services/live_activity_service.dart`; arranca al ir online (`_showOnlinePresence`), ofertas por `_syncOfferLiveActivity`. NO hay push-to-start (iOS 17.2+, sin implementar): con la app muerta manda la notificación APNs normal.
+
+**Mapa rider — pedir viaje / picker pin-drop (Issues 2 y 4, arreglados 2026-08-07)**
+- `lib/screens/ride_request_{screen,controller,map,widgets}.dart` = UNA sola State class vía part files.
+- Estado: `lib/state/rider_trip_controller.dart` (`RiderPhase`; `_tryFetchRoute` CONSERVA `pickingLocation`; la salida del picker es SOLO por `finishPickingLocation()`).
+- Picker "Set your drop-off" = `RideRequestScreen(pickerMode: true)` empujado desde `pickup_dropoff_search_screen.dart`. Latch anti-snap `_userTookCamera`; gate GPS `_gpsMayMoveCamera`; reverse-geocode desde el CENTRO del mapa (`_pickerOnCameraIdle`).
+- "Driver Found": `_dfFlyMainCamera` encuadra la ruta COMPLETA una vez (pitch 20), nunca zoom al punto medio.
+
+**Tracking rider (viaje en curso)**
+- `lib/screens/rider_tracking_screen.dart` + `lib/controllers/rider_tracking_controller.dart` (fases `_TrackPhase`) + `lib/widgets/tracking/tracking_map_view.dart` (fase arriving encuadra driver→pickup A PROPÓSITO — no "arreglarlo") + `lib/map/tracking_map_camera.dart` (chase por frame).
+
+**Driver online / ofertas / viaje**
+- `lib/screens/driver/driver_online_{screen,controller,map}.dart` — preview de oferta con fit a ruta (follow suprimido); tras aceptar, chase por frame zoom 17.5/pitch 55 = navegación turn-by-turn (intencional). `driver_trip_accept_screen.dart` — mini-mapa fit único; GPS solo mueve el carrito.
+
+**Registro driver — documentos + biometría (Issues 3 y 5, arreglados 2026-08-07)**
+- `lib/screens/driver/driver_signup_screen.dart` (3 pasos). Licencia Front/Back → `license_guidelines_screen.dart` (página de guías) → `license_scanner_screen.dart` (cámara + OCR). Seguro/registro de auto: `_showPickOptions` (cámara/galería).
+- Cara 4 pasos: `lib/screens/face_liveness_screen.dart` (minFaceSize 0.1, feedback visible, errores en pantalla) + `lib/utils/face_oval_fit.dart` (math pineada por `test/face_oval_fit_test.dart` — no cambiar umbrales).
+- Guías compartidas: `lib/widgets/doc_guidelines_view.dart` — UNA sola fuente del diseño; la usa también el KYC rider.
+
+**Identidad rider (KYC)**
+- `lib/screens/identity_verification_screen.dart` — paso 7 = guías (`DocGuidelinesView`), scanner inline con OCR + crop (`lib/utils/doc_frame_crop.dart`, pineado por `test/doc_frame_crop_test.dart`).
+
+**Motor de mapas**
+- `lib/map/`: `unified_map_service`, `camera_director` (locks exclusivos), `tracking_map_camera`, `map_surface_coordinator` (una sola superficie viva). Web = Mapbox GL JS en `web_map_view_web.dart`. SDK `mapbox_maps_flutter ^2.5.0`.
+
+**Trip lifecycle backend**
+- `backend/routers/trips.py`: statuses canónicos + `_STATUS_ALIASES` + `_VALID_TRANSITIONS` (forward-only), comisiones `_COMMISSION_BY_TYPE`. `Trip.distance` = MILLAS, `Trip.duration` = MINUTOS; ambos NULL hasta que el viaje completa.
 
 ---
 
-## 🔐 Security Reminders
+## 🪤 Trampas y bugs silenciosos conocidos
 
-- `backend/services/redis_cache.py` **no longer uses `pickle`**. Only JSON-serializable values can be cached.
-- `backend/main.py` CORS defaults are production-safe; localhost only appears when `DEBUG=1`.
-- Several secrets are still hardcoded in mobile/web assets (Firebase keys, Stripe pk_live, Google Maps key). **Do not commit new secrets.** See `SECURITY_ACTIONS.md` for rotation plan.
+1. **FCM `priority="max"` va en palabra pelada** — el SDK la prefija con `PRIORITY_`; pasar el nombre de wire mata el Message ENTERO en silencio (pasó dos veces). Hay test guardián.
+2. **El bloque `notification` del FCM SE QUEDA** — sin él Android no dispara `onMessageOpenedApp`/`getInitialMessage` y el tap no hace nada. El dedup vive en el cliente (bg handler retorna temprano en ofertas).
+3. **Sonido APNs custom:** el `.wav` debe ser miembro del target Runner en `project.pbxproj` (lo es desde 2026-08-07). Si falta, iOS cae al sonido default SIN error ni log.
+4. **`Runner.entitlements` lleva `aps-environment=production`** (2026-08-07) — exige la capability Push Notifications en el App ID de App Store Connect o la firma falla.
+5. **Cambios nativos NO viajan por Shorebird OTA** (pbxproj, entitlements, AndroidManifest, pods): requieren build completo (Codemagic iOS / build Android).
+6. **`pickerMode` queda `true` tras un Confirm exitoso** — jamás gates con `widget.pickerMode`; gatea por fase `pickingLocation`.
+7. **Checklist anti-bug-silencioso (aplicar a TODO fix):** (a) ¿el archivo/asset es miembro del bundle/target nativo? (b) ¿el error llega a la UI o solo a `debugPrint`/`catch (_) {}`? (c) ¿todo gate de fase/estado tiene su camino de salida explícito? (d) ¿el push lleva contenido visible o solo ids? (e) ¿hay entradas HERMANAS al mismo flujo (front/back, cámara/galería, Android/iOS) que necesitan el mismo cambio? — grep por hermanos, no solo el caso reportado.
+8. **`face_liveness_screen_new.dart` fue borrado** (duplicado muerto con el bug yuv420 + catch silencioso) — no recrear ni re-importar.
+9. **Tests que ya fallaban en HEAD (no son tuyos, no los persigas):** `test_dispatch_radius.py::test_every_live_path_uses_the_shared_ceiling`, `test_rating_thresholds.py` (3), `test_rider_terms_compliance.py::test_wait_fee_schedule_consistent_between_ui_and_backend`, `test_state_filter_all_paths.py::test_live_dispatch_has_no_state_filter`.
+10. **Las reglas Firebase del repo NO son las desplegadas** — nunca `firebase deploy` de rules sin comparar con la consola (detalle: CLAUDE.md #27-29).
+11. **`flutter_stripe` y Mapbox no corren en web** (crash en primer layout) — todo flujo con ellos va tras `kIsWeb`; por eso las pantallas de mapa/pagos no se verifican en `localhost`.
 
 ---
 
-## 🛠️ Common Commands
+## 🚦 Edit safety
+
+**Nunca editar sin aprobación explícita:** `pubspec.yaml`, `codemagic.yaml`, `shorebird.yaml`, `railway.toml`, `firebase.json`, `.firebaserc`, `database.rules.json`, `firestore.rules`, `storage.rules`, `android/app/build.gradle.kts`, signing en `ios/Runner.xcodeproj/` (agregar RECURSOS como sonidos sí está permitido si el fix lo requiere — verificado 2026-08-07), `backend/models/database.py` (sin plan de migración), `backend/migrations/*.py` ya corridas, `backend/migrate.py`, `backend/config.py`, `backend/utils/security.py` (sin tests de regresión), docs legales en `docs/` (privacy/ToS/agreements), `.github/copilot-instructions.md`, `.github/agents/*.md`, `.github/workflows/*.yml`, `CLAUDE.md`.
+
+**Siempre:** `flutter analyze` tras editar `.dart`; `pytest` tras editar Python; `try/finally` + `.dispose()` en controllers; Pydantic en inputs FastAPI; SQLAlchemy ORM o `text()` con parámetros nombrados; strings user-facing vía `S.of(context).xxx` (bilingüe ES/EN); `maybeOf` fuera de `build()` (CLAUDE.md #26); nunca commitear secretos.
+
+## 🔐 Seguridad
+
+- `backend/services/redis_cache.py` ya NO usa `pickle` — solo valores JSON-serializables.
+- CORS en `backend/main.py` es production-safe; localhost solo con `DEBUG=1`.
+- Hay secretos hardcodeados históricos en assets móviles/web (Firebase keys, Stripe pk_live, Google Maps key) — no agregar nuevos; plan de rotación en `SECURITY_ACTIONS.md`.
+
+## 🛠️ Comandos
 
 ```bash
-# Backend tests
-pytest backend/tests/ -v
-
-# Flutter analysis
-flutter analyze
-
-# Backend deploy (Railway)
-railway up --detach
-
-# Flutter build (iOS via Codemagic / Android via Shorebird)
-# Do NOT run flutter build apk manually unless instructed.
+flutter analyze                                            # tras editar Dart
+cd backend && ./.venv/Scripts/python.exe -m pytest tests/ -q   # tras editar Python
+railway up --detach                                        # deploy backend
+# iOS = Codemagic · Android = Shorebird OTA — NUNCA flutter build apk manual
 ```
 
----
-
-*Last updated: 2026-06-04 during full-project audit.*
+*Última actualización: 2026-08-07 — convertido en cerebro de navegación Kimi tras la sesión de 5 fixes (push ofertas, snaps de mapa, guías licencia, cara).*

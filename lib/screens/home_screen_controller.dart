@@ -126,6 +126,24 @@ extension _HomeScreenController on _HomeScreenState {
       // Live data — the stream genuinely works; re-arm the error budget.
       _verificationRetryCount = 0;
       if (!mounted) return;
+
+      // Decided over the WHOLE snapshot, never doc by doc. The query is not
+      // limited to one document, so a rider who was rejected and then
+      // approved keeps both, and Firestore does not promise an order: the
+      // stale rejected one could be read first, arm the flag, and hand the
+      // approved one a celebration on every single sign-in — the exact bug
+      // this is here to prevent.
+      final anyApproved = snapshot.docs.any((d) {
+        final data = d.data();
+        final status = data['status'] as String? ??
+            data['verificationStatus'] as String? ??
+            '';
+        return status == 'approved' ||
+            data['isVerified'] == true ||
+            data['isApproved'] == true;
+      });
+      if (!anyApproved) _sawUnapprovedThisSession = true;
+
       for (final doc in snapshot.docs) {
         final data = doc.data();
         final status = data['status'] as String? ??
@@ -158,8 +176,12 @@ extension _HomeScreenController on _HomeScreenState {
             _verificationStatus = 'approved';
           });
 
-          // Show celebratory dialog
-          _showApprovalDialog();
+          // Only celebrate an approval that happened while they watched.
+          //
+          // Arriving already approved is not news — it is every sign-in of
+          // every verified rider, and it was being congratulated as if it
+          // had just happened.
+          if (_sawUnapprovedThisSession) _showApprovalDialog();
           return;
         } else if (status == 'pending') {
           if (mounted) {

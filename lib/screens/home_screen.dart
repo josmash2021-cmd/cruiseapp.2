@@ -147,6 +147,19 @@ class _HomeScreenState extends State<HomeScreen>
 
   // Verification state — eagerly loaded to prevent banner flash
   bool _isVerified = LocalDataService.isVerifiedSync;
+
+  /// Whether this process has ever seen the account NOT approved.
+  ///
+  /// The celebration is for the MOMENT of approval, so it needs a
+  /// transition, and `!_isVerified` is not one — it is seeded from a local
+  /// cache that logout wipes, so on every fresh sign-in of an
+  /// already-approved rider it read false, the first Firestore snapshot came
+  /// back approved, and the dialog fired again. People who had been verified
+  /// for months got congratulated every time they logged in.
+  ///
+  /// Deliberately NOT persisted: a rider waiting for approval is the only
+  /// one who can set it, and they set it from the very first snapshot.
+  bool _sawUnapprovedThisSession = false;
   String _verificationStatus = LocalDataService.isVerifiedSync ? 'approved' : '';
   // True once the verification state is actually known (local cache hit or a
   // completed backend check). Until then the hero must NOT show the

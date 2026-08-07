@@ -179,7 +179,6 @@ class _CruiseLevelScreenState extends State<CruiseLevelScreen>
         final stats = await ApiService.getDriverStats(userId)
             .timeout(const Duration(seconds: 15));
         final completed = (stats['completed_trips'] as num?)?.toInt() ?? 0;
-        final canceled = (stats['canceled_trips'] as num?)?.toInt() ?? 0;
         final total = (stats['total_trips'] as num?)?.toInt() ?? 0;
         // New drivers have no trips → no rating. Don't show fake 5.0 stars.
         final rawRating = stats['avg_rating'];
@@ -189,9 +188,12 @@ class _CruiseLevelScreenState extends State<CruiseLevelScreen>
         _completedTrips = completed;
         _avgRating = avgRating;
         _satisfactionRate = total > 0 ? (completed / total * 100) : 0;
-        _cancellationRate = total > 0 ? (canceled / total * 100) : 0;
+        // Backend count rule: 1 point per cancellation, matching the
+        // per-rejection acceptance and per-late on-time rules.
+        _cancellationRate =
+            (stats['cancellation_rate'] as num?)?.toDouble() ?? 0;
         _acceptanceRate = (stats['acceptance_rate'] as num?)?.toDouble() ?? 100;
-        _onTimeRate = (stats['on_time_rate'] as num?)?.toDouble() ?? 95;
+        _onTimeRate = (stats['on_time_rate'] as num?)?.toDouble() ?? 100;
 
         // Use backend authoritative cruise_level if available,
         // otherwise fall back to client-side computation

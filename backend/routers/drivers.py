@@ -2519,18 +2519,32 @@ async def get_driver_stats(driver_id: int, user: User = Depends(_get_current_use
             func.count(Trip.id).label("total"),
             func.sum(sql_case((Trip.status == "completed", 1), else_=0)).label("completed"),
             func.sum(sql_case((Trip.status.in_(["cancelled", "canceled"]), 1), else_=0)).label("cancelled_count"),
+            # Late = the driver reached the pickup point after the time the
+            # ride was scheduled for. Unscheduled rides cannot be late.
+            func.sum(sql_case((and_(
+                Trip.scheduled_at.isnot(None),
+                Trip.arrived_at.isnot(None),
+                Trip.arrived_at > Trip.scheduled_at,
+            ), 1), else_=0)).label("late"),
         ).where(Trip.driver_id == driver_id)
     )
     trip_row = trip_r.one()
     total_trips = trip_row.total or 0
     completed = int(trip_row.completed or 0)
     canceled = int(trip_row.cancelled_count or 0)
+    late = int(trip_row.late or 0)
 
     # Average rating (lightweight index scan)
     avg_rating, ratings_count = await _compute_user_rating(db, driver_id)
 
-    acceptance_rate = (accepted / total_offers * 100) if total_offers > 0 else 100.0
-    on_time_rate = round(((completed / total_trips) * 100), 1) if total_trips > 0 else 100.0
+    # Simple count rule (product decision): every rejected offer, every late
+    # arrival and every cancellation moves its rate by exactly one point,
+    # from 100 down (acceptance / on-time) or from 0 up (cancellation).
+    # The old ratios moved less and less per event as the history grew —
+    # rejection #50 barely moved the needle, which hid the signal entirely.
+    acceptance_rate = max(0.0, 100.0 - rejected)
+    on_time_rate = max(0.0, 100.0 - late)
+    cancellation_rate = min(100.0, float(canceled))
 
     # Recompute cruise level from live stats (self-healing: fixes stale DB values)
     from cruise_level_agent import compute_tier
@@ -2563,7 +2577,9 @@ async def get_driver_stats(driver_id: int, user: User = Depends(_get_current_use
         "total_trips": total_trips,
         "completed_trips": completed,
         "canceled_trips": canceled,
-        "on_time_rate": on_time_rate,
+        "late_trips": late,
+        "cancellation_rate": round(cancellation_rate, 1),
+        "on_time_rate": round(on_time_rate, 1),
         "avg_rating": effective_rating,
         "ratings_count": ratings_count,
         "cruise_level": correct_level,

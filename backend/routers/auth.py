@@ -1204,23 +1204,32 @@ async def get_dashboard(user: User = Depends(_get_current_user), db: AsyncSessio
                 select(
                     func.count(DispatchOffer.id).label("total"),
                     func.sum(sql_case((DispatchOffer.status == "accepted", 1), else_=0)).label("accepted"),
+                    func.sum(sql_case((DispatchOffer.status == "rejected", 1), else_=0)).label("rejected"),
                 ).where(DispatchOffer.driver_id == user.id)
             )
             offer_row = offer_r.one()
             total_offers = offer_row.total or 0
             accepted = int(offer_row.accepted or 0)
-            acceptance_rate = (accepted / total_offers * 100) if total_offers > 0 else 100.0
+            rejected = int(offer_row.rejected or 0)
+            # Same 1-point-per-event rule as /drivers/{id}/stats.
+            acceptance_rate = max(0.0, 100.0 - rejected)
 
             trip_r = await db.execute(
                 select(
                     func.count(Trip.id).label("total"),
                     func.sum(sql_case((Trip.status == "completed", 1), else_=0)).label("completed"),
+                    func.sum(sql_case((and_(
+                        Trip.scheduled_at.isnot(None),
+                        Trip.arrived_at.isnot(None),
+                        Trip.arrived_at > Trip.scheduled_at,
+                    ), 1), else_=0)).label("late"),
                 ).where(Trip.driver_id == user.id)
             )
             trip_row = trip_r.one()
             completed_trips = int(trip_row.completed or 0)
             total_trips = trip_row.total or 0
-            on_time_rate = round(((completed_trips / total_trips) * 100), 1) if total_trips > 0 else 100.0
+            late_trips = int(trip_row.late or 0)
+            on_time_rate = round(max(0.0, 100.0 - late_trips), 1)
 
             driver_data = {
                 "earnings": {

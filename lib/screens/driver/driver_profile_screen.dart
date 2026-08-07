@@ -147,11 +147,13 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
         _satisfactionRate = total > 0
             ? (completed / total * 100).clamp(0, 100)
             : 0;
-        _cancellationRate = total > 0
-            ? (canceled / total * 100).clamp(0, 100)
-            : 0;
+        // 1 point per cancelled trip, straight from the backend — the same
+        // count rule as acceptance (per rejection) and on-time (per late
+        // arrival).
+        _cancellationRate =
+            (stats['cancellation_rate'] as num?)?.toDouble() ?? 0;
         _acceptanceRate = (stats['acceptance_rate'] as num?)?.toDouble() ?? 100;
-        _onTimeRate = (stats['on_time_rate'] as num?)?.toDouble() ?? 95;
+        _onTimeRate = (stats['on_time_rate'] as num?)?.toDouble() ?? 100;
 
         // Determine cruise level tier — use backend authoritative value,
         // fall back to client-side computation matching cruise_level_screen.dart

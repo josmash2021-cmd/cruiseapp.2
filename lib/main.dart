@@ -136,46 +136,28 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
     await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
   }
   final type = message.data['type'] as String? ?? '';
+
+  // The system already drew this one.
+  //
+  // The backend sends offers with a `notification` block, so FCM renders the
+  // alert itself the instant it arrives — guaranteed, even from a cold
+  // process, and with the tap wired to onMessageOpenedApp. Drawing a second
+  // copy here put TWO alerts on the driver's phone for one offer.
+  //
+  // Dropping the backend block instead was tried and reverted: without it,
+  // onMessageOpenedApp never fires and the notification became untappable.
+  // And the reason this copy existed at all — fullScreenIntent — has never
+  // worked: USE_FULL_SCREEN_INTENT was missing from the manifest, so Android
+  // has silently ignored the flag since API 29. The permission is declared
+  // now, but earning a real full-screen takeover also needs the Android 14
+  // user grant, so it cannot be the only path an offer arrives by.
+  if (type == 'trip_offer' || type == 'new_offer') return;
+
   final plugin = FlutterLocalNotificationsPlugin();
   const androidSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
   await plugin.initialize(
     settings: const InitializationSettings(android: androidSettings),
   );
-
-  if (type == 'trip_offer' || type == 'new_offer') {
-    // Always show clean title/body — never expose price or address to driver
-    const title = 'New Ride Offer';
-    const body = 'A rider needs a ride \u2014 open Cruise to accept.';
-    await plugin.show(
-      id: 9001,
-      title: title,
-      body: body,
-      notificationDetails: NotificationDetails(
-        android: AndroidNotificationDetails(
-          'cruise_offers',
-          'Trip Offers',
-          channelDescription: 'New trip offer alerts for drivers',
-          importance: Importance.max,
-          priority: Priority.max,
-          playSound: true,
-          sound: const RawResourceAndroidNotificationSound('cruise_online'),
-          enableVibration: true,
-          vibrationPattern: Int64List.fromList([0, 150, 100, 150, 100, 150]),
-          fullScreenIntent: true,
-          color: const Color(0xFFE8C547),
-          icon: '@mipmap/ic_launcher',
-        ),
-        iOS: const DarwinNotificationDetails(
-          presentAlert: true,
-          presentBadge: true,
-          presentSound: true,
-          sound: 'cruise_online.wav',
-          interruptionLevel: InterruptionLevel.timeSensitive,
-        ),
-      ),
-      payload: 'trip_offer',
-    );
-  }
 
   // System push notifications for rider + driver (show even when app is killed)
   const riderTypes = {
@@ -239,13 +221,67 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 /// Navigate to DriverOnlineScreen when driver taps a "new_offer" FCM notification.
 void _handleDriverRideOffer(RemoteMessage message) {
   if ((message.data['type'] as String? ?? '') != 'new_offer') return;
-  UserSession.getMode().then((mode) {
+  _openDriverRideOffer(
+    offerId: message.data['offer_id']?.toString() ?? '',
+    tripId: message.data['trip_id']?.toString() ?? '',
+  );
+}
+
+/// Route a tap on a local notification written with [_offerPayload].
+///
+/// The notification the background isolate puts up is a local one, so nothing
+/// about the tap reaches [FirebaseMessaging.onMessageOpenedApp] — the ids come
+/// back out of the payload string instead.
+void handleOfferNotificationPayload(String? payload) {
+  if (payload == null || !payload.startsWith('trip_offer')) return;
+  final parts = payload.split(':');
+  _openDriverRideOffer(
+    offerId: parts.length > 2 ? parts[2] : '',
+    tripId: parts.length > 1 ? parts[1] : '',
+  );
+}
+
+/// How long a tap waits for the offer lookup before the screen is pushed
+/// anyway. The tap is the driver's, not the network's: past this the screen
+/// goes up and its own poll finds the offer the way it always did.
+const Duration _offerLookupBudget = Duration(milliseconds: 1200);
+
+/// What [_fetchPendingOffer] answers: the offer, and whether dispatch was
+/// reachable at all.
+typedef _PendingOfferLookup = ({bool reachable, Map<String, dynamic>? offer});
+
+/// Open the driver's online screen ON the offer the notification was about.
+///
+/// The push names its offer (`offer_id` / `trip_id`, see
+/// backend/routers/dispatch.py) and the cascade hands that same offer to the
+/// next driver OFFER_TIMEOUT_SECONDS later. Both ids used to be dropped here:
+/// the screen went up bare and started looking for whatever dispatch still had
+/// for this driver, so a tap late in the window either found the card after a
+/// round trip of its own, or sat on the "Finding trips" bar without ever
+/// saying the ride had already moved on.
+///
+/// Now the offer is looked up by id first and handed to the screen whole, and
+/// a lookup that comes back without it means the cascade reassigned it — which
+/// is said out loud instead of being left to the driver to work out.
+void _openDriverRideOffer({required String offerId, required String tripId}) {
+  UserSession.getMode().then((mode) async {
     if (mode != 'driver') return;
+
+    final Future<_PendingOfferLookup?>? lookup =
+        offerId.isEmpty && tripId.isEmpty
+            ? null
+            : _fetchPendingOffer(offerId, tripId);
+    _PendingOfferLookup? found;
+    if (lookup != null) {
+      found = await lookup.timeout(_offerLookupBudget, onTimeout: () => null);
+    }
+
     final nav = _navigatorKey.currentState;
     if (nav == null) return;
     nav.push(PageRouteBuilder(
       opaque: false,
-      pageBuilder: (_, __, ___) => const DriverOnlineScreen(),
+      pageBuilder: (_, __, ___) =>
+          DriverOnlineScreen(deepLinkOffer: found?.offer),
       transitionDuration: const Duration(milliseconds: 280),
       reverseTransitionDuration: const Duration(milliseconds: 220),
       transitionsBuilder: (_, anim, __, child) => FadeTransition(
@@ -253,7 +289,70 @@ void _handleDriverRideOffer(RemoteMessage message) {
         child: child,
       ),
     ));
+    debugPrint('[FCM] offer tap → DriverOnlineScreen '
+        'offer=$offerId trip=$tripId card=${found?.offer != null}');
+
+    if (lookup == null || found?.offer != null) return;
+    // Either the lookup outran the budget above or it answered while the
+    // route was going up; this is the settled answer either way.
+    lookup.then((result) {
+      if (result == null || result.offer != null || !result.reachable) return;
+      _showOfferGoneNotice();
+    });
   });
+}
+
+/// The still-pending offer with this id, straight from dispatch.
+///
+/// `reachable` is false when the question could not be asked — no session, no
+/// network — so a dead connection is never reported to the driver as a ride
+/// somebody else took.
+Future<_PendingOfferLookup> _fetchPendingOffer(
+  String offerId,
+  String tripId,
+) async {
+  try {
+    final driverId = await ApiService.getCurrentUserId();
+    if (driverId == null) return (reachable: false, offer: null);
+    final pending = await ApiService.getDriverPendingOffers(driverId);
+    for (final o in pending) {
+      // In a pending row `offer_id` is the offer and `id` is the trip it was
+      // cut from — the row is the offer merged with _trip_dict, see
+      // backend/routers/dispatch.py. The push carries both ids, and either
+      // one names the ride the driver just tapped.
+      final matchesOffer =
+          offerId.isNotEmpty && o['offer_id']?.toString() == offerId;
+      final matchesTrip = tripId.isNotEmpty &&
+          (o['trip_id'] ?? o['id'])?.toString() == tripId;
+      if (matchesOffer || matchesTrip) return (reachable: true, offer: o);
+    }
+    return (reachable: true, offer: null);
+  } catch (e) {
+    debugPrint('[FCM] offer $offerId lookup failed: $e');
+    return (reachable: false, offer: null);
+  }
+}
+
+/// Say the offer is gone. The driver opened the app from a notification about
+/// one specific ride, and landing on the searching bar with nothing said reads
+/// as the app having lost it.
+void _showOfferGoneNotice() {
+  final ctx = _navigatorKey.currentContext;
+  if (ctx == null) return;
+  // maybeOf: this lands a frame or more after the route was pushed, off any
+  // build of ours, and the lookup can settle while the tree is rebuilding.
+  final messenger = ScaffoldMessenger.maybeOf(ctx);
+  if (messenger == null) return;
+  messenger.showSnackBar(SnackBar(
+    content: Text(
+      S.of(ctx).tripNoLongerAvailable,
+      style: const TextStyle(color: Colors.black, fontWeight: FontWeight.w700),
+    ),
+    backgroundColor: const Color(0xFFD4A843),
+    behavior: SnackBarBehavior.floating,
+    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+    duration: const Duration(seconds: 4),
+  ));
 }
 
 /// Unified notification tap handler — routes to correct screen by FCM type.
@@ -956,6 +1055,19 @@ Future<void> heavyInit() async {
           return;
         }
         await NotificationService.init();
+        // The third way into the offer: a tap on the notification the
+        // background isolate showed, when that tap is what started the app.
+        // FCM's own getInitialMessage knows only about the push it received,
+        // never about a local notification, so without this the ids of the
+        // offer the driver tapped are gone by the time the app is up.
+        final launch = await FlutterLocalNotificationsPlugin()
+            .getNotificationAppLaunchDetails();
+        if (launch?.didNotificationLaunchApp ?? false) {
+          final payload = launch?.notificationResponse?.payload;
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            handleOfferNotificationPayload(payload);
+          });
+        }
       } catch (e) {
         debugPrint('[NotificationService] init error: $e');
       }

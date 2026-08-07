@@ -167,7 +167,11 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   /// depending on whether the car is moving. See [HeadingService].
   final HeadingService _headingSource = HeadingService();
   StreamSubscription<double>? _headingSub;
-  StreamSubscription<String>? _fcmTokenRefreshSub;
+
+  /// One push-registration attempt at a time — see [_registerFcmToken].
+  /// Token rotation is not watched here any more; NotificationService keeps
+  /// the app's single listener, and it records whether the save landed.
+  bool _fcmRegisterInFlight = false;
 
   // ── Stats ──
   double _todayEarnings = 0.0;
@@ -537,7 +541,26 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   /// The retry matters: the save is a no-op until the session JWT exists,
   /// and without a second attempt a device that got here a moment early
   /// stayed unregistered for the whole session.
-  Future<void> _registerFcmToken() async {
+  ///
+  /// Screen entry used to be the only caller, which is how a token becomes
+  /// permanently lost: the backend nulls `fcm_token` as soon as APNs or FCM
+  /// answers "Requested entity was not found", and after that nothing asks
+  /// again until the driver happens to cold-start into this screen. Going
+  /// online and returning to the foreground now ask too — [reason] says
+  /// which one, and [NotificationService.ensureTokenRegistered] skips the
+  /// request outright when the backend already holds this token, so the
+  /// extra entry points cost nothing on the happy path. Rotation is handled
+  /// there as well, by the single listener the whole app shares.
+  Future<bool> _registerFcmToken({String reason = 'screen entry'}) async {
+    // Overlapping chains buy nothing: the retries below can run for ~18 s,
+    // and a driver switching apps can land here several times inside that.
+    // A forced re-assert must not be answered by the memo of an older
+    // attempt: going online is precisely when we stop trusting it, because
+    // the backend may have nulled the row behind our back.
+    if (_fcmRegisterInFlight && !reason.startsWith('go online')) {
+      return NotificationService.isTokenRegistered;
+    }
+    _fcmRegisterInFlight = true;
     try {
       final messaging = FirebaseMessaging.instance;
 
@@ -549,40 +572,47 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       if (settings.authorizationStatus == AuthorizationStatus.denied) {
         debugPrint('[DriverHome] FCM: push permission DENIED by the user — '
             'no ride offers can be delivered while the app is closed');
-        return;
+        return false;
       }
 
-      final token = await messaging.getToken();
-      if (token == null) {
-        // Typically APNs not wired up on iOS: no APNs token, no FCM token.
-        // A Firebase/Xcode configuration problem, not something the app can
-        // recover from at runtime — but it must not be silent.
-        debugPrint('[DriverHome] FCM: getToken() returned null — check APNs '
-            'setup in Firebase and the Xcode capabilities');
-        return;
-      }
-
-      var saved = await ApiService.saveFcmToken(token);
+      // Going online re-asserts unconditionally. The in-process memo says
+      // "already saved", but the backend clears the column by itself when a
+      // token goes stale — so believing the memo is how a driver ends up
+      // online with an empty row and no offers, which is the exact state
+      // four of six production drivers were found in.
+      var saved = await NotificationService.ensureTokenRegistered(
+        reason: reason,
+        force: reason.startsWith('go online'),
+      );
       for (var attempt = 1; !saved && attempt <= 3; attempt++) {
         await Future.delayed(Duration(seconds: attempt * 3));
-        if (!mounted) return;
+        if (!mounted) return false;
         debugPrint(
             '[DriverHome] FCM: retrying token registration ($attempt/3)');
-        saved = await ApiService.saveFcmToken(token);
+        saved = await NotificationService.ensureTokenRegistered(
+            reason: '$reason retry $attempt');
       }
       if (!saved) {
         debugPrint('[DriverHome] FCM: token could NOT be registered after 3 '
             'retries — this driver will not receive ride offers in background');
       }
-
-      _fcmTokenRefreshSub?.cancel();
-      _fcmTokenRefreshSub = messaging.onTokenRefresh.listen((t) {
-        debugPrint('[DriverHome] FCM: token rotated, re-registering');
-        ApiService.saveFcmToken(t);
-      });
+      return saved;
     } catch (e) {
       debugPrint('[DriverHome] FCM registration failed: $e');
+      return false;
+    } finally {
+      _fcmRegisterInFlight = false;
     }
+  }
+
+  /// Shout when the driver is online and the backend has no token for this
+  /// phone. That state costs them every offer that arrives while they are in
+  /// another app, and until now it left no trace anywhere.
+  void _warnIfOnlineWithoutPushToken(String where) {
+    if (NotificationService.isTokenRegistered) return;
+    debugPrint('[DriverHome] FCM: DRIVER IS ONLINE WITH NO REGISTERED PUSH '
+        'TOKEN ($where) — push is the only channel that reaches this phone '
+        'from another app, so every offer will be missed');
   }
 
   @override
@@ -651,7 +681,6 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   void dispose() {
     mapRouteObserver.unsubscribe(this);
     MapSurfaceCoordinator.instance.release(_kHomeMapSurfaceOwner);
-    _fcmTokenRefreshSub?.cancel();
     disposePanelAnimation();
     _pulseCtrl.dispose();
     _glossCtrl.dispose();
@@ -697,6 +726,17 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       if (!_vehicleDocsApproved) _checkVehicleDocStatus();
       // Re-check scheduled ride lockout (driver may return from background)
       _checkScheduledRideLockout();
+      // A save that never landed stays lost until something asks again, and
+      // the app coming back is the cheapest place to ask: when the backend
+      // already holds this token there is no request at all, and when it
+      // does not — the session was still loading at screen entry, or the
+      // backend dropped the row after APNs rejected it — this is the only
+      // thing between the driver and a shift with no offers.
+      if (NotificationService.needsTokenRetry) {
+        unawaited(_registerFcmToken(reason: 'app resumed').then((saved) {
+          if (!saved && _isStillOnline) _warnIfOnlineWithoutPushToken('resume');
+        }));
+      }
     }
     if (state == AppLifecycleState.resumed && _isStillOnline && mounted) {
       // App returned from background — refresh trip status then restart polling
@@ -1729,6 +1769,22 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     // on iOS too, so it waits for the transition to be most of the way done.
     Future.delayed(const Duration(milliseconds: 300), () {
       HapticService.lightImpact();
+    });
+    // Going online is the moment a push token has to exist: from here on,
+    // the only thing that reaches this phone while the driver is in another
+    // app is a push — both offer SSE streams live in the UI isolate and stop
+    // the moment the app leaves the foreground.
+    //
+    // It waits out the transition for the same reason no sound fires from
+    // this button: getToken() and the save are platform-channel work, and
+    // those frames belong to the route animation and to the Mapbox surface
+    // coming up on the next screen. Two seconds later nothing is competing,
+    // and when the backend already holds this token the whole thing is one
+    // cached read.
+    Future.delayed(const Duration(seconds: 2), () async {
+      if (!mounted) return;
+      final saved = await _registerFcmToken(reason: 'go online');
+      if (!saved) _warnIfOnlineWithoutPushToken('go online');
     });
     final result = await pushFuture;
     if (!mounted) return;

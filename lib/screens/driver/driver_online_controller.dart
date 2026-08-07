@@ -1931,7 +1931,16 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
           title: S.of(context).newRideOffer,
           body: '',
           offerId: (firstOffer['offer_id'] as num? ?? 0).toInt(),
-          payload: 'trip_offer',
+          // 'trip_offer:<tripId>:<offerId>' — the shape
+          // handleOfferNotificationPayload in main.dart splits back apart. A
+          // tap on a LOCAL notification never reaches
+          // FirebaseMessaging.onMessageOpenedApp, so the ids only survive if
+          // they ride in this string. It used to be the bare word
+          // 'trip_offer', and the driver landed on a screen that had to go
+          // rediscover which offer they had just tapped.
+          payload: 'trip_offer:'
+              '${(firstOffer['trip_id'] as num? ?? 0).toInt()}:'
+              '${(firstOffer['offer_id'] as num? ?? 0).toInt()}',
           appInForeground: false,
         );
       }

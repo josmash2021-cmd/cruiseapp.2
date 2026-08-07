@@ -12,6 +12,7 @@ import 'security_service.dart';
 import 'cache_service.dart';
 import 'firebase_storage_service.dart';
 import 'prefs_cache.dart';
+import 'notification_service.dart';
 
 /// Stores and retrieves the logged-in user's session.
 ///
@@ -340,6 +341,14 @@ class UserSession {
     await prefs.remove(_key);
     await prefs.remove(_modeKey);
     await prefs.remove('pending_password');
+
+    // The push token is the device's, not the account's, so the next user to
+    // sign in on this phone gets the SAME string — and the registration memo
+    // short-circuits on exactly that comparison. Forgetting it here is what
+    // makes the next sign-in actually write the token to the new user's row.
+    // Without it the second driver on a shared phone receives no offers at
+    // all, with nothing in any log to explain it.
+    NotificationService.forgetRegisteredToken();
 
     // Clear local file path keys — the file is deleted below.
     // KEEP the photo URL keys so the photo loads instantly on next sign-in

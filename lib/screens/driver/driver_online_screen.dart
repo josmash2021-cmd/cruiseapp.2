@@ -105,6 +105,13 @@ class DriverOnlineScreen extends StatefulWidget {
   /// already in progress look like starting one, and told the backend to
   /// go online for a driver who never stopped being online.
   final bool resuming;
+
+  /// The offer a notification tap was about, already fetched by the push
+  /// handler in main.dart and handed over whole. The screen puts its card up
+  /// on the first frame instead of waiting for its own stream to rediscover
+  /// the ride: a tap can land forty seconds into a forty-five second window,
+  /// and what is left of it is not enough for another round trip.
+  final Map<String, dynamic>? deepLinkOffer;
   const DriverOnlineScreen({
     super.key,
     this.initialPos,
@@ -112,6 +119,7 @@ class DriverOnlineScreen extends StatefulWidget {
     this.photoUrl,
     this.showCancelledNotice = false,
     this.resuming = false,
+    this.deepLinkOffer,
   });
   @override
   State<DriverOnlineScreen> createState() => _DriverOnlineScreenState();
@@ -711,6 +719,17 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
         if (mounted) _showCancelledNotice();
       });
     }
+    // The offer the driver tapped in the notification, down the same path SSE
+    // and the poll use: the card, the alert and the route preview then behave
+    // exactly as if the stream had delivered it, and the offer the tap was
+    // about is the one on screen — not whatever dispatch has by the time this
+    // screen gets around to asking.
+    final linked = widget.deepLinkOffer;
+    if (linked != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _applyOffers([linked]);
+      });
+    }
     // Once, here — not in the resume branch, which would stack another
     // listener on every return from the background.
     EarningsPrivacy.load();
@@ -892,12 +911,14 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
       claimed = true;
       unawaited(_acquireMapSurface().then((_) {
         if (mounted && !_mapMounted) _setState(() => _mapMounted = true);
+        _armOnlineChime();
       }).catchError((Object e) {
         // Even a failed handoff must not leave the screen mapless — the
         // coordinator already serialises us, so mounting here is the same
         // risk the timeout path takes, against a certain blank map.
         debugPrint('[DriverOnline] map surface claim failed: $e');
         if (mounted && !_mapMounted) _setState(() => _mapMounted = true);
+        _armOnlineChime();
       }));
     }
 
@@ -934,6 +955,62 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   // tap "Go Online". We render a dark placeholder during the transition
   // and mount the real map a few frames after it ends.
   bool _mapMounted = false;
+
+  // ── Go-online chime ──
+  Timer? _onlineChimeTimer;
+  bool _onlineChimeFired = false;
+
+  /// Sound the go-online confirmation, once the map surface is ours.
+  ///
+  /// It plays from this screen and not from the GO button on purpose. Three
+  /// rounds fired it over there — after the push, deferred 300 ms, then as
+  /// resume() on a pre-warmed player — and all three stalled, because the
+  /// audio engine does its work on the platform thread and that is the thread
+  /// running the route transition and standing this screen's Mapbox
+  /// PlatformView up. The note where the button used to call it is worth
+  /// reading before moving this.
+  ///
+  /// Called from the surface claim, which resolves after the transition has
+  /// ended; the delay then lets the PlatformView come up on the frame the
+  /// _mapMounted flip schedules. A confirmation is allowed to be late — the
+  /// haptic already answered the tap the instant it happened — it is not
+  /// allowed to be early.
+  ///
+  /// Nothing on the resume path: the driver never went offline, so there is
+  /// no state change to confirm, and returning to a shift already running is
+  /// precisely when a waiting offer sounds its own cue a second later.
+  ///
+  /// Idempotent. Both branches of the claim call it, the claim can be raced
+  /// by its own deadline, and the chime is one per go-online.
+  void _armOnlineChime() {
+    if (!mounted ||
+        widget.resuming ||
+        // Arriving by tapping an offer notification. The driver already knows
+        // they are online — they are here to answer a ride, and the offer
+        // card plays its own cue. A "you are online" chime on top of that is
+        // the app talking over itself at the one moment attention matters.
+        widget.deepLinkOffer != null ||
+        _onlineChimeFired ||
+        _onlineChimeTimer != null) {
+      return;
+    }
+    // 1200 ms, not 600. The timer is armed in the same microtask that flips
+    // `_mapMounted`, so it starts BEFORE the MapWidget builds — and mounting
+    // that widget creates a native PlatformView synchronously, blocking the
+    // UI thread for several hundred ms (see the comment on _mapMounted). At
+    // 600 ms the chime could land inside exactly that window on a slow phone,
+    // which is the stall this whole approach exists to avoid. Nobody notices
+    // half a second on a confirmation tone; everybody notices a freeze.
+    _onlineChimeTimer = Timer(const Duration(milliseconds: 1200), () {
+      _onlineChimeTimer = null;
+      // An offer that arrived in the meantime has taken the screen over and
+      // is playing its own cue; the driver does not need to be told they are
+      // online while a ride request is on top of it.
+      if (!mounted || _onlineChimeFired || _phase != _Phase.searching) return;
+      _onlineChimeFired = true;
+      NotificationService.playOnlineChime();
+    });
+  }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
@@ -1014,6 +1091,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     _reqCtrl?.dispose();
     _doneCtrl?.dispose();
     _statusLineTimer?.cancel();
+    _onlineChimeTimer?.cancel();
     _searchPulse.dispose();
     _pollT?.cancel();
     _offerSseSub?.cancel();

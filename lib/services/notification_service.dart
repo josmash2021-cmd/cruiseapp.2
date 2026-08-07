@@ -23,10 +23,11 @@ import 'package:timezone/timezone.dart' as tz;
 ///   cruise_reminders — scheduled ride reminders
 ///
 /// In-app sounds (audioplayers):
-///   cruise_online.wav — played when a new offer arrives while the app is open.
-///                       Despite the filename this is the OFFER cue; the
-///                       go-online chime it was named for was removed for
-///                       freezing the platform thread during the transition.
+///   cruise_online.wav — the offer cue while the app is open, and the
+///                       go-online chime it was named for. The chime never
+///                       plays from the GO button — that is what froze the
+///                       platform thread — only from the online screen once
+///                       its map is up. See [playOnlineChime].
 class NotificationService {
   static final FlutterLocalNotificationsPlugin _plugin =
       FlutterLocalNotificationsPlugin();
@@ -37,35 +38,155 @@ class NotificationService {
   static const int _offerBaseId = 9000;
   static const int _driverOnlineId = 8888;
 
-  // Offers only. There was a second player for the go-online chime; that
-  // chime is gone — see the comment where _goOnline used to call it.
+  // Both cues. The go-online chime had a player of its own once, and a
+  // second engine cold-starting on the platform thread was part of what made
+  // it freeze; it borrows this pre-warmed one now — see [playOnlineChime].
   static final AudioPlayer _offerPlayer = AudioPlayer();
 
-  /// FCM token-refresh subscription (see [registerTokenWithBackend]).
+  /// FCM token-refresh subscription (see [ensureTokenRegistered]).
   /// Never cancelled: the service is a process-lifetime static.
+  /// The only rotation listener in the app — every screen that used to keep
+  /// its own saved without recording the outcome, so a rotation that failed
+  /// to reach the backend looked exactly like one that landed.
   static StreamSubscription<String>? _tokenRefreshSub;
+
+  /// The token string the backend last accepted, for this process only.
+  ///
+  /// Deliberately not persisted. The backend nulls `users.fcm_token` on its
+  /// own the first time APNs/FCM answers "Requested entity was not found",
+  /// and a memo that outlived the process would keep agreeing with a row
+  /// that is already empty. Process-scoped means a cold start always
+  /// registers once, and every call after that costs nothing.
+  static String? _lastRegisteredToken;
+
+  /// The last save was attempted and did not land — no session JWT yet,
+  /// HTTP error, or no network. Whoever can ask again should.
+  static bool _lastSaveFailed = false;
+
+  /// One save in flight at a time: screen entry, going online and returning
+  /// to the foreground can all ask inside the same second.
+  static Future<bool>? _inFlightSave;
+
+  /// Whether the backend is known to hold this device's token.
+  static bool get isTokenRegistered => _lastRegisteredToken != null;
+
+  /// Whether it is worth asking again — nothing has registered this process,
+  /// or the last attempt failed. The two differ when the phone could not
+  /// produce a token at all after an earlier save had already landed.
+  static bool get needsTokenRetry =>
+      _lastRegisteredToken == null || _lastSaveFailed;
+
+  /// Forget which token the backend holds. Call on logout or any account
+  /// switch.
+  ///
+  /// The FCM token belongs to the DEVICE, not to the account, so after a
+  /// switch it is byte-identical — and `_saveCurrentToken` short-circuits on
+  /// exactly that comparison. Without this the memo says "already saved" and
+  /// the token is never written to the NEW user's row: the second driver to
+  /// use a phone silently receives no offers, forever, with nothing in any
+  /// log to say why.
+  static void forgetRegisteredToken() {
+    _lastRegisteredToken = null;
+    _lastSaveFailed = false;
+  }
 
   /// Registers the current FCM token with the backend and keeps it updated
   /// on rotation. Safe to call multiple times and before login (fails silently).
-  static Future<void> registerTokenWithBackend() async {
+  static Future<void> registerTokenWithBackend() =>
+      ensureTokenRegistered(reason: 'startup');
+
+  /// Make sure the backend holds this device's token, and say whether it
+  /// does. Safe to call multiple times and before login.
+  ///
+  /// The network call only happens when the token is not the one the backend
+  /// already accepted, so the call sites that exist purely as safety nets —
+  /// going online, coming back to the foreground — cost one cached
+  /// platform-channel read once any of them has worked.
+  ///
+  /// [reason] names the call site in the log. Which entry point finally
+  /// landed the token is the thing worth knowing when a driver reports that
+  /// offers never reach the phone.
+  /// [force] re-asserts the token even when this process already saw it
+  /// saved. That matters because the memo lives in THIS process and the
+  /// backend nulls `users.fcm_token` on its own, whenever Apple or Google
+  /// answers "Requested entity was not found". After that the row is empty
+  /// while the app still believes it is registered, and every later call
+  /// short-circuits — which is exactly the trap these extra call sites were
+  /// added to escape. Going online is rare, so one unconditional POST there
+  /// costs nothing and closes it.
+  static Future<bool> ensureTokenRegistered({
+    String reason = 'unspecified',
+    bool force = false,
+  }) {
+    if (force) {
+      _lastRegisteredToken = null;
+      // Do not JOIN a save already travelling — it read the memo before it
+      // was cleared, so it can still short-circuit and report success without
+      // writing anything. Queue a real one behind it instead. Forcing only
+      // happens on go-online, so at most one extra POST is ever chained.
+      final travelling = _inFlightSave;
+      if (travelling != null) {
+        return _inFlightSave = travelling
+            .then((_) => _saveCurrentToken(reason))
+            .whenComplete(() => _inFlightSave = null);
+      }
+    }
+    return _inFlightSave ??= _saveCurrentToken(reason)
+        .whenComplete(() => _inFlightSave = null);
+  }
+
+  static Future<bool> _saveCurrentToken(String reason) async {
     try {
       final messaging = FirebaseMessaging.instance;
+      // Before the null check below, not after: on iOS a cold start reaches
+      // here while APNs is still answering, and the token that never existed
+      // for getToken() arrives on this stream a moment later. Attaching only
+      // on the success path meant the one device that most needs the listener
+      // never got one.
+      _listenForRotation(messaging);
       final token = await messaging.getToken();
       if (token == null) {
-        debugPrint('[Notifications] getToken() returned null — check APNs setup');
-      } else {
-        final ok = await ApiService.saveFcmToken(token);
-        if (!ok) {
-          debugPrint('[Notifications] token not registered (likely no session '
-              'yet) — will retry on the next rotation or screen entry');
-        }
+        // No APNs token on iOS, or the device has not reached FCM yet.
+        // Nothing to save and nothing to remember.
+        _lastSaveFailed = true;
+        debugPrint('[Notifications] getToken() returned null ($reason) — '
+            'check APNs setup');
+        return false;
       }
-      _tokenRefreshSub ??= messaging.onTokenRefresh.listen((t) {
-        unawaited(ApiService.saveFcmToken(t));
-      });
+      // Already on the backend — this is the happy path, and it makes no
+      // request at all. Whatever went wrong last time is over: the phone
+      // produced a token and it is the one the backend accepted.
+      if (token == _lastRegisteredToken) {
+        _lastSaveFailed = false;
+        return true;
+      }
+
+      final ok = await ApiService.saveFcmToken(token);
+      _recordSave(token, ok);
+      if (!ok) {
+        debugPrint('[Notifications] token not registered ($reason) — likely no '
+            'session yet; will retry on rotation, go-online or resume');
+      }
+      return ok;
     } catch (e) {
-      debugPrint('[Notifications] token registration failed: $e');
+      _lastSaveFailed = true;
+      debugPrint('[Notifications] token registration failed ($reason): $e');
+      return false;
     }
+  }
+
+  static void _listenForRotation(FirebaseMessaging messaging) {
+    _tokenRefreshSub ??= messaging.onTokenRefresh.listen((t) async {
+      debugPrint('[Notifications] token rotated — re-registering');
+      _recordSave(t, await ApiService.saveFcmToken(t));
+    });
+  }
+
+  /// A token counts as registered only when the backend said so. A failed
+  /// save clears the memo, so the next caller retries instead of skipping.
+  static void _recordSave(String token, bool ok) {
+    _lastRegisteredToken = ok ? token : null;
+    _lastSaveFailed = !ok;
   }
 
   /// Initialize the notification plugin. Call once at app startup.
@@ -498,6 +619,49 @@ class NotificationService {
         _offerSoundPlaying = false;
         _quietly(restoreAfterOfferCue(), 'unduck');
         debugPrint('[NotificationService] playOfferSound error: $e');
+      }
+    });
+  }
+
+  /// The go-online confirmation. Called by DriverOnlineScreen once its map
+  /// surface is up — never by the GO button, which is what froze; the
+  /// screen's `_armOnlineChime` carries that history.
+  ///
+  /// Borrows the offer player instead of building its own. The chime used to
+  /// have a second [AudioPlayer], and a second audio engine cold-starting on
+  /// the platform thread was part of the cost; this one is already pre-warmed
+  /// by [init], and cruise_online.wav is the clip it was named for.
+  ///
+  /// One shot and no duck. The offer cue dips the driver's music because it
+  /// has to be heard over it for six seconds; this is a beat of confirmation
+  /// and mixes at full volume rather than flipping the session category twice
+  /// around itself.
+  static void playOnlineChime() {
+    // The offer cue owns the player while it is running and outranks this:
+    // being told a ride is waiting matters more than being told you are
+    // online. Checked again inside, after the prefs await.
+    if (_offerSoundPlaying) return;
+    Future.microtask(() async {
+      try {
+        final prefs = PrefsCache.instanceSync ?? await PrefsCache.instance;
+        final volume = prefs.getDouble('sound_volume') ?? 0.8;
+        if (!(prefs.getBool('notif_sounds') ?? true) || volume <= 0) return;
+        if (_offerSoundPlaying) return;
+        // Free once the session is configured — it hands back the cached
+        // future. The case it covers is a chime that beats [init]'s preload,
+        // where playing first would activate the session on audioplayers'
+        // own category and stop whatever the driver is listening to.
+        await ensureNonInterruptingAudio();
+        // The preference above was read and then never applied: a driver who
+        // pulled the slider down to 0.1 still got the chime at full volume.
+        _quietly(_offerPlayer.setVolume(volume), 'chime volume');
+        // Fire-and-forget through _quietly for the reason spelled out in
+        // playOfferSound: an unawaited platform call that never gets its
+        // reply surfaces half a minute later as a bare TimeoutException.
+        _quietly(_offerPlayer.seek(Duration.zero), 'chime seek');
+        _quietly(_offerPlayer.resume(), 'chime resume');
+      } catch (e) {
+        debugPrint('[NotificationService] playOnlineChime error: $e');
       }
     });
   }

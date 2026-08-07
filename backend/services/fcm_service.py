@@ -259,6 +259,25 @@ def _send_fcm_push(token: str, title: str, body: str, data: dict = None, is_offe
         from firebase_admin import messaging as _fcm
         from datetime import timedelta as _td
         channel_id = "cruise_offers" if is_offer else "cruise_premium"
+        # The notification block STAYS, for offers too. Sending them
+        # data-only was tried and reverted before it shipped:
+        #
+        #  1. Without it FCM never fires onMessageOpenedApp/getInitialMessage
+        #     on Android — the only two feeds into the offer tap handler. The
+        #     alert showed up and TAPPING IT DID NOTHING, which is worse than
+        #     the duplicate it was meant to remove.
+        #  2. A data-only message is only visible if the background isolate
+        #     manages to cold-start a Flutter engine inside the 45 s TTL. The
+        #     system tray draws this one unconditionally the moment it lands.
+        #     For the one push that pays a driver's rent, guaranteed wins.
+        #  3. The whole argument was that only the Dart-drawn copy can carry
+        #     fullScreenIntent — and it could not either: USE_FULL_SCREEN_INTENT
+        #     was never declared in the manifest, so Android had been ignoring
+        #     that flag since API 29.
+        #
+        # The duplicate is gone from the CLIENT instead — the background
+        # handler returns early for offers and lets the system's copy stand.
+        # See lib/main.dart.
         msg = _fcm.Message(
             notification=_fcm.Notification(title=title, body=body),
             data={k: str(v) for k, v in (data or {}).items()},
@@ -289,24 +308,48 @@ def _send_fcm_push(token: str, title: str, body: str, data: dict = None, is_offe
             ),
         )
         _fcm.send(msg)
-        logging.info("[FCM] Push sent to ...%s (channel=%s)", token[-8:], channel_id)
+        logging.info(
+            "[FCM] Push sent to ...%s (%s)",
+            token[-8:],
+            f"channel={channel_id}" + (" offer/max-priority" if is_offer else ""),
+        )
     except Exception as _e:
         _msg = str(_e)
         if "Requested entity was not found" in _msg or "registration-token-not-registered" in _msg.lower():
             # Stale token — clean it from any User row so we stop trying it.
+            # Clearing it also makes that user unreachable by push until the
+            # app registers a new one, and nothing here can force that, so the
+            # row ids go in the log: a token tail names nobody, and whoever
+            # reads this later needs to know WHO just went silent.
             try:
                 import asyncio as _asyncio
-                from sqlalchemy import update as _upd
+                from sqlalchemy import select as _sel, update as _upd
                 from models.database import SessionLocal as _SL, User as _U
                 async def _clear():
-                    async with _SL() as _db:
-                        await _db.execute(_upd(_U).where(_U.fcm_token == token).values(fcm_token=None))
-                        await _db.commit()
+                    try:
+                        async with _SL() as _db:
+                            _res = await _db.execute(_sel(_U.id).where(_U.fcm_token == token))
+                            _ids = [str(_r[0]) for _r in _res.fetchall()]
+                            await _db.execute(_upd(_U).where(_U.fcm_token == token).values(fcm_token=None))
+                            await _db.commit()
+                        logging.warning(
+                            "[FCM] stale token cleared (...%s) — no push can reach user(s) %s "
+                            "until the app re-registers",
+                            token[-8:] if token else "?",
+                            ", ".join(_ids) if _ids else "<no matching row>",
+                        )
+                    except Exception as _db_err:
+                        # Runs detached on the main loop; nobody awaits the
+                        # future, so an unlogged raise would vanish at GC.
+                        logging.warning("[FCM] stale-token cleanup failed: %s", _db_err)
                 if _MAIN_LOOP is not None and _MAIN_LOOP.is_running():
                     _asyncio.run_coroutine_threadsafe(_clear(), _MAIN_LOOP)
-                    logging.info("[FCM] stale token cleared (...%s)", token[-8:] if token else "?")
                 else:
-                    logging.info("[FCM] stale-token cleanup skipped (no main loop)")
+                    logging.warning(
+                        "[FCM] stale-token cleanup skipped, no main loop — dead token "
+                        "...%s stays on its row",
+                        token[-8:] if token else "?",
+                    )
             except Exception as _clean_err:
                 logging.warning("[FCM] stale-token cleanup failed: %s", _clean_err)
         else:

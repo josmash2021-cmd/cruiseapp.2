@@ -1,4 +1,4 @@
-import os, time, math, secrets, logging, json, re, base64, asyncio, collections, hashlib, hmac
+import os, time, math, secrets, logging, json, re, base64, asyncio, collections, hashlib, hmac, calendar
 from datetime import date, datetime, timedelta, timezone
 from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException, Header, Request, Query, Body, UploadFile, File, Form
@@ -650,11 +650,18 @@ async def get_driver_earnings(
         description="Minutes to add to UTC to get the caller's local time. "
                     "Defaults to 0 (UTC) so existing callers are unaffected.",
     ),
+    month: Optional[str] = Query(
+        None,
+        description="ISO year-month (YYYY-MM) for a full-month breakdown. "
+                    "Only used when period=month. Defaults to the current month.",
+    ),
     user: User = Depends(_get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     """Get driver earnings — optimized using cached totals + lightweight recent query."""
     now = utc_now()
+    until = now  # most periods end at the current instant
+    selected_month = None  # set when period == "month" with a full-month view
     if period == "today":
         # "Today" has to mean the driver's today. With tz_offset unset this is
         # the UTC day, which for a driver in Alabama starts at 6pm the evening
@@ -665,7 +672,28 @@ async def get_driver_earnings(
             - timedelta(minutes=tz_offset)
         ) if tz_offset else utc_today_start()
     elif period == "month":
-        since = utc_days_ago(30)
+        # Full-month view when a month is requested; otherwise keep the legacy
+        # rolling seven-day response so older callers are not broken.
+        if month:
+            local_now = now + timedelta(minutes=tz_offset)
+            month_year = local_now.year
+            month_month = local_now.month
+            try:
+                y, m = month.split("-")
+                parsed_year, parsed_month = int(y), int(m)
+                if 1 <= parsed_month <= 12:
+                    month_year, month_month = parsed_year, parsed_month
+            except Exception:
+                pass
+            local_month_start = datetime(month_year, month_month, 1, 0, 0, 0)
+            next_month_year = month_year + 1 if month_month == 12 else month_year
+            next_month_month = 1 if month_month == 12 else month_month + 1
+            local_month_end = datetime(next_month_year, next_month_month, 1, 0, 0, 0)
+            since = local_month_start - timedelta(minutes=tz_offset)
+            until = local_month_end - timedelta(minutes=tz_offset)
+            selected_month = (month_year, month_month)
+        else:
+            since = utc_days_ago(30)
     elif period == "year":
         # The driver's own year, for the same reason "today" is their own
         # day: 1 January arrives five hours earlier in Alabama than it does
@@ -718,6 +746,7 @@ async def get_driver_earnings(
                     ),
                 ),
                 Trip.created_at >= since,
+                Trip.created_at < until,
             )
         )
     )
@@ -750,7 +779,22 @@ async def get_driver_earnings(
     # break every client already reading them.
     day_labels = []
     daily_earnings = []
-    if period == "year":
+    if selected_month:
+        # Full-month breakdown: one bucket per calendar day.
+        month_year, month_month = selected_month
+        days_in_month = calendar.monthrange(month_year, month_month)[1]
+        for d in range(1, days_in_month + 1):
+            day_labels.append(str(d))
+            day_total = sum(
+                _driver_trip_amounts(t)[0]
+                for t in period_trips
+                if t.created_at
+                and (t.created_at + timedelta(minutes=tz_offset)).year == month_year
+                and (t.created_at + timedelta(minutes=tz_offset)).month == month_month
+                and (t.created_at + timedelta(minutes=tz_offset)).day == d
+            )
+            daily_earnings.append(round(day_total, 2))
+    elif period == "year":
         local_now = now + timedelta(minutes=tz_offset)
         for m in range(1, 13):
             day_labels.append(date(local_now.year, m, 1).strftime("%b"))
@@ -816,6 +860,7 @@ async def get_driver_earnings(
                 DispatchOffer.driver_id == user.id,
                 DispatchOffer.status == "rejected",
                 DispatchOffer.created_at >= since,
+                DispatchOffer.created_at < until,
             )
         )
     )

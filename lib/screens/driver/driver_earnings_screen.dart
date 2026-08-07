@@ -26,8 +26,11 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
     with TickerProviderStateMixin, WidgetsBindingObserver {
   static const _gold = Color(0xFFE8C547);
 
-  int _selectedPeriod = 1; // 0=Today, 1=This Week, 2=This Month
+  int _selectedPeriod = 1; // 0=Today, 1=This Week, 2=This Month, 3=Year
   final _periodKeys = ['today', 'week', 'month', 'year'];
+
+  /// Month currently shown in the Month tab. Only year/month matter.
+  DateTime _selectedMonth = DateTime.now();
 
   late AnimationController _chartCtrl;
   late Animation<double> _chartAnim;
@@ -186,7 +189,11 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
 
   Future<void> _fetchEarnings() async {
     final period = _periodKeys[_selectedPeriod];
-    final cacheKey = 'driver_earnings_$period';
+    final isMonth = period == 'month';
+    final monthSuffix = isMonth
+        ? '_${_selectedMonth.year}-${_selectedMonth.month.toString().padLeft(2, '0')}'
+        : '';
+    final cacheKey = 'driver_earnings_$period$monthSuffix';
 
     // Cache-first, but only from the stretch of time it describes.
     //
@@ -214,7 +221,10 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
       _earningsError = null;
     });
     try {
-      final data = await ApiService.getDriverEarnings(period: period).timeout(const Duration(seconds: 15));
+      final data = await ApiService.getDriverEarnings(
+        period: period,
+        month: isMonth ? _selectedMonth : null,
+      ).timeout(const Duration(seconds: 15));
       if (!mounted) return;
       _applyEarningsData(data);
       _chartCtrl.forward(from: 0);
@@ -470,7 +480,11 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
                 onTap: () {
                   if (_selectedPeriod == i) return;
                   HapticService.selectionClick();
-                  setState(() => _selectedPeriod = i);
+                  setState(() {
+                    _selectedPeriod = i;
+                    // Month always opens on the current month.
+                    if (i == 2) _selectedMonth = DateTime.now();
+                  });
                   _fetchEarnings();
                 },
                 child: AnimatedContainer(
@@ -511,9 +525,8 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
 
   /// Which stretch of time the figure covers, spelled out.
   ///
-  /// The reference has arrows to step back a day at a time. They are not
-  /// here because the endpoint takes a period and not a date — it can only
-  /// answer for the current one, so arrows would be buttons that do nothing.
+  /// Month has left/right arrows so the driver can look at any past month.
+  /// The right arrow is only live when there is a future month to move to.
   Widget _periodLabel() {
     final now = DateTime.now();
     const months = [
@@ -532,21 +545,69 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
             '${months[now.month - 1]} ${now.day}';
         break;
       case 2:
-        text = '${months[now.month - 1]} ${now.year}';
+        text = '${months[_selectedMonth.month - 1]} ${_selectedMonth.year}';
         break;
       default:
         text = '${now.year}';
     }
-    return Center(
-      child: Text(
-        text,
-        style: TextStyle(
-          color: Colors.white.withValues(alpha: 0.55),
-          fontSize: 13.5,
-          fontWeight: FontWeight.w600,
-        ),
+
+    final label = Text(
+      text,
+      style: TextStyle(
+        color: Colors.white.withValues(alpha: 0.55),
+        fontSize: 13.5,
+        fontWeight: FontWeight.w600,
       ),
     );
+
+    if (_selectedPeriod != 2) return Center(child: label);
+
+    final canGoNext = _selectedMonth.year < now.year ||
+        (_selectedMonth.year == now.year && _selectedMonth.month < now.month);
+
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: () => _shiftMonth(-1),
+          child: Padding(
+            padding: const EdgeInsets.all(8.0),
+            child: Icon(
+              Icons.chevron_left_rounded,
+              color: Colors.white.withValues(alpha: 0.55),
+              size: 20,
+            ),
+          ),
+        ),
+        label,
+        GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: canGoNext ? () => _shiftMonth(1) : null,
+          child: Padding(
+            padding: const EdgeInsets.all(8.0),
+            child: Icon(
+              Icons.chevron_right_rounded,
+              color: canGoNext
+                  ? Colors.white.withValues(alpha: 0.55)
+                  : Colors.white.withValues(alpha: 0.18),
+              size: 20,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  void _shiftMonth(int delta) {
+    HapticService.selectionClick();
+    setState(() {
+      _selectedMonth = DateTime(
+        _selectedMonth.year,
+        _selectedMonth.month + delta,
+      );
+    });
+    _fetchEarnings();
   }
 
   /// The number, at the size the screen is opened for.
@@ -1240,12 +1301,31 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
 
   Widget _buildBarChart() {
     final count = _dailyEarnings.length;
+    if (count == 0) return const SizedBox.shrink();
     // Index of the best day — its bar gets the gold gradient.
     int maxIdx = 0;
     for (var i = 0; i < count; i++) {
       if (_dailyEarnings[i] > _dailyEarnings[maxIdx]) maxIdx = i;
     }
     final hasEarnings = _dailyEarnings.any((v) => v > 0);
+    if (_selectedPeriod == 2) {
+      return _buildMonthBarChart(count, maxIdx, hasEarnings);
+    }
+    return _buildCompactBarChart(count, maxIdx, hasEarnings);
+  }
+
+  bool _isBarToday(int index) {
+    final now = DateTime.now();
+    if (_selectedPeriod == 2) {
+      return _selectedMonth.year == now.year &&
+          _selectedMonth.month == now.month &&
+          index + 1 == now.day;
+    }
+    return index == now.weekday - 1;
+  }
+
+  /// The seven-day chart used for Today / Week / Year.
+  Widget _buildCompactBarChart(int count, int maxIdx, bool hasEarnings) {
     return SizedBox(
       height: 180,
       child: Row(
@@ -1256,19 +1336,11 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
               ? (val / _maxDay) * 140 * _chartAnim.value
               : 0.0;
           final isMax = hasEarnings && i == maxIdx;
-          final isToday = i == DateTime.now().weekday - 1;
+          final isToday = _isBarToday(i);
           return Expanded(
             child: Column(
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
-                // Cents on the days that earned, and a quiet $0 on the ones
-                // that did not.
-                //
-                // Whole dollars on every column read as a row of equals: $7
-                // and $7 for $7.10 and $7.21 is the same figure printed
-                // twice. And a $0 in the same weight as an amount competes
-                // for the eye exactly where it is scanning for the days that
-                // made money.
                 FittedBox(
                   fit: BoxFit.scaleDown,
                   child: Text(
@@ -1289,10 +1361,6 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
                 const SizedBox(height: 6),
                 AnimatedContainer(
                   duration: const Duration(milliseconds: 600),
-                  // A floor, so a day with nothing still draws a tick on the
-                  // axis. Without it the chart has holes and reads as broken
-                  // rather than as empty — the same rule the home sheet's
-                  // chart follows.
                   height: h < 4 ? 4 : h,
                   margin: const EdgeInsets.symmetric(horizontal: 6),
                   decoration: BoxDecoration(
@@ -1330,6 +1398,96 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
             ),
           );
         }),
+      ),
+    );
+  }
+
+  /// The Month chart: every day of the selected month as a scrollable bar.
+  Widget _buildMonthBarChart(int count, int maxIdx, bool hasEarnings) {
+    const barWidth = 24.0;
+    return SizedBox(
+      height: 180,
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        physics: const BouncingScrollPhysics(),
+        child: SizedBox(
+          width: count * barWidth,
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: List.generate(count, (i) {
+              final val = _dailyEarnings[i];
+              final h = (_maxDay > 0)
+                  ? (val / _maxDay) * 140 * _chartAnim.value
+                  : 0.0;
+              final isMax = hasEarnings && i == maxIdx;
+              final isToday = _isBarToday(i);
+              return SizedBox(
+                width: barWidth,
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    // Only label days that earned; 31 '$0' labels crowd the
+                    // month view without adding information.
+                    if (val > 0)
+                      FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Text(
+                          '\$${val.toStringAsFixed(2)}',
+                          maxLines: 1,
+                          style: TextStyle(
+                            color: _gold.withValues(alpha: 0.85),
+                            fontSize: 9,
+                            fontWeight: FontWeight.w700,
+                            fontFeatures: const [
+                              ui.FontFeature.tabularFigures(),
+                            ],
+                          ),
+                        ),
+                      )
+                    else
+                      const SizedBox(height: 12),
+                    const SizedBox(height: 4),
+                    AnimatedContainer(
+                      duration: const Duration(milliseconds: 600),
+                      height: h < 3 ? 3 : h,
+                      margin: const EdgeInsets.symmetric(horizontal: 4),
+                      decoration: BoxDecoration(
+                        gradient: isMax
+                            ? const LinearGradient(
+                                begin: Alignment.topCenter,
+                                end: Alignment.bottomCenter,
+                                colors: [Color(0xFFF5D990), Color(0xFFE8C547)],
+                              )
+                            : null,
+                        color: isMax
+                            ? null
+                            : Colors.white.withValues(alpha: 0.10),
+                        borderRadius: BorderRadius.circular(5),
+                        boxShadow: isMax
+                            ? [
+                                BoxShadow(
+                                  color: _gold.withValues(alpha: 0.35),
+                                  blurRadius: 10,
+                                ),
+                              ]
+                            : [],
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      i < _dayLabels.length ? _dayLabels[i] : '',
+                      style: TextStyle(
+                        color: isToday ? Colors.white : Colors.white38,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }),
+          ),
+        ),
       ),
     );
   }

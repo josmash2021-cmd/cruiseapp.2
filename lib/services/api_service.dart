@@ -2158,6 +2158,7 @@ class ApiService {
   /// Get driver earnings summary for a period (today, week, month).
   static Future<Map<String, dynamic>> getDriverEarnings({
     String period = 'week',
+    DateTime? month,
   }) async {
     final token = await getToken();
     if (token == null) throw ApiException(401, 'Not logged in');
@@ -2167,8 +2168,18 @@ class ApiService {
     // gets a day that started at 6pm yesterday and a 6pm rush that lands in
     // the 11pm column.
     final tzOffset = DateTime.now().timeZoneOffset.inMinutes;
+    final query = <String, String>{
+      'period': period,
+      'tz_offset': tzOffset.toString(),
+    };
+    if (month != null) {
+      query['month'] =
+          '${month.year}-${month.month.toString().padLeft(2, '0')}';
+    }
     final res = await _cachedGet(
-      Uri.parse('$_baseUrl/drivers/earnings?period=$period&tz_offset=$tzOffset'),
+      Uri.parse(
+        '$_baseUrl/drivers/earnings?${query.entries.map((e) => '${Uri.encodeComponent(e.key)}=${Uri.encodeComponent(e.value)}').join('&')}',
+      ),
       headers: _jsonHeaders(token),
       cacheTtl: const Duration(seconds: 10), // 10s — earnings are non-critical
       useCache: true,

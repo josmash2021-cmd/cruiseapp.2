@@ -273,7 +273,9 @@ def _send_fcm_push(token: str, title: str, body: str, data: dict = None, is_offe
         #  3. The whole argument was that only the Dart-drawn copy can carry
         #     fullScreenIntent — and it could not either: USE_FULL_SCREEN_INTENT
         #     was never declared in the manifest, so Android had been ignoring
-        #     that flag since API 29.
+        #     that flag since API 29. It IS declared now, but a real takeover
+        #     also needs the Android 14 user grant, so it still cannot be the
+        #     only path an offer arrives by.
         #
         # The duplicate is gone from the CLIENT instead — the background
         # handler returns early for offers and lets the system's copy stand.

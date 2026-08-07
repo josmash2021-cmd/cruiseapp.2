@@ -88,6 +88,15 @@ part 'driver_online_widgets.dart';
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 class DriverOnlineScreen extends StatefulWidget {
+  /// How many instances are mounted right now.
+  ///
+  /// The offer notification a warm app taps is drawn BY this screen (see the
+  /// background branch of `_applyOffers`), so by construction this screen is
+  /// already on the stack when that tap happens. Pushing another one buried
+  /// the live instance — with its SSE, its poll and its map — under a second
+  /// copy that had to stand everything up again, on a 45-second clock.
+  static int mountedCount = 0;
+
   final LatLng? initialPos;
   final double initialHeading;
   final String? photoUrl;
@@ -710,6 +719,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   @override
   void initState() {
     super.initState();
+    DriverOnlineScreen.mountedCount++;
     _enforceDriverRole();
     WidgetsBinding.instance.addObserver(this);
     // The trip screen handed us a cancelled trip: show the notice as soon
@@ -1091,6 +1101,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
 
   @override
   void dispose() {
+    DriverOnlineScreen.mountedCount--;
     WidgetsBinding.instance.removeObserver(this);
     if (_networkListener != null) {
       NetworkService().onlineNotifier.removeListener(_networkListener!);

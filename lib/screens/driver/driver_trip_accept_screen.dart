@@ -2907,6 +2907,12 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     // markers. deleteAll is the only sweep that reaches annotations whose
     // Dart handles we already dropped.
     try { await mgr.deleteAll(); } catch (_) {}
+    // deleteAll took the mid-route stop flag with it, and `_stopPinAnnot` is
+    // the one annotation handle in this file that is never nulled anywhere —
+    // its create is gated on `_stopPinAnnot == null`, so a swept pin with a
+    // live handle could never be drawn again. The flag simply vanished for
+    // the rest of the trip. The handle has to die with the pin.
+    _stopPinAnnot = null;
     if (!mounted || _annotMgr != mgr) return null;
 
     // Caught PER CREATE, not around the pair.

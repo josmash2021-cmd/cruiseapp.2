@@ -278,6 +278,18 @@ void _openDriverRideOffer({required String offerId, required String tripId}) {
 
     final nav = _navigatorKey.currentState;
     if (nav == null) return;
+    // The screen that DREW this notification is still up.
+    //
+    // A warm-app tap can only come from the local notification, and the only
+    // thing that posts it is DriverOnlineScreen's own background branch — so
+    // that screen is on the stack by construction. Pushing a second copy
+    // buries the live one, SSE, poll and map included, and makes the new one
+    // rebuild all of it while the offer's 45 seconds run down. Returning to
+    // the driver is the whole job; its own stream already has the offer.
+    if (DriverOnlineScreen.mountedCount > 0) {
+      debugPrint('[FCM] offer tap — driver screen already up, not stacking');
+      return;
+    }
     nav.push(PageRouteBuilder(
       opaque: false,
       pageBuilder: (_, __, ___) =>

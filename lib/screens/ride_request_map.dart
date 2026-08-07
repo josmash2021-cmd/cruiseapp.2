@@ -1096,7 +1096,12 @@ extension _RideRequestMap on _RideRequestScreenState {
       if (_pendingCam != null && identical(_mapCtrl, mc)) _flushCamera(mc);
     }).catchError((Object e) {
       _camWriteInFlight = false;
-      _pendingCam = null;
+      // A transient refusal is not a reason to throw away the newest frame —
+      // and on an ending animation that frame is the final position. Only a
+      // dead channel makes it pointless to keep.
+      if (e is PlatformException && e.code == 'channel-error') {
+        _pendingCam = null;
+      }
       // Only drop the controller we actually called: by the time this
       // rejection lands, onMapCreated may already have handed us a live
       // replacement, and nulling that one would leave the screen mapless.

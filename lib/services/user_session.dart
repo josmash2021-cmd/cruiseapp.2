@@ -350,6 +350,12 @@ class UserSession {
     // all, with nothing in any log to explain it.
     NotificationService.forgetRegisteredToken();
 
+    // The online flag is the account's, not the phone's. It survived logout,
+    // so the next driver to sign in on this device had `_isStillOnline` true
+    // from someone else's shift: DriverHomeScreen opened straight into trip
+    // polling and the button said RESUME, without them ever pressing GO.
+    await prefs.remove('driver_was_online');
+
     // Clear local file path keys — the file is deleted below.
     // KEEP the photo URL keys so the photo loads instantly on next sign-in
     // (URLs are permanent Firebase Storage links, not sensitive data).

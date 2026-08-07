@@ -483,6 +483,12 @@ class NotificationService {
           : null,
       icon: '@mipmap/ic_launcher',
       color: const Color(0xFFE8C547),
+      // NEEDS A FULL BUILD, NOT A SHOREBIRD PATCH. This flag only does
+      // anything with USE_FULL_SCREEN_INTENT in AndroidManifest.xml, and a
+      // manifest change is native — `shorebird patch` ships Dart only, so an
+      // OTA patch leaves the permission behind and the takeover silently does
+      // not happen. On API 34+ it also needs the user to grant it in
+      // settings, which is why no delivery path may depend on this working.
       fullScreenIntent: true,
       category: AndroidNotificationCategory.call,
       styleInformation: const DefaultStyleInformation(true, true),

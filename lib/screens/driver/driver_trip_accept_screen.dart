@@ -1571,19 +1571,32 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
           _annotMgr!.update(annot).catchError((_) {});
         }
       }
-      double minLat = 90, maxLat = -90, minLng = 180, maxLng = -180;
-      for (final p in [
+      // Same hardening its twin in _runStyleLoadedSetup got, and for the same
+      // reason: this fold seeds sentinels and every comparison against a NaN
+      // is false, so ONE bad coordinate leaves 90/-90/180/-180 in place and
+      // ships an inverted box across the channel — which raises inside
+      // Objective-C ("Invalid number value (NaN) in JSON write") where no
+      // Dart catch can reach it. Filter first, seed from a real point.
+      final finite = [
         widget.pickupLatLng,
         if (stop != null) stop,
         _dropoffLL,
         ...pts,
-      ]) {
+      ].where((p) => isValidLatLng(p.latitude, p.longitude)).toList();
+      if (finite.isEmpty) {
+        debugPrint('[DriverTrip] redraw skipped — no finite coordinates');
+        return;
+      }
+      double minLat = finite.first.latitude, maxLat = finite.first.latitude;
+      double minLng = finite.first.longitude, maxLng = finite.first.longitude;
+      for (final p in finite) {
         if (p.latitude < minLat) minLat = p.latitude;
         if (p.latitude > maxLat) maxLat = p.latitude;
         if (p.longitude < minLng) minLng = p.longitude;
         if (p.longitude > maxLng) maxLng = p.longitude;
       }
-      final prettBearing = (_routeBearing(pts) + 15.0) % 360;
+      final rawBearing = _routeBearing(pts);
+      final prettBearing = rawBearing.isFinite ? (rawBearing + 15.0) % 360 : 0.0;
       final cam = await ctrl.cameraForCoordinateBounds(
         mapbox.CoordinateBounds(
           southwest:
@@ -1600,6 +1613,10 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
       );
       if (!mounted) return;
       final targetZoom = ((cam.zoom ?? 13) - 0.5).clamp(9.0, 14.0);
+      if (!_cameraIsSane(cam.center, targetZoom.toDouble())) {
+        debugPrint('[DriverTrip] redraw skipped — camera not finite');
+        return;
+      }
       await ctrl.flyTo(
         mapbox.CameraOptions(
             center: cam.center,

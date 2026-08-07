@@ -726,7 +726,19 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     // screen gets around to asking.
     final linked = widget.deepLinkOffer;
     if (linked != null) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
+      // After the transition, not on the first frame.
+      //
+      // _applyOffers treats this as a new leading offer, which means
+      // playOfferSound() plus three heavyImpact haptics — four platform-
+      // channel round-trips. Fired from the first post-frame callback they
+      // land while the route transition (420 ms) and this screen's Mapbox
+      // PlatformView are both competing for the platform thread, which is
+      // the exact stall that got the go-online chime removed three times.
+      //
+      // Half a second is invisible against a 45-second offer window and it
+      // is the whole difference between the card appearing and the app
+      // locking up as the driver opens it.
+      Future.delayed(const Duration(milliseconds: 500), () {
         if (mounted) _applyOffers([linked]);
       });
     }

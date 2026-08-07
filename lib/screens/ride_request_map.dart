@@ -604,6 +604,16 @@ extension _RideRequestMap on _RideRequestScreenState {
     if (_mapCtrl == null || _polylineAnnotMgr == null) return;
     _cinematicRunning = true;
     _showPinLabels = true;
+    // A route appearing is an explicit auto-frame moment, exactly like
+    // entering searching (see the reset in the driver-release path) or
+    // tapping recenter.
+    //
+    // This matters now that the per-frame writes honour `_userTookCamera`:
+    // the rider almost always pans while choosing a destination, and without
+    // this the flag was still set when the route arrived, so the whole
+    // cinematic ran its 2.2 s producing frames that were dropped at the
+    // gate. The route drew and the camera never moved.
+    _userTookCamera = false;
     final pts = _capRouteEndpoints(List<LatLng>.from(s.route!.points));
     _buildRouteMarkers();
     _resetCinematic();
@@ -973,6 +983,35 @@ extension _RideRequestMap on _RideRequestScreenState {
   /// pending frame, send it the moment the channel frees up, and when the
   /// animation stops the pending frame is the final one — so the end state
   /// always gets there instead of being the one that goes missing.
+  /// Every animated camera move goes through here.
+  ///
+  /// The NaN gate alone was not enough. `flyTo` is a pigeon call and it was
+  /// left unawaited with no handler, so on a surface that has been revoked it
+  /// rejects with PlatformException(channel-error) straight into the zone —
+  /// the exact unhandled async error `_pushCamera` was built to stop, still
+  /// live on every fit path. A synchronous try/catch around it does nothing:
+  /// the rejection arrives on a later microtask, long after the call returned.
+  ///
+  /// Releasing the handle on channel-error is what makes the callers' own
+  /// `_mapCtrl == null` guards start telling the truth; onMapCreated seeds a
+  /// new one when a surface comes back.
+  void _safeFlyTo(mapbox.CameraOptions? cam, mapbox.MapAnimationOptions anim) {
+    final mc = _mapCtrl;
+    if (mc == null || !mounted) return;
+    if (!_saneCam(cam)) {
+      debugPrint('[Map] skipped a non-finite flyTo');
+      return;
+    }
+    mc.flyTo(cam!, anim).catchError((Object e) {
+      if (identical(_mapCtrl, mc) &&
+          e is PlatformException &&
+          e.code == 'channel-error') {
+        _mapCtrl = null;
+        debugPrint('[Map] flyTo channel gone — released stale controller');
+      }
+    });
+  }
+
   void _pushCamera(mapbox.MapboxMap mc, mapbox.CameraOptions opts) {
     // The rider's hand outranks every animation. Checked here AND at flush
     // time, because those are different moments: a frame produced before
@@ -1143,8 +1182,10 @@ extension _RideRequestMap on _RideRequestScreenState {
       null,
     )
         .then((cam) {
-      if (!mounted || _mapCtrl == null) return;
-      _mapCtrl!.flyTo(
+      // Gated like every other fit: cam.center comes straight out of
+      // cameraForCoordinatesPadding and was the one write in this file
+      // reaching flyTo unchecked.
+      _safeFlyTo(
         mapbox.CameraOptions(
           center: cam.center,
           zoom: cam.zoom,
@@ -1219,11 +1260,23 @@ extension _RideRequestMap on _RideRequestScreenState {
       mapbox.PointAnnotationManager mgr, mapbox.PointAnnotation annot) {
     mgr.update(annot).catchError((Object e) {
       // A channel that is merely unreachable has NOT killed the annotation.
-      // Dropping the handle then would strand a live native pin with no
-      // Dart reference, and the next _placeMarkers would draw a second one
-      // on top of it. Only "no manager or annotation found" — pigeon code
-      // '0' — actually means the id is dead.
-      final dead = e is PlatformException && e.code == '0';
+      // Dropping the handle then would strand a live native pin with no Dart
+      // reference, and the next _placeMarkers would draw a second one on top
+      // of it. Only "this annotation no longer exists" means the id is dead.
+      //
+      // The two platforms say that completely differently, and testing for
+      // the iOS shape alone meant this never fired on Android at all:
+      //   iOS      PointAnnotationController.swift:8  -> code "0",
+      //            message "No manager or annotation found ..."
+      //   Android  PointAnnotationController.kt:107   -> Result.failure(
+      //            Throwable("Annotation has not been added on the map: ..."))
+      //            which reaches Dart as code "Throwable".
+      // Matching on the message is what actually spans both.
+      final msg = e is PlatformException
+          ? '${e.code} ${e.message ?? ''}'
+          : e.toString();
+      final dead = msg.contains('No manager or annotation found') ||
+          msg.contains('Annotation has not been added on the map');
       if (!dead) {
         debugPrint('[Pins] annotation update failed, handle kept: $e');
         return;
@@ -1974,9 +2027,7 @@ extension _RideRequestMap on _RideRequestScreenState {
       // Longer cinematic fit so the reveal of pickup → dropoff feels
       // gentle instead of a quick flick (user asked for smooth, not
       // rapid camera motion).
-      // NaN here crashes inside native, uncatchable — see _saneCam.
-      if (!_saneCam(cam)) return;
-      _mapCtrl?.flyTo(cam, mapbox.MapAnimationOptions(duration: 1400));
+      _safeFlyTo(cam, mapbox.MapAnimationOptions(duration: 1400));
     });
   }
 
@@ -1999,9 +2050,7 @@ extension _RideRequestMap on _RideRequestScreenState {
       mapbox.MbxEdgeInsets(top: 80, left: 50, bottom: bottomInset, right: 50),
       null, null,
     ).then((cam) {
-      // NaN here crashes inside native, uncatchable — see _saneCam.
-      if (!_saneCam(cam)) return;
-      _mapCtrl?.flyTo(cam, mapbox.MapAnimationOptions(duration: 1200));
+      _safeFlyTo(cam, mapbox.MapAnimationOptions(duration: 1200));
     });
   }
 
@@ -2184,9 +2233,7 @@ extension _RideRequestMap on _RideRequestScreenState {
       );
       // Slower fit so the fly feels fluid instead of snappy.
       if (cam != null) {
-        // NaN here crashes inside native, uncatchable — see _saneCam.
-        if (!_saneCam(cam)) return;
-        _mapCtrl?.flyTo(cam, mapbox.MapAnimationOptions(duration: 1100));
+        _safeFlyTo(cam, mapbox.MapAnimationOptions(duration: 1100));
       }
     } else if (_userLocation != null) {
       // Web: the picker phase shows this button too, and _mapCtrl is null

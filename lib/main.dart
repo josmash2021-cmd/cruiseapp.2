@@ -281,7 +281,15 @@ void _openDriverRideOffer({required String offerId, required String tripId}) {
     nav.push(PageRouteBuilder(
       opaque: false,
       pageBuilder: (_, __, ___) =>
-          DriverOnlineScreen(deepLinkOffer: found?.offer),
+          DriverOnlineScreen(
+            deepLinkOffer: found?.offer,
+            // Dispatch only offers rides to drivers who are ALREADY online,
+            // so arriving here from a notification is a resume by
+            // definition. Left at the default `false` the screen replayed
+            // the entire go-online handshake — with an offer waiting and 45
+            // seconds on the clock.
+            resuming: true,
+          ),
       transitionDuration: const Duration(milliseconds: 280),
       reverseTransitionDuration: const Duration(milliseconds: 220),
       transitionsBuilder: (_, anim, __, child) => FadeTransition(
@@ -1060,6 +1068,11 @@ Future<void> heavyInit() async {
         // FCM's own getInitialMessage knows only about the push it received,
         // never about a local notification, so without this the ids of the
         // offer the driver tapped are gone by the time the app is up.
+        // Cold launch covers the app that was not running; this covers the
+        // one that was — a tap on a local notification with the app warm
+        // reaches _onNotificationTapped and nowhere else.
+        NotificationService.onOfferTapped = handleOfferNotificationPayload;
+
         final launch = await FlutterLocalNotificationsPlugin()
             .getNotificationAppLaunchDetails();
         if (launch?.didNotificationLaunchApp ?? false) {

@@ -339,8 +339,23 @@ class NotificationService {
     return 'America/Chicago';
   }
 
+  /// Called when the driver taps a notification THIS app drew (as opposed to
+  /// one FCM drew, which arrives through onMessageOpenedApp).
+  ///
+  /// The body used to be a single debugPrint, so every tap on a local offer
+  /// notification did nothing at all — the payload carrying the trip and
+  /// offer ids was built, attached, delivered here, and thrown away.
+  ///
+  /// Set by main() rather than imported: this service is below the app layer
+  /// and must not reach up into it.
+  static void Function(String? payload)? onOfferTapped;
+
   static void _onNotificationTapped(NotificationResponse response) {
-    debugPrint('[Notification] tapped: ${response.payload}');
+    final payload = response.payload;
+    debugPrint('[Notification] tapped: $payload');
+    if (payload != null && payload.startsWith('trip_offer')) {
+      onOfferTapped?.call(payload);
+    }
   }
 
   // ── Permission management ──────────────────────────────────────────────

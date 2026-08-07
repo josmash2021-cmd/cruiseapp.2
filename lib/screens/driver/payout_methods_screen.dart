@@ -44,11 +44,32 @@ class PayoutMethodsScreen extends StatefulWidget {
   State<PayoutMethodsScreen> createState() => _PayoutMethodsScreenState();
 }
 
+/// The gold of the payout sub-flow, declared once for the whole file.
+///
+/// 0xFFE8C547, not the 0xFFD4A843 this file used to carry: everything the
+/// screen pushes or is pushed from — AddBankAccountScreen,
+/// StripeOnboardingScreen, the cash-out page and its success screen — is on
+/// E8C547, so the old value changed gold one tap into the flow. (Much of the
+/// rest of the driver app is still on D4A843; this unifies the payout flow,
+/// not the app.)
+///
+/// Top-level rather than three `static const _gold`s in three private
+/// classes, which is exactly how the screen and its own two sheets drifted
+/// apart in the first place.
+const _gold = Color(0xFFE8C547);
+
 class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
-  static const _gold = Color(0xFFD4A843);
   static const _green = Color(0xFF4CAF50);
   static const _danger = Color(0xFFFF5252);
   static const _text = Colors.white;
+
+  // Mirrors of the backend constants (INSTANT_FEE_RATE / INSTANT_FEE_MIN /
+  // INSTANT_MIN_AMOUNT in backend/routers/drivers.py) so the card can state
+  // the terms without a round-trip. The backend re-validates every one of
+  // them at cashout time — these are for reading, not for deciding.
+  static const _instantFeeLabel = '1.5%';
+  static const _instantFeeMinLabel = '\$0.50';
+  static const _instantMinAmountLabel = '\$50';
 
   List<Map<String, dynamic>> _methods = [];
   bool _loading = true;
@@ -141,7 +162,13 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
 
   void _snack(String msg, {bool error = false}) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
+    // maybeOf, not of: every caller reaches here after an await, and per
+    // project rule 26 `mounted` does not cover the window where the element
+    // is deactivated but not yet disposed — `.of` resolves to a null-check
+    // crash there, and only in release.
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    if (messenger == null) return;
+    messenger.showSnackBar(
       SnackBar(
         content: Text(
           msg,
@@ -165,63 +192,46 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
     final s = S.of(context);
     return Scaffold(
       backgroundColor: neuBase,
-      body: SafeArea(
+      // The same speckled ground the driver menu that links here carries,
+      // so arriving does not read as landing in a different app.
+      body: Stack(
+        children: [
+          const Positioned.fill(child: NeuDotsBackdrop()),
+          SafeArea(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // ── Header ──
+            //
+            // Back, the page's name, and a way to ask what any of this
+            // means. The intro paragraph that used to sit under a large
+            // left-aligned title is gone: it explained the payday and the
+            // fee in prose, and both now live on the card they belong to,
+            // where a driver comparing the two can read them side by side.
             Padding(
-              padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: GestureDetector(
-                  onTap: () => Navigator.pop(context),
-                  child: Container(
-                    width: 40,
-                    height: 40,
-                    alignment: Alignment.center,
-                    decoration: neuBox(radius: 14, pressed: true),
-                    child: const Icon(
-                      Icons.arrow_back_rounded,
-                      color: _text,
-                      size: 20,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(height: 18),
-
-            // Title on the left at reading size, with the sentence that
-            // explains the two rows underneath it — rather than a centred
-            // page title over a card explaining only one of them.
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+              padding: const EdgeInsets.fromLTRB(16, 6, 16, 16),
+              child: Row(
                 children: [
-                  Text(
-                    s.payoutYourMethods,
-                    style: const TextStyle(
-                      color: _text,
-                      fontSize: 26,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: -0.6,
+                  _headerButton(
+                    Icons.arrow_back_rounded,
+                    () => Navigator.pop(context),
+                  ),
+                  Expanded(
+                    child: Text(
+                      s.payoutMethodsTitle,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        color: _text,
+                        fontSize: 18,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: -0.3,
+                      ),
                     ),
                   ),
-                  const SizedBox(height: 8),
-                  Text(
-                    s.payoutMethodsIntro,
-                    style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.45),
-                      fontSize: 13.5,
-                      height: 1.4,
-                    ),
-                  ),
+                  _headerButton(Icons.help_outline_rounded, _showHelpSheet),
                 ],
               ),
             ),
-            const SizedBox(height: 22),
 
             // The page does not wait on the network to exist.
             //
@@ -249,34 +259,50 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
                                 _errorStrip(_loadError!),
                                 const SizedBox(height: 14),
                               ],
-                              // Two destinations, always both shown.
+                              _sectionLabel(s.payoutAvailableSection),
+                              // Two ways to be paid, always both shown, each
+                              // answering the same three questions in the same
+                              // order: what it costs, when it lands, where it
+                              // goes. A driver deciding between them is
+                              // comparing exactly those three things, and the
+                              // old two-line rows made them guess at two of
+                              // the three.
                               //
-                              // The old screen listed whatever happened to be
-                              // linked and hid the rest behind two buttons at
-                              // the foot of the page, so a driver with no card
-                              // had no way to learn that instant cashout
-                              // existed. A row that is not set up says so and
-                              // offers to be — the absence is information too.
-                              // Two separate cards now, not one box split by
-                              // a hairline: each row carries its own surface,
-                              // so a card inside a card would double the
-                              // shadow and read as a seam.
-                              _destinationRow(
-                                icon: Icons.flash_on_rounded,
-                                title: s.payoutExpressPay,
-                                emptyDesc: s.payoutExpressPayDesc,
-                                method: _methodOfType('debit_card'),
-                                statusLabel: s.payoutOnRequest,
-                                onTap: _connectDebitCard,
-                              ),
-                              const SizedBox(height: 10),
-                              _destinationRow(
+                              // Weekly first because it is what happens on its
+                              // own — the backend sweeps every balance to the
+                              // bank each Monday whether or not the driver ever
+                              // opens this screen. Instant is the thing you go
+                              // out of your way to do.
+                              _payoutOptionCard(
                                 icon: Icons.calendar_month_rounded,
                                 title: s.payoutWeekly,
-                                emptyDesc: s.payoutWeeklyDesc,
+                                fee: s.payoutFeeFree,
+                                cadence: s.payoutWhenWeekly,
+                                destinationIcon: Icons.account_balance_rounded,
+                                destinationEmpty: s.payoutNoBankLinked,
                                 method: _methodOfType('bank_account'),
-                                statusLabel: s.payoutActive,
+                                addLabel: s.payoutAddBank,
+                                changeLabel: s.payoutChangeBank,
                                 onTap: _connectBankAccount,
+                              ),
+                              const SizedBox(height: 14),
+                              _payoutOptionCard(
+                                icon: Icons.flash_on_rounded,
+                                title: s.instantCashout,
+                                fee: s.payoutFeePercent(
+                                  _instantFeeLabel,
+                                  _instantFeeMinLabel,
+                                ),
+                                cadence: s.payoutWhenInstant,
+                                destinationIcon: Icons.credit_card_rounded,
+                                destinationEmpty: s.payoutNoCardLinked,
+                                method: _methodOfType('debit_card'),
+                                addLabel: s.payoutAddCard,
+                                changeLabel: s.payoutChangeCard,
+                                footnote: s.payoutInstantMinimum(
+                                  _instantMinAmountLabel,
+                                ),
+                                onTap: _connectDebitCard,
                               ),
                               // Anything the two rows are not already showing
                               // — a driver who linked a second card — still
@@ -294,6 +320,8 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
             ),
           ],
         ),
+          ),
+        ],
       ),
     );
   }
@@ -317,141 +345,403 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
     return _methods.where((m) => !shown.contains(m['id'])).toList();
   }
 
-  /// One payout destination: what it is, what is attached, and its state.
-  Widget _destinationRow({
-    required IconData icon,
-    required String title,
-    required String emptyDesc,
-    required Map<String, dynamic>? method,
-    required String statusLabel,
-    required VoidCallback onTap,
-  }) {
-    final s = S.of(context);
-    final linked = method != null;
-    final sub = linked
-        ? _cleanDisplay((method['display_name'] ?? '').toString())
-        : emptyDesc;
+  /// A 40 pt round control for the header row.
+  ///
+  /// Two of them, one on each side, so the page title sits optically
+  /// centred without measuring it.
+  Widget _headerButton(IconData icon, VoidCallback onTap) {
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
-      // Deaf while a Stripe call is in flight. Two taps on "Set up" opens
-      // two sheets, and the second one lands on a Connect account the first
-      // is halfway through changing.
-      // Live while the list is still arriving. Only a Stripe call in flight
-      // closes the row.
-      //
-      // Dimming it and turning taps off during the fetch made the whole card
-      // read as disabled for as long as the request took — and the tap is
-      // harmless either way: it opens the sheet that attaches an account,
-      // which is the right thing whether one is already attached or not.
-      onTap: _busy
+      onTap: () {
+        HapticService.selectionClick();
+        onTap();
+      },
+      child: Container(
+        width: 40,
+        height: 40,
+        alignment: Alignment.center,
+        decoration: neuBox(radius: 14, pressed: true),
+        child: Icon(icon, color: _text, size: 20),
+      ),
+    );
+  }
+
+  Widget _sectionLabel(String label) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 4, bottom: 14),
+      child: Text(
+        label,
+        style: const TextStyle(
+          color: _text,
+          fontSize: 22,
+          fontWeight: FontWeight.w800,
+          letterSpacing: -0.5,
+        ),
+      ),
+    );
+  }
+
+  /// One way of being paid: what it costs, when it lands, and where it goes.
+  ///
+  /// The three lines are always in that order and always present, even when
+  /// nothing is attached yet — a driver choosing between the two cards is
+  /// comparing those three facts, and a card that omits one because it is
+  /// not set up hides the very thing being compared. What changes with the
+  /// linked state is the third line's value, the pill, and the button.
+  Widget _payoutOptionCard({
+    required IconData icon,
+    required String title,
+    required String fee,
+    required String cadence,
+    required IconData destinationIcon,
+    required String destinationEmpty,
+    required Map<String, dynamic>? method,
+    required String addLabel,
+    required String changeLabel,
+    required VoidCallback onTap,
+    String? footnote,
+  }) {
+    final s = S.of(context);
+    // `linked` must never be reassigned. Flow analysis carries the null
+    // check through the boolean only while it keeps its original SSA node;
+    // any write to it — `if (_busy) linked = false;` looks harmless — drops
+    // the stored promotion and the `m['display_name']` / `m['id']` reads
+    // below stop compiling.
+    final m = method;
+    final linked = m != null;
+    final display =
+        linked ? _cleanDisplay((m['display_name'] ?? '').toString()) : '';
+    return Opacity(
+      // Dimmed only while a Stripe call is in flight, never while the list
+      // is merely loading: the card's own content is structural and true
+      // before the server answers.
+      opacity: _busy ? 0.5 : 1,
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: neuBox(radius: 22),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 44,
+                  height: 44,
+                  alignment: Alignment.center,
+                  decoration: neuBox(radius: 14, pressed: true),
+                  child: Icon(
+                    icon,
+                    size: 21,
+                    color: linked ? _gold : Colors.white.withValues(alpha: 0.45),
+                  ),
+                ),
+                const SizedBox(width: 13),
+                Expanded(
+                  child: Text(
+                    title,
+                    style: const TextStyle(
+                      color: _text,
+                      fontSize: 17,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: -0.2,
+                    ),
+                  ),
+                ),
+                // The pill is the one thing that genuinely has to wait: until
+                // the list arrives the card cannot honestly say either
+                // "Active" or "Set up", so it says nothing rather than
+                // putting a spinner where an answer will be.
+                if (_busy)
+                  const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(
+                      color: _gold,
+                      strokeWidth: 2,
+                    ),
+                  )
+                else if (!_loading)
+                  _statusPill(
+                    linked ? s.payoutActive : s.payoutSetUp,
+                    linked: linked,
+                  ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            _infoLine(Icons.payments_outlined, fee),
+            const SizedBox(height: 10),
+            _infoLine(Icons.event_rounded, cadence),
+            const SizedBox(height: 10),
+            _infoLine(
+              destinationIcon,
+              linked ? display : destinationEmpty,
+              strong: linked,
+              // The bin is the ONLY way to remove a bank or the express-pay
+              // card — `_extraMethods` never lists either of them — so it
+              // has to live on the line that names what would be removed.
+              trailing: (linked && !_busy && !_loading)
+                  ? _deleteButton(m['id'], display)
+                  : null,
+            ),
+            if (footnote != null) ...[
+              const SizedBox(height: 12),
+              Text(
+                footnote,
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.32),
+                  fontSize: 11.5,
+                  height: 1.3,
+                ),
+              ),
+            ],
+            const SizedBox(height: 16),
+            // Deaf while a Stripe call is in flight. Two taps on "Add"
+            // opens two sheets, and the second lands on a Connect account
+            // the first is halfway through changing.
+            _ctaPill(
+              label: linked ? changeLabel : addLabel,
+              primary: !linked,
+              onTap: _busy ? null : onTap,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// One fact about a payout option, in a sunken well the eye can run down.
+  Widget _infoLine(
+    IconData icon,
+    String text, {
+    bool strong = false,
+    Widget? trailing,
+  }) {
+    return Row(
+      children: [
+        Container(
+          width: 26,
+          height: 26,
+          alignment: Alignment.center,
+          decoration: neuBox(radius: 9, pressed: true),
+          child: Icon(
+            icon,
+            size: 14,
+            color: Colors.white.withValues(alpha: strong ? 0.55 : 0.38),
+          ),
+        ),
+        const SizedBox(width: 11),
+        Expanded(
+          child: Text(
+            text,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: strong ? 0.88 : 0.6),
+              fontSize: 13.5,
+              fontWeight: strong ? FontWeight.w600 : FontWeight.w400,
+            ),
+          ),
+        ),
+        if (trailing != null) ...[
+          const SizedBox(width: 8),
+          trailing,
+        ],
+      ],
+    );
+  }
+
+  /// A 30 pt well inside a 44 pt target.
+  ///
+  /// The well is small on purpose — it sits on a line of text, not in a
+  /// row of controls — but this is the only way to remove a payout
+  /// destination, so the tappable area is the full 44 and the drawn box
+  /// just floats in the middle of it.
+  Widget _deleteButton(dynamic id, String name) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () {
+        HapticService.selectionClick();
+        _confirmDelete(id, name);
+      },
+      child: SizedBox(
+        width: 44,
+        height: 44,
+        child: Center(
+          child: Container(
+            width: 30,
+            height: 30,
+            alignment: Alignment.center,
+            decoration: neuBox(radius: 10, pressed: true),
+            child: Icon(
+              Icons.delete_outline_rounded,
+              color: Colors.white.withValues(alpha: 0.4),
+              size: 16,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// The card's action. Filled gold when there is nothing attached yet,
+  /// because then it is the thing to do; a sunken well afterwards, because
+  /// then it only offers to change something already working.
+  Widget _ctaPill({
+    required String label,
+    required bool primary,
+    VoidCallback? onTap,
+  }) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap == null
           ? null
           : () {
               HapticService.mediumImpact();
               onTap();
             },
-      child: Opacity(
-        opacity: _busy ? 0.5 : 1,
-        // Its own card, sized like the saved-method one below it: a 48 pt
-        // icon well, 16 of padding, radius 20. These two rows are the main
-        // thing on the screen and used to be the smallest thing on it —
-        // thinner and flatter than the card that appears once a bank is
-        // attached, so the screen read as a list of settings rather than the
-        // two places a driver gets paid.
-        child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: neuBox(radius: 20),
-        child: Row(
-          children: [
-            Container(
-              width: 48,
-              height: 48,
-              alignment: Alignment.center,
-              decoration: neuBox(radius: 15, pressed: true),
-              child: Icon(
-                icon,
-                size: 22,
-                color: linked ? _gold : Colors.white.withValues(alpha: 0.45),
-              ),
-            ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    style: const TextStyle(
-                      color: _text,
-                      fontSize: 16,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  const SizedBox(height: 3),
-                  Text(
-                    sub,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.45),
-                      fontSize: 13.5,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 10),
-            // The pill is the one thing that genuinely has to wait: until
-            // the list arrives, the row cannot honestly say either "Active"
-            // or "Set up". So it says nothing, rather than putting a
-            // spinner where an answer will be — a small turning circle in a
-            // row is read as the row working, not as one field pending.
-            if (_busy)
-              const SizedBox(
-                width: 16,
-                height: 16,
-                child: CircularProgressIndicator(color: _gold, strokeWidth: 2),
+      child: Container(
+        width: double.infinity,
+        height: 46,
+        alignment: Alignment.center,
+        decoration: primary
+            ? BoxDecoration(
+                color: _gold,
+                borderRadius: BorderRadius.circular(14),
               )
-            else if (!_loading)
-              _statusPill(linked ? statusLabel : s.payoutSetUp,
-                  linked: linked),
-            const SizedBox(width: 6),
-            // A linked row gets a bin instead of a chevron.
-            //
-            // `_confirmDelete` and `_deleteMethod` were written and had no
-            // caller: the redesign replaced the per-method cards with these
-            // two structural rows and the delete button went with them. A
-            // driver could attach a card and never take it off.
-            if (linked && !_busy && !_loading)
-              GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: () {
-                  HapticService.selectionClick();
-                  _confirmDelete(
-                    method['id'],
-                    _cleanDisplay((method['display_name'] ?? '').toString()),
-                  );
-                },
+            : neuBox(radius: 14, pressed: true),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: primary ? neuBase : _gold,
+            fontSize: 14,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// What the two cards mean, for a driver who has never been paid before.
+  ///
+  /// `isScrollControlled` and a scroll view, like the other two sheets in
+  /// this file: without them the sheet is capped at 9/16 of the screen and
+  /// this content measures ~418 pt, so on a 375x667 phone the "Got it"
+  /// button is clipped away entirely — not visible and not tappable. The
+  /// in-app text-size slider goes to 1.6, which puts every phone over.
+  void _showHelpSheet() {
+    final s = S.of(context);
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (ctx) => Container(
+        padding: const EdgeInsets.fromLTRB(24, 12, 24, 24),
+        decoration: const BoxDecoration(
+          color: neuBase,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+        ),
+        child: SafeArea(
+          top: false,
+          child: SingleChildScrollView(
+            child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
                 child: Container(
-                  width: 34,
-                  height: 34,
-                  alignment: Alignment.center,
-                  decoration: neuBox(radius: 12, pressed: true),
-                  child: Icon(
-                    Icons.delete_outline_rounded,
-                    color: Colors.white.withValues(alpha: 0.4),
-                    size: 17,
+                  width: 36,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.white12,
+                    borderRadius: BorderRadius.circular(2),
                   ),
                 ),
-              )
-            else
-              Icon(
-                Icons.chevron_right_rounded,
-                color: Colors.white.withValues(alpha: 0.3),
-                size: 20,
               ),
-          ],
+              const SizedBox(height: 20),
+              Text(
+                s.payoutHelpTitle,
+                style: const TextStyle(
+                  color: _text,
+                  fontSize: 22,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: -0.4,
+                ),
+              ),
+              const SizedBox(height: 18),
+              _helpBlock(
+                Icons.calendar_month_rounded,
+                s.payoutWeekly,
+                s.payoutHelpWeekly,
+              ),
+              const SizedBox(height: 14),
+              _helpBlock(
+                Icons.flash_on_rounded,
+                s.instantCashout,
+                s.payoutHelpInstant,
+              ),
+              const SizedBox(height: 22),
+              GestureDetector(
+                onTap: () => Navigator.pop(ctx),
+                child: Container(
+                  width: double.infinity,
+                  height: 50,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: _gold,
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Text(
+                    s.gotIt,
+                    style: const TextStyle(
+                      color: neuBase,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+            ),
+          ),
         ),
-        ),
+      ),
+    );
+  }
+
+  Widget _helpBlock(IconData icon, String title, String body) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: neuBox(radius: 16, pressed: true),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, color: _gold, size: 18),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    color: _text,
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  body,
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.5),
+                    fontSize: 12,
+                    height: 1.45,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -1181,7 +1471,6 @@ class _AddDebitCardSheet extends StatefulWidget {
 class _AddBankIntroSheet extends StatelessWidget {
   const _AddBankIntroSheet();
 
-  static const _gold = Color(0xFFD4A843);
 
   @override
   Widget build(BuildContext context) {
@@ -1353,7 +1642,6 @@ Widget _keepSecureNote(String body) {
 }
 
 class _AddDebitCardSheetState extends State<_AddDebitCardSheet> {
-  static const _gold = Color(0xFFD4A843);
 
   final _nameCtrl = TextEditingController();
   bool _complete = false;
@@ -1445,11 +1733,14 @@ class _AddDebitCardSheetState extends State<_AddDebitCardSheet> {
               ),
               const SizedBox(height: 18),
               // Which destination this is, then what is being done to it —
-              // the same two-line header the row that opened this sheet
-              // uses, so the driver can see they are where they aimed.
+              // the same name the card that opened this sheet carries, so
+              // the driver can see they are where they aimed. It said
+              // "EXPRESS PAY" while the card said "Instant cashout": two
+              // plausible product names one tap apart, and "Express Pay"
+              // is now a word the app uses nowhere else.
               Center(
                 child: Text(
-                  s.payoutExpressPay.toUpperCase(),
+                  s.instantCashout.toUpperCase(),
                   style: TextStyle(
                     color: Colors.white.withValues(alpha: 0.35),
                     fontSize: 11,

@@ -723,6 +723,10 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       // that unwound while we were backgrounded could leave us on top with
       // no map. _unsuspendMap no-ops unless we really are the top route.
       _unsuspendMap();
+      // A driver who went to Settings to grant the location has no reason
+      // to also restart the app. Retry quietly — _initLocation is a no-op
+      // once a fix exists, so this costs nothing on the normal path.
+      if (_currentLatLng == null) unawaited(_initLocation());
       // Always re-check vehicle doc approval when app comes back
       if (!_vehicleDocsApproved) _checkVehicleDocStatus();
       // Re-check scheduled ride lockout (driver may return from background)
@@ -1157,6 +1161,111 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   // ═══════════════════════════════════════════════════
   //  LOCATION
   // ═══════════════════════════════════════════════════
+  /// Can this driver actually be found? Answers only after trying to fix it.
+  ///
+  /// A driver app without a location is not degraded, it is broken: dispatch
+  /// ranks candidates by distance, so a driver with no fix is invisible.
+  /// Going online in that state produced the worst outcome available — the
+  /// app said "you are online", the driver waited a whole shift, and not one
+  /// offer could ever have reached them.
+  ///
+  /// So this is a gate, not a warning. It asks, re-asks, and sends the
+  /// driver to Settings when only Settings can fix it, and going online is
+  /// refused until it answers true.
+  Future<bool> _ensureLocationReady() async {
+    if (kIsWeb) return true;
+    try {
+      if (!await Geolocator.isLocationServiceEnabled()) {
+        if (!mounted) return false;
+        await showDialog<void>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: Text(S.of(ctx).locationPermissionRequired),
+            content: Text(S.of(ctx).locationServicesDisabledMsg),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: Text(S.of(ctx).cancel),
+              ),
+              TextButton(
+                onPressed: () {
+                  Navigator.pop(ctx);
+                  Geolocator.openLocationSettings();
+                },
+                child: Text(S.of(ctx).openSettings),
+              ),
+            ],
+          ),
+        );
+        return false;
+      }
+
+      var perm = await Geolocator.checkPermission();
+      if (perm == LocationPermission.denied) {
+        perm = await Geolocator.requestPermission();
+      }
+      if (perm == LocationPermission.denied) {
+        if (!mounted) return false;
+        // Refusable, so offer the prompt again rather than Settings.
+        final retry = await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: Text(S.of(ctx).locationPermissionRequired),
+            content: Text(S.of(ctx).locationRequiredForDriver),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: Text(S.of(ctx).cancel),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: Text(S.of(ctx).retry),
+              ),
+            ],
+          ),
+        );
+        if (retry != true || !mounted) return false;
+        perm = await Geolocator.requestPermission();
+      }
+      if (perm == LocationPermission.deniedForever) {
+        if (!mounted) return false;
+        await showDialog<void>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: Text(S.of(ctx).locationPermissionRequired),
+            content: Text(S.of(ctx).locationRequiredForDriver),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: Text(S.of(ctx).cancel),
+              ),
+              TextButton(
+                onPressed: () {
+                  Navigator.pop(ctx);
+                  openAppSettings();
+                },
+                child: Text(S.of(ctx).openSettings),
+              ),
+            ],
+          ),
+        );
+        return false;
+      }
+      if (perm == LocationPermission.denied) return false;
+
+      // Permission granted but no fix yet — start the stream that produces
+      // one rather than reporting ready on a promise.
+      if (_currentLatLng == null) {
+        unawaited(_initLocation());
+      }
+      return true;
+    } catch (e) {
+      debugPrint('[DriverHome] location gate failed: $e');
+      // Never let a thrown check be the thing that stops a shift.
+      return true;
+    }
+  }
+
   Future<void> _initLocation() async {
     try {
       bool svc = await Geolocator.isLocationServiceEnabled();
@@ -1689,6 +1798,12 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     // The trip poll can be mid-push into the same screen; two of us would
     // stack it.
     if (_isNavigatingToOnline) return;
+    // Nothing about being online works without a location — dispatch ranks
+    // by distance, so a driver with no fix is not "online with a bad map",
+    // they are unreachable. This used to be unchecked: the button worked,
+    // the app said online, and no offer could ever arrive.
+    if (!await _ensureLocationReady()) return;
+    if (!mounted) return;
     // Show immediate feedback — button will display loading state
     setState(() => _isNavigatingToOnline = true);
     try {

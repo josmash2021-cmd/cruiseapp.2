@@ -37,6 +37,11 @@ dependencies:
   http: ^1.6.0
   shared_preferences: ^2.3.3
   image_picker: ^1.1.2
+  # Only for re-encoding the cropped document photo as JPEG: dart:ui can
+  # decode anything but can only write PNG, and a PNG of a photograph is
+  # several times the size of the JPEG it came from. Already resolved at
+  # 4.8.0 as a transitive dependency, so this pins nothing new.
+  image: ^4.8.0
   # Support-chat attachments. image_picker cannot select a PDF, so documents
   # need this. It is a native plugin: adding it means a full Codemagic /
   # Shorebird build, NOT an OTA patch.

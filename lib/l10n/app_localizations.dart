@@ -3072,6 +3072,8 @@ class S {
   String get useCamera => _es ? 'Usar Cámara' : 'Use Camera';
   String stepOf(int step, int total) =>
       _es ? 'Paso $step de $total' : 'Step $step of $total';
+  String photoOf(int photo, int total) =>
+      _es ? 'Foto $photo de $total' : 'Photo $photo of $total';
   String get firstNameLabel => _es ? 'Nombre' : 'First name';
   String get lastNameLabel => _es ? 'Apellido' : 'Last name';
   String get emailAddressLabel => _es ? 'Correo electrónico' : 'Email address';
@@ -3434,6 +3436,47 @@ class S {
   String get passport => _es ? 'Pasaporte' : 'Passport';
   String get frontAndBack => _es ? 'Frente y dorso' : 'Front & Back';
   String get frontOnly => _es ? 'Solo frente' : 'Front Only';
+
+  // ── Document photo guidelines ──
+  String get guidelinesLicenseTitle => _es
+      ? 'Pautas para tomar la foto de tu licencia de conducir'
+      : "Guidelines for taking a photo of your driver's license";
+  String get guidelinesGovIdTitle => _es
+      ? 'Pautas para tomar la foto de tu identificación oficial'
+      : 'Guidelines for taking a photo of your government ID';
+  String get guidelinesPassportTitle => _es
+      ? 'Pautas para tomar la foto de tu pasaporte'
+      : 'Guidelines for taking a photo of your passport';
+
+  String get guidelineLicenseValid => _es
+      ? 'Asegúrate de que tu licencia esté vigente y sea válida'
+      : 'Make sure your license is current and valid';
+  String get guidelineLicensePhysical => _es
+      ? 'La imagen que subas debe ser de tu licencia física'
+      : 'The image you upload must be of your physical license';
+  String get guidelineLicenseCorners => _es
+      ? 'Asegúrate de que la foto salga nítida, que no esté borrosa, y que se vean las cuatro esquinas de tu licencia para evitar pasos de verificación adicionales'
+      : 'Ensure the photo is clear, not blurry and includes all four corners of your license to avoid additional verification steps';
+
+  String get guidelineGovIdValid => _es
+      ? 'Asegúrate de que tu identificación oficial esté vigente y sea válida'
+      : 'Make sure your government ID is current and valid';
+  String get guidelineGovIdPhysical => _es
+      ? 'La imagen que subas debe ser de tu identificación física'
+      : 'The image you upload must be of your physical ID';
+  String get guidelineGovIdCorners => _es
+      ? 'Asegúrate de que la foto salga nítida, que no esté borrosa, y que se vean las cuatro esquinas de tu identificación para evitar pasos de verificación adicionales'
+      : 'Ensure the photo is clear, not blurry and includes all four corners of your ID to avoid additional verification steps';
+
+  String get guidelinePassportValid => _es
+      ? 'Asegúrate de que tu pasaporte no esté vencido'
+      : 'Make sure your passport has not expired and is still valid';
+  String get guidelinePassportPhysical => _es
+      ? 'La imagen que subas debe ser de tu pasaporte físico'
+      : 'The image you upload must be of your physical passport';
+  String get guidelinePassportCorners => _es
+      ? 'Asegúrate de que la foto salga nítida, que no esté borrosa, y que se vean las cuatro esquinas de la página de datos para evitar pasos de verificación adicionales'
+      : 'Ensure the photo is clear, not blurry and includes all four corners of the photo page to avoid additional verification steps';
 
   // ── Verification steps ──
   String get scanYourDocument =>
@@ -4245,6 +4288,13 @@ class S {
       : 'Help with luggage and offer a premium experience.';
 
   // ── Signup ──
+  /// Headings that split the driver's document checklist in two.
+  /// Shown when nine digits are in but they cannot be an SSN.
+  String get ssnNotPossible => _es
+      ? 'Ese número no puede ser un Social Security Number. Revisa los dígitos.'
+      : 'That cannot be a Social Security Number. Check the digits.';
+  String get docsAboutYou => _es ? 'Sobre ti' : 'About you';
+  String get docsAboutYourCar => _es ? 'Sobre tu auto' : 'About your car';
   String get carRegistration =>
       _es ? 'Registro del vehículo' : 'Car Registration';
   String get carRegistrationSubtitle => _es

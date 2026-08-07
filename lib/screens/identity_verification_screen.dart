@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:ui' as ui;
 import 'package:camera/camera.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -15,9 +16,13 @@ import '../services/api_service.dart';
 import '../services/local_data_service.dart';
 import '../services/user_session.dart';
 import '../services/firebase_auth_recovery.dart';
+import '../utils/doc_frame_crop.dart';
+import '../widgets/doc_scan_illustration.dart';
+import '../widgets/neu_style.dart';
 
 /// Rider identity verification flow:
 ///  Step 0 — Intro: choose document type
+///  Step 7 — Guidelines for the chosen document (sits between 0 and 1)
 ///  Step 1 — Scan document(s) inline (front, then back for license)
 ///  Step 2 — Selfie capture
 ///  Step 3 — Processing / submitting
@@ -37,7 +42,12 @@ class _IdentityVerificationScreenState extends State<IdentityVerificationScreen>
   static const _gold = Color(0xFFE8C547);
   static const _goldDark = Color(0xFFB8972E);
 
-  // 0=intro, 1=scanning, 2=selfie-guide, 3=processing, 4=pending, 5=confirmed, 6=rejected
+  // 0=intro, 7=doc guidelines, 1=scanning, 2=selfie-guide, 3=processing,
+  // 4=pending, 5=confirmed, 6=rejected
+  //
+  // 7 is out of order on purpose: it was added after the fact and the other
+  // numbers are referenced from a dozen places, so renumbering to slot it in
+  // would have been a large diff for no gain.
   int _step = 0;
   String? _docFrontPath;
   String? _docBackPath;
@@ -105,14 +115,15 @@ class _IdentityVerificationScreenState extends State<IdentityVerificationScreen>
   //  FLOW CONTROL
   // ════════════════════════════════════════════════════
 
-  /// User picked a doc type — go to scanner for the front
+  /// Picked a document in the sheet. Goes to the guidelines for THAT document
+  /// first — the camera only opens once they tap Next.
   void _selectDocType(String type) {
     setState(() {
       _docType = type;
       _scanningBack = false;
       _docFrontPath = null;
       _docBackPath = null;
-      _step = 1; // scanning
+      _step = 7; // guidelines for the chosen document
     });
   }
 
@@ -389,8 +400,10 @@ class _IdentityVerificationScreenState extends State<IdentityVerificationScreen>
             // Go back to front
             setState(() => _scanningBack = false);
           } else {
-            // Go back to intro
-            setState(() => _step = 0);
+            // Back to the guidelines for this document, not all the way out —
+            // they can re-read them and tap Next, or X out to the intro from
+            // there. Before the guidelines step existed this went to 0.
+            setState(() => _step = 7);
           }
         },
       );
@@ -429,6 +442,8 @@ class _IdentityVerificationScreenState extends State<IdentityVerificationScreen>
     switch (_step) {
       case 0:
         return _buildIntro(c);
+      case 7:
+        return _buildDocGuidelines(c);
       case 2:
         return _buildSelfieGuide(c);
       case 3:
@@ -524,9 +539,9 @@ class _IdentityVerificationScreenState extends State<IdentityVerificationScreen>
                 ),
                 elevation: 0,
               ),
-              child: const Text(
-                'Start Verification',
-                style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
+              child: Text(
+                S.of(context).startVerification,
+                style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
               ),
             ),
           ),
@@ -545,59 +560,60 @@ class _IdentityVerificationScreenState extends State<IdentityVerificationScreen>
     );
   }
 
-  /// Bottom sheet to pick document type before opening camera
+  /// Bottom sheet to pick document type before opening camera.
+  ///
+  /// Neumorphic (rule 18): [neuBase] ground, each option a raised [neuBox],
+  /// its icon in a sunken well. The neu system is dark-only, so the text
+  /// colors here are literal instead of coming from [AppColors] — pulling
+  /// light-mode text onto a #14141A sheet would be white-on-white.
   void _showDocTypePicker() {
-    final c = AppColors.of(context);
     showModalBottomSheet<String>(
       context: context,
       backgroundColor: Colors.transparent,
       builder: (ctx) => Container(
-        decoration: BoxDecoration(
-          color: c.cardBg,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        decoration: const BoxDecoration(
+          color: neuBase,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
         ),
         padding: const EdgeInsets.fromLTRB(24, 12, 24, 0),
         child: SafeArea(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              // Handle bar
+              // Handle bar — sunken, so it reads as a groove in the sheet.
               Container(
-                width: 40,
-                height: 4,
-                margin: const EdgeInsets.only(bottom: 20),
-                decoration: BoxDecoration(
-                  color: Colors.white24,
-                  borderRadius: BorderRadius.circular(2),
-                ),
+                width: 44,
+                height: 5,
+                margin: const EdgeInsets.only(bottom: 22),
+                decoration: neuBox(radius: 3, pressed: true),
               ),
               Text(
                 S.of(context).chooseDocToScan,
-                style: TextStyle(
+                style: const TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.w700,
-                  color: c.textPrimary,
+                  color: Colors.white,
                 ),
               ),
               const SizedBox(height: 20),
               _docTypeSheetOption(
-                c, ctx,
+                ctx,
                 Icons.credit_card_rounded,
                 S.of(context).driversLicense,
                 S.of(context).frontAndBack,
                 'license',
               ),
-              const SizedBox(height: 10),
+              const SizedBox(height: 12),
               _docTypeSheetOption(
-                c, ctx,
+                ctx,
                 Icons.badge_rounded,
                 S.of(context).governmentId,
                 S.of(context).frontOnly,
                 'government_id',
               ),
-              const SizedBox(height: 10),
+              const SizedBox(height: 12),
               _docTypeSheetOption(
-                c, ctx,
+                ctx,
                 Icons.menu_book_rounded,
                 S.of(context).passport,
                 S.of(context).frontOnly,
@@ -614,7 +630,6 @@ class _IdentityVerificationScreenState extends State<IdentityVerificationScreen>
   }
 
   Widget _docTypeSheetOption(
-    AppColors c,
     BuildContext ctx,
     IconData icon,
     String title,
@@ -625,20 +640,14 @@ class _IdentityVerificationScreenState extends State<IdentityVerificationScreen>
       onTap: () => Navigator.pop(ctx, type),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-        decoration: BoxDecoration(
-          color: _gold.withValues(alpha: 0.06),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: _gold.withValues(alpha: 0.15)),
-        ),
+        decoration: neuBox(radius: 18),
         child: Row(
           children: [
             Container(
               width: 44,
               height: 44,
-              decoration: BoxDecoration(
-                color: _gold.withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(12),
-              ),
+              alignment: Alignment.center,
+              decoration: neuBox(radius: 13, pressed: true),
               child: Icon(icon, color: _gold, size: 22),
             ),
             const SizedBox(width: 14),
@@ -648,10 +657,10 @@ class _IdentityVerificationScreenState extends State<IdentityVerificationScreen>
                 children: [
                   Text(
                     title,
-                    style: TextStyle(
+                    style: const TextStyle(
                       fontSize: 15,
                       fontWeight: FontWeight.w700,
-                      color: c.textPrimary,
+                      color: Colors.white,
                     ),
                   ),
                   const SizedBox(height: 2),
@@ -659,13 +668,14 @@ class _IdentityVerificationScreenState extends State<IdentityVerificationScreen>
                     subtitle,
                     style: TextStyle(
                       fontSize: 12,
-                      color: c.textTertiary,
+                      color: Colors.white.withValues(alpha: 0.45),
                     ),
                   ),
                 ],
               ),
             ),
-            Icon(Icons.chevron_right_rounded, color: _gold.withValues(alpha: 0.5), size: 22),
+            Icon(Icons.chevron_right_rounded,
+                color: _gold.withValues(alpha: 0.5), size: 22),
           ],
         ),
       ),
@@ -702,6 +712,156 @@ class _IdentityVerificationScreenState extends State<IdentityVerificationScreen>
   // ═══════════════════════════════════════════
   //  Step 2 — Selfie guide
   // ═══════════════════════════════════════════
+  // ═══════════════════════════════════════════
+  //  Step 7 — Guidelines for the chosen document
+  // ═══════════════════════════════════════════
+
+  String _guidelinesTitle() {
+    switch (_docType) {
+      case 'passport':
+        return S.of(context).guidelinesPassportTitle;
+      case 'government_id':
+        return S.of(context).guidelinesGovIdTitle;
+      default:
+        return S.of(context).guidelinesLicenseTitle;
+    }
+  }
+
+  List<String> _guidelinesBullets() {
+    final s = S.of(context);
+    switch (_docType) {
+      case 'passport':
+        return [
+          s.guidelinePassportValid,
+          s.guidelinePassportPhysical,
+          s.guidelinePassportCorners,
+        ];
+      case 'government_id':
+        return [
+          s.guidelineGovIdValid,
+          s.guidelineGovIdPhysical,
+          s.guidelineGovIdCorners,
+        ];
+      default:
+        return [
+          s.guidelineLicenseValid,
+          s.guidelineLicensePhysical,
+          s.guidelineLicenseCorners,
+        ];
+    }
+  }
+
+  Widget _buildDocGuidelines(AppColors c) {
+    return Padding(
+      key: const ValueKey(7),
+      padding: const EdgeInsets.symmetric(horizontal: 24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const SizedBox(height: 8),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: GestureDetector(
+              // Back to the intro, not straight into the camera — the whole
+              // point of this step is that nothing opens until they tap Next.
+              onTap: () => setState(() => _step = 0),
+              child: Container(
+                width: 40,
+                height: 40,
+                alignment: Alignment.center,
+                decoration: neuBox(radius: 12),
+                child: const Icon(Icons.close_rounded,
+                    color: Colors.white, size: 20),
+              ),
+            ),
+          ),
+          Expanded(
+            child: SingleChildScrollView(
+              // Long copy on a small phone must scroll rather than overflow.
+              physics: const BouncingScrollPhysics(),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const SizedBox(height: 28),
+                  Center(
+                    child: DocScanIllustration(docType: _docType, height: 190),
+                  ),
+                  const SizedBox(height: 30),
+                  Text(
+                    _guidelinesTitle(),
+                    style: TextStyle(
+                      fontSize: 23,
+                      height: 1.25,
+                      fontWeight: FontWeight.w800,
+                      color: c.textPrimary,
+                    ),
+                  ),
+                  const SizedBox(height: 22),
+                  for (final bullet in _guidelinesBullets())
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 16),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Container(
+                            width: 5,
+                            height: 5,
+                            margin: const EdgeInsets.only(top: 9, right: 14),
+                            decoration: const BoxDecoration(
+                              color: _gold,
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                          Expanded(
+                            child: Text(
+                              bullet,
+                              style: TextStyle(
+                                fontSize: 15,
+                                height: 1.45,
+                                color: c.textSecondary,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  const SizedBox(height: 12),
+                ],
+              ),
+            ),
+          ),
+          GestureDetector(
+            onTap: () {
+              HapticService.lightImpact();
+              setState(() => _step = 1); // now open the camera
+            },
+            child: Container(
+              height: 56,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(colors: [_gold, _goldDark]),
+                borderRadius: BorderRadius.circular(28),
+              ),
+              child: Text(
+                S.of(context).next,
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w800,
+                  color: Colors.black,
+                ),
+              ),
+            ),
+          ),
+          SizedBox(
+            height: MediaQuery.of(context).viewInsets.bottom > 0
+                ? 12
+                : MediaQuery.of(context).padding.bottom + 24,
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildSelfieGuide(AppColors c) {
     return Padding(
       key: const ValueKey(2),
@@ -1241,6 +1401,8 @@ class _InlineDocScannerState extends State<_InlineDocScanner>
 
   late AnimationController _cornerAnim;
 
+  static const double _frameRadius = 14;
+
   String get _scanTitle {
     if (widget.docType == 'passport') return S.of(context).scanPassport;
     if (widget.docType == 'government_id') return S.of(context).scanId;
@@ -1399,8 +1561,77 @@ class _InlineDocScannerState extends State<_InlineDocScanner>
     super.dispose();
   }
 
+  /// Cuts the captured photo down to what was inside the brackets.
+  ///
+  /// Returns [srcPath] untouched on any failure. Nothing here is worth
+  /// blocking a verification over — a full-frame photo still gets reviewed,
+  /// an error message does not.
+  Future<String> _cropToFrame(String srcPath, Size screen) async {
+    ui.Image? img;
+    try {
+      final bytes = await File(srcPath).readAsBytes();
+      final codec = await ui.instantiateImageCodec(bytes);
+      img = (await codec.getNextFrame()).image;
+      codec.dispose();
+
+      final src = mapFrameToImage(
+        docScanFrame(screen),
+        screen,
+        Size(img.width.toDouble(), img.height.toDouble()),
+      );
+      // null means the mapping is not trustworthy — upload the whole photo
+      // rather than a strip of desk. See lib/utils/doc_frame_crop.dart.
+      if (src == null) return srcPath;
+
+      final w = src.width.round();
+      final h = src.height.round();
+      final rec = ui.PictureRecorder();
+      Canvas(rec).drawImageRect(
+        img,
+        src,
+        Rect.fromLTWH(0, 0, w.toDouble(), h.toDouble()),
+        Paint()..filterQuality = FilterQuality.high,
+      );
+      final picture = rec.endRecording();
+      final ui.Image cropped;
+      try {
+        cropped = await picture.toImage(w, h);
+      } finally {
+        picture.dispose();
+      }
+
+      final rgba = await () async {
+        try {
+          return await cropped.toByteData(format: ui.ImageByteFormat.rawRgba);
+        } finally {
+          cropped.dispose();
+        }
+      }();
+      // toByteData genuinely returns null on iOS when the raster context is
+      // lost (project rule 26). That is not an error worth surfacing.
+      if (rgba == null) return srcPath;
+
+      final jpeg = jpegFromRgba(rgba, w, h);
+      if (jpeg == null) return srcPath;
+
+      final dst = '${srcPath.replaceAll(RegExp(r'\.[^.\/]*$'), '')}_frame.jpg';
+      await File(dst).writeAsBytes(jpeg, flush: true);
+      return dst;
+    } catch (e) {
+      debugPrint('[DocScanner] frame crop failed, keeping full photo: $e');
+      return srcPath;
+    } finally {
+      img?.dispose();
+    }
+  }
+
   Future<void> _capture() async {
     if (_ctrl == null || !_ctrl!.value.isInitialized || _capturing) return;
+    // Read the screen BEFORE anything awaits — this runs from onTap, so it
+    // is outside build (project rule 26), and the drain loop below is an
+    // await gap that can outlive the element. Size.zero makes _cropToFrame
+    // bail to the full photo rather than crop against garbage.
+    final screen = MediaQuery.maybeOf(context)?.size ?? Size.zero;
     _scanTimer?.cancel();
     while (_scanning) {
       await Future.delayed(const Duration(milliseconds: 50));
@@ -1409,7 +1640,10 @@ class _InlineDocScannerState extends State<_InlineDocScanner>
     HapticService.mediumImpact();
     try {
       final xFile = await _ctrl!.takePicture();
-      final inputImage = InputImage.fromFilePath(xFile.path);
+      // Crop first, then read text off the crop: the OCR no longer has to
+      // ignore whatever was on the desk around the document.
+      final path = await _cropToFrame(xFile.path, screen);
+      final inputImage = InputImage.fromFilePath(path);
       final result = await _textRecognizer.processImage(inputImage);
       final text = result.text.toLowerCase();
       final isDoc =
@@ -1423,7 +1657,7 @@ class _InlineDocScannerState extends State<_InlineDocScanner>
       if (isDoc) {
         if (mounted) {
           setState(() {
-            _capturedPath = xFile.path;
+            _capturedPath = path;
             _documentDetected = true;
             _detectedHint = '';
           });
@@ -1431,7 +1665,7 @@ class _InlineDocScannerState extends State<_InlineDocScanner>
       } else {
         if (mounted) {
           setState(() {
-            _capturedPath = xFile.path;
+            _capturedPath = path;
             _documentDetected = false;
             _detectedHint = S.of(context).noDocumentDetected;
           });
@@ -1440,9 +1674,10 @@ class _InlineDocScannerState extends State<_InlineDocScanner>
     } catch (_) {
       try {
         final xFile = await _ctrl!.takePicture();
+        final path = await _cropToFrame(xFile.path, screen);
         if (mounted) {
           setState(() {
-            _capturedPath = xFile.path;
+            _capturedPath = path;
             _documentDetected = true;
           });
         }
@@ -1479,8 +1714,12 @@ class _InlineDocScannerState extends State<_InlineDocScanner>
     return Stack(
       fit: StackFit.expand,
       children: [
-        Image.file(File(_capturedPath!), fit: BoxFit.cover),
-        Container(color: Colors.black.withValues(alpha: 0.4)),
+        // contain, not cover: this is now a crop of the scan window, and
+        // covering the screen with it would cut the document a second time —
+        // the driver has to see exactly what is about to be uploaded.
+        Container(color: neuBase),
+        Center(child: Image.file(File(_capturedPath!), fit: BoxFit.contain)),
+        Container(color: Colors.black.withValues(alpha: 0.25)),
         // Top bar — X always top-left, no title after capture
         SafeArea(
           child: Padding(
@@ -1490,13 +1729,12 @@ class _InlineDocScannerState extends State<_InlineDocScanner>
               child: GestureDetector(
                 onTap: _retake,
                 child: Container(
-                  width: 40,
-                  height: 40,
-                  decoration: BoxDecoration(
-                    color: Colors.black45,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: const Icon(Icons.close, color: Colors.white, size: 22),
+                  width: 44,
+                  height: 44,
+                  alignment: Alignment.center,
+                  decoration: neuBox(radius: 14),
+                  child: const Icon(Icons.close_rounded,
+                      color: Colors.white, size: 22),
                 ),
               ),
             ),
@@ -1516,68 +1754,84 @@ class _InlineDocScannerState extends State<_InlineDocScanner>
                   if (!_documentDetected && _detectedHint.isNotEmpty)
                     Container(
                       margin: const EdgeInsets.only(bottom: 14),
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                      decoration: BoxDecoration(
-                        color: Colors.orange.shade900.withValues(alpha: 0.85),
-                        borderRadius: BorderRadius.circular(12),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 16, vertical: 12),
+                      decoration: neuBox(
+                        radius: 16,
+                        borderColor: const Color(0xFFE08A2B)
+                            .withValues(alpha: 0.45),
                       ),
                       child: Row(
                         children: [
-                          const Icon(Icons.warning_amber_rounded, color: Colors.white, size: 22),
+                          const Icon(Icons.warning_amber_rounded,
+                              color: Color(0xFFE8A54B), size: 22),
                           const SizedBox(width: 10),
                           Expanded(
                             child: Text(
                               _detectedHint,
-                              style: const TextStyle(
-                                color: Colors.white, fontSize: 13, fontWeight: FontWeight.w500,
+                              style: TextStyle(
+                                color: Colors.white.withValues(alpha: 0.8),
+                                fontSize: 13,
+                                fontWeight: FontWeight.w500,
+                                height: 1.35,
                               ),
                             ),
                           ),
                         ],
                       ),
                     ),
-                  SizedBox(
-                    width: double.infinity,
-                    height: 54,
-                    child: ElevatedButton(
-                      onPressed: _usePhoto,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: _gold,
-                        foregroundColor: Colors.black,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                        elevation: 0,
+                  GestureDetector(
+                    onTap: _usePhoto,
+                    child: Container(
+                      width: double.infinity,
+                      height: 56,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(
+                            colors: [_gold, Color(0xFFB8972E)]),
+                        borderRadius: BorderRadius.circular(28),
                       ),
                       child: Text(
                         S.of(context).usePhoto,
-                        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
+                        style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w800,
+                            color: Colors.black),
                       ),
                     ),
                   ),
                   const SizedBox(height: 12),
-                  SizedBox(
-                    width: double.infinity,
-                    height: 48,
-                    child: OutlinedButton(
-                      onPressed: _retake,
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: Colors.white,
-                        side: const BorderSide(color: Colors.white30),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                      ),
+                  GestureDetector(
+                    onTap: _retake,
+                    child: Container(
+                      width: double.infinity,
+                      height: 52,
+                      alignment: Alignment.center,
+                      decoration: neuBox(radius: 26),
                       child: Text(
                         S.of(context).retake,
-                        style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.white.withValues(alpha: 0.85),
+                        ),
                       ),
                     ),
                   ),
                   const SizedBox(height: 14),
-                  // Step counter
-                  Text(
-                    '${widget.currentPhoto} of ${widget.totalPhotos}',
-                    style: TextStyle(
-                      color: _gold,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 14, vertical: 6),
+                    decoration: neuBox(radius: 12, pressed: true),
+                    child: Text(
+                      S
+                          .of(context)
+                          .photoOf(widget.currentPhoto, widget.totalPhotos),
+                      style: TextStyle(
+                        color: _gold.withValues(alpha: 0.75),
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                   ),
                 ],
@@ -1623,40 +1877,66 @@ class _InlineDocScannerState extends State<_InlineDocScanner>
                   GestureDetector(
                     onTap: widget.onCancel,
                     child: Container(
-                      width: 40,
-                      height: 40,
-                      decoration: BoxDecoration(
-                        color: Colors.black.withValues(alpha: 0.6),
-                        shape: BoxShape.circle,
+                      width: 44,
+                      height: 44,
+                      alignment: Alignment.center,
+                      decoration: neuBox(radius: 14),
+                      child: const Icon(Icons.close_rounded,
+                          color: Colors.white, size: 22),
+                    ),
+                  ),
+                  // Expanded, NOT Spacer + Flexible. Flexible defaults to
+                  // flex 1, so between two Spacers it becomes a third equal
+                  // claimant and RenderFlex caps it at one third of the free
+                  // space — 90 px on a 390 px phone, which turns "Scan Front
+                  // of License" into "Scan Fro…". Expanded owns all of it,
+                  // and since both flanking buttons are 44 px the pill still
+                  // lands dead centre.
+                  Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      child: Center(
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 14, vertical: 9),
+                          decoration: neuBox(radius: 16),
+                          // scaleDown rather than ellipsis: the longest
+                          // Spanish title still overruns a 360 px phone by a
+                          // few px, and shrinking a hair beats hiding which
+                          // side of the licence this shot is for.
+                          child: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Text(
+                              _scanTitle,
+                              maxLines: 1,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 15,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                        ),
                       ),
-                      child: const Icon(Icons.close_rounded, color: Colors.white, size: 24),
                     ),
                   ),
-                  const Spacer(),
-                  Text(
-                    _scanTitle,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 16,
-                      fontWeight: FontWeight.w700,
-                      shadows: [Shadow(color: Colors.black54, blurRadius: 6)],
-                    ),
-                  ),
-                  const Spacer(),
                   GestureDetector(
                     onTap: _toggleFlash,
                     child: Container(
-                      width: 40,
-                      height: 40,
-                      decoration: BoxDecoration(
-                        color: Colors.black.withValues(alpha: 0.6),
-                        shape: BoxShape.circle,
-                      ),
+                      width: 44,
+                      height: 44,
+                      alignment: Alignment.center,
+                      // Sunken while off, raised once armed — the state reads
+                      // from the surface, not just from the icon.
+                      decoration: neuBox(
+                          radius: 14, pressed: _flashMode == FlashMode.off),
                       child: Icon(
                         _flashMode == FlashMode.off
                             ? Icons.flash_off_rounded
                             : Icons.flash_on_rounded,
-                        color: _flashMode == FlashMode.off ? Colors.white : _gold,
+                        color: _flashMode == FlashMode.off
+                            ? Colors.white.withValues(alpha: 0.55)
+                            : _gold,
                         size: 22,
                       ),
                     ),
@@ -1669,22 +1949,34 @@ class _InlineDocScannerState extends State<_InlineDocScanner>
 
         // Instruction text
         Positioned(
-          bottom: 180,
+          bottom: 186,
           left: 24,
           right: 24,
-          child: Text(
-            _documentDetected
-                ? S.of(context).documentDetectedTakePhoto
-                : S.of(context).alignDocumentInstruction,
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              color: _documentDetected
-                  ? const Color(0xFF4CAF50)
-                  : Colors.white.withValues(alpha: 0.85),
-              fontSize: 14,
-              fontWeight: FontWeight.w600,
-              height: 1.4,
-              shadows: const [Shadow(color: Colors.black87, blurRadius: 8)],
+          child: Center(
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 250),
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 18, vertical: 11),
+              decoration: neuBox(
+                radius: 18,
+                borderColor: _documentDetected
+                    ? const Color(0xFF4CAF50).withValues(alpha: 0.45)
+                    : null,
+              ),
+              child: Text(
+                _documentDetected
+                    ? S.of(context).documentDetectedTakePhoto
+                    : S.of(context).alignDocumentInstruction,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: _documentDetected
+                      ? const Color(0xFF6FCB74)
+                      : Colors.white.withValues(alpha: 0.8),
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  height: 1.4,
+                ),
+              ),
             ),
           ),
         ),
@@ -1697,44 +1989,61 @@ class _InlineDocScannerState extends State<_InlineDocScanner>
           child: Column(
             children: [
               Center(
+                // The shutter sits in a raised neu collar so the gold disc
+                // reads as a physical button set into the page, not a
+                // sticker floating over the camera.
                 child: GestureDetector(
                   onTap: _initialized ? _capture : null,
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 200),
-                    width: _capturing ? 68 : 74,
-                    height: _capturing ? 68 : 74,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: _documentDetected ? const Color(0xFF4CAF50) : _gold,
-                      boxShadow: [
-                        BoxShadow(
-                          color: (_documentDetected ? const Color(0xFF4CAF50) : _gold)
-                              .withValues(alpha: 0.45),
-                          blurRadius: 20,
-                          spreadRadius: 2,
-                        ),
-                      ],
+                  child: Container(
+                    width: 92,
+                    height: 92,
+                    alignment: Alignment.center,
+                    decoration: neuBox(radius: 46),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 200),
+                      width: _capturing ? 62 : 70,
+                      height: _capturing ? 62 : 70,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color:
+                            _documentDetected ? const Color(0xFF4CAF50) : _gold,
+                        boxShadow: [
+                          BoxShadow(
+                            color: (_documentDetected
+                                    ? const Color(0xFF4CAF50)
+                                    : _gold)
+                                .withValues(alpha: 0.38),
+                            blurRadius: 18,
+                            spreadRadius: 1,
+                          ),
+                        ],
+                      ),
+                      child: _capturing
+                          ? const Padding(
+                              padding: EdgeInsets.all(19),
+                              child: CircularProgressIndicator(
+                                color: Colors.black,
+                                strokeWidth: 2.5,
+                              ),
+                            )
+                          : const Icon(Icons.camera_alt_rounded,
+                              color: Colors.black, size: 30),
                     ),
-                    child: _capturing
-                        ? const Padding(
-                            padding: EdgeInsets.all(20),
-                            child: CircularProgressIndicator(
-                              color: Colors.black,
-                              strokeWidth: 2.5,
-                            ),
-                          )
-                        : const Icon(Icons.camera_alt_rounded, color: Colors.black, size: 32),
                   ),
                 ),
               ),
-              const SizedBox(height: 12),
-              // Step counter below shutter
-              Text(
-                '${widget.currentPhoto} of ${widget.totalPhotos}',
-                style: TextStyle(
-                  color: _gold.withValues(alpha: 0.7),
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
+              const SizedBox(height: 14),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                decoration: neuBox(radius: 12, pressed: true),
+                child: Text(
+                  S.of(context).photoOf(widget.currentPhoto, widget.totalPhotos),
+                  style: TextStyle(
+                    color: _gold.withValues(alpha: 0.75),
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
               ),
             ],
@@ -1746,45 +2055,56 @@ class _InlineDocScannerState extends State<_InlineDocScanner>
 
   Widget _buildOverlay(BuildContext context) {
     final size = MediaQuery.of(context).size;
-    final frameW = size.width * 0.82;
-    final frameH = frameW * 0.63;
-    final frameLeft = (size.width - frameW) / 2;
-    final frameTop = (size.height - frameH) / 2 - 30;
+    final f = docScanFrame(size);
 
-    return AnimatedBuilder(
-      animation: _cornerAnim,
-      builder: (_, __) {
-        final glow = _cornerAnim.value;
-        return Stack(
-          children: [
-            Positioned(top: 0, left: 0, right: 0, height: frameTop,
-              child: Container(color: Colors.black.withValues(alpha: 0.62))),
-            Positioned(top: frameTop + frameH, left: 0, right: 0, bottom: 0,
-              child: Container(color: Colors.black.withValues(alpha: 0.62))),
-            Positioned(top: frameTop, left: 0, width: frameLeft, height: frameH,
-              child: Container(color: Colors.black.withValues(alpha: 0.62))),
-            Positioned(top: frameTop, left: frameLeft + frameW, right: 0, height: frameH,
-              child: Container(color: Colors.black.withValues(alpha: 0.62))),
-            Positioned(
-              top: frameTop, left: frameLeft,
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 300),
-                width: frameW, height: frameH,
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                    color: _documentDetected
-                        ? const Color(0xFF4CAF50).withValues(alpha: 0.7 + 0.3 * glow)
-                        : _gold.withValues(alpha: 0.5 + 0.5 * glow),
-                    width: _documentDetected ? 3 : 2,
+    return Stack(
+      children: [
+        // Everything outside the window goes soft. Only what stays sharp is
+        // uploaded, so the blur is not decoration — it is the crop, shown.
+        //
+        // Deliberately outside the AnimatedBuilder below: a BackdropFilter
+        // rebuilt on every frame of the corner pulse would re-blur the whole
+        // camera feed sixty times a second.
+        Positioned.fill(
+          child: ClipPath(
+            clipper: _FrameCutoutClipper(f, _frameRadius),
+            child: BackdropFilter(
+              filter: ui.ImageFilter.blur(sigmaX: 9, sigmaY: 9),
+              child: Container(color: Colors.black.withValues(alpha: 0.45)),
+            ),
+          ),
+        ),
+        AnimatedBuilder(
+          animation: _cornerAnim,
+          builder: (_, __) {
+            final glow = _cornerAnim.value;
+            return Stack(
+              children: [
+                Positioned(
+                  top: f.top,
+                  left: f.left,
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 300),
+                    width: f.width,
+                    height: f.height,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(_frameRadius),
+                      border: Border.all(
+                        color: _documentDetected
+                            ? const Color(0xFF4CAF50)
+                                .withValues(alpha: 0.7 + 0.3 * glow)
+                            : _gold.withValues(alpha: 0.5 + 0.5 * glow),
+                        width: _documentDetected ? 3 : 2,
+                      ),
+                    ),
                   ),
                 ),
-              ),
-            ),
-            ..._corners(frameLeft, frameTop, frameW, frameH, glow),
-          ],
-        );
-      },
+                ..._corners(f.left, f.top, f.width, f.height, glow),
+              ],
+            );
+          },
+        ),
+      ],
     );
   }
 
@@ -1808,6 +2128,28 @@ class _InlineDocScannerState extends State<_InlineDocScanner>
       child: CustomPaint(painter: _CornerPainter(c, thick, left, top)),
     );
   }
+}
+
+/// Everything EXCEPT the scan window. Whatever is drawn through this clip
+/// lands outside the frame, which is how the blur leaves the document sharp
+/// and softens the desk around it.
+class _FrameCutoutClipper extends CustomClipper<Path> {
+  final Rect frame;
+  final double radius;
+  const _FrameCutoutClipper(this.frame, this.radius);
+
+  @override
+  Path getClip(Size size) => Path.combine(
+        PathOperation.difference,
+        Path()..addRect(Offset.zero & size),
+        Path()
+          ..addRRect(
+              RRect.fromRectAndRadius(frame, Radius.circular(radius))),
+      );
+
+  @override
+  bool shouldReclip(_FrameCutoutClipper old) =>
+      old.frame != frame || old.radius != radius;
 }
 
 class _CornerPainter extends CustomPainter {

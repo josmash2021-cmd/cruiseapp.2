@@ -1410,11 +1410,14 @@ class S {
   // ── Payout methods, rebuilt layout ──
   String get payoutYourMethods =>
       _es ? 'Tus métodos de cobro' : 'Your payout methods';
+  // Monday, because that is when the scheduler actually fires — see
+  // _PAYOUT_WEEKDAY = 0 in backend/main.py. This line has said Tuesday and
+  // Wednesday at different times; neither was ever the run day.
   String get payoutMethodsIntro => _es
-      ? 'Tus ganancias se depositan cada miércoles, salvo que pidas retirarlas '
-          'antes con Retiro exprés.'
-      : 'Your earnings are deposited every Wednesday, unless you ask to cash '
-          'out sooner with Express Pay.';
+      ? 'Tus ganancias se depositan cada lunes, salvo que pidas retirarlas '
+          'antes a tu tarjeta de débito.'
+      : 'Your earnings are deposited every Monday, unless you ask to cash '
+          'out sooner to your debit card.';
   String get payoutExpressPay => _es ? 'Retiro exprés' : 'Express Pay';
   String get payoutWeekly => _es ? 'Pago semanal' : 'Weekly payouts';
   String get payoutOnRequest => _es ? 'A petición' : 'On request';
@@ -1424,24 +1427,27 @@ class S {
       ? 'Cobra cuando quieras, con una comisión'
       : 'Cash out whenever you like, for a fee';
   String get payoutWeeklyDesc =>
-      _es ? 'Cada miércoles, sin comisión' : 'Every Wednesday, no fee';
+      _es ? 'Cada lunes, sin comisión' : 'Every Monday, no fee';
   String payoutEndingIn(String last4) =>
       _es ? 'Terminada en •$last4' : 'Ending in •$last4';
 
   String get payoutUpdateCard =>
       _es ? 'Actualizar tarjeta' : 'Update debit card';
+  // "Retiro instantáneo" / "Instant cashout", matching the card that opens
+  // this sheet. It said "Retiro exprés" / "Express Pay", a product name
+  // nothing else in the app shows any more.
   String get payoutUpdateCardDesc => _es
-      ? 'Con Retiro exprés puedes cobrar tus ganancias cuando quieras, '
-          'con una pequeña comisión cada vez.'
-      : 'With Express Pay you can cash out your earnings whenever you want, '
-          'for a small fee each time.';
+      ? 'Con el Retiro instantáneo puedes cobrar tus ganancias cuando '
+          'quieras, con una pequeña comisión cada vez.'
+      : 'With Instant cashout you can cash out your earnings whenever you '
+          'want, for a small fee each time.';
   String get payoutUpdateBank =>
       _es ? 'Actualizar cuenta bancaria' : 'Update bank account';
   String get payoutUpdateBankDesc => _es
       ? 'Con el Pago semanal enviamos tus ganancias a esta cuenta cada '
-          'miércoles, sin comisión de retiro.'
+          'lunes, sin comisión de retiro.'
       : 'With Weekly payouts we send your earnings to this bank account '
-          'every Tuesday, with no cashout fee.';
+          'every Monday, with no cashout fee.';
   String get payoutKeepSecure =>
       _es ? 'Protege tus ganancias' : 'Keep your earnings secure';
   String get payoutKeepSecureCard => _es
@@ -1460,6 +1466,175 @@ class S {
           'ruta y cuenta nunca pasan por Cruise.'
       : 'Your bank is chosen in Stripe\'s secure window. Routing and '
           'account numbers never pass through Cruise.';
+
+  // ── Payout methods, card layout ──
+  //
+  // One card per way of getting paid, each answering the same three
+  // questions in the same order: what it costs, when it lands, and where.
+  String get payoutAvailableSection => _es ? 'Disponibles' : 'Available';
+  String get payoutFeeFree => _es ? 'Sin comisión' : 'Free';
+  String payoutFeePercent(String rate, String min) => _es
+      ? '$rate de comisión (mín. $min)'
+      : '$rate fee (min $min)';
+  String get payoutWhenWeekly => _es
+      ? 'Cada lunes · llega en 1–2 días hábiles'
+      : 'Every Monday · arrives in 1–2 business days';
+  String get payoutWhenInstant => _es
+      ? 'Cuando quieras · llega en minutos'
+      : 'Whenever you want · arrives in minutes';
+  String get payoutNoBankLinked =>
+      _es ? 'Sin cuenta vinculada' : 'No account linked';
+  String get payoutNoCardLinked =>
+      _es ? 'Sin tarjeta vinculada' : 'No card linked';
+  String get payoutAddBank =>
+      _es ? 'Agregar cuenta bancaria' : 'Add a bank account';
+  String get payoutAddCard =>
+      _es ? 'Agregar tarjeta de débito' : 'Add a debit card';
+  String get payoutChangeBank => _es ? 'Cambiar cuenta' : 'Change account';
+  String get payoutChangeCard => _es ? 'Cambiar tarjeta' : 'Change card';
+  String payoutInstantMinimum(String amount) =>
+      _es ? 'Mínimo $amount por retiro' : 'Minimum $amount per cashout';
+  String get payoutHelpTitle =>
+      _es ? '¿Cómo te pagamos?' : 'How you get paid';
+  String get payoutHelpWeekly => _es
+      ? 'Cada lunes enviamos tus ganancias a tu cuenta bancaria, sin '
+          'comisión. Suelen llegar en uno o dos días hábiles.'
+      : 'Every Monday we send your earnings to your bank account, with no '
+          'fee. They usually arrive within one or two business days.';
+  // ── Cash out screen ──
+  //
+  // One page, one action. The balance, the day it empties on its own, and
+  // the button that empties it sooner.
+  String get cashoutAvailableBalance =>
+      _es ? 'Saldo disponible' : 'Available balance';
+  String cashoutAutoTransferOn(String date) => _es
+      ? 'La transferencia semanal se hará el $date'
+      : 'Weekly auto-transfer will initiate on $date';
+  String get cashoutInstantButton =>
+      _es ? 'Retiro instantáneo' : 'Instant Cash out';
+  String cashoutFeeLine(String fee, String net) => _es
+      ? 'Comisión $fee · recibes $net'
+      : 'Fee $fee · you receive $net';
+  String get cashoutProcessing =>
+      _es ? 'Procesando tu retiro…' : 'Processing your cash out…';
+  String get cashoutProcessingHint => _es
+      ? 'No cierres la app. Esto toma unos segundos.'
+      : 'Keep the app open. This takes a few seconds.';
+  String cashoutBelowMinimum(String amount) => _es
+      ? 'Necesitas al menos $amount para retirar'
+      : 'You need at least $amount to cash out';
+  String get cashoutNeedCard => _es
+      ? 'Agrega una tarjeta de débito para retirar al instante'
+      : 'Add a debit card to cash out instantly';
+  String get cashoutAddCardAction =>
+      _es ? 'Agregar tarjeta' : 'Add a card';
+  // Seven days is Stripe's verification window on a newly attached card,
+  // not a waiting period we invented — say so, or it reads as us holding
+  // the driver's money back.
+  String cashoutCardVerifying(int days) => _es
+      ? days == 1
+          ? 'Tu tarjeta está en verificación. Podrás retirar mañana.'
+          : 'Tu tarjeta está en verificación. Podrás retirar en $days días.'
+      : days == 1
+          ? 'Your card is being verified. You can cash out tomorrow.'
+          : 'Your card is being verified. You can cash out in $days days.';
+  String get cashoutComingSoon => _es
+      ? 'El retiro instantáneo estará disponible muy pronto'
+      : 'Instant Cash out is coming soon';
+  String get cashoutUnavailable => _es
+      ? 'El retiro instantáneo no está disponible ahora mismo'
+      : 'Instant Cash out is not available right now';
+  String get cashoutNothingToWithdraw =>
+      _es ? 'No tienes saldo para retirar' : 'You have nothing to cash out';
+  String get cashoutFailed => _es
+      ? 'No pudimos completar el retiro. Intenta de nuevo o escribe a soporte.'
+      : 'We could not complete the cash out. Try again or contact support.';
+  String get cashoutInsufficient =>
+      _es ? 'Saldo insuficiente.' : 'Insufficient balance.';
+  String get cashoutNoStripeAccount => _es
+      ? 'Todavía no puedes cobrar: termina de configurar tus pagos en '
+          'Métodos de pago.'
+      : 'You cannot be paid yet — finish setting up your payouts in Payout '
+          'methods.';
+  // Stripe said no before any money moved. Saying so is the whole point:
+  // the balance on screen did not change and the driver should not spend
+  // the next minute wondering whether it did.
+  String get cashoutNotStarted => _es
+      ? 'No pudimos iniciar el retiro. Tu saldo está intacto, inténtalo de '
+          'nuevo.'
+      : 'We could not start the cash out. Your balance is untouched — please '
+          'try again.';
+  // The request timed out. It may well have gone through, and telling them
+  // it failed would be a guess — one they can check for themselves.
+  String get cashoutUncertain => _es
+      ? 'Tardó más de lo normal. Puede que sí haya salido: revisa el '
+          'historial en un minuto antes de intentar otra vez.'
+      : 'That took longer than usual. It may still have gone through — check '
+          'your payout history in a minute before trying again.';
+  // The instant leg failed but the money already left the platform, so it
+  // lands on the normal weekly schedule instead. Not an error — a slower
+  // arrival, and the driver has to be told which one happened.
+  String get cashoutQueuedInstead => _es
+      ? 'Tu retiro se envió, pero no pudo salir al instante. Llegará a tu '
+          'cuenta en 1–2 días hábiles.'
+      : 'Your cash out was sent, but it could not go out instantly. It will '
+          'reach your account in 1–2 business days.';
+
+  // ── Cash out history ──
+  //
+  // Two groups, split by whether the money has landed. Every row names
+  // which of the two ways it moved, because an instant cashout the driver
+  // asked for and the Monday transfer that happens on its own otherwise
+  // look identical: a date and an amount.
+  String get cashoutInitiatedBy =>
+      _es ? 'Iniciado por Cruise' : 'Initiated by Cruise';
+  String get cashoutInitiatedNote => _es
+      ? 'Tu pago se depositará en tu cuenta en 2–3 días hábiles.'
+      : 'Your payment will deposit to your bank in 2–3 business days.';
+  // "Enviado", not "Depositado en el banco".
+  //
+  // A row reaches this section the moment Stripe accepts the transfer, which
+  // for the Monday run is about two business days before the money is in
+  // anyone's bank. Calling that "deposited" sends drivers to check an
+  // account that has nothing in it yet. The note below carries the two real
+  // arrival times, because they differ by method and a section heading
+  // cannot say both.
+  String get cashoutDeposited => _es ? 'Enviado' : 'Sent';
+  String get cashoutDepositedNote => _es
+      ? 'Los depósitos semanales tardan 2–3 días hábiles en llegar a tu '
+          'banco. Los retiros instantáneos llegan a tu tarjeta en minutos.'
+      : 'Weekly deposits take 2–3 business days to reach your bank. Instant '
+          'cashouts reach your card in minutes.';
+  String get cashoutRowInstant =>
+      _es ? 'Retiro instantáneo' : 'Instant cashout';
+  String get cashoutRowWeekly =>
+      _es ? 'Depósito semanal' : 'Weekly deposit';
+  String get cashoutHistoryEmpty => _es
+      ? 'Todavía no has recibido ningún pago.'
+      : 'You have not been paid yet.';
+  String get cashoutHistoryUnavailable => _es
+      ? 'No pudimos cargar tu historial de pagos.'
+      : 'We could not load your payout history.';
+  String get cashoutDetailTitle => _es ? 'Detalle del pago' : 'Payment detail';
+  String get cashoutDetailGross => _es ? 'Monto' : 'Amount';
+  String get cashoutDetailFee => _es ? 'Comisión' : 'Fee';
+  String get cashoutDetailNet => _es ? 'Recibiste' : 'You received';
+  String get cashoutDetailMethod => _es ? 'Método' : 'Method';
+  String get cashoutDetailStatus => _es ? 'Estado' : 'Status';
+  String get cashoutDetailDate => _es ? 'Fecha' : 'Date';
+  // "Enviado", for the same reason the section is: Stripe accepting the
+  // transfer is not the money being in a bank account.
+  String get cashoutStatusCompleted => _es ? 'Enviado' : 'Sent';
+  String get cashoutStatusProcessing =>
+      _es ? 'En camino' : 'On its way';
+
+  String get payoutHelpInstant => _es
+      ? 'Si no quieres esperar al lunes, retira cuando quieras a tu tarjeta '
+          'de débito. La comisión es de 1.5% (mínimo \$0.50) y el retiro '
+          'mínimo es de \$50.'
+      : 'If you would rather not wait for Monday, cash out to your debit '
+          'card whenever you want. The fee is 1.5% (minimum \$0.50) and the '
+          'smallest cashout is \$50.';
 
   // ── Earnings screen, rebuilt layout ──
   String get earningsPeriodDay => _es ? 'Hoy' : 'Today';

@@ -83,7 +83,16 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
   bool get _canSubmitStep2 =>
       _hasLen && _hasNumber && _hasUpper && _hasSpecial && _matches;
 
-  String _errMsg(Object e) => e.toString().replaceFirst('Exception: ', '');
+  /// The sentence the server wrote, with nothing of ours around it.
+  ///
+  /// This used to be `toString().replaceFirst('Exception: ', '')`, which
+  /// never matched an [ApiException] — its toString is
+  /// `ApiException(400): …` — so people trying to reset their password were
+  /// shown the words "ApiException(400)" above the button.
+  String _errMsg(Object e) {
+    if (e is ApiException) return e.message;
+    return e.toString().replaceFirst(RegExp(r'^\w*Exception:?\s*'), '');
+  }
 
   Future<void> _sendCode() async {
     final identifier =
@@ -126,6 +135,38 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
     }
   }
 
+  /// Checks the code before letting them pick a password.
+  ///
+  /// This button used to just move to the next step; the code was only ever
+  /// tested inside the confirm call, so "That code is not right" appeared
+  /// under the new password field — two screens away from the thing that was
+  /// wrong. Now the answer lands under the code.
+  Future<void> _verifyCode() async {
+    setState(() {
+      _loading = true;
+      _errorText = null;
+    });
+    try {
+      await ApiService.verifyPasswordResetCodePublic(
+        identifier: _identifier,
+        code: _codeCtrl.text.trim(),
+      );
+      if (!mounted) return;
+      HapticService.mediumImpact();
+      setState(() {
+        _loading = false;
+        _step = 2;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      HapticService.mediumImpact();
+      setState(() {
+        _loading = false;
+        _errorText = _errMsg(e);
+      });
+    }
+  }
+
   Future<void> _confirm() async {
     setState(() {
       _loading = true;
@@ -157,11 +198,27 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
       );
     } catch (e) {
       if (!mounted) return;
+      final msg = _errMsg(e);
       setState(() {
         _loading = false;
-        _errorText = _errMsg(e);
+        _errorText = msg;
+        // The code is verified a step earlier now, so reaching here with a
+        // code complaint means it expired or was burned in between. Send
+        // them back to the field it is about rather than showing it under
+        // the password, which is the whole point of the earlier check.
+        if (_isCodeProblem(msg)) _step = 1;
       });
     }
+  }
+
+  /// Whether this server message is about the code rather than the password.
+  ///
+  /// Matched on the server's own sentences. Anything unrecognised stays on
+  /// the password step, because moving someone away from a message they
+  /// could have acted on is worse than leaving them where they are.
+  bool _isCodeProblem(String msg) {
+    final m = msg.toLowerCase();
+    return m.contains('code');
   }
 
   @override
@@ -398,10 +455,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
         _primaryButton(
           label: s.verify,
           enabled: _canSubmitStep1,
-          onTap: () => setState(() {
-            _step = 2;
-            _errorText = null;
-          }),
+          onTap: _verifyCode,
           c: c,
         ),
         const SizedBox(height: 16),

@@ -1318,6 +1318,26 @@ class ApiService {
     return _parse(res);
   }
 
+  /// Check a reset code without spending it, so the app can say "that code
+  /// is not right" on the screen where it was typed instead of two screens
+  /// later, under the new password.
+  ///
+  /// Throws [ApiException] carrying the server's own sentence. A wrong code
+  /// costs an attempt here exactly as it would at confirm time.
+  static Future<void> verifyPasswordResetCodePublic({
+    required String identifier,
+    required String code,
+  }) async {
+    final res = await _client
+        .post(
+          Uri.parse('$_baseUrl/auth/password-reset/verify-code-public'),
+          headers: _jsonHeaders(),
+          body: jsonEncode({'identifier': identifier, 'code': code}),
+        )
+        .timeout(const Duration(seconds: 15));
+    _parse(res);
+  }
+
   /// Public counterpart of [confirmPasswordReset]: set a new password with
   /// the code that was emailed or texted. Throws [ApiException] with the
   /// server's own message for wrong/expired codes and weak passwords.

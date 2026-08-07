@@ -451,8 +451,13 @@ async def send_otp(body: SendOtpIn, request: Request):
             its own code that conflicts with the one we already stored locally."""
             try:
                 loop = asyncio.get_event_loop()
-                sent = await loop.run_in_executor(None, lambda: _send_email(email,
-                    "Your Cruise Verification Code", html_body))
+                sent = await loop.run_in_executor(None, lambda: _send_email(
+                    email,
+                    "Your Cruise Verification Code",
+                    html_body,
+                    # Explicit, so EmailJS's template never has to guess.
+                    template_params={"code": code},
+                ))
                 if sent:
                     logging.info("[OTP-BG] Email sent via provider to %s", email)
                 else:
@@ -2762,7 +2767,12 @@ async def send_password_reset_code(
     try:
         await asyncio.get_event_loop().run_in_executor(
             None,
-            lambda: _send_email(user.email, "Cruise — Your verification code", html),
+            lambda: _send_email(
+                user.email,
+                "Cruise — Your verification code",
+                html,
+                template_params={"code": code},
+            ),
         )
     except Exception as e:
         logging.error("[PasswordReset] send failed for user %s: %s", user.id, e)
@@ -2773,6 +2783,42 @@ async def send_password_reset_code(
         "email": _mask_email(user.email),
         "expires_in": _RESET_CODE_TTL_SECONDS,
     }
+
+
+async def _consume_reset_code(user: User, code: str, db: AsyncSession):
+    """Return this user's live reset token, or raise the reason it is not.
+
+    Shared by the verify step and both confirm endpoints so the wording and
+    the attempt accounting cannot drift apart — a code that reads as wrong on
+    one screen and right on the next is worse than either answer alone.
+
+    A wrong code costs an attempt and burns the token at
+    ``_RESET_CODE_MAX_ATTEMPTS``. A correct one is NOT consumed here: the
+    verify step has to leave it usable for the confirm that follows.
+    """
+    result = await db.execute(
+        select(PasswordResetToken).where(PasswordResetToken.user_id == user.id)
+    )
+    token_row = result.scalars().first()
+    if not token_row:
+        raise HTTPException(400, "Request a code first")
+    if time.time() > token_row.expires_at:
+        await db.delete(token_row)
+        await db.commit()
+        raise HTTPException(400, "That code expired. Request a new one.")
+
+    if hashlib.sha256(code.encode()).hexdigest() != token_row.code:
+        token_row.attempts = (token_row.attempts or 0) + 1
+        burned = token_row.attempts >= _RESET_CODE_MAX_ATTEMPTS
+        if burned:
+            await db.delete(token_row)
+        await db.commit()
+        raise HTTPException(
+            400,
+            "Too many wrong codes. Request a new one." if burned
+            else "That code is not right",
+        )
+    return token_row
 
 
 @router.post("/auth/password-reset/confirm", dependencies=[Depends(_verify_api_key)])
@@ -2797,28 +2843,7 @@ async def confirm_password_reset(
             "uppercase letter, and special character",
         )
 
-    result = await db.execute(
-        select(PasswordResetToken).where(PasswordResetToken.user_id == user.id)
-    )
-    token_row = result.scalars().first()
-    if not token_row:
-        raise HTTPException(400, "Request a code first")
-    if time.time() > token_row.expires_at:
-        await db.delete(token_row)
-        await db.commit()
-        raise HTTPException(400, "That code expired. Request a new one.")
-
-    if hashlib.sha256(code.encode()).hexdigest() != token_row.code:
-        token_row.attempts = (token_row.attempts or 0) + 1
-        burned = token_row.attempts >= _RESET_CODE_MAX_ATTEMPTS
-        if burned:
-            await db.delete(token_row)
-        await db.commit()
-        raise HTTPException(
-            400,
-            "Too many wrong codes. Request a new one." if burned
-            else "That code is not right",
-        )
+    token_row = await _consume_reset_code(user, code, db)
 
     user.password_hash = pwd.hash(new_password)
     await db.delete(token_row)
@@ -2974,7 +2999,12 @@ async def send_password_reset_code_public(
         try:
             await asyncio.get_event_loop().run_in_executor(
                 None,
-                lambda: _send_email(user.email, "Cruise — Your verification code", html),
+                lambda: _send_email(
+                    user.email,
+                    "Cruise — Your verification code",
+                    html,
+                    template_params={"code": code},
+                ),
             )
         except Exception as e:
             logging.error("[PasswordReset] public send failed for user %s: %s", user.id, e)
@@ -3004,6 +3034,34 @@ async def send_password_reset_code_public(
         sent_method = "sms"
 
     return {"status": "sent", "method": sent_method, "masked": masked}
+
+
+@router.post("/auth/password-reset/verify-code-public", dependencies=[Depends(_verify_api_key)])
+async def verify_password_reset_code_public(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """Say whether this code is the live one, without changing anything.
+
+    Exists so the app can tell someone their code is wrong ON THE SCREEN
+    WHERE THEY TYPED IT. Without it the only check was inside the confirm
+    call, so a wrong code surfaced two screens later, underneath the new
+    password they had just chosen.
+
+    Costs an attempt when wrong, exactly like confirm, and leaves the token
+    alone when right.
+    """
+    body = await request.json()
+    identifier = str(body.get("identifier", "")).strip()
+    code = str(body.get("code", "")).strip()
+
+    user, _method = await _find_user_by_public_identifier(identifier, db)
+    if not user:
+        # Same words as a wrong code. Never "no such account".
+        raise HTTPException(400, "That code is not right")
+
+    await _consume_reset_code(user, code, db)
+    return {"status": "ok"}
 
 
 @router.post("/auth/password-reset/confirm-public", dependencies=[Depends(_verify_api_key)])
@@ -3037,28 +3095,7 @@ async def confirm_password_reset_public(
         # Unknown account: same words as a wrong code, never "no such user".
         raise HTTPException(400, "That code is not right")
 
-    result = await db.execute(
-        select(PasswordResetToken).where(PasswordResetToken.user_id == user.id)
-    )
-    token_row = result.scalars().first()
-    if not token_row:
-        raise HTTPException(400, "Request a code first")
-    if time.time() > token_row.expires_at:
-        await db.delete(token_row)
-        await db.commit()
-        raise HTTPException(400, "That code expired. Request a new one.")
-
-    if hashlib.sha256(code.encode()).hexdigest() != token_row.code:
-        token_row.attempts = (token_row.attempts or 0) + 1
-        burned = token_row.attempts >= _RESET_CODE_MAX_ATTEMPTS
-        if burned:
-            await db.delete(token_row)
-        await db.commit()
-        raise HTTPException(
-            400,
-            "Too many wrong codes. Request a new one." if burned
-            else "That code is not right",
-        )
+    token_row = await _consume_reset_code(user, code, db)
 
     user.password_hash = pwd.hash(new_password)
     await db.delete(token_row)

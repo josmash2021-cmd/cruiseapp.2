@@ -46,9 +46,10 @@ async def test_email_send_and_confirm(client, test_rider, db):
     rider, _ = test_rider
     sent = {}
 
-    def fake_send_email(to, subject, html):
+    def fake_send_email(to, subject, html, template_params=None, **kw):
         sent["to"] = to
         sent["html"] = html
+        sent["params"] = template_params or {}
 
     with mock.patch("routers.auth._send_email", side_effect=fake_send_email):
         res = await _post(client, "/auth/password-reset/send-code-public",
@@ -59,7 +60,16 @@ async def test_email_send_and_confirm(client, test_rider, db):
     assert data["method"] == "email"
     assert data["masked"] == "r•••r@test.com"
     assert sent["to"] == "rider@test.com"
-    code = _extract_code(sent["html"])
+
+    # The code has to be handed over as a parameter, not left for the mailer
+    # to scrape back out of the markup. When it was scraped, a bare
+    # \d{6} found `background:#050505` first and every single person
+    # was mailed "050505" while the real code stayed here.
+    code = sent["params"].get("code")
+    assert code, "the code must be passed in template_params"
+    assert code == _extract_code(sent["html"]), (
+        "the parameter and the code printed in the email must agree"
+    )
 
     res = await _post(client, "/auth/password-reset/confirm-public",
                       {"identifier": "rider@test.com", "code": code,
@@ -173,3 +183,123 @@ async def test_unknown_identifier_leaks_nothing(client, test_rider):
                            "new_password": "NewPass1!"})
         assert res.status_code == 400
         assert res.json()["detail"] == "That code is not right"
+
+
+# ── The verify-only step ─────────────────────────────────────────────────
+#
+# It exists so a wrong code is reported on the screen where it was typed.
+# Before it, the code was only ever tested inside confirm, so the message
+# "That code is not right" landed under the NEW PASSWORD field, two screens
+# away from the thing that was actually wrong.
+
+
+async def _issue_code(client, sent, identifier="rider@test.com"):
+    def fake_send_email(to, subject, html, template_params=None, **kw):
+        sent["params"] = template_params or {}
+
+    with mock.patch("routers.auth._send_email", side_effect=fake_send_email):
+        res = await _post(client, "/auth/password-reset/send-code-public",
+                          {"identifier": identifier})
+    assert res.status_code == 200, res.text
+    return sent["params"]["code"]
+
+
+@pytest.mark.asyncio
+async def test_verify_accepts_the_live_code_without_spending_it(
+        client, test_rider, db):
+    """The whole point: verify, then still be able to confirm with it."""
+    sent = {}
+    code = await _issue_code(client, sent)
+
+    res = await _post(client, "/auth/password-reset/verify-code-public",
+                      {"identifier": "rider@test.com", "code": code})
+    assert res.status_code == 200, res.text
+    assert res.json()["status"] == "ok"
+
+    # Verifying twice is fine, and neither burns it.
+    res = await _post(client, "/auth/password-reset/verify-code-public",
+                      {"identifier": "rider@test.com", "code": code})
+    assert res.status_code == 200, res.text
+
+    # And the code still works for the real thing.
+    res = await _post(client, "/auth/password-reset/confirm-public",
+                      {"identifier": "rider@test.com", "code": code,
+                       "new_password": "AfterVerify1!"})
+    assert res.status_code == 200, res.text
+
+
+@pytest.mark.asyncio
+async def test_verify_rejects_a_wrong_code_with_the_same_words(
+        client, test_rider, db):
+    sent = {}
+    code = await _issue_code(client, sent)
+    wrong = "000000" if code != "000000" else "111111"
+
+    res = await _post(client, "/auth/password-reset/verify-code-public",
+                      {"identifier": "rider@test.com", "code": wrong})
+    assert res.status_code == 400
+    assert res.json()["detail"] == "That code is not right"
+
+
+@pytest.mark.asyncio
+async def test_verify_costs_an_attempt_and_burns_at_the_cap(
+        client, test_rider, db):
+    """A guess must cost the same here as it does at confirm."""
+    from routers.auth import _RESET_CODE_MAX_ATTEMPTS
+    sent = {}
+    code = await _issue_code(client, sent)
+    wrong = "000000" if code != "000000" else "111111"
+
+    for i in range(_RESET_CODE_MAX_ATTEMPTS - 1):
+        res = await _post(client, "/auth/password-reset/verify-code-public",
+                          {"identifier": "rider@test.com", "code": wrong})
+        assert res.json()["detail"] == "That code is not right", f"try {i}"
+
+    res = await _post(client, "/auth/password-reset/verify-code-public",
+                      {"identifier": "rider@test.com", "code": wrong})
+    assert res.status_code == 400
+    assert res.json()["detail"] == "Too many wrong codes. Request a new one."
+
+    # Burned means gone: the real code no longer works either.
+    res = await _post(client, "/auth/password-reset/confirm-public",
+                      {"identifier": "rider@test.com", "code": code,
+                       "new_password": "Whatever1!"})
+    assert res.status_code == 400
+    assert res.json()["detail"] == "Request a code first"
+
+
+@pytest.mark.asyncio
+async def test_verify_says_nothing_about_unknown_accounts(client, db):
+    """Same sentence as a wrong code — never "no such user"."""
+    res = await _post(client, "/auth/password-reset/verify-code-public",
+                      {"identifier": "nobody@nowhere.test", "code": "123456"})
+    assert res.status_code == 400
+    assert res.json()["detail"] == "That code is not right"
+
+
+@pytest.mark.asyncio
+async def test_verify_reports_an_expired_code_as_expired(
+        client, test_rider, db):
+    sent = {}
+    code = await _issue_code(client, sent)
+
+    rows = (await db.execute(
+        select(PasswordResetToken).where(
+            PasswordResetToken.user_id == test_rider[0].id)
+    )).scalars().all()
+    assert len(rows) == 1
+    rows[0].expires_at = time.time() - 1
+    await db.commit()
+
+    res = await _post(client, "/auth/password-reset/verify-code-public",
+                      {"identifier": "rider@test.com", "code": code})
+    assert res.status_code == 400
+    assert res.json()["detail"] == "That code expired. Request a new one."
+
+
+@pytest.mark.asyncio
+async def test_verify_without_a_code_having_been_sent(client, test_rider, db):
+    res = await _post(client, "/auth/password-reset/verify-code-public",
+                      {"identifier": "rider@test.com", "code": "123456"})
+    assert res.status_code == 400
+    assert res.json()["detail"] == "Request a code first"

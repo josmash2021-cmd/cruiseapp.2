@@ -29,11 +29,28 @@ def _send_email(to_email: str, subject: str, html_body: str, template_params: di
     EMAILJS_PRIVATE_KEY = os.getenv("EMAILJS_PRIVATE_KEY", "")
     if not skip_emailjs and EMAILJS_SERVICE_ID and EMAILJS_TEMPLATE_ID and EMAILJS_PUBLIC_KEY and EMAILJS_PRIVATE_KEY:
         try:
-            # Extract OTP code from html_body if present (6-digit number)
-            import re as _re
-            _otp_match = _re.search(r'\b(\d{6})\b', html_body)
-            _otp_code = _otp_match.group(1) if _otp_match else ""
             _params = template_params or {}
+            # The code for EmailJS's own template.
+            #
+            # Callers that send one pass it in template_params. Scraping it
+            # back out of the HTML is the fallback, and it has to look only
+            # at VISIBLE text: the markup is full of six-digit runs that are
+            # not codes. Every one of these mails opens with
+            # `background:#050505`, and a plain \b\d{6}\b matched that
+            # first, so EmailJS was told the code was "050505" every single
+            # time while the real one stayed on the server. Stripping the
+            # tags takes their style attributes with them.
+            import re as _re
+            _otp_code = str(_params.get("code") or "")
+            if not _otp_code:
+                _visible = _re.sub(r'<[^>]*>', ' ', html_body)
+                _otp_match = _re.search(r'\b(\d{6})\b', _visible)
+                _otp_code = _otp_match.group(1) if _otp_match else ""
+                if _otp_code:
+                    logging.warning(
+                        "[EMAIL] OTP scraped out of the HTML for %s — pass it "
+                        "in template_params instead", to_email,
+                    )
             _params.setdefault("to_email", to_email)
             _params.setdefault("email", to_email)
             _params.setdefault("name", to_email.split("@")[0])

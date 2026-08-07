@@ -1188,7 +1188,45 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       LocationPermission perm = await Geolocator.checkPermission();
       if (perm == LocationPermission.denied) {
         perm = await Geolocator.requestPermission();
-        if (perm == LocationPermission.denied) return;
+        if (perm == LocationPermission.denied) {
+          // Say something. This used to be a bare `return`.
+          //
+          // Refusing the prompt left the map parked on the fallback seed
+          // with no driver dot and nothing at all on screen to explain it:
+          // a confident map of a city the driver is not in. Every report of
+          // "the map opens somewhere else" starts here — the coordinates
+          // were never the bug, the silence was.
+          //
+          // `deniedForever` already had its dialog. Plain `denied` can be
+          // asked again, so this one offers to ask rather than sending
+          // anyone into Settings.
+          debugPrint('[DriverHome] location permission denied — map cannot '
+              'follow the driver until it is granted');
+          if (!mounted) return;
+          final retry = await showDialog<bool>(
+            context: context,
+            builder: (ctx) => AlertDialog(
+              title: Text(S.of(ctx).locationPermissionRequired),
+              content: Text(S.of(ctx).locationRequiredForDriver),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx, false),
+                  child: Text(S.of(ctx).cancel),
+                ),
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx, true),
+                  child: Text(S.of(ctx).retry),
+                ),
+              ],
+            ),
+          );
+          if (retry != true || !mounted) return;
+          perm = await Geolocator.requestPermission();
+          if (perm == LocationPermission.denied ||
+              perm == LocationPermission.deniedForever) {
+            return;
+          }
+        }
       }
       if (perm == LocationPermission.deniedForever) {
         if (mounted) {

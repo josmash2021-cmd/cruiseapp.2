@@ -1078,17 +1078,78 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
     }
   }
 
-  /// Link a bank account through the Stripe Financial Connections sheet.
+  /// Link a bank account for the weekly payout.
   ///
-  /// The backend mints a Financial Connections session and returns its
-  /// `client_secret` — it has no hosted URL, so this must go through the
-  /// native SDK. Stripe hands back a `btok_...` which the backend attaches
-  /// as the Connect external_account that weekly payouts are sent to.
+  /// Primary path is our own full-screen form (AddBankAccountScreen) — the
+  /// digits go from the Stripe SDK straight to Stripe and only the btok_
+  /// comes back. The Financial Connections sheet stays as the fallback for
+  /// a driver who would rather pick their bank by logging into it. Either
+  /// way the backend attaches the token as the Connect external_account the
+  /// Monday payout transfer lands on.
   Future<void> _connectBankAccount() async {
     HapticService.mediumImpact();
     if (kIsWeb) {
       _snack(S.of(context).bankLinkMobileOnly, error: true);
       return;
+    }
+
+    // Stripe Connect onboarding comes BEFORE any bank form.
+    //
+    // Every account this app creates starts Restricted: Account.create
+    // mints an Express account with no identity, no tax details and nothing
+    // submitted, and until onboarding clears that, the transfers capability
+    // is inactive. A bank attached in that state links "successfully" — and
+    // then every Monday transfer bounces with a 4xx, the balance is handed
+    // back, and the driver is never paid nor told why. Verify the account
+    // can actually receive money first.
+    //
+    // The backend has always had the onboarding link (AccountLink with
+    // type="account_onboarding") and ApiService has always had the call;
+    // the FC-only path below already did this check — the manual form did
+    // not, which is the hole this closes.
+    try {
+      final status = await ApiService.getStripeConnectStatus();
+      if (!mounted) return;
+      final ready = status['payouts_enabled'] == true;
+      if (!ready) {
+        final url = await ApiService.getStripeConnectLink();
+        if (!mounted) return;
+        // In our own frame, not the browser. Handing the driver to Safari in
+        // the middle of getting paid is where they lose the thread; this
+        // keeps our header and back button around Stripe's page, and returns
+        // true the moment Stripe redirects to one of our return URLs.
+        final done = await Navigator.of(context).push<bool>(
+          MaterialPageRoute(
+            builder: (_) => StripeOnboardingScreen(url: url),
+          ),
+        );
+        if (!mounted) return;
+        if (done == true) {
+          // Stripe's onboarding collects a bank account of its own as part of
+          // the requirements, so by the time it hands the driver back there
+          // is often nothing left to ask. Re-read the methods first and only
+          // show our form if it really did not come back with one —
+          // otherwise we would make them type the same account twice.
+          await _loadMethods();
+          if (!mounted) return;
+          if (_methodOfType('bank_account') != null) {
+            _snack(S.of(context).bankAccountLinked);
+            return;
+          }
+          // Ready now — re-enter so the status check above gates what shows.
+          await _connectBankAccount();
+          return;
+        }
+        // Backed out partway. The same link resumes a half-finished
+        // account, so tapping again carries on where they left off.
+        _snack(S.of(context).verifyIdentityToGetPaid);
+        return;
+      }
+    } catch (e) {
+      // A network blip must not block the form: without the check we cannot
+      // know onboarding is missing, so proceed — worst case is the previous
+      // behavior, a bank attached to an account that still needs onboarding.
+      debugPrint('[Payout] connect status check failed, continuing to form: $e');
     }
 
     // Our own form, full screen: routing, account, re-enter. The driver
@@ -1125,79 +1186,20 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
       return;
     }
 
-    // Our page first, Stripe's window second.
+    // Straight to Stripe. There used to be an explanatory sheet in between
+    // — heading, terms, security note, then a button that opened Stripe —
+    // but the row that got here is already labelled "Add a bank account"
+    // and the card above it already says what it is for, so the sheet was
+    // one more tap between the driver and getting paid.
     //
-    // The bank flow used to drop the driver straight into Stripe's sheet
-    // from a row labelled "Weekly payouts", with nothing in between saying
-    // what the account will be used for or warning them off attaching
-    // someone else's. This is that missing page — the heading, the terms
-    // and the security note — and the button on it is what opens Stripe.
-    //
-    // The routing and account numbers are still typed into Stripe's own
-    // window and never touch this app. That is not a shortcut: taking them
-    // in our own fields would put the app inside the compliance scope those
+    // The routing and account numbers are typed into Stripe's own window
+    // and never touch this app. That is not a shortcut: taking them in our
+    // own fields would put the app inside the compliance scope those
     // numbers carry, for no gain the driver would ever see.
-    final go = await showModalBottomSheet<bool>(
-      context: context,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: true,
-      builder: (_) => const _AddBankIntroSheet(),
-    );
-    if (go != true || !mounted) return;
-
     setState(() => _busy = true);
     try {
-      // ── Stripe Connect onboarding comes first ──────────────────────────
-      //
-      // The bank sheet cannot open on a Restricted account, and every account
-      // this app creates starts Restricted: the backend calls Account.create
-      // when the driver first reaches this screen, which mints an Express
-      // account with no identity, no tax details and nothing submitted.
-      // Financial Connections then refuses the session and the driver got
-      // "Failed to add method" with no way forward — every account in the
-      // Stripe dashboard sat Restricted, none ever Enabled.
-      //
-      // The backend has always had the onboarding link (AccountLink with
-      // type="account_onboarding") and ApiService has always had the call.
-      // Nothing invoked it: `getStripeConnectLink` had no caller anywhere in
-      // the app. This is that missing step.
-      final status = await ApiService.getStripeConnectStatus();
-      if (!mounted) return;
-      final ready = status['payouts_enabled'] == true;
-      if (!ready) {
-        final url = await ApiService.getStripeConnectLink();
-        if (!mounted) return;
-        // In our own frame, not the browser. Handing the driver to Safari in
-        // the middle of getting paid is where they lose the thread; this
-        // keeps our header and back button around Stripe's page, and returns
-        // true the moment Stripe redirects to one of our return URLs.
-        final done = await Navigator.of(context).push<bool>(
-          MaterialPageRoute(
-            builder: (_) => StripeOnboardingScreen(url: url),
-          ),
-        );
-        if (!mounted) return;
-        if (done == true) {
-          // Stripe's onboarding collects a bank account of its own as part of
-          // the requirements, so by the time it hands the driver back there
-          // is often nothing left to ask. Re-read the methods first and only
-          // show our form if it really did not come back with one —
-          // otherwise we would make them type the same account twice.
-          await _loadMethods();
-          if (!mounted) return;
-          if (_methodOfType('bank_account') != null) {
-            _snack(S.of(context).bankAccountLinked);
-            return;
-          }
-          await _connectBankAccount();
-          return;
-        }
-        // Backed out partway. The same link resumes a half-finished
-        // account, so tapping again carries on where they left off.
-        _snack(S.of(context).verifyIdentityToGetPaid);
-        return;
-      }
-
+      // Onboarding was already verified above — by the time this fallback
+      // opens, the account can receive transfers.
       final session = await ApiService.createDriverFinancialConnectionsSession();
       if (!mounted) return;
 
@@ -1460,136 +1462,6 @@ class _AddDebitCardSheet extends StatefulWidget {
   @override
   State<_AddDebitCardSheet> createState() => _AddDebitCardSheetState();
 }
-
-/// What Weekly payouts is, before Stripe's window opens over it.
-///
-/// The bank half of the reference design: heading, the terms in a sentence,
-/// the security note, and one button. What it does not have is fields for a
-/// routing and account number, because those are typed into Stripe's own
-/// window — see the comment in _connectBankAccount for why that is a
-/// deliberate line and not a missing feature.
-class _AddBankIntroSheet extends StatelessWidget {
-  const _AddBankIntroSheet();
-
-
-  @override
-  Widget build(BuildContext context) {
-    final s = S.of(context);
-    return Container(
-      padding: const EdgeInsets.fromLTRB(24, 12, 24, 24),
-      decoration: const BoxDecoration(
-        color: neuBase,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-      ),
-      child: SafeArea(
-        top: false,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Center(
-              child: Container(
-                width: 36,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: Colors.white12,
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-            ),
-            const SizedBox(height: 18),
-            Center(
-              child: Text(
-                s.payoutWeekly.toUpperCase(),
-                style: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.35),
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 1.4,
-                ),
-              ),
-            ),
-            const SizedBox(height: 14),
-            Text(
-              s.payoutUpdateBank,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 24,
-                fontWeight: FontWeight.w800,
-                letterSpacing: -0.5,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              s.payoutUpdateBankDesc,
-              style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.45),
-                fontSize: 13,
-                height: 1.45,
-              ),
-            ),
-            const SizedBox(height: 16),
-            _keepSecureNote(s.payoutKeepSecureBank),
-            const SizedBox(height: 14),
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Icon(
-                  Icons.lock_rounded,
-                  size: 14,
-                  color: Colors.white.withValues(alpha: 0.3),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    s.payoutBankHandledByStripe,
-                    style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.32),
-                      fontSize: 11.5,
-                      height: 1.35,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 22),
-            GestureDetector(
-              onTap: () {
-                HapticService.mediumImpact();
-                Navigator.pop(context, true);
-              },
-              child: Container(
-                width: double.infinity,
-                height: 54,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: _gold,
-                  borderRadius: BorderRadius.circular(16),
-                  boxShadow: [
-                    BoxShadow(
-                      color: _gold.withValues(alpha: 0.25),
-                      blurRadius: 16,
-                      offset: const Offset(0, 4),
-                    ),
-                  ],
-                ),
-                child: Text(
-                  s.payoutOpenBankSheet,
-                  style: const TextStyle(
-                    color: neuBase,
-                    fontSize: 15,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
 /// The "keep your earnings secure" panel both payout sheets carry.
 ///
 /// It is here rather than inside either one because the two warnings are

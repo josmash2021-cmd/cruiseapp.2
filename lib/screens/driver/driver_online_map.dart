@@ -425,6 +425,100 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     _previewDropoffAnnot = null;
   }
 
+  /// Redraw the offer preview on a freshly created native surface.
+  ///
+  /// Everything the preview cinematic built belongs to the PlatformView
+  /// that died with the old surface (app backgrounded → Android destroys
+  /// the SurfaceView, or a coordinator revoke/acquire round trip). The
+  /// State fields all survived — _previewingOffer, _fullSegOne/_fullSegTwo
+  /// — so this puts back the final resting state instantly: both gold
+  /// segments, both endpoint pins at their post-pop size, and the
+  /// whole-route frame. Without it the driver came back from another app
+  /// to the offer card with the route gone, and the default rebuild also
+  /// flew the camera back to the driver at street zoom.
+  Future<void> _restoreOfferPreviewOnFreshSurface() async {
+    final offer = _previewingOffer;
+    if (offer == null) return;
+    final pickupLL = LatLng(
+      _safeDouble(offer['pickup_lat']),
+      _safeDouble(offer['pickup_lng']),
+    );
+    final dropoffLL = LatLng(
+      _safeDouble(offer['dropoff_lat']),
+      _safeDouble(offer['dropoff_lng']),
+    );
+    final driverPos = _pos ?? pickupLL;
+
+    // Same gold, weight and join the gloss draw rests at.
+    final polyMgr = _polylineAnnotMgr;
+    if (polyMgr != null) {
+      final g1 = _fullSegOne.length >= 2 ? safeLineString(_fullSegOne) : null;
+      if (g1 != null) {
+        try {
+          _previewPickupAnnot =
+              await polyMgr.create(mapbox.PolylineAnnotationOptions(
+            geometry: g1,
+            lineColor: const Color(0xFFFFD700).toARGB32(),
+            lineWidth: 4.0,
+            lineJoin: mapbox.LineJoin.ROUND,
+          ));
+        } catch (_) {}
+      }
+      if (!mounted || _previewingOffer != null) return;
+      final g2 = _fullSegTwo.length >= 2 ? safeLineString(_fullSegTwo) : null;
+      if (g2 != null) {
+        try {
+          _previewDropoffAnnot =
+              await polyMgr.create(mapbox.PolylineAnnotationOptions(
+            geometry: g2,
+            lineColor: const Color(0xFFFFD700).toARGB32(),
+            lineWidth: 4.0,
+            lineJoin: mapbox.LineJoin.ROUND,
+          ));
+        } catch (_) {}
+      }
+    }
+    if (!mounted || _previewingOffer != null) return;
+
+    // Endpoint pins at their post-pop size — the pop is an entrance
+    // animation, not state worth replaying.
+    final pointMgr = _pinAnnotMgr;
+    if (pointMgr != null) {
+      try {
+        final imgs = await Future.wait([
+          renderPickupRingBytes(
+              size: kOfferEndpointSize, rasterScale: kEndpointRasterScale),
+          renderDropoffRingDotBytes(
+              size: kOfferEndpointSize, rasterScale: kEndpointRasterScale),
+        ]);
+        if (!mounted || _previewingOffer == null) return;
+        _prevPickupAnnot =
+            await pointMgr.create(mapbox.PointAnnotationOptions(
+          geometry: mapbox.Point(
+              coordinates:
+                  mapbox.Position(pickupLL.longitude, pickupLL.latitude)),
+          image: imgs[0],
+          iconSize: 1 / kEndpointRasterScale,
+          iconAnchor: mapbox.IconAnchor.CENTER,
+        ));
+        _prevDropoffAnnot =
+            await pointMgr.create(mapbox.PointAnnotationOptions(
+          geometry: mapbox.Point(
+              coordinates:
+                  mapbox.Position(dropoffLL.longitude, dropoffLL.latitude)),
+          image: imgs[1],
+          iconSize: 1 / kEndpointRasterScale,
+          iconAnchor: mapbox.IconAnchor.CENTER,
+        ));
+      } catch (_) {}
+    }
+    if (!mounted || _previewingOffer != null) return;
+
+    // A recreated surface boots centered on the driver at street zoom —
+    // reframe the whole route or the lines just drawn sit off-screen.
+    await _fitBoundsMulti(_routeFramePoints(driverPos, pickupLL, dropoffLL));
+  }
+
   Future<void> _setPickupAnnotation() async {
     final pointMgr = _pinAnnotMgr;
     if (pointMgr == null) return;

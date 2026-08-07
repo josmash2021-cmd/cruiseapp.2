@@ -303,7 +303,13 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
 
               // Use already-known position from home screen — no blocking GPS call needed
               final here = _pos;
-              if (here != null) {
+              // An offer preview on screen when the surface died gets its
+              // route + pins + frame restored instead of the default
+              // driver-centered boot — otherwise the driver comes back
+              // from another app to the offer card with the route gone.
+              final restorePreview = _previewingOffer != null &&
+                  (_fullSegOne.length >= 2 || _fullSegTwo.length >= 2);
+              if (here != null && !restorePreview) {
                 _animateToPosition(here,
                     zoom: 16.0, bearing: _heading, tilt: 0);
               }
@@ -316,6 +322,9 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                     ? _pickupLL
                     : _dropoffLL;
                 if (here != null) _fitBounds(here, dest);
+              }
+              if (restorePreview) {
+                await _restoreOfferPreviewOnFreshSurface();
               }
             } catch (e) {
               // Unhandled before. Anything thrown here aborted the rest of

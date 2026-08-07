@@ -3313,7 +3313,7 @@ extension _RideRequestWidgets on _RideRequestScreenState {
               // overlay's 1.8s lifetime, so the rider saw pure black
               // instead of "driver found" (user report 2026-08-04).
               // The scrim below now sits over the LIVE main map, whose
-              // camera _dfFlyMainCamera() sends to the route midpoint.
+              // camera _dfFlyMainCamera() fits to the whole route.
               // ── Subtle gradient overlay (let map show through, like Trip Accepted) ──
               Positioned.fill(
                 child: DecoratedBox(

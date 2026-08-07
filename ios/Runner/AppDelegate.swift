@@ -213,7 +213,7 @@ final class CruiseLiveActivityManager {
         let alert = AlertConfiguration(
           title: "New ride offer",
           body: "\(fare) · \(perHour)",
-          sound: .default)
+          sound: UNNotificationSound(named: UNNotificationSoundName("cruise_online.wav")))
         await a.update(
           .init(state: state, staleDate: Date().addingTimeInterval(45)),
           alertConfiguration: alert)

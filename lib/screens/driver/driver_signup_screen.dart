@@ -23,7 +23,7 @@ import '../privacy_policy_screen.dart';
 import 'driver_agreement_screen.dart';
 import 'driver_pending_review_screen.dart';
 import '../../utils/ssn_validator.dart';
-import 'license_scanner_screen.dart';
+import 'license_guidelines_screen.dart';
 
 final _nonDigitRe = RegExp(r'\D');
 
@@ -1592,7 +1592,7 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
             required_: true,
             onTap: () async {
               final path = await Navigator.of(context).push<String?>(
-                slideFromRightRoute(const LicenseScannerScreen(side: 'Front')),
+                slideFromRightRoute(const LicenseGuidelinesScreen(side: 'Front')),
               );
               if (path != null && mounted) {
                 setState(() => _licenseFrontPath = path);
@@ -1609,7 +1609,7 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
             required_: true,
             onTap: () async {
               final path = await Navigator.of(context).push<String?>(
-                slideFromRightRoute(const LicenseScannerScreen(side: 'Back')),
+                slideFromRightRoute(const LicenseGuidelinesScreen(side: 'Back')),
               );
               if (path != null && mounted) {
                 setState(() => _licenseBackPath = path);

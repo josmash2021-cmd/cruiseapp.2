@@ -17,7 +17,7 @@ import '../services/local_data_service.dart';
 import '../services/user_session.dart';
 import '../services/firebase_auth_recovery.dart';
 import '../utils/doc_frame_crop.dart';
-import '../widgets/doc_scan_illustration.dart';
+import '../widgets/doc_guidelines_view.dart';
 import '../widgets/neu_style.dart';
 
 /// Rider identity verification flow:
@@ -443,7 +443,12 @@ class _IdentityVerificationScreenState extends State<IdentityVerificationScreen>
       case 0:
         return _buildIntro(c);
       case 7:
-        return _buildDocGuidelines(c);
+        return DocGuidelinesView(
+          key: const ValueKey(7),
+          docType: _docType,
+          onNext: () => setState(() => _step = 1), // now open the camera
+          onClose: () => setState(() => _step = 0),
+        );
       case 2:
         return _buildSelfieGuide(c);
       case 3:
@@ -712,155 +717,6 @@ class _IdentityVerificationScreenState extends State<IdentityVerificationScreen>
   // ═══════════════════════════════════════════
   //  Step 2 — Selfie guide
   // ═══════════════════════════════════════════
-  // ═══════════════════════════════════════════
-  //  Step 7 — Guidelines for the chosen document
-  // ═══════════════════════════════════════════
-
-  String _guidelinesTitle() {
-    switch (_docType) {
-      case 'passport':
-        return S.of(context).guidelinesPassportTitle;
-      case 'government_id':
-        return S.of(context).guidelinesGovIdTitle;
-      default:
-        return S.of(context).guidelinesLicenseTitle;
-    }
-  }
-
-  List<String> _guidelinesBullets() {
-    final s = S.of(context);
-    switch (_docType) {
-      case 'passport':
-        return [
-          s.guidelinePassportValid,
-          s.guidelinePassportPhysical,
-          s.guidelinePassportCorners,
-        ];
-      case 'government_id':
-        return [
-          s.guidelineGovIdValid,
-          s.guidelineGovIdPhysical,
-          s.guidelineGovIdCorners,
-        ];
-      default:
-        return [
-          s.guidelineLicenseValid,
-          s.guidelineLicensePhysical,
-          s.guidelineLicenseCorners,
-        ];
-    }
-  }
-
-  Widget _buildDocGuidelines(AppColors c) {
-    return Padding(
-      key: const ValueKey(7),
-      padding: const EdgeInsets.symmetric(horizontal: 24),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          const SizedBox(height: 8),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: GestureDetector(
-              // Back to the intro, not straight into the camera — the whole
-              // point of this step is that nothing opens until they tap Next.
-              onTap: () => setState(() => _step = 0),
-              child: Container(
-                width: 40,
-                height: 40,
-                alignment: Alignment.center,
-                decoration: neuBox(radius: 12),
-                child: const Icon(Icons.close_rounded,
-                    color: Colors.white, size: 20),
-              ),
-            ),
-          ),
-          Expanded(
-            child: SingleChildScrollView(
-              // Long copy on a small phone must scroll rather than overflow.
-              physics: const BouncingScrollPhysics(),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const SizedBox(height: 28),
-                  Center(
-                    child: DocScanIllustration(docType: _docType, height: 190),
-                  ),
-                  const SizedBox(height: 30),
-                  Text(
-                    _guidelinesTitle(),
-                    style: TextStyle(
-                      fontSize: 23,
-                      height: 1.25,
-                      fontWeight: FontWeight.w800,
-                      color: c.textPrimary,
-                    ),
-                  ),
-                  const SizedBox(height: 22),
-                  for (final bullet in _guidelinesBullets())
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 16),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Container(
-                            width: 5,
-                            height: 5,
-                            margin: const EdgeInsets.only(top: 9, right: 14),
-                            decoration: const BoxDecoration(
-                              color: _gold,
-                              shape: BoxShape.circle,
-                            ),
-                          ),
-                          Expanded(
-                            child: Text(
-                              bullet,
-                              style: TextStyle(
-                                fontSize: 15,
-                                height: 1.45,
-                                color: c.textSecondary,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  const SizedBox(height: 12),
-                ],
-              ),
-            ),
-          ),
-          GestureDetector(
-            onTap: () {
-              HapticService.lightImpact();
-              setState(() => _step = 1); // now open the camera
-            },
-            child: Container(
-              height: 56,
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(colors: [_gold, _goldDark]),
-                borderRadius: BorderRadius.circular(28),
-              ),
-              child: Text(
-                S.of(context).next,
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w800,
-                  color: Colors.black,
-                ),
-              ),
-            ),
-          ),
-          SizedBox(
-            height: MediaQuery.of(context).viewInsets.bottom > 0
-                ? 12
-                : MediaQuery.of(context).padding.bottom + 24,
-          ),
-        ],
-      ),
-    );
-  }
 
   Widget _buildSelfieGuide(AppColors c) {
     return Padding(

@@ -319,6 +319,14 @@ def _send_fcm_push(token: str, title: str, body: str, data: dict = None, is_offe
                     badge=1,
                     content_available=True if is_offer else None,
                     mutable_content=True if is_offer else None,
+                    # The installed SDK's Aps has no interruption_level
+                    # kwarg, but custom_data keys are merged verbatim into
+                    # the encoded aps dict (see _messaging_encoder.encode_aps).
+                    # Time-sensitive is what lets an offer break through
+                    # Focus mode and notification summaries on iOS — anything
+                    # less can hold it back until the driver unlocks.
+                    custom_data=({"interruption-level": "time-sensitive"}
+                                 if is_offer else None),
                 )),
             ),
         )

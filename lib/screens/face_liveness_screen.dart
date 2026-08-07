@@ -15,6 +15,15 @@ import '../widgets/neu_style.dart';
 // ─── Step enum ──────────────────────────────────────────────────────────────
 enum _Step { center, turnRight, turnLeft, holdStill }
 
+/// Why the face is not yet framed — drives the small hint line under the
+/// subtitle. `framed` shows nothing: the blur and the ring already say it.
+enum _FaceFeedback { noFace, tooFar, tooClose, offCenter, framed, detectorError }
+
+/// How starting the camera failed, when it did. Shown as an in-screen error
+/// instead of the silent pop that used to leave the driver on the signup
+/// form wondering what happened.
+enum _CameraFailure { permission, init }
+
 // ─── Main Widget ────────────────────────────────────────────────────────────
 
 /// Premium iOS Face ID–style biometric verification.
@@ -46,6 +55,18 @@ class _FaceLivenessScreenState extends State<FaceLivenessScreen>
 
   /// So the detector's rejection is reported once, not sixty times a second.
   bool _detectorErrorLogged = false;
+
+  /// Consecutive detector rejections. A long streak means the detector is
+  /// rejecting every frame on this device, not failing to find a face —
+  /// that is when the on-screen error appears. One success clears it.
+  int _detectorFailures = 0;
+
+  /// Coarse framing of the detected face, for the hint line. Starts at
+  /// noFace because that is the truth until the first frame comes back.
+  _FaceFeedback _feedback = _FaceFeedback.noFace;
+
+  /// Set when the camera could not be started at all.
+  _CameraFailure? _cameraFailure;
 
   /// The screen the preview is laid out in, captured during build so the
   /// camera callback can map face boxes without touching context.
@@ -172,7 +193,9 @@ class _FaceLivenessScreenState extends State<FaceLivenessScreen>
     final camStatus = await Permission.camera.request();
     if (!mounted) return;
     if (!camStatus.isGranted) {
-      Navigator.of(context).pop();
+      // Used to just pop, which from the driver's side read as "the button
+      // did nothing". Say why, and offer the way to system settings.
+      setState(() => _cameraFailure = _CameraFailure.permission);
       return;
     }
 
@@ -180,12 +203,24 @@ class _FaceLivenessScreenState extends State<FaceLivenessScreen>
       options: FaceDetectorOptions(
         enableClassification: true,
         enableLandmarks: false,
-        minFaceSize: 0.2,
+        // 0.1, not 0.2: at 0.2 a face smaller than a fifth of the frame is
+        // never even REPORTED, so anyone holding the phone at a normal
+        // arm's length sat on "Position your face" forever. Acceptance is
+        // still the oval-fit gate's call (faceFitsOval), so framing
+        // strictness is unchanged — this only lets the detector see
+        // farther faces well enough to hint "move closer".
+        minFaceSize: 0.1,
         performanceMode: FaceDetectorMode.accurate,
       ),
     );
 
-    final cameras = await availableCameras();
+    final List<CameraDescription> cameras;
+    try {
+      cameras = await availableCameras();
+    } catch (_) {
+      if (mounted) setState(() => _cameraFailure = _CameraFailure.init);
+      return;
+    }
     if (cameras.isEmpty) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -223,7 +258,7 @@ class _FaceLivenessScreenState extends State<FaceLivenessScreen>
       await _cam!.startImageStream(_onFrame);
       if (mounted) setState(() => _camReady = true);
     } catch (_) {
-      if (mounted) Navigator.of(context).pop();
+      if (mounted) setState(() => _cameraFailure = _CameraFailure.init);
     }
   }
 
@@ -247,6 +282,9 @@ class _FaceLivenessScreenState extends State<FaceLivenessScreen>
     List<Face> faces;
     try {
       faces = await _detector!.processImage(inputImage);
+      // One success clears the streak; the error line, if it was showing,
+      // is replaced by the normal framing hint below.
+      _detectorFailures = 0;
     } catch (e) {
       // Logged, once, deliberately. A silent catch here is what hid the
       // Android format bug: every frame threw "ImageFormat is not supported"
@@ -255,35 +293,54 @@ class _FaceLivenessScreenState extends State<FaceLivenessScreen>
         _detectorErrorLogged = true;
         debugPrint('[FaceLiveness] detector rejected every frame: $e');
       }
+      // And once the streak is long enough that this is plainly every frame
+      // rather than a dropped one, the screen says so. The stream keeps
+      // running — the very next frame could still succeed.
+      if (++_detectorFailures >= 30) {
+        _setFeedback(_FaceFeedback.detectorError);
+      }
       return;
     }
 
     if (!mounted) return;
 
     if (faces.isEmpty) {
+      _setFeedback(_FaceFeedback.noFace);
       _setFaceFramed(false);
       return;
     }
 
-    _setFaceFramed(_isFramed(faces.first, img));
+    final framing = _framingFor(faces.first, img);
+    _setFeedback(framing);
+    _setFaceFramed(framing == _FaceFeedback.framed);
     if (_faceInOval) _checkStep(faces.first);
   }
 
-  /// Whether the detected face is inside the oval the person is being shown,
-  /// not merely somewhere in the frame.
+  /// How the detected face sits against the oval the person is being shown —
+  /// not merely whether a face exists somewhere in the frame.
   ///
-  /// The old check was "a face exists", which passed a face twice the size of
-  /// the oval and half off the side of it.
-  bool _isFramed(Face face, CameraImage img) {
+  /// The old check was "a face exists", which passed a face twice the size
+  /// of the oval and half off the side of it. Acceptance itself is still
+  /// [faceFitsOval]'s call, unchanged; the other branches only explain
+  /// WHICH of its tolerances failed, reusing its exact thresholds (26% of
+  /// the oval off-centre, face/oval width outside 0.42–1.15), so the hint
+  /// always names what the gate is still waiting for.
+  _FaceFeedback _framingFor(Face face, CameraImage img) {
     final screen = _screen;
-    if (screen == null) return false;
+    if (screen == null) return _FaceFeedback.noFace;
     final upright = uprightFrameSize(
       Size(img.width.toDouble(), img.height.toDouble()),
       _rotationDegrees(),
     );
     final onScreen = mapImageRectToScreen(face.boundingBox, upright, screen);
-    if (onScreen == null) return false;
-    return faceFitsOval(onScreen, _ovalRect(screen));
+    if (onScreen == null || onScreen.isEmpty) return _FaceFeedback.noFace;
+    final oval = _ovalRect(screen);
+    if (faceFitsOval(onScreen, oval)) return _FaceFeedback.framed;
+    final ratio = onScreen.width / oval.width;
+    if (ratio < 0.42) return _FaceFeedback.tooFar;   // faceFitsOval's minimum
+    if (ratio > 1.15) return _FaceFeedback.tooClose; // its maximum
+    // The width is inside the gate, so the centring is what failed.
+    return _FaceFeedback.offCenter;
   }
 
   static Rect _ovalRect(Size screen) => Rect.fromCenter(
@@ -308,6 +365,30 @@ class _FaceLivenessScreenState extends State<FaceLivenessScreen>
       _fillFrom +
       (_ringProgress - _fillFrom) *
           Curves.easeOutCubic.transform(_fillCtrl.value);
+
+  void _setFeedback(_FaceFeedback v) {
+    // Called from the camera callback, which can outlive the widget.
+    if (!mounted || _feedback == v) return;
+    setState(() => _feedback = v);
+  }
+
+  String _feedbackText(BuildContext context) {
+    final s = S.of(context);
+    switch (_feedback) {
+      case _FaceFeedback.noFace:
+        return s.faceFeedbackNoFace;
+      case _FaceFeedback.tooFar:
+        return s.faceFeedbackMoveCloser;
+      case _FaceFeedback.tooClose:
+        return s.faceFeedbackMoveAway;
+      case _FaceFeedback.offCenter:
+        return s.faceFeedbackCenter;
+      case _FaceFeedback.detectorError:
+        return s.faceDetectionError;
+      case _FaceFeedback.framed:
+        return '';
+    }
+  }
 
   void _setFaceFramed(bool v) {
     if (_faceInOval == v) return;
@@ -555,13 +636,104 @@ class _FaceLivenessScreenState extends State<FaceLivenessScreen>
     _screen = MediaQuery.sizeOf(context);
     return Scaffold(
       backgroundColor: _black,
-      body: _camReady ? _buildLive() : _buildLoading(),
+      body: _cameraFailure != null
+          ? _buildError()
+          : _camReady
+              ? _buildLive()
+              : _buildLoading(),
     );
   }
 
   Widget _buildLoading() {
     return const Center(
       child: CircularProgressIndicator(color: _gold, strokeWidth: 2),
+    );
+  }
+
+  // ── Startup error (permission denied / camera failed to start) ────────────
+  //
+  // This used to be a silent pop: the screen vanished and the driver landed
+  // back on the form with no idea why. Same dark ground and gold accent as
+  // the live view, a one-line reason, and a way out — plus the shortcut to
+  // system settings when settings are the fix.
+  Widget _buildError() {
+    final s = S.of(context);
+    final denied = _cameraFailure == _CameraFailure.permission;
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 40),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 72,
+              height: 72,
+              alignment: Alignment.center,
+              decoration: neuBox(
+                radius: 36,
+                borderColor: _gold.withValues(alpha: 0.45),
+                borderWidth: 1.5,
+              ),
+              child: const Icon(
+                Icons.videocam_off_rounded,
+                color: _gold,
+                size: 30,
+              ),
+            ),
+            const SizedBox(height: 20),
+            Text(
+              denied ? s.faceCameraPermissionDenied : s.faceCameraError,
+              style: const TextStyle(
+                color: _white,
+                fontSize: 16,
+                fontWeight: FontWeight.w500,
+                height: 1.4,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 28),
+            if (denied) ...[
+              _buildErrorButton(
+                label: s.openSettings,
+                gold: true,
+                onTap: () => openAppSettings(),
+              ),
+              const SizedBox(height: 12),
+            ],
+            _buildErrorButton(
+              label: s.close,
+              onTap: () => Navigator.of(context).pop(),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildErrorButton({
+    required String label,
+    required VoidCallback onTap,
+    bool gold = false,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 12),
+        decoration: neuBox(
+          radius: 24,
+          borderColor: _gold.withValues(alpha: gold ? 0.45 : 0.12),
+          borderWidth: 1.2,
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: gold ? _gold : _white,
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
+            letterSpacing: 0.2,
+          ),
+        ),
+      ),
     );
   }
 
@@ -799,6 +971,25 @@ class _FaceLivenessScreenState extends State<FaceLivenessScreen>
                   textAlign: TextAlign.center,
                 ),
               ),
+              // Framing hint — visible only while the face is not framed.
+              // Once framed, the blur and "Face detected" already say it,
+              // and the panel looks exactly as it always has.
+              if (!_finishing && _feedback != _FaceFeedback.framed) ...[
+                const SizedBox(height: 6),
+                AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 250),
+                  child: Text(
+                    _feedbackText(context),
+                    key: ValueKey(_feedback),
+                    style: TextStyle(
+                      color: _gold.withValues(alpha: 0.85),
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+              ],
               const SizedBox(height: 24),
               // Progress dots
               Row(

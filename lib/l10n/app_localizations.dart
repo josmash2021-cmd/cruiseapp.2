@@ -1441,13 +1441,6 @@ class S {
           'quieras, con una pequeña comisión cada vez.'
       : 'With Instant cashout you can cash out your earnings whenever you '
           'want, for a small fee each time.';
-  String get payoutUpdateBank =>
-      _es ? 'Actualizar cuenta bancaria' : 'Update bank account';
-  String get payoutUpdateBankDesc => _es
-      ? 'Con el Pago semanal enviamos tus ganancias a esta cuenta cada '
-          'lunes, sin comisión de retiro.'
-      : 'With Weekly payouts we send your earnings to this bank account '
-          'every Monday, with no cashout fee.';
   String get payoutKeepSecure =>
       _es ? 'Protege tus ganancias' : 'Keep your earnings secure';
   String get payoutKeepSecureCard => _es
@@ -1455,18 +1448,6 @@ class S {
           'Cruise jamás te pedirá que añadas una tarjeta concreta.'
       : "Never enter someone else's card for your earnings. Cruise will "
           'never ask you to add a specific card.';
-  String get payoutKeepSecureBank => _es
-      ? 'Esta cuenta se usará solo para tus ganancias. Nunca pongas la '
-          'cuenta de otra persona.'
-      : 'This account will only be used for your earnings. Never enter '
-          "someone else's bank.";
-  String get payoutOpenBankSheet => _es ? 'Elegir mi banco' : 'Choose my bank';
-  String get payoutBankHandledByStripe => _es
-      ? 'Tu banco se elige en la ventana segura de Stripe. Los números de '
-          'ruta y cuenta nunca pasan por Cruise.'
-      : 'Your bank is chosen in Stripe\'s secure window. Routing and '
-          'account numbers never pass through Cruise.';
-
   // ── Payout methods, card layout ──
   //
   // One card per way of getting paid, each answering the same three
@@ -3589,6 +3570,27 @@ class S {
   String get faceDetected => _es ? 'Rostro detectado' : 'Face detected';
   String get positionYourFace =>
       _es ? 'Coloca tu rostro en el óvalo' : 'Position your face in the oval';
+  String get faceFeedbackNoFace => _es
+      ? 'No se detecta tu rostro — revisa la iluminación'
+      : 'No face detected — check the lighting';
+  String get faceFeedbackMoveCloser =>
+      _es ? 'Acércate un poco' : 'Move closer';
+  String get faceFeedbackMoveAway =>
+      _es ? 'Aléjate un poco' : 'Move a little farther';
+  String get faceFeedbackCenter => _es
+      ? 'Centra tu rostro en el óvalo'
+      : 'Center your face in the oval';
+  String get faceDetectionError => _es
+      ? 'La detección de rostro no funciona en este dispositivo — '
+          'reinicia e inténtalo de nuevo'
+      : "Face detection isn't working on this device — please restart and "
+          'try again';
+  String get faceCameraPermissionDenied => _es
+      ? 'Se necesita acceso a la cámara para verificar tu identidad'
+      : 'Camera access is needed to verify your identity';
+  String get faceCameraError => _es
+      ? 'No se pudo iniciar la cámara — reinicia e inténtalo de nuevo'
+      : "The camera couldn't start — please restart and try again";
 
   // ── Coming Soon ────────────────────────────────────────────────────────────
   String get comingSoon => _es ? 'Próximamente' : 'Coming Soon';

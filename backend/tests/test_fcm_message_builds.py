@@ -63,6 +63,8 @@ def _build(is_offer: bool):
                 badge=1,
                 content_available=True if is_offer else None,
                 mutable_content=True if is_offer else None,
+                custom_data=({"interruption-level": "time-sensitive"}
+                             if is_offer else None),
             )),
         ),
     )
@@ -88,6 +90,29 @@ def test_the_android_priority_reaches_the_wire_as_fcm_expects():
 def test_a_normal_push_is_high_not_max():
     note = _encode(_build(False))["android"]["notification"]
     assert note["notification_priority"] == "PRIORITY_HIGH"
+
+
+def test_an_offer_is_time_sensitive_on_ios():
+    """Focus mode / Scheduled Summary hold back ordinary pushes — an offer
+    cannot wait for either, so its aps payload must say time-sensitive."""
+    aps = _encode(_build(True))["apns"]["payload"]["aps"]
+    assert aps["interruption-level"] == "time-sensitive"
+
+
+def test_a_normal_push_is_not_time_sensitive():
+    """Only offers may claim the interruption. Apple reviews the entitlement,
+    and every push using it dilutes the ones that genuinely cannot wait."""
+    aps = _encode(_build(False))["apns"]["payload"]["aps"]
+    assert "interruption-level" not in aps
+
+
+def test_the_offer_keeps_its_android_channel_sound_and_priority():
+    """cruise_offers is the channel with the custom sound and full-screen
+    intent wired up in the app — drift here and the offer lands silently."""
+    note = _encode(_build(True))["android"]["notification"]
+    assert note["channel_id"] == "cruise_offers"
+    assert note["sound"] == "cruise_online"
+    assert note["notification_priority"] == "PRIORITY_MAX"
 
 
 class TestTheTwoWaysThisBreaks:
@@ -121,3 +146,9 @@ def test_the_service_still_passes_the_right_keyword():
         "that raises TypeError and kills the push on both platforms"
     )
     assert 'priority="max" if is_offer else "high"' in src
+    # Same drift-guard for the iOS half: the copy above can keep asserting
+    # time-sensitive forever while the shipped payload quietly drops it.
+    assert '"interruption-level": "time-sensitive"' in src, (
+        "fcm_service no longer marks offers time-sensitive — Focus mode "
+        "will hold them back on iOS"
+    )

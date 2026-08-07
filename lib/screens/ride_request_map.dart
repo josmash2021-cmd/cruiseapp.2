@@ -596,6 +596,11 @@ extension _RideRequestMap on _RideRequestScreenState {
     final s = _ctrl.state;
     if (s.route == null) return;
     if (_cinematicRunning) return;
+    // Never while the map picker is up: the latch reset + cinematic fit
+    // below are the snap-back the rider sees ~1 s into a drag. Deliberately
+    // NOT gated on widget.pickerMode — that flag stays true on this canvas
+    // after a successful Confirm, when the route preview MUST draw.
+    if (s.phase == RiderPhase.pickingLocation) return;
     // Prerequisites — bail BEFORE claiming the lock so we retry on the
     // next _onStateChange tick once the map finishes loading. Previously
     // we'd set _cinematicRunning = true and then _startCinematicSequence
@@ -1853,6 +1858,10 @@ extension _RideRequestMap on _RideRequestScreenState {
   Future<void> _drawWebRouteOnce() async {
     final web = _webMapCtrl;
     final s = _ctrl.state;
+    // Same picker rule as _drawRoute: no pins, no line, no fit while the
+    // rider drags under the center pin. Phase-gated, not pickerMode-gated —
+    // pickerMode is still true here after a successful Confirm.
+    if (s.phase == RiderPhase.pickingLocation) return;
     if (web == null || s.route == null || s.pickup == null || s.dropoff == null) {
       return;
     }
@@ -2431,7 +2440,9 @@ extension _RideRequestMap on _RideRequestScreenState {
 
       // Phase exits pickingLocation.
       //   - Both endpoints set: _tryFetchRoute() (triggered by
-      //     setPickup/setDropoff above) flips phase → previewRoute.
+      //     setPickup/setDropoff above) now KEEPS pickingLocation —
+      //     its flip was the mid-drag snap-back — so the exit below
+      //     calls finishPickingLocation() explicitly.
       //   - Missing endpoint: try to auto-fill the missing leg with
       //     the user's current GPS so we stay on the same canvas
       //     (mirrors the "Choose on map" pickup flow). Only bounce
@@ -2488,6 +2499,10 @@ extension _RideRequestMap on _RideRequestScreenState {
           popNav.pop();
           return;
         }
+      } else {
+        // Both endpoints committed (directly, or via the GPS/cached-fix
+        // auto-fill above) — leave the picker for the route preview.
+        _ctrl.finishPickingLocation();
       }
 
       if (mounted) {

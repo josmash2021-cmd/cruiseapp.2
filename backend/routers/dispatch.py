@@ -700,6 +700,23 @@ async def _send_offer_to_driver(
         except Exception as _re:
             logging.warning("[Dispatch] rider history lookup failed: %s", _re)
 
+    # Candidate selection filtered on is_online, but the first offer goes
+    # out _FIRST_OFFER_DELAY_SECONDS later and cascade offers later still,
+    # and "go offline" is one tap. Ringing a driver who already clocked out
+    # burns the whole offer timeout on a phone nobody is watching, so the
+    # flag is re-read here, at send time. The offer row above stays created
+    # either way — cascade/expiry retires it on schedule.
+    still_online = (
+        await db.execute(select(User.is_online).where(User.id == driver.id))
+    ).scalar()
+    if not still_online:
+        logging.info(
+            "[Dispatch] trip %s: skipping offer push to driver %s — went "
+            "offline since candidate selection (offer %s stays for expiry)",
+            trip.id, driver.id, offer.id,
+        )
+        return offer
+
     _safe_create_task(event_bus.push_driver_offer(driver.id, [{
         "offer_id": offer.id,
         "rider_name": rider_name,
@@ -717,15 +734,61 @@ async def _send_offer_to_driver(
         "driver_earnings": estimated_driver_fare,
     }]))
 
-    if driver.fcm_token:
-        _safe_create_task(_send_fcm_push_async(
-            driver.fcm_token,
-            title="New Ride Offer",
-            body="A rider needs a ride -- open Cruise to accept.",
-            data={"type": "new_offer", "trip_id": str(trip.id), "offer_id": str(offer.id),
-                  "chained": "1" if chained else "0"},
-            is_offer=True,
-        ))
+    # Called unconditionally, even with no token.
+    #
+    # This used to be behind `if driver.fcm_token:`. _send_fcm_push already
+    # handles an empty token — it counts it and logs "push DROPPED (missing
+    # device token)" — but the guard meant that code was never reached, so a
+    # driver whose token had been cleared produced NO log line at all. An
+    # offer would be created, the driver would sit online with the app in the
+    # background, nothing would arrive, and the server looked like it had
+    # never tried. Diagnosing that cost a live incident.
+    #
+    # The other seventy guards like this one are left alone; this is the push
+    # that pays a driver's rent, and it is the one that has to say when it
+    # cannot go out.
+    if not driver.fcm_token:
+        logging.warning(
+            "[Dispatch] offer %s to driver %s has NO fcm_token — that driver "
+            "cannot be reached while the app is backgrounded until it "
+            "registers one", offer.id, driver.id,
+        )
+
+    # The lock-screen copy is all a backgrounded driver sees before deciding
+    # whether to wake the app, so the push itself carries the numbers that
+    # decide: fare, $/hr, trip distance and duration. Trip.distance is miles
+    # and trip.duration whole minutes (see the auto-calc in trips.py), and
+    # either can still be NULL at request time — so every segment except the
+    # fare is optional, and a missing one shortens the list instead of
+    # blanking the body.
+    fare_str = f"${estimated_driver_fare:.2f}"
+    minutes = int(trip.duration) if trip.duration else 0
+    miles = float(trip.distance) if trip.distance else 0.0
+    per_hour_str = (f"${estimated_driver_fare / (minutes / 60):.2f}/hr"
+                    if minutes > 0 else None)
+    miles_str = f"{miles:.1f} mi" if miles > 0 else None
+    minutes_str = f"{minutes} min" if minutes > 0 else None
+    offer_body = " · ".join(
+        s for s in (fare_str, per_hour_str, miles_str, minutes_str) if s
+    )
+    push_data = {"type": "new_offer", "trip_id": str(trip.id),
+                 "offer_id": str(offer.id),
+                 "chained": "1" if chained else "0", "fare": fare_str}
+    if per_hour_str:
+        push_data["per_hour"] = per_hour_str
+    if miles_str:
+        push_data["miles"] = miles_str
+    if minutes_str:
+        push_data["minutes"] = minutes_str
+    if trip.pickup_address:
+        push_data["pickup_address"] = trip.pickup_address
+    _safe_create_task(_send_fcm_push_async(
+        driver.fcm_token or "",
+        title="New Ride Offer",
+        body=offer_body,
+        data=push_data,
+        is_offer=True,
+    ))
 
     return offer
 

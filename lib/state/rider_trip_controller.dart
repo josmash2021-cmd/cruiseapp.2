@@ -408,6 +408,15 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
     notifyListeners();
   }
 
+  /// Leave the in-place map picker after a confirmed pick. _tryFetchRoute
+  /// deliberately keeps pickingLocation now (its flip was the mid-drag
+  /// camera snap), so the picker's Confirm exits through here instead.
+  void finishPickingLocation() {
+    if (_state.phase != RiderPhase.pickingLocation) return;
+    _state = _state.copyWith(phase: RiderPhase.previewRoute);
+    notifyListeners();
+  }
+
   void setSchedule(DateTime? dateTime) {
     _state = _state.copyWith(scheduledAt: dateTime);
     notifyListeners();
@@ -488,7 +497,13 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
     );
     final estimatedOptions = _generateRideOptions(estimatedRoute);
     _state = _state.copyWith(
-      phase: RiderPhase.previewRoute,
+      // Never flip the phase out of the map picker: that flip mid-drag
+      // unmounted the picker overlays and fired the route-fit flight
+      // behind the rider's finger (the picker "snap back"). The picker's
+      // Confirm exits via finishPickingLocation() instead.
+      phase: _state.phase == RiderPhase.pickingLocation
+          ? RiderPhase.pickingLocation
+          : RiderPhase.previewRoute,
       route: estimatedRoute,
       rideOptions: estimatedOptions,
       selectedOption: null,
@@ -512,7 +527,10 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
       if (routeResult != null) {
         final options = _generateRideOptions(routeResult);
         _state = _state.copyWith(
-          phase: RiderPhase.previewRoute,
+          // Same picker guard as the estimated route above.
+          phase: _state.phase == RiderPhase.pickingLocation
+              ? RiderPhase.pickingLocation
+              : RiderPhase.previewRoute,
           route: routeResult,
           rideOptions: options,
           selectedOption: null,

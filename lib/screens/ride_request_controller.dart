@@ -2258,35 +2258,94 @@ extension _RideRequestController on _RideRequestScreenState {
     );
   }
 
-  /// Driver Found: glide the LIVE main map to the route midpoint with the
-  /// celebratory 20° tilt. Replaces the overlay's former private map —
-  /// one surface, no black init window, no two-surface iOS crash.
+  /// Driver Found: fit the WHOLE route once with the celebratory 20° tilt.
+  /// Replaces the overlay's former private map — one surface, no black
+  /// init window, no two-surface iOS crash. The old midpoint-at-14.5
+  /// flight put both endpoints off-screen on longer trips. Driver
+  /// location updates after this move the marker/ETA only, never the
+  /// camera.
   void _dfFlyMainCamera() {
-    final pickup = _ctrl.state.pickup;
-    final dropoff = _ctrl.state.dropoff;
+    // The rider's hand outranks this frame too — _safeFlyTo/_fitWebRoute
+    // don't check the latch themselves, their callers do.
+    if (_userTookCamera) return;
+    final s = _ctrl.state;
+    final pickup = s.pickup;
+    final dropoff = s.dropoff;
     if (pickup == null) return;
-    final midLat =
-        dropoff != null ? (pickup.lat + dropoff.lat) / 2 : pickup.lat;
-    final midLng =
-        dropoff != null ? (pickup.lng + dropoff.lng) / 2 : pickup.lng;
+    // Fit the route polyline; fall back to the two endpoints when the
+    // route never landed.
+    final routePts = s.route?.points ?? const <LatLng>[];
+    final fitPts = routePts.isNotEmpty
+        ? routePts
+        : [
+            LatLng(pickup.lat, pickup.lng),
+            if (dropoff != null) LatLng(dropoff.lat, dropoff.lng),
+          ];
+    if (fitPts.length < 2) {
+      // Pickup only — nothing to fit; keep the old single-point frame.
+      if (kIsWeb) {
+        _webMapCtrl?.flyTo(
+            lng: pickup.lng, lat: pickup.lat, zoom: 14.5, pitch: 20, durationMs: 1000);
+        return;
+      }
+      _safeFlyTo(
+        mapbox.CameraOptions(
+          center:
+              mapbox.Point(coordinates: mapbox.Position(pickup.lng, pickup.lat)),
+          zoom: 14.5,
+          pitch: 20.0,
+        ),
+        mapbox.MapAnimationOptions(duration: 1000),
+      );
+      return;
+    }
     if (kIsWeb) {
-      _webMapCtrl?.flyTo(
-          lng: midLng, lat: midLat, zoom: 14.5, pitch: 20, durationMs: 1000);
+      // Browser twin of the fit below — same top inset, same tilt.
+      _fitWebRoute(List<LatLng>.from(fitPts),
+          durationMs: 1000, pitch: 20, paddingTop: 90);
       return;
     }
     final mc = _mapCtrl;
     if (mc == null) return;
-    unawaited(mc
-        .flyTo(
-          mapbox.CameraOptions(
-            center:
-                mapbox.Point(coordinates: mapbox.Position(midLng, midLat)),
-            zoom: 14.5,
-            pitch: 20.0,
-          ),
-          mapbox.MapAnimationOptions(duration: 1000),
-        )
-        .catchError((_) {}));
+    double minLat = 90, maxLat = -90, minLng = 180, maxLng = -180;
+    for (final p in fitPts) {
+      if (p.latitude < minLat) minLat = p.latitude;
+      if (p.latitude > maxLat) maxLat = p.latitude;
+      if (p.longitude < minLng) minLng = p.longitude;
+      if (p.longitude > maxLng) maxLng = p.longitude;
+    }
+    final mq = MediaQuery.maybeOf(context);
+    if (mq == null) return;
+    // Same sheet inset the searching frame uses, so the whole route
+    // clears the Driver Found card.
+    final bottomInset = _sheetHeightPx > 0
+        ? _sheetHeightPx + 24 + 16
+        : (mq.size.height * 0.38).clamp(280.0, 400.0) + mq.padding.bottom;
+    mc
+        .cameraForCoordinatesPadding(
+      [
+        mapbox.Point(coordinates: mapbox.Position(minLng, minLat)),
+        mapbox.Point(coordinates: mapbox.Position(maxLng, maxLat)),
+      ],
+      mapbox.CameraOptions(pitch: 20.0),
+      mapbox.MbxEdgeInsets(top: 90, left: 50, bottom: bottomInset, right: 50),
+      null,
+      null,
+    )
+        .then((cam) {
+      // Gated like every other fit — _safeFlyTo validates cam before the
+      // channel write (see _animateSearchCameraToAngle).
+      _safeFlyTo(
+        mapbox.CameraOptions(
+          center: cam.center,
+          zoom: cam.zoom,
+          pitch: 20.0,
+        ),
+        mapbox.MapAnimationOptions(duration: 1000),
+      );
+    }).catchError((e) {
+      debugPrint('[DriverFound] fit full route failed: $e');
+    });
   }
 
   Future<void> _showPaymentMethodPicker(AppColors c, RideOption? option) async {

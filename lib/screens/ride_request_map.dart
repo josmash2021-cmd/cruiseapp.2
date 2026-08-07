@@ -9,11 +9,14 @@ extension _RideRequestMap on _RideRequestScreenState {
   // route and any updated/recreated route use the exact same shade.
   static const int _routeGoldColor = 0xFFF0CA3E;
 
-  // The cinematic's final frame — the same 55° tilt and fixed 15° bearing
-  // _startCinematicSequence flies to on native; the web fit uses them so
-  // both platforms settle on an identical view.
-  static const double _kCinematicPitch = 55.0;
-  static const double _kCinematicBearing = 15.0;
+  // The cinematic's final frame. Top-down and north-up, like the rider's
+  // overview before it: the 55° tilt + 15° bearing used to fire here, and
+  // the route overview "snapped" into a pitched close-up a second after
+  // settling — the rider lost the full-route frame they had just been
+  // shown. The sequence stays (pins pop, line draws, labels unroll); only
+  // the orientation change is gone.
+  static const double _kCinematicPitch = 0.0;
+  static const double _kCinematicBearing = 0.0;
 
   /// Detect what icon to show on the dropoff pin based on address text.
   _PinIcon _detectDropoffType(String address) {
@@ -695,13 +698,15 @@ extension _RideRequestMap on _RideRequestScreenState {
   /// controls pitch + zoom + center simultaneously so there are
   /// ZERO competing flyTo / setCamera calls.
   ///
-  /// Sequence the user asked for:
+  /// Sequence:
   ///   1. Camera starts at the DROPOFF pin, top-down (pitch 0°),
   ///      zoomed in (~16).
-  ///   2. Slowly tilts 0° → 55° while zooming out to fit the full
-  ///      route above the choose-a-ride card. (2.2 s, easeInOutCubic)
+  ///   2. Smoothly zooms out to fit the full route above the
+  ///      choose-a-ride card, STAYING top-down and north-up. (2.2 s,
+  ///      easeInOutCubic) — the old 0° → 55° tilt was the "map suddenly
+  ///      jumps into a pitched close-up" the rider reported.
   ///   3. Pins pop during the first 600 ms.
-  ///   4. Route draws progressively during the tilt/zoom.
+  ///   4. Route draws progressively during the zoom.
   ///   5. Labels unroll halfway through.
   ///   6. Sheet fades in after everything settles.
   Future<void> _startCinematicSequence(List<LatLng> pts) async {
@@ -711,10 +716,10 @@ extension _RideRequestMap on _RideRequestScreenState {
     // mid-flight, everything after our awaits must become a no-op.
     final gen = _cinematicGen;
 
-    // Fixed 15° bearing — matches the Shopify widget's static camera
-    // angle during step 3. Previously randomized ±5–12°, but the web is
-    // intentionally consistent so every ride looks the same.
-    _randomBearing = 15.0;
+    // North-up, matching the flat overview the sequence replaces. It was a
+    // fixed 15° so every ride looked the same; that rotation is half of the
+    // "map suddenly jumps" report, so it goes to 0 with the tilt.
+    _randomBearing = 0.0;
 
     // ── Compute the FINAL camera we want to arrive at ──
     // This is the framed view with pitch 55°, big bottom inset for
@@ -750,7 +755,8 @@ extension _RideRequestMap on _RideRequestScreenState {
           mapbox.Point(coordinates: mapbox.Position(minLng, minLat)),
           mapbox.Point(coordinates: mapbox.Position(maxLng, maxLat)),
         ],
-        mapbox.CameraOptions(pitch: 55.0, bearing: _randomBearing),
+        mapbox.CameraOptions(
+            pitch: _kCinematicPitch, bearing: _randomBearing),
         mapbox.MbxEdgeInsets(top: 80, left: 50, bottom: cardInset, right: 50),
         null,
         null,
@@ -817,7 +823,7 @@ extension _RideRequestMap on _RideRequestScreenState {
 
     final endLat = targetCenterLat;
     final endLng = targetCenterLng;
-    const endPitch = 55.0;
+    const endPitch = _kCinematicPitch;
     final endZoom = targetZoom;
     final endBearing = _randomBearing;
 
@@ -2032,7 +2038,7 @@ extension _RideRequestMap on _RideRequestScreenState {
       [mapbox.Point(coordinates: mapbox.Position(minLng, minLat)),
        mapbox.Point(coordinates: mapbox.Position(maxLng, maxLat))],
       mapbox.CameraOptions(
-        pitch: preserveCamera ? 55.0 : null,
+        pitch: preserveCamera ? _kCinematicPitch : null,
         bearing: preserveCamera ? _randomBearing : null,
       ),
       mapbox.MbxEdgeInsets(top: 60, left: 40, bottom: bottomPad, right: 40),
@@ -2060,7 +2066,7 @@ extension _RideRequestMap on _RideRequestScreenState {
     _mapCtrl!.cameraForCoordinatesPadding(
       [mapbox.Point(coordinates: mapbox.Position(minLng, minLat)),
        mapbox.Point(coordinates: mapbox.Position(maxLng, maxLat))],
-      mapbox.CameraOptions(pitch: 55.0, bearing: _randomBearing),
+      mapbox.CameraOptions(pitch: _kCinematicPitch, bearing: _randomBearing),
       mapbox.MbxEdgeInsets(top: 80, left: 50, bottom: bottomInset, right: 50),
       null, null,
     ).then((cam) {

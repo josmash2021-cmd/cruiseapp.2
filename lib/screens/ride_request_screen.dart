@@ -166,11 +166,16 @@ List<String> _getSearchStatusMessages(BuildContext context) {
 
 /// Camera angle presets synced with each status message.
 /// Each entry: (pitch°, bearing°)
+///
+/// All zero on purpose: the searching camera used to tilt and rotate
+/// through these, and the rider read it as the map "snapping" out of the
+/// calm top-down overview. The map stays flat and north-up while the
+/// status messages cycle.
 const List<(double, double)> _searchCameraAngles = [
-  (55.0, 12.0),   // Looking for your driver — subtle right
-  (45.0, -30.0),  // Connecting — wider left turn
-  (60.0, 25.0),   // Almost there — tighter, right
-  (50.0, -10.0),  // Confirming — settling back center-left
+  (0.0, 0.0),   // Looking for your driver
+  (0.0, 0.0),   // Connecting
+  (0.0, 0.0),   // Almost there
+  (0.0, 0.0),   // Confirming
 ];
 
 /// Enum for payment retry actions

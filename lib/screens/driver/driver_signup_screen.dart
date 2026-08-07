@@ -22,6 +22,7 @@ import '../biometric_consent_screen.dart';
 import '../privacy_policy_screen.dart';
 import 'driver_agreement_screen.dart';
 import 'driver_pending_review_screen.dart';
+import '../../utils/ssn_validator.dart';
 import 'license_scanner_screen.dart';
 
 final _nonDigitRe = RegExp(r'\D');
@@ -29,15 +30,17 @@ final _nonDigitRe = RegExp(r'\D');
 /// Multi-step driver sign-up + verification flow.
 ///
 ///  Step 0 — Personal information
-///  Step 1 — Vehicle details
-///  Step 2 — Documents & biometrics
-///    • Driver's license (FRONT)
-///    • Driver's license (BACK)
-///    • Car insurance photo
-///    • Car registration photo
-///    • SSN (for Checkr background check)
-///    • Face biometric liveness check
-///  Step 3 — Review & submit
+///  Step 1 — Documents & verification, in two halves
+///    About you:      license FRONT, license BACK, SSN (for Checkr), face
+///                    biometric liveness check
+///    About your car: make/model/year/colour/plate, insurance photo,
+///                    registration photo
+///  Step 2 — Review & submit
+///
+/// The car's details used to be a step of their own, sitting between the
+/// personal page and the documents page. They are now the opening of the
+/// "about your car" half — you describe the car and prove it in one place
+/// instead of being asked about it, sent elsewhere, then asked again.
 class DriverSignupScreen extends StatefulWidget {
   const DriverSignupScreen({super.key});
 
@@ -271,7 +274,7 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
 
   final _pageCtrl = PageController();
   int _step = 0;
-  static const _totalSteps = 4;
+  static const _totalSteps = 3;
 
   // ── Step 0: Personal info ──────────────────────────────────────────────────
   final _firstNameCtrl = TextEditingController();
@@ -394,6 +397,21 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
     super.dispose();
   }
 
+  /// Whether every field about the car itself is filled in and sane.
+  ///
+  /// Read by BOTH the Continue gate and the checklist counter. They used to
+  /// be written out separately, which is how a page ends up showing a full
+  /// progress bar over a grey Continue button and no way to tell why.
+  bool get _vehicleDetailsComplete {
+    final year = int.tryParse(_yearCtrl.text.trim()) ?? 0;
+    return _makeCtrl.text.trim().isNotEmpty &&
+        _modelCtrl.text.trim().isNotEmpty &&
+        year >= 2000 &&
+        year <= DateTime.now().year + 1 &&
+        _colorCtrl.text.trim().isNotEmpty &&
+        _plateCtrl.text.trim().isNotEmpty;
+  }
+
   bool get _canProceed {
     switch (_step) {
       case 0:
@@ -414,21 +432,16 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
             !_checkingEmail &&
             !_checkingPhone;
       case 1:
-        final year = int.tryParse(_yearCtrl.text.trim()) ?? 0;
-        return _makeCtrl.text.trim().isNotEmpty &&
-            _modelCtrl.text.trim().isNotEmpty &&
-            year >= 2000 &&
-            year <= DateTime.now().year + 1 &&
-            _colorCtrl.text.trim().isNotEmpty &&
-            _plateCtrl.text.trim().isNotEmpty;
-      case 2:
+        // One page now, so one gate: everything about you AND everything
+        // about the car.
         return _licenseFrontPath != null &&
             _licenseBackPath != null &&
-            _insurancePath != null &&
-            _registrationPath != null &&
             _biometricDone &&
-            _ssnCtrl.text.replaceAll(_nonDigitRe, '').length == 9;
-      case 3:
+            isPlausibleSsn(_ssnCtrl.text) &&
+            _vehicleDetailsComplete &&
+            _insurancePath != null &&
+            _registrationPath != null;
+      case 2:
         // Legal consents were collected on step 0 (below the password).
         return true;
       default:
@@ -1055,7 +1068,6 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
                 physics: const NeverScrollableScrollPhysics(),
                 children: [
                   _buildPersonalInfo(),
-                  _buildVehicleInfo(),
                   _buildDocuments(),
                   _buildReview(),
                 ],
@@ -1477,84 +1489,80 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
   //  STEP 1 — Vehicle Info
   // ═══════════════════════════════════════════════════════════════════════════
 
-  Widget _buildVehicleInfo() {
+  /// The car's own details — make, model, year, colour, plate.
+  ///
+  /// Was a page of its own; now it opens the "about your car" half of the
+  /// documents step, directly above the insurance and registration photos
+  /// that back it up.
+  Widget _vehicleFields() {
     final models = _carModelsMap[_makeCtrl.text.trim()] ?? [];
-    return SingleChildScrollView(
-      padding: const EdgeInsets.symmetric(horizontal: 28),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const SizedBox(height: 20),
-          _pageTitle(
-            S.of(context).vehicleDetails,
-            S.of(context).vehicleInfoSubtitle,
-          ),
-          const SizedBox(height: 28),
-          Row(
-            children: [
-              Expanded(
-                child: _autocompleteField(
-                  ctrl: _makeCtrl,
-                  label: S.of(context).vehicleMake,
-                  icon: Icons.directions_car_outlined,
-                  options: _carMakes,
-                  onSelected: (_) {
-                    _modelCtrl.clear();
-                    setState(() {});
-                  },
-                ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: _autocompleteField(
+                ctrl: _makeCtrl,
+                label: S.of(context).vehicleMake,
+                icon: Icons.directions_car_outlined,
+                options: _carMakes,
+                onSelected: (_) {
+                  _modelCtrl.clear();
+                  setState(() {});
+                },
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _autocompleteField(
-                  ctrl: _modelCtrl,
-                  label: S.of(context).vehicleModel,
-                  icon: Icons.directions_car_outlined,
-                  options: models,
-                ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _autocompleteField(
+                ctrl: _modelCtrl,
+                label: S.of(context).vehicleModel,
+                icon: Icons.directions_car_outlined,
+                options: models,
               ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(
-                child: _field(
-                  ctrl: _yearCtrl,
-                  label: S.of(context).vehicleYear,
-                  icon: Icons.calendar_today_outlined,
-                  keyboard: TextInputType.number,
-                  maxLength: 4,
-                ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+        Row(
+          children: [
+            Expanded(
+              child: _field(
+                ctrl: _yearCtrl,
+                label: S.of(context).vehicleYear,
+                icon: Icons.calendar_today_outlined,
+                keyboard: TextInputType.number,
+                maxLength: 4,
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _autocompleteField(
-                  ctrl: _colorCtrl,
-                  label: S.of(context).vehicleColor,
-                  icon: Icons.palette_outlined,
-                  options: _carColors,
-                ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _autocompleteField(
+                ctrl: _colorCtrl,
+                label: S.of(context).vehicleColor,
+                icon: Icons.palette_outlined,
+                options: _carColors,
               ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          _field(
-            ctrl: _plateCtrl,
-            label: S.of(context).licensePlateLabel,
-            icon: Icons.confirmation_number_outlined,
-            capitalize: true,
-          ),
-          const SizedBox(height: 20),
-          _infoBox(S.of(context).vehicleRequirements),
-          const SizedBox(height: 40),
-        ],
-      ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+        _field(
+          ctrl: _plateCtrl,
+          label: S.of(context).licensePlateLabel,
+          icon: Icons.confirmation_number_outlined,
+          capitalize: true,
+        ),
+        const SizedBox(height: 20),
+        _infoBox(S.of(context).vehicleRequirements),
+        const SizedBox(height: 16),
+      ],
     );
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
-  //  STEP 2 — Documents & Biometrics
+  //  STEP 1 — Documents & verification (about you + about your car)
   // ═══════════════════════════════════════════════════════════════════════════
 
   Widget _buildDocuments() {
@@ -1569,6 +1577,12 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
             S.of(context).completeAllItems,
           ),
           const SizedBox(height: 22),
+
+          // Two groups, because the list mixed two different errands: proving
+          // who you are, and proving the car is yours. Five undifferentiated
+          // tiles read as one long chore; split, each half is short enough to
+          // see the end of.
+          _docSectionHeader(S.of(context).docsAboutYou),
 
           _docTile(
             title: S.of(context).driverLicenseFront,
@@ -1604,6 +1618,17 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
           ),
           const SizedBox(height: 10),
 
+          _buildSsnSection(),
+          const SizedBox(height: 10),
+
+          _buildBiometricTile(),
+          const SizedBox(height: 26),
+
+          _docSectionHeader(S.of(context).docsAboutYourCar),
+
+          // Describe the car, then prove it. Same half of the page.
+          _vehicleFields(),
+
           _docTile(
             title: S.of(context).carInsurance,
             subtitle: S.of(context).carInsuranceDesc,
@@ -1611,29 +1636,23 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
             filePath: _insurancePath,
             required_: true,
             onTap: () => _showPickOptions(
-              'Car Insurance',
+              S.of(context).carInsurance,
               (p) => setState(() => _insurancePath = p),
             ),
           ),
           const SizedBox(height: 10),
 
           _docTile(
-            title: 'Car Registration',
-            subtitle: 'Take or upload a photo of your registration',
+            title: S.of(context).carRegistration,
+            subtitle: S.of(context).carRegistrationSubtitle,
             icon: Icons.description_outlined,
             filePath: _registrationPath,
             required_: true,
             onTap: () => _showPickOptions(
-              'Car Registration',
+              S.of(context).carRegistration,
               (p) => setState(() => _registrationPath = p),
             ),
           ),
-          const SizedBox(height: 10),
-
-          _buildSsnSection(),
-          const SizedBox(height: 10),
-
-          _buildBiometricTile(),
           const SizedBox(height: 22),
 
           _buildDocProgress(),
@@ -1643,14 +1662,42 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
     );
   }
 
+  /// Group heading over the document tiles. Same treatment as the driver
+  /// menu's section labels so the two screens read as one app.
+  Widget _docSectionHeader(String title) {
+    final c = AppColors.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(left: 6, bottom: 10),
+      child: Text(
+        title.toUpperCase(),
+        style: TextStyle(
+          color: c.textTertiary,
+          fontSize: 12,
+          fontWeight: FontWeight.w700,
+          letterSpacing: 1.2,
+        ),
+      ),
+    );
+  }
+
   Widget _buildSsnSection() {
     final c = AppColors.of(context);
-    final ssnFilled = _ssnCtrl.text.replaceAll(_nonDigitRe, '').length == 9;
+    // Three states, not two. "Nine digits are in" is not the same as "this
+    // could be somebody's number": 000-00-0000 and 123-45-6789 are nine
+    // digits and neither has ever been issued. See utils/ssn_validator.dart —
+    // which checks the number is POSSIBLE, not that it belongs to anyone.
+    final problem = ssnProblem(_ssnCtrl.text);
+    final ssnValid = problem == null;
+    final ssnRejected = problem != null && problem != SsnProblem.incomplete;
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: neuBox(
         radius: 18,
-        borderColor: ssnFilled ? _gold.withValues(alpha: 0.4) : null,
+        borderColor: ssnValid
+            ? _gold.withValues(alpha: 0.4)
+            : ssnRejected
+                ? c.error.withValues(alpha: 0.45)
+                : null,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1660,15 +1707,22 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
               Container(
                 width: 40,
                 height: 40,
-                decoration: ssnFilled
+                alignment: Alignment.center,
+                decoration: ssnValid
                     ? BoxDecoration(
                         color: _gold.withValues(alpha: 0.2),
                         borderRadius: BorderRadius.circular(12),
                       )
                     : neuBox(radius: 12, pressed: true),
                 child: Icon(
-                  Icons.security_rounded,
-                  color: ssnFilled ? _gold : c.textTertiary,
+                  ssnRejected
+                      ? Icons.gpp_maybe_rounded
+                      : Icons.security_rounded,
+                  color: ssnValid
+                      ? _gold
+                      : ssnRejected
+                          ? c.error
+                          : c.textTertiary,
                   size: 20,
                 ),
               ),
@@ -1689,34 +1743,36 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
                     ),
                     const SizedBox(height: 3),
                     Text(
-                      ssnFilled
+                      ssnValid
                           ? S.of(context).ssnEntered
                           : S.of(context).enterSsn,
                       style: TextStyle(
-                        color: ssnFilled ? _gold : c.textTertiary,
+                        color: ssnValid ? _gold : c.textTertiary,
                         fontSize: 11,
                       ),
                     ),
-                    if (!ssnFilled) ...[
+                    if (!ssnValid) ...[
                       const SizedBox(height: 6),
                       _badge(S.of(context).requiredBadge),
                     ],
                   ],
                 ),
               ),
-              if (ssnFilled)
+              // The tick is the whole point of this screen's ask: it only
+              // appears once the number could actually have been issued.
+              if (ssnValid)
                 GestureDetector(
                   onTap: () => setState(() {
                     _ssnCtrl.clear();
                   }),
                   child: const Icon(Icons.edit_rounded, color: _gold, size: 18),
                 ),
-              if (ssnFilled) const SizedBox(width: 6),
-              if (ssnFilled)
+              if (ssnValid) const SizedBox(width: 6),
+              if (ssnValid)
                 const Icon(Icons.check_circle_rounded, color: _gold, size: 22),
             ],
           ),
-          if (!ssnFilled) ...[
+          if (!ssnValid) ...[
             const SizedBox(height: 14),
             Container(
               decoration: neuBox(radius: 12, pressed: true),
@@ -1764,13 +1820,32 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
               ),
             ),
             const SizedBox(height: 10),
-            Text(
-              S.of(context).ssnEncryptedNote,
-              style: TextStyle(
-                color: c.textTertiary,
-                fontSize: 11,
+            if (ssnRejected)
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(Icons.error_outline_rounded, color: c.error, size: 15),
+                  const SizedBox(width: 7),
+                  Expanded(
+                    child: Text(
+                      S.of(context).ssnNotPossible,
+                      style: TextStyle(
+                        color: c.error,
+                        fontSize: 11,
+                        height: 1.35,
+                      ),
+                    ),
+                  ),
+                ],
+              )
+            else
+              Text(
+                S.of(context).ssnEncryptedNote,
+                style: TextStyle(
+                  color: c.textTertiary,
+                  fontSize: 11,
+                ),
               ),
-            ),
           ],
         ],
       ),
@@ -1853,16 +1928,17 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
   }
 
   Widget _buildDocProgress() {
+    // Same order as the page, and it must list EVERYTHING _canProceed
+    // gates on. The vehicle fields were missing, so the bar could read 6/6
+    // while Continue stayed grey over an empty plate.
     final items = [
       (S.of(context).licenseFrontLabel, _licenseFrontPath != null),
       (S.of(context).licenseBackLabel, _licenseBackPath != null),
-      (S.of(context).insuranceLabel, _insurancePath != null),
-      ('Registration', _registrationPath != null),
-      (
-        S.of(context).ssnShortLabel,
-        _ssnCtrl.text.replaceAll(_nonDigitRe, '').length == 9,
-      ),
+      (S.of(context).ssnShortLabel, isPlausibleSsn(_ssnCtrl.text)),
       (S.of(context).faceCheckLabel, _biometricDone),
+      (S.of(context).vehicleDetails, _vehicleDetailsComplete),
+      (S.of(context).insuranceLabel, _insurancePath != null),
+      (S.of(context).carRegistration, _registrationPath != null),
     ];
     final done = items.where((i) => i.$2).length;
     final c = AppColors.of(context);
@@ -1955,7 +2031,7 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
                 : S.of(context).missingStatus,
           ),
           _reviewItem(
-            'Registration',
+            S.of(context).carRegistration,
             _registrationPath != null
                 ? S.of(context).uploadedStatus
                 : S.of(context).missingStatus,
@@ -2202,7 +2278,7 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
                   ),
                   if (required_ && !done) ...[
                     const SizedBox(height: 6),
-                    _badge('Required'),
+                    _badge(S.of(context).requiredBadge),
                   ],
                 ],
               ),

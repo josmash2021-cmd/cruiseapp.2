@@ -59,6 +59,7 @@ import '../../utils/responsive.dart';
 import '../../utils/name_helper.dart' as nh;
 import '../../utils/driver_location_settings.dart';
 import '../../services/firebase_auth_recovery.dart';
+import '../../services/preload_service.dart';
 
 /// Statuses the backend treats as the end of a trip.
 ///
@@ -2116,7 +2117,14 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     // during the first layout. On web show the GL JS WebMapView instead,
     // same pattern as the rider home mini map.
     if (kIsWeb) {
-      final webPos = _currentLatLng ?? const LatLng(33.5186, -86.8104);
+      // Same order as the native path above: measured, then the splash's
+      // fix, then the seed. On web the seed is reached most often, because
+      // the browser will not answer a location request without a prompt.
+      final webPreloaded = PreloadService.initialPosition;
+      final webPos = _currentLatLng ??
+          (webPreloaded != null
+              ? LatLng(webPreloaded.latitude, webPreloaded.longitude)
+              : const LatLng(33.5186, -86.8104));
       return Container(
         decoration: neuBox(radius: 24),
         clipBehavior: Clip.antiAlias,
@@ -2147,9 +2155,23 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
         ),
       );
     }
-    // FIX: Always show map, even if GPS hasn't loaded yet. Use default location
-    // and move camera when GPS arrives. Prevents blank screen on slow GPS.
-    final pos = _currentLatLng ?? const LatLng(33.5186, -86.8104);
+    // Open where the driver IS, on the first frame.
+    //
+    // The splash already resolved a fix and parked it in
+    // `PreloadService.initialPosition` — the rider home (home_screen.dart)
+    // and the driver's online screen both read it, this screen never did. So
+    // it opened on the Birmingham seed and then jumped when GPS answered a
+    // moment later, and to a driver anywhere else that jump is the map
+    // "resetting itself" the instant they look at it.
+    //
+    // Order matters: whatever this session has actually measured, then the
+    // splash's fix, then the seed — which is now only reached when a phone
+    // has never produced a location at all.
+    final preloaded = PreloadService.initialPosition;
+    final pos = _currentLatLng ??
+        (preloaded != null
+            ? LatLng(preloaded.latitude, preloaded.longitude)
+            : const LatLng(33.5186, -86.8104));
 
     return RepaintBoundary(
       child: LayoutBuilder(

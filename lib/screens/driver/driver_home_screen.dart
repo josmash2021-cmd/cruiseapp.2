@@ -1873,6 +1873,16 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     // most of the transition. The coordinator still runs and still waits —
     // this is a margin on top of it, not a replacement.
     //
+    // The chime fires HERE, before the push — not after it. At this line the
+    // tap has been answered and the platform thread is idle; the freezes that
+    // killed the three earlier rounds all came from asking the audio engine
+    // to work DURING the route transition and the next screen's PlatformView
+    // mount. resume() on the pre-warmed player crosses the channel now, when
+    // nothing else needs the thread, so the sound is what the driver hears
+    // the instant GO is tapped. The screen's delayed chime is skipped by the
+    // recency guard inside playOnlineChime, so this is still one sound.
+    if (!_isStillOnline) NotificationService.playOnlineChime();
+
     // Nothing is awaited, so the push is not delayed. The cost is that the
     // map behind the transition is a solid card for those 420 ms, which
     // costs nothing the driver can act on; the crash costs the shift.
@@ -1909,15 +1919,10 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
         },
       ),
     );
-    // No chime. Removed, not deferred again.
-    //
-    // Three rounds went into keeping it: fire it after the push, then defer it
-    // 300 ms, then swap play(Source) for resume() on a pre-warmed player. It
-    // still stuck, because the audio engine's work happens on the platform
-    // thread and that is the same thread the route transition and the Mapbox
-    // surface on the next screen both need. Every fix moved the stall, none of
-    // them removed it. A sound worth one second of frozen UI on the busiest
-    // button in the driver app does not exist.
+    // The chime left this spot for the tap above (see the comment there):
+    // sound AFTER the push was the thing that froze, three times, because the
+    // audio engine's work happens on the platform thread the transition and
+    // the Mapbox surface both need. Before the push, that thread is free.
     //
     // The haptic stays and stays deferred — the engine can cold-start slowly
     // on iOS too, so it waits for the transition to be most of the way done.

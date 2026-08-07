@@ -597,9 +597,10 @@ class NotificationService {
     });
   }
 
-  /// The go-online confirmation. Called by DriverOnlineScreen once its map
-  /// surface is up — never by the GO button, which is what froze; the
-  /// screen's `_armOnlineChime` carries that history.
+  /// The go-online confirmation. Fired by the GO button at tap time (the
+  /// platform thread is still idle then — it is sound-AFTER-push that used
+  /// to stall, not sound-before-it), with `_armOnlineChime` in
+  /// DriverOnlineScreen as the fallback for entries that skip the button.
   ///
   /// Borrows the offer player instead of building its own. The chime used to
   /// have a second [AudioPlayer], and a second audio engine cold-starting on
@@ -610,11 +611,24 @@ class NotificationService {
   /// has to be heard over it for six seconds; this is a beat of confirmation
   /// and mixes at full volume rather than flipping the session category twice
   /// around itself.
+  ///
+  /// Idempotent within a few seconds: the GO button fires it at tap time and
+  /// DriverOnlineScreen's `_armOnlineChime` fires it again ~1.2 s later when
+  /// the map surface lands. The second call must be a no-op, or the driver
+  /// hears the confirmation twice.
+  static DateTime? _lastOnlineChimeAt;
+
   static void playOnlineChime() {
     // The offer cue owns the player while it is running and outranks this:
     // being told a ride is waiting matters more than being told you are
     // online. Checked again inside, after the prefs await.
     if (_offerSoundPlaying) return;
+    final now = DateTime.now();
+    if (_lastOnlineChimeAt != null &&
+        now.difference(_lastOnlineChimeAt!) < const Duration(seconds: 4)) {
+      return;
+    }
+    _lastOnlineChimeAt = now;
     Future.microtask(() async {
       try {
         final prefs = PrefsCache.instanceSync ?? await PrefsCache.instance;

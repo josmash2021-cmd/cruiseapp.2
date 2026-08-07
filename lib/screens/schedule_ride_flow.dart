@@ -78,25 +78,11 @@ class _ScheduleDateScreenState extends State<_ScheduleDateScreen> {
     return d.year == now.year && d.month == now.month && d.day == now.day;
   }
 
-  bool _sameDay(DateTime a, DateTime b) =>
-      a.year == b.year && a.month == b.month && a.day == b.day;
-
-  void _pickQuick(String key) {
-    final now = DateTime.now();
-    DateTime target = DateTime(now.year, now.month, now.day);
-    if (key == 'tomorrow') {
-      target = target.add(const Duration(days: 1));
-    } else if (key == 'weekend') {
-      final d = target.weekday; // Mon=1 … Sun=7
-      // Next Saturday (weekday 6). If today is Sat already, jump to next Sat.
-      final delta = ((6 - d + 7) % 7 == 0) ? 7 : (6 - d + 7) % 7;
-      target = target.add(Duration(days: delta));
-    }
-    setState(() {
-      _selected = target;
-      _viewMonth = DateTime(target.year, target.month, 1);
-    });
-  }
+  // `_sameDay` and `_pickQuick` lived here to drive the Today / Tomorrow /
+  // Weekend chips. The chips are gone and the calendar is the only way to
+  // pick a day, so both went with them — the analyzer flags them as unused
+  // otherwise, and a dead date helper is the kind of thing someone revives
+  // by accident.
 
   void _changeMonth(int delta) {
     setState(() {
@@ -126,21 +112,6 @@ class _ScheduleDateScreenState extends State<_ScheduleDateScreen> {
     final s = S.of(context);
     final isEs = Localizations.localeOf(context).languageCode == 'es';
 
-    String todayLabel = isEs ? 'Hoy' : 'Today';
-    String tomorrowLabel = isEs ? 'Mañana' : 'Tomorrow';
-    String weekendLabel = isEs ? 'Fin de semana' : 'Weekend';
-
-    final today = DateTime.now();
-    final tomorrow = today.add(const Duration(days: 1));
-    final isTodaySel = _sameDay(_selected, today);
-    final isTomorrowSel = _sameDay(_selected, tomorrow);
-    // "Weekend" chip shows active when the selected day is Sat/Sun
-    // within ~1 week of today.
-    final isWeekendSel = !isTodaySel &&
-        !isTomorrowSel &&
-        (_selected.weekday == 6 || _selected.weekday == 7) &&
-        _selected.difference(today).inDays <= 8;
-
     return Scaffold(
       backgroundColor: _bg,
       body: SafeArea(
@@ -153,35 +124,21 @@ class _ScheduleDateScreenState extends State<_ScheduleDateScreen> {
               onBack: () => Navigator.pop(context),
             ),
 
-            const SizedBox(height: 4),
+            const SizedBox(height: 12),
 
-            // Quick chips
+            // A rule between the header and the calendar, where the
+            // Today / Tomorrow / Weekend chips used to be. Same hairline
+            // the footer above the Select Time button uses, so the page
+            // is divided by one weight rather than two.
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20),
-              child: Row(
-                children: [
-                  _QuickChip(
-                    label: todayLabel,
-                    active: isTodaySel,
-                    onTap: () => _pickQuick('today'),
-                  ),
-                  const SizedBox(width: 8),
-                  _QuickChip(
-                    label: tomorrowLabel,
-                    active: isTomorrowSel,
-                    onTap: () => _pickQuick('tomorrow'),
-                  ),
-                  const SizedBox(width: 8),
-                  _QuickChip(
-                    label: weekendLabel,
-                    active: isWeekendSel,
-                    onTap: () => _pickQuick('weekend'),
-                  ),
-                ],
+              child: Container(
+                height: 1,
+                color: Colors.white.withValues(alpha: 0.06),
               ),
             ),
 
-            const SizedBox(height: 18),
+            const SizedBox(height: 12),
 
             // Calendar card
             Expanded(

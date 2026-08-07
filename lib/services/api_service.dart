@@ -2251,12 +2251,12 @@ class ApiService {
 
   /// Request a cashout of driver earnings.
   ///
-  /// [method] is "standard" (free, 1-2 days) or "instant" (1.5% fee,
-  /// minutes). Instant requires a debit card linked >=7 days and a
-  /// minimum amount of $50 — backend enforces both.
+  /// "instant" is the only method — 1.5% fee, arrives in minutes, needs a
+  /// debit card linked >=7 days and a minimum of $50. The backend enforces
+  /// all three and rejects the retired "standard" ACH method outright.
   static Future<Map<String, dynamic>> requestCashout({
     required double amount,
-    String method = 'standard',
+    String method = 'instant',
   }) async {
     final token = await getToken();
     if (token == null) throw ApiException(401, 'Not logged in');
@@ -2267,7 +2267,13 @@ class ApiService {
           headers: _jsonHeaders(token),
           body: jsonEncode({'amount': amount, 'method': method}),
         )
-        .timeout(const Duration(seconds: 12));
+        // 45s, not the 12 this used to carry. The endpoint makes TWO
+        // synchronous Stripe round-trips (fund the Connect account, then the
+        // instant payout) and only then answers. At 12s the client gave up
+        // while the money was still moving, and the driver was shown a
+        // failure for a cash-out that had in fact gone through — with their
+        // balance already down, because the backend claims it up front.
+        .timeout(const Duration(seconds: 45));
     return _parse(res);
   }
 
@@ -2309,7 +2315,11 @@ class ApiService {
       final list = jsonDecode(res.body) as List;
       return list.cast<Map<String, dynamic>>();
     }
-    return [];
+    // Throw, like getPayoutMethods does. Returning [] made a 500 or an
+    // expired token indistinguishable from a driver who has never been
+    // paid — and the cash-out page said exactly that to someone with a
+    // year of payouts behind them.
+    throw ApiException(res.statusCode, 'Could not load payout history');
   }
 
   // ═══════════════════════════════════════════════════════

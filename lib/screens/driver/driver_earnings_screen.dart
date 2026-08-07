@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:ui' as ui;
 import 'dart:math';
 import 'dart:convert';
@@ -269,21 +270,26 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
   }
 
   Future<void> _fetchPayoutData() async {
+    // Two independent requests, awaited independently. They used to share a
+    // `Future.wait` inside one try, so the moment `getDriverCashouts` began
+    // throwing on HTTP errors a failed history would also throw away a
+    // perfectly good balance — the headline number on the screen.
     try {
-      final results = await Future.wait([
-        ApiService.getNextPayoutDate(),
-        ApiService.getDriverCashouts(),
-      ]);
+      final info = await ApiService.getNextPayoutDate();
       if (!mounted) return;
-      final info = results[0] as Map<String, dynamic>;
-      final history = results[1] as List<Map<String, dynamic>>;
       setState(() {
         _pendingBalance = (info['pending_balance'] as num?)?.toDouble() ?? 0.0;
         _stripeConnected = info['stripe_connected'] as bool? ?? false;
-        _cashoutHistory = history;
         final raw = info['next_payout_date'] as String?;
         if (raw != null) _nextPayoutDate = DateTime.tryParse(raw);
       });
+    } catch (e) {
+      debugPrint('[Earnings] next-payout-date error: $e');
+    }
+    try {
+      final history = await ApiService.getDriverCashouts();
+      if (!mounted) return;
+      setState(() => _cashoutHistory = history);
     } catch (e) {
       // Logged, not shown. The payout block degrades to zeros on its own
       // and the headline figure carries its own error line — a second
@@ -996,7 +1002,7 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
                 if (!hasDestination) {
                   _openPayoutMethodsScreen();
                 } else if (canCash) {
-                  _showCashOutSheet();
+                  _openCashOutScreen();
                 }
               },
               child: Container(
@@ -1033,13 +1039,21 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
     );
   }
 
+  /// The next payday, named as the day the scheduler actually runs.
+  ///
+  /// `toUtc()`, not `toLocal()`. The backend answers with Monday 02:00 UTC,
+  /// which is Sunday 21:00 in Alabama — converting to local printed
+  /// "Sun, Aug 9" on this card while the cash-out page, which does not
+  /// convert, printed "08-10" for the very same instant. One date, two
+  /// screens, two different days, and the one this card showed was a day
+  /// the payout never runs on.
   String _formatPayoutDate(DateTime dt) {
     const months = [
       'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
       'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
     ];
     const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-    final d = dt.toLocal();
+    final d = dt.toUtc();
     return '${days[d.weekday - 1]}, ${months[d.month - 1]} ${d.day}';
   }
 
@@ -1135,14 +1149,33 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
         ),
       ),
       const SizedBox(height: 14),
-      ..._cashoutHistory.take(8).map((c) {
-        final amount = (c['amount'] as num?)?.toDouble() ?? 0.0;
+      // Failed rows are money that never moved — the amount is still in
+      // the balance shown above, so listing it here as a payout counted it
+      // twice, in orange, as if it were on its way.
+      ..._cashoutHistory
+          .where((c) => c['status'] != 'failed')
+          .take(8)
+          .map((c) {
+        // The NET, matching the cash-out page. This showed the gross, so
+        // one instant cashout appeared as two different numbers on two
+        // screens a tap apart.
+        final amount = (c['net_amount'] as num?)?.toDouble() ??
+            (c['amount'] as num?)?.toDouble() ??
+            0.0;
         final status = c['status'] as String? ?? 'pending';
         final rawDate = c['created_at'] as String?;
-        DateTime? date;
-        if (rawDate != null) date = DateTime.tryParse(rawDate)?.toLocal();
+        final parsedDate = rawDate == null ? null : DateTime.tryParse(rawDate);
+        // UTC for the weekly run, local for a cash-out the driver made —
+        // same rule as the cash-out page, for the same reason.
+        final date = parsedDate == null
+            ? null
+            : (c['method'] == 'instant'
+                ? parsedDate.toLocal()
+                : parsedDate.toUtc());
         final dateStr = date != null ? _formatPayoutDate(date) : '—';
-        final isCompleted = status == 'completed';
+        // "scheduled" is out of the platform and on Stripe's daily sweep —
+        // done, not pending.
+        final isCompleted = status == 'completed' || status == 'scheduled';
         return Container(
           margin: const EdgeInsets.only(bottom: 10),
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
@@ -1169,7 +1202,9 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      isCompleted ? 'Payout Sent' : 'Pending',
+                      isCompleted
+                          ? S.of(context).cashoutDeposited
+                          : S.of(context).cashoutStatusProcessing,
                       style: const TextStyle(
                         color: Colors.white,
                         fontSize: 14,
@@ -1300,18 +1335,26 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
 
 
 
-  void _showCashOutSheet() {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: true,
-      builder: (ctx) {
-        return _CashOutSheet(
-          available: _pendingBalance,
-          onCashedOut: _fetchEarnings,
-        );
-      },
-    );
+  /// A full page rather than a sheet: cashing out is the whole task, and
+  /// the auto-transfer date above the button is something the driver reads
+  /// and decides on, not a detail to skim on a half-height card.
+  void _openCashOutScreen() {
+    Navigator.of(context)
+        .push(
+          MaterialPageRoute(
+            builder: (_) => _CashOutScreen(
+              available: _pendingBalance,
+              nextPayoutDate: _nextPayoutDate,
+              onCashedOut: _fetchEarnings,
+            ),
+          ),
+        )
+        // The balance changed under us if they went through with it, and
+        // the eligibility window may have moved either way.
+        .then((_) {
+          if (!mounted) return;
+          _fetchPayoutData();
+        });
   }
 
   void _openPayoutMethodsScreen() {
@@ -1326,179 +1369,305 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
 }
 
 // ═══════════════════════════════════════════════════════════════════
-//  CASHOUT SHEET — Instant vs Standard, Uber-style with PREMIUM glow
+//  CASH OUT — a page, not a sheet
+//
+//  One balance, the day it empties on its own, and one button. It used to
+//  be a bottom sheet offering a choice between a free weekly ACH and an
+//  instant card payout; there is no choice left to make, so a half-height
+//  sheet asking the driver to pick from a list of one was the wrong shape.
+//
+//  The line above the button is the part a driver actually plans around:
+//  the balance goes to zero by itself every Monday, and knowing which
+//  Monday is what tells them whether cashing out early is worth 1.5%.
 // ═══════════════════════════════════════════════════════════════════
 
-class _CashOutSheet extends StatefulWidget {
+class _CashOutScreen extends StatefulWidget {
   final double available;
+
+  /// The next automatic weekly transfer, straight from
+  /// `GET /drivers/payouts/next-date`. Null when that call failed — the
+  /// screen falls back to the next Monday rather than dropping the line,
+  /// because the date is the reason this page has a line at all.
+  final DateTime? nextPayoutDate;
   final VoidCallback onCashedOut;
-  const _CashOutSheet({required this.available, required this.onCashedOut});
+
+  const _CashOutScreen({
+    required this.available,
+    required this.nextPayoutDate,
+    required this.onCashedOut,
+  });
 
   @override
-  State<_CashOutSheet> createState() => _CashOutSheetState();
+  State<_CashOutScreen> createState() => _CashOutScreenState();
 }
 
-class _CashOutSheetState extends State<_CashOutSheet>
-    with SingleTickerProviderStateMixin {
+class _CashOutScreenState extends State<_CashOutScreen> {
   static const _gold = Color(0xFFE8C547);
-  static const _card = Color(0xFF1C1C1E);
 
-  // Local mirrors of backend constants — backend is the source of truth
-  // and re-validates everything, but the UI uses these to decide enable
-  // states without an extra round-trip.
+  // Local mirrors of the backend constants — the backend re-validates all
+  // of them, but the UI needs them to decide what to draw without a second
+  // round-trip. See INSTANT_* in backend/routers/drivers.py.
   static const double _instantFeeRate = 0.015;
   static const double _instantFeeMin = 0.50;
   static const double _instantMinAmount = 50.0;
 
-  String _selected = 'standard'; // "instant" or "standard"
   bool _loadingEligibility = true;
   bool _instantEnabled = false;
   String? _ineligibleReason;
   int _daysRemaining = 0;
   bool _submitting = false;
 
-  late AnimationController _glowCtrl;
+  List<Map<String, dynamic>> _history = const [];
+  bool _loadingHistory = true;
+  bool _historyFailed = false;
+  bool _eligibilityFailed = false;
 
   @override
   void initState() {
     super.initState();
-    _glowCtrl = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1400),
-    )..repeat(reverse: true);
     _loadEligibility();
+    _loadHistory();
   }
 
-  @override
-  void dispose() {
-    _glowCtrl.dispose();
-    super.dispose();
+  /// Past payouts, both kinds.
+  ///
+  /// Fetched here rather than handed down from earnings so the list is
+  /// current: a driver arrives on this page precisely when they are
+  /// thinking about money moving, and the parent's copy can be minutes old.
+  Future<void> _loadHistory() async {
+    List<Map<String, dynamic>>? rows;
+    try {
+      rows = await ApiService.getDriverCashouts()
+          .timeout(const Duration(seconds: 12));
+    } catch (e) {
+      debugPrint('[Cashout] history unavailable: $e');
+    }
+    if (!mounted) return;
+    setState(() {
+      // An empty list because the request failed is NOT the same as an
+      // empty list because the driver has never been paid, and the page
+      // used to say the second thing for both. A driver with fourteen
+      // payouts on a weak signal was told they had never been paid.
+      _historyFailed = rows == null;
+      if (rows != null) _history = rows;
+      _loadingHistory = false;
+    });
   }
 
   Future<void> _loadEligibility() async {
-    final e = await ApiService.getCashoutEligibility().timeout(const Duration(seconds: 15));
+    Map<String, dynamic> e;
+    try {
+      e = await ApiService.getCashoutEligibility()
+          .timeout(const Duration(seconds: 15));
+    } catch (_) {
+      // getCashoutEligibility already swallows its own errors, but a
+      // timeout thrown here would otherwise leave the page spinning
+      // forever with no button and no explanation.
+      e = {'instant_enabled': false, 'reason': 'error'};
+    }
     if (!mounted) return;
     setState(() {
       _loadingEligibility = false;
       _instantEnabled = e['instant_enabled'] == true;
       _ineligibleReason = e['reason'] as String?;
       _daysRemaining = (e['days_remaining'] as num?)?.toInt() ?? 0;
+      // "We could not ask" is not "the answer is no". A dropped request
+      // used to read as a permanent "Instant cash out is not available
+      // right now", with nothing on the page offering to ask again — a
+      // perfectly eligible driver on a weak signal was locked out until
+      // they thought to leave and come back.
+      _eligibilityFailed = e['reason'] == 'error';
     });
   }
 
   double get _fee {
-    if (_selected != 'instant') return 0.0;
     final raw = widget.available * _instantFeeRate;
     return raw < _instantFeeMin ? _instantFeeMin : double.parse(raw.toStringAsFixed(2));
   }
 
   double get _net => double.parse((widget.available - _fee).toStringAsFixed(2));
 
-  bool get _canConfirm {
-    if (_submitting) return false;
-    if (widget.available <= 0) return false;
-    if (_selected == 'instant') {
-      if (!_instantEnabled) return false;
-      if (widget.available < _instantMinAmount) return false;
+  bool get _belowMinimum => widget.available < _instantMinAmount;
+
+  bool get _canConfirm =>
+      !_submitting && !_loadingEligibility && _instantEnabled && !_belowMinimum;
+
+  /// The Monday the balance empties itself on.
+  ///
+  /// Deliberately NOT converted to local time. The server sends Monday
+  /// 02:00 UTC, which in Alabama is Sunday 21:00 — `toLocal()` would print
+  /// the Sunday and the line would name a day the transfer never runs on.
+  /// The UTC calendar day is the one the scheduler keys off, so that is
+  /// the one to show.
+  ///
+  /// Snapped to Monday either way: this line's whole job is to name a
+  /// Monday, and a server that ever answered with something else would
+  /// otherwise put a Tuesday on screen with no way to notice.
+  DateTime get _autoTransferDate {
+    final given = widget.nextPayoutDate;
+    if (given != null) {
+      final d = DateTime(given.year, given.month, given.day);
+      final drift = (DateTime.monday - d.weekday + 7) % 7;
+      return d.add(Duration(days: drift));
     }
-    return true;
+    // No answer from the server — the coming Monday, and the one after
+    // when today is already Monday: today's run has either happened or is
+    // hours away, and pointing at it is not something to plan around.
+    final now = DateTime.now();
+    final delta = (DateTime.monday - now.weekday + 7) % 7;
+    return DateTime(now.year, now.month, now.day)
+        .add(Duration(days: delta == 0 ? 7 : delta));
+  }
+
+  String _formatDate(DateTime d) {
+    final mm = d.month.toString().padLeft(2, '0');
+    final dd = d.day.toString().padLeft(2, '0');
+    // Day-first where the reader expects day-first. "04-21" is genuinely
+    // ambiguous otherwise, and this line is a date the driver plans around.
+    final es = Localizations.localeOf(context).languageCode == 'es';
+    return es ? '$dd-$mm' : '$mm-$dd';
   }
 
   Future<void> _confirm() async {
+    if (!_canConfirm) return;
     setState(() => _submitting = true);
     HapticService.mediumImpact();
 
     if (AppConfig.sandboxPayments) {
-      await Future.delayed(const Duration(milliseconds: 800));
+      await Future.delayed(const Duration(milliseconds: 1600));
       if (!mounted) return;
-      Navigator.pop(context);
       widget.onCashedOut();
-      _pushSuccessScreen(
-        net: _selected == 'instant' ? _net : widget.available,
-        instant: _selected == 'instant',
-        cardBrand: _selected == 'instant' ? 'Visa' : null,
-        cardLast4: _selected == 'instant' ? '1084' : null,
-      );
+      _replaceWithSuccess(net: _net, cardBrand: 'Visa', cardLast4: '1084');
       return;
     }
 
     try {
       final result = await ApiService.requestCashout(
         amount: widget.available,
-        method: _selected,
+        method: 'instant',
       );
       if (!mounted) return;
-      Navigator.pop(context);
       final transferId = result['transfer_id'] as String?;
+      // Explicit flag from the backend, not inferred from the status
+      // string: "processing" is also what a row looks like for the split
+      // second between the funding transfer and the instant payout.
+      final queued = result['queued'] == true;
+      // Distinct from `queued`: the funding transfer got no definitive
+      // answer, so whether the money moved is unknown. The balance is
+      // already claimed either way, which is why this cannot be reported
+      // as a plain failure.
+      final uncertain = result['uncertain'] == true;
       final stripeErr = result['stripe_error'] as String?;
-      if (transferId != null) {
+
+      if (transferId != null || queued || uncertain) {
         widget.onCashedOut();
-        final netAmt = (result['net_amount'] as num?)?.toDouble() ??
-            (_selected == 'instant' ? _net : widget.available);
-        _pushSuccessScreen(
+        final netAmt = (result['net_amount'] as num?)?.toDouble() ?? _net;
+        if (uncertain) {
+          _snack(S.of(context).cashoutUncertain, Colors.orange);
+          Navigator.maybeOf(context)?.pop();
+          return;
+        }
+        if (queued && transferId == null) {
+          // The money left the platform but the instant leg did not fire.
+          // Saying "arrived instantly" here would be a lie the driver
+          // discovers by refreshing their bank app.
+          _snack(S.of(context).cashoutQueuedInstead, _gold);
+          Navigator.maybeOf(context)?.pop();
+          return;
+        }
+        _replaceWithSuccess(
           net: netAmt,
-          instant: _selected == 'instant',
           cardBrand: result['card_brand'] as String?,
           cardLast4: result['card_last4'] as String?,
         );
-      } else if (stripeErr != null) {
-        debugPrint('Cashout Stripe error: $stripeErr');
-        _showSnack(
-          'Cashout could not be completed. Please try again or contact support.',
-          Colors.orange,
-        );
-      } else {
-        _showSnack(
-          'Cashout requested. Set up Stripe payouts to receive funds automatically.',
-          _gold,
-        );
+        return;
       }
+
+      setState(() => _submitting = false);
+      debugPrint('[Cashout] no transfer id, stripe_error=$stripeErr');
+      _snack(S.of(context).cashoutFailed, Colors.orange);
+    } on TimeoutException catch (_) {
+      // The request outlived the client, which is NOT the same as failing.
+      // The backend claims the balance before it calls Stripe, so a cash-out
+      // that actually went through has already moved the money — telling the
+      // driver it failed would send them to tap again on a balance that is
+      // already spent. Refresh what we can and say honestly that we do not
+      // know yet.
+      if (!mounted) return;
+      setState(() => _submitting = false);
+      debugPrint('[Cashout] request timed out — outcome unknown');
+      widget.onCashedOut();
+      _snack(S.of(context).cashoutUncertain, Colors.orange);
+      // Leave, like the `uncertain` branch does. `widget.available` is
+      // fixed at construction, so staying here would keep the old balance
+      // under the driver's nose with a live button — and if the cash-out
+      // did go through, that number is now wrong and the button would
+      // spend money they no longer have. Popping hands control back to
+      // earnings, whose `.then` re-reads the real balance.
+      Navigator.maybeOf(context)?.pop();
     } catch (e) {
       if (!mounted) return;
-      Navigator.pop(context);
-      debugPrint('Cashout error: $e');
-      final msg = e.toString().contains('Insufficient')
-          ? 'Insufficient balance.'
-          : e.toString().contains('Instant cashout requires')
-              ? 'Instant cashout requires a minimum of \$${_instantMinAmount.toStringAsFixed(0)}.'
-              : e.toString().contains('Instant cashout not available')
-                  ? 'Instant cashout not available yet — debit card cooldown not cleared.'
-                  : 'Please try again or contact support.';
-      _showSnack(msg, Colors.red);
-    } finally {
-      if (mounted) setState(() => _submitting = false);
+      setState(() => _submitting = false);
+      debugPrint('[Cashout] error: $e');
+      _snack(_errorMessage(e, S.of(context)), Colors.red);
     }
   }
 
-  void _pushSuccessScreen({
+  /// Turn a backend refusal into something the driver can act on.
+  ///
+  /// The endpoint's 400s are all written for a person to read, so the last
+  /// resort is the server's own sentence rather than a generic "contact
+  /// support" — a driver told "finish setting up your payouts" knows what
+  /// to do; one told "try again or contact support" does not. The matches
+  /// are on stable fragments of those messages, and each maps to a
+  /// localized string so the driver reads it in their own language.
+  String _errorMessage(Object e, S s) {
+    if (e is! ApiException) return s.cashoutFailed;
+    final raw = e.message;
+    if (raw.contains('Insufficient')) return s.cashoutInsufficient;
+    if (raw.contains('minimum of')) {
+      return s.cashoutBelowMinimum('\$${_instantMinAmount.toStringAsFixed(0)}');
+    }
+    if (raw.contains('Payouts are not set up')) return s.cashoutNoStripeAccount;
+    if (raw.contains('balance is untouched')) return s.cashoutNotStarted;
+    if (raw.contains('no longer available')) return s.cashoutUnavailable;
+    if (raw.contains('not available') || raw.contains('coming soon')) {
+      return s.cashoutUnavailable;
+    }
+    return raw.isNotEmpty ? raw : s.cashoutFailed;
+  }
+
+  /// Replace, not push: the cash-out page has done its job and there is
+  /// nothing to come back to. Popping off the success screen should land
+  /// on earnings, with the new balance already fetched.
+  void _replaceWithSuccess({
     required double net,
-    required bool instant,
     String? cardBrand,
     String? cardLast4,
   }) {
-    // Find the root navigator context — the sheet's own Navigator was
-    // already popped, so we walk up to the earnings screen instead.
-    final nav = Navigator.of(context, rootNavigator: true);
-    nav.push(
+    final nav = Navigator.maybeOf(context);
+    if (nav == null) return;
+    nav.pushReplacement(
       PageRouteBuilder(
         opaque: true,
         pageBuilder: (_, __, ___) => _CashoutSuccessScreen(
           netAmount: net,
-          instant: instant,
+          instant: true,
           cardBrand: cardBrand,
           cardLast4: cardLast4,
         ),
         transitionDuration: const Duration(milliseconds: 320),
-        transitionsBuilder: (_, anim, __, child) {
-          return FadeTransition(opacity: anim, child: child);
-        },
+        transitionsBuilder: (_, anim, __, child) =>
+            FadeTransition(opacity: anim, child: child),
       ),
     );
   }
 
-  void _showSnack(String msg, Color bg) {
+  void _snack(String msg, Color bg) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    if (messenger == null) return;
+    messenger.showSnackBar(
       SnackBar(
         content: Text(msg),
         backgroundColor: bg,
@@ -1509,370 +1678,573 @@ class _CashOutSheetState extends State<_CashOutSheet>
     );
   }
 
-  void _onSelect(String method) {
-    if (method == 'instant' && !_instantEnabled) {
-      // Card disabled — explain why with a snack instead of selecting.
-      final reason = _ineligibleReason;
-      String msg;
-      if (reason == 'coming_soon') {
-        msg = '⚡ Instant Cashout is coming soon. Stay tuned!';
-      } else if (reason == 'no_debit_card') {
-        msg = 'Add a debit card in Payout methods to unlock Instant Cashout.';
-      } else if (reason == 'cooldown') {
-        msg = 'Instant unlocks in $_daysRemaining day${_daysRemaining == 1 ? '' : 's'}.';
-      } else {
-        msg = 'Instant Cashout is not available right now.';
+  /// Why the button is dim, in one line under it.
+  ///
+  /// Null when the button is live — a page that explains itself when there
+  /// is nothing to explain reads as a warning.
+  String? _blockedReason(S s) {
+    if (_loadingEligibility) return null;
+    if (widget.available <= 0) return s.cashoutNothingToWithdraw;
+    if (!_instantEnabled) {
+      switch (_ineligibleReason) {
+        case 'coming_soon':
+          return s.cashoutComingSoon;
+        case 'no_debit_card':
+          return s.cashoutNeedCard;
+        case 'cooldown':
+          return s.cashoutCardVerifying(_daysRemaining);
+        default:
+          return s.cashoutUnavailable;
       }
-      _showSnack(msg, _gold);
-      HapticService.lightImpact();
-      return;
     }
-    HapticService.selectionClick();
-    setState(() => _selected = method);
+    if (_belowMinimum) {
+      return s.cashoutBelowMinimum('\$${_instantMinAmount.toStringAsFixed(0)}');
+    }
+    return null;
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: EdgeInsets.only(
-        left: 20,
-        right: 20,
-        top: 16,
-        bottom: 20 + MediaQuery.of(context).viewInsets.bottom,
-      ),
-      decoration: const BoxDecoration(
-        color: _card,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Center(
-            child: Container(
-              width: 36,
-              height: 4,
-              decoration: BoxDecoration(
-                color: Colors.white12,
-                borderRadius: BorderRadius.circular(2),
-              ),
+  // ── History ──────────────────────────────────────────────────────
+  //
+  // Two groups, split by whether the money has landed yet, because those
+  // are two different questions: "did my request go through" and "has it
+  // arrived". A single reverse-chronological list answers neither without
+  // the driver reading every row.
+  //
+  // Failed rows appear in neither. A failed cashout never left the
+  // platform and its amount is still sitting in the balance at the top of
+  // this same page — a line saying it did not happen would be the only
+  // thing on the screen contradicting the number above it.
+  bool _isInstant(Map<String, dynamic> row) => row['method'] == 'instant';
+
+  /// The money is out of the platform and on its way, by either route.
+  ///
+  /// "completed" is an instant payout Stripe accepted; "scheduled" is one
+  /// riding the automatic daily payout because the instant leg did not
+  /// fire, plus every legacy free cash-out. Both are finished as far as
+  /// this app is concerned — neither is still waiting on us — so both
+  /// belong under "Sent". Only a row we are still working on stays above.
+  bool _hasLanded(Map<String, dynamic> row) =>
+      row['status'] == 'completed' || row['status'] == 'scheduled';
+
+  List<Map<String, dynamic>> get _initiated => _history
+      .where((r) => r['status'] != 'failed' && !_hasLanded(r))
+      .toList();
+
+  List<Map<String, dynamic>> get _landed =>
+      _history.where(_hasLanded).toList();
+
+  /// The day to put on a row, which is not the same question for the two
+  /// kinds of payout.
+  ///
+  /// An instant cashout happened when the driver tapped the button, so it
+  /// belongs on their local calendar. The weekly run fires Monday 02:00
+  /// UTC — Sunday evening in the Americas — so `toLocal()` dates it Sunday,
+  /// one day before the Monday this very page names two inches higher. The
+  /// scheduler keys off the UTC day, so that is the day a weekly row wears.
+  String _rowDate(Map<String, dynamic> row) {
+    final raw = row['created_at'] as String?;
+    final parsed = raw == null ? null : DateTime.tryParse(raw);
+    if (parsed == null) return '—';
+    final d = _isInstant(row) ? parsed.toLocal() : parsed.toUtc();
+    const en = [
+      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+    ];
+    const es = [
+      'ene', 'feb', 'mar', 'abr', 'may', 'jun',
+      'jul', 'ago', 'sep', 'oct', 'nov', 'dic',
+    ];
+    final isEs = Localizations.localeOf(context).languageCode == 'es';
+    final month = (isEs ? es : en)[d.month - 1];
+    return isEs ? '${d.day} $month' : '$month ${d.day}';
+  }
+
+  Widget _historySection(String title, String? note,
+      List<Map<String, dynamic>> rows) {
+    if (rows.isEmpty) return const SizedBox.shrink();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: 30),
+        Text(
+          title,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 19,
+            fontWeight: FontWeight.w800,
+            letterSpacing: -0.3,
+          ),
+        ),
+        if (note != null) ...[
+          const SizedBox(height: 4),
+          Text(
+            note,
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.42),
+              fontSize: 12.5,
+              height: 1.35,
             ),
           ),
-          const SizedBox(height: 18),
-          Center(
-            child: Column(
+        ],
+        const SizedBox(height: 12),
+        ...rows.map(_historyRow),
+      ],
+    );
+  }
+
+  Widget _historyRow(Map<String, dynamic> row) {
+    final s = S.of(context);
+    // What the driver actually received. The gross is what left their
+    // balance; on an instant cashout the two differ by the fee, and the
+    // number that belongs in a list of deposits is the one that arrived.
+    final net = (row['net_amount'] as num?)?.toDouble() ??
+        (row['amount'] as num?)?.toDouble() ??
+        0.0;
+    final label = _isInstant(row) ? s.cashoutRowInstant : s.cashoutRowWeekly;
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () => _showRowDetail(row),
+      child: Container(
+        decoration: BoxDecoration(
+          border: Border(
+            top: BorderSide(color: Colors.white.withValues(alpha: 0.07)),
+          ),
+        ),
+        padding: const EdgeInsets.symmetric(vertical: 16),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Expanded(
+              child: Text(
+                _rowDate(row),
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.75),
+                  fontSize: 15,
+                ),
+              ),
+            ),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
               children: [
                 Text(
-                  'Available balance',
-                  style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.5),
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    letterSpacing: 0.5,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  '\$${widget.available.toStringAsFixed(2)}',
+                  '\$${net.toStringAsFixed(2)}',
                   style: const TextStyle(
                     color: Colors.white,
-                    fontSize: 36,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: -0.5,
+                    fontSize: 17,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  label,
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.42),
+                    fontSize: 13,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(width: 10),
+            Icon(
+              Icons.chevron_right_rounded,
+              color: Colors.white.withValues(alpha: 0.3),
+              size: 22,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// What the chevron opens: the numbers behind one row.
+  ///
+  /// Mostly it exists so the fee is visible somewhere after the fact — the
+  /// success screen shows it once and is then gone, and a driver checking
+  /// later why $161.72 arrived as $159.30 has nowhere else to look.
+  void _showRowDetail(Map<String, dynamic> row) {
+    final s = S.of(context);
+    final gross = (row['amount'] as num?)?.toDouble() ?? 0.0;
+    final fee = (row['fee'] as num?)?.toDouble() ?? 0.0;
+    final net = (row['net_amount'] as num?)?.toDouble() ?? gross - fee;
+    HapticService.selectionClick();
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (ctx) => Container(
+        padding: const EdgeInsets.fromLTRB(24, 12, 24, 24),
+        decoration: const BoxDecoration(
+          color: Color(0xFF14141A),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+        ),
+        child: SafeArea(
+          top: false,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 36,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: Colors.white12,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 20),
+                Text(
+                  s.cashoutDetailTitle,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 21,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: -0.3,
+                  ),
+                ),
+                const SizedBox(height: 18),
+                _detailRow(s.cashoutDetailDate, _rowDate(row)),
+                _detailRow(s.cashoutDetailMethod,
+                    _isInstant(row) ? s.cashoutRowInstant : s.cashoutRowWeekly),
+                _detailRow(
+                  s.cashoutDetailStatus,
+                  _hasLanded(row)
+                      ? s.cashoutStatusCompleted
+                      : s.cashoutStatusProcessing,
+                ),
+                _detailRow(
+                    s.cashoutDetailGross, '\$${gross.toStringAsFixed(2)}'),
+                // Only when there was one. A weekly deposit showing
+                // "Fee $0.00" invites the question of when it would not be.
+                if (fee > 0)
+                  _detailRow(s.cashoutDetailFee, '\$${fee.toStringAsFixed(2)}'),
+                _detailRow(s.cashoutDetailNet, '\$${net.toStringAsFixed(2)}',
+                    strong: true),
+                const SizedBox(height: 18),
+                SizedBox(
+                  width: double.infinity,
+                  height: 50,
+                  child: ElevatedButton(
+                    onPressed: () => Navigator.of(ctx).pop(),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: _gold,
+                      foregroundColor: Colors.black,
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                    ),
+                    child: Text(
+                      s.gotIt,
+                      style: const TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
                   ),
                 ),
               ],
             ),
           ),
-          const SizedBox(height: 22),
-          Padding(
-            padding: const EdgeInsets.only(left: 4, bottom: 10),
+        ),
+      ),
+    );
+  }
+
+  Widget _detailRow(String label, String value, {bool strong = false}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 9),
+      child: Row(
+        children: [
+          Expanded(
             child: Text(
-              'How fast do you want it?',
+              label,
               style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.7),
+                color: Colors.white.withValues(alpha: 0.5),
                 fontSize: 14,
-                fontWeight: FontWeight.w700,
               ),
             ),
           ),
-          // ── INSTANT CARD ──
-          AnimatedBuilder(
-            animation: _glowCtrl,
-            builder: (_, child) {
-              final glow = _selected == 'instant' && _instantEnabled
-                  ? 0.35 + (_glowCtrl.value * 0.35)
-                  : 0.0;
-              return Container(
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(18),
-                  boxShadow: glow > 0
-                      ? [
-                          BoxShadow(
-                            color: _gold.withValues(alpha: glow),
-                            blurRadius: 20,
-                            spreadRadius: 1,
-                          ),
-                        ]
-                      : null,
-                ),
-                child: child,
-              );
-            },
-            child: _OptionCard(
-              icon: Icons.flash_on_rounded,
-              iconColor: _gold,
-              title: 'Instant',
-              badge: _ineligibleReason == 'coming_soon' ? 'COMING SOON' : 'PREMIUM',
-              badgeColor: _gold,
-              subtitle: _ineligibleReason == 'coming_soon'
-                  ? 'Launching soon — get ready ⚡'
-                  : 'Get it in minutes',
-              receiveLabel: _instantEnabled
-                  ? 'You receive \$${_net.toStringAsFixed(2)}'
-                  : (_ineligibleReason == 'coming_soon'
-                      ? 'Available very soon'
-                      : (_ineligibleReason == 'cooldown'
-                          ? 'Unlocks in $_daysRemaining day${_daysRemaining == 1 ? '' : 's'}'
-                          : (_ineligibleReason == 'no_debit_card'
-                              ? 'Add a debit card to unlock'
-                              : 'Not available'))),
-              detail: _instantEnabled
-                  ? 'Fee \$${_fee.toStringAsFixed(2)} (1.5%) • Min \$${_instantMinAmount.toStringAsFixed(0)}'
-                  : (_ineligibleReason == 'coming_soon'
-                      ? 'Cash out to your debit card in minutes'
-                      : null),
-              selected: _selected == 'instant',
-              enabled: _instantEnabled && !_loadingEligibility,
-              loading: _loadingEligibility,
-              onTap: () => _onSelect('instant'),
-            ),
-          ),
-          const SizedBox(height: 12),
-          // ── STANDARD CARD ──
-          _OptionCard(
-            icon: Icons.account_balance_rounded,
-            iconColor: Colors.white.withValues(alpha: 0.7),
-            title: 'Standard',
-            badge: 'FREE',
-            badgeColor: Colors.white.withValues(alpha: 0.4),
-            subtitle: 'Arrives in 1–2 business days',
-            receiveLabel: 'You receive \$${widget.available.toStringAsFixed(2)}',
-            detail: null,
-            selected: _selected == 'standard',
-            enabled: true,
-            loading: false,
-            onTap: () => _onSelect('standard'),
-          ),
-          const SizedBox(height: 22),
-          SizedBox(
-            width: double.infinity,
-            height: 54,
-            child: ElevatedButton(
-              onPressed: _canConfirm ? _confirm : null,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: _gold,
-                foregroundColor: Colors.black,
-                disabledBackgroundColor: _gold.withValues(alpha: 0.3),
-                disabledForegroundColor: Colors.black.withValues(alpha: 0.6),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
-                ),
-              ),
-              child: _submitting
-                  ? const SizedBox(
-                      height: 22,
-                      width: 22,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2.5,
-                        valueColor: AlwaysStoppedAnimation(Colors.black),
-                      ),
-                    )
-                  : Text(
-                      _selected == 'instant'
-                          ? 'Cash out \$${_net.toStringAsFixed(2)} instantly'
-                          : 'Cash out \$${widget.available.toStringAsFixed(2)}',
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-            ),
-          ),
-          const SizedBox(height: 8),
-          Center(
-            child: TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: Text(
-                S.of(context).cancel,
-                style: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.4),
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
+          Text(
+            value,
+            style: TextStyle(
+              color: strong ? _gold : Colors.white,
+              fontSize: 15,
+              fontWeight: strong ? FontWeight.w800 : FontWeight.w600,
             ),
           ),
         ],
       ),
     );
   }
-}
-
-class _OptionCard extends StatelessWidget {
-  final IconData icon;
-  final Color iconColor;
-  final String title;
-  final String badge;
-  final Color badgeColor;
-  final String subtitle;
-  final String receiveLabel;
-  final String? detail;
-  final bool selected;
-  final bool enabled;
-  final bool loading;
-  final VoidCallback onTap;
-
-  const _OptionCard({
-    required this.icon,
-    required this.iconColor,
-    required this.title,
-    required this.badge,
-    required this.badgeColor,
-    required this.subtitle,
-    required this.receiveLabel,
-    required this.detail,
-    required this.selected,
-    required this.enabled,
-    required this.loading,
-    required this.onTap,
-  });
 
   @override
   Widget build(BuildContext context) {
-    const gold = Color(0xFFE8C547);
-    final borderColor = selected
-        ? gold
-        : Colors.white.withValues(alpha: 0.08);
-    final bg = selected
-        ? gold.withValues(alpha: 0.06)
-        : Colors.white.withValues(alpha: 0.02);
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 220),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-        decoration: BoxDecoration(
-          color: bg,
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(
-            color: borderColor,
-            width: selected ? 1.6 : 1.0,
-          ),
-        ),
-        child: Opacity(
-          opacity: enabled ? 1.0 : 0.55,
-          child: Row(
-            children: [
-              Container(
-                width: 44,
-                height: 44,
-                decoration: BoxDecoration(
-                  color: iconColor.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Icon(icon, color: iconColor, size: 22),
+    final s = S.of(context);
+    final blocked = _blockedReason(s);
+    final needsCard = !_instantEnabled && _ineligibleReason == 'no_debit_card';
+    final nothingYet =
+        !_loadingHistory && _initiated.isEmpty && _landed.isEmpty;
+
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: SafeArea(
+        child: Stack(
+          children: [
+            // Scrolls, and the balance sits at the top rather than in the
+            // middle of the viewport: the history underneath it is the rest
+            // of the page, and a centred block would push it below the fold
+            // on every phone.
+            ListView(
+              physics: const BouncingScrollPhysics(
+                parent: AlwaysScrollableScrollPhysics(),
               ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
+              padding: const EdgeInsets.fromLTRB(24, 52, 24, 40),
+              children: [
+                Text(
+                  s.cashoutAvailableBalance,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.55),
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  '\$${widget.available.toStringAsFixed(2)}',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 44,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: -1,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  s.cashoutAutoTransferOn(_formatDate(_autoTransferDate)),
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.42),
+                    fontSize: 13,
+                    height: 1.35,
+                  ),
+                ),
+                const SizedBox(height: 26),
+                SizedBox(
+                  height: 56,
+                  child: ElevatedButton(
+                    onPressed: _canConfirm ? _confirm : null,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: _gold,
+                      foregroundColor: Colors.black,
+                      disabledBackgroundColor: _gold.withValues(alpha: 0.28),
+                      disabledForegroundColor:
+                          Colors.black.withValues(alpha: 0.55),
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(28),
+                      ),
+                    ),
+                    child: Text(
+                      s.cashoutInstantButton,
+                      style: const TextStyle(
+                        fontSize: 17,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 14),
+                // What it costs, or why it cannot run — never both, and
+                // never nothing: the space under the button always carries
+                // the one sentence that matters in this state.
+                if (_loadingEligibility)
+                  Center(
+                    child: Container(
+                      height: 16,
+                      width: 140,
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.07),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                    ),
+                  )
+                else
+                  Text(
+                    blocked ??
+                        s.cashoutFeeLine(
+                          '\$${_fee.toStringAsFixed(2)}',
+                          '\$${_net.toStringAsFixed(2)}',
+                        ),
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.45),
+                      fontSize: 13,
+                      height: 1.4,
+                    ),
+                  ),
+                if (needsCard)
+                  Center(
+                    child: TextButton(
+                      onPressed: () {
+                        Navigator.of(context).pushReplacement(
+                          MaterialPageRoute(
+                            builder: (_) => const PayoutMethodsScreen(),
+                          ),
+                        );
+                      },
+                      child: Text(
+                        s.cashoutAddCardAction,
+                        style: const TextStyle(
+                          color: _gold,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+                  ),
+                // The eligibility answer never arrived. Offer to ask again
+                // rather than leaving "not available right now" standing as
+                // if it were the server's verdict.
+                if (_eligibilityFailed)
+                  Center(
+                    child: TextButton(
+                      onPressed: () {
+                        HapticService.selectionClick();
+                        setState(() {
+                          _loadingEligibility = true;
+                          _eligibilityFailed = false;
+                        });
+                        _loadEligibility();
+                      },
+                      child: Text(
+                        s.retry,
+                        style: const TextStyle(
+                          color: _gold,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+                  ),
+
+                // ── History ──
+                _historySection(
+                  s.cashoutInitiatedBy,
+                  s.cashoutInitiatedNote,
+                  _initiated,
+                ),
+                _historySection(
+                  s.cashoutDeposited,
+                  s.cashoutDepositedNote,
+                  _landed,
+                ),
+                if (_historyFailed) ...[
+                  const SizedBox(height: 36),
+                  Center(
+                    child: Column(
                       children: [
                         Text(
-                          title,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 16,
-                            fontWeight: FontWeight.w800,
+                          s.cashoutHistoryUnavailable,
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.4),
+                            fontSize: 13,
+                            height: 1.4,
                           ),
                         ),
-                        const SizedBox(width: 8),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: badgeColor.withValues(alpha: 0.15),
-                            borderRadius: BorderRadius.circular(6),
-                            border: Border.all(
-                              color: badgeColor.withValues(alpha: 0.4),
-                              width: 0.8,
-                            ),
-                          ),
+                        const SizedBox(height: 6),
+                        TextButton(
+                          onPressed: () {
+                            HapticService.selectionClick();
+                            setState(() {
+                              _loadingHistory = true;
+                              _historyFailed = false;
+                            });
+                            _loadHistory();
+                          },
                           child: Text(
-                            badge,
-                            style: TextStyle(
-                              color: badgeColor,
-                              fontSize: 9,
-                              fontWeight: FontWeight.w900,
-                              letterSpacing: 0.6,
+                            s.retry,
+                            style: const TextStyle(
+                              color: _gold,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w800,
                             ),
                           ),
                         ),
                       ],
                     ),
-                    const SizedBox(height: 4),
-                    Text(
-                      subtitle,
-                      style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.55),
-                        fontSize: 12.5,
-                      ),
+                  ),
+                ] else if (nothingYet) ...[
+                  const SizedBox(height: 40),
+                  Text(
+                    s.cashoutHistoryEmpty,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.3),
+                      fontSize: 13,
                     ),
-                    const SizedBox(height: 6),
-                    if (loading)
-                      Container(
-                        height: 12,
-                        width: 110,
-                        decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.08),
-                          borderRadius: BorderRadius.circular(4),
+                  ),
+                ],
+              ],
+            ),
+            Positioned(
+              top: 0,
+              left: 4,
+              child: IconButton(
+                icon: const Icon(Icons.close_rounded,
+                    color: Colors.white, size: 26),
+                onPressed:
+                    _submitting ? null : () => Navigator.of(context).pop(),
+              ),
+            ),
+            // ── Processing ──
+            //
+            // Over the page rather than inside the button: the request goes
+            // to Stripe and back and can take seconds, and a spinner in a
+            // 56 pt button reads as a slow tap rather than as money moving.
+            if (_submitting)
+              Positioned.fill(
+                child: ColoredBox(
+                  color: Colors.black.withValues(alpha: 0.92),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const SizedBox(
+                        width: 54,
+                        height: 54,
+                        child: CircularProgressIndicator(
+                          color: _gold,
+                          strokeWidth: 3,
                         ),
-                      )
-                    else ...[
+                      ),
+                      const SizedBox(height: 26),
                       Text(
-                        receiveLabel,
-                        style: TextStyle(
-                          color: enabled
-                              ? Colors.white.withValues(alpha: 0.85)
-                              : Colors.white.withValues(alpha: 0.45),
-                          fontSize: 13,
+                        s.cashoutProcessing,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 17,
                           fontWeight: FontWeight.w700,
                         ),
                       ),
-                      if (detail != null) ...[
-                        const SizedBox(height: 2),
-                        Text(
-                          detail!,
-                          style: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.4),
-                            fontSize: 11,
-                            fontWeight: FontWeight.w500,
-                          ),
+                      const SizedBox(height: 8),
+                      Text(
+                        s.cashoutProcessingHint,
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.45),
+                          fontSize: 13,
                         ),
-                      ],
+                      ),
                     ],
-                  ],
+                  ),
                 ),
               ),
-              Icon(
-                selected
-                    ? Icons.check_circle_rounded
-                    : Icons.radio_button_unchecked_rounded,
-                color: selected ? gold : Colors.white.withValues(alpha: 0.2),
-                size: 22,
-              ),
-            ],
-          ),
+          ],
         ),
       ),
     );

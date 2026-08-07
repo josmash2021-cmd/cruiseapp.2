@@ -8,7 +8,49 @@ extension _HomeScreenController on _HomeScreenState {
 
   // --- Service Zone support ---
 
-  void _listenServiceZones() {
+  /// Fired from initState. It used to subscribe on the spot with no auth
+  /// gate and no onError — the last unguarded `snapshots().listen` left in
+  /// the app. `config/serviceZones` is `allow read: if isAuthenticated()`
+  /// and Firebase anonymous auth is DISABLED in the console, so every rider
+  /// whose custom-token session had not been minted yet got
+  /// `[cloud_firestore/permission-denied]` thrown into the zone with no
+  /// handler to receive it → Crashlytics. That is why this group spans
+  /// 1.0.0 through 1.0.9 and keeps recurring. Now the session is
+  /// established *before* the listen exists, and the listen carries its own
+  /// error path, so there is no unhandled route left for the rejection.
+  ///
+  /// [allowRetry] caps recovery at a single re-subscribe: a session that
+  /// exists and is still denied means the RULES reject this path, and
+  /// re-subscribing on every error is how the verification stream turned
+  /// one denial into an endless loop of Crashlytics events.
+  void _listenServiceZones({bool allowRetry = true}) async {
+    if (!FirebaseAuthRecovery.hasSession) {
+      final ok = await FirebaseAuthRecovery.ensureSignedIn();
+      if (!mounted) return;
+      if (!ok) {
+        // Wait for a session rather than giving up on this screen.
+        //
+        // `false` here does NOT mean "this rider can never sign in". It is
+        // also what ensureSignedIn() answers the instant ANOTHER caller
+        // attempted within its 30-second cooldown, and at startup chat, the
+        // GPS mirror and the trip listener all race for exactly that — so a
+        // plain `return` left service zones unsubscribed for the entire
+        // session and the state gate silently stuck on its permissive
+        // default. One-shot watch, cancelled the moment it fires and in
+        // dispose, so it cannot outlive the screen or stack up.
+        debugPrint('[Zones] no Firebase session yet — waiting for one');
+        _zonesAuthSub?.cancel();
+        _zonesAuthSub =
+            FirebaseAuth.instance.authStateChanges().listen((fbUser) {
+          if (fbUser == null || !mounted) return;
+          _zonesAuthSub?.cancel();
+          _zonesAuthSub = null;
+          _listenServiceZones(allowRetry: allowRetry);
+        });
+        return;
+      }
+    }
+    _zonesSub?.cancel();
     _zonesSub = FirebaseFirestore.instance
         .collection('config')
         .doc('serviceZones')
@@ -27,6 +69,21 @@ extension _HomeScreenController on _HomeScreenState {
               _serviceZoneActive = states.contains(_userStateName);
             }
           });
+        }, onError: (e) async {
+          debugPrint('[Zones] Firestore error: $e');
+          // A Firestore listen is terminal once it errors — it never emits
+          // again. Drop the handle so dispose isn't cancelling a corpse and
+          // so the retry below starts from a clean subscription.
+          _zonesSub?.cancel();
+          _zonesSub = null;
+          if (!allowRetry) return;
+          // Only a missing session is worth retrying; anything else (rules
+          // change, backend outage) resolves nothing by re-listening, and
+          // the gate stays open meanwhile.
+          if (!e.toString().contains('permission-denied')) return;
+          final ok = await FirebaseAuthRecovery.ensureSignedIn();
+          if (!mounted || !ok) return;
+          _listenServiceZones(allowRetry: false);
         });
   }
 

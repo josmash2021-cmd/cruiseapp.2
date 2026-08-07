@@ -15,6 +15,74 @@ class TrackingMapCamera {
   DateTime? _cameraAnimEnd;
   DateTime _lastBoundsFit = DateTime(2000);
 
+  /// True when a coordinate can survive the trip to native.
+  ///
+  /// A NaN latitude is not an error Dart can catch. It crosses the platform
+  /// channel and raises inside Objective-C — `FlyToInterpolator.init`
+  /// "latitude must not be NaN", `convertDictionaryToGeometry` "Invalid
+  /// number value (NaN) in JSON write" — and the process is gone before any
+  /// Dart `catch` is reachable. `utils/mapbox_safe.dart` does this for
+  /// annotation geometry and `UnifiedMapService._cameraIsFinite` for its own
+  /// camera; the rider-tracking camera below fed every LatLng it was handed
+  /// straight into `mapbox.Position(...)` unchecked, which is why the crash
+  /// only shows up on this screen. A latitude past the poles is as fatal as
+  /// a NaN and arrives the same way: arithmetic over a position that was
+  /// never seeded.
+  static bool _isFinitePos(LatLng p) =>
+      p.latitude.isFinite &&
+      p.longitude.isFinite &&
+      p.latitude.abs() <= 90 &&
+      p.longitude.abs() <= 180;
+
+  /// Same gate for a camera the platform handed back to us.
+  ///
+  /// `cameraForCoordinatesPadding` answers a degenerate box with a
+  /// non-finite centre/zoom, and that answer used to go into `flyTo`
+  /// untouched — only `cam.zoom` was clamped, `cam.center` was never looked
+  /// at once.
+  static bool _cameraIsFinite(mapbox.CameraOptions cam) {
+    bool ok(num? v) => v == null || v.isFinite;
+    final c = cam.center?.coordinates;
+    if (c != null) {
+      if (!ok(c.lat) || !ok(c.lng)) return false;
+      if (c.lat.abs() > 90 || c.lng.abs() > 180) return false;
+    }
+    final a = cam.anchor;
+    if (a != null && (!ok(a.x) || !ok(a.y))) return false;
+    final pad = cam.padding;
+    if (pad != null &&
+        (!ok(pad.top) || !ok(pad.bottom) || !ok(pad.left) || !ok(pad.right))) {
+      return false;
+    }
+    return ok(cam.zoom) && ok(cam.bearing) && ok(cam.pitch);
+  }
+
+  /// The single door every one-shot camera move in this class goes through.
+  ///
+  /// Two jobs. It refuses to hand a non-finite camera to native (see
+  /// [_isFinitePos]) — dropping the move leaves the rider on the previous
+  /// frame, which is a bad frame, not a dead app. And it catches what is
+  /// left, which after the number check is only the channel disappearing
+  /// mid-animation: these are all `await`ed from screens that can be popped
+  /// while the fly is in flight, and a camera move is not worth taking the
+  /// screen down on the way out.
+  Future<void> _safeFlyTo(
+    mapbox.CameraOptions cam,
+    int durationMs,
+    String tag,
+  ) async {
+    if (_map == null) return;
+    if (!_cameraIsFinite(cam)) {
+      debugPrint('[TrackingMapCamera] $tag skipped — non-finite camera');
+      return;
+    }
+    try {
+      await _map!.flyTo(cam, mapbox.MapAnimationOptions(duration: durationMs));
+    } catch (e) {
+      debugPrint('[TrackingMapCamera] $tag flyTo failed: $e');
+    }
+  }
+
   /// Ajusta la cámara para mostrar todos los puntos con padding
   Future<void> fitBounds({
     required List<LatLng> points,
@@ -29,9 +97,17 @@ class TrackingMapCamera {
     if (_map == null || points.isEmpty) return;
     if (_cameraAnimating && DateTime.now().isBefore(_cameraAnimEnd!)) return;
 
-    double minLat = points[0].latitude, maxLat = points[0].latitude;
-    double minLng = points[0].longitude, maxLng = points[0].longitude;
-    for (final p in points) {
+    // Fold only over coordinates that are real numbers. Every comparison
+    // against NaN is false, so math.min/max silently keep the seeded corner:
+    // one NaN point in the list used to leave a degenerate box, and both the
+    // corners we send and the camera we get back travel to native, where a
+    // NaN raises instead of throwing.
+    final pts = points.where(_isFinitePos).toList(growable: false);
+    if (pts.isEmpty) return;
+
+    double minLat = pts[0].latitude, maxLat = pts[0].latitude;
+    double minLng = pts[0].longitude, maxLng = pts[0].longitude;
+    for (final p in pts) {
       minLat = math.min(minLat, p.latitude);
       maxLat = math.max(maxLat, p.latitude);
       minLng = math.min(minLng, p.longitude);
@@ -53,9 +129,27 @@ class TrackingMapCamera {
       null, null,
     );
 
-    final zoom = (cam.zoom ?? 14.0).clamp(minZoom, maxZoom);
+    // A NaN zoom comes back out of .clamp() still NaN — clamping is not a
+    // validation — so the check has to come first, the same way
+    // zoomToFitSpan already does it at the bottom of this file.
+    final rawZoom = cam.zoom ?? 14.0;
+    final zoom = (rawZoom.isFinite ? rawZoom : 14.0).clamp(minZoom, maxZoom);
+    // The centre the platform computed is only used when it is usable; the
+    // box corners above are known finite, so the midpoint is always a safe
+    // frame to fall back on rather than dropping the fit entirely.
+    final center = cam.center;
+    final centerOk = center != null &&
+        center.coordinates.lat.isFinite &&
+        center.coordinates.lng.isFinite;
     final clampedCam = mapbox.CameraOptions(
-      center: cam.center,
+      center: centerOk
+          ? center
+          : mapbox.Point(
+              coordinates: mapbox.Position(
+                (minLng + maxLng) / 2,
+                (minLat + maxLat) / 2,
+              ),
+            ),
       zoom: zoom,
       bearing: cam.bearing,
       pitch: cam.pitch,
@@ -65,7 +159,7 @@ class TrackingMapCamera {
 
     _cameraAnimating = true;
     _cameraAnimEnd = DateTime.now().add(Duration(milliseconds: durationMs - 50));
-    await _map!.flyTo(clampedCam, mapbox.MapAnimationOptions(duration: durationMs));
+    await _safeFlyTo(clampedCam, durationMs, 'fitBounds');
 
     Future.delayed(Duration(milliseconds: durationMs), () {
       _cameraAnimating = false;
@@ -83,10 +177,13 @@ class TrackingMapCamera {
   }) async {
     if (_map == null) return;
 
-    final pts = <LatLng>[pickupPos, dropoffPos];
-    if (routePoints.isNotEmpty) {
-      pts.addAll(routePoints);
-    }
+    // Same NaN-poisoned fold as fitBounds: one non-finite point anywhere in
+    // pickup/dropoff/route was enough to keep a NaN corner in the box and
+    // send it across the channel, where it raises instead of throwing.
+    final pts = <LatLng>[pickupPos, dropoffPos, ...routePoints]
+        .where(_isFinitePos)
+        .toList(growable: false);
+    if (pts.isEmpty) return;
 
     double minLat = pts[0].latitude, maxLat = pts[0].latitude;
     double minLng = pts[0].longitude, maxLng = pts[0].longitude;
@@ -112,9 +209,21 @@ class TrackingMapCamera {
       null, null,
     );
 
-    final zoom = (cam.zoom ?? 14.0).clamp(13.0, 16.0);
+    final rawZoom = cam.zoom ?? 14.0;
+    final zoom = (rawZoom.isFinite ? rawZoom : 14.0).clamp(13.0, 16.0);
+    final center = cam.center;
+    final centerOk = center != null &&
+        center.coordinates.lat.isFinite &&
+        center.coordinates.lng.isFinite;
     final clampedCam = mapbox.CameraOptions(
-      center: cam.center,
+      center: centerOk
+          ? center
+          : mapbox.Point(
+              coordinates: mapbox.Position(
+                (minLng + maxLng) / 2,
+                (minLat + maxLat) / 2,
+              ),
+            ),
       zoom: zoom,
       bearing: cam.bearing,
       pitch: cam.pitch,
@@ -122,7 +231,7 @@ class TrackingMapCamera {
       anchor: cam.anchor,
     );
 
-    await _map!.flyTo(clampedCam, mapbox.MapAnimationOptions(duration: durationMs));
+    await _safeFlyTo(clampedCam, durationMs, 'fitArrivedBounds');
   }
 
   /// Centra la cámara en el conductor con zoom cercano
@@ -134,13 +243,21 @@ class TrackingMapCamera {
     int durationMs = 1100,
   }) async {
     if (_map == null) return;
+    // driverPos is the interpolated car position, not a raw fix: an
+    // interpolation over an unseeded endpoint yields NaN, and NaN is
+    // absorbing, so it never recovers on its own.
+    if (!_isFinitePos(driverPos)) {
+      debugPrint('[TrackingMapCamera] centerOnDriver skipped — non-finite driver pos');
+      return;
+    }
 
     final point = mapbox.Point(
       coordinates: mapbox.Position(driverPos.longitude, driverPos.latitude),
     );
 
+    mapbox.CameraOptions? cam;
     try {
-      final cam = await _map!.cameraForCoordinatesPadding(
+      cam = await _map!.cameraForCoordinatesPadding(
         [point],
         mapbox.CameraOptions(zoom: zoom, bearing: 0, pitch: 0),
         mapbox.MbxEdgeInsets(
@@ -151,13 +268,21 @@ class TrackingMapCamera {
         ),
         null, null,
       );
-      await _map!.flyTo(cam, mapbox.MapAnimationOptions(duration: durationMs));
-    } catch (_) {
-      await _map!.flyTo(
-        mapbox.CameraOptions(center: point, zoom: zoom, bearing: 0, pitch: 0),
-        mapbox.MapAnimationOptions(duration: durationMs),
-      );
+    } catch (e) {
+      debugPrint('[TrackingMapCamera] centerOnDriver fit failed: $e');
     }
+    // The fallback used to live in a catch around the flyTo as well, so a
+    // camera the platform returned non-finite was flown once as-is and, when
+    // that blew up, flown again — the raw point is only a rescue for a fit
+    // that did not produce usable numbers, never a retry of the same move.
+    await _safeFlyTo(
+      (cam != null && _cameraIsFinite(cam))
+          ? cam
+          : mapbox.CameraOptions(
+              center: point, zoom: zoom, bearing: 0, pitch: 0),
+      durationMs,
+      'centerOnDriver',
+    );
   }
 
   /// Vuela hacia el conductor al inicio del viaje (zoom 16.5)
@@ -168,8 +293,14 @@ class TrackingMapCamera {
     int durationMs = 1500,
   }) async {
     if (_map == null) return;
+    // Fired at Start Ride from whatever position the caller holds at that
+    // instant, which went into Position() with nothing looking at it.
+    if (!_isFinitePos(driverPos)) {
+      debugPrint('[TrackingMapCamera] flyToDriverStart skipped — non-finite driver pos');
+      return;
+    }
 
-    await _map!.flyTo(
+    await _safeFlyTo(
       mapbox.CameraOptions(
         center: mapbox.Point(
           coordinates: mapbox.Position(driverPos.longitude, driverPos.latitude),
@@ -184,19 +315,27 @@ class TrackingMapCamera {
           right: 40,
         ),
       ),
-      mapbox.MapAnimationOptions(duration: durationMs),
+      durationMs,
+      'flyToDriverStart',
     );
   }
 
   /// Centra la cámara en una posición genérica
   Future<void> centerOn(LatLng pos, {double zoom = 15.0, int durationMs = 600}) async {
     if (_map == null) return;
-    await _map!.flyTo(
+    // Generic entry point: it takes any position a caller happens to hold,
+    // so it is the one with the least idea of where its input came from.
+    if (!_isFinitePos(pos)) {
+      debugPrint('[TrackingMapCamera] centerOn skipped — non-finite position');
+      return;
+    }
+    await _safeFlyTo(
       mapbox.CameraOptions(
         center: mapbox.Point(coordinates: mapbox.Position(pos.longitude, pos.latitude)),
         zoom: zoom,
       ),
-      mapbox.MapAnimationOptions(duration: durationMs),
+      durationMs,
+      'centerOn',
     );
   }
 
@@ -366,11 +505,26 @@ class TrackingMapCamera {
     _introSeedStartedAt = DateTime.now();
     _map!.getCameraState().then((state) {
       if (gen != _introGen) return; // a newer intro owns the camera now
+      final c = state.center.coordinates;
+      final from = LatLng(c.lat.toDouble(), c.lng.toDouble());
+      // The seed is whatever the platform says the camera is, and on a map
+      // whose style has not finished loading that has come back non-finite.
+      // Every intro frame interpolates from it, so accepting it once meant
+      // NaN in the centre, zoom, pitch and bearing of the whole swing.
+      // Treated exactly like a failed read: skip the swing, chase directly.
+      if (!_isFinitePos(from) ||
+          !state.zoom.isFinite ||
+          !state.pitch.isFinite ||
+          !state.bearing.isFinite) {
+        debugPrint('[TrackingMapCamera] chase intro seed non-finite — chasing directly');
+        _introSeeding = false;
+        _introActive = false;
+        return;
+      }
       _introFromZoom = state.zoom;
       _introFromPitch = state.pitch;
       _introFromBearing = state.bearing;
-      final c = state.center.coordinates;
-      _introFromCenter = LatLng(c.lat.toDouble(), c.lng.toDouble());
+      _introFromCenter = from;
       _introSeeding = false;
     }).catchError((Object e) {
       if (gen != _introGen) return;
@@ -444,10 +598,21 @@ class TrackingMapCamera {
         _lastFollowTargetAt == null ||
         now.difference(_lastFollowTargetAt!).inMilliseconds >= 350) {
       _lastFollowTargetAt = now;
-      double minLat = points.first.latitude, maxLat = minLat;
-      double minLng = points.first.longitude, maxLng = minLng;
-      for (final p in points) {
-        if (p.latitude == 0 && p.longitude == 0) continue; // unseeded
+      // The corners used to be seeded from points.first and only the fold
+      // skipped unseeded points, so an unseeded or NaN first element stayed
+      // in the box — and a NaN loses every comparison, so nothing later
+      // could push it out either. From there it latched: the target feeds
+      // the glide, the glide feeds _followCenter, and every flyTo/setCamera
+      // afterwards carried NaN to native, where it aborts the process
+      // instead of throwing. Filter first, seed from what is left.
+      final usable = points
+          .where((p) => !(p.latitude == 0 && p.longitude == 0))
+          .where(_isFinitePos)
+          .toList(growable: false);
+      if (usable.isEmpty) return;
+      double minLat = usable.first.latitude, maxLat = minLat;
+      double minLng = usable.first.longitude, maxLng = minLng;
+      for (final p in usable) {
         minLat = math.min(minLat, p.latitude);
         maxLat = math.max(maxLat, p.latitude);
         minLng = math.min(minLng, p.longitude);
@@ -573,7 +738,12 @@ class TrackingMapCamera {
     double? routeBearing,
   }) {
     if (_map == null) return;
+    // Unseeded, and — new — non-finite. A NaN car position does not just
+    // skip a frame: it is low-passed into _navZoom/_navBearing and into the
+    // intro's interpolation, where NaN is absorbing, so one bad tick left
+    // every later setCamera carrying NaN across the channel.
     if (driverPos.latitude == 0 && driverPos.longitude == 0) return;
+    if (!_isFinitePos(driverPos)) return;
 
     final now = DateTime.now();
     final dtSec = _lastNavFrameAt == null
@@ -721,20 +891,29 @@ class TrackingMapCamera {
   }) {
     if (_map == null) return;
     if (_frameInFlight) return;
+    final frame = mapbox.CameraOptions(
+      center: mapbox.Point(
+        coordinates: mapbox.Position(center.longitude, center.latitude),
+      ),
+      zoom: _navZoom,
+      bearing: _navBearing,
+      pitch: _navPitch,
+      anchor: mapbox.ScreenCoordinate(x: anchorX, y: anchorY),
+    );
+    // Last gate before the channel. Everything upstream is now filtered, but
+    // this frame is assembled from four separately smoothed values plus an
+    // anchor derived from screen metrics, and a NaN in any one of them does
+    // not throw here — it raises inside native (convertDictionaryToGeometry,
+    // "Invalid number value (NaN) in JSON write") and takes the app with it.
+    // Dropping one chase frame is invisible; the next tick redraws.
+    if (!_cameraIsFinite(frame)) {
+      debugPrint('[TrackingMapCamera] chase frame skipped — non-finite camera');
+      return;
+    }
     _frameInFlight = true;
     try {
       _map!
-          .setCamera(
-        mapbox.CameraOptions(
-          center: mapbox.Point(
-            coordinates: mapbox.Position(center.longitude, center.latitude),
-          ),
-          zoom: _navZoom,
-          bearing: _navBearing,
-          pitch: _navPitch,
-          anchor: mapbox.ScreenCoordinate(x: anchorX, y: anchorY),
-        ),
-      )
+          .setCamera(frame)
           .then((_) {
         _frameInFlight = false;
       }).catchError((e) {

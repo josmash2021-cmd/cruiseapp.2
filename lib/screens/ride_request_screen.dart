@@ -390,6 +390,12 @@ class _RideRequestScreenState extends State<RideRequestScreen>
   mapbox.PointAnnotation? _goldDotAnnot;
   mapbox.PointAnnotation? _userDotAnnot;
   mapbox.PolylineAnnotation? _routeAnnot;
+  /// Newest camera frame waiting for the channel, and whether one is
+  /// already travelling. The animation listeners produce frames faster than
+  /// the pigeon channel drains them, so frames are coalesced rather than
+  /// queued — see `_pushCamera` in ride_request_map.dart.
+  mapbox.CameraOptions? _pendingCam;
+  bool _camWriteInFlight = false;
   // ── Cinematic animation ──
   AnimationController? _tiltCtrl;
   Animation<double>? _tiltAnim;
@@ -1057,13 +1063,30 @@ class _RideRequestScreenState extends State<RideRequestScreen>
     _pickerAnchorCtrl?.dispose();
     _pickerRippleTicker?.dispose();
     _shakeCtrl.dispose();
+    // Nulled the instant they're disposed, and BEFORE _cleanupMapAnnotations()
+    // runs seven lines down. That cleanup does `_tiltCtrl?.stop()`, and
+    // `_resetCinematic()` stops all four in a row — `?.` guards a null FIELD,
+    // not a DEAD controller. `AnimationController.stop()` is
+    // `assert(_ticker != null, 'stop() called after dispose'); _ticker!.stop()`,
+    // and the assert is compiled out of release, so the bare `!` threw
+    // "Null check operator used on a null value" on every rider who left this
+    // screen with a route drawn (top Crashlytics crash on 1.0.9; AOT inlined
+    // stop() so the report blamed this file, not the framework). With the
+    // fields null the `?.` short-circuits and there is nothing left to deref.
+    // Same shape _cancelSearching() already uses for _dfCheckCtrl/_searchCamCtrl.
     _searchCamCtrl?.dispose();
+    _searchCamCtrl = null;
     _tiltCtrl?.dispose();
+    _tiltCtrl = null;
     _bearingCtrl?.dispose();
+    _bearingCtrl = null;
     _pinPopCtrl?.dispose();
+    _pinPopCtrl = null;
     _labelPopCtrl?.dispose();
+    _labelPopCtrl = null;
     _routeDrawTicker?.stop();
     _routeDrawTicker?.dispose();
+    _routeDrawTicker = null;
     // Clean up map annotations on dispose to prevent ghost routes
     _cleanupMapAnnotations();
     super.dispose();
@@ -1200,6 +1223,13 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                   ),
                   onMapCreated: (ctrl) async {
                     _mapCtrl = ctrl;
+                    // A fresh surface starts with a clean write gate. The
+                    // old one may have been revoked mid-write, leaving
+                    // `_camWriteInFlight` true and a stale frame pending —
+                    // which would make the new map ignore every camera
+                    // push it ever receives.
+                    _camWriteInFlight = false;
+                    _pendingCam = null;
                     // Cache controller for reuse across rider screens
                     MapControllerCache.instance.cache(ctrl);
                     ctrl.scaleBar.updateSettings(mapbox.ScaleBarSettings(enabled: false));

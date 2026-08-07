@@ -820,9 +820,10 @@ extension _RideRequestMap on _RideRequestScreenState {
     }
 
     void onUnifiedTick() {
-      if (_mapCtrl == null || !mounted) return;
+      final mc = _mapCtrl;
+      if (mc == null || !mounted) return;
       final t = Curves.easeInOutCubic.transform(_tiltCtrl!.value);
-      _mapCtrl!.setCamera(mapbox.CameraOptions(
+      _pushCamera(mc, mapbox.CameraOptions(
         center: mapbox.Point(
           coordinates: mapbox.Position(
             startLng + (endLng - startLng) * t,
@@ -927,11 +928,146 @@ extension _RideRequestMap on _RideRequestScreenState {
   }
 
   void _applyMapCamera() {
-    if (_mapCtrl == null || !mounted) return;
-    _mapCtrl!.setCamera(mapbox.CameraOptions(
+    final mc = _mapCtrl;
+    if (mc == null || !mounted) return;
+    _pushCamera(mc, mapbox.CameraOptions(
       pitch: _tiltAnim?.value,
       bearing: _bearingAnim?.value,
     ));
+  }
+
+  /// Per-frame camera write for the animation listeners (the cinematic's
+  /// unified tick, [_applyMapCamera]) — the only two places that push a
+  /// camera 60 times a second for seconds at a stretch.
+  ///
+  /// `_mapCtrl != null` says nothing about the native view. The Dart handle
+  /// stays alive after the platform view is torn down, and this app
+  /// multiplexes ONE Mapbox surface through MapSurfaceCoordinator, so the
+  /// view can be revoked and handed to another screen while this State is
+  /// still mounted — the guard passes and the call goes out anyway. Every
+  /// pigeon call then rejects with PlatformException(channel-error, Unable
+  /// to establish connection on channel …). It was unawaited with no
+  /// handler, so it landed in the zone as an unhandled error; wrapping the
+  /// call site in try/catch would not have helped either, since the
+  /// rejection arrives on a later microtask, long after the sync block
+  /// returned.
+  ///
+  /// Handling the rejection is only half of it: the animation would keep
+  /// firing into the dead view for its remaining ~130 frames, each one
+  /// throwing again. So on channel-error the handle is released, which is
+  /// what finally makes the listeners' own `_mapCtrl == null` guard true and
+  /// stops the writes at the first failure. onMapCreated re-seeds _mapCtrl
+  /// when a surface comes back, so this is recoverable, not a one-way door.
+  /// Coalesced, so the animation does not fight itself.
+  ///
+  /// This is the visible half of the bug, separate from the crash. Firing
+  /// `setCamera` 60 times a second unawaited queues 130-odd pigeon calls
+  /// down one channel that cannot drain that fast. Writes issued while an
+  /// earlier one is still travelling are DROPPED — and per CLAUDE.md rule
+  /// 25 the last one is the likeliest casualty, which is precisely the
+  /// frame carrying the final pitch and bearing. What a rider sees is the
+  /// move running, stalling partway, and then the camera arriving in one
+  /// jump when the next unrelated write lands.
+  ///
+  /// Same shape as TrackingMapCar._flushCarWrite: keep only the newest
+  /// pending frame, send it the moment the channel frees up, and when the
+  /// animation stops the pending frame is the final one — so the end state
+  /// always gets there instead of being the one that goes missing.
+  void _pushCamera(mapbox.MapboxMap mc, mapbox.CameraOptions opts) {
+    // The rider's hand outranks every animation. Checked here AND at flush
+    // time, because those are different moments: a frame produced before
+    // they grabbed the map is still in the queue when they start dragging.
+    if (_userTookCamera) {
+      _pendingCam = null;
+      return;
+    }
+    _pendingCam = opts;
+    if (_camWriteInFlight) return; // the in-flight write picks up the newest
+    _flushCamera(mc);
+  }
+
+  /// True when every field of [cam] is something Mapbox can actually use.
+  ///
+  /// A NaN does not throw on our side — it crosses the pigeon channel and
+  /// raises inside native: "latitude must not be NaN" from
+  /// FlyToInterpolator, or NSInvalidArgumentException "Invalid number value
+  /// (NaN) in JSON write" while the geometry is being serialised. Neither is
+  /// catchable in Dart, which is why they show up as hard crashes spanning
+  /// 1.0.3 through 1.0.9.
+  ///
+  /// NaN gets in the same two ways every time: a min/max fold seeded with
+  /// sentinels, where every comparison against NaN is false so the sentinels
+  /// survive; and arithmetic on a location that was never set. Rather than
+  /// chase every producer, everything is checked at the one door it has to
+  /// pass through.
+  bool _saneCam(mapbox.CameraOptions? cam) {
+    if (cam == null) return false;
+    final c = cam.center?.coordinates;
+    if (c != null) {
+      final lat = c.lat.toDouble(), lng = c.lng.toDouble();
+      if (!isValidLatLng(lat, lng)) return false;
+      if (lat.abs() > 90 || lng.abs() > 180) return false;
+    }
+    for (final v in [cam.zoom, cam.pitch, cam.bearing]) {
+      if (v != null && !v.isFinite) return false;
+    }
+    return true;
+  }
+
+  void _flushCamera(mapbox.MapboxMap mc) {
+    final opts = _pendingCam;
+    if (opts == null) return;
+    _pendingCam = null;
+    // Never hand a NaN to the channel — it crashes inside native where no
+    // Dart catch can reach it. Dropping the frame costs one animation step;
+    // sending it costs the app.
+    if (!_saneCam(opts)) {
+      _camWriteInFlight = false;
+      debugPrint('[Map] dropped a non-finite camera frame');
+      return;
+    }
+    _camWriteInFlight = true;
+    // A write that never settles must not latch the gate shut.
+    //
+    // The flag is cleared in `then` and `catchError`, and a pigeon call to a
+    // half-dead channel can do neither — that is Crashlytics #15, a
+    // `TimeoutException … Future not completed` with no app frame. If that
+    // happens here the flag stays true forever and `_pushCamera` silently
+    // drops every later frame: no cinematic, no pitch, a camera that simply
+    // stops responding for the life of the screen. Two seconds is far longer
+    // than a healthy setCamera and far shorter than a rider would tolerate.
+    mc.setCamera(opts).timeout(const Duration(seconds: 2)).then((_) {
+      _camWriteInFlight = false;
+      // A newer frame arrived mid-write — send it now rather than waiting
+      // for a tick that may never come, because the animation may have
+      // just ended and this is the final position.
+      //
+      // Unless the rider took the camera while this one was travelling.
+      // That is the drag-then-snap on "choose on map": every caller checks
+      // `_userTookCamera` before ASKING for a move, but the frame it
+      // produced a moment earlier was still in flight, so the check had
+      // already passed. It landed after their finger was down and threw
+      // the map back to a top-down frame over their own location. Guarding
+      // only at the call site cannot catch it; the queue has to be
+      // abandoned at the moment it would be sent.
+      if (_userTookCamera) {
+        _pendingCam = null;
+        return;
+      }
+      if (_pendingCam != null && identical(_mapCtrl, mc)) _flushCamera(mc);
+    }).catchError((Object e) {
+      _camWriteInFlight = false;
+      _pendingCam = null;
+      // Only drop the controller we actually called: by the time this
+      // rejection lands, onMapCreated may already have handed us a live
+      // replacement, and nulling that one would leave the screen mapless.
+      if (identical(_mapCtrl, mc) &&
+          e is PlatformException &&
+          e.code == 'channel-error') {
+        _mapCtrl = null;
+        debugPrint('[Map] camera channel gone — released stale controller');
+      }
+    });
   }
 
   /// Frame the FULL route top-down while dispatch searches — pitch 0,
@@ -1047,14 +1183,61 @@ extension _RideRequestMap on _RideRequestScreenState {
     final mgr = _pointAnnotMgr;
     if (mgr == null) return;
     final s = _pinPopAnim?.value ?? 1.0;
-    if (_pickupAnnot != null) {
-      _pickupAnnot!.iconSize = s * 0.65;
-      mgr.update(_pickupAnnot!);
+    final pickup = _pickupAnnot;
+    if (pickup != null) {
+      pickup.iconSize = s * 0.65;
+      _pushPinUpdate(mgr, pickup);
     }
-    if (_dropoffAnnot != null) {
-      _dropoffAnnot!.iconSize = s * 0.65;
-      mgr.update(_dropoffAnnot!);
+    final dropoff = _dropoffAnnot;
+    if (dropoff != null) {
+      dropoff.iconSize = s * 0.65;
+      _pushPinUpdate(mgr, dropoff);
     }
+  }
+
+  /// Fire-and-forget iconSize write for the pop animations, which run every
+  /// frame off an animation listener ([_updatePinScales],
+  /// [_updateLabelScales]).
+  ///
+  /// The `mgr != null` check above only proves we hold *a* manager. When the
+  /// style reloads, the platform view is rebuilt, or the shared Mapbox
+  /// surface is handed to another screen, the manager is recreated and every
+  /// annotation id we cached goes dead — the handle is non-null and stale,
+  /// which is the worst possible combination. The pigeon then rejects with
+  /// PlatformException(0, No manager or annotation found with manager id …).
+  /// The call was unawaited and unhandled, so that rejection went straight
+  /// to Crashlytics; a synchronous try/catch around it is a no-op, because
+  /// an unawaited future's error never passes through the calling frame.
+  ///
+  /// Per CLAUDE.md rule 17 the handle is dropped inside the rejection
+  /// itself, not on some later frame: the annotation no longer exists
+  /// natively, so keeping the id only guarantees the next ~30 frames throw
+  /// the same error. With both handles nulled the listener goes quiet, and
+  /// _placeMarkersOnly / _buildRouteMarkers recreate the pins against the
+  /// new manager.
+  void _pushPinUpdate(
+      mapbox.PointAnnotationManager mgr, mapbox.PointAnnotation annot) {
+    mgr.update(annot).catchError((Object e) {
+      // A channel that is merely unreachable has NOT killed the annotation.
+      // Dropping the handle then would strand a live native pin with no
+      // Dart reference, and the next _placeMarkers would draw a second one
+      // on top of it. Only "no manager or annotation found" — pigeon code
+      // '0' — actually means the id is dead.
+      final dead = e is PlatformException && e.code == '0';
+      if (!dead) {
+        debugPrint('[Pins] annotation update failed, handle kept: $e');
+        return;
+      }
+      // Identity, not equality: if the pins were already recreated while
+      // this update was in flight, the new handles must survive.
+      if (identical(_pickupAnnot, annot)) _pickupAnnot = null;
+      if (identical(_dropoffAnnot, annot)) _dropoffAnnot = null;
+      // Rule 17(b): null the handle AND fire-and-forget the delete. Nulling
+      // alone is what put two gold dots on the rider's map — the native
+      // annotation outlives the handle and the next create adds a second.
+      mgr.delete(annot).catchError((_) {});
+      debugPrint('[Pins] annotation update rejected, handle dropped: $e');
+    });
   }
 
   /// Trigger the animated overlay labels (pickup at 50 ms, dropoff at
@@ -1149,13 +1332,17 @@ extension _RideRequestMap on _RideRequestScreenState {
     final mgr = _pointAnnotMgr;
     if (mgr == null) return;
     final s = _labelPopAnim?.value ?? 0.65;
-    if (_pickupAnnot != null) {
-      _pickupAnnot!.iconSize = s;
-      mgr.update(_pickupAnnot!);
+    // Same listener-driven, fire-and-forget write as _updatePinScales, so
+    // the same dead-id rejection reached the zone from here.
+    final pickup = _pickupAnnot;
+    if (pickup != null) {
+      pickup.iconSize = s;
+      _pushPinUpdate(mgr, pickup);
     }
-    if (_dropoffAnnot != null) {
-      _dropoffAnnot!.iconSize = s;
-      mgr.update(_dropoffAnnot!);
+    final dropoff = _dropoffAnnot;
+    if (dropoff != null) {
+      dropoff.iconSize = s;
+      _pushPinUpdate(mgr, dropoff);
     }
   }
 
@@ -1787,6 +1974,8 @@ extension _RideRequestMap on _RideRequestScreenState {
       // Longer cinematic fit so the reveal of pickup → dropoff feels
       // gentle instead of a quick flick (user asked for smooth, not
       // rapid camera motion).
+      // NaN here crashes inside native, uncatchable — see _saneCam.
+      if (!_saneCam(cam)) return;
       _mapCtrl?.flyTo(cam, mapbox.MapAnimationOptions(duration: 1400));
     });
   }
@@ -1810,6 +1999,8 @@ extension _RideRequestMap on _RideRequestScreenState {
       mapbox.MbxEdgeInsets(top: 80, left: 50, bottom: bottomInset, right: 50),
       null, null,
     ).then((cam) {
+      // NaN here crashes inside native, uncatchable — see _saneCam.
+      if (!_saneCam(cam)) return;
       _mapCtrl?.flyTo(cam, mapbox.MapAnimationOptions(duration: 1200));
     });
   }
@@ -1993,6 +2184,8 @@ extension _RideRequestMap on _RideRequestScreenState {
       );
       // Slower fit so the fly feels fluid instead of snappy.
       if (cam != null) {
+        // NaN here crashes inside native, uncatchable — see _saneCam.
+        if (!_saneCam(cam)) return;
         _mapCtrl?.flyTo(cam, mapbox.MapAnimationOptions(duration: 1100));
       }
     } else if (_userLocation != null) {
@@ -2009,8 +2202,20 @@ extension _RideRequestMap on _RideRequestScreenState {
         );
         return;
       }
+      // The recenter is fed straight from _userLocation, which is the most
+      // likely carrier of a never-set or half-computed coordinate — exactly
+      // the shape that reaches FlyToInterpolator as "latitude must not be
+      // NaN". Better no recenter than a crash.
+      final me = mapbox.CameraOptions(
+        center: mapbox.Point(
+          coordinates: mapbox.Position(
+              _userLocation!.longitude, _userLocation!.latitude),
+        ),
+        zoom: 15.5,
+      );
+      if (!_saneCam(me)) return;
       _mapCtrl?.flyTo(
-        mapbox.CameraOptions(center: mapbox.Point(coordinates: mapbox.Position(_userLocation!.longitude, _userLocation!.latitude)), zoom: 15.5),
+        me,
         // 500 ms → 900 ms so the re-center glide never feels like a snap.
         mapbox.MapAnimationOptions(duration: 900),
       );

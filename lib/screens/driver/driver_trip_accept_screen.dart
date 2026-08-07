@@ -2852,8 +2852,112 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     ));
   }
 
+  /// The camera guard mapbox_safe.dart never had. A non-finite centre — or
+  /// one past the poles, which arrives the same way, from arithmetic on a
+  /// location that was never set — is not a Dart exception we can catch: it
+  /// crosses the pigeon channel and raises NSInvalidArgumentException
+  /// ("Invalid number value (NaN) in JSON write") inside Objective-C.
+  bool _cameraIsSane(mapbox.Point? center, double zoom) {
+    if (center == null || !zoom.isFinite) return false;
+    final c = center.coordinates;
+    final lat = c.lat.toDouble(), lng = c.lng.toDouble();
+    return isValidLatLng(lat, lng) && lat.abs() <= 90 && lng.abs() <= 180;
+  }
+
+  /// Creates the pickup + dropoff pins on [mgr], or returns null when the
+  /// platform channel is already gone.
+  ///
+  /// These two creates used to be bare while the polyline create right below
+  /// them was wrapped — that asymmetry was the whole crash. _onStyleLoaded is
+  /// an async void wired as onStyleLoadedListener, so a
+  /// PlatformException(channel-error) from a surface that died between the
+  /// style event and here had no awaiter and escaped as an unhandled async
+  /// error. Returning null instead of throwing makes that impossible, and
+  /// lets the caller stop rather than keep talking to a dead channel.
+  Future<List<mapbox.PointAnnotation>?> _createPinPair(
+    mapbox.PointAnnotationManager mgr, {
+    required mapbox.Point pickupPoint,
+    required mapbox.Point dropoffPoint,
+    required Uint8List pickupBytes,
+    required Uint8List dropoffBytes,
+    required double iconSize,
+  }) async {
+    // Rule 17(a): clear the manager before creating.
+    //
+    // A second style load runs this again on the same manager, and the pins
+    // from the first pass are still on it — the create would put a new pair
+    // on top of the old one and the driver sees doubled pickup and dropoff
+    // markers. deleteAll is the only sweep that reaches annotations whose
+    // Dart handles we already dropped.
+    try { await mgr.deleteAll(); } catch (_) {}
+    if (!mounted || _annotMgr != mgr) return null;
+
+    // Caught PER CREATE, not around the pair.
+    //
+    // `Future.wait` propagates the first rejection and DISCARDS whatever the
+    // other future resolved to — so if the dropoff create failed and the
+    // pickup succeeded, the pickup pin existed natively with no Dart handle
+    // left to delete it: precisely the orphan the block below exists to
+    // prevent. Resolving each to null instead keeps every handle that was
+    // actually produced, so the cleanup can reach it.
+    final results = await Future.wait([
+      mgr
+          .create(mapbox.PointAnnotationOptions(
+            geometry: pickupPoint,
+            image: pickupBytes, iconSize: iconSize, iconAnchor: mapbox.IconAnchor.BOTTOM,
+            iconOffset: const [0.0, 0.0],
+          ))
+          .then<mapbox.PointAnnotation?>((p) => p)
+          .catchError((_) => null),
+      mgr
+          .create(mapbox.PointAnnotationOptions(
+            geometry: dropoffPoint,
+            image: dropoffBytes, iconSize: iconSize, iconAnchor: mapbox.IconAnchor.BOTTOM,
+            iconOffset: const [0.0, 0.0],
+          ))
+          .then<mapbox.PointAnnotation?>((p) => p)
+          .catchError((_) => null),
+    ]);
+    final made = results.whereType<mapbox.PointAnnotation>().toList();
+
+    // Two channel round-trips is plenty of time for dispose, or a second
+    // style load, to swap the manager underneath us. Pins bound to a
+    // manager we no longer hold can never be updated or deleted through
+    // _annotMgr again — they would sit on the map as orphan markers
+    // (rule 17), so they are dropped here while we still have the handle.
+    // A half-made pair goes the same way: one lone pin is worse than none.
+    if (!mounted || _annotMgr != mgr || made.length != 2) {
+      for (final p in made) {
+        try { await mgr.delete(p); } catch (_) {}
+      }
+      return null;
+    }
+    return made;
+  }
+
   // onStyleLoadedListener — style is guaranteed ready here; run all setup.
-  Future<void> _onStyleLoaded(mapbox.StyleLoadedEventData _) async {
+  /// The listener Mapbox actually calls — a net around the whole setup.
+  ///
+  /// This is wired as `onStyleLoadedListener`, so it is an async void that
+  /// NOBODY awaits: any rejection escapes as an unhandled async error and
+  /// takes the isolate with it. The body below has a dozen awaits into the
+  /// platform channel (`cameraForCoordinateBounds`, `setCamera`, annotation
+  /// creates, the route animation), and every one of them rejects with
+  /// PlatformException(channel-error) if the driver leaves the screen
+  /// between the style event and that line. Guarding only the first await —
+  /// which is what shipped — left the other eleven bare.
+  ///
+  /// Catching here is not swallowing: with the surface gone there is no map
+  /// left to draw on, so stopping is the only correct continuation.
+  Future<void> _onStyleLoaded(mapbox.StyleLoadedEventData e) async {
+    try {
+      await _runStyleLoadedSetup(e);
+    } on PlatformException catch (err) {
+      debugPrint('[TripAccept] style setup abandoned — map channel gone: $err');
+    }
+  }
+
+  Future<void> _runStyleLoadedSetup(mapbox.StyleLoadedEventData _) async {
     final ctrl = _map;
     if (ctrl == null || !mounted) return;
 
@@ -2873,7 +2977,20 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
         } catch (_) {}
       }),
     ];
-    await Future.wait(setupFutures);
+    // The style-loaded event is delivered by the platform, and it can land
+    // AFTER the surface is gone — the driver dismissed the offer, the app
+    // went to background, or MapSurfaceCoordinator handed the surface to
+    // another screen. Every pigeon call then rejects with
+    // PlatformException(channel-error), and this method is an async void
+    // wired as onStyleLoadedListener: nobody awaits it, so that rejection
+    // escaped as an unhandled async error and took down the isolate.
+    // Catching it here is not swallowing — without the managers there is no
+    // map left to draw on, so stopping is the only correct continuation.
+    try {
+      await Future.wait(setupFutures);
+    } on PlatformException catch (_) {
+      return;
+    }
     if (!mounted) return;
 
     // Load route + render pins in parallel. _loadPreviewRoute usually beat
@@ -2899,62 +3016,94 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     // raw coordinates creates off-road straight-line segments.
 
     // Include driver position + pickup + dropoff + route in bounds so everything is visible.
-    final allPoints = [
+    //
+    // The old fold was NaN-blind: it seeded minLat/maxLat/minLng/maxLng with
+    // the 90/-90/180/-180 sentinels, and every `<` / `>` against a NaN is
+    // false — so a single NaN in driverPos/pickup/dropoff/route left the
+    // sentinels in place and produced an INVERTED CoordinateBounds
+    // (southwest 180/90, northeast -180/-90). cameraForCoordinateBounds
+    // resolved that to a non-finite centre which went straight back through
+    // setCamera, and a NaN crossing the channel is not a Dart exception: it
+    // raises NSInvalidArgumentException "Invalid number value (NaN) in JSON
+    // write" inside convertDictionaryToGeometry, which no `catch` on this
+    // side can hold. The pins below already went through safePoint() and the
+    // polyline through safeLineString() — that asymmetry is exactly why the
+    // annotations survived and the camera did not; mapbox_safe.dart never
+    // covered the camera. Now: drop non-finite and out-of-range points
+    // first, and seed the fold from a real point so no sentinel can leak.
+    final allPoints = <LatLng>[
       widget.driverPos,
       widget.pickupLatLng,
       _dropoffLL,
       ..._routePoints,
-    ];
-    double minLat = 90, maxLat = -90, minLng = 180, maxLng = -180;
-    for (final p in allPoints) {
-      if (p.latitude  < minLat) minLat = p.latitude;
-      if (p.latitude  > maxLat) maxLat = p.latitude;
-      if (p.longitude < minLng) minLng = p.longitude;
-      if (p.longitude > maxLng) maxLng = p.longitude;
+    ].where((p) =>
+        isValidLatLng(p.latitude, p.longitude) &&
+        p.latitude.abs() <= 90 &&
+        p.longitude.abs() <= 180).toList();
+    mapbox.CoordinateBounds? bounds;
+    if (allPoints.isNotEmpty) {
+      double minLat = allPoints.first.latitude, maxLat = minLat;
+      double minLng = allPoints.first.longitude, maxLng = minLng;
+      for (final p in allPoints) {
+        if (p.latitude  < minLat) minLat = p.latitude;
+        if (p.latitude  > maxLat) maxLat = p.latitude;
+        if (p.longitude < minLng) minLng = p.longitude;
+        if (p.longitude > maxLng) maxLng = p.longitude;
+      }
+      bounds = mapbox.CoordinateBounds(
+        southwest: mapbox.Point(coordinates: mapbox.Position(minLng, minLat)),
+        northeast: mapbox.Point(coordinates: mapbox.Position(maxLng, maxLat)),
+        infiniteBounds: false,
+      );
     }
-    final bounds = mapbox.CoordinateBounds(
-      southwest: mapbox.Point(coordinates: mapbox.Position(minLng, minLat)),
-      northeast: mapbox.Point(coordinates: mapbox.Position(maxLng, maxLat)),
-      infiniteBounds: false,
-    );
     // Compute a small auto-bearing based on route direction for a pleasant angle.
+    // atan2 over a NaN route point returns NaN, and that NaN rode into the
+    // camera as the bearing — same crossing, same Objective-C raise.
     final rBearing = _routeBearing(_routePoints);
-    final prettBearing = (rBearing + 15.0) % 360;
+    final prettBearing = rBearing.isFinite ? (rBearing + 15.0) % 360 : 0.0;
 
     // ── If returning (animation already played), show final state instantly ──
     if (_miniMapAnimDone || widget.arrivedAtPickup) {
       _miniMapAnimDone = true;
       // Top-down eagle view only (user spec 2026-08-04 — the tilt is gone).
-      final cam = await ctrl.cameraForCoordinateBounds(
-        bounds,
-        mapbox.MbxEdgeInsets(top: 60, left: 50, bottom: 70, right: 50),
-        prettBearing,
-        0,
-        null, null,
-      );
-      if (!mounted) return;
-      // Reduce zoom by 0.5 to ensure route is fully visible with padding
-      final targetZoom = ((cam.zoom ?? 13) - 0.5).clamp(10.0, 14.0);
-      ctrl.setCamera(mapbox.CameraOptions(
-        center: cam.center, zoom: targetZoom, bearing: prettBearing, pitch: 0.0,
-      ));
+      // No finite point to frame means no camera move: skipping the fit
+      // leaves the map wherever it was, which is survivable — writing a
+      // non-finite camera is not.
+      if (bounds != null) {
+        final cam = await ctrl.cameraForCoordinateBounds(
+          bounds,
+          mapbox.MbxEdgeInsets(top: 60, left: 50, bottom: 70, right: 50),
+          prettBearing,
+          0,
+          null, null,
+        );
+        if (!mounted) return;
+        // Reduce zoom by 0.5 to ensure route is fully visible with padding
+        // (clamp() passes a NaN straight through, so it is checked too).
+        final targetZoom = ((cam.zoom ?? 13) - 0.5).clamp(10.0, 14.0);
+        if (_cameraIsSane(cam.center, targetZoom)) {
+          ctrl.setCamera(mapbox.CameraOptions(
+            center: cam.center, zoom: targetZoom, bearing: prettBearing, pitch: 0.0,
+          ));
+        }
+      }
       // Place pins + route instantly
       final pickupPoint = safePoint(widget.pickupLatLng.longitude, widget.pickupLatLng.latitude);
       final dropoffPoint = safePoint(_dropoffLL.longitude, _dropoffLL.latitude);
       _pinAnnots.clear();
-      if (_annotMgr != null && pickupPoint != null && dropoffPoint != null) {
-        final pins = await Future.wait([
-          _annotMgr!.create(mapbox.PointAnnotationOptions(
-            geometry: pickupPoint,
-            image: pickupPinBytes, iconSize: 0.62, iconAnchor: mapbox.IconAnchor.BOTTOM,
-            iconOffset: const [0.0, 0.0],
-          )),
-          _annotMgr!.create(mapbox.PointAnnotationOptions(
-            geometry: dropoffPoint,
-            image: dropoffPinBytes, iconSize: 0.62, iconAnchor: mapbox.IconAnchor.BOTTOM,
-            iconOffset: const [0.0, 0.0],
-          )),
-        ]);
+      final mgr = _annotMgr;
+      if (mgr != null && pickupPoint != null && dropoffPoint != null) {
+        final pins = await _createPinPair(
+          mgr,
+          pickupPoint: pickupPoint,
+          dropoffPoint: dropoffPoint,
+          pickupBytes: pickupPinBytes,
+          dropoffBytes: dropoffPinBytes,
+          iconSize: 0.62,
+        );
+        // A dead channel here means the surface is gone: there is no route
+        // to draw and no car to start on top of pins that do not exist.
+        if (pins == null) return;
         _pinAnnots.addAll(pins);
       }
       if (_polyMgr != null && _routePoints.length >= 2) {
@@ -2983,37 +3132,43 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     // ── First visit: animated sequence ──
 
     // STEP 1: Fit bounds at pitch 0 (top-down) so everything is visible flat
-    final camFlat = await ctrl.cameraForCoordinateBounds(
-      bounds,
-      mapbox.MbxEdgeInsets(top: 60, left: 50, bottom: 70, right: 50),
-      prettBearing,
-      0, // pitch 0 for flat fit
-      null, null,
-    );
-    if (!mounted) return;
-    // Reduce zoom to ensure full route is visible with generous padding
-    final targetZoom = ((camFlat.zoom ?? 13) - 0.5).clamp(9.0, 14.0);
-    ctrl.setCamera(mapbox.CameraOptions(
-      center: camFlat.center, zoom: targetZoom, bearing: prettBearing, pitch: 0.0,
-    ));
+    // Same guard as the resume branch: with no finite point to frame there
+    // is nothing to fit, and a NaN centre would raise in Objective-C.
+    if (bounds != null) {
+      final camFlat = await ctrl.cameraForCoordinateBounds(
+        bounds,
+        mapbox.MbxEdgeInsets(top: 60, left: 50, bottom: 70, right: 50),
+        prettBearing,
+        0, // pitch 0 for flat fit
+        null, null,
+      );
+      if (!mounted) return;
+      // Reduce zoom to ensure full route is visible with generous padding
+      final targetZoom = ((camFlat.zoom ?? 13) - 0.5).clamp(9.0, 14.0);
+      if (_cameraIsSane(camFlat.center, targetZoom)) {
+        ctrl.setCamera(mapbox.CameraOptions(
+          center: camFlat.center, zoom: targetZoom, bearing: prettBearing, pitch: 0.0,
+        ));
+      }
+    }
 
     // STEP 2: Pins pop in (scale 0 → 1.0 with spring)
     final pickupPoint = safePoint(widget.pickupLatLng.longitude, widget.pickupLatLng.latitude);
     final dropoffPoint = safePoint(_dropoffLL.longitude, _dropoffLL.latitude);
     _pinAnnots.clear();
-    if (_annotMgr != null && pickupPoint != null && dropoffPoint != null) {
-      final pins = await Future.wait([
-        _annotMgr!.create(mapbox.PointAnnotationOptions(
-          geometry: pickupPoint,
-          image: pickupPinBytes, iconSize: 0.01, iconAnchor: mapbox.IconAnchor.BOTTOM,
-          iconOffset: const [0.0, 0.0],
-        )),
-        _annotMgr!.create(mapbox.PointAnnotationOptions(
-          geometry: dropoffPoint,
-          image: dropoffPinBytes, iconSize: 0.01, iconAnchor: mapbox.IconAnchor.BOTTOM,
-          iconOffset: const [0.0, 0.0],
-        )),
-      ]);
+    final mgr = _annotMgr;
+    if (mgr != null && pickupPoint != null && dropoffPoint != null) {
+      final pins = await _createPinPair(
+        mgr,
+        pickupPoint: pickupPoint,
+        dropoffPoint: dropoffPoint,
+        pickupBytes: pickupPinBytes,
+        dropoffBytes: dropoffPinBytes,
+        iconSize: 0.01,
+      );
+      // Channel gone: there are no pins to pop, no route to animate and no
+      // car to launch. Pressing on only queues more rejected pigeon calls.
+      if (pins == null) return;
       _pinAnnots.addAll(pins);
     }
     // Animate pins: 0.01 → 1.15 → 1.0 over 400ms

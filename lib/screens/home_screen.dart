@@ -163,6 +163,9 @@ class _HomeScreenState extends State<HomeScreen>
   bool _serviceZoneActive = true; // default true until Firestore loads
   bool _stateCheckDone = false;
   StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _zonesSub;
+  /// One-shot watch that re-arms the service-zone listen once a Firebase
+  /// session finally exists — see `_listenServiceZones`.
+  StreamSubscription<User?>? _zonesAuthSub;
 
   // Self-healing watchdog — detects and recovers from a stuck GPS stream.
   DateTime _lastGpsFixAt = DateTime(0);
@@ -499,6 +502,7 @@ class _HomeScreenState extends State<HomeScreen>
     _locationSub?.cancel();
     _stopLocationWatchdogs();
     _zonesSub?.cancel();
+    _zonesAuthSub?.cancel();
     _driverLocationSub?.cancel();
     _tripDocSub?.cancel();
     _tripStatusSub?.cancel();

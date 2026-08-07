@@ -238,6 +238,7 @@ class _CruiseLevelScreenState extends State<CruiseLevelScreen>
       backgroundColor: neuBase,
       body: Stack(
         children: [
+          const Positioned.fill(child: NeuDotsBackdrop()),
           _loading
               ? const Center(
                   child:

@@ -441,7 +441,10 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
 
     return Scaffold(
       backgroundColor: neuBase,
-      body: _loading
+      body: Stack(
+        children: [
+          const Positioned.fill(child: NeuDotsBackdrop()),
+          _loading
           ? const Center(
               child: CircularProgressIndicator(color: _gold, strokeWidth: 2),
             )
@@ -527,6 +530,8 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
                   ),
               ],
             ),
+        ],
+      ),
     );
   }
 

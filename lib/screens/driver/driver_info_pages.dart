@@ -28,7 +28,12 @@ class _InfoPageShell extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: neuBase,
-      body: SafeArea(
+      // Same dotted backdrop as the driver menu these pages open from —
+      // on a flat neuBase the cards float on nothing.
+      body: Stack(
+        children: [
+          const Positioned.fill(child: NeuDotsBackdrop()),
+          SafeArea(
         child: Column(
           children: [
             // Top bar — back arrow left, title centered
@@ -90,6 +95,8 @@ class _InfoPageShell extends StatelessWidget {
             ),
           ],
         ),
+          ),
+        ],
       ),
     );
   }

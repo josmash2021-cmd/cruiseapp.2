@@ -3,6 +3,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 
 import '../config/app_theme.dart';
+import '../widgets/neu_style.dart';
 import '../l10n/app_localizations.dart';
 import '../config/api_keys.dart';
 import '../services/api_service.dart';
@@ -24,7 +25,6 @@ class _TripReceiptScreenState extends State<TripReceiptScreen>
 
   // Dark-neumorphism palette: one base surface, deep shadows bottom-right,
   // faint highlight top-left.
-  static const _bg = Color(0xFF101014);
   static const _surface = Color(0xFF17171D);
 
   late AnimationController _entryController;
@@ -227,8 +227,13 @@ class _TripReceiptScreenState extends State<TripReceiptScreen>
   Widget build(BuildContext context) {
     final c = AppColors.of(context);
     return Scaffold(
-      backgroundColor: _bg,
-      body: SafeArea(
+      backgroundColor: neuBase,
+      // The shared speckled ground, so this page sits on the same
+      // surface as the menu it is reached from.
+      body: Stack(
+        children: [
+          const Positioned.fill(child: NeuDotsBackdrop()),
+          SafeArea(
         child: FadeTransition(
           opacity: _fadeAnim,
           child: SlideTransition(
@@ -771,6 +776,8 @@ class _TripReceiptScreenState extends State<TripReceiptScreen>
           ),
           ),
         ),
+        ],
+      ),
     );
   }
 

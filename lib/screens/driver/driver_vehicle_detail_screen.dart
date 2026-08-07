@@ -53,7 +53,10 @@ class DriverVehicleDetailScreen extends StatelessWidget {
           onPressed: () => Navigator.pop(context),
         ),
       ),
-      body: ListView(
+      body: Stack(
+        children: [
+          const Positioned.fill(child: NeuDotsBackdrop()),
+          ListView(
         physics: const BouncingScrollPhysics(),
         padding: const EdgeInsets.fromLTRB(20, 0, 20, 40),
         children: [
@@ -62,6 +65,8 @@ class DriverVehicleDetailScreen extends StatelessWidget {
           _rideTypes(s),
           const SizedBox(height: 26),
           _manage(context, s),
+        ],
+      ),
         ],
       ),
     );

@@ -171,7 +171,12 @@ class _WalletScreenState extends State<WalletScreen> with SecureScreenMixin {
 
     return Scaffold(
       backgroundColor: neuBase,
-      body: SafeArea(
+      // The shared speckled ground, so this page sits on the same
+      // surface as the menu it is reached from.
+      body: Stack(
+        children: [
+          const Positioned.fill(child: NeuDotsBackdrop()),
+          SafeArea(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -220,6 +225,8 @@ class _WalletScreenState extends State<WalletScreen> with SecureScreenMixin {
             ),
           ],
         ),
+      ),
+        ],
       ),
     );
   }

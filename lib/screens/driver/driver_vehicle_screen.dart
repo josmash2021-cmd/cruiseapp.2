@@ -292,7 +292,10 @@ class _DriverVehicleScreenState extends State<DriverVehicleScreen> {
       // neumorphic shadows are invisible on it, which is why neuBase is
       // #14141A and not #000000.
       backgroundColor: neuBase,
-      body: _loading
+      body: Stack(
+        children: [
+          const Positioned.fill(child: NeuDotsBackdrop()),
+          _loading
           ? const Center(
               child: CircularProgressIndicator(color: _gold, strokeWidth: 2))
           : Stack(
@@ -377,6 +380,8 @@ class _DriverVehicleScreenState extends State<DriverVehicleScreen> {
                 ),
               ],
             ),
+        ],
+      ),
     );
   }
 

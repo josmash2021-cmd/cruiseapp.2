@@ -337,6 +337,7 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
       // spacer at the foot of the column.
       body: Stack(
         children: [
+          const Positioned.fill(child: NeuDotsBackdrop()),
           CustomScrollView(
         physics: const BouncingScrollPhysics(),
         slivers: [

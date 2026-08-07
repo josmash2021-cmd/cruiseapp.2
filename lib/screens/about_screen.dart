@@ -53,7 +53,10 @@ class _AboutScreenState extends State<AboutScreen> {
 
     return Scaffold(
       backgroundColor: neuBase,
-      body: SafeArea(
+      body: Stack(
+        children: [
+          const Positioned.fill(child: NeuDotsBackdrop()),
+          SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.symmetric(horizontal: 24),
           child: Column(
@@ -203,6 +206,8 @@ class _AboutScreenState extends State<AboutScreen> {
             ],
           ),
         ),
+      ),
+        ],
       ),
     );
   }

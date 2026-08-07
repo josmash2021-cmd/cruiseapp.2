@@ -59,7 +59,15 @@ class _DriverSettingsScreenState extends State<DriverSettingsScreen> {
     final dc = DriverColors.of(context);
     return Scaffold(
       backgroundColor: neuBase,
-      body: Column(
+      // The same speckled ground the driver menu that opens this carries.
+      // On a flat neuBase the neumorphic rows float on nothing; the dots
+      // give them a surface to be pressed into, which is the whole point
+      // of the style — and arriving here from a dotted menu onto a flat
+      // page reads as landing in a different app.
+      body: Stack(
+        children: [
+          const Positioned.fill(child: NeuDotsBackdrop()),
+          Column(
         children: [
           // ── Top bar ──
           Container(
@@ -172,6 +180,8 @@ class _DriverSettingsScreenState extends State<DriverSettingsScreen> {
                 ),
               ],
             ),
+          ),
+        ],
           ),
         ],
       ),

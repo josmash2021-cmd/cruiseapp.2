@@ -919,6 +919,12 @@ def _instant_fee(amount: float) -> float:
 # is plenty and avoids hitting Stripe on every eligibility check.
 _instant_capability_cache = {"value": None, "checked_at": 0.0}
 _INSTANT_CAPABILITY_TTL_SEC = 600
+# A transient Stripe error is not an answer, so it must not be cached for
+# the same 10 minutes a real answer is. One dropped connection used to take
+# instant cash-out offline for EVERY driver for ten minutes, and the UI
+# reported it as "coming soon" — the same words it uses for a capability
+# Stripe has never granted. Retry in 30 seconds instead.
+_INSTANT_CAPABILITY_ERROR_TTL_SEC = 30
 
 
 def _platform_instant_payouts_active() -> bool:
@@ -932,10 +938,19 @@ def _platform_instant_payouts_active() -> bool:
     now = _time.time()
     cached = _instant_capability_cache["value"]
     last = _instant_capability_cache["checked_at"]
-    if cached is not None and (now - last) < _INSTANT_CAPABILITY_TTL_SEC:
+    ttl = (
+        _INSTANT_CAPABILITY_ERROR_TTL_SEC
+        if _instant_capability_cache.get("from_error")
+        else _INSTANT_CAPABILITY_TTL_SEC
+    )
+    if cached is not None and (now - last) < ttl:
         return cached
     if not STRIPE_SECRET:
-        _instant_capability_cache.update({"value": False, "checked_at": now})
+        # A real answer, not an error: no key means no capability, and that
+        # will not change until the process restarts with one.
+        _instant_capability_cache.update(
+            {"value": False, "checked_at": now, "from_error": False}
+        )
         return False
     try:
         import stripe as _s
@@ -943,11 +958,15 @@ def _platform_instant_payouts_active() -> bool:
         acct = _s.Account.retrieve()
         caps = acct.get("capabilities", {}) or {}
         active = caps.get("instant_payouts") == "active"
-        _instant_capability_cache.update({"value": active, "checked_at": now})
+        _instant_capability_cache.update(
+            {"value": active, "checked_at": now, "from_error": False}
+        )
         return active
     except Exception as e:
         logging.warning("[InstantCapability] check failed, fail-closed: %s", e)
-        _instant_capability_cache.update({"value": False, "checked_at": now})
+        _instant_capability_cache.update(
+            {"value": False, "checked_at": now, "from_error": True}
+        )
         return False
 
 
@@ -1054,26 +1073,62 @@ async def get_cashout_eligibility(
 async def request_cashout(body: CashoutIn, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
     if body.amount <= 0:
         raise HTTPException(400, "Cashout amount must be positive")
-    method = (body.method or "standard").lower()
-    if method not in ("standard", "instant"):
-        raise HTTPException(400, "method must be 'standard' or 'instant'")
+    # Instant is the only method the app OFFERS. "standard" is still
+    # ACCEPTED, and that distinction is deliberate.
+    #
+    # Every phone already in the field runs a build whose cash-out sheet
+    # sends method="standard", and that path works today: one Transfer to
+    # the Connect account, no fee, delivered by Stripe's automatic daily
+    # payout. 400ing it the moment this deploys would take cash-out away
+    # from every existing driver until they update — and the installed
+    # build renders the message as "Please try again or contact support",
+    # so they would not even learn why.
+    #
+    # So old builds keep their free path, new builds only ever send
+    # "instant", and this shim can be deleted once the fleet has updated.
+    # It must NOT be turned into a silent upgrade to instant: that would
+    # charge 1.5% on a screen that says the cash-out is free.
+    method = (body.method or "instant").lower()
+    if method not in ("instant", "standard"):
+        raise HTTPException(400, "method must be 'instant'")
+    legacy_standard = method == "standard"
 
     # Lock the driver row for the duration of the transaction so two
     # concurrent cashout requests from the same driver can't both pass
     # the balance check with stale data. Without FOR UPDATE a driver
     # with $100 available could fire two simultaneous $100 cashouts and
     # end up owing the platform $100.
+    #
+    # `populate_existing=True` is what makes that true, and without it the
+    # lock is decoration. `_get_current_user` has ALREADY loaded this exact
+    # User row into this exact session (same `Depends(get_db)`, so FastAPI
+    # hands both the same AsyncSession), and the sessionmaker is built with
+    # `expire_on_commit=False`. A second `select(User)` therefore takes the
+    # Postgres lock and fetches the current row, then throws those values
+    # away and returns the instance already in the identity map — with the
+    # `pending_balance` read back at authentication time, before the lock.
+    # Two concurrent requests would serialise correctly on the lock and
+    # then both read the same pre-lock balance. `populate_existing` forces
+    # the freshly locked row's values onto the instance.
     lock_r = await db.execute(
-        select(User).where(User.id == user.id).with_for_update()
+        select(User)
+        .where(User.id == user.id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
     )
     locked_user = lock_r.scalar_one_or_none()
     if not locked_user:
         raise HTTPException(404, "Driver not found")
 
     # ── Instant Cashout gates (min amount + 7-day cooldown + debit card) ──
+    #
+    # None of these apply to the legacy "standard" path: it has no fee, no
+    # minimum and no card, and it never touched the instant capability. An
+    # old build asking for the free weekly transfer must not be told to
+    # link a debit card.
     instant_card = None
     fee_amount = 0.0
-    if method == "instant":
+    if not legacy_standard:
         if not _platform_instant_payouts_active():
             raise HTTPException(
                 400,
@@ -1131,33 +1186,212 @@ async def request_cashout(body: CashoutIn, user: User = Depends(_get_current_use
     
     if body.amount > available_balance:
         raise HTTPException(400, f"Insufficient balance. Available: ${available_balance:.2f}")
+
+    # No Connect account means no leg of this can run. Refuse BEFORE writing
+    # the row: the old code fell straight past the whole Stripe block in
+    # that case and left a Cashout sitting at its default status "pending"
+    # with pending_balance never deducted — and the nightly reconciler in
+    # main.py counts every row that is not "failed" as money already paid,
+    # so a driver with no Stripe account would drift the ledger by the full
+    # amount every time they tapped the button.
+    if not user.stripe_connect_id or not STRIPE_SECRET:
+        raise HTTPException(
+            400,
+            "Payouts are not set up on this account yet — finish Stripe "
+            "onboarding from Payout methods first.",
+        )
+
+    # ── CLAIM: the row and the deduction in ONE committed transaction ──
+    #
+    # The deduction MUST happen here, not after Stripe answers. `db.commit()`
+    # ends the transaction and releases the `FOR UPDATE` taken above, so any
+    # work done after it is unlocked. Writing the row, committing, and only
+    # then deducting — which is what this did — left a window where a second
+    # request read the same untouched `pending_balance`, passed the same
+    # check, and funded a second transfer. Two taps on the button paid the
+    # balance out twice, and `max(0.0, ...)` on the deduction hid it by
+    # clamping the result at zero instead of going negative.
+    #
+    # Same shape as the weekly scheduler in main.py: claim first, move money
+    # second, and hand the claim back only on a definite rejection.
     cashout = Cashout(
         user_id=user.id,
         amount=body.amount,
         method=method,
         fee=fee_amount,
+        status="processing",
     )
     db.add(cashout)
+    locked_user.pending_balance = round(
+        max(0.0, (locked_user.pending_balance or 0.0) - body.amount), 2
+    )
     await db.commit()
     await db.refresh(cashout)
 
-    # ── Stripe payout — Transfer (standard) OR Instant Payout (instant) ──
+    # ── Stripe: fund the Connect account, then pay it out instantly ──
+    #
+    # TWO legs, and the first one is not optional. Trip fares are ordinary
+    # platform charges (trips.py takes a plain PaymentIntent — no
+    # destination charge, no transfer_data), so every dollar a driver earns
+    # sits in the PLATFORM balance and exists on the driver's side only as
+    # `users.pending_balance` in Postgres. The driver's Connect balance is
+    # empty except in the hours after the Monday sweep in main.py.
+    #
+    # Payout.create draws on the CONNECT balance. Calling it alone — which
+    # is what this endpoint used to do — could only ever have failed with
+    # "insufficient available funds", except by luck on a Monday morning.
+    # It was never caught because instant is gated behind
+    # _platform_instant_payouts_active(), which is false until Stripe grants
+    # the capability, so the endpoint returned "coming soon" and the payout
+    # line never ran.
+    #
+    # So: Transfer platform -> Connect first, then Payout Connect -> card.
     transfer_id = None
     stripe_error = None
-    if user.stripe_connect_id and STRIPE_SECRET:
-        try:
-            import stripe as _s
-            _s.api_key = STRIPE_SECRET
-            # Amount in cents; Stripe requires positive integer
-            amount_cents = max(int(body.amount * 100), 50)
-            if method == "instant":
-                # Stripe Instant Payouts run on the Connect account itself
-                # and route to a specific debit-card external_account.
-                ext_id = _ext_id_from_display(instant_card.display_name)
-                if not ext_id:
-                    raise RuntimeError("Debit card external_account id missing")
-                payout = _s.Payout.create(
-                    amount=amount_cents,
+    payout_queued = False
+    payout_uncertain = False
+    import stripe as _s
+    _s.api_key = STRIPE_SECRET
+    # Stripe wants positive integer cents. The driver's balance is debited
+    # the gross and they receive the net.
+    #
+    # The GROSS is what gets transferred, not the net, and that is on
+    # purpose: Stripe charges its own instant-payout fee against the
+    # CONNECTED account's balance, so the difference is the headroom that
+    # fee comes out of. Funding with only the net would leave nothing to
+    # pay it from and the payout would bounce for insufficient funds.
+    #
+    # The consequence, stated plainly because the previous comment here
+    # claimed the opposite: the platform does NOT keep this fee. It funds
+    # Stripe's charge, and whatever is left over sweeps to the driver on
+    # the pinned daily schedule. Our 1.5% / $0.50 minimum is a pass-through
+    # of Stripe's US instant-payout price, which is what the app's own copy
+    # tells the driver. If the platform is ever meant to take a cut, that
+    # is a deliberate change here — not something to infer from this
+    # arithmetic.
+    gross_cents = max(int(round(body.amount * 100)), 50)
+    net_cents = max(int(round((body.amount - fee_amount) * 100)), 50)
+
+    # ── Leg 1: platform -> Connect balance ──
+    #
+    # `asyncio.to_thread`, because the Stripe SDK is synchronous: called
+    # directly from an async endpoint it freezes the whole event loop for
+    # the round-trip — every other driver's location ping, trip poll and
+    # dispatch offer waits behind one person's cash-out, twice over.
+    def _create_funding_transfer():
+        return _s.Transfer.create(
+            amount=gross_cents,
+            currency="usd",
+            destination=user.stripe_connect_id,
+            description=f"Cruise instant cashout #{cashout.id} (funding)",
+            metadata={
+                "cashout_id": str(cashout.id),
+                "driver_id": str(user.id),
+                "leg": "funding",
+            },
+            # Keyed on the row id, so retrying THIS cashout cannot move the
+            # money twice. It does not stop a fresh tap from creating a new
+            # row with a new key — that is what the committed claim above is
+            # for, since a second tap now finds the balance already spent.
+            idempotency_key=f"cashout-fund-{cashout.id}",
+        )
+
+    try:
+        transfer = await asyncio.to_thread(_create_funding_transfer)
+    except Exception as _te:
+        stripe_error = str(_te)[:200]
+        http_status = getattr(_te, "http_status", None)
+        definitely_rejected = isinstance(http_status, int) and 400 <= http_status < 500
+        if definitely_rejected:
+            # Stripe said no. Nothing moved, so the claim goes back and the
+            # driver keeps every cent — same as _release_payout_claim in
+            # main.py does for the weekly run.
+            logging.error(
+                "[Cashout] Stripe rejected the funding transfer for driver %s "
+                "cashout #%s (HTTP %s): %s — balance returned",
+                user.id, cashout.id, http_status, _te,
+            )
+            # Re-lock and REPOPULATE before giving the money back.
+            #
+            # The claim's commit ended the transaction and released the
+            # FOR UPDATE, and `expire_on_commit=False` means `locked_user`
+            # still carries the float it held before that commit. Adding to
+            # that stale value writes the WHOLE column from a snapshot taken
+            # before the Stripe round-trip — so a trip that completed during
+            # those seconds, crediting this same column from another
+            # session, is silently erased by the refund. The driver loses a
+            # fare to a cash-out that never even happened.
+            #
+            # Same shape as `_release_payout_claim` in main.py: take the row
+            # again, read what it says NOW, add to that.
+            refund_r = await db.execute(
+                select(User)
+                .where(User.id == user.id)
+                .with_for_update()
+                .execution_options(populate_existing=True)
+            )
+            fresh = refund_r.scalar_one_or_none()
+            if fresh is not None:
+                fresh.pending_balance = round(
+                    float(fresh.pending_balance or 0.0) + body.amount, 2
+                )
+            cashout.status = "failed"
+            await db.commit()
+            await db.refresh(cashout)
+            # `from None`: the Stripe exception is already logged in full
+            # above, and chaining it onto the HTTP error only buries the
+            # readable message under a traceback.
+            raise HTTPException(
+                400,
+                "We could not start your cash out. Your balance is untouched "
+                "— please try again.",
+            ) from None
+        # No definitive answer: a timeout or a 5xx. The transfer may or may
+        # not have gone through, so the balance STAYS claimed and the row
+        # stays "processing". Handing it back here and having the transfer
+        # turn out to have landed would pay the same money twice.
+        #
+        # `uncertain`, NOT `queued`. Queued means the money definitely left
+        # the platform and is merely taking the slow road; this is the case
+        # where nobody knows yet. Telling the driver "sent, arrives in 1-2
+        # days" for a transfer that may never have reached Stripe is the
+        # kind of confident wrong answer that costs a support call and a
+        # manual refund.
+        payout_uncertain = True
+        logging.error(
+            "[Cashout] funding transfer for driver %s cashout #%s ($%.2f) failed "
+            "with NO definitive answer (%s). Balance stays claimed, row stays "
+            "'processing'. Reconcile against idempotency_key=cashout-fund-%s.",
+            user.id, cashout.id, body.amount, _te, cashout.id,
+        )
+    else:
+        logging.info(
+            "[Cashout] funded Connect %s with $%.2f for cashout #%s (%s)",
+            user.stripe_connect_id, body.amount, cashout.id,
+            transfer.get("id") if hasattr(transfer, "get") else getattr(transfer, "id", "?"),
+        )
+
+        # The legacy "standard" path ends here, and always did: one transfer
+        # to the Connect account, delivered by Stripe's automatic daily
+        # payout. No card, no fee, no second leg.
+        if legacy_standard:
+            cashout.status = "scheduled"
+            payout_queued = True
+            await db.commit()
+            await db.refresh(cashout)
+            logging.info(
+                "[Cashout] legacy standard cashout #%s for driver %s — $%.2f "
+                "riding the automatic payout schedule",
+                cashout.id, user.id, body.amount,
+            )
+
+        if not legacy_standard:
+            # ── Leg 2: Connect balance -> the driver's debit card, now ──
+            ext_id = _ext_id_from_display(instant_card.display_name) if instant_card else ""
+
+            def _create_instant_payout():
+                return _s.Payout.create(
+                    amount=net_cents,
                     currency="usd",
                     method="instant",
                     destination=ext_id,
@@ -1168,43 +1402,79 @@ async def request_cashout(body: CashoutIn, user: User = Depends(_get_current_use
                         "fee_charged_to_driver": f"{fee_amount:.2f}",
                     },
                     stripe_account=user.stripe_connect_id,
+                    idempotency_key=f"cashout-instant-{cashout.id}",
                 )
-                transfer_id = payout["id"]
+
+            try:
+                if not ext_id:
+                    raise RuntimeError("Debit card external_account id missing")
+                payout = await asyncio.to_thread(_create_instant_payout)
+                transfer_id = (
+                    payout.get("id") if hasattr(payout, "get")
+                    else getattr(payout, "id", None)
+                )
+                cashout.status = "completed"
+                await db.commit()
+                await db.refresh(cashout)
                 logging.info(
                     "[Cashout] Stripe Instant Payout %s for driver %s - "
                     "gross $%.2f, fee $%.2f, net $%.2f",
                     transfer_id, user.id, body.amount, fee_amount,
                     body.amount - fee_amount,
                 )
-            else:
-                transfer = _s.Transfer.create(
-                    amount=amount_cents,
-                    currency="usd",
-                    destination=user.stripe_connect_id,
-                    description=f"Cruise driver payout - cashout #{cashout.id}",
-                    metadata={"cashout_id": str(cashout.id), "driver_id": str(user.id)},
-                )
-                transfer_id = transfer["id"]
-                logging.info("[Cashout] Stripe Transfer %s created for driver %s - $%.2f", transfer_id, user.id, body.amount)
-            cashout.status = "completed"
-            # Deduct from pending_balance using the already-locked row
-            locked_user.pending_balance = round(
-                max(0.0, (locked_user.pending_balance or 0.0) - body.amount), 2
-            )
-            await db.commit()
-            await db.refresh(cashout)
-        except Exception as _se:
-            stripe_error = str(_se)[:200]
-            logging.error("[Cashout] Stripe %s failed for driver %s: %s", method, user.id, _se)
-            # Mark as failed so it doesn't block future cashout attempts
-            cashout.status = "failed"
-            await db.commit()
+            except Exception as _se:
+                # NOT a failure, and above all not a refund: the funds are in
+                # the driver's Connect balance and Stripe's automatic daily
+                # payout carries them to the default destination within a
+                # business day or two. Restoring pending_balance here would pay
+                # the same money twice. The app says "slower, not lost".
+                stripe_error = str(_se)[:200]
+                payout_queued = True
 
-    # For instant cashouts, surface the destination card details so the
-    # success screen can show "Visa ····1084" without an extra round-trip.
+                _ps = getattr(_se, "http_status", None)
+                instant_definitely_refused = (
+                    isinstance(_ps, int) and 400 <= _ps < 500
+                ) or isinstance(_se, RuntimeError)  # missing ext_id: nothing sent
+
+                if instant_definitely_refused:
+                    # Stripe never ran the instant payout, so it never charged
+                    # its instant fee — the WHOLE gross rides the daily
+                    # schedule to the driver. Leaving `fee` at 1.5% would put
+                    # a number in their history that their bank statement
+                    # contradicts forever: "you received $394" against a
+                    # deposit of $400, for a service the app itself told them
+                    # did not happen.
+                    #
+                    # An ambiguous failure keeps the fee: the payout may have
+                    # landed and Stripe may well have charged for it.
+                    cashout.fee = 0.0
+                    fee_amount = 0.0
+
+                # A terminal status, not "processing". A queued row is
+                # finished as far as this service is concerned — the money is
+                # out of the platform and on Stripe's schedule. Left at
+                # "processing" it would sit under "Initiated" in the app
+                # forever AND trip main.py's STUCK PAYOUT alarm on every
+                # weekly run, for a payout that is doing exactly what it
+                # should. `status` is String(20) with no constraint, so this
+                # needs no migration.
+                cashout.status = "scheduled"
+                await db.commit()
+                await db.refresh(cashout)
+
+                logging.error(
+                    "[Cashout] instant leg failed for driver %s, cashout #%s "
+                    "left on the automatic schedule (fee %s): %s",
+                    user.id, cashout.id,
+                    "cleared" if instant_definitely_refused else "KEPT — verify in Stripe",
+                    _se,
+                )
+
+    # Surface the destination card details so the success screen can show
+    # "Visa ····1084" without an extra round-trip.
     card_brand = None
     card_last4 = None
-    if method == "instant" and instant_card is not None:
+    if instant_card is not None:
         # display_name format: "Visa ····1084  [ext:card_xxx]"
         raw = instant_card.display_name or ""
         cleaned = raw.split("[ext:")[0].strip()
@@ -1227,14 +1497,54 @@ async def request_cashout(body: CashoutIn, user: User = Depends(_get_current_use
         "status": cashout.status,
         "transfer_id": transfer_id,
         "stripe_error": stripe_error,
+        # True when the money is on its way but NOT instantly — the funding
+        # transfer landed and the instant leg did not, so it rides the
+        # automatic schedule instead. The app shows a different message for
+        # this than for a payout that actually went out in minutes.
+        "queued": payout_queued,
+        # No definitive answer from Stripe on the funding leg. The balance
+        # is claimed and the row is "processing", but whether the money
+        # moved is genuinely unknown until someone reconciles it.
+        "uncertain": payout_uncertain,
         "card_brand": card_brand,
         "card_last4": card_last4,
     }
 
 @router.get("/drivers/cashouts", dependencies=[Depends(_verify_api_key)])
 async def get_cashouts(user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(Cashout).where(Cashout.user_id == user.id).order_by(Cashout.created_at.desc()))
-    return [{"id": c.id, "amount": c.amount, "status": c.status, "created_at": c.created_at.isoformat()} for c in result.scalars().all()]
+    """The driver's payout history.
+
+    Now carries `method` and `fee`. Without them the app could not tell an
+    instant cashout the driver asked for from the Monday auto-transfer that
+    happens on its own — both arrive as a row with a date and an amount,
+    and the history screen has to label each one.
+
+    `method` is "instant" only for rows this router wrote. The weekly
+    scheduler in main.py builds `Cashout(...)` without a method, so those
+    rows carry the column default "standard"; rows written before the
+    column existed are NULL. Anything that is not "instant" is a weekly
+    deposit, which is why the client tests for "instant" rather than
+    listing the alternatives.
+    """
+    result = await db.execute(
+        select(Cashout)
+        .where(Cashout.user_id == user.id)
+        .order_by(Cashout.created_at.desc())
+        .limit(100)
+    )
+    rows = []
+    for c in result.scalars().all():
+        fee = float(c.fee or 0.0)
+        rows.append({
+            "id": c.id,
+            "amount": c.amount,
+            "fee": fee,
+            "net_amount": round(float(c.amount or 0.0) - fee, 2),
+            "method": c.method or "standard",
+            "status": c.status,
+            "created_at": c.created_at.isoformat(),
+        })
+    return rows
 
 @router.get("/drivers/payouts/next-date", dependencies=[Depends(_verify_api_key)])
 async def get_next_payout_date(user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
@@ -1242,9 +1552,14 @@ async def get_next_payout_date(user: User = Depends(_get_current_user), db: Asyn
     result = await db.execute(select(User).where(User.id == user.id))
     drv = result.scalar_one_or_none()
     pending = round(float(drv.pending_balance or 0.0), 2) if drv else 0.0
-    # Calculate next Tuesday 02:00 UTC
+    # Next MONDAY 02:00 UTC — the day the scheduler actually fires.
+    #
+    # This said Tuesday while `_PAYOUT_WEEKDAY = 0` in backend/main.py has
+    # always meant Monday, so the date the earnings screen showed was a day
+    # later than the run that pays it. Kept as a literal rather than an
+    # import because main.py imports this router.
     now = utc_now()
-    days_ahead = (1 - now.weekday()) % 7  # 1 = Tuesday
+    days_ahead = (0 - now.weekday()) % 7  # 0 = Monday, see main.py
     if days_ahead == 0 and now.hour >= 2:
         days_ahead = 7
     next_date = (now + timedelta(days=days_ahead)).replace(

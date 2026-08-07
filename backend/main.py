@@ -253,15 +253,27 @@ async def _report_stuck_payouts() -> None:
 
     for c in rows:
         created = c.created_at
+        # Two kinds of row land in this scan now, and they carry DIFFERENT
+        # idempotency keys. Printing the weekly key for a driver-initiated
+        # instant cashout would send whoever is reconciling to look up a
+        # transfer that does not exist under that name — and conclude the
+        # money never moved, which is exactly the wrong half of the
+        # decision below.
+        if (c.method or "") == "instant":
+            idem = f"cashout-fund-{c.id}"
+        elif created:
+            idem = f"auto_payout_{c.user_id}_{_iso_week_stamp(created)}"
+        else:
+            idem = "?"
         logging.error(
-            "[AutoPayout] STUCK PAYOUT — cashout #%s driver=%s $%.2f claimed=%s is still "
-            "'processing'. The balance is claimed and will NOT be paid again "
+            "[AutoPayout] STUCK PAYOUT — cashout #%s driver=%s $%.2f method=%s claimed=%s "
+            "is still 'processing'. The balance is claimed and will NOT be paid again "
             "automatically. Look up idempotency_key=%s in Stripe: if the transfer "
             "exists set the row to 'completed', if it does not set it to 'failed' and "
             "add $%.2f back to the driver's pending_balance.",
-            c.id, c.user_id, float(c.amount or 0.0),
+            c.id, c.user_id, float(c.amount or 0.0), c.method or "standard",
             created.isoformat() if created else "?",
-            f"auto_payout_{c.user_id}_{_iso_week_stamp(created)}" if created else "?",
+            idem,
             float(c.amount or 0.0),
         )
 

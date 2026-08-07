@@ -167,8 +167,11 @@ class DriverLocationIn(BaseModel):
 
 class CashoutIn(BaseModel):
     amount: float
-    # "standard" (free, 1-2 days, default) or "instant" (1.5% fee, minutes).
-    method: str = "standard"
+    # "instant" is the only method: 1.5% fee, debit card, $50 minimum.
+    # The free "standard" ACH payout was retired — the endpoint rejects it
+    # rather than silently upgrading it, since instant charges a fee the
+    # driver never agreed to on an old build.
+    method: str = "instant"
 
 
 # ═══════════════════════════════════════════════════════

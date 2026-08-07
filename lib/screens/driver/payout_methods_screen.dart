@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../l10n/app_localizations.dart';
 
+import 'add_bank_account_screen.dart';
 import 'stripe_onboarding_screen.dart';
 
 import '../../services/api_service.dart';
@@ -18,14 +19,17 @@ import '../../widgets/neu_style.dart';
 ///
 /// Two destinations the driver can attach to their Connect account:
 ///
-///   1. **Connect bank account** — our accounts are Stripe-hosted
-///      (controller.requirement_collection == 'stripe'), and Stripe refuses
-///      every API write to their external accounts, so banks are collected
-///      by Stripe's own windows: hosted onboarding while the account is not
-///      payout-ready, the Express dashboard after. Both attach the bank
-///      automatically; when the window closes the app mirrors what Stripe
-///      holds (`POST /drivers/payout-methods/sync-from-stripe`). That is
-///      where the weekly Monday ACH payout lands.
+///   1. **Connect bank account** — our connected accounts are Custom-style
+///      (controller.requirement_collection == 'application'), so the bank
+///      form is ours: typed routing + account numbers, Uber-style
+///      (AddBankAccountScreen). The Stripe SDK tokenizes the digits and
+///      only the btok_ leaves the device; the backend pushes the driver's
+///      KYC + TOS acceptance and attaches the token as the
+///      external_account the weekly Monday ACH payout lands on. Legacy
+///      Stripe-hosted accounts (a handful, all mid/fully-onboarded) can't
+///      be API-managed, so those drivers manage banks through Stripe's own
+///      windows and we mirror the result back
+///      (`POST /drivers/payout-methods/sync-from-stripe`).
 ///
 ///   2. **Add debit card** — a `CardField` sheet tokenizes the PAN
 ///      client-side (`createToken` with `currency: usd`, which is what
@@ -1081,18 +1085,21 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
 
   /// Add or change the bank the weekly payout lands on.
   ///
-  /// There is no typed form, and that is Stripe's rule rather than a
-  /// missing feature: our connected accounts are Stripe-hosted
-  /// (controller.requirement_collection == 'stripe'), and Stripe refuses
-  /// EVERY API write to their external accounts — both token contexts
-  /// bounce with oauth_not_supported (proven against live mode,
-  /// 2026-08-07). Banks get onto the account only through Stripe's own
-  /// windows, which attach them automatically: hosted onboarding while the
-  /// account is not payout-ready, the Express dashboard once it is. Both
-  /// still let the driver TYPE routing + account numbers by hand — manual
-  /// entry is Stripe's built-in fallback — the digits just live in
-  /// Stripe's frame, never in ours. When the window closes we mirror what
-  /// Stripe holds into our list.
+  /// Two account shapes exist, and the flow branches on which one the
+  /// driver has (the status endpoint heals legacy half-onboarded accounts
+  /// into Custom-style ones, so most drivers land on the first branch):
+  ///
+  ///   - collection == 'application' (our Custom-style accounts): the
+  ///     platform collects everything, so the bank form is OURS — typed
+  ///     routing + account numbers, Uber-style. The digits are tokenized
+  ///     by the Stripe SDK and only the btok_ leaves the device.
+  ///
+  ///   - collection == 'stripe' (legacy Stripe-hosted accounts): Stripe
+  ///     refuses every API write to their external accounts
+  ///     (oauth_not_supported, proven against live mode 2026-08-07), so
+  ///     banks go through Stripe's own windows — hosted onboarding while
+  ///     the account is not payout-ready, the Express dashboard once it
+  ///     is — and we mirror what Stripe holds when the window closes.
   Future<void> _connectBankAccount() async {
     HapticService.mediumImpact();
     if (kIsWeb) {
@@ -1101,15 +1108,41 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
     }
     setState(() => _busy = true);
     try {
-      final hadBank = _methodOfType('bank_account') != null;
+      final existing = _methodOfType('bank_account');
       final status = await ApiService.getStripeConnectStatus();
       if (!mounted) return;
+      final collection = (status['collection'] ?? 'stripe').toString();
       final ready = status['payouts_enabled'] == true;
+
+      if (collection == 'application') {
+        // One bank at a time. If there is already one attached this is an
+        // edit, and the old row goes once the new one is safely in — never
+        // before, or a failure halfway would leave the driver with no
+        // payout destination and the weekly transfer nowhere to land.
+        final added = await Navigator.of(context).push<bool>(
+          MaterialPageRoute(
+            builder: (_) => AddBankAccountScreen(replacing: existing != null),
+          ),
+        );
+        if (!mounted) return;
+        if (added == true) {
+          final oldId = existing?['id'];
+          if (oldId is int) {
+            try {
+              await ApiService.deletePayoutMethod(oldId);
+            } catch (e) {
+              debugPrint('[Payout] could not remove the replaced bank: $e');
+            }
+          }
+          if (!mounted) return;
+          _snack(S.of(context).bankAccountLinked);
+          await _loadMethods();
+        }
+        return;
+      }
+
+      // Legacy Stripe-hosted account: banks live in Stripe's windows.
       if (!ready) {
-        // Not payout-ready yet: hosted onboarding collects identity AND the
-        // bank in one flow and attaches the bank itself at the end. The
-        // same link resumes a half-finished account, so a driver who backs
-        // out carries on where they left off.
         final url = await ApiService.getStripeConnectLink();
         if (!mounted) return;
         await Navigator.of(context).push<bool>(
@@ -1118,8 +1151,6 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
           ),
         );
       } else {
-        // Payout-ready already: the Express dashboard is the only surface
-        // Stripe allows to add, change or remove a payout bank now.
         final url = await ApiService.getStripeConnectDashboardLink();
         if (!mounted) return;
         if (url.isEmpty) {
@@ -1133,8 +1164,6 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
         );
       }
       if (!mounted) return;
-      // Whatever happened inside Stripe's window, the truth lives on their
-      // side — mirror it, then reload so the card shows what Stripe holds.
       try {
         await ApiService.syncPayoutMethodsFromStripe();
       } catch (e) {
@@ -1143,7 +1172,7 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
       if (!mounted) return;
       await _loadMethods();
       if (!mounted) return;
-      if (!hadBank && _methodOfType('bank_account') != null) {
+      if (existing == null && _methodOfType('bank_account') != null) {
         _snack(S.of(context).bankAccountLinked);
       }
     } catch (e) {
@@ -1319,7 +1348,13 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
     } catch (e) {
       debugPrint('[Payout] _deleteMethod error: $e');
       if (!mounted) return;
-      _snack(S.of(context).failedToRemoveMethod, error: true);
+      // The backend's 409 names the case that matters here: the driver
+      // tried to delete the default destination and the weekly payout
+      // would have nowhere to land. Show it, not the generic failure.
+      _snack(
+        e is ApiException ? e.message : S.of(context).failedToRemoveMethod,
+        error: true,
+      );
     }
   }
 }

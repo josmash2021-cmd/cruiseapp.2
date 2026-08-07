@@ -2417,6 +2417,12 @@ class S {
       : 'Enter your credit or debit card details.';
   String get nameOnCard => _es ? 'Nombre en la tarjeta' : 'Name on card';
   String get zipPostalCode => _es ? 'Código postal' : 'ZIP / Postal code';
+  String get addressLabel => _es ? 'Dirección' : 'Address';
+  String get cityLabel => _es ? 'Ciudad' : 'City';
+  String get dayLabel => _es ? 'Día' : 'Day';
+  String get agreeToStripeAgreement => _es
+      ? 'Acepto el Acuerdo de Cuenta Conectada de Stripe'
+      : "I agree to Stripe's Connected Account Agreement";
   String get securedByStripe => _es
       ? 'Asegurado por Stripe. No almacenamos tus datos.'
       : "Secured by Stripe. We don't store your details.";

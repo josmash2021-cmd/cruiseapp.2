@@ -58,25 +58,36 @@ DRIVER_SHARE_RATE = 0.70
 
 
 def _create_driver_connect_account(_stripe, email: str, **extra):
-    """Create a driver's Express account as a RECIPIENT, not a merchant.
+    """Create a driver's connected account as a Custom-style RECIPIENT.
 
     A driver never charges anyone. The platform charges the rider, transfers
     the driver's share, and the driver withdraws it to a bank (weekly) or to
     a debit card (instant). Both are external_accounts — money out. So
     `transfers` is the capability they need.
 
-    `card_payments` means "this account will charge cards", i.e. a business,
-    and asking for it makes Stripe underwrite every driver as one: merchant
-    category, statement descriptor, business details. That is why every
-    connected account in the dashboard sits Restricted.
+    Custom-style (accounts v2 `controller`), NOT Express — because the
+    product collects the payout bank in our OWN form (typed routing +
+    account numbers, like Uber), and Stripe only allows API attaches on
+    accounts where the platform collects requirements
+    (`requirement_collection: 'application'`). Proven against live mode on
+    2026-08-07: Express/Stripe-hosted accounts reject every external-account
+    write with oauth_not_supported; this configuration accepts them.
 
-    The pair stays as a fallback because a platform not yet approved for
-    transfers-only is refused outright ("Your platform needs approval for
-    accounts to have requested the `transfers` capability without the
-    `card_payments` capability"). Ask for the right thing; if this platform
-    has not been approved yet, fall back rather than fail to create the
-    account. The day Stripe approves transfers-only, new drivers get the
-    light onboarding with no code change.
+    What that choice buys and costs, stated plainly:
+    - dashboard 'none': drivers have NO Stripe dashboard. Payout banks and
+      payout history must be surfaced in our app (they are).
+    - The platform collects KYC: name/DOB/address/SSN come from driver
+      signup and are pushed with Account.modify; TOS acceptance is captured
+      in the bank form (Stripe's Connected Account Agreement, with date +
+      ip + user-agent, as Stripe requires).
+    - 1099 handling for platform-controlled accounts is the platform's
+      responsibility to configure (Stripe can file them, but it has to be
+      set up for these accounts — with Express, Stripe handled it).
+
+    `card_payments` stays only as the creation fallback: a platform not yet
+    approved for transfers-only is refused outright. Asking for it makes
+    Stripe underwrite the driver as a merchant, which is why the old
+    accounts sat Restricted — ask for transfers alone whenever allowed.
     """
     # Pin the payout schedule instead of inheriting Stripe's default.
     #
@@ -88,25 +99,35 @@ def _create_driver_connect_account(_stripe, email: str, **extra):
     # NOT `weekly`: a weekly schedule anchored to Monday can miss its own
     # cutoff for a transfer landing that same morning and hold the money a
     # further seven days. Daily has no cutoff to miss.
-    #
-    # It was working out to roughly this already, but by Stripe's default
-    # rather than by our choice — so a change on their side would have moved
-    # payday with no change on ours.
     _payout_settings = {
         "payouts": {"schedule": {"interval": "daily"}},
     }
 
     # A driver is a person, not a company. Without this Stripe does not know
-    # that and opens onboarding with "Business details" — industry, product
-    # description, "how do you charge your customers" — which is nonsense to
-    # someone who just drives, and is half of why these accounts stall.
+    # that and asks for "Business details" — nonsense for someone who drives.
     # Callers that already pass it (the older onboarding route) win via the
     # setdefault, so nothing is overridden.
     extra.setdefault("business_type", "individual")
+    # The only field Stripe listed in currently_due on a fresh account in
+    # the live probe — set it at birth so transfers can activate as soon as
+    # identity + bank land.
+    extra.setdefault("business_profile", {
+        "url": "https://cruiseinride.com",
+        "mcc": "4121",  # taxicabs & limousines
+    })
 
     def _mk(caps):
+        # NOTE: `type` and `controller` are mutually exclusive in this API
+        # version — v2 accounts are shaped entirely by the controller hash.
         return _stripe.Account.create(
-            type="express", email=email or "", capabilities=caps,
+            email=email or "",
+            capabilities=caps,
+            controller={
+                "losses": {"payments": "application"},
+                "fees": {"payer": "application"},
+                "stripe_dashboard": {"type": "none"},
+                "requirement_collection": "application",
+            },
             settings=_payout_settings, **extra)
 
     try:
@@ -121,41 +142,52 @@ def _create_driver_connect_account(_stripe, email: str, **extra):
         return _mk({"card_payments": {"requested": True}, "transfers": {"requested": True}})
 
 
+
 async def _usable_connect_id(_stripe, user, db) -> str:
     """The driver's Connect id, guaranteed reachable AND manageable by THIS Stripe key.
 
-    A stored id can go dead. The commonest way is a test/live mix-up — an
-    account minted with a test key does not exist in live mode at all — and
-    the platform then gets:
+    Two ways a stored id is dead weight:
 
-        The provided key 'sk_live_...' does not have access to account
-        'acct_...' (or that account does not exist).
+    1. Unreachable — the test/live mix-up: an account minted with a test key
+       does not exist in live mode at all, and the platform gets "The
+       provided key 'sk_live_...' does not have access to account 'acct_...'".
+    2. Unmanageable — a legacy Express/Stripe-hosted account
+       (controller.requirement_collection == 'stripe'): it retrieves FINE and
+       then rejects every external-account write with oauth_not_supported,
+       so the native bank form can never work on it. Proven against live
+       mode, 2026-08-07.
 
-    That error surfaced on the driver's Submit, on a form they had just
-    filled in correctly, with no way forward: the id was wrong and nothing
-    ever replaced it. Retrieving it first turns a permanent dead end into a
-    one-time recreate.
+    The replacement policy keeps whatever still has real value:
 
-    Reachable is not enough, though. A Standard account (linked over OAuth
-    or created from the Stripe dashboard) retrieves FINE and then rejects
-    every management write with oauth_not_supported: the in-app bank
-    "delete" never detaches anything on Stripe, and the next add dies on
-    the driver's Submit with "This application does not have the required
-    permissions for this endpoint on account ...". Only an Express account
-    created by this backend is manageable, so any other type falls through
-    to a fresh one.
+    - requirement_collection == 'application' → our Custom-style accounts,
+      fully API-manageable. Keep.
+    - payouts_enabled → a legacy account that finished onboarding; the money
+      flows and its bank lives on Stripe's side. Keep (bank changes go
+      through Stripe's windows for these).
+    - details_submitted → a legacy account mid/under review; replacing it
+      would throw away a verification the driver already submitted. Keep.
+    - anything else → nothing works on it and nothing is lost: replace with
+      a fresh Custom-style account.
     """
     cid = user.stripe_connect_id
     if cid:
         try:
             existing = _stripe.Account.retrieve(cid)
-            if (existing.get("type") or "").lower() == "express":
+            ctrl = existing.get("controller") or {}
+            collection = (ctrl.get("requirement_collection") or "").lower()
+            keep = (
+                collection == "application"
+                or bool(existing.get("payouts_enabled"))
+                or bool(existing.get("details_submitted"))
+            )
+            if keep:
                 return cid
             logging.warning(
-                "[Connect] stored account %s is type %r, not express — the "
-                "platform can read it but every management write bounces "
-                "(oauth_not_supported); creating a fresh one for user %s",
-                cid, existing.get("type"), user.id)
+                "[Connect] stored account %s is legacy Stripe-hosted with no "
+                "submitted onboarding (collection=%r, payouts_enabled=%s) — "
+                "API writes bounce on it (oauth_not_supported); creating a "
+                "fresh Custom-style one for user %s",
+                cid, collection or "?", existing.get("payouts_enabled"), user.id)
         except Exception as e:
             logging.warning(
                 "[Connect] stored account %s is unreachable with this key (%s) "
@@ -838,18 +870,40 @@ async def create_stripe_connect_link(
 @router.get("/drivers/stripe-connect/status", dependencies=[Depends(_verify_api_key)])
 async def get_stripe_connect_status(
     user: User = Depends(_get_current_user),
+    db: AsyncSession = Depends(get_db),
 ):
-    """Check if driver has completed Stripe Connect onboarding."""
-    if not user.stripe_connect_id or not STRIPE_SECRET:
+    """Check if driver has completed Stripe Connect onboarding.
+
+    Also reports WHO collects the account's requirements: 'application'
+    (our Custom-style accounts — the native in-app form works) or 'stripe'
+    (legacy Stripe-hosted accounts — banks are managed through Stripe's
+    windows). The app branches on this. Healing the stored id here is what
+    lets a legacy half-onboarded account get replaced by a Custom-style
+    one the moment the driver enters the payout flow.
+    """
+    if not STRIPE_SECRET:
         return {"connected": False, "stripe_account_id": None}
+    if not user.stripe_connect_id:
+        # No account yet — new accounts are always Custom-style, so the app
+        # can go straight to the native form.
+        return {
+            "connected": False,
+            "stripe_account_id": None,
+            "payouts_enabled": False,
+            "collection": "application",
+            "details_submitted": False,
+        }
     try:
         import stripe as _stripe
         _stripe.api_key = STRIPE_SECRET
-        acct = _stripe.Account.retrieve(user.stripe_connect_id)
+        cid = await _usable_connect_id(_stripe, user, db)
+        acct = _stripe.Account.retrieve(cid)
         return {
             "connected": acct.get("charges_enabled", False),
-            "stripe_account_id": user.stripe_connect_id,
+            "stripe_account_id": cid,
             "payouts_enabled": acct.get("payouts_enabled", False),
+            "collection": (acct.get("controller") or {}).get("requirement_collection") or "stripe",
+            "details_submitted": acct.get("details_submitted", False),
         }
     except Exception as e:
         return {"connected": False, "error": str(e)[:400]}
@@ -1682,6 +1736,15 @@ async def delete_payout_method(payout_id: int, user: User = Depends(_get_current
                     user.stripe_connect_id, ext_id
                 )
         except Exception as e:
+            if "cannot delete the default external account" in str(e):
+                # Deleting it would leave the weekly payout with nowhere to
+                # land. Keep the local row and say so, instead of pretending
+                # the bank is gone while Stripe keeps paying it.
+                raise HTTPException(
+                    409,
+                    "That bank is the default payout destination. Add another "
+                    "payout method first, then remove this one.",
+                )
             logging.warning("[payout] external_account detach failed: %s", e)
 
     await db.delete(pm)
@@ -1910,17 +1973,23 @@ async def stripe_connect_login_link(user: User = Depends(_get_current_user), db:
 
 @router.post("/drivers/payout-methods/bank-account", dependencies=[Depends(_verify_api_key)])
 async def add_bank_account_payout(
+    request: Request,
     body: dict = Body(...),
     user: User = Depends(_get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     """Attach a bank account as an external_account on the driver's Stripe
-    Connect account so the weekly Tuesday ACH payout has a destination.
+    Connect account so the weekly Monday ACH payout has a destination.
 
-    The client collects the account through the Stripe Financial
-    Connections sheet (``Stripe.instance.collectBankAccountToken``) and
-    sends only the resulting ``bank_token`` (``btok_...``). Account and
-    routing numbers never reach our servers.
+    The client tokenizes the typed numbers with the Stripe SDK and sends
+    only the resulting ``bank_token`` (``btok_...``) — account and routing
+    numbers never reach our servers. On our Custom-style accounts
+    (``requirement_collection == 'application'``) the platform also owns
+    KYC collection, so the body carries the driver's identity fields
+    (first/last name, dob, address) and ``tos_accepted``; they are pushed
+    with Account.modify BEFORE the attach, because Stripe refuses the
+    attach while requirements are missing. TOS acceptance is recorded the
+    way Stripe demands: date + client IP + user agent.
 
     Mirrors ``add_debit_card_payout`` — the Stripe external_account id is
     appended to display_name as ``[ext:ba_xxx]`` so the delete flow can
@@ -1958,6 +2027,57 @@ async def add_bank_account_payout(
         # Heal a dead id before using it, or the driver gets "key does not
         # have access to account" on a form they filled in correctly.
         _cid = await _usable_connect_id(_stripe, user, db)
+
+        # On platform-collected accounts WE own the KYC — there is no
+        # Stripe-hosted page to gather it, and the bank attach below is
+        # refused while requirements are missing, so this goes first.
+        _acct = _stripe.Account.retrieve(_cid)
+        _collection = (
+            (_acct.get("controller") or {}).get("requirement_collection") or ""
+        ).lower()
+        if _collection == "application":
+            individual = {}
+            _fn = (body.get("first_name") or "").strip()
+            _ln = (body.get("last_name") or "").strip()
+            if _fn:
+                individual["first_name"] = _fn
+            if _ln:
+                individual["last_name"] = _ln
+            _dob = body.get("dob") or {}
+            try:
+                _d, _m, _y = int(_dob.get("day")), int(_dob.get("month")), int(_dob.get("year"))
+                if _y > 1900 and 1 <= _m <= 12 and 1 <= _d <= 31:
+                    individual["dob"] = {"day": _d, "month": _m, "year": _y}
+            except (TypeError, ValueError):
+                pass
+            _addr = body.get("address") or {}
+            _line1 = (_addr.get("line1") or "").strip()
+            if _line1:
+                individual["address"] = {
+                    "line1": _line1,
+                    "city": (_addr.get("city") or "").strip(),
+                    "state": (_addr.get("state") or "").strip(),
+                    "postal_code": (_addr.get("postal_code") or "").strip(),
+                    "country": "US",
+                }
+            _ssn4 = (body.get("ssn_last_4") or "").strip()
+            if len(_ssn4) == 4 and _ssn4.isdigit() and _ssn4 != "0000":
+                individual["ssn_last_4"] = _ssn4
+            _mod = {}
+            if individual:
+                _mod["individual"] = individual
+            if body.get("tos_accepted"):
+                # Stripe only counts TOS acceptance with the date, the
+                # client IP and the user agent. The form shows Stripe's
+                # Connected Account Agreement next to the checkbox.
+                _mod["tos_acceptance"] = {
+                    "date": int(datetime.now(timezone.utc).timestamp()),
+                    "ip": request.client.host if request.client else "",
+                    "user_agent": (request.headers.get("user-agent") or "")[:255],
+                }
+            if _mod:
+                _stripe.Account.modify(_cid, **_mod)
+
         try:
             ext = _stripe.Account.create_external_account(
                 _cid,

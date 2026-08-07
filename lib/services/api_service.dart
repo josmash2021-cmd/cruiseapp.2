@@ -2632,6 +2632,11 @@ class ApiService {
   static Future<Map<String, dynamic>> addBankAccountPayout({
     required String bankToken,
     bool setDefault = false,
+    String? firstName,
+    String? lastName,
+    Map<String, int>? dob,
+    Map<String, String>? address,
+    bool tosAccepted = false,
   }) async {
     final token = await getToken();
     if (token == null) throw ApiException(401, 'Not logged in');
@@ -2642,6 +2647,14 @@ class ApiService {
           body: jsonEncode({
             'bank_token': bankToken,
             'set_default': setDefault,
+            // KYC + TOS for platform-collected (Custom-style) accounts —
+            // the backend pushes these before attaching the bank, because
+            // Stripe refuses the attach while requirements are missing.
+            if (firstName != null) 'first_name': firstName,
+            if (lastName != null) 'last_name': lastName,
+            if (dob != null) 'dob': dob,
+            if (address != null) 'address': address,
+            if (tosAccepted) 'tos_accepted': true,
           }),
         )
         .timeout(const Duration(seconds: 15));

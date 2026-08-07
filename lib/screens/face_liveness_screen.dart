@@ -1,12 +1,16 @@
 import 'dart:async';
-import '../utils/app_platform.dart';
 import 'dart:math' as math;
+import 'dart:ui' as ui;
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
-import '../services/haptic_service.dart';
+import 'package:flutter/services.dart';
 import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../l10n/app_localizations.dart';
+import '../services/haptic_service.dart';
+import '../utils/app_platform.dart';
+import '../utils/face_oval_fit.dart';
+import '../widgets/neu_style.dart';
 
 // ─── Step enum ──────────────────────────────────────────────────────────────
 enum _Step { center, turnRight, turnLeft, holdStill }
@@ -35,6 +39,18 @@ class _FaceLivenessScreenState extends State<FaceLivenessScreen>
   // ── Step state ───────────────────────────────────────────────────────────
   _Step _step = _Step.center;
   bool _faceDetected = false;
+
+  /// The face is not just present, it is inside the oval and about the right
+  /// size. This is what gates the steps and drives the blur.
+  bool _faceInOval = false;
+
+  /// So the detector's rejection is reported once, not sixty times a second.
+  bool _detectorErrorLogged = false;
+
+  /// The screen the preview is laid out in, captured during build so the
+  /// camera callback can map face boxes without touching context.
+  Size? _screen;
+
   double _ringProgress = 0.0; // 0..1 across all steps
   int _stepIndex = 0;         // 0..3
 
@@ -48,10 +64,17 @@ class _FaceLivenessScreenState extends State<FaceLivenessScreen>
   double _lastBrightness = 1.0; // 0..1, default bright
 
   // ── Animation controllers ────────────────────────────────────────────────
-  late final AnimationController _rotateCtrl;   // ring rotation 4s
   late final AnimationController _pulseCtrl;    // oval breathing 1.2s
   late final AnimationController _stepCtrl;     // step-text fade 0.3s
   late final AnimationController _doneCtrl;     // completion burst 0.6s
+  late final AnimationController _blurCtrl;     // surroundings soften 0.35s
+  late final AnimationController _sweepCtrl;    // ring highlight travel 2.4s
+
+  /// The ring's progress, eased toward [_ringProgress] instead of jumping.
+  /// A step landing is a quarter of the ring at once; tweened, it reads as
+  /// the ring filling rather than a bar stepping.
+  late final AnimationController _fillCtrl;
+  double _fillFrom = 0.0;
 
   // ── Colors ───────────────────────────────────────────────────────────────
   static const _black   = Color(0xFF000000);
@@ -86,10 +109,6 @@ class _FaceLivenessScreenState extends State<FaceLivenessScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _rotateCtrl = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 4),
-    )..repeat();
     _pulseCtrl = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1200),
@@ -98,6 +117,20 @@ class _FaceLivenessScreenState extends State<FaceLivenessScreen>
       vsync: this,
       duration: const Duration(milliseconds: 300),
     )..forward();
+    _blurCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 350),
+      reverseDuration: const Duration(milliseconds: 260),
+    );
+    _sweepCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 2400),
+    )..repeat();
+    _fillCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 650),
+      value: 1,
+    );
     _doneCtrl = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 600),
@@ -108,10 +141,12 @@ class _FaceLivenessScreenState extends State<FaceLivenessScreen>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.paused) {
-      _rotateCtrl.stop();
+      // Every looping ticker, or they keep waking the device behind a
+      // screen that is not even visible.
+      _sweepCtrl.stop();
       _pulseCtrl.stop();
     } else if (state == AppLifecycleState.resumed) {
-      _rotateCtrl.repeat();
+      _sweepCtrl.repeat();
       _pulseCtrl.repeat(reverse: true);
     }
   }
@@ -119,10 +154,12 @@ class _FaceLivenessScreenState extends State<FaceLivenessScreen>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    _rotateCtrl.dispose();
     _pulseCtrl.dispose();
     _stepCtrl.dispose();
     _doneCtrl.dispose();
+    _blurCtrl.dispose();
+    _sweepCtrl.dispose();
+    _fillCtrl.dispose();
     _cam?.dispose();
     _detector?.close();
     super.dispose();
@@ -166,8 +203,15 @@ class _FaceLivenessScreenState extends State<FaceLivenessScreen>
       front,
       ResolutionPreset.medium,
       enableAudio: false,
+      // nv21 on Android, NOT yuv420. The ML Kit plugin's own Android
+      // converter (InputImageConverter.java) accepts only NV21 and YV12 and
+      // answers anything else with "ImageFormat is not supported" — which
+      // this screen was catching and discarding, so on Android every single
+      // frame failed and no face was ever detected. With nv21 requested,
+      // CameraX hands back one plane holding the complete NV21 buffer, which
+      // is exactly what the detector wants.
       imageFormatGroup: AppPlatform.isAndroid
-          ? ImageFormatGroup.yuv420
+          ? ImageFormatGroup.nv21
           : ImageFormatGroup.bgra8888,
     );
 
@@ -203,24 +247,81 @@ class _FaceLivenessScreenState extends State<FaceLivenessScreen>
     List<Face> faces;
     try {
       faces = await _detector!.processImage(inputImage);
-    } catch (_) {
+    } catch (e) {
+      // Logged, once, deliberately. A silent catch here is what hid the
+      // Android format bug: every frame threw "ImageFormat is not supported"
+      // and the screen just sat there looking like it was working.
+      if (!_detectorErrorLogged) {
+        _detectorErrorLogged = true;
+        debugPrint('[FaceLiveness] detector rejected every frame: $e');
+      }
       return;
     }
 
     if (!mounted) return;
 
     if (faces.isEmpty) {
-      _setFaceDetected(false);
+      _setFaceFramed(false);
       return;
     }
 
-    _setFaceDetected(true);
-    _checkStep(faces.first);
+    _setFaceFramed(_isFramed(faces.first, img));
+    if (_faceInOval) _checkStep(faces.first);
   }
 
-  void _setFaceDetected(bool v) {
-    if (_faceDetected != v) {
-      setState(() => _faceDetected = v);
+  /// Whether the detected face is inside the oval the person is being shown,
+  /// not merely somewhere in the frame.
+  ///
+  /// The old check was "a face exists", which passed a face twice the size of
+  /// the oval and half off the side of it.
+  bool _isFramed(Face face, CameraImage img) {
+    final screen = _screen;
+    if (screen == null) return false;
+    final upright = uprightFrameSize(
+      Size(img.width.toDouble(), img.height.toDouble()),
+      _rotationDegrees(),
+    );
+    final onScreen = mapImageRectToScreen(face.boundingBox, upright, screen);
+    if (onScreen == null) return false;
+    return faceFitsOval(onScreen, _ovalRect(screen));
+  }
+
+  static Rect _ovalRect(Size screen) => Rect.fromCenter(
+        center: Offset(screen.width / 2, screen.height * 0.42),
+        width: _ovalW,
+        height: _ovalH,
+      );
+
+  /// Moves the ring to [target] over time rather than snapping to it.
+  void _animateRingTo(double target) {
+    if (target == _ringProgress) return;
+    _fillFrom = _ringValue;
+    _ringProgress = target;
+    _fillCtrl
+      ..value = 0
+      ..forward();
+  }
+
+  /// Where the ring is drawn right now, between the last value and the one
+  /// it is heading for.
+  double get _ringValue =>
+      _fillFrom +
+      (_ringProgress - _fillFrom) *
+          Curves.easeOutCubic.transform(_fillCtrl.value);
+
+  void _setFaceFramed(bool v) {
+    if (_faceInOval == v) return;
+    setState(() {
+      _faceInOval = v;
+      _faceDetected = v;
+    });
+    // Everything outside the oval softens once they are framed, so the blur
+    // is not decoration — it is the app saying "yes, that is what I am
+    // looking at".
+    if (v) {
+      _blurCtrl.forward();
+    } else {
+      _blurCtrl.reverse();
     }
   }
 
@@ -254,10 +355,12 @@ class _FaceLivenessScreenState extends State<FaceLivenessScreen>
           // increment hold progress
           final next = (_holdProgress + 0.04).clamp(0.0, 1.0);
           if (next != _holdProgress) {
-            setState(() {
-              _holdProgress = next;
-              _ringProgress = (_stepIndex * 0.25) + next * 0.25;
-            });
+            setState(() => _holdProgress = next);
+            // The hold is continuous already, so it drives the ring directly
+            // — tweening a value that changes every frame would lag behind
+            // the person's own steadiness.
+            _fillFrom = _ringProgress = (_stepIndex * 0.25) + next * 0.25;
+            _fillCtrl.value = 1;
             if (next >= 1.0 && !_finishing) {
               _captureAndComplete();
             }
@@ -266,10 +369,9 @@ class _FaceLivenessScreenState extends State<FaceLivenessScreen>
           // decay progress if they move
           final next = (_holdProgress - 0.03).clamp(0.0, 1.0);
           if (next != _holdProgress) {
-            setState(() {
-              _holdProgress = next;
-              _ringProgress = (_stepIndex * 0.25) + next * 0.25;
-            });
+            setState(() => _holdProgress = next);
+            _fillFrom = _ringProgress = (_stepIndex * 0.25) + next * 0.25;
+            _fillCtrl.value = 1;
           }
         }
         break;
@@ -283,9 +385,9 @@ class _FaceLivenessScreenState extends State<FaceLivenessScreen>
       if (!mounted) return;
       setState(() {
         _stepIndex++;
-        _ringProgress = _stepIndex * 0.25;
         _step = _Step.values[_stepIndex];
       });
+      _animateRingTo(_stepIndex * 0.25);
       _stepCtrl.forward();
       // Start video recording at step 2 (turnRight, index 1)
       if (_stepIndex == 1 && !_isRecording) {
@@ -394,18 +496,42 @@ class _FaceLivenessScreenState extends State<FaceLivenessScreen>
   // ─────────────────────────────────────────────────────────────────────────
   // InputImage helper
   // ─────────────────────────────────────────────────────────────────────────
-  InputImage? _toInputImage(CameraImage img) {
+  /// How far the frame has to be turned for the detector to see it upright.
+  ///
+  /// iOS ignores this. Android does not, and the sensor angle alone is only
+  /// right by accident while the phone is held portrait: it has to be
+  /// combined with how the device is currently turned, and a front camera
+  /// combines it the other way round from a rear one.
+  static const _orientationDegrees = <DeviceOrientation, int>{
+    DeviceOrientation.portraitUp: 0,
+    DeviceOrientation.landscapeLeft: 90,
+    DeviceOrientation.portraitDown: 180,
+    DeviceOrientation.landscapeRight: 270,
+  };
+
+  int _rotationDegrees() {
     final cam = _cam;
-    if (cam == null) return null;
-    final rotation = InputImageRotationValue.fromRawValue(
-      cam.description.sensorOrientation,
-    );
+    if (cam == null) return 0;
+    final sensor = cam.description.sensorOrientation;
+    if (!AppPlatform.isAndroid) return sensor;
+    final device = _orientationDegrees[cam.value.deviceOrientation] ?? 0;
+    return cam.description.lensDirection == CameraLensDirection.front
+        ? (sensor + device) % 360
+        : (sensor - device + 360) % 360;
+  }
+
+  InputImage? _toInputImage(CameraImage img) {
+    if (_cam == null || img.planes.isEmpty) return null;
+
+    final rotation = InputImageRotationValue.fromRawValue(_rotationDegrees());
     if (rotation == null) return null;
 
-    final format = InputImageFormatValue.fromRawValue(img.format.raw);
-    if (format == null) return null;
-
-    if (img.planes.isEmpty) return null;
+    // Stated outright rather than read back off the frame, because the
+    // camera was opened asking for exactly these two and they are the only
+    // two each platform's detector accepts.
+    final format = AppPlatform.isAndroid
+        ? InputImageFormat.nv21
+        : InputImageFormat.bgra8888;
 
     final plane = img.planes[0];
     return InputImage.fromBytes(
@@ -424,6 +550,9 @@ class _FaceLivenessScreenState extends State<FaceLivenessScreen>
   // ─────────────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
+    // Kept so the camera callback can map face boxes onto the screen without
+    // reaching for context off the build thread.
+    _screen = MediaQuery.sizeOf(context);
     return Scaffold(
       backgroundColor: _black,
       body: _camReady ? _buildLive() : _buildLoading(),
@@ -443,7 +572,10 @@ class _FaceLivenessScreenState extends State<FaceLivenessScreen>
         // 1. Full-screen camera
         _buildCameraFill(),
 
-        // 2. Oval cutout overlay
+        // 2. Everything outside the oval softens once the face is framed
+        _buildSurroundBlur(),
+
+        // 3. Oval cutout overlay
         _buildOvalOverlay(),
 
         // 3. Face ID ring around the oval
@@ -481,6 +613,34 @@ class _FaceLivenessScreenState extends State<FaceLivenessScreen>
     );
   }
 
+  // ── Surroundings blur ─────────────────────────────────────────────────────
+  //
+  // Fades in the moment the face is inside the oval, and back out if they
+  // drift. Nothing else on the screen says "I have you" as directly as the
+  // room going soft around them.
+  Widget _buildSurroundBlur() {
+    return AnimatedBuilder(
+      animation: Listenable.merge([_blurCtrl, _pulseCtrl]),
+      builder: (_, __) {
+        final t = Curves.easeOutCubic.transform(_blurCtrl.value);
+        // Nothing to draw, and a BackdropFilter that blurs by zero still
+        // costs a full-screen render pass.
+        if (t < 0.01) return const SizedBox.shrink();
+        final pulse = Curves.easeInOut.transform(_pulseCtrl.value);
+        return ClipPath(
+          clipper: _OvalCutoutClipper(
+            ovalW: _ovalW + pulse * 4,
+            ovalH: _ovalH + pulse * 5,
+          ),
+          child: BackdropFilter(
+            filter: ui.ImageFilter.blur(sigmaX: 11 * t, sigmaY: 11 * t),
+            child: const SizedBox.expand(),
+          ),
+        );
+      },
+    );
+  }
+
   // ── Oval cutout ───────────────────────────────────────────────────────────
   Widget _buildOvalOverlay() {
     return AnimatedBuilder(
@@ -500,16 +660,20 @@ class _FaceLivenessScreenState extends State<FaceLivenessScreen>
   // ── Ring (static, no rotation — wave fill) ────────────────────────────────
   Widget _buildRing() {
     return AnimatedBuilder(
-      animation: Listenable.merge([_rotateCtrl, _pulseCtrl]),
+      animation:
+          Listenable.merge([_sweepCtrl, _pulseCtrl, _fillCtrl, _blurCtrl]),
       builder: (_, __) {
-        return CustomPaint(
-          painter: _FaceIDRingPainter(
-            progress: _ringProgress,
-            wave: _rotateCtrl.value,      // used for shimmer, NOT rotation
-            breathe: _pulseCtrl.value,
-            allDone: _finishing,
-            ovalW: _ovalW,
-            ovalH: _ovalH,
+        return RepaintBoundary(
+          child: CustomPaint(
+            painter: _FaceIDRingPainter(
+              progress: _ringValue,
+              sweep: _sweepCtrl.value,
+              breathe: _pulseCtrl.value,
+              framed: Curves.easeOutCubic.transform(_blurCtrl.value),
+              allDone: _finishing,
+              ovalW: _ovalW,
+              ovalH: _ovalH,
+            ),
           ),
         );
       },
@@ -522,12 +686,8 @@ class _FaceLivenessScreenState extends State<FaceLivenessScreen>
       top: MediaQuery.of(context).padding.top + 16,
       right: 24,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
-        decoration: BoxDecoration(
-          color: _gray.withValues(alpha: 0.85),
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: _gold.withValues(alpha: 0.4), width: 1),
-        ),
+        padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 8),
+        decoration: neuBox(radius: 20),
         child: Text(
           '${_stepIndex + 1} / 4',
           style: const TextStyle(
@@ -549,12 +709,10 @@ class _FaceLivenessScreenState extends State<FaceLivenessScreen>
       child: GestureDetector(
         onTap: () => Navigator.of(context).pop(),
         child: Container(
-          width: 40,
-          height: 40,
-          decoration: BoxDecoration(
-            color: _gray.withValues(alpha: 0.7),
-            shape: BoxShape.circle,
-          ),
+          width: 44,
+          height: 44,
+          alignment: Alignment.center,
+          decoration: neuBox(radius: 22),
           child: const Icon(Icons.close_rounded, color: _white, size: 20),
         ),
       ),
@@ -586,15 +744,18 @@ class _FaceLivenessScreenState extends State<FaceLivenessScreen>
               // Icon
               AnimatedContainer(
                 duration: const Duration(milliseconds: 300),
-                width: 56,
-                height: 56,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: _gray,
-                  border: Border.all(
-                    color: _finishing ? _green : _gold,
-                    width: 1.5,
-                  ),
+                width: 60,
+                height: 60,
+                alignment: Alignment.center,
+                decoration: neuBox(
+                  radius: 30,
+                  borderColor: (_finishing
+                          ? _green
+                          : _faceInOval
+                              ? _gold
+                              : Colors.white)
+                      .withValues(alpha: _faceInOval || _finishing ? 0.45 : 0.06),
+                  borderWidth: 1.5,
                 ),
                 child: Icon(
                   _finishing ? Icons.check_rounded : _stepIcons[_stepIndex],
@@ -741,24 +902,54 @@ class _OvalCutoutPainter extends CustomPainter {
 }
 
 // ─── Face ID static ring painter with wave fill ────────────────────────────
+/// One continuous ribbon of light around the oval.
+///
+/// This used to be eighty separate radial dashes, each coloured by its own
+/// rule, which is why it read as a row of tally marks rather than something
+/// flowing. Now it is a single arc under a sweep gradient, with a soft glow
+/// beneath it, a highlight that travels the filled length, and a head that
+/// pulses at the leading edge. Progress is handed in already eased by the
+/// screen, so a step landing pours into place instead of jumping a quarter.
+/// The ring of ticks around the oval — kept as ticks, made to flow.
+///
+/// The marks themselves were never the problem; the way they moved was. This
+/// draws the same radial dashes, but:
+///
+///   • the boundary dash lights up FRACTIONALLY, so progress is continuous
+///     instead of snapping eighty times around the ring
+///   • an eased wave travels the lit arc, stretching and brightening each
+///     dash as it passes and letting it settle behind — the dashes breathe
+///     in sequence rather than blinking as a block
+///   • a soft glow sits under the lit run so the light looks like it is
+///     coming off the marks, not painted beside them
+///   • the head dash carries its own halo
 class _FaceIDRingPainter extends CustomPainter {
-  final double progress;   // 0..1
-  final double wave;       // 0..1 animation value (for shimmer, NOT rotation)
-  final double breathe;    // 0..1 animation value
+  /// 0..1, already eased by the screen so a completed step pours in.
+  final double progress;
+
+  /// 0..1 looping, drives the travelling wave.
+  final double sweep;
+
+  /// 0..1 breathing.
+  final double breathe;
+
+  /// 0..1, how framed the face is. Warms the ring as they line up.
+  final double framed;
+
   final bool allDone;
   final double ovalW;
   final double ovalH;
 
   static const _dashCount = 80;
-  static const _green     = Color(0xFF34C759);
-  static const _gold      = Color(0xFFD4AF37);
-  static const _goldBr    = Color(0xFFE8C547);
-  static const _gray      = Color(0xFF2A2A2A);
+  static const _green    = Color(0xFF34C759);
+  static const _greenHi  = Color(0xFFA8F5C0);
+  static const _track    = Color(0xFF2A2A2A);
 
   const _FaceIDRingPainter({
     required this.progress,
-    required this.wave,
+    required this.sweep,
     required this.breathe,
+    required this.framed,
     required this.allDone,
     required this.ovalW,
     required this.ovalH,
@@ -766,137 +957,118 @@ class _FaceIDRingPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
+    if (size.width < 2 || size.height < 2) return;
+
     final center = Offset(size.width / 2, size.height * 0.42);
     final b = Curves.easeInOut.transform(breathe);
 
-    // Padding around the oval
     final radiusX = ovalW / 2 + 10 + b * 3;
     final radiusY = ovalH / 2 + 10 + b * 4;
+    if (radiusX < 1 || radiusY < 1) return;
 
-    // NO rotation offset — ring is static
-    final filledDashes = (progress * _dashCount).round();
-    final degreesPerDash = 2 * math.pi / _dashCount;
+    final p = progress.clamp(0.0, 1.0);
+    // Fractional, not rounded. Rounding is what made the ring advance in
+    // visible steps of one eightieth.
+    final filledExact = allDone ? _dashCount.toDouble() : p * _dashCount;
+    final step = 2 * math.pi / _dashCount;
 
-    // Wave shimmer position (travels along filled arc)
-    final wavePos = wave * filledDashes;
+    // The wave eases at both ends of its run, so it never looks dragged at a
+    // constant speed, and it sweeps a little past the head before returning.
+    final t = Curves.easeInOutSine.transform(sweep);
+    final wavePos = t * (filledExact + 6) - 3;
+
+    final glow = <Offset>[];
 
     for (var i = 0; i < _dashCount; i++) {
-      // Static angle — starts at top, goes clockwise
-      final angle = -math.pi / 2 + i * degreesPerDash;
-      final isFilled = i < filledDashes;
+      final angle = -math.pi / 2 + i * step;
 
-      Color color;
-      double strokeW;
+      // How lit this dash is: 1 inside the run, a fraction at the boundary.
+      final lit = (filledExact - i).clamp(0.0, 1.0);
 
-      if (allDone) {
-        color = _green;
-        strokeW = 3.0;
-      } else if (isFilled) {
-        // Check if this dash is at a step boundary (25%, 50%, 75%)
-        final isStepTick = (i == 20 || i == 40 || i == 60) && i < filledDashes;
+      // Smooth falloff around the wave — no hard band edge.
+      final d = (i - wavePos).abs();
+      final wave = lit == 0 ? 0.0 : math.exp(-(d * d) / 18.0);
 
-        // Leading edge glow dot
-        final isLeading = i == filledDashes - 1;
-        if (isLeading) {
-          // Pulsing bright leading dot
-          final pulse = (math.sin(wave * math.pi * 6) + 1) / 2;
-          color = Color.lerp(_green, const Color(0xFF8EF5A5), pulse)!;
-          strokeW = 4.0;
-        } else if (isStepTick) {
-          // Step ticks glow brighter
-          color = _green;
-          strokeW = 4.0;
-        } else {
-          // Wave shimmer: bright band passing over filled dashes
-          final dist = (i - wavePos).abs();
-          final shimmer = (1.0 - dist / 8.0).clamp(0.0, 0.4);
-          color = Color.lerp(_green, const Color(0xFF8EF5A5), shimmer)!;
-          strokeW = 3.0;
-        }
-      } else {
-        color = _gray;
+      final Color color;
+      final double strokeW;
+      final double inner;
+      final double outer;
+
+      if (lit == 0) {
+        color = _track;
         strokeW = 2.0;
+        inner = 6;
+        outer = 2;
+      } else {
+        // Length and weight ride the wave, so the ring ripples.
+        color = Color.lerp(_green, _greenHi, wave * 0.85)!
+            .withValues(alpha: (0.55 + 0.45 * lit) * (0.85 + framed * 0.15));
+        strokeW = 2.6 + wave * 1.5 + framed * 0.3;
+        inner = 6 + wave * 2.5;
+        outer = 2 + wave * 2.5;
+        if (wave > 0.45) {
+          glow.add(Offset(
+            center.dx + radiusX * math.cos(angle),
+            center.dy + radiusY * math.sin(angle),
+          ));
+        }
       }
 
-      // Draw radial dash from inner to outer point
-      final innerX = center.dx + (radiusX - 6) * math.cos(angle);
-      final innerY = center.dy + (radiusY - 6) * math.sin(angle);
-      final outerX = center.dx + (radiusX + 2) * math.cos(angle);
-      final outerY = center.dy + (radiusY + 2) * math.sin(angle);
-
       canvas.drawLine(
-        Offset(innerX, innerY),
-        Offset(outerX, outerY),
+        Offset(
+          center.dx + (radiusX - inner) * math.cos(angle),
+          center.dy + (radiusY - inner) * math.sin(angle),
+        ),
+        Offset(
+          center.dx + (radiusX + outer) * math.cos(angle),
+          center.dy + (radiusY + outer) * math.sin(angle),
+        ),
         Paint()
           ..color = color
           ..strokeWidth = strokeW
           ..strokeCap = StrokeCap.round,
       );
-
-      // Glow on filled dashes
-      if (isFilled && !allDone) {
-        final isLeading = i == filledDashes - 1;
-        canvas.drawLine(
-          Offset(innerX, innerY),
-          Offset(outerX, outerY),
-          Paint()
-            ..color = _green.withValues(alpha: isLeading ? 0.35 : 0.15)
-            ..strokeWidth = strokeW + (isLeading ? 6 : 4)
-            ..strokeCap = StrokeCap.round
-            ..maskFilter = MaskFilter.blur(BlurStyle.normal, isLeading ? 6 : 4),
-        );
-      }
-
-      // Step tick glow (at 25%, 50%, 75% boundaries)
-      if (isFilled && !allDone && (i == 20 || i == 40 || i == 60)) {
-        canvas.drawCircle(
-          Offset((innerX + outerX) / 2, (innerY + outerY) / 2),
-          5,
-          Paint()
-            ..color = _green.withValues(alpha: 0.3)
-            ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4),
-        );
-      }
     }
 
-    // All done: glowing green oval ring
-    if (allDone) {
-      final ovalRect = Rect.fromCenter(
-        center: center,
-        width: ovalW + 20,
-        height: ovalH + 20,
-      );
-      canvas.drawOval(
-        ovalRect,
+    // The wave's own halo, drawn over the marks it is passing.
+    if (glow.isNotEmpty && !allDone) {
+      canvas.drawPoints(
+        ui.PointMode.points,
+        glow,
         Paint()
-          ..color = _green.withValues(alpha: 0.25)
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 10
-          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8),
-      );
-      canvas.drawOval(
-        ovalRect,
-        Paint()
-          ..color = _green
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 2.5,
+          ..color = _greenHi.withValues(alpha: 0.30)
+          ..strokeWidth = 9
+          ..strokeCap = StrokeCap.round
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 5),
       );
     }
 
-    // Breathing glow ring
+    // The leading dash keeps its own pulsing halo, so the eye always knows
+    // where the fill has reached even when the wave is elsewhere.
+    if (!allDone && filledExact > 0.5) {
+      final headAngle = -math.pi / 2 + (filledExact - 1) * step;
+      final pulse = 0.5 + 0.5 * math.sin(sweep * math.pi * 2);
+      canvas.drawCircle(
+        Offset(
+          center.dx + radiusX * math.cos(headAngle),
+          center.dy + radiusY * math.sin(headAngle),
+        ),
+        3.2 + pulse * 1.6,
+        Paint()
+          ..color = _greenHi.withValues(alpha: 0.65)
+          ..maskFilter = MaskFilter.blur(BlurStyle.normal, 3 + pulse * 3),
+      );
+    }
+
+    // The faint halo that keeps the oval alive while nothing else moves.
     if (!allDone) {
-      final glowAlpha = 0.05 + b * 0.1;
-      final ovalRect = Rect.fromCenter(
-        center: center,
-        width: ovalW + 22,
-        height: ovalH + 22,
-      );
       canvas.drawOval(
-        ovalRect,
+        Rect.fromCenter(center: center, width: ovalW + 22, height: ovalH + 22),
         Paint()
-          ..color = _goldBr.withValues(alpha: glowAlpha)
           ..style = PaintingStyle.stroke
           ..strokeWidth = 2.5 + b * 2
+          ..color = _green
+              .withValues(alpha: (0.03 + b * 0.06) * (0.4 + framed * 0.6))
           ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8),
       );
     }
@@ -905,7 +1077,33 @@ class _FaceIDRingPainter extends CustomPainter {
   @override
   bool shouldRepaint(_FaceIDRingPainter old) =>
       old.progress != progress ||
-      old.wave != wave ||
+      old.sweep != sweep ||
       old.breathe != breathe ||
+      old.framed != framed ||
       old.allDone != allDone;
+}
+
+/// Everything EXCEPT the oval. What is drawn through this clip lands outside
+/// the face window, which is how the blur leaves the face sharp and softens
+/// the room behind it.
+class _OvalCutoutClipper extends CustomClipper<Path> {
+  final double ovalW;
+  final double ovalH;
+  const _OvalCutoutClipper({required this.ovalW, required this.ovalH});
+
+  @override
+  Path getClip(Size size) => Path.combine(
+        PathOperation.difference,
+        Path()..addRect(Offset.zero & size),
+        Path()
+          ..addOval(Rect.fromCenter(
+            center: Offset(size.width / 2, size.height * 0.42),
+            width: ovalW,
+            height: ovalH,
+          )),
+      );
+
+  @override
+  bool shouldReclip(_OvalCutoutClipper old) =>
+      old.ovalW != ovalW || old.ovalH != ovalH;
 }

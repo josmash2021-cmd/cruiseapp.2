@@ -122,7 +122,7 @@ def _create_driver_connect_account(_stripe, email: str, **extra):
 
 
 async def _usable_connect_id(_stripe, user, db) -> str:
-    """The driver's Connect id, guaranteed reachable by THIS Stripe key.
+    """The driver's Connect id, guaranteed reachable AND manageable by THIS Stripe key.
 
     A stored id can go dead. The commonest way is a test/live mix-up — an
     account minted with a test key does not exist in live mode at all — and
@@ -135,12 +135,27 @@ async def _usable_connect_id(_stripe, user, db) -> str:
     filled in correctly, with no way forward: the id was wrong and nothing
     ever replaced it. Retrieving it first turns a permanent dead end into a
     one-time recreate.
+
+    Reachable is not enough, though. A Standard account (linked over OAuth
+    or created from the Stripe dashboard) retrieves FINE and then rejects
+    every management write with oauth_not_supported: the in-app bank
+    "delete" never detaches anything on Stripe, and the next add dies on
+    the driver's Submit with "This application does not have the required
+    permissions for this endpoint on account ...". Only an Express account
+    created by this backend is manageable, so any other type falls through
+    to a fresh one.
     """
     cid = user.stripe_connect_id
     if cid:
         try:
-            _stripe.Account.retrieve(cid)
-            return cid
+            existing = _stripe.Account.retrieve(cid)
+            if (existing.get("type") or "").lower() == "express":
+                return cid
+            logging.warning(
+                "[Connect] stored account %s is type %r, not express — the "
+                "platform can read it but every management write bounces "
+                "(oauth_not_supported); creating a fresh one for user %s",
+                cid, existing.get("type"), user.id)
         except Exception as e:
             logging.warning(
                 "[Connect] stored account %s is unreachable with this key (%s) "

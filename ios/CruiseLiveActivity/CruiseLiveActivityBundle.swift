@@ -150,8 +150,23 @@ private struct OfferCard: View {
         .lineLimit(1)
         .minimumScaleFactor(0.7)
       }
+      // The money to the top edge, the route to the bottom one, and the gap
+      // between them rather than around them.
+      //
+      // The system hands the lock-screen banner a height of its own and
+      // SwiftUI centres whatever it is given inside it, so both rows used to
+      // sit in the middle with dead space above and below. On a surface this
+      // small that space is the most expensive thing on it. This Spacer
+      // makes the stack claim the full height, which pushes the route bar
+      // down and leaves the fare where the eye lands first.
+      //
+      // Only in the banner: the Dynamic Island's expanded region is sized to
+      // its content, so a Spacer there would stretch the region open instead
+      // of moving anything inside it.
+      if !compact { Spacer(minLength: 0) }
       OfferRouteBar(compact: compact)
     }
+    .frame(maxHeight: compact ? nil : .infinity, alignment: .top)
   }
 }
 

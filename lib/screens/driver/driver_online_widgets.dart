@@ -175,6 +175,26 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
           // Increment generation so any stale annotation refs from the old
           // PlatformView are recognized as dead and recreated fresh.
           _mapGeneration++;
+          // Fresh-install guard: onStyleLoaded can fire before `_map` was
+          // stored (or not reach the listener at all), leaving the raw grey
+          // dark-v11 — scale bar included, since the theme is also what
+          // disables the ornaments. Blindly re-apply a few times after the
+          // map exists to cover both orderings; when onStyleLoaded runs
+          // normally it simply applies the same theme again.
+          _navyGoldRetryTimer?.cancel();
+          final themeGen = _mapGeneration;
+          var themeAttempts = 0;
+          _navyGoldRetryTimer =
+              Timer.periodic(const Duration(seconds: 1), (t) {
+            if (!mounted ||
+                _map == null ||
+                _mapGeneration != themeGen ||
+                ++themeAttempts > 5) {
+              t.cancel();
+              return;
+            }
+            MapTheme.applyNavyGold(ctrl);
+          });
           // CRITICAL: reset all annotation references before creating new managers.
           // On Android the PlatformView (SurfaceView) is destroyed when the app
           // goes to background and recreated on resume. This triggers onMapCreated

@@ -235,6 +235,10 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   DateTime _lastNavSetState = DateTime(0);
   DateTime _lastBackendLocSend = DateTime(0);
   bool _lastStyleDark = true;
+  // One-shot re-apply of the navy/gold theme after onMapCreated. On a fresh
+  // install onStyleLoaded can fire before `_map` is stored (or not reach the
+  // listener at all), and the screen stays on the raw grey dark-v11.
+  Timer? _navyGoldRetryTimer;
   // Monotonically incremented every time onMapCreated fires. Guards against
   // stale annotation refs surviving a PlatformView recreation.
   int _mapGeneration = 0;
@@ -1173,6 +1177,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     _reqCtrl?.dispose();
     _doneCtrl?.dispose();
     _statusLineTimer?.cancel();
+    _navyGoldRetryTimer?.cancel();
     _onlineChimeTimer?.cancel();
     _searchPulse.dispose();
     _pollT?.cancel();

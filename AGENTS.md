@@ -61,6 +61,8 @@
 
 ## 🪤 Trampas y bugs silenciosos conocidos
 
+0. **Columna ORM nueva ≠ columna en prod** (outage 2026-08-08): agregar una Column al modelo + a las listas ensure-column NO garantiza que el boot migration la cree — cada query de la tabla entera falla con `UndefinedColumn` y envenena la transacción (500s en cadena, `InFailedSqlTransaction`). Remedio inmediato sin redeploy: `railway run bash -c 'curl -s -X POST -H "x-api-key: $API_KEY" https://cruiseapp2-production.up.railway.app/admin/run-migrations'`. Verificación: logs sin `UndefinedColumn` fresco. Tras cualquier deploy con columna nueva, chequear los logs por "Added column" / "migration skip".
+
 1. **FCM `priority="max"` va en palabra pelada** — el SDK la prefija con `PRIORITY_`; pasar el nombre de wire mata el Message ENTERO en silencio (pasó dos veces). Hay test guardián.
 2. **El bloque `notification` del FCM SE QUEDA** — sin él Android no dispara `onMessageOpenedApp`/`getInitialMessage` y el tap no hace nada. El dedup vive en el cliente (bg handler retorna temprano en ofertas).
 3. **Sonido APNs custom:** el `.wav` debe ser miembro del target Runner en `project.pbxproj` (lo es desde 2026-08-07). Si falta, iOS cae al sonido default SIN error ni log.

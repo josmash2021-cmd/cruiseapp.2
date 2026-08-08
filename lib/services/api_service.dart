@@ -2218,14 +2218,18 @@ class ApiService {
   }) async {
     try {
       final authToken = await getToken();
-      if (authToken == null) return; // no session yet — next rotation retries
-      await _client
+      if (authToken == null) {
+        debugPrint('[LiveActivity] token save SKIPPED ($kind) — no session JWT');
+        return; // no session yet — next rotation retries
+      }
+      final res = await _client
           .post(
             Uri.parse('$_baseUrl/drivers/live-activity-token'),
             headers: _jsonHeaders(authToken),
             body: jsonEncode({'kind': kind, 'token': token}),
           )
           .timeout(const Duration(seconds: 8));
+      debugPrint('[LiveActivity] token save $kind → HTTP ${res.statusCode}');
     } catch (e) {
       debugPrint('[ApiService] live-activity token save failed: $e');
     }

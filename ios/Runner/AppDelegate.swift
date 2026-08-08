@@ -133,22 +133,28 @@ final class CruiseLiveActivityManager {
     pushToStartObserverStarted = true
     if #available(iOS 17.2, *) {
       Task {
+        NSLog("[LiveActivity] push-to-start observer RUNNING (iOS 17.2+)")
         for await data in Activity<CruiseActivityAttributes>.pushToStartTokenUpdates {
           let t = hex(data)
-          NSLog("[LiveActivity] push-to-start token refreshed (%d bytes)", data.count)
+          NSLog("[LiveActivity] push-to-start token EMITTED (%d bytes) — forwarding to Dart", data.count)
           onPushToken?("push_to_start", t)
         }
+        NSLog("[LiveActivity] push-to-start token stream ENDED")
       }
+    } else {
+      NSLog("[LiveActivity] push-to-start UNAVAILABLE — device below iOS 17.2; only running-activity updates can arrive")
     }
   }
 
   /// The running activity's own channel — used for offer updates.
   private func observeActivityPushToken(_ a: Activity<CruiseActivityAttributes>) {
     if let data = a.pushToken {
+      NSLog("[LiveActivity] activity token EMITTED (%d bytes) — forwarding to Dart", data.count)
       onPushToken?("activity", hex(data))
     }
     Task {
       for await data in a.pushTokenUpdates {
+        NSLog("[LiveActivity] activity token ROTATED (%d bytes) — forwarding to Dart", data.count)
         onPushToken?("activity", hex(data))
       }
     }

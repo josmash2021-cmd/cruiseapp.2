@@ -630,6 +630,7 @@ async def _send_offer_to_driver(
     for other in stale:
         other.status = "expired"
         _pending_cache.pop(other.driver_id, None)
+        _safe_create_task(_clear_live_activity_offer(other.driver_id))
         logging.info(
             "[Dispatch] trip %s: expiring offer %s to driver %s — it is "
             "driver %s's turn now",
@@ -812,6 +813,32 @@ async def _send_offer_to_driver(
     return offer
 
 
+async def _clear_live_activity_offer(driver_id: int) -> None:
+    """The offer died — take the fare off the driver's Live Activity."""
+    try:
+        async with SessionLocal() as db:
+            d = await db.get(User, driver_id)
+        if d is None or not (d.apns_la_activity_token or d.apns_la_start_token):
+            return
+        from services.apns_liveactivity import clear_live_activity_offer
+        outcome = await clear_live_activity_offer(
+            start_token=d.apns_la_start_token,
+            activity_token=d.apns_la_activity_token,
+        )
+        if outcome in ("stale_activity", "stale_start"):
+            async with SessionLocal() as db:
+                d = await db.get(User, driver_id)
+                if d is not None:
+                    if outcome == "stale_activity":
+                        d.apns_la_activity_token = None
+                    else:
+                        d.apns_la_start_token = None
+                    await db.commit()
+    except Exception as e:
+        logging.warning("[LiveActivity] clear failed for driver %s: %s",
+                        driver_id, e)
+
+
 async def _send_live_activity_offer(driver, *, fare, per_hour, miles, minutes) -> None:
     """Offer → the driver's Live Activity, straight over APNs. Fail-soft."""
     try:
@@ -882,6 +909,9 @@ async def _auto_cascade(trip_id: int, first_offer_id: int, first_driver_id: int)
                 # Expire the current offer
                 offer.status = "expired"
                 await db.commit()
+                # Take the fare off this driver's Live Activity — the island
+                # must not keep selling a ride that can no longer be taken.
+                _safe_create_task(_clear_live_activity_offer(offer.driver_id))
                 logging.info(
                     "[Cascade] Trip %d: offer %d expired after %ds, trying driver #%d",
                     trip_id, current_offer_id, _CASCADE_WAIT_SECONDS, attempt + 1,
@@ -1588,6 +1618,7 @@ async def get_driver_pending(driver_id: int = Query(...), user: User = Depends(_
         stale_rows = stale_result.all()
         for stale_offer, stale_trip in stale_rows:
             stale_offer.status = "expired"
+            _safe_create_task(_clear_live_activity_offer(stale_offer.driver_id))
             logging.warning(
                 "[Dispatch] Offer %d (trip %d) for driver %d expired after >5 min -- marking expired and cascading",
                 stale_offer.id, stale_offer.trip_id, driver_id,
@@ -2462,7 +2493,8 @@ async def reject_offer(
     if not offer:
         raise HTTPException(404, "Offer not found")
     offer.status = "rejected"
-    
+    _safe_create_task(_clear_live_activity_offer(driver_id))
+
     # Store rejection reason if provided
     if reason:
         offer.rejection_reason = reason

@@ -65,6 +65,60 @@ def _apns_jwt():
         return None
 
 
+async def clear_live_activity_offer(
+    *,
+    start_token: str | None,
+    activity_token: str | None,
+) -> str | None:
+    """The offer died (expired, rejected, or went to another driver): the
+    island goes back to the plain online state — no fare left on screen.
+
+    Returns the same outcome strings as send_live_activity_offer.
+    """
+    token = _apns_jwt()
+    if token is None:
+        return None
+    if not (activity_token or start_token):
+        return None
+
+    content_state = {
+        "status": "online",
+        "since": int(time.time()),
+        "fare": "",
+        "perHour": "",
+        "miles": "",
+        "minutes": "",
+    }
+    aps = {
+        "timestamp": int(time.time()),
+        "event": "update",
+        "content-state": content_state,
+        # No alert block: a silent repaint, not a second interruption.
+    }
+    channel = activity_token or start_token
+    headers = {
+        "authorization": f"bearer {token}",
+        "apns-topic": f"{_BUNDLE}.push-type.liveactivity",
+        "apns-push-type": "liveactivity",
+        "apns-priority": "10",
+    }
+    try:
+        async with httpx.AsyncClient(http2=True, timeout=10) as client:
+            r = await client.post(
+                f"{_HOST}/3/device/{channel}", headers=headers, json=aps)
+        if r.status_code == 200:
+            logger.info("[APNs-LA] offer cleared (channel ...%s)", channel[-6:])
+            return None
+        logger.warning("[APNs-LA] clear failed: HTTP %s %s",
+                       r.status_code, r.text[:200])
+        if r.status_code in (400, 410):
+            return "stale_activity" if activity_token else "stale_start"
+        return "error"
+    except Exception as e:
+        logger.warning("[APNs-LA] clear error: %s", e)
+        return "error"
+
+
 async def send_live_activity_offer(
     *,
     start_token: str | None,

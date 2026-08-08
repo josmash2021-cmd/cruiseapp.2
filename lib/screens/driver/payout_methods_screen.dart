@@ -289,6 +289,7 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
                                 addLabel: s.payoutAddBank,
                                 changeLabel: s.payoutChangeBank,
                                 onTap: _connectBankAccount,
+                                allowDelete: false,
                               ),
                               const SizedBox(height: 14),
                               _payoutOptionCard(
@@ -405,6 +406,10 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
     required String changeLabel,
     required VoidCallback onTap,
     String? footnote,
+    // The weekly bank is never removable from here — only changeable. The
+    // delete bin on it either lied (the 409 the app used to swallow) or
+    // orphaned the Monday payout. Instant's debit card keeps its bin.
+    bool allowDelete = true,
   }) {
     final s = S.of(context);
     // `linked` must never be reassigned. Flow analysis carries the null
@@ -481,10 +486,9 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
               destinationIcon,
               linked ? display : destinationEmpty,
               strong: linked,
-              // The bin is the ONLY way to remove a bank or the express-pay
-              // card — `_extraMethods` never lists either of them — so it
-              // has to live on the line that names what would be removed.
-              trailing: (linked && !_busy && !_loading)
+              // The bin lives only where removal is allowed — the weekly
+              // bank is change-only now; the express-pay card keeps it.
+              trailing: (linked && allowDelete && !_busy && !_loading)
                   ? _deleteButton(m['id'], display)
                   : null,
             ),

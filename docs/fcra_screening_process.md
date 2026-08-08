@@ -21,8 +21,7 @@ The consumer reporting agency used by the Company is:
 - **Vendor:** Checkr
 - **Consumer reporting agency ("CRA"):** Checkr, Inc.
 - **Address:** 1 Montgomery Street, Suite 2400, San Francisco, CA 94104
-- **Telephone:** (844) 824-3257
-- **Toll-free telephone:** (844) 824-3257
+- **Telephone (toll-free):** (844) 824-3257
 
 ## 2. Summary of Rights Process
 
@@ -62,7 +61,9 @@ action notice that includes:
 
 You will then have a **reasonable opportunity to dispute** the accuracy or
 completeness of the report directly with the CRA before any final decision
-is made.
+is made. The Company waits at least five (5) business days after sending
+the pre-adverse action notice before any final decision, or longer where
+state or local law requires it.
 
 ## 4. Adverse Action Notice
 
@@ -72,8 +73,7 @@ the Company will send you a final **adverse action notice** that includes:
 1. notice of the adverse action;
 2. the name, address, and telephone number of the CRA that provided the
    report — **Checkr, Inc., 1 Montgomery Street, Suite 2400, San Francisco,
-   CA 94104, (844) 824-3257**, toll-free
-   **(844) 824-3257**;
+   CA 94104, telephone (toll-free): (844) 824-3257**;
 3. a statement that **the CRA did not make the decision** and cannot explain
    why it was made;
 4. notice of your right to **request a free additional copy of your report

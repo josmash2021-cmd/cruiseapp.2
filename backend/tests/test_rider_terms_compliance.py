@@ -1,7 +1,7 @@
 """Compliance tests: Rider Terms of Service vs. actual app behavior.
 
 Guards docs/rider_terms_of_service.md against drift from the code:
-receipt contents (Fla. Stat. § 627.748(6)), the support-mediated
+receipt contents (Fla. Stat. § 627.748(6)), the instant pre-pickup
 cancellation flow, wait/no-show fee figures, the support email, and the
 cleaning/damage and lost-item fee decisions (no such fees are charged).
 """
@@ -104,18 +104,21 @@ def test_wait_fee_schedule_consistent_between_ui_and_backend():
     l10n = _read(L10N_PATH)
 
     # Backend wait policy (trips.py): (free_minutes, fee_per_minute).
-    for snippet in (
-        '"sedan":   (2, 0.40)',
-        '"comfort": (2, 0.40)',
-        '"premium": (3, 0.60)',
-        '"vip":     (5, 1.00)',
-        "_AIRPORT_WAIT_POLICY = (10, 0.40)",
+    for pattern in (
+        r'"sedan":\s+\(2, 0\.40\)',
+        r'"comfort":\s+\(2, 0\.40\)',
+        r'"standard":\s+\(2, 0\.40\)',
+        r'"premium":\s+\(3, 0\.60\)',
+        r'"suv_xl":\s+\(5, 1\.00\)',
+        r'"vip":\s+\(5, 1\.00\)',
+        r'"black":\s+\(5, 1\.00\)',
+        r"_AIRPORT_WAIT_POLICY = \(10, 0\.40\)",
     ):
-        assert snippet in backend, f"backend wait policy missing: {snippet}"
+        assert re.search(pattern, backend), f"backend wait policy missing: {pattern}"
 
     # The in-app terms text must mirror the same per-minute figures and
     # must NOT advertise a flat $10.00 no-show fee (it does not exist).
-    for frag in (r"\$0.40/min", r"\$0.60/min", r"\$1.00/min"):
+    for frag in (r"\$0.40 per minute", r"\$0.60 per minute", r"\$1.00 per minute"):
         assert frag in l10n, f"l10n missing wait-fee figure: {frag}"
     assert "No-show fee" not in l10n
     assert r"\$10.00" not in l10n

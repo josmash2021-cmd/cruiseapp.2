@@ -2,11 +2,6 @@
 
 **Version 2.0 — Production Candidate — Effective Date: [EFFECTIVE DATE]**
 
-> **STATUS: PRODUCTION CANDIDATE — NOT YET PUBLISHED.** Before publication,
-> complete every bracketed placeholder, confirm the technical practices
-> listed in the pre-publication review notes, and obtain final sign-off from
-> Florida-licensed counsel.
-
 This Privacy Policy (the "**Policy**") explains how **Royal Purple LLC**, a
 Florida limited liability company, with its principal place of business at
 **[COMPANY ADDRESS]** ("**Royal Purple**", "**we**", "**us**", or the
@@ -34,7 +29,7 @@ This Policy applies to riders, drivers, and visitors of the Platform
   year, color, plate).
 - **Identity verification:** government ID images, selfies, and liveness
   verification results (for drivers, also a short verification video), as
-  described in Section 9.
+  described in Section 10.
 - **Tax information:** IRS Form W-9 data (including Social Security number
   or other taxpayer identification number) required to pay drivers and to
   meet tax reporting obligations.
@@ -183,14 +178,22 @@ We share personal information only as follows:
 We do not sell personal information. We do not share personal information
 with third parties for their own targeted advertising.
 
-## 7. Driver Obligations Regarding Rider Data
+## 7. Cookies and Similar Technologies
+
+Our web booking pages and app use cookies, SDK identifiers, and similar
+technologies for authentication, analytics (Firebase Analytics), and crash
+reporting (Crashlytics). We do not use advertising cookies or sell data
+collected through them. You can control cookies through your browser
+settings; disabling them may prevent web bookings.
+
+## 8. Driver Obligations Regarding Rider Data
 
 Drivers may access and use rider personal information solely to complete the
 trip and as otherwise permitted by law, and may not retain, sell, disclose,
 or use rider personal information for any purpose unrelated to completing
 the trip.
 
-## 8. Sensitive Information
+## 9. Sensitive Information
 
 Certain information we collect is sensitive, including:
 
@@ -205,7 +208,7 @@ payments and payouts, tax reporting, identity and eligibility verification,
 safety and fraud prevention, and compliance with law. We do not use
 sensitive information for marketing.
 
-## 9. Identity Verification
+## 10. Identity Verification
 
 To keep the Platform safe, we verify the identity of Users:
 
@@ -223,11 +226,11 @@ To keep the Platform safe, we verify the identity of Users:
   in-house; we do not use a third-party identity verification vendor.
 - **Use, retention, and deletion:** verification materials are used only to
   verify identity and eligibility, prevent fraud, and comply with law. They
-  are retained for the periods described in Section 10 and deleted when no
+  are retained for the periods described in Section 11 and deleted when no
   longer needed, subject to legal retention obligations; you may request
-  deletion as described in Section 12.
+  deletion as described in Section 13.
 
-## 10. Retention
+## 11. Retention
 
 - **Trip records:** we retain individual ride (trip) records for at least
   one year after each ride is provided, as required by Fla. Stat.
@@ -240,6 +243,10 @@ To keep the Platform safe, we verify the identity of Users:
   up to two (2) years and then deleted or anonymized, unless a longer period
   is required by a legal hold, an open safety investigation or dispute, or
   tax, accounting, or legal compliance obligations.
+- **Identity verification materials:** government ID images, selfies, and
+  verification videos are retained while the account is active and deleted
+  within 90 days after account closure or a failed verification, unless a
+  longer period is required by law, an open investigation, or a dispute.
 - **Other information** may be retained for longer periods where needed for
   tax, accounting, insurance, safety, fraud prevention, dispute resolution,
   or legal compliance.
@@ -250,7 +257,7 @@ the purposes described in this Policy. We do not automatically delete all
 personal information on any fixed anniversary; deletion requests are
 honored subject to the retention obligations described in this Section.
 
-## 11. Security
+## 12. Security
 
 We use administrative, technical, and physical safeguards designed to
 protect personal information, including: encryption in transit (TLS);
@@ -263,14 +270,14 @@ No system is perfectly secure. If we become aware of a breach affecting
 your personal information, we will notify you and the authorities as
 required by law.
 
-## 12. Your Rights and Choices
+## 13. Your Rights and Choices
 
 Subject to applicable law, you may:
 
 - access and correct your account information in the app;
 - request a copy of your personal information;
 - request deletion of your account and personal information, subject to the
-  retention obligations described in Section 10;
+  retention obligations described in Section 11;
 - control push, SMS, and email preferences in the app settings; and
 - control location and other device permissions in your device settings.
 
@@ -279,7 +286,7 @@ account, we may need to verify your identity (for example, through the
 contact information registered to your account) before fulfilling a
 request. We respond to requests within the time required by applicable law.
 
-## 13. Children
+## 14. Children
 
 The Platform is not directed to children under 18. Riders must be at least
 18 years old to create an account. Minors may ride only when accompanied by
@@ -291,7 +298,7 @@ part of the accompanying adult's trip record. If we become aware that a
 person under 18 has provided us personal information outside these
 circumstances, we will delete it.
 
-## 14. Changes to This Policy
+## 15. Changes to This Policy
 
 We may update this Policy. Minor changes take effect when the updated
 version is posted in the app with a new effective date. For material
@@ -300,7 +307,7 @@ and, where required by law, obtain your consent. Changes apply going
 forward; we will not apply changes retroactively except as permitted by
 law.
 
-## 15. Contact
+## 16. Contact
 
 Privacy questions and requests: **[PRIVACY EMAIL]** or **[COMPANY
 ADDRESS]**.

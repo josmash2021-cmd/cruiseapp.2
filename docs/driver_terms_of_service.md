@@ -113,40 +113,35 @@ use the in-app safety / end-ride flow instead of cancelling.
 
 5.2. **By the rider.** Where a rider cancels under the conditions described
 in the rider-facing terms, a cancellation fee of **$5.00** may apply. The
-Driver receives **60% of the cancellation fee ($3.00)** and the Company
-retains **40% ($2.00)**, allocated as displayed in the app. No
+Driver receives **70% of the cancellation fee ($3.50)** and the Company
+retains **30% ($1.50)**, allocated as displayed in the app. No
 payment-processing fee or other deduction is applied to the Driver's share.
 
 5.3. **No-shows.** If a rider does not appear within the waiting period
-displayed in the app, the Driver may cancel and any applicable fee will be
-handled under Section 5.2.
+displayed in the app, the Driver may cancel and receives the Driver's share
+(70%) of the accrued wait-time fee, as displayed in the app.
 
 ## 6. Ratings
 
 6.1. The Company operates a two-way rating system: riders rate Drivers and
 Drivers may rate riders.
 
-6.2. The following quality thresholds currently apply: (a) an average rating
-below **4.2** generates a warning to the Driver; (b) an average rating below
-**4.0** places the Driver on **probation** status with notice; and (c) an
-average rating below **3.8** results in **automatic temporary suspension** of
-platform access. Ratings are computed on a **rolling 30-day window** and
-re-evaluated periodically, so a suspended Driver's access is **automatically
-restored** as older low ratings age out of the window and the rolling average
-recovers — the Driver does not need to complete new trips to recover. These
-thresholds apply only once the Driver has accumulated at least
-**10** rated trips within the rolling window; no
-rating-based action is taken before that minimum is reached. The Driver may
-also request **manual review and early restoration** under Section
-12.4. A temporary suspension under this Section is not a deactivation. If the
-Driver's rolling average does not recover within a reasonable period, or the
-Driver repeatedly reaches the suspension threshold, the Company may convert
-the suspension into a deactivation — but only after (a) notice to the Driver,
-(b) a meaningful opportunity to improve, and (c) an internal review under
-Section 12.4. Acceptance-rate metrics are not part of this evaluation
-(Section 3.3).
-An average rating of **4.7 or higher** may qualify the Driver for access to
-premium ride categories.
+6.2. Each Driver has a rating score that starts at **5.0** and moves up or
+down by a fixed step for each rating received. The following thresholds
+currently apply: (a) a score of **4.5 or below** generates a warning to the
+Driver; (b) a score **below 4.3** generates a notice that the Driver is at
+risk of deactivation; and (c) a score of **3.5 or below** results in a
+**temporary 24-hour suspension** of platform access, after which platform
+access is **automatically restored** with the score set to **4.0**. These
+thresholds apply only once the Driver has accumulated at least **5** rated
+trips; no rating-based suspension is imposed before that minimum is
+reached. The Driver may also request **manual review and early
+restoration** under Section 12.4. A temporary suspension under this Section
+is not a deactivation. If the Driver repeatedly reaches the suspension
+threshold, the Company may convert the suspension into a deactivation — but
+only after (a) notice to the Driver, (b) a meaningful opportunity to
+improve, and (c) an internal review under Section 12.4. Acceptance-rate
+metrics are not part of this evaluation (Section 3.3).
 
 6.3. The Company maintains safeguards against abusive or manipulated ratings
 and will review any rating-based action upon the Driver's request under
@@ -155,9 +150,9 @@ rating or rating-based action resulted from discrimination prohibited by law.
 
 ## 7. Fares, Payments, and Fees
 
-7.1. **Driver share.** The Driver receives **60%** of the gross trip fare
+7.1. **Driver share.** The Driver receives **70%** of the gross trip fare
 (base fare, time and distance charges, and any demand-based or surge
-pricing); the Company retains a service fee of **40%** of that fare. **No
+pricing); the Company retains a service fee of **30%** of that fare. **No
 service fee applies to tips or to reimbursed tolls.** Cancellation fees are
 defined and allocated separately under Section 5.2.
 

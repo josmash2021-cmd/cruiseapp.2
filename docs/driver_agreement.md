@@ -106,27 +106,24 @@ review. Once the rider is aboard, the Driver shall not cancel and shall
 instead use the in-app safety / end-ride flow.
 
 5.5. **Ratings system.** The Company operates a two-way rating system in
-which riders rate Drivers after completed trips. The following quality
-thresholds currently apply: (a) an average rating below **4.2** generates a
-warning to the Driver; (b) an average rating below **4.0** places the Driver
-on **probation** status with notice; and (c) an average rating below **3.8**
-results in **automatic temporary suspension** of platform access. Ratings
-are computed on a **rolling 30-day window** and re-evaluated periodically,
-so a suspended Driver's access is **automatically restored** as older low
-ratings age out of the window and the rolling average recovers — the Driver
-does not need to complete new trips to recover. These thresholds apply only
-once the Driver has accumulated at least **10** rated
-trips within the rolling window; no rating-based action is taken before that
-minimum is reached. A temporary suspension under this Section is not a
-deactivation; the Company may convert it into a deactivation only after
-notice to the Driver, a meaningful opportunity to improve, and an internal
-review under Section 14.6. In addition, the Driver may
-request **manual review and early restoration** through the internal review
-procedure in Section 14.6 — including review whenever the Driver makes a
-plausible claim that the action resulted from discrimination prohibited by
-law. These are rider-quality metrics, not acceptance-rate metrics (Section
-5.2). An average rating of **4.7 or higher** may qualify the Driver for
-access to premium ride categories.
+which riders rate Drivers after completed trips. Each Driver has a rating
+score that starts at **5.0** and moves up or down by a fixed step for each
+rating received. The following thresholds currently apply: (a) a score of
+**4.5 or below** generates a warning to the Driver; (b) a score **below
+4.3** generates a notice that the Driver is at risk of deactivation; and
+(c) a score of **3.5 or below** results in a **temporary 24-hour
+suspension** of platform access, after which platform access is
+**automatically restored** with the score set to **4.0**. These thresholds
+apply only once the Driver has accumulated at least **5** rated trips; no
+rating-based suspension is imposed before that minimum is reached. A
+temporary suspension under this Section is not a deactivation; the Company
+may convert it into a deactivation only after notice to the Driver, a
+meaningful opportunity to improve, and an internal review under Section
+14.6. In addition, the Driver may request **manual review and early
+restoration** through the internal review procedure in Section 14.6 —
+including review whenever the Driver makes a plausible claim that the
+action resulted from discrimination prohibited by law. These are
+rider-quality metrics, not acceptance-rate metrics (Section 5.2).
 
 ## 6. Platform Use and Account Security
 
@@ -169,9 +166,9 @@ the pickup location, the destination, and the trip fare for that trip, as
 displayed in the app.
 
 8.3. **Service fee and Driver share.** The Company retains a service fee of
-**40%** of the gross trip fare (base fare, time and distance charges, and any
+**30%** of the gross trip fare (base fare, time and distance charges, and any
 demand-based or surge pricing), and the Driver receives the remaining
-**60%**. **No service fee applies to tips or to reimbursed tolls.**
+**70%**. **No service fee applies to tips or to reimbursed tolls.**
 Cancellation fees are defined and allocated separately under Section 8.6.
 Any change to the service fee will be communicated in advance and, if
 material, presented for re-acceptance under Section 22.
@@ -186,8 +183,8 @@ to the passenger and remitted to the Driver as displayed in the app.
 *[Confirm practice.]*
 
 8.6. **Cancellation charges.** Where a passenger cancellation fee applies
-under the Terms of Service, the fee is **$5.00**: the Driver receives **60%
-($3.00)** and the Company retains **40% ($2.00)**, as displayed in the app.
+under the Terms of Service, the fee is **$5.00**: the Driver receives **70%
+($3.50)** and the Company retains **30% ($1.50)**, as displayed in the app.
 No payment-processing fee or other deduction is applied to the Driver's
 share.
 
@@ -244,10 +241,9 @@ publish until confirmed.]*
 
 9.3. **Currency and updates.** The Driver shall keep the Driver's driver's
 license, vehicle registration, insurance, and all other required documents
-current and valid at all times, update the policy information in the app when
-it changes, and
-**immediately notify the Company of any cancellation, lapse, expiration, or
-reduction** of the Driver's required coverage.
+current and valid at all times, update the policy information in the app
+when it changes, and **immediately notify the Company of any cancellation,
+lapse, expiration, or reduction** of the Driver's required coverage.
 
 9.4. **Accident duties.** In the event of an accident while the Driver is
 logged on or engaged in a prearranged ride, the Driver shall: (a) comply with
@@ -363,7 +359,8 @@ Company will pay all amounts lawfully owed for completed services, subject to
 lawful adjustments; (b) the Driver shall cease displaying Company trade dress
 and, at the Company's option, return or destroy Company-provided materials;
 (c) the Driver's platform access ends; and (d) provisions that by their
-nature should survive (including Sections 13, 16 through 20, and 23) survive.
+nature should survive (including Sections 1.4, 8.10, 9, 13, 16 through 20,
+and 23) survive.
 
 ## 15. Intellectual Property
 

@@ -43,9 +43,10 @@ minimums (Fla. Stat. § 627.748(7)):
 
 ## 3. Coverage During a Prearranged Ride
 
-From the driver's acceptance of a trip request through the rider's exit from
-the vehicle, the Company maintains automobile liability coverage at no less
-than the following statutory minimums (Fla. Stat. § 627.748(7)):
+From the driver's acceptance of a trip request until the last rider exits
+from and is no longer occupying the vehicle, the Company maintains
+automobile liability coverage at no less than the following statutory
+minimums (Fla. Stat. § 627.748(7)):
 
 - **Combined liability (death, bodily injury, property damage):** at least
   $[1,000,000]. *[Confirm actual limits — may be higher.]*
@@ -60,7 +61,8 @@ than the following statutory minimums (Fla. Stat. § 627.748(7)):
 - **"Logged on":** the driver is available to receive trip requests through
   the app.
 - **"Prearranged ride":** the period beginning when the driver accepts a trip
-  request through the platform and ending when the rider exits the vehicle.
+  request through the platform and ending when the last rider exits from and
+  is no longer occupying the vehicle.
 - **Offline:** no TNC coverage is provided by the Company; the driver's
   personal policy applies.
 
@@ -76,6 +78,12 @@ endorsement with the driver's own insurer.
 5.3. The Company's coverage and the driver's personal policy interact as
 provided by Fla. Stat. § 627.748(7). *[Counsel/insurer to confirm priority
 of coverage language before publication.]*
+
+5.4. Providing rides for compensation that are not prearranged rides
+arranged through the platform subjects you to the coverage requirements of
+Fla. Stat. § 324.032(1); failure to meet those requirements carries
+penalties under Fla. Stat. § 324.221, up to and including a second-degree
+misdemeanor.
 
 ## 6. Exclusions and Limitations
 

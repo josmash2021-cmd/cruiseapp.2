@@ -25,7 +25,7 @@ This Policy applies to riders, drivers, and visitors of the Platform (together, 
 
 - **Account information:** name, phone number, email address, password, and profile photo.
 - **Driver documents:** driver's license, vehicle registration, proof of insurance, vehicle inspection records, and vehicle details (make, model, year, color, plate).
-- **Identity verification:** government ID images, selfies, and liveness verification results (for drivers, also a short verification video), as described in Section 9.
+- **Identity verification:** government ID images, selfies, and liveness verification results (for drivers, also a short verification video), as described in Section 10.
 - **Tax information:** IRS Form W-9 data (including Social Security number or other taxpayer identification number) required to pay drivers and to meet tax reporting obligations.
 - **Payment information:** payment method tokens and identifiers (for riders) and payout account identifiers (for drivers). Card numbers and bank account details are collected and held by our payment processor; we do not store full card numbers or full bank account numbers — only the bank name and last four digits, for display.
 - **Communications:** messages you send through the Platform (including in-app chat), calls and messages with support, and feedback or ratings you submit.
@@ -113,12 +113,17 @@ We share personal information only as follows:
 We do not sell personal information. We do not share personal information with third parties for their own targeted advertising.''',
     ),
     LegalSection(
-      heading: '7. Driver Obligations Regarding Rider Data',
+      heading: '7. Cookies and Similar Technologies',
+      body: r'''
+Our web booking pages and app use cookies, SDK identifiers, and similar technologies for authentication, analytics (Firebase Analytics), and crash reporting (Crashlytics). We do not use advertising cookies or sell data collected through them. You can control cookies through your browser settings; disabling them may prevent web bookings.''',
+    ),
+    LegalSection(
+      heading: '8. Driver Obligations Regarding Rider Data',
       body: r'''
 Drivers may access and use rider personal information solely to complete the trip and as otherwise permitted by law, and may not retain, sell, disclose, or use rider personal information for any purpose unrelated to completing the trip.''',
     ),
     LegalSection(
-      heading: '8. Sensitive Information',
+      heading: '9. Sensitive Information',
       body: r'''
 Certain information we collect is sensitive, including:
 
@@ -131,7 +136,7 @@ Certain information we collect is sensitive, including:
 We use this information only for the purposes that require it: processing payments and payouts, tax reporting, identity and eligibility verification, safety and fraud prevention, and compliance with law. We do not use sensitive information for marketing.''',
     ),
     LegalSection(
-      heading: '9. Identity Verification',
+      heading: '10. Identity Verification',
       body: r'''
 To keep the Platform safe, we verify the identity of Users:
 
@@ -139,50 +144,51 @@ To keep the Platform safe, we verify the identity of Users:
 - **Liveness verification** runs on your device (using on-device face detection) and asks you to perform simple movements to confirm that a live person — not a photo or recording — is completing the check.
 - **No facial recognition.** We do not perform face matching or facial recognition, and we do not create or store biometric templates or face prints. The images and video you provide are stored as verification documents and reviewed to confirm your identity and eligibility.
 - **Who performs verification:** identity verification is performed in-house; we do not use a third-party identity verification vendor.
-- **Use, retention, and deletion:** verification materials are used only to verify identity and eligibility, prevent fraud, and comply with law. They are retained for the periods described in Section 10 and deleted when no longer needed, subject to legal retention obligations; you may request deletion as described in Section 12.''',
+- **Use, retention, and deletion:** verification materials are used only to verify identity and eligibility, prevent fraud, and comply with law. They are retained for the periods described in Section 11 and deleted when no longer needed, subject to legal retention obligations; you may request deletion as described in Section 13.''',
     ),
     LegalSection(
-      heading: '10. Retention',
+      heading: '11. Retention',
       body: r'''
 - **Trip records:** we retain individual ride (trip) records for at least one year after each ride is provided, as required by **Fla. Stat. § 627.748(15)(a)**.
 - **Driver records:** we retain individual driver records for at least one year after the driver's relationship with the Company ends, as required by **Fla. Stat. § 627.748(15)(b)**.
 - **Chat and support transcripts:** in-app trip chat messages and customer support transcripts (including AI support conversations) are retained for up to two (2) years and then deleted or anonymized, unless a longer period is required by a legal hold, an open safety investigation or dispute, or tax, accounting, or legal compliance obligations.
+- **Identity verification materials:** government ID images, selfies, and verification videos are retained while the account is active and deleted within 90 days after account closure or a failed verification, unless a longer period is required by law, an open investigation, or a dispute.
 - **Other information** may be retained for longer periods where needed for tax, accounting, insurance, safety, fraud prevention, dispute resolution, or legal compliance.
 
 These statutory minimums are a floor, not our full retention schedule. Beyond them, we retain personal information only for the periods needed for the purposes described in this Policy. We do not automatically delete all personal information on any fixed anniversary; deletion requests are honored subject to the retention obligations described in this Section.''',
     ),
     LegalSection(
-      heading: '11. Security',
+      heading: '12. Security',
       body: r'''
 We use administrative, technical, and physical safeguards designed to protect personal information, including: encryption in transit (TLS); application-layer encryption of Social Security numbers and taxpayer IDs at rest; password hashing; one-time passcode verification at login; role-based access controls; security audit logging; and rate limiting against abusive traffic.
 
 No system is perfectly secure. If we become aware of a breach affecting your personal information, we will notify you and the authorities as required by law.''',
     ),
     LegalSection(
-      heading: '12. Your Rights and Choices',
+      heading: '13. Your Rights and Choices',
       body: r'''
 Subject to applicable law, you may:
 
 - access and correct your account information in the app;
 - request a copy of your personal information;
-- request deletion of your account and personal information, subject to the retention obligations described in Section 10;
+- request deletion of your account and personal information, subject to the retention obligations described in Section 11;
 - control push, SMS, and email preferences in the app settings; and
 - control location and other device permissions in your device settings.
 
 To exercise these rights, contact **[PRIVACY EMAIL]**. To protect your account, we may need to verify your identity (for example, through the contact information registered to your account) before fulfilling a request. We respond to requests within the time required by applicable law.''',
     ),
     LegalSection(
-      heading: '13. Children',
+      heading: '14. Children',
       body: r'''
 The Platform is not directed to children under 18. Riders must be at least 18 years old to create an account. Minors may ride only when accompanied by an adult who requested the ride or is otherwise authorized to accompany the minor; unaccompanied minors are not permitted (see the Rider Terms of Service). We do not knowingly collect personal information directly from minors; trip information about an accompanied minor is collected only as part of the accompanying adult's trip record. If we become aware that a person under 18 has provided us personal information outside these circumstances, we will delete it.''',
     ),
     LegalSection(
-      heading: '14. Changes to This Policy',
+      heading: '15. Changes to This Policy',
       body: r'''
 We may update this Policy. Minor changes take effect when the updated version is posted in the app with a new effective date. For material changes, we will provide prominent advance notice in the app or by email and, where required by law, obtain your consent. Changes apply going forward; we will not apply changes retroactively except as permitted by law.''',
     ),
     LegalSection(
-      heading: '15. Contact',
+      heading: '16. Contact',
       body: r'''
 Privacy questions and requests: **[PRIVACY EMAIL]** or **[COMPANY ADDRESS]**.''',
     ),

@@ -1,6 +1,6 @@
 # Vehicle tiers — the spec, before the code
 
-Agreed 2026-08-01. Nothing below is implemented yet. This file exists so
+Agreed 2026-08-01. Classifier and dual-readers shipped; the vehicles.vehicle_type data migration is not run yet. This file exists so
 the work starts from a written rule rather than from memory.
 
 ## The four tiers
@@ -11,7 +11,7 @@ driver never picks it.
 
 | Tier | Vehicle | Years |
 |---|---|---|
-| **Standard** | Sedan or compact car | 2012 – 2020 |
+| **Standard** | Sedan or compact car | any year (fallback) |
 | **Compact** | SUV, 4–5 seats | 2015 – 2026 |
 | **Premium** | SUV, 6 seats | 2015 – 2026 |
 | **Black** | Suburban, Escalade, 7+ seats | 2022 – 2026 |
@@ -76,19 +76,21 @@ Order of work, and it matters:
    check all read `vehicle_tiers` now.
 3. Only then migrate `vehicles.vehicle_type` to the four new values.
    `backend/migrate_vehicle_tiers.py` is written and reports before it
-   writes. **Not run.** See the pay cut below.
+   writes. **Not run.**
 4. Both apps.
 
-### The migration contains a pay cut, and it needs a decision
+### The migration no longer changes anyone's split
 
-`premium` meant "a good sedan, driver rated 4.7+" and paid 65%. Premium
-now means a six-seat SUV, so those sedans reclassify to Standard and
-their drivers drop to **65% → 60%**. Nothing else loses: `suv_xl` goes
-68% → 70%, `comfort` → Standard is 60% either way.
+Under the flat 70/30 policy every tier pays the driver the same 70%, so
+reclassifying a car changes which requests it is offered, never its split
+of the fare. The pay cut this section used to flag — legacy `premium`
+sedans (then 65%) reclassifying to Standard (then 60%) — no longer
+exists: both sides of that move already pay 70%.
 
-The migration script refuses to apply while any row would take a cut,
-and prints every affected driver by name. Either grandfather them, or
-pass `--allow-pay-cuts` once it is a decision rather than a side effect.
+The migration script still reports every row it would rewrite before it
+writes, and still refuses to apply while any row would take a pay cut —
+under flat 70/30 that guard should never trip, but it stays as a safety
+net.
 
 ### Rating no longer moves a tier
 
@@ -137,8 +139,8 @@ the table becomes a fallback rather than the source.
 
 Nothing. The spec is complete and ready to build.
 
-- ~~Compact's commission.~~ **Decided:** 62% to the driver, 38% to the
-  platform. A new row; it matches no existing key.
+- ~~Compact's commission.~~ **Decided:** flat 70/30 like every tier: 70%
+  to the driver, 30% to the platform. A new row; it matches no existing key.
 - ~~Cars that qualify for nothing.~~ **Decided:** they fall into
   Standard. A 2011 sedan or a 2014 SUV still drives; it just never
   qualifies for a higher tier.
@@ -148,7 +150,7 @@ Nothing. The spec is complete and ready to build.
 A driver is offered exactly the work their own tier says, with one
 exception: a Black car also sees Premium requests. From the driver's
 seat — Black gets Black + Premium, Premium gets Premium only, Compact
-gets Compact only, Standard gets Standard only. This replaces the older
+gets Compact + Standard, Standard gets Standard only. This replaces the older
 "own tier or one rung up" ladder. The rule lives in
 `backend/services/vehicle_tiers.py` (`_REQUEST_RULE`) and is pinned by
 `backend/tests/test_vehicle_tiers.py`.

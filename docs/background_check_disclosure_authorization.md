@@ -26,8 +26,7 @@ agency:
 - **Vendor:** Checkr, Inc.
 - **Consumer reporting agency:** Checkr, Inc.
 - **Address:** 1 Montgomery Street, Suite 2400, San Francisco, CA 94104
-- **Telephone:** (844) 824-3257
-- **Toll-free telephone:** (844) 824-3257
+- **Telephone (toll-free):** (844) 824-3257
 
 The consumer reports obtained may include the following categories, as
 permitted by law:
@@ -42,9 +41,9 @@ permitted by law:
 - verification of licenses, documents, and eligibility information you
   provide.
 
-**Reports may be obtained before authorization and at least once every three
-years thereafter while the account remains active, or more frequently if
-required by law.**
+**Reports may be obtained before you are authorized to drive on the
+platform, and at least once every three years thereafter while the account
+remains active, or more frequently if required by law.**
 
 The CFPB document **"A Summary of Your Rights Under the Fair Credit
 Reporting Act"** is delivered to you together with this document during the
@@ -74,5 +73,3 @@ retained before acceptance. The Company records each acceptance with:
 - the device information; and
 - the account ID.
 
-**Driver name:** ___________________________
-**Date:** ___________________________

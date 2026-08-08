@@ -53,9 +53,9 @@ These Rider Terms of Service (the "Rider Terms") are entered into by and between
 
 5.3. **Tips.** Tips are optional and go 100% to your driver.
 
-5.4. **Cancellation fees.** You may cancel free of charge in the app at any time before a driver is assigned. After a driver is assigned, cancellations are handled through support: you may request a cancellation by contacting support in the app, and the request is reviewed and processed by the Company. A cancellation fee of **$5.00** may apply if the cancellation is completed more than two (2) minutes after driver assignment while the driver is en route to or has arrived at the pickup location. No cancellation fee applies if the Company cancels your trip or no driver is available.
+5.4. **Cancellation fees.** You may cancel your trip directly in the app at any time before the trip starts. Cancellation is free of charge at any time before a driver is assigned, and during the first two (2) minutes after driver assignment. After that free window, a cancellation fee of **$5.00** applies if the driver is en route to or has arrived at the pickup location. No cancellation fee applies if the Company cancels your trip or no driver is available.
 
-5.5. **Wait time and no-show fees.** A free waiting period applies at pickup, after which a per-minute wait fee accrues, as displayed live in the app: Sedan and Comfort — 2 free minutes, then $0.40 per minute; Premium — 3 free minutes, then $0.60 per minute; VIP — 5 free minutes, then $1.00 per minute; airport pickups — 10 free minutes, then $0.40 per minute. Accrued wait fees are added to your trip fare. If you do not appear within the applicable waiting period, the trip may be cancelled as a no-show and the wait fees accrued up to cancellation apply.
+5.5. **Wait time and no-show fees.** A free waiting period applies at pickup, after which a per-minute wait fee accrues, as displayed live in the app: Standard and Compact — 2 free minutes, then $0.40 per minute; Premium — 3 free minutes, then $0.60 per minute; Black and SUV XL — 5 free minutes, then $1.00 per minute; trips booked through the airport flow (to or from the airport) — 10 free minutes, then $0.40 per minute. Partial minutes round up. Accrued wait fees are added to your trip fare. If you do not appear within the applicable waiting period, the trip may be canceled as a no-show and the wait fees accrued up to cancellation apply.
 
 5.6. **Cleaning and damage fees.** The Company does not currently charge cleaning or damage fees. If such fees are introduced in the future, Riders will receive notice and, where required, an opportunity to accept updated Terms.
 
@@ -74,7 +74,7 @@ These Rider Terms of Service (the "Rider Terms") are entered into by and between
     LegalSection(
       heading: '8. Cancellations and Changes',
       body: r'''
-8.1. Before a driver is assigned, you may cancel your trip directly in the app, free of charge. After a driver is assigned, you may not cancel directly in the app: you must request the cancellation through support, and a cancellation fee may apply under Section 5.4. Accrued wait fees may apply under Section 5.5.
+8.1. You may cancel your trip directly in the app at any time before the trip starts. Cancellation is free of charge before a driver is assigned and during the free window after assignment; a cancellation fee may apply after that window under Section 5.4. Accrued wait fees may apply under Section 5.5.
 
 8.2. If no driver is available, your trip may be canceled without charge and any hold released.''',
     ),
@@ -145,7 +145,7 @@ These Rider Terms of Service (the "Rider Terms") are entered into by and between
       body: r'''
 17.1. TO THE MAXIMUM EXTENT PERMITTED BY LAW, THE COMPANY SHALL NOT BE LIABLE FOR INDIRECT, INCIDENTAL, SPECIAL, CONSEQUENTIAL, OR PUNITIVE DAMAGES.
 
-17.2. SUBJECT TO SECTION 17.3, THE COMPANY'S AGGREGATE LIABILITY ARISING OUT OF OR RELATING TO THESE RIDER TERMS SHALL NOT EXCEED THE AMOUNTS YOU PAID THROUGH THE PLATFORM IN THE THREE MONTHS BEFORE THE EVENT GIVING RISE TO THE CLAIM.
+17.2. SUBJECT TO SECTION 17.3, THE COMPANY'S AGGREGATE LIABILITY ARISING OUT OF OR RELATING TO THESE RIDER TERMS SHALL NOT EXCEED THE GREATER OF (i) THE AMOUNTS YOU PAID THROUGH THE PLATFORM IN THE THREE MONTHS BEFORE THE EVENT GIVING RISE TO THE CLAIM, OR (ii) ONE HUNDRED DOLLARS ($100).
 
 17.3. EXCLUSIONS. NOTHING IN THIS SECTION EXCLUDES OR LIMITS LIABILITY FOR: (a) DEATH OR PERSONAL INJURY; (b) DAMAGE TO PROPERTY; (c) GROSS NEGLIGENCE OR WILLFUL MISCONDUCT; (d) FRAUD; (e) LIABILITY THAT CANNOT LAWFULLY BE LIMITED OR WAIVED; OR (f) THE COMPANY'S INSURANCE OBLIGATIONS UNDER FLA. STAT. § 627.748.''',
     ),

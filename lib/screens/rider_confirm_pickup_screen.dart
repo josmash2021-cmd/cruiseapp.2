@@ -7,10 +7,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_compass/flutter_compass.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:url_launcher/url_launcher.dart';
 import '../config/page_transitions.dart';
 import '../models/lat_lng.dart';
 import '../services/haptic_service.dart';
+import '../services/masked_call_service.dart';
 import 'chat_screen.dart';
 
 import '../widgets/verified_avatar.dart';
@@ -737,32 +737,28 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
     );
   }
 
-  /// Dial the driver.
+  /// Dial the driver through the masked-call bridge: the app fetches a
+  /// short-lived masked contact (company number + extension) and dials
+  /// that, so neither side ever sees the other's real phone number.
   ///
   /// Every failure used to be a silent `return`: no number on the trip, or
-  /// launchUrl refusing, and the rider just tapped a button that did nothing
-  /// — indistinguishable from the app being frozen. launchUrl also reports
-  /// failure by RETURNING false, not by throwing, so the old try/catch could
-  /// not have caught the common case.
+  /// the dialer refusing, and the rider just tapped a button that did
+  /// nothing — indistinguishable from the app being frozen. Failures now
+  /// surface as a snackbar.
   Future<void> _callDriver() async {
     HapticService.lightImpact();
-    final phone = widget.driverPhone?.trim() ?? '';
-    if (phone.isEmpty) {
-      debugPrint('[ConfirmPickup] call: trip carries no driver phone');
+    final tripId = widget.tripId;
+    if (tripId == null) {
+      debugPrint('[ConfirmPickup] call: no trip id for masked call');
       _showCallFailed();
       return;
     }
-    try {
-      final ok = await launchUrl(
-        Uri.parse('tel:$phone'),
-        mode: LaunchMode.externalApplication,
-      );
-      if (!ok) {
-        debugPrint('[ConfirmPickup] call: no handler for tel:');
-        _showCallFailed();
-      }
-    } catch (e) {
-      debugPrint('[ConfirmPickup] call failed: $e');
+    final ok = await MaskedCallService.callCounterparty(
+      tripId: tripId,
+      role: 'rider',
+    );
+    if (!ok) {
+      debugPrint('[ConfirmPickup] masked call failed');
       _showCallFailed();
     }
   }

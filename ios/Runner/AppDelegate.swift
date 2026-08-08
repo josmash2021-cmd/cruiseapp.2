@@ -189,7 +189,7 @@ final class CruiseLiveActivityManager {
           content: .init(state: state, staleDate: nil)
         )
         self.activity = act
-        observeActivityPushToken(act)
+        self.observeActivityPushToken(act)
       } catch {
         // Denied in Settings, backgrounded, or system limit. Logged because
         // a start that quietly failed is why offer() later finds nothing
@@ -241,7 +241,7 @@ final class CruiseLiveActivityManager {
             attributes: CruiseActivityAttributes(),
             content: .init(state: state, staleDate: nil))
           self.activity = act
-          observeActivityPushToken(act)
+          self.observeActivityPushToken(act)
         } catch {
           NSLog("[LiveActivity] offer: no running activity and request "
             + "failed (backgrounded on iOS 16, denied in Settings, or "

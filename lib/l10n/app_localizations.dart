@@ -1035,7 +1035,7 @@ class S {
   String get rideInProgressSubtitle => _es
       ? 'Toca para continuar tu viaje actual'
       : 'Tap to resume your current ride';
-  String get chooseRide => _es ? 'Elige un viaje' : 'Choose a ride';
+  String get chooseRide => _es ? 'Elige un viaje' : 'Choose a Ride';
   String get pickYourOption => _es ? 'Elige tu opción' : 'Pick your option';
   String get homeLabel => _es ? 'Casa' : 'Home';
   String get workLabel => _es ? 'Trabajo' : 'Work';

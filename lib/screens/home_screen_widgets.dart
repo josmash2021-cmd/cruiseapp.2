@@ -1879,16 +1879,18 @@ extension _HomeScreenWidgets on _HomeScreenState {
                         // Anchoring it to the bottom instead pushed it onto
                         // the minutes — that is how they ended up behind
                         // the wheels — and left the card top-heavy.
-                        // 14 instead of 8: the render is far wider than it
-                        // is tall, so on a card this narrow the width is
-                        // what sets the car's size. Trimming the box height
-                        // would leave it exactly as big as it was.
+                        // Nearly edge to edge now (2 px margins, was 10):
+                        // the render is far wider than it is tall, so on a
+                        // card this narrow the width is what sets the car's
+                        // size — wider box, bigger car. The band is also a
+                        // touch taller (0.42, was 0.383) without touching
+                        // the title above or the wait line below.
                         Positioned(
-                          left: 10,
-                          right: 10,
-                          top: cardH * 0.295,
+                          left: 2,
+                          right: 2,
+                          top: cardH * 0.27,
                           child: SizedBox(
-                            height: cardH * 0.383,
+                            height: cardH * 0.42,
                             child: CarImage3D(
                               assetPath: 'assets/images/${v['image']}',
                               cacheWidth: 640,

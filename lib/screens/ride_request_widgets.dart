@@ -1608,7 +1608,8 @@ extension _RideRequestWidgets on _RideRequestScreenState {
               height: carH,
               width: double.infinity,
               child: FractionallySizedBox(
-                widthFactor: 0.88,
+                // Full card width (was 0.88) — bigger car, same box.
+                widthFactor: 1.0,
                 child: CarImage3D(
                   assetPath: carAsset,
                   cacheWidth: 640,

@@ -1340,16 +1340,39 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
   /// SmoothMotion, so the next write already carries a newer position than
   /// the one skipped — there is no information in the frames we discard.
   /// Same discipline the rider's chase camera uses (TrackingMapCamera).
+  ///
+  /// Almost true. The entry zoom ease (16 → 15.5 over 750 ms) is the one
+  /// place where a dropped frame IS visible: while the map is busy mounting,
+  /// every intermediate write was discarded and then the final one landed at
+  /// once — the camera "zoomed out a little, suddenly". So writes are not
+  /// dropped any more, they are coalesced: only the newest frame waits for
+  /// the channel, and it goes out the moment the previous write settles.
+  /// The burst queue stays impossible (one in flight, one pending, ever) and
+  /// the ease arrives as a glide instead of a pop.
+  mapbox.CameraOptions? _pendingCamWrite;
+
   void _writeCamera(mapbox.CameraOptions options) {
     final map = _map;
     if (map == null) return;
-    if (_camWriteBusy) return;
+    _pendingCamWrite = options;
+    if (_camWriteBusy) return; // the in-flight write flushes the newest
+    _flushCameraWrite(map);
+  }
+
+  void _flushCameraWrite(mapbox.MapboxMap map) {
+    final opts = _pendingCamWrite;
+    if (opts == null) return;
+    _pendingCamWrite = null;
     _camWriteBusy = true;
     try {
-      map.setCamera(options).then((_) {
+      // A write that never settles must not latch the gate: the timeout
+      // frees it, and the pending flush still carries the freshest frame.
+      map.setCamera(opts).timeout(const Duration(seconds: 2)).then((_) {
         _camWriteBusy = false;
+        _flushCameraWrite(map);
       }).catchError((Object _) {
         _camWriteBusy = false;
+        _flushCameraWrite(map);
       });
     } catch (_) {
       _camWriteBusy = false;

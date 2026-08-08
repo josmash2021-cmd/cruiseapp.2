@@ -57,6 +57,13 @@
 **Trip lifecycle backend**
 - `backend/routers/trips.py`: statuses canónicos + `_STATUS_ALIASES` + `_VALID_TRANSITIONS` (forward-only), comisiones `_COMMISSION_BY_TYPE`. `Trip.distance` = MILLAS, `Trip.duration` = MINUTOS; ambos NULL hasta que el viaje completa.
 
+**Pagos / holds (2026-08-08)**
+- Hold OBLIGATORIO del total estimado (capture_method=manual) antes de crear el viaje — inmediato (`/dispatch/request`) y agendado (`POST /trips`): sin PI válido (`requires_capture`) → 402 y no se crea nada (producción; testers/sandbox/`TEST_MODE_RIDER_IDS` con bypass).
+- `increment_authorization` extiende el hold cuando algo lo supera: surcharges al crear (dispatch.py), wait time al pasar a `in_trip` (trips.py ~L1445). Emisor sin soporte → warning + shortfall de `_charge_trip` de respaldo (no bloquea).
+- Agendados: el dispatcher (`main.py _scheduled_ride_dispatcher`) re-verifica el hold antes de despachar; expirado → re-autoriza off-session; declined → cancela SIN fee (`payment_declined`) + push.
+- Hold NO liberable por el rider: `payments.cancel/capture` dan 409 con viaje activo; la liberación solo por `_release_or_capture_fee_on_cancel` (fee $5 si driver en ruta >2 min).
+- Split al completar: 70/30 flat todas las tiers, ANTES del cobro; driver cobra por Connect (payout semanal / instant). ACH no soporta holds (documentado). Guardianes: `backend/tests/test_hold_total.py`, `test/ride_hold_guard_test.dart`.
+
 ---
 
 ## 🪤 Trampas y bugs silenciosos conocidos

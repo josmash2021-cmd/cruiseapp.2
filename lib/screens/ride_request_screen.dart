@@ -386,6 +386,15 @@ class _RideRequestScreenState extends State<RideRequestScreen>
   static const String _mapSurfaceOwner = 'RideRequest';
   bool _mapMounted = false;
 
+  /// The camera as the rider last left it, fed by onCameraChangeListener.
+  /// A recreated MapWidget boots from these (see cameraOptions) instead of
+  /// from the handoff or the GPS fix — platform-view teardown can no longer
+  /// "snap" the picker back to the rider's own location.
+  LatLng? _lastCamCenter;
+  double? _lastCamZoom;
+  double? _lastCamPitch;
+  double? _lastCamBearing;
+
   // ── Map ──
   mapbox.MapboxMap? _mapCtrl;
   mapbox.PointAnnotationManager? _pointAnnotMgr;
@@ -1214,19 +1223,25 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                   textureView: true,
                   styleUri: MapboxConfig.styleDark,
                   onMapLoadErrorListener: (err) => debugPrint('[RideRequest] Load error: ${err.message} (type: ${err.type})'),
-                  // Handoff camera: if the previous screen (map picker)
-                  // handed us its final view, boot in that exact state
-                  // so there's no visible teleport between the two maps.
+                  // Boot camera: the LAST place the rider left the map, not
+                  // the handoff or the GPS fix. PlatformViews get destroyed
+                  // and recreated (GPU pressure, the coordinator's handoff)
+                  // and a fresh map boots from cameraOptions — the picker's
+                  // "snap back to my location" was exactly that reset. With
+                  // the last known frame as the boot frame, a rebuild is
+                  // invisible no matter what causes it.
                   cameraOptions: mapbox.CameraOptions(
                     center: mapbox.Point(
                       coordinates: mapbox.Position(
-                        widget.handoffLng ?? _center!.longitude,
-                        widget.handoffLat ?? _center!.latitude,
+                        _lastCamCenter?.longitude ??
+                            widget.handoffLng ?? _center!.longitude,
+                        _lastCamCenter?.latitude ??
+                            widget.handoffLat ?? _center!.latitude,
                       ),
                     ),
-                    zoom: widget.handoffZoom ?? 15.5,
-                    bearing: widget.handoffBearing ?? 0.0,
-                    pitch: widget.handoffPitch ?? 45.0,
+                    zoom: _lastCamZoom ?? widget.handoffZoom ?? 15.5,
+                    bearing: _lastCamBearing ?? widget.handoffBearing ?? 0.0,
+                    pitch: _lastCamPitch ?? widget.handoffPitch ?? 45.0,
                   ),
                   onMapCreated: (ctrl) async {
                     // [CamSnap] hunt: a SECOND onMapCreated on this screen
@@ -1315,7 +1330,16 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                       } catch (_) {}
                     }
                   },
-                  onCameraChangeListener: (_) {
+                  onCameraChangeListener: (cam) {
+                    // Track the last live frame so a recreated MapWidget
+                    // boots HERE instead of at the handoff/GPS frame (the
+                    // picker's snap-back). Cheap: four assignments, no IPC.
+                    final c = cam.cameraState.center.coordinates;
+                    _lastCamCenter =
+                        LatLng(c.lat.toDouble(), c.lng.toDouble());
+                    _lastCamZoom = cam.cameraState.zoom;
+                    _lastCamPitch = cam.cameraState.pitch;
+                    _lastCamBearing = cam.cameraState.bearing;
                     // Throttled: this fires per camera frame, and each sync
                     // is two awaited pixelForCoordinate IPCs. Unthrottled it
                     // pushed ~120 round-trips/s into the channel DURING the

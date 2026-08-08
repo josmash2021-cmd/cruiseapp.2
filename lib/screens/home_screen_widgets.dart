@@ -1886,11 +1886,11 @@ extension _HomeScreenWidgets on _HomeScreenState {
                         // touch taller (0.42, was 0.383) without touching
                         // the title above or the wait line below.
                         Positioned(
-                          left: 2,
-                          right: 2,
-                          top: cardH * 0.27,
+                          left: 0,
+                          right: 0,
+                          top: cardH * 0.25,
                           child: SizedBox(
-                            height: cardH * 0.42,
+                            height: cardH * 0.46,
                             child: CarImage3D(
                               assetPath: 'assets/images/${v['image']}',
                               cacheWidth: 640,

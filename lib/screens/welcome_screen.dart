@@ -279,7 +279,7 @@ class _WelcomeScreenState extends State<WelcomeScreen>
                             ),
                             const TextSpan(text: ' or '),
                             TextSpan(
-                              text: 'sign in',
+                              text: 'Sign in',
                               style: TextStyle(
                                 color: _gold,
                                 fontWeight: FontWeight.w700,

@@ -6,6 +6,7 @@ import math
 import os
 import re
 import time
+import unicodedata
 from datetime import date, datetime, timedelta, timezone
 from functools import lru_cache
 
@@ -99,6 +100,30 @@ def _resolve_rider_display(trip, rider=None) -> tuple[str, str]:
         return name, phone
 
     return "Rider", ""
+
+
+# ═══════════════════════════════════════════════════════
+#  Rider ID name matching (OCR auto-verification)
+# ═══════════════════════════════════════════════════════
+
+def _name_tokens(text: str) -> set:
+    """Lowercase, strip accents and punctuation, split into tokens."""
+    normalized = unicodedata.normalize("NFKD", (text or "").lower())
+    ascii_only = "".join(c for c in normalized if not unicodedata.combining(c))
+    return set(re.findall(r"[a-z0-9]+", ascii_only))
+
+
+def _name_matches(account_name: str, ocr_text: str) -> bool:
+    """True when every account-name token appears as a token in the OCR text.
+
+    Order doesn't matter ("MARTINEZ, JHON" matches "Jhon Martinez") and the
+    OCR carries extra tokens (dates, address), so this is a subset check —
+    partial tokens never count ("jon" does not match "jhon").
+    """
+    name_tokens = _name_tokens(account_name)
+    if not name_tokens:
+        return False
+    return name_tokens <= _name_tokens(ocr_text)
 
 
 # ═══════════════════════════════════════════════════════

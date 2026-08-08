@@ -144,6 +144,9 @@ class User(Base):
     id_document_type = Column(String(30), nullable=True)
     verification_status = Column(String(20), default="none")
     verification_reason = Column(Text, nullable=True)
+    # Raw OCR text of the rider's scanned ID; matched against the account
+    # name by the auto-verification task after submit.
+    verification_ocr_text = Column(String(4000), nullable=True)
     id_photo_url = Column(Text, nullable=True)
     selfie_url = Column(Text, nullable=True)
     license_front_url = Column(Text, nullable=True)
@@ -925,6 +928,7 @@ async def migrate_add_columns(conn):
         ("users", "background_recheck_suspended", "BOOLEAN DEFAULT 0"),
         ("users", "apns_la_start_token", "VARCHAR(128)"),
         ("users", "apns_la_activity_token", "VARCHAR(128)"),
+        ("users", "verification_ocr_text", "VARCHAR(4000)"),
     ]
     for table, col, col_type in new_columns:
         try:
@@ -1024,6 +1028,7 @@ async def migrate_postgres(conn):
         ("users", "average_rating", "FLOAT DEFAULT 5.0"),
         ("users", "apns_la_start_token", "VARCHAR(128)"),
         ("users", "apns_la_activity_token", "VARCHAR(128)"),
+        ("users", "verification_ocr_text", "VARCHAR(4000)"),
         ("trips", "scheduled_at", "TIMESTAMP WITH TIME ZONE"),
         ("trips", "cancel_reason", "TEXT"),
         ("trips", "notes", "TEXT"),

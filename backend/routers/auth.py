@@ -2,6 +2,7 @@ import os, time, math, secrets, logging, json, re, base64, asyncio, collections,
 from datetime import datetime, timedelta, timezone
 from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException, Header, Request, Query, Body
+from pydantic import ValidationError
 import jwt
 from fastapi.responses import JSONResponse, FileResponse, Response
 from sqlalchemy import select, func, and_, text, update
@@ -13,7 +14,7 @@ from models.database import (
 )
 from models.schemas import (
     RegisterIn, CheckExistsIn, LoginIn, CompleteLoginIn, SocialAuthIn,
-    SendOtpIn, VerifyOtpIn, ApplyReferralIn,
+    SendOtpIn, VerifyOtpIn, ApplyReferralIn, VerifyRequestOcrIn,
 )
 from utils.security import (
     pwd, _create_token, _create_refresh_token, _create_login_token,
@@ -24,7 +25,7 @@ from utils.security import (
     revoke_token, _check_password_reset_rate, _record_password_reset,
     JWT_SECRET, JWT_ALGORITHM,
 )
-from utils.helpers import _safe_create_task, utc_now, _user_dict, _haversine, _trip_dict, _compute_user_rating, validate_driver_minimum_age
+from utils.helpers import _safe_create_task, utc_now, _user_dict, _haversine, _trip_dict, _compute_user_rating, validate_driver_minimum_age, _name_matches
 from utils.image_validation import validate_image_bytes
 from services.fcm_service import _send_fcm_push_async
 from services.email_sms_service import _send_email
@@ -2057,13 +2058,18 @@ async def submit_verification(request: Request, user: User = Depends(_get_curren
         if not db_user:
             raise HTTPException(404, "User not found")
         db_user.id_document_type = body.get("id_document_type", "id_card")
-        # Riders auto-approve on submission — dispatch review is the DRIVER
-        # gate (car, insurance, background check). A rider's license upload
-        # is the whole identity check, so making them wait for an operator
-        # click only stranded approved-to-be riders at a locked home screen.
+        # OCR text of the scanned ID — validated via Pydantic for type/length.
+        try:
+            ocr_in = VerifyRequestOcrIn(id_ocr_text=body.get("id_ocr_text"))
+        except ValidationError:
+            raise HTTPException(422, "id_ocr_text must be a string of at most 4000 characters")
+        # Riders stay pending on submission: the account name is matched
+        # against the ID's OCR text a few seconds later by _auto_verify_rider,
+        # which approves or rejects. Dispatch review remains the DRIVER gate.
         if db_user.role == "rider":
-            db_user.verification_status = "approved"
-            db_user.is_verified = True
+            db_user.verification_status = "pending"
+            db_user.is_verified = False
+            db_user.verification_ocr_text = ocr_in.id_ocr_text
         else:
             db_user.verification_status = "pending"
             db_user.is_verified = False
@@ -2089,6 +2095,11 @@ async def submit_verification(request: Request, user: User = Depends(_get_curren
     except Exception as e:
         logging.error("[Verify] DB error saving verification for user %s: %s", user.id, e)
         raise HTTPException(500, f"Error saving verification: {str(e)}")
+
+    # Rider auto-verification: resolve pending by matching the account name
+    # against the ID's OCR text (see _auto_verify_rider).
+    if db_user.role == "rider":
+        _safe_create_task(_auto_verify_rider(db_user.id), name=f"auto-verify-rider-{db_user.id}")
 
     # Save verification photos if provided (non-fatal - disk may be unavailable on Railway)
     saved_urls = {}
@@ -2263,21 +2274,60 @@ async def submit_verification(request: Request, user: User = Depends(_get_curren
         except Exception as e:
             logging.error("Firestore verification sync failed: %s", e)
 
-    # The rider auto-approval has to reach Firestore too — the app's listener
-    # watches the verifications collection, and the sync above wrote
-    # "pending". This batch flips all three collections to approved, the same
-    # write dispatch's own approval button makes.
-    if _HAS_FIRESTORE and db_user.role == "rider":
-        try:
-            firestore_sync.write_approval(db_user.id, "approve", role="rider")
-        except Exception as e:
-            logging.error("[Verify] rider auto-approval Firestore write failed: %s", e)
+    # The rider decision (approve/reject) reaches Firestore from
+    # _auto_verify_rider; the sync above already wrote "pending", which is
+    # the correct status until the OCR name check resolves.
 
     try:
         return _user_dict(db_user)
     except Exception as e:
         logging.error("[Verify] Error building user dict: %s", e)
         return {"ok": True, "verification_status": "pending"}
+
+
+# Seconds between a rider's verify-request submit and the OCR name check —
+# long enough for the OCR text to be committed, short enough that the app's
+# status polling shows "pending" only briefly.
+AUTO_VERIFY_DELAY_SECONDS = 10
+
+
+async def _auto_verify_rider(user_id: int):
+    """Resolve a rider's pending verification from the ID's OCR text.
+
+    Approves when the account name appears in the OCR; rejects with
+    'name_mismatch' when it doesn't and with 'ocr_unreadable' when no OCR
+    text was captured. A dispatch decision that landed while this task slept
+    always wins — pending is the only status it will touch.
+    """
+    await asyncio.sleep(AUTO_VERIFY_DELAY_SECONDS)
+    async with SessionLocal() as db:
+        result = await db.execute(select(User).where(User.id == user_id))
+        db_user = result.scalar_one_or_none()
+        if not db_user or db_user.verification_status != "pending":
+            return
+        ocr_text = (db_user.verification_ocr_text or "").strip()
+        account_name = f"{db_user.first_name or ''} {db_user.last_name or ''}".strip()
+        if not ocr_text:
+            db_user.verification_status = "rejected"
+            db_user.verification_reason = "ocr_unreadable"
+        elif _name_matches(account_name, ocr_text):
+            db_user.verification_status = "approved"
+            db_user.is_verified = True
+            db_user.verified_at = datetime.now(timezone.utc)
+            db_user.verification_reason = None
+        else:
+            db_user.verification_status = "rejected"
+            db_user.verification_reason = "name_mismatch"
+        action = "approve" if db_user.verification_status == "approved" else "reject"
+        reason = db_user.verification_reason
+        await db.commit()
+    # Same batch write dispatch's own approval button makes, so the app's
+    # Firestore listener flips with the database.
+    if _HAS_FIRESTORE:
+        try:
+            firestore_sync.write_approval(user_id, action, reason=reason, role="rider")
+        except Exception as e:
+            logging.error("[Verify] rider auto-verify Firestore write failed: %s", e)
 
 @router.get("/auth/verification-status", dependencies=[Depends(_verify_api_key)])
 async def verification_status(user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):

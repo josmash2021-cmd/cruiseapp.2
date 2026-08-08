@@ -1,7 +1,7 @@
 """Cruise App — Pydantic request/response schemas."""
 
 from typing import Optional
-from pydantic import BaseModel, field_validator, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 def _sanitize_check(value: str) -> str:
@@ -126,6 +126,11 @@ class OwnerLogin(BaseModel):
 
 class ApplyReferralIn(BaseModel):
     code: str
+
+
+class VerifyRequestOcrIn(BaseModel):
+    """OCR text of the scanned ID sent with POST /auth/verify-request."""
+    id_ocr_text: Optional[str] = Field(default=None, max_length=4000)
 
 
 # ═══════════════════════════════════════════════════════

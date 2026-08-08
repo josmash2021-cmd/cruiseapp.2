@@ -327,20 +327,45 @@ class _FaceLivenessScreenState extends State<FaceLivenessScreen>
   /// always names what the gate is still waiting for.
   _FaceFeedback _framingFor(Face face, CameraImage img) {
     final screen = _screen;
-    if (screen == null) return _FaceFeedback.noFace;
+    final preview = _cam?.value.previewSize;
+    if (screen == null || preview == null) return _FaceFeedback.noFace;
     final upright = uprightFrameSize(
       Size(img.width.toDouble(), img.height.toDouble()),
       _rotationDegrees(),
     );
-    final onScreen = mapImageRectToScreen(face.boundingBox, upright, screen);
+    // The box arrives in the STREAM frame, but the preview the person sees
+    // is the previewSize surface (FittedBox cover in _buildCameraFill) —
+    // typically 640×480 vs 1280×720. Map the box into the preview frame
+    // first or it reads ~1.33× too big and "too close" never clears.
+    final displayed = Size(preview.height, preview.width);
+    final onScreen = mapImageRectToScreen(
+      scaleBoxBetweenFrames(face.boundingBox, upright, displayed),
+      displayed,
+      screen,
+    );
     if (onScreen == null || onScreen.isEmpty) return _FaceFeedback.noFace;
     final oval = _ovalRect(screen);
+    _logFitGeometry(upright, displayed, onScreen.width / oval.width);
     if (faceFitsOval(onScreen, oval)) return _FaceFeedback.framed;
     final ratio = onScreen.width / oval.width;
     if (ratio < 0.42) return _FaceFeedback.tooFar;   // faceFitsOval's minimum
     if (ratio > 1.15) return _FaceFeedback.tooClose; // its maximum
     // The width is inside the gate, so the centring is what failed.
     return _FaceFeedback.offCenter;
+  }
+
+  DateTime _lastFitLog = DateTime.fromMillisecondsSinceEpoch(0);
+
+  /// One geometry line a second at most — the camera callback fires per
+  /// frame, and without this cap the log is unusable.
+  void _logFitGeometry(Size stream, Size displayed, double ratio) {
+    final now = DateTime.now();
+    if (now.difference(_lastFitLog) < const Duration(seconds: 1)) return;
+    _lastFitLog = now;
+    debugPrint('[FaceFit] stream=${stream.width}x${stream.height} '
+        'preview=${displayed.width}x${displayed.height} '
+        'rot=${_rotationDegrees()} ratio=${ratio.toStringAsFixed(2)} '
+        'feedback=$_feedback');
   }
 
   static Rect _ovalRect(Size screen) => Rect.fromCenter(

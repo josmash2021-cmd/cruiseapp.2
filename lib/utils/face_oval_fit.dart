@@ -58,6 +58,26 @@ Rect? mapImageRectToScreen(Rect box, Size upright, Size screen) {
   );
 }
 
+/// Rescales [box] from one upright frame ([from]) into another ([to]) of
+/// possibly different resolution or aspect.
+///
+/// Needed because the ML Kit stream frame and the preview frame the
+/// FittedBox draws are NOT the same surface: the stream typically runs at
+/// 640×480 (4:3) while the preview negotiates something like 1280×720
+/// (16:9). Mapping a stream-space box against preview-space dimensions
+/// inflates it by the resolution ratio (~1.33× in that pairing) and the
+/// face reads as permanently "too close".
+Rect scaleBoxBetweenFrames(Rect box, Size from, Size to) {
+  final sx = to.width / from.width;
+  final sy = to.height / from.height;
+  return Rect.fromLTRB(
+    box.left * sx,
+    box.top * sy,
+    box.right * sx,
+    box.bottom * sy,
+  );
+}
+
 /// Whether [face] (in screen coordinates) sits inside [oval] well enough to
 /// call it framed.
 ///

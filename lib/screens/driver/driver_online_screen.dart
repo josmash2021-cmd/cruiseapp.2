@@ -771,7 +771,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     // Taps that arrive while this screen is already alive (the iOS case —
     // the SSE stream is dead in the background, so without this the offer
     // only shows up when the poll happens to run).
-    deepLinkOfferNotifier.addListener(_applyInjectedOffer);
+    DriverOnlineScreen.deepLinkOfferNotifier.addListener(_applyInjectedOffer);
     // Once, here — not in the resume branch, which would stack another
     // listener on every return from the background.
     EarningsPrivacy.load();
@@ -1058,9 +1058,9 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   /// already mounted. Consumed once and cleared, so a stale offer cannot
   /// replay on a later rebuild.
   void _applyInjectedOffer() {
-    final offer = deepLinkOfferNotifier.value;
+    final offer = DriverOnlineScreen.deepLinkOfferNotifier.value;
     if (offer == null) return;
-    deepLinkOfferNotifier.value = null;
+    DriverOnlineScreen.deepLinkOfferNotifier.value = null;
     if (!mounted) return;
     // The route preview's animation flag can be stuck true from a sequence
     // the background paused mid-stroke — and while it is true every route
@@ -1161,7 +1161,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   void dispose() {
     DriverOnlineScreen.mountedCount--;
     WidgetsBinding.instance.removeObserver(this);
-    deepLinkOfferNotifier.removeListener(_applyInjectedOffer);
+    DriverOnlineScreen.deepLinkOfferNotifier.removeListener(_applyInjectedOffer);
     if (_networkListener != null) {
       NetworkService().onlineNotifier.removeListener(_networkListener!);
       _networkListener = null;

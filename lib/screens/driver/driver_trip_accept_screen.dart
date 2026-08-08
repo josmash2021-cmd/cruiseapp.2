@@ -3101,9 +3101,10 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
           null, null,
         );
         if (!mounted) return;
-        // Reduce zoom by 0.5 to ensure route is fully visible with padding
-        // (clamp() passes a NaN straight through, so it is checked too).
-        final targetZoom = ((cam.zoom ?? 13) - 0.5).clamp(10.0, 14.0);
+        // Moderate zoom, not street-tight: −1.2 below the exact fit (was
+        // −0.5) so the mini map breathes and the whole trip reads at a
+        // glance (clamp() passes a NaN straight through, so it is checked).
+        final targetZoom = ((cam.zoom ?? 13) - 1.2).clamp(9.0, 14.0);
         if (_cameraIsSane(cam.center, targetZoom)) {
           ctrl.setCamera(mapbox.CameraOptions(
             center: cam.center, zoom: targetZoom, bearing: prettBearing, pitch: 0.0,
@@ -3166,8 +3167,9 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
         null, null,
       );
       if (!mounted) return;
-      // Reduce zoom to ensure full route is visible with generous padding
-      final targetZoom = ((camFlat.zoom ?? 13) - 0.5).clamp(9.0, 14.0);
+      // Same moderate zoom as the resume branch: −1.2 below the exact fit,
+      // generous padding, the whole trip readable at a glance.
+      final targetZoom = ((camFlat.zoom ?? 13) - 1.2).clamp(9.0, 14.0);
       if (_cameraIsSane(camFlat.center, targetZoom)) {
         ctrl.setCamera(mapbox.CameraOptions(
           center: camFlat.center, zoom: targetZoom, bearing: prettBearing, pitch: 0.0,
@@ -3272,7 +3274,12 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
         await ctrl.style.setStyleLayerProperty(_carMgr!.id, 'icon-allow-overlap', true);
         await ctrl.style.setStyleLayerProperty(_carMgr!.id, 'icon-ignore-placement', true);
       } catch (_) {}
-      _carBytes ??= await CarIconLoader.loadUberBytes(rideType: widget.vehicleType);
+      // Always the black car on the mini map (user spec): comfort used to
+      // render the white sedan here. SUVs keep the black SUV body.
+      final carType = widget.vehicleType.toLowerCase().contains('suv')
+          ? 'suv'
+          : 'sedan';
+      _carBytes ??= await CarIconLoader.loadUberBytes(rideType: carType);
       if (!mounted || _carBytes == null || _carMgr == null) return;
       final p0 = safePoint(widget.driverPos.longitude, widget.driverPos.latitude);
       if (p0 == null) return;
@@ -3376,10 +3383,32 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     if (bestIdx < _eraseHintIdx) bestIdx = _eraseHintIdx;
     _eraseHintIdx = bestIdx;
     if (bestIdx >= pts.length - 1) return;
-    final geom = safeLineString(<LatLng>[car, ...pts.sublist(bestIdx + 1)]);
+    // The remaining line starts at the car's projection ON the road
+    // segment, not at the raw GPS fix: a straight car→next-vertex
+    // connector cuts the corner across the block and reads as "the line
+    // doesn't follow the streets".
+    final start = _projectOntoSegment(car, pts[bestIdx], pts[bestIdx + 1]);
+    final geom = safeLineString(<LatLng>[start, ...pts.sublist(bestIdx + 1)]);
     if (geom == null) return;
     annot.geometry = geom;
     mgr.update(annot).catchError((_) {});
+  }
+
+  /// [p] projected onto the a→b segment, in local meters. Keeps the eaten
+  /// route glued to the road instead of jumping to the car's raw fix.
+  LatLng _projectOntoSegment(LatLng p, LatLng a, LatLng b) {
+    final cosLat = math.cos(a.latitude * math.pi / 180.0);
+    final bx = (b.longitude - a.longitude) * 111320.0 * cosLat;
+    final by = (b.latitude - a.latitude) * 110540.0;
+    final px = (p.longitude - a.longitude) * 111320.0 * cosLat;
+    final py = (p.latitude - a.latitude) * 110540.0;
+    final len2 = bx * bx + by * by;
+    if (len2 <= 0) return a;
+    final t = ((px * bx + py * by) / len2).clamp(0.0, 1.0);
+    return LatLng(
+      a.latitude + (b.latitude - a.latitude) * t,
+      a.longitude + (b.longitude - a.longitude) * t,
+    );
   }
 
   /// Rider aboard: the pickup pin pops OUT, then a light travels the

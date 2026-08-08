@@ -121,6 +121,16 @@ class DriverOnlineScreen extends StatefulWidget {
   /// the ride: a tap can land forty seconds into a forty-five second window,
   /// and what is left of it is not enough for another round trip.
   final Map<String, dynamic>? deepLinkOffer;
+
+  /// Injection bridge for notification taps that land while THIS screen is
+  /// already on the stack. main.dart used to drop those taps ("the stream
+  /// has it") — true on Android, false on iOS, where the stream is dead in
+  /// the background: the driver opened Cruise to an empty "You're online"
+  /// and watched the offer arrive seconds later by poll. The tap now sets
+  /// this notifier and the mounted screen applies the offer at once.
+  static final ValueNotifier<Map<String, dynamic>?> deepLinkOfferNotifier =
+      ValueNotifier(null);
+
   const DriverOnlineScreen({
     super.key,
     this.initialPos,
@@ -758,6 +768,10 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
         if (mounted) _applyOffers([linked]);
       });
     }
+    // Taps that arrive while this screen is already alive (the iOS case —
+    // the SSE stream is dead in the background, so without this the offer
+    // only shows up when the poll happens to run).
+    deepLinkOfferNotifier.addListener(_applyInjectedOffer);
     // Once, here — not in the resume branch, which would stack another
     // listener on every return from the background.
     EarningsPrivacy.load();
@@ -1040,6 +1054,17 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     });
   }
 
+  /// The offer a notification tap is about, arriving while this screen is
+  /// already mounted. Consumed once and cleared, so a stale offer cannot
+  /// replay on a later rebuild.
+  void _applyInjectedOffer() {
+    final offer = deepLinkOfferNotifier.value;
+    if (offer == null) return;
+    deepLinkOfferNotifier.value = null;
+    if (!mounted) return;
+    _applyOffers([offer]);
+  }
+
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (!mounted) return;
@@ -1131,6 +1156,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   void dispose() {
     DriverOnlineScreen.mountedCount--;
     WidgetsBinding.instance.removeObserver(this);
+    deepLinkOfferNotifier.removeListener(_applyInjectedOffer);
     if (_networkListener != null) {
       NetworkService().onlineNotifier.removeListener(_networkListener!);
       _networkListener = null;

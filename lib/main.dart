@@ -32,6 +32,7 @@ import 'screens/driver/driver_pending_review_screen.dart';
 import 'services/api_service.dart';
 import 'services/map_controller_cache.dart';
 import 'services/notification_service.dart';
+import 'services/live_activity_service.dart';
 import 'services/security_service.dart';
 import 'services/user_session.dart';
 import 'services/local_data_service.dart';
@@ -278,16 +279,18 @@ void _openDriverRideOffer({required String offerId, required String tripId}) {
 
     final nav = _navigatorKey.currentState;
     if (nav == null) return;
-    // The screen that DREW this notification is still up.
-    //
-    // A warm-app tap can only come from the local notification, and the only
-    // thing that posts it is DriverOnlineScreen's own background branch — so
-    // that screen is on the stack by construction. Pushing a second copy
-    // buries the live one, SSE, poll and map included, and makes the new one
-    // rebuild all of it while the offer's 45 seconds run down. Returning to
-    // the driver is the whole job; its own stream already has the offer.
+    // The screen that DREW this notification is still up. Pushing a second
+    // copy buries the live one — but returning EMPTY is the iOS bug: the
+    // offer SSE stream is dead in the background there, so "its own stream
+    // has the offer" is only true on Android. Hand the offer to the mounted
+    // screen through the notifier and the card is up now, not whenever the
+    // poll happens to fire.
     if (DriverOnlineScreen.mountedCount > 0) {
-      debugPrint('[FCM] offer tap — driver screen already up, not stacking');
+      debugPrint('[FCM] offer tap — driver screen already up, injecting offer');
+      final offer = found?.offer;
+      if (offer != null) {
+        DriverOnlineScreen.deepLinkOfferNotifier.value = offer;
+      }
       return;
     }
     nav.push(PageRouteBuilder(
@@ -1075,6 +1078,12 @@ Future<void> heavyInit() async {
           return;
         }
         await NotificationService.init();
+        // Listen for Live Activity push tokens from app start, not only when
+        // the driver goes online. iOS emits the push-to-start token when the
+        // app launches; if nobody is listening (the driver merely RESUMED an
+        // online session, so startOnline() never ran), the token is dropped
+        // and the backend can never paint the offer on the island.
+        LiveActivityService.installPushTokenHook();
         // The third way into the offer: a tap on the notification the
         // background isolate showed, when that tap is what started the app.
         // FCM's own getInitialMessage knows only about the push it received,

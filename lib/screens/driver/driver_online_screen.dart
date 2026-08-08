@@ -1062,6 +1062,11 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     if (offer == null) return;
     deepLinkOfferNotifier.value = null;
     if (!mounted) return;
+    // The route preview's animation flag can be stuck true from a sequence
+    // the background paused mid-stroke — and while it is true every route
+    // draw is vetoed, so the injected card would come up WITHOUT its route.
+    // A tap is an explicit restart: clear it.
+    _isCardAnimating = false;
     _applyOffers([offer]);
   }
 

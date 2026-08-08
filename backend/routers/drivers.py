@@ -1685,8 +1685,55 @@ async def get_next_payout_date(user: User = Depends(_get_current_user), db: Asyn
         "stripe_connected": bool(drv and drv.stripe_connect_id),
     }
 
+def _push_stored_ssn_if_due(_stripe, cid: str, user) -> None:
+    """Hand Stripe the SSN we already collected at signup, when it asks.
+
+    Connected accounts periodically demand the representative's SSN
+    (``individual.ssn_last_4`` / ``individual.id_number`` in currently_due)
+    and PAUSE PAYOUTS over it — while the same number sits encrypted on the
+    user row from driver registration. Asking the driver to retype what we
+    already hold is how accounts end up paused for no reason. Best-effort
+    and quiet: a failure here blocks nothing else on the screen.
+    """
+    try:
+        if not user.ssn:
+            return
+        acct = _stripe.Account.retrieve(cid)
+        due = (acct.get("requirements") or {}).get("currently_due") or []
+        if "individual.ssn_last_4" not in due and "individual.id_number" not in due:
+            return
+        digits = re.sub(r"\D", "", decrypt_ssn(user.ssn) or "")
+        if len(digits) != 9:
+            return
+        individual = {}
+        if "individual.id_number" in due:
+            individual["id_number"] = digits
+        if "individual.ssn_last_4" in due:
+            individual["ssn_last_4"] = digits[-4:]
+        if individual:
+            _stripe.Account.modify(cid, individual=individual)
+            logging.info(
+                "[StripeKYC] pushed stored SSN to satisfy %s for user %s",
+                [d for d in due if "ssn" in d or "id_number" in d], user.id,
+            )
+    except Exception as e:
+        logging.warning("[StripeKYC] auto-SSN push failed for user %s: %s",
+                        getattr(user, "id", "?"), e)
+
+
 @router.get("/drivers/payout-methods", dependencies=[Depends(_verify_api_key)])
 async def get_payout_methods(user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
+    # The screen this feeds is where a driver learns Stripe wants their SSN.
+    # We already hold it — push it on the way through, so the requirement
+    # clears itself instead of pausing their payouts over a form we can
+    # answer for them.
+    if STRIPE_SECRET and user.stripe_connect_id and user.ssn:
+        try:
+            import stripe as _stripe
+            _stripe.api_key = STRIPE_SECRET
+            _push_stored_ssn_if_due(_stripe, user.stripe_connect_id, user)
+        except Exception as e:
+            logging.warning("[StripeKYC] payout-methods SSN check failed: %s", e)
     result = await db.execute(select(PayoutMethod).where(PayoutMethod.user_id == user.id))
     return [{"id": p.id, "method_type": p.method_type, "display_name": p.display_name, "is_default": p.is_default} for p in result.scalars().all()]
 
@@ -1764,31 +1811,52 @@ async def delete_payout_method(payout_id: int, user: User = Depends(_get_current
     # remaining row so the driver always has a default to fall back on.
     was_default = bool(pm.is_default)
 
-    # Best-effort: detach external_account from the Stripe Connect
-    # account if we know its ID. Failures are logged and ignored — the
-    # local row gets removed regardless so the driver can re-add.
+    # Detach the external_account from the Stripe Connect account when we
+    # know its ID. Not best-effort any more: deleting the local row while
+    # Stripe keeps the bank means the sync mirror resurrects it and the app
+    # just told the driver a lie ("Payout method removed" on a bank that
+    # still gets their money).
     sea = (pm.display_name or "")
-    if STRIPE_SECRET and user.stripe_connect_id:
+    if STRIPE_SECRET and user.stripe_connect_id and \
+            "[ext:" in sea and sea.endswith("]"):
+        ext_id = sea.split("[ext:")[1][:-1]
         try:
             import stripe as _stripe
             _stripe.api_key = STRIPE_SECRET
-            # Stripe external_account IDs are stored in display_name
-            # for our debit-card flow as a hidden suffix `[ext:ba_xxx]`
-            # or `[ext:card_xxx]`. Parse it out if present.
-            if "[ext:" in sea and sea.endswith("]"):
-                ext_id = sea.split("[ext:")[1][:-1]
-                _stripe.Account.delete_external_account(
-                    user.stripe_connect_id, ext_id
-                )
+            cid = user.stripe_connect_id
+            # Stripe refuses to delete the DEFAULT external account. If this
+            # one is it, hand the default to another destination first.
+            accts = _stripe.Account.list_external_accounts(
+                cid, limit=20,
+            ).get("data", [])
+            target = next((a for a in accts if a.get("id") == ext_id), None)
+            if target and target.get("default_for_currency"):
+                others = [a for a in accts if a.get("id") != ext_id]
+                if others:
+                    _stripe.Account.modify_external_account(
+                        cid, others[0]["id"], default_for_currency=True,
+                    )
+            _stripe.Account.delete_external_account(cid, ext_id)
         except Exception as e:
-            if "cannot delete the default external account" in str(e):
-                # Deleting it would leave the weekly payout with nowhere to
-                # land. Keep the local row and say so, instead of pretending
-                # the bank is gone while Stripe keeps paying it.
+            msg = str(e)
+            if "cannot delete the default external account" in msg:
+                # It is the only destination Stripe can see — deleting it
+                # would leave the weekly payout with nowhere to land. Keep
+                # the local row and say so, instead of pretending the bank
+                # is gone while Stripe keeps paying it.
                 raise HTTPException(
                     409,
                     "That bank is the default payout destination. Add another "
                     "payout method first, then remove this one.",
+                )
+            if "oauth_not_supported" in msg or "required permissions" in msg:
+                # Stripe-hosted account: only Stripe's own windows can touch
+                # its banks, and our mirror would re-add the row anyway.
+                raise HTTPException(
+                    409,
+                    "This bank is managed from Stripe's secure window and "
+                    "can't be removed here yet — contact support and we'll "
+                    "remove it for you.",
                 )
             logging.warning("[payout] external_account detach failed: %s", e)
 
@@ -2108,6 +2176,13 @@ async def add_bank_account_payout(
             _ssn4 = (body.get("ssn_last_4") or "").strip()
             if len(_ssn4) == 4 and _ssn4.isdigit() and _ssn4 != "0000":
                 individual["ssn_last_4"] = _ssn4
+            elif user.ssn:
+                # The form didn't carry it, but signup did — answer the
+                # requirement from the encrypted record instead of bouncing
+                # the bank attach for a number we already know.
+                _stored = re.sub(r"\D", "", decrypt_ssn(user.ssn) or "")
+                if len(_stored) == 9:
+                    individual["ssn_last_4"] = _stored[-4:]
             _mod = {}
             if individual:
                 _mod["individual"] = individual

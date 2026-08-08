@@ -2611,12 +2611,24 @@ class ApiService {
     final token = await getToken();
     if (token == null) throw ApiException(401, 'Not logged in');
 
-    await _client
+    final res = await _client
         .delete(
           Uri.parse('$_baseUrl/drivers/payout-methods/$payoutId'),
           headers: _jsonHeaders(token),
         )
         .timeout(const Duration(seconds: 8));
+    // The status code was never read: a 409 ("this bank is the default
+    // payout destination") came back, nobody threw, and the screen showed
+    // "Payout method removed" over a bank that was never removed.
+    if (res.statusCode >= 200 && res.statusCode < 300) return;
+    String detail = 'Could not remove the payout method';
+    try {
+      final body = jsonDecode(res.body);
+      if (body is Map && body['detail'] != null) {
+        detail = body['detail'].toString();
+      }
+    } catch (_) {}
+    throw ApiException(res.statusCode, detail);
   }
 
   /// Promote one payout method to default. Backend atomically demotes

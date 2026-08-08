@@ -1012,6 +1012,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
       owner: _mapSurfaceOwner,
       onRevoke: () async {
         if (!mounted || !_mapMounted) return;
+        debugPrint('[CamSnap] SURFACE REVOKED — map will rebuild at initial camera');
         _setState(() => _mapMounted = false);
         await surfaceRemoved();
       },
@@ -1020,6 +1021,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
       MapSurfaceCoordinator.instance.release(_mapSurfaceOwner);
       return;
     }
+    debugPrint('[CamSnap] acquire ok (mapMounted=true)');
     _setState(() => _mapMounted = true);
   }
 
@@ -1227,6 +1229,13 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                     pitch: widget.handoffPitch ?? 45.0,
                   ),
                   onMapCreated: (ctrl) async {
+                    // [CamSnap] hunt: a SECOND onMapCreated on this screen
+                    // means the platform view was destroyed and rebuilt —
+                    // which is exactly what resets the camera to the initial
+                    // frame (the rider's own location, tilt gone) and reads
+                    // as "the picker snapped back".
+                    debugPrint('[CamSnap] onMapCreated phase=${_ctrl.state.phase} '
+                        'pickerMode=${widget.pickerMode} mountedWas=$_mapMounted');
                     _mapCtrl = ctrl;
                     // A fresh surface starts with a clean write gate. The
                     // old one may have been revoked mid-write, leaving

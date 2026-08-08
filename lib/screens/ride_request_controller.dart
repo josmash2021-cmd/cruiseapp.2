@@ -507,6 +507,7 @@ extension _RideRequestController on _RideRequestScreenState {
           // it answers in milliseconds, and instant, so it does not glide —
           // it snaps.
           if (_gpsMayMoveCamera) {
+            debugPrint('[CamSnap] GPS last-known setCamera -> user location');
             _mapCtrl?.setCamera(mapbox.CameraOptions(
               center: mapbox.Point(coordinates: mapbox.Position(lastLl.longitude, lastLl.latitude)),
               zoom: 15.5,
@@ -535,6 +536,7 @@ extension _RideRequestController on _RideRequestScreenState {
       // pickup at street zoom — the "animation destroyed, map parked at the
       // pickup" report). Same rule as above and as the web branch.
       if (_gpsMayMoveCamera) {
+        debugPrint('[CamSnap] GPS fresh-fix flyTo -> user location');
         _mapCtrl?.flyTo(
           mapbox.CameraOptions(center: mapbox.Point(coordinates: mapbox.Position(ll.longitude, ll.latitude)), zoom: 15.5),
           mapbox.MapAnimationOptions(duration: 800),

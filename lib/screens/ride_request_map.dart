@@ -2228,7 +2228,7 @@ extension _RideRequestMap on _RideRequestScreenState {
     // Logged for the same hunt as _gpsMayMoveCamera: this is the other thing
     // that can fly the picker to the rider's own position, and it should only
     // ever run from a tap on the recenter button.
-    debugPrint('[RideRequest] _recenterMap() — phase=${_ctrl.state.phase} '
+    debugPrint('[CamSnap] _recenterMap() — phase=${_ctrl.state.phase} '
         'pickerMode=${widget.pickerMode}');
     // The rider explicitly asked us to re-frame — hand the camera back to
     // the automatic fits.

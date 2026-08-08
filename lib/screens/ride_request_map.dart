@@ -749,26 +749,38 @@ extension _RideRequestMap on _RideRequestScreenState {
     double targetZoom = 14.0;
     double targetCenterLat = (minLat + maxLat) / 2;
     double targetCenterLng = (minLng + maxLng) / 2;
-    try {
-      final cam = await _mapCtrl!.cameraForCoordinatesPadding(
-        [
-          mapbox.Point(coordinates: mapbox.Position(minLng, minLat)),
-          mapbox.Point(coordinates: mapbox.Position(maxLng, maxLat)),
-        ],
-        mapbox.CameraOptions(
-            pitch: _kCinematicPitch, bearing: _randomBearing),
-        mapbox.MbxEdgeInsets(top: 80, left: 50, bottom: cardInset, right: 50),
-        null,
-        null,
-      );
-      // Read values directly from CameraOptions — NO setCamera round-trip.
-      targetZoom = cam.zoom ?? 14.0;
-      if (cam.center != null) {
-        targetCenterLat = cam.center!.coordinates.lat.toDouble();
-        targetCenterLng = cam.center!.coordinates.lng.toDouble();
+    bool fitOk = false;
+    for (var attempt = 0; attempt < 2 && !fitOk; attempt++) {
+      try {
+        final cam = await _mapCtrl!.cameraForCoordinatesPadding(
+          [
+            mapbox.Point(coordinates: mapbox.Position(minLng, minLat)),
+            mapbox.Point(coordinates: mapbox.Position(maxLng, maxLat)),
+          ],
+          mapbox.CameraOptions(
+              pitch: _kCinematicPitch, bearing: _randomBearing),
+          mapbox.MbxEdgeInsets(top: 80, left: 50, bottom: cardInset, right: 50),
+          null,
+          null,
+        );
+        // Read values directly from CameraOptions — NO setCamera round-trip.
+        targetZoom = cam.zoom ?? 14.0;
+        if (cam.center != null) {
+          targetCenterLat = cam.center!.coordinates.lat.toDouble();
+          targetCenterLng = cam.center!.coordinates.lng.toDouble();
+        }
+        fitOk = true;
+      } catch (e) {
+        debugPrint('[Cinematic] final camera compute failed '
+            '(attempt ${attempt + 1}): $e');
+        if (!mounted) { _cinematicRunning = false; return; }
+        if (attempt == 0) {
+          // The one transient cause is the style/size not being ready on a
+          // fresh mount — retry once after a beat instead of falling through
+          // to the hardcoded frame below.
+          await Future.delayed(const Duration(milliseconds: 600));
+        }
       }
-    } catch (e) {
-      debugPrint('[Cinematic] final camera compute failed: $e');
     }
     if (!mounted) { _cinematicRunning = false; return; }
 
@@ -800,6 +812,17 @@ extension _RideRequestMap on _RideRequestScreenState {
       }
     } catch (_) {
       // Fallback keeps the old dropoff-centric defaults.
+    }
+
+    if (!fitOk) {
+      // No reliable fit, so no flight: hold the full-route overview the
+      // rider already had instead of animating to a hardcoded street zoom
+      // that cuts the dropoff off the screen — the "de golpe a la vista
+      // cerrada" report. Pins, route draw, labels and the end-of-sequence
+      // reframe still run, so a late-ready map still gets its proper frame.
+      targetZoom = startZoom;
+      targetCenterLat = startLat;
+      targetCenterLng = startLng;
     }
 
     // Small beat so the initial frame renders before animating.
@@ -920,7 +943,10 @@ extension _RideRequestMap on _RideRequestScreenState {
     // visual gain.
     if (mounted && _sheetHeightPx > 0 && _ctrl.state.route != null) {
       final botSafe = (MediaQuery.maybeOf(context)?.padding.bottom ?? 0.0);
-      if ((_cameraBottomInset(botSafe) - cardInset).abs() > 40) {
+      // !fitOk: the takeoff compute failed, so this reframe is not a
+      // correction but THE fit — always run it, whatever the inset delta.
+      if (!fitOk ||
+          (_cameraBottomInset(botSafe) - cardInset).abs() > 40) {
         _fitRoute(List<LatLng>.from(_ctrl.state.route!.points),
             preserveCamera: true);
       }

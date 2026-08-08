@@ -244,8 +244,10 @@ void handleOfferNotificationPayload(String? payload) {
 
 /// How long a tap waits for the offer lookup before the screen is pushed
 /// anyway. The tap is the driver's, not the network's: past this the screen
-/// goes up and its own poll finds the offer the way it always did.
-const Duration _offerLookupBudget = Duration(milliseconds: 1200);
+/// goes up and its own poll finds the offer the way it always did. Five
+/// seconds because the lookup now retries past the server's 1.5 s cache
+/// window instead of reading one stale empty list.
+const Duration _offerLookupBudget = Duration(milliseconds: 5000);
 
 /// What [_fetchPendingOffer] answers: the offer, and whether dispatch was
 /// reachable at all.
@@ -334,26 +336,55 @@ Future<_PendingOfferLookup> _fetchPendingOffer(
   String offerId,
   String tripId,
 ) async {
-  try {
-    final driverId = await ApiService.getCurrentUserId();
-    if (driverId == null) return (reachable: false, offer: null);
-    final pending = await ApiService.getDriverPendingOffers(driverId);
-    for (final o in pending) {
-      // In a pending row `offer_id` is the offer and `id` is the trip it was
-      // cut from — the row is the offer merged with _trip_dict, see
-      // backend/routers/dispatch.py. The push carries both ids, and either
-      // one names the ride the driver just tapped.
-      final matchesOffer =
-          offerId.isNotEmpty && o['offer_id']?.toString() == offerId;
-      final matchesTrip = tripId.isNotEmpty &&
-          (o['trip_id'] ?? o['id'])?.toString() == tripId;
-      if (matchesOffer || matchesTrip) return (reachable: true, offer: o);
+  // One question, three answers, each one logged by name. The offer tap was
+  // landing on "Finding trips" with the card nowhere, and every step in this
+  // chain used to fail silently — so nobody could tell WHICH one lost the
+  // ride: no user id, a server error, a still-empty list inside the 1.5 s
+  // pending-cache window, or an offer that genuinely expired.
+  var everAnswered = false;
+  for (var attempt = 0; attempt < 3; attempt++) {
+    if (attempt > 0) {
+      // The server's pending list sits behind a 1.5 s cache — a tap that
+      // lands inside it reads a stale EMPTY list while the offer exists.
+      // Two beats past it guarantees one fresh read.
+      await Future.delayed(const Duration(milliseconds: 1700));
     }
-    return (reachable: true, offer: null);
-  } catch (e) {
-    debugPrint('[FCM] offer $offerId lookup failed: $e');
-    return (reachable: false, offer: null);
+    try {
+      final driverId = await ApiService.getCurrentUserId();
+      if (driverId == null) {
+        debugPrint('[OfferTap] attempt ${attempt + 1}: NO driverId (session '
+            'not ready)');
+        continue;
+      }
+      final pending = await ApiService.getDriverPendingOffers(driverId);
+      everAnswered = true;
+      debugPrint('[OfferTap] attempt ${attempt + 1}: ${pending.length} '
+          'pending offer(s) for driver $driverId');
+      for (final o in pending) {
+        // In a pending row `offer_id` is the offer and `id` is the trip it
+        // was cut from — the row is the offer merged with _trip_dict, see
+        // backend/routers/dispatch.py. The push carries both ids, and either
+        // one names the ride the driver just tapped.
+        final matchesOffer =
+            offerId.isNotEmpty && o['offer_id']?.toString() == offerId;
+        final matchesTrip = tripId.isNotEmpty &&
+            (o['trip_id'] ?? o['id'])?.toString() == tripId;
+        if (matchesOffer || matchesTrip) return (reachable: true, offer: o);
+      }
+      // Reachable, but this offer is not among the pending ones. Asking
+      // again cannot help — it expired or went to the next driver.
+      if (attempt > 0 || pending.isNotEmpty) {
+        debugPrint('[OfferTap] offer $offerId trip $tripId NOT in pending — '
+            'already gone');
+        return (reachable: true, offer: null);
+      }
+    } catch (e) {
+      debugPrint('[OfferTap] attempt ${attempt + 1} failed: $e');
+    }
   }
+  // Three rounds, never an answer: that is a dead connection, not a taken
+  // ride — do not tell the driver someone else got it.
+  return (reachable: everAnswered, offer: null);
 }
 
 /// Say the offer is gone. The driver opened the app from a notification about

@@ -32,7 +32,6 @@ import '../../models/lat_lng.dart';
 import '../../map/map_surface_coordinator.dart';
 import '../../map/web_map_view.dart';
 import '../../config/api_keys.dart';
-import '../../navigation/car_icon_loader.dart';
 import '../../services/places_service.dart';
 import '../../services/resilient_position_stream.dart';
 import '../../utils/driver_location_settings.dart';
@@ -3038,11 +3037,14 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     // snaps start/end to the nearest road. Replacing them with the user's
     // raw coordinates creates off-road straight-line segments.
 
-    // Include driver position + pickup + dropoff + route in bounds so everything is visible.
+    // Include pickup + dropoff + route in bounds so both addresses fill the
+    // card. driverPos is deliberately OUT of the fold (user spec 2026-08-08):
+    // the route already covers both endpoints, the car always sits on or near
+    // it, and framing the driver's current fix pushed the zoom out.
     //
     // The old fold was NaN-blind: it seeded minLat/maxLat/minLng/maxLng with
     // the 90/-90/180/-180 sentinels, and every `<` / `>` against a NaN is
-    // false — so a single NaN in driverPos/pickup/dropoff/route left the
+    // false — so a single NaN in pickup/dropoff/route left the
     // sentinels in place and produced an INVERTED CoordinateBounds
     // (southwest 180/90, northeast -180/-90). cameraForCoordinateBounds
     // resolved that to a non-finite centre which went straight back through
@@ -3055,7 +3057,6 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     // covered the camera. Now: drop non-finite and out-of-range points
     // first, and seed the fold from a real point so no sentinel can leak.
     final allPoints = <LatLng>[
-      widget.driverPos,
       widget.pickupLatLng,
       _dropoffLL,
       ..._routePoints,
@@ -3101,10 +3102,10 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
           null, null,
         );
         if (!mounted) return;
-        // Moderate zoom, not street-tight: −1.2 below the exact fit (was
-        // −0.5) so the mini map breathes and the whole trip reads at a
-        // glance (clamp() passes a NaN straight through, so it is checked).
-        final targetZoom = ((cam.zoom ?? 13) - 1.2).clamp(9.0, 14.0);
+        // Moderate zoom in (user spec 2026-08-08): only −0.2 below the exact
+        // fit so the whole route fills the card, clamped to [9.0, 15.5]
+        // (clamp() passes a NaN straight through, so it is checked).
+        final targetZoom = ((cam.zoom ?? 13) - 0.2).clamp(9.0, 15.5);
         if (_cameraIsSane(cam.center, targetZoom)) {
           ctrl.setCamera(mapbox.CameraOptions(
             center: cam.center, zoom: targetZoom, bearing: prettBearing, pitch: 0.0,
@@ -3167,9 +3168,9 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
         null, null,
       );
       if (!mounted) return;
-      // Same moderate zoom as the resume branch: −1.2 below the exact fit,
-      // generous padding, the whole trip readable at a glance.
-      final targetZoom = ((camFlat.zoom ?? 13) - 1.2).clamp(9.0, 14.0);
+      // Same moderate zoom as the resume branch: −0.2 below the exact fit,
+      // the full route filling the card, clamped to [9.0, 15.5].
+      final targetZoom = ((camFlat.zoom ?? 13) - 0.2).clamp(9.0, 15.5);
       if (_cameraIsSane(camFlat.center, targetZoom)) {
         ctrl.setCamera(mapbox.CameraOptions(
           center: camFlat.center, zoom: targetZoom, bearing: prettBearing, pitch: 0.0,
@@ -3274,12 +3275,26 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
         await ctrl.style.setStyleLayerProperty(_carMgr!.id, 'icon-allow-overlap', true);
         await ctrl.style.setStyleLayerProperty(_carMgr!.id, 'icon-ignore-placement', true);
       } catch (_) {}
-      // Always the black car on the mini map (user spec): comfort used to
-      // render the white sedan here. SUVs keep the black SUV body.
-      final carType = widget.vehicleType.toLowerCase().contains('suv')
-          ? 'suv'
-          : 'sedan';
-      _carBytes ??= await CarIconLoader.loadUberBytes(rideType: carType);
+      // Same car PNG as the rider tracking map (user spec 2026-08-08 — was
+      // the Canvas-rendered black Uber car): same rideName→asset mapping as
+      // lib/map/tracking_map_car.dart, resized to maxDim 240 like there.
+      final rideName = widget.vehicleType.toLowerCase();
+      final carAsset =
+          rideName.contains('vip') || rideName.contains('suv') ||
+                  rideName.contains('suburban') || rideName.contains('luxury')
+              ? 'assets/images/car_suv.png'
+              : rideName.contains('sedan') || rideName.contains('premium') ||
+                      rideName.contains('fusion')
+                  ? 'assets/images/car_sedan.png'
+                  : 'assets/images/car_suv.png';
+      if (_carBytes == null) {
+        try {
+          final raw = await rootBundle.load(carAsset);
+          _carBytes = await _resizePngForMap(raw.buffer.asUint8List(), maxDim: 240);
+        } catch (e) {
+          debugPrint('[DriverTrip] mini-map car load failed ($carAsset): $e');
+        }
+      }
       if (!mounted || _carBytes == null || _carMgr == null) return;
       final p0 = safePoint(widget.driverPos.longitude, widget.driverPos.latitude);
       if (p0 == null) return;
@@ -3287,7 +3302,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
       _carAnnot = await _carMgr!.create(mapbox.PointAnnotationOptions(
         geometry: p0,
         image: _carBytes!,
-        iconSize: 0.30,
+        iconSize: 0.50,
         iconRotate: 0,
       ));
       _carGpsSub?.cancel();
@@ -3316,6 +3331,35 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     } catch (e) {
       debugPrint('[DriverTrip] mini-map car setup failed: $e');
     }
+  }
+
+  /// Resize a PNG to a sane map-icon size and return PNG bytes (not RGBA) —
+  /// the same helper the rider tracking map uses, duplicated here rather
+  /// than dragged across the tracking pipeline.
+  Future<Uint8List> _resizePngForMap(Uint8List pngBytes, {int maxDim = 160}) async {
+    final codec = await ui.instantiateImageCodec(pngBytes);
+    final frame = await codec.getNextFrame();
+    final img = frame.image;
+
+    final scale = maxDim / math.max(img.width, img.height);
+    final newW = (img.width * scale).round().clamp(1, maxDim);
+    final newH = (img.height * scale).round().clamp(1, maxDim);
+
+    final recorder = ui.PictureRecorder();
+    final canvas = Canvas(recorder, Rect.fromLTWH(0, 0, newW.toDouble(), newH.toDouble()));
+    canvas.drawImageRect(
+      img,
+      Rect.fromLTWH(0, 0, img.width.toDouble(), img.height.toDouble()),
+      Rect.fromLTWH(0, 0, newW.toDouble(), newH.toDouble()),
+      Paint()..filterQuality = FilterQuality.high,
+    );
+    final picture = recorder.endRecording();
+    final resized = await picture.toImage(newW, newH);
+    final byteData = await resized.toByteData(format: ui.ImageByteFormat.png);
+    resized.dispose();
+    picture.dispose();
+    img.dispose();
+    return byteData!.buffer.asUint8List();
   }
 
   void _ensureCarTicker() {
@@ -3594,10 +3638,10 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
           widget.pickupLatLng.latitude, iconBytes: pins[0]);
       c.addMarker('dropoff', _dropoffLL.longitude,
           _dropoffLL.latitude, iconBytes: pins[1]);
-      // Same content as the native fit: driver + pickup + dropoff + route,
-      // with extra bottom padding so the "N min trip" chip never covers it.
+      // Same content as the native fit: pickup + dropoff + route (driverPos
+      // stays out of the bounds on web too, user spec 2026-08-08), with
+      // extra bottom padding so the "N min trip" chip never covers it.
       c.fitBounds([
-        (lng: widget.driverPos.longitude, lat: widget.driverPos.latitude),
         (lng: widget.pickupLatLng.longitude, lat: widget.pickupLatLng.latitude),
         (lng: _dropoffLL.longitude, lat: _dropoffLL.latitude),
         ...pts.map((p) => (lng: p.longitude, lat: p.latitude)),

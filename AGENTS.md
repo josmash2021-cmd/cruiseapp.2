@@ -37,7 +37,7 @@
 - Encuadre onTrip (arreglado 2026-08-08): `_tripFramePoints()` usa `_tripRoutePts` = ruta COMPLETA pickup→dropoff, sembrada UNA vez en `_initRoute`. El traffic refresh (cada 2 min) y los reroutes solo reemplazan `_routePts` (pata restante, para dibujo/ETA) — JAMÁS `_tripRoutePts` o el frame colapsa a carro→dropoff (foto del zoom cerrado). Test guardián: `test/tracking_full_route_guard_test.dart`.
 
 **Driver online / ofertas / viaje**
-- `lib/screens/driver/driver_online_{screen,controller,map}.dart` — preview de oferta con fit a ruta (follow suprimido); tras aceptar, chase por frame zoom 17.5/pitch 55 = navegación turn-by-turn (intencional). `driver_trip_accept_screen.dart` — mini-mapa fit único; GPS solo mueve el carrito.
+- `lib/screens/driver/driver_online_{screen,controller,map}.dart` — preview de oferta con fit a ruta (follow suprimido); tras aceptar, chase por frame zoom 17.5/pitch 55 = navegación turn-by-turn (intencional). `driver_trip_accept_screen.dart` — mini-mapa fit único (pickup+dropoff+ruta, SIN driverPos; zoom −0.2 clamp [9,15.5]; carrito = PNG del tracking rider `car_suv/sedan.png` iconSize 0.50, spec 2026-08-08); GPS solo mueve el carrito. Guardián: `test/driver_trip_minimap_guard_test.dart`.
 
 **Registro driver — documentos + biometría (Issues 3 y 5, arreglados 2026-08-07)**
 - `lib/screens/driver/driver_signup_screen.dart` (3 pasos). Licencia Front/Back → `license_guidelines_screen.dart` (página de guías) → `license_scanner_screen.dart` (cámara + OCR). Seguro/registro de auto: `_showPickOptions` (cámara/galería).

@@ -638,9 +638,6 @@ class TrackingMapCamera {
     // glide there once with flyTo. A per-frame setCamera from an internal
     // position the rider has since dragged away from would snap.
     if (_followZoom == null || _followCenter == null) {
-      _followZoom = _followTargetZoom;
-      _followCenter = target;
-      _followSettleUntil = now.add(const Duration(milliseconds: 900));
       try {
         _map!
             .flyTo(
@@ -657,7 +654,19 @@ class TrackingMapCamera {
             )
             .catchError((Object e) {
           debugPrint('[TrackingMapCamera] follow flyTo failed: $e');
+          // Un-seed so the next frame retries the flyTo: leaving
+          // _followZoom/_followCenter marked after a failed flyTo makes the
+          // framer believe the seed glide already happened, and the camera
+          // never goes to the frame.
+          _followZoom = null;
+          _followCenter = null;
+          _followSettleUntil = null;
         });
+        // Seeded only once the flyTo went out without throwing — see the
+        // catchError above for the failure path.
+        _followZoom = _followTargetZoom;
+        _followCenter = target;
+        _followSettleUntil = now.add(const Duration(milliseconds: 900));
       } catch (e) {
         debugPrint('[TrackingMapCamera] follow flyTo error: $e');
       }

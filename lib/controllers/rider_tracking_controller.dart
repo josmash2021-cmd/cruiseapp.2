@@ -1392,6 +1392,10 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
         );
         if (result != null && result.durationSeconds != null && result.durationSeconds! > 0) {
           _routeDurationSec = result.durationSeconds;
+          // Remaining-leg geometry only: this feeds the erase-behind-the-car
+          // and the ETA projection. `_tripRoutePts` — the full pickup→dropoff
+          // polyline the camera frames against — is NOT touched, or the
+          // onTrip frame collapses to car→dropoff on every refresh.
           _routePts = result.points;
           _buildSegDist();
           // resetDraw: false — the line is already on screen and being

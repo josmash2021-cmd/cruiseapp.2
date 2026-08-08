@@ -1054,8 +1054,16 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     // The WHOLE trip, always (user spec 2026-08-08): the rider's map shows
     // the complete route — pickup to dropoff — for the entire ride. Framing
     // only what is left zoomed the camera into a slice of the road and cut
-    // the trip off both edges of the screen on long routes.
-    pts.addAll(_routePts);
+    // the trip off both edges of the screen on long routes. `_tripRoutePts`
+    // is the immutable full-trip polyline — traffic refreshes and off-route
+    // reroutes only replace `_routePts` (the remaining car→dropoff leg used
+    // for drawing/ETA), so framing must read the stored trip route. `_routePts`
+    // stays as the fallback for paths where the trip route never seeded.
+    if (_tripRoutePts.length >= 2) {
+      pts.addAll(_tripRoutePts);
+    } else {
+      pts.addAll(_routePts);
+    }
     return pts;
   }
 
@@ -2176,6 +2184,10 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     if (!mounted || spliced.length < 2) return;
 
     _routePts = spliced;
+    // `_tripRoutePts` is NOT updated on purpose: the onTrip frame uses the
+    // full pickup→dropoff polyline, and both endpoints are fixed, so framing
+    // with the slightly stale trip geometry is fine — replacing it with this
+    // car→dropoff splice would collapse the frame to the remaining leg.
     _buildSegDist();
     // resetDraw:false — the line is already on screen. Re-arming the
     // progressive draw would replay the whole "water flowing" reveal from

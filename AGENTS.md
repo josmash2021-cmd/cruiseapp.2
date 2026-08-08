@@ -34,6 +34,7 @@
 
 **Tracking rider (viaje en curso)**
 - `lib/screens/rider_tracking_screen.dart` + `lib/controllers/rider_tracking_controller.dart` (fases `_TrackPhase`) + `lib/widgets/tracking/tracking_map_view.dart` (fase arriving encuadra driver→pickup A PROPÓSITO — no "arreglarlo") + `lib/map/tracking_map_camera.dart` (chase por frame).
+- Encuadre onTrip (arreglado 2026-08-08): `_tripFramePoints()` usa `_tripRoutePts` = ruta COMPLETA pickup→dropoff, sembrada UNA vez en `_initRoute`. El traffic refresh (cada 2 min) y los reroutes solo reemplazan `_routePts` (pata restante, para dibujo/ETA) — JAMÁS `_tripRoutePts` o el frame colapsa a carro→dropoff (foto del zoom cerrado). Test guardián: `test/tracking_full_route_guard_test.dart`.
 
 **Driver online / ofertas / viaje**
 - `lib/screens/driver/driver_online_{screen,controller,map}.dart` — preview de oferta con fit a ruta (follow suprimido); tras aceptar, chase por frame zoom 17.5/pitch 55 = navegación turn-by-turn (intencional). `driver_trip_accept_screen.dart` — mini-mapa fit único; GPS solo mueve el carrito.

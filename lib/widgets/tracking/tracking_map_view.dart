@@ -1051,24 +1051,12 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
   List<LatLng> _tripFramePoints() {
     final pts = <LatLng>[widget.dropoffLatLng];
     if (_animPos.latitude != 0 || _animPos.longitude != 0) pts.add(_animPos);
-    pts.addAll(_remainingRoutePts());
+    // The WHOLE trip, always (user spec 2026-08-08): the rider's map shows
+    // the complete route — pickup to dropoff — for the entire ride. Framing
+    // only what is left zoomed the camera into a slice of the road and cut
+    // the trip off both edges of the screen on long routes.
+    pts.addAll(_routePts);
     return pts;
-  }
-
-  /// The part of the route the car has not driven yet. Road already behind
-  /// it only drags the frame backwards and keeps the whole trip zoomed out
-  /// long after the rider has stopped caring about the pickup.
-  List<LatLng> _remainingRoutePts() {
-    if (_routePts.isEmpty) return const <LatLng>[];
-    // _segDist is rebuilt with _routePts; if they ever disagree, framing the
-    // whole route is wrong-but-safe, while indexing into it is a crash.
-    if (_segDist.length != _routePts.length || _traveledM <= 0) return _routePts;
-    int i = 0;
-    while (i < _segDist.length && _segDist[i] < _traveledM) {
-      i++;
-    }
-    if (i >= _routePts.length) return <LatLng>[_routePts.last];
-    return _routePts.sublist(i);
   }
 
   double _hav(LatLng a, LatLng b) {

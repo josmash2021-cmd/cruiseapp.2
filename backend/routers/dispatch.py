@@ -782,18 +782,16 @@ async def _send_offer_to_driver(
         push_data["minutes"] = minutes_str
     if trip.pickup_address:
         push_data["pickup_address"] = trip.pickup_address
-    _safe_create_task(_send_fcm_push_async(
-        driver.fcm_token or "",
-        title="New Ride Offer",
-        body=offer_body,
-        data=push_data,
-        is_offer=True,
-    ))
-
-    # The iOS Live Activity copy. FCM cannot repaint — much less START — a
-    # Live Activity on a backgrounded or killed app; only Apple's
-    # push-type:liveactivity channel can. Without this leg the Dynamic
-    # Island card was a foreground-only decoration.
+    # Outside the app the offer shows up in exactly ONE place.
+    #
+    # iPhone with the Live Activity build (it has registered its APNs
+    # channels): the Dynamic Island / lock-screen card IS the notification —
+    # an FCM banner on top of it is the same offer saying itself twice.
+    #
+    # Android and older iOS builds (no channel registered yet): the FCM
+    # heads-up banner, as before. The switch is per-driver and automatic —
+    # the day the new build registers its tokens, banners stop and the card
+    # takes over; nothing to flip by hand.
     if driver.apns_la_activity_token or driver.apns_la_start_token:
         _safe_create_task(_send_live_activity_offer(
             driver,
@@ -801,6 +799,14 @@ async def _send_offer_to_driver(
             per_hour=per_hour_str,
             miles=miles_str,
             minutes=minutes_str,
+        ))
+    else:
+        _safe_create_task(_send_fcm_push_async(
+            driver.fcm_token or "",
+            title="New Ride Offer",
+            body=offer_body,
+            data=push_data,
+            is_offer=True,
         ))
 
     return offer

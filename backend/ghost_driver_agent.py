@@ -29,6 +29,30 @@ WARN_AFTER_MINUTES = 15        # Send "still driving?" push after this
 OFFLINE_AFTER_MINUTES = 20     # Force offline after this
 SCAN_INTERVAL_SECONDS = 90     # How often to scan
 MIN_MOVEMENT_METERS = 50       # Movement threshold to count as "active"
+
+# Remote switch for the "Te hemos desconectado" banner (app_config row
+# ghost_offline_push_enabled, text boolean). Cached 60 s so the scan loop
+# costs at most one tiny read per minute, and a DB hiccup keeps the last
+# known answer instead of failing open.
+_flag_cache = {"value": False, "at": 0.0}
+
+
+async def _ghost_offline_push_enabled(db) -> bool:
+    now = time.time()
+    if now - _flag_cache["at"] < 60:
+        return _flag_cache["value"]
+    try:
+        from models.database import AppConfig
+        r = await db.execute(
+            select(AppConfig.value).where(
+                AppConfig.key == "ghost_offline_push_enabled"))
+        v = r.scalar_one_or_none()
+        _flag_cache["value"] = (v or "").strip().lower() in (
+            "1", "true", "yes", "on")
+    except Exception:
+        pass  # keep the last known answer
+    _flag_cache["at"] = now
+    return _flag_cache["value"]
 STALE_LOCATION_HOURS = 24      # Ignore drivers with location older than this
 
 # ── Ghost recovery phases (driver has an ACTIVE trip) ─────────────────
@@ -215,8 +239,11 @@ class GhostDriverAgent:
                         (now - last_active).total_seconds() / 60,
                     )
 
-                    # Push notification: you've been set offline
-                    if driver.fcm_token:
+                    # Push notification: you've been set offline.
+                    # Remote kill-switch — product asked for this banner OFF,
+                    # re-activable with zero redeploy: set app_config
+                    # ghost_offline_push_enabled = 'true'.
+                    if driver.fcm_token and await _ghost_offline_push_enabled(db):
                         self._send_offline_push(driver)
 
                     # Sync to Firestore

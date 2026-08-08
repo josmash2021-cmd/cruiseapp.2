@@ -1261,6 +1261,18 @@ class UnmatchedTripRetryAgent:
                     key=lambda d: _haversine(trip.pickup_lat, trip.pickup_lng, d.lat or 0, d.lng or 0),
                 )
                 assigned = drivers_sorted[0]
+
+                # Selection filtered on is_online, but "go offline" is one
+                # tap and this scan runs on a timer — re-read the flag at
+                # send time, the same rule dispatch's _send_offer_to_driver
+                # follows. An offline phone must never ring with an offer.
+                still_online = (
+                    await db.execute(
+                        select(User.is_online).where(User.id == assigned.id))
+                ).scalar()
+                if not still_online:
+                    continue
+
                 offer = DispatchOffer(trip_id=trip.id, driver_id=assigned.id)
                 db.add(offer)
                 await db.commit()
@@ -1307,14 +1319,40 @@ class UnmatchedTripRetryAgent:
                 except Exception:
                     pass
 
-                # FCM push
-                if assigned.fcm_token:
+                # Push — same one-place rule as dispatch: an iPhone with its
+                # Live Activity channels registered gets the island card and
+                # NO banner; everyone else gets the FCM heads-up. The body
+                # carries the numbers (fare · $/hr · mi · min), same as
+                # dispatch's offer push — the generic "open Cruise to accept"
+                # copy told the driver nothing worth waking up for.
+                fare_str = f"${estimated_driver_fare:.2f}"
+                minutes = int(trip.duration) if trip.duration else 0
+                miles = float(trip.distance) if trip.distance else 0.0
+                per_hour_str = (f"${estimated_driver_fare / (minutes / 60):.2f}/hr"
+                                if minutes > 0 else None)
+                miles_str = f"{miles:.1f} mi" if miles > 0 else None
+                minutes_str = f"{minutes} min" if minutes > 0 else None
+                offer_body = " · ".join(
+                    s for s in (fare_str, per_hour_str, miles_str, minutes_str) if s
+                )
+                if assigned.apns_la_activity_token or assigned.apns_la_start_token:
+                    from routers.dispatch import _send_live_activity_offer
+                    from utils.helpers import _safe_create_task
+                    _safe_create_task(_send_live_activity_offer(
+                        assigned,
+                        fare=fare_str,
+                        per_hour=per_hour_str,
+                        miles=miles_str,
+                        minutes=minutes_str,
+                    ))
+                elif assigned.fcm_token:
                     try:
                         _send_fcm_push(
                             assigned.fcm_token,
                             title="New Ride Offer",
-                            body="A rider needs a ride \u2014 open Cruise to accept.",
+                            body=offer_body,
                             data={"type": "new_offer", "trip_id": str(trip.id), "offer_id": str(offer.id)},
+                            is_offer=True,
                         )
                     except Exception:
                         pass

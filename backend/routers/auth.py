@@ -4,7 +4,7 @@ from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException, Header, Request, Query, Body
 import jwt
 from fastapi.responses import JSONResponse, FileResponse, Response
-from sqlalchemy import select, func, and_, text
+from sqlalchemy import select, func, and_, text, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from models.database import (
@@ -88,6 +88,16 @@ async def save_fcm_token(
     user: User = Depends(_get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
+    # An FCM token names a DEVICE, not an account. Two accounts on one phone
+    # (rider + driver is the normal case) used to keep the same token on
+    # both rows — and every push addressed to the rider landed on the phone
+    # while the DRIVER was signed in ("Driver Found!" on the driver's own
+    # trip screen). Claim it: the token lives on exactly one row.
+    await db.execute(
+        update(User)
+        .where(User.fcm_token == token, User.id != user.id)
+        .values(fcm_token=None)
+    )
     user.fcm_token = token
     await db.commit()
     return {"ok": True}
@@ -99,8 +109,17 @@ async def logout(
     request: Request,
     authorization: str = Header(None),
     user: User = Depends(_get_current_user),
+    db: AsyncSession = Depends(get_db),
 ):
     """Blacklist the current JWT so it cannot be used after logout."""
+    # Signing out also releases this phone's push token: after logout the
+    # app has no session, and a push that still arrives would open into a
+    # signed-out app — or worse, onto the next account that signs in here.
+    try:
+        user.fcm_token = None
+        await db.commit()
+    except Exception:
+        pass  # never block a logout on token cleanup
     if not authorization or not authorization.startswith("Bearer "):
         return {"ok": True}
     token = authorization.split(" ")[1]

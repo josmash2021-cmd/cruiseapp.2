@@ -1349,8 +1349,6 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
   /// the channel, and it goes out the moment the previous write settles.
   /// The burst queue stays impossible (one in flight, one pending, ever) and
   /// the ease arrives as a glide instead of a pop.
-  mapbox.CameraOptions? _pendingCamWrite;
-
   void _writeCamera(mapbox.CameraOptions options) {
     final map = _map;
     if (map == null) return;

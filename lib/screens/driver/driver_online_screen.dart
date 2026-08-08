@@ -564,6 +564,12 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   /// A camera write is crossing the platform channel. See _writeCamera.
   bool _camWriteBusy = false;
 
+  /// The newest camera frame waiting for the channel. See _writeCamera —
+  /// coalescing keeps this to one pending frame, never a queue. Lives here
+  /// and not in the controller extension because extensions cannot declare
+  /// instance fields (web build caught it).
+  mapbox.CameraOptions? _pendingCamWrite;
+
   /// The camera as Mapbox last reported it, pushed to us by
   /// onCameraChangeListener so the projection never has to ask for it.
   mapbox.CameraState? _onlineCamState;

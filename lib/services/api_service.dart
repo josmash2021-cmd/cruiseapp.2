@@ -2209,6 +2209,28 @@ class ApiService {
   /// every driver row holding fcm_token NULL — no push can reach any phone —
   /// and nothing anywhere said why. The bool lets callers retry; the
   /// distinct log lines say which of the three failure modes happened.
+  /// Register the iOS Live Activity push channel with the backend.
+  /// kind: 'push_to_start' (starts the island on a killed app) or 'activity'
+  /// (updates the running one). Empty token clears the field server-side.
+  static Future<void> registerLiveActivityToken({
+    required String kind,
+    required String token,
+  }) async {
+    try {
+      final authToken = await getToken();
+      if (authToken == null) return; // no session yet — next rotation retries
+      await _client
+          .post(
+            Uri.parse('$_baseUrl/drivers/live-activity-token'),
+            headers: _jsonHeaders(authToken),
+            body: jsonEncode({'kind': kind, 'token': token}),
+          )
+          .timeout(const Duration(seconds: 8));
+    } catch (e) {
+      debugPrint('[ApiService] live-activity token save failed: $e');
+    }
+  }
+
   static Future<bool> saveFcmToken(String fcmToken) async {
     try {
       final token = await getToken();

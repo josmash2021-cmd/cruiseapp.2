@@ -2587,6 +2587,33 @@ async def get_driver_stats(driver_id: int, user: User = Depends(_get_current_use
 
 
 # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+@router.post("/drivers/live-activity-token", dependencies=[Depends(_verify_api_key)])
+async def register_live_activity_token(
+    payload: dict = Body(...),
+    user: User = Depends(_get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Store the iOS Live Activity push channels for this device.
+
+    kind=push_to_start — the broadcast token that can START an activity on a
+    killed app (iOS 17.2+). kind=activity — the running activity's own
+    channel, used for offer updates. An empty token clears the field (the
+    app sends that when the activity ends or the island is turned off).
+    """
+    kind = (payload.get("kind") or "").strip() if isinstance(payload, dict) else ""
+    token = (payload.get("token") or "").strip() if isinstance(payload, dict) else ""
+    if kind not in ("push_to_start", "activity"):
+        raise HTTPException(400, "kind must be push_to_start or activity")
+    if len(token) > 128:
+        raise HTTPException(400, "token too long")
+    if kind == "push_to_start":
+        user.apns_la_start_token = token or None
+    else:
+        user.apns_la_activity_token = token or None
+    await db.commit()
+    return {"ok": True}
+
+
 #  VEHICLE TIER AUTO-CLASSIFICATION
 # ═══════════════════════════════════════════════════════════════
 

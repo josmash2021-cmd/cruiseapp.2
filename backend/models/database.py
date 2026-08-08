@@ -160,6 +160,14 @@ class User(Base):
     phone_changes_count = Column(Integer, default=0)
     stripe_connect_id = Column(String(100), nullable=True)
     fcm_token = Column(String(500), nullable=True)
+    # iOS Live Activity (ActivityKit) push channels. `apns_la_start_token` is
+    # the broadcast push-to-start token (iOS 17.2+); `apns_la_activity_token`
+    # is the running activity's own push token. The backend uses them to put
+    # a ride offer on the Dynamic Island / lock screen while the driver is
+    # in another app or the app is killed — a plain FCM push cannot repaint
+    # a Live Activity.
+    apns_la_start_token = Column(String(128), nullable=True)
+    apns_la_activity_token = Column(String(128), nullable=True)
     # Unique referral code shown to the rider (e.g. "JHON-A4F9"). Used by
     # invitees during signup to credit the referrer once they qualify.
     referral_code = Column(String(20), nullable=True, unique=True, index=True)
@@ -915,6 +923,8 @@ async def migrate_add_columns(conn):
         ("users", "last_background_check_at", "DATETIME"),
         ("users", "next_background_check_due_at", "DATETIME"),
         ("users", "background_recheck_suspended", "BOOLEAN DEFAULT 0"),
+        ("users", "apns_la_start_token", "VARCHAR(128)"),
+        ("users", "apns_la_activity_token", "VARCHAR(128)"),
     ]
     for table, col, col_type in new_columns:
         try:
@@ -1012,6 +1022,8 @@ async def migrate_postgres(conn):
         ("users", "background_recheck_suspended", "BOOLEAN DEFAULT FALSE"),
         ("users", "active_session_id", "VARCHAR(64)"),
         ("users", "average_rating", "FLOAT DEFAULT 5.0"),
+        ("users", "apns_la_start_token", "VARCHAR(128)"),
+        ("users", "apns_la_activity_token", "VARCHAR(128)"),
         ("trips", "scheduled_at", "TIMESTAMP WITH TIME ZONE"),
         ("trips", "cancel_reason", "TEXT"),
         ("trips", "notes", "TEXT"),

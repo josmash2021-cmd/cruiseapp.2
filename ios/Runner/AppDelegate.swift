@@ -65,6 +65,16 @@ import ActivityKit
         result(FlutterMethodNotImplemented)
       }
     }
+
+    // Push channels for the offer card on a backgrounded/killed app. The
+    // tokens flow native → Dart → backend; dispatch then paints the Live
+    // Activity directly over APNs (FCM cannot touch a Live Activity).
+    if #available(iOS 16.2, *) {
+      CruiseLiveActivityManager.shared.onPushToken = { kind, token in
+        channel.invokeMethod("pushToken", arguments: ["kind": kind, "token": token])
+      }
+      CruiseLiveActivityManager.shared.startPushToStartObserver()
+    }
   }
 
   // Show notification banner/alert/sound even when app is open
@@ -106,6 +116,44 @@ final class CruiseLiveActivityManager {
   static let shared = CruiseLiveActivityManager()
   private var activity: Activity<CruiseActivityAttributes>?
 
+  /// Called with ("push_to_start" | "activity", hexToken) whenever Apple
+  /// hands us a Live Activity push channel. Set by the AppDelegate, which
+  /// forwards it to Dart for registration with the backend.
+  var onPushToken: ((String, String) -> Void)?
+  private var pushToStartObserverStarted = false
+
+  private func hex(_ data: Data) -> String {
+    data.map { String(format: "%02x", $0) }.joined()
+  }
+
+  /// The broadcast channel that can START a Live Activity on a killed app.
+  /// Emits the current token on subscribe, and every rotation after.
+  func startPushToStartObserver() {
+    if pushToStartObserverStarted { return }
+    pushToStartObserverStarted = true
+    if #available(iOS 17.2, *) {
+      Task {
+        for await data in Activity<CruiseActivityAttributes>.pushToStartTokenUpdates {
+          let t = hex(data)
+          NSLog("[LiveActivity] push-to-start token refreshed (%d bytes)", data.count)
+          onPushToken?("push_to_start", t)
+        }
+      }
+    }
+  }
+
+  /// The running activity's own channel — used for offer updates.
+  private func observeActivityPushToken(_ a: Activity<CruiseActivityAttributes>) {
+    if let data = a.pushToken {
+      onPushToken?("activity", hex(data))
+    }
+    Task {
+      for await data in a.pushTokenUpdates {
+        onPushToken?("activity", hex(data))
+      }
+    }
+  }
+
   // Every operation chains on the previous one. Independent detached
   // Tasks raced on quick online→offline toggles: stop()'s sweep could
   // land AFTER start()'s request and kill the fresh activity — or the
@@ -136,10 +184,12 @@ final class CruiseLiveActivityManager {
         await stale.end(nil, dismissalPolicy: .immediate)
       }
       do {
-        self.activity = try Activity.request(
+        let act = try Activity.request(
           attributes: CruiseActivityAttributes(),
           content: .init(state: state, staleDate: nil)
         )
+        self.activity = act
+        observeActivityPushToken(act)
       } catch {
         // Denied in Settings, backgrounded, or system limit. Logged because
         // a start that quietly failed is why offer() later finds nothing
@@ -187,9 +237,11 @@ final class CruiseLiveActivityManager {
         // in the log when it does not, instead of reporting a card the
         // driver cannot see.
         do {
-          self.activity = try Activity.request(
+          let act = try Activity.request(
             attributes: CruiseActivityAttributes(),
             content: .init(state: state, staleDate: nil))
+          self.activity = act
+          observeActivityPushToken(act)
         } catch {
           NSLog("[LiveActivity] offer: no running activity and request "
             + "failed (backgrounded on iOS 16, denied in Settings, or "

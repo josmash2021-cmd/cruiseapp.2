@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 import '../utils/app_platform.dart';
+import 'api_service.dart';
 
 /// Bridge to the iOS Live Activity (Dynamic Island) — the Cruise logo
 /// stays visible while the driver is online and switches to another app.
@@ -17,8 +18,33 @@ class LiveActivityService {
 
   static const _channel = MethodChannel('cruise/live_activity');
 
+  static bool _tokenHookInstalled = false;
+
+  /// Receive the ActivityKit push channels from the native side and register
+  /// them with the backend. Without this the server can only banner the
+  /// driver; with it, dispatch can paint the offer straight onto the Dynamic
+  /// Island / lock screen while the app is backgrounded or killed.
+  static void installPushTokenHook() {
+    if (_tokenHookInstalled || !AppPlatform.isIOS) return;
+    _tokenHookInstalled = true;
+    _channel.setMethodCallHandler((call) async {
+      if (call.method == 'pushToken') {
+        final args = call.arguments as Map?;
+        final kind = args?['kind'] as String? ?? '';
+        final token = args?['token'] as String? ?? '';
+        if (kind.isNotEmpty && token.isNotEmpty) {
+          await ApiService.registerLiveActivityToken(kind: kind, token: token);
+        }
+      }
+      return null;
+    });
+  }
+
   /// Driver went online — put the Cruise logo in the Dynamic Island.
-  static Future<void> startOnline() => _invoke('start', 'online');
+  static Future<void> startOnline() {
+    installPushTokenHook();
+    return _invoke('start', 'online');
+  }
 
   /// Refresh the island's status line: 'online' while waiting for offers,
   /// 'on_trip' while driving someone. Also how an offer is cleared — going
@@ -46,8 +72,15 @@ class LiveActivityService {
         'minutes': minutes,
       });
 
-  /// Driver went offline — remove the island/lock-screen activity.
-  static Future<void> stop() => _invoke('stop', null);
+  /// Driver went offline — remove the island/lock-screen activity. The
+  /// activity's push channel dies with it, so the backend's copy is cleared
+  /// too; otherwise dispatch keeps paying for pushes to a dead channel.
+  static Future<void> stop() {
+    if (AppPlatform.isIOS) {
+      ApiService.registerLiveActivityToken(kind: 'activity', token: '');
+    }
+    return _invoke('stop', null);
+  }
 
   static Future<void> _invoke(String method, String? status,
       {Map<String, String>? extra}) async {

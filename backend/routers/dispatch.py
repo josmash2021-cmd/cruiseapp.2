@@ -790,7 +790,49 @@ async def _send_offer_to_driver(
         is_offer=True,
     ))
 
+    # The iOS Live Activity copy. FCM cannot repaint — much less START — a
+    # Live Activity on a backgrounded or killed app; only Apple's
+    # push-type:liveactivity channel can. Without this leg the Dynamic
+    # Island card was a foreground-only decoration.
+    if driver.apns_la_activity_token or driver.apns_la_start_token:
+        _safe_create_task(_send_live_activity_offer(
+            driver,
+            fare=fare_str,
+            per_hour=per_hour_str,
+            miles=miles_str,
+            minutes=minutes_str,
+        ))
+
     return offer
+
+
+async def _send_live_activity_offer(driver, *, fare, per_hour, miles, minutes) -> None:
+    """Offer → the driver's Live Activity, straight over APNs. Fail-soft."""
+    try:
+        from services.apns_liveactivity import send_live_activity_offer
+        outcome = await send_live_activity_offer(
+            start_token=driver.apns_la_start_token,
+            activity_token=driver.apns_la_activity_token,
+            fare=fare,
+            per_hour=per_hour,
+            miles=miles,
+            minutes=minutes,
+        )
+        if outcome in ("stale_activity", "stale_start"):
+            # Dead channel — clear it so later offers stop aiming at it.
+            async with SessionLocal() as db:
+                d = await db.get(User, driver.id)
+                if d is not None:
+                    if outcome == "stale_activity":
+                        d.apns_la_activity_token = None
+                    else:
+                        d.apns_la_start_token = None
+                    await db.commit()
+            logging.warning(
+                "[LiveActivity] cleared %s for driver %s", outcome, driver.id)
+    except Exception as e:
+        logging.warning("[LiveActivity] offer push failed for driver %s: %s",
+                        driver.id, e)
 
 
 async def _auto_cascade(trip_id: int, first_offer_id: int, first_driver_id: int) -> None:

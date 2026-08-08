@@ -7,11 +7,10 @@
 > completed and all flagged provisions verified by counsel before release.
 
 This Independent Contractor Agreement (the "**Agreement**") is entered into by
-and between **Royal Purple LLC**, a Florida limited liability company, with
-its principal place of business at **[COMPANY ADDRESS]** ("**Royal Purple**"
-or the "**Company**"), and the individual who accepts this Agreement
-electronically through the Cruiseinride application (the "**Driver**" and,
-together with the Company, the "**Parties**").
+and between **Royal Purple LLC**, a Florida limited liability company
+("**Royal Purple**" or the "**Company**"), and the individual who accepts
+this Agreement electronically through the Cruiseinride application (the
+"**Driver**" and, together with the Company, the "**Parties**").
 
 "**Cruiseinride**" means the transportation network company digital platform,
 mobile application, and brand owned and operated by Royal Purple LLC. This
@@ -323,7 +322,7 @@ continues until terminated under this Section.
 
 14.2. **Termination by the Driver.** The Driver may terminate this Agreement
 at any time by discontinuing use of the platform and providing notice through
-the app or to **[NOTICE EMAIL]**.
+the app or to **support@cruiseapp.com**.
 
 14.3. **Termination by the Company.** The Company may terminate this
 Agreement by notice to the Driver. Termination of this Agreement ends the
@@ -348,9 +347,9 @@ safety, the Company will provide notice of the reason.
 
 14.6. **Internal review.** The Driver may request an internal review of a
 suspension, deactivation, or rating-based action by contacting
-**[APPEALS CONTACT]**. The Company will review the request and respond within
-a reasonable period. **This review expressly includes actions based on the
-rider-rating system, and the Company will conduct a review whenever the
+**support@cruiseapp.com**. The Company will review the request and respond
+within a reasonable period. **This review expressly includes actions based on
+the rider-rating system, and the Company will conduct a review whenever the
 Driver makes a plausible claim that any such action resulted from
 discrimination prohibited by law.**
 
@@ -394,10 +393,48 @@ lawfully be limited, or the insurance obligations described in Section 9.
 18.1. The Parties shall first attempt in good faith to resolve any dispute
 arising out of this Agreement informally by notice under Section 20.
 
-18.2. Disputes shall be resolved in the state or federal
-courts located in **[COUNTY] County, Florida**, and the Parties consent to
-the personal jurisdiction and venue of those courts. This Agreement contains
-no arbitration provision.
+18.2. **Binding individual arbitration.** Except as provided in Sections
+18.5 through 18.8, any dispute, claim, or controversy arising out of or
+relating to this Agreement that is not resolved informally shall be resolved
+by **final and binding individual arbitration** administered by the American
+Arbitration Association ("**AAA**") under its applicable Consumer or
+Commercial Arbitration Rules. The arbitration shall be seated in **[COUNTY]
+County, Florida**, shall be conducted in English before a single arbitrator,
+and the arbitrator shall apply the laws of the State of Florida. Judgment on
+the award may be entered in any court of competent jurisdiction.
+
+18.3. **CLASS ACTION WAIVER.** THE COMPANY AND THE DRIVER AGREE THAT EACH MAY
+BRING CLAIMS AGAINST THE OTHER **ONLY IN AN INDIVIDUAL CAPACITY** AND NOT AS
+A PLAINTIFF OR CLASS MEMBER IN ANY PURPORTED CLASS, COLLECTIVE, CONSOLIDATED,
+OR REPRESENTATIVE ACTION, AND NOT IN ANY PRIVATE ATTORNEY GENERAL ACTION. THE
+ARBITRATOR MAY NOT CONSOLIDATE THE CLAIMS OF MORE THAN ONE PERSON.
+
+18.4. **JURY TRIAL WAIVER.** TO THE EXTENT ANY CLAIM PROCEEDS IN COURT RATHER
+THAN ARBITRATION, THE COMPANY AND THE DRIVER EACH **WAIVE ANY RIGHT TO A
+TRIAL BY JURY**.
+
+18.5. **Small-claims carve-out.** Either Party may bring an individual claim
+in the small-claims court of **[COUNTY] County, Florida**, so long as the
+claim qualifies and remains in that court.
+
+18.6. **30-day opt-out.** The Driver may opt out of this arbitration
+agreement by emailing **support@cruiseapp.com** within **30 days** of first
+accepting this Agreement, including the Driver's name, account email, and a
+clear statement that the Driver opts out of arbitration. If the Driver opts
+out, disputes shall be litigated in the state or federal courts located in
+**[COUNTY] County, Florida**, still on an individual basis only — the class
+action waiver in Section 18.3 survives opt-out to the fullest extent
+permitted by law.
+
+18.7. **Intellectual property.** Either Party may seek injunctive or other
+equitable relief in a court of competent jurisdiction for actual or
+threatened infringement or misappropriation of intellectual property rights.
+
+18.8. **FCRA exclusion.** This arbitration agreement does not apply to the
+background-check pre-adverse action and dispute process under the Fair Credit
+Reporting Act ("**FCRA**") described in Section 10 and in the Background
+Check Disclosure and Authorization; that administrative process remains
+unchanged.
 
 ## 19. Governing Law
 
@@ -409,11 +446,10 @@ classification law of any other state.
 
 ## 20. Notices
 
-20.1. Notices to the Company shall be sent to **[COMPANY ADDRESS]** or
-**[NOTICE EMAIL]**. Notices to the Driver shall be sent to the email address
-or phone number associated with the Driver's account, or through the app.
-Notice is effective upon delivery (email/app) or three business days after
-mailing.
+20.1. Notices to the Company shall be sent by email to
+**support@cruiseapp.com**. Notices to the Driver shall be sent to the email
+address or phone number associated with the Driver's account, or through the
+app. Notice is effective upon delivery (email/app).
 
 ## 21. Terms of Service and Order of Precedence
 
@@ -451,7 +487,8 @@ device information, and the Driver's account ID.
 22.4. **Versioning and re-acceptance.** Material changes will be presented
 again for acceptance under a new version number before taking effect as to
 the Driver. The Driver may access the current version and the Driver's
-acceptance history through the app or upon request to **[NOTICE EMAIL]**.
+acceptance history through the app or upon request to
+**support@cruiseapp.com**.
 
 ## 23. Entire Agreement; Amendments; Severability; Waiver; Assignment; Force Majeure
 

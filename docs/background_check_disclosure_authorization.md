@@ -1,6 +1,6 @@
 # Background Check Disclosure and Authorization
 
-**Version 1.0 — PRODUCTION CANDIDATE — Effective Date: [EFFECTIVE DATE]**
+**Version 1.0 — PRODUCTION CANDIDATE — Effective Date: August 8, 2026**
 
 > **PRODUCTION CANDIDATE — NOT FOR PUBLICATION until the blockers listed in
 > `docs/fcra_screening_process.md` (Appendix) are resolved:** screening
@@ -14,11 +14,11 @@
 
 ## 1. Disclosure
 
-**Royal Purple LLC**, a Florida limited liability company, with its principal
-place of business at **[COMPANY ADDRESS]** (the "**Company**"), may obtain
-consumer reports about you in connection with your application to drive, and
-your continued engagement as an independent contractor Driver, on the
-**Cruiseinride** platform operated by the Company.
+**Royal Purple LLC**, a Florida limited liability company (the
+"**Company**"), may obtain consumer reports about you in connection with
+your application to drive, and your continued engagement as an independent
+contractor Driver, on the **Cruiseinride** platform operated by the
+Company.
 
 The Company obtains these reports from the following consumer reporting
 agency:

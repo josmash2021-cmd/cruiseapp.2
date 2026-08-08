@@ -1188,13 +1188,13 @@ class S {
       : 'You may be charged a cancellation fee.';
   String get yesCancelTrip => _es ? 'Sí, Cancelar Viaje' : 'Yes, Cancel Trip';
   String get cancelAfterAssignBody => _es
-      ? 'Ya hay un conductor asignado a tu viaje. Las cancelaciones después de la asignación se gestionan a través de soporte. Enviaremos tu solicitud ahora; puede aplicar una tarifa de cancelación de \$5.00.'
-      : 'A driver is already assigned to your trip. Cancellations after assignment are handled through support. We will send your request now; a \$5.00 cancellation fee may apply.';
+      ? 'Tu conductor ya va en camino. Puedes cancelar al instante: es gratis dentro de los primeros 2 minutos después de la asignación del conductor; después aplica una tarifa de cancelación de \$5.00.'
+      : 'Your driver is already on the way. You can cancel instantly: it is free within the first 2 minutes after driver assignment; after that, a \$5.00 cancellation fee applies.';
   String get sendCancellationRequest =>
-      _es ? 'Enviar solicitud de cancelación' : 'Send cancellation request';
+      _es ? 'Cancelar viaje ahora' : 'Cancel trip now';
   String get cancelRequestSentToSupport => _es
-      ? 'Solicitud de cancelación enviada a soporte.'
-      : 'Cancellation request sent to support.';
+      ? 'Viaje cancelado.'
+      : 'Trip cancelled.';
   // ── Chat ──────────────────────────────────────────────────────────────────
   String get connectionIssueRetrying => _es
       ? 'Problema de conexión - reintentando...'
@@ -2951,8 +2951,8 @@ class S {
   String get termsDisputeTitle =>
       _es ? '15. Resolución de Disputas' : '15. Dispute Resolution';
   String get termsDisputeBody => _es
-      ? 'Cualquier disputa que surja de estos Términos o que se relacione con ellos será resuelta mediante arbitraje vinculante de acuerdo con las reglas de la Asociación Americana de Arbitraje (AAA). Ambas partes renuncian al derecho a un juicio con jurado o participar en una demanda colectiva.'
-      : 'Any disputes arising from or relating to these Terms will be resolved through binding arbitration in accordance with the rules of the American Arbitration Association (AAA). Both parties waive the right to a jury trial or to participate in a class action lawsuit.';
+      ? 'Cualquier disputa que surja de estos Términos o se relacione con ellos se resolverá mediante arbitraje individual vinculante administrado por la Asociación Americana de Arbitraje (AAA), con sede en el Condado de [COUNTY], Florida, conforme a la ley de Florida. Las reclamaciones solo pueden presentarse a título individual: se renuncia a cualquier acción colectiva, consolidada o representativa, incluidas las acciones de fiscal general privado, y ambas partes renuncian a cualquier derecho a un juicio con jurado. Cualquiera de las partes puede presentar una reclamación individual ante el tribunal de reclamos menores (small claims) del Condado de [COUNTY], Florida. Puede optar por no participar en el arbitraje enviando un correo a support@cruiseapp.com dentro de los 30 días siguientes a la primera aceptación de estos Términos; si opta por salir, las disputas se litigarán en los tribunales del Condado de [COUNTY], Florida, y la renuncia a acciones colectivas se mantiene donde la ley lo permita. Este arbitraje no aplica al proceso de disputa y acción preadversa bajo la FCRA.'
+      : 'Any dispute arising from or relating to these Terms will be resolved by binding individual arbitration administered by the American Arbitration Association (AAA), seated in [COUNTY] County, Florida, under Florida law. Claims may be brought only in an individual capacity: class, collective, consolidated, and representative actions — including private attorney general actions — are waived, and both parties waive any right to a jury trial. Either party may bring an individual claim in the small-claims court of [COUNTY] County, Florida. You may opt out of arbitration by emailing support@cruiseapp.com within 30 days of first accepting these Terms; if you opt out, disputes are litigated in the courts of [COUNTY] County, Florida, and the class action waiver survives opt-out where permitted by law. This arbitration agreement does not apply to the FCRA pre-adverse action and dispute process.';
   String get termsModificationsTitle =>
       _es ? '16. Modificaciones' : '16. Modifications';
   String get termsModificationsBody => _es
@@ -2961,8 +2961,8 @@ class S {
   String get termsGoverningLawTitle =>
       _es ? '17. Ley Aplicable' : '17. Governing Law';
   String get termsGoverningLawBody => _es
-      ? 'Estos Términos se regirán exclusivamente por las leyes del Estado de Florida, sin tener en cuenta los principios de conflicto de leyes. Las disputas que no se resuelvan de manera informal se resolverán ante los tribunales estatales o federales ubicados en el Condado de [COUNTY], Florida, y las partes consienten la jurisdicción personal y la competencia de dichos tribunales.'
-      : 'These Terms are governed exclusively by the laws of the State of Florida, without regard to conflict-of-laws principles. Disputes not resolved informally shall be resolved in the state or federal courts located in [COUNTY] County, Florida, and the parties consent to the personal jurisdiction and venue of those courts.';
+      ? 'Estos Términos se regirán exclusivamente por las leyes del Estado de Florida, sin tener en cuenta los principios de conflicto de leyes. Sujeto al acuerdo de arbitraje de la sección de Resolución de Disputas, cualquier reclamación que se litigue ante un tribunal se presentará ante los tribunales estatales o federales ubicados en el Condado de [COUNTY], Florida, y las partes consienten la jurisdicción personal y la competencia de dichos tribunales.'
+      : 'These Terms are governed exclusively by the laws of the State of Florida, without regard to conflict-of-laws principles. Subject to the arbitration agreement in the Dispute Resolution section, any claim that proceeds in court shall be brought in the state or federal courts located in [COUNTY] County, Florida, and the parties consent to the personal jurisdiction and venue of those courts.';
   String get termsContactTitle => _es ? '18. Contáctenos' : '18. Contact Us';
   String get termsContactBody => _es
       ? 'Si tiene alguna pregunta sobre estos Términos, contáctenos:\n\nRoyal Purple LLC\nEmail: legal@cruiseapp.com\nSoporte: support@cruiseapp.com'
@@ -3125,6 +3125,9 @@ class S {
   String get agreeContractorText => _es
       ? 'Acepto el Acuerdo de Contratista Independiente.'
       : 'I agree to the Independent Contractor Agreement.';
+  String get agreementAcceptFailed => _es
+      ? 'No se pudo registrar tu aceptación — revisa tu conexión e inténtalo de nuevo.'
+      : 'Could not record your acceptance — check your connection and try again.';
   String get readContractorAgreement => _es
       ? 'Leer el Acuerdo de Contratista Independiente'
       : 'Read the Independent Contractor Agreement';
@@ -4860,15 +4863,9 @@ class S {
       ? 'No encontramos un conductor disponible. Intenta de nuevo.'
       : "We couldn't find a driver in time. Please try again.";
 
-  // Rider Contact-Support flow strings.
-  String get tripAlreadyInProgressTitle =>
-      _es ? 'Viaje en curso' : 'Trip already in progress';
-  String get tripAlreadyInProgressBody => _es
-      ? 'Tu conductor está en camino. Si necesitas cancelar, contacta a soporte y un agente te ayudará.'
-      : 'Your driver is on the way. If you need to cancel, please contact support and a dispatcher will help you.';
-  String get dispatchNotifiedSnack => _es
-      ? 'Dispatch ha sido notificado y te contactará en breve.'
-      : 'Dispatch has been notified and will contact you shortly.';
+  // Rider instant-cancel flow: the confirmation body lives in
+  // cancelAfterAssignBody (near line 1190); success shows the cancel
+  // overlay's tripCancelled string.
 
   // Driver scheduled-rides "Release this ride" strings.
   String get releaseRideButton =>

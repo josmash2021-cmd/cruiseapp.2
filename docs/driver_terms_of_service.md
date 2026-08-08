@@ -1,6 +1,6 @@
 # Cruiseinride Driver Terms of Service
 
-**Version 1.1 — PRODUCTION CANDIDATE — Effective Date: [EFFECTIVE DATE]**
+**Version 1.1 — PRODUCTION CANDIDATE — Effective Date: August 8, 2026**
 
 > **PRODUCTION CANDIDATE — NOT YET READY FOR PRODUCTION.** Pending before
 > publication: (a) completion of every bracketed placeholder; (b) written
@@ -14,10 +14,9 @@
 > schedule freedom, exclusivity, freedom to decline trips, and compensation.
 
 These Driver Terms are entered into by and between **Royal Purple LLC**, a
-Florida limited liability company, with its principal place of business at
-**[COMPANY ADDRESS]** ("**Royal Purple**" or the "**Company**"), and each
-individual who applies to drive or drives on the Cruiseinride platform (the
-"**Driver**"). "**Cruiseinride**" means the transportation network company
+Florida limited liability company ("**Royal Purple**" or the "**Company**"),
+and each individual who applies to drive or drives on the Cruiseinride
+platform (the "**Driver**"). "**Cruiseinride**" means the transportation network company
 digital platform, mobile application, and brand owned and operated by Royal
 Purple LLC. All operations under these Driver Terms take place in the State
 of Florida, and these Driver Terms are governed exclusively by Florida law.
@@ -269,9 +268,9 @@ Driver shall cease displaying Company trade dress; and platform access ends.
 
 12.4. **Internal review and appeals.** The Driver may request an internal
 review of any suspension, deactivation, or rating-based action by contacting
-**[APPEALS CONTACT]**. The Company will review the request and respond within
-a reasonable period. This review expressly includes cases in which the Driver
-makes a plausible claim that the action resulted from discrimination
+**support@cruiseapp.com**. The Company will review the request and respond
+within a reasonable period. This review expressly includes cases in which the
+Driver makes a plausible claim that the action resulted from discrimination
 prohibited by law.
 
 ## 13. Privacy and Data
@@ -292,15 +291,46 @@ Agreement; (b) these Driver Terms; (c) safety and community policies; (d)
 annexes and disclosures. No unilateral update may modify the core protections
 of the Contractor Agreement (Section 21.2 of that Agreement).
 
-14.2. **Governing law and venue.** These Driver Terms are governed
-exclusively by the laws of the State of Florida. Disputes shall be resolved
-in the state or federal courts located in **[COUNTY] County, Florida**, and
-the parties consent to the personal jurisdiction and venue of those courts.
-These Driver Terms contain no arbitration provision.
+14.2. **Governing law; binding individual arbitration.** These Driver Terms
+are governed exclusively by the laws of the State of Florida. Except as
+provided in paragraphs (c) through (f) below, any dispute, claim, or
+controversy arising out of or relating to these Driver Terms or the Platform
+shall be resolved by **final and binding individual arbitration**
+administered by the American Arbitration Association ("**AAA**") under its
+applicable Consumer or Commercial Arbitration Rules. The arbitration shall be
+seated in **[COUNTY] County, Florida**, shall be conducted in English before
+a single arbitrator, and the arbitrator shall apply Florida law. Judgment on
+the award may be entered in any court of competent jurisdiction.
+(a) **CLASS ACTION WAIVER.** THE COMPANY AND THE DRIVER AGREE THAT EACH MAY
+BRING CLAIMS AGAINST THE OTHER **ONLY IN AN INDIVIDUAL CAPACITY** AND NOT AS
+A PLAINTIFF OR CLASS MEMBER IN ANY PURPORTED CLASS, COLLECTIVE, CONSOLIDATED,
+OR REPRESENTATIVE ACTION, AND NOT IN ANY PRIVATE ATTORNEY GENERAL ACTION. THE
+ARBITRATOR MAY NOT CONSOLIDATE THE CLAIMS OF MORE THAN ONE PERSON.
+(b) **JURY TRIAL WAIVER.** TO THE EXTENT ANY CLAIM PROCEEDS IN COURT RATHER
+THAN ARBITRATION, THE COMPANY AND THE DRIVER EACH **WAIVE ANY RIGHT TO A
+TRIAL BY JURY**.
+(c) **Small-claims carve-out.** Either party may bring an individual claim in
+the small-claims court of **[COUNTY] County, Florida**, so long as the claim
+qualifies and remains in that court.
+(d) **30-day opt-out.** The Driver may opt out of this arbitration agreement
+by emailing **support@cruiseapp.com** within **30 days** of first accepting
+these Driver Terms, including the Driver's name, account email, and a clear
+statement that the Driver opts out of arbitration. If the Driver opts out,
+disputes shall be litigated in the state or federal courts located in
+**[COUNTY] County, Florida**, still on an individual basis only — the class
+action waiver in paragraph (a) survives opt-out to the fullest extent
+permitted by law.
+(e) **Intellectual property.** Either party may seek injunctive or other
+equitable relief in a court of competent jurisdiction for actual or
+threatened infringement or misappropriation of intellectual property rights.
+(f) **FCRA exclusion.** This arbitration agreement does not apply to the
+background-check pre-adverse action and dispute process under the Fair Credit
+Reporting Act ("**FCRA**") described in the Background Check Disclosure and
+Authorization; that administrative process remains unchanged.
 
-14.3. **Notices.** Notices to the Company: **[COMPANY ADDRESS]** or
-**[NOTICE EMAIL]**. Notices to the Driver: the contact information associated
-with the Driver's account or through the app.
+14.3. **Notices.** Notices to the Company: by email to
+**support@cruiseapp.com**. Notices to the Driver: the contact information
+associated with the Driver's account or through the app.
 
 14.4. **Amendments.** The Company may update these Driver Terms with notice
 through the app. **Material changes require the Driver's affirmative in-app

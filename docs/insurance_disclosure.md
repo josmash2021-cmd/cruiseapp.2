@@ -1,6 +1,6 @@
 # Cruiseinride Insurance Disclosure (TNC Coverage)
 
-**Version 1.0 — Draft for Florida Counsel Review — Effective Date: [EFFECTIVE DATE]**
+**Version 1.0 — Draft for Florida Counsel Review — Effective Date: August 8, 2026**
 
 > **DRAFT — FOR REVIEW BY FLORIDA-LICENSED COUNSEL ONLY. NOT FOR PUBLICATION.**
 > No insurance data in this document is final. Every bracketed placeholder

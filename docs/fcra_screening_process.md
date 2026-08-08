@@ -1,6 +1,6 @@
 # FCRA Screening Process — Adverse Action, Disputes, and Driver Rights
 
-**Version 1.0 — PRODUCTION CANDIDATE — Effective Date: [EFFECTIVE DATE]**
+**Version 1.0 — PRODUCTION CANDIDATE — Effective Date: August 8, 2026**
 
 > **PRODUCTION CANDIDATE — NOT FOR PUBLICATION until the blockers listed in
 > the Appendix are resolved.** This document is separate from the standalone
@@ -92,7 +92,7 @@ correct or delete inaccurate, incomplete, or unverifiable information.
 
 Questions about the screening process, requests for a copy of your report,
 or questions about a notice you received may be sent to
-**[BACKGROUND CHECK CONTACT]**.
+**support@cruiseapp.com**.
 
 ## 7. Refusing or Withdrawing Authorization
 
@@ -111,7 +111,7 @@ Accordingly:
   are again in place.
 
 This is a consequence of a legal eligibility requirement, not a penalty. You
-may contact **[BACKGROUND CHECK CONTACT]** with questions before deciding.
+may contact **support@cruiseapp.com** with questions before deciding.
 
 ---
 
@@ -144,8 +144,9 @@ may contact **[BACKGROUND CHECK CONTACT]** with questions before deciding.
    `backend/services/fcra_compliance.py`. Every delivery is recorded in the
    `summary_rights_deliveries` table with channel, document version, and UTC
    timestamp.
-4. **Contact email.** `[BACKGROUND CHECK CONTACT]` must be replaced with a
-   monitored mailbox.
+4. **Contact email — RESOLVED.** The background-check contact is
+   **support@cruiseapp.com**, the Company's monitored support mailbox
+   (`backend/services/email_service.py`).
 5. **Separate acceptance flow — IMPLEMENTED.** The in-app consent screen
    (`lib/screens/driver/background_check_consent_screen.dart`) uses a
    dedicated checkbox for the Background Check Disclosure and Authorization

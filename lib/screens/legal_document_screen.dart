@@ -19,11 +19,21 @@ class LegalDocumentScreen extends StatelessWidget {
   final String effectiveDate;
   final List<LegalSection> sections;
 
+  /// Optional bar pinned below the document (e.g. an accept button when the
+  /// screen is used as a re-acceptance gate).
+  final Widget? bottomBar;
+
+  /// When false the back button is hidden and system back is blocked — used
+  /// by the re-acceptance gate so the only way out is accepting.
+  final bool canPop;
+
   const LegalDocumentScreen({
     super.key,
     required this.title,
     required this.effectiveDate,
     required this.sections,
+    this.bottomBar,
+    this.canPop = true,
   });
 
   static const _bodyStyle = TextStyle(
@@ -89,7 +99,9 @@ class LegalDocumentScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return PopScope(
+      canPop: canPop,
+      child: Scaffold(
       backgroundColor: neuBase,
       body: SafeArea(
         child: Column(
@@ -101,19 +113,22 @@ class LegalDocumentScreen extends StatelessWidget {
               padding: const EdgeInsets.symmetric(horizontal: 24),
               child: Row(
                 children: [
-                  GestureDetector(
-                    onTap: () => Navigator.of(context).pop(),
-                    child: Container(
-                      width: 40,
-                      height: 40,
-                      decoration: neuBox(radius: 14, pressed: true),
-                      child: const Icon(
-                        Icons.arrow_back_rounded,
-                        color: Colors.white,
-                        size: 20,
+                  if (canPop)
+                    GestureDetector(
+                      onTap: () => Navigator.of(context).pop(),
+                      child: Container(
+                        width: 40,
+                        height: 40,
+                        decoration: neuBox(radius: 14, pressed: true),
+                        child: const Icon(
+                          Icons.arrow_back_rounded,
+                          color: Colors.white,
+                          size: 20,
+                        ),
                       ),
-                    ),
-                  ),
+                    )
+                  else
+                    const SizedBox(width: 40, height: 40),
                   const SizedBox(width: 16),
                   Expanded(
                     child: Column(
@@ -154,8 +169,10 @@ class LegalDocumentScreen extends StatelessWidget {
                 itemBuilder: (_, i) => _buildSection(sections[i]),
               ),
             ),
+            if (bottomBar != null) bottomBar!,
           ],
         ),
+      ),
       ),
     );
   }

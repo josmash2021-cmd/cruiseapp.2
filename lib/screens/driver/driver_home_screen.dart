@@ -48,6 +48,7 @@ import 'driver_promos_screen.dart';
 import 'driver_analytics_screen.dart';
 import 'driver_vehicle_screen.dart';
 import 'driver_documents_screen.dart';
+import 'driver_agreement_screen.dart';
 import 'scheduled_rides_screen.dart';
 import 'scheduled_ride_details_screen.dart';
 import '../../l10n/app_localizations.dart';
@@ -468,7 +469,9 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     _startDocApprovalListener();
     // Defer account status check to post-frame — don't block UI startup
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _checkAccountStatus();
+      if (!mounted) return;
+      _checkAccountStatus();
+      _checkDriverAgreementConsent();
     });
     _accountStatusTimer = Timer.periodic(
       const Duration(seconds: 300),
@@ -1156,6 +1159,46 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
         );
       }
     } catch (_) {}
+  }
+
+  /// Re-acceptance gate for the Independent Contractor Agreement (current
+  /// version: [kDriverAgreementVersion]). Every acceptance is logged
+  /// server-side (ConsentLog) with the document version, so when the
+  /// agreement version bumps, a driver whose newest
+  /// 'independent_contractor_agreement' acceptance is stale — or who has
+  /// none — must review and accept the new version before continuing.
+  /// Fail-open: a network failure never locks the driver out; the check
+  /// simply re-runs on the next app start.
+  Future<void> _checkDriverAgreementConsent() async {
+    try {
+      final items = await ApiService.fetchConsentHistory();
+      if (!mounted) return;
+      // The history comes newest-first: the first match is the latest.
+      String? acceptedVersion;
+      for (final item in items) {
+        if (item['consent_type'] == 'independent_contractor_agreement' &&
+            item['action'] == 'accepted') {
+          acceptedVersion = item['version']?.toString();
+          break;
+        }
+      }
+      if (acceptedVersion == kDriverAgreementVersion) return;
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          fullscreenDialog: true,
+          builder: (_) => DriverAgreementScreen(
+            onAccept: () => ApiService.recordConsent(
+              consentType: 'independent_contractor_agreement',
+              action: 'accepted',
+              version: kDriverAgreementVersion,
+            ),
+          ),
+        ),
+      );
+    } catch (e) {
+      debugPrint(
+          '[DriverHome] agreement consent check skipped (fail-open): $e');
+    }
   }
 
   // ═══════════════════════════════════════════════════

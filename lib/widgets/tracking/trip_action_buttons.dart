@@ -14,25 +14,22 @@ extension _RiderTrackingActionButtons on _RiderTrackingScreenState {
     _executeCancelAndTransition();
   }
 
-  /// Post-assignment cancellation: once a driver is assigned the backend
-  /// rejects direct rider cancels (403 on /trips/{id}/cancel), so file a
-  /// cancellation request with support/dispatch instead. The trip stays
-  /// active until the request is approved — the rider remains on the
-  /// tracking screen.
-  Future<void> _requestCancelViaSupport() async {
-    if (widget.tripId == null) return;
+  /// Instant pre-pickup cancellation (2026-08-08): POST /trips/{id}/cancel
+  /// works even with a driver assigned — the backend charges $5.00 only
+  /// when the driver has been assigned/en route for more than 2 minutes
+  /// (free before that) and rejects in-trip cancels server-side. Success
+  /// runs the overlay + home transition; failure surfaces as a real error
+  /// and the rider stays on the tracking screen.
+  Future<void> _cancelTripInstantly() async {
+    final tripId = widget.tripId;
+    if (tripId == null) return;
+    _setState(() => _cancelOverlayPhase = 1);
     try {
-      await ApiService.requestTripCancel(tripId: widget.tripId!);
-      if (!mounted) return;
-      _messenger?.showSnackBar(
-        SnackBar(
-          content: Text(S.of(context).cancelRequestSentToSupport),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+      await ApiService.cancelTrip(tripId);
     } catch (e) {
-      debugPrint('[RiderTracking] requestTripCancel(${widget.tripId}) failed: $e');
+      debugPrint('[RiderTracking] cancelTrip($tripId) failed: $e');
       if (!mounted) return;
+      _setState(() => _cancelOverlayPhase = 0);
       _messenger?.showSnackBar(
         SnackBar(
           content: Text(S.of(context).cancelOnServerFailedActive),
@@ -41,11 +38,13 @@ extension _RiderTrackingActionButtons on _RiderTrackingScreenState {
           duration: const Duration(seconds: 5),
         ),
       );
+      return;
     }
+    if (!mounted) return;
+    await _finishCancelTransition();
   }
 
   Future<void> _executeCancelAndTransition() async {
-    await LocalDataService.clearActiveRide();
     bool backendOk = true;
     if (widget.tripId != null) {
       try {
@@ -67,6 +66,13 @@ extension _RiderTrackingActionButtons on _RiderTrackingScreenState {
         ),
       );
     }
+    await _finishCancelTransition();
+  }
+
+  /// Shared tail of a successful cancel: clear local state, show the
+  /// checkmark overlay (phase 2), then go home.
+  Future<void> _finishCancelTransition() async {
+    await LocalDataService.clearActiveRide();
     AnalyticsService.instance.logRideCancelled('user_cancelled', false);
     await _cleanupMapAnnotations();
     if (!mounted) return;
@@ -243,14 +249,13 @@ extension _RiderTrackingActionButtons on _RiderTrackingScreenState {
   }
 
   void _showCancelDialog() {
-    // Cancel policy (2026-04-11): RiderTrackingScreen only opens once
-    // a driver has been assigned and is arriving/en-route/arrived/
-    // in_trip. Per policy, riders may NOT directly cancel trips with
-    // a driver assigned — the only escape path is to contact support,
-    // which creates an ActionRequest for dispatch. The in-app flow
-    // that cancels BEFORE a driver is assigned lives in the
-    // RideRequestScreen waiting mode, not here.
-    _showContactSupportForCancel();
+    // Cancel policy (2026-08-08): the backend allows instant rider
+    // cancellation at any point before pickup — even with a driver
+    // assigned — charging $5.00 only once the driver has been assigned /
+    // en route for more than 2 minutes (free before that). The
+    // confirmation dialog that explains the fee rule lives in
+    // driver_info_card.dart (_showCancelConfirmDialog).
+    _showCancelConfirmDialog();
   }
 
   /// Shows a clear overlay when the driver (or backend) cancels the trip.
@@ -447,144 +452,6 @@ extension _RiderTrackingActionButtons on _RiderTrackingScreenState {
               ),
             ],
           ),
-        ),
-      ),
-    );
-  }
-
-  /// Shown when the rider asks to cancel but a driver is already assigned.
-  /// Per policy, the only way to cancel at that point is to contact
-  /// dispatch. This dialog explains why and opens the support chat.
-  void _showContactSupportForCancel() {
-    final s = S.of(context);
-    showDialog(
-      context: context,
-      barrierDismissible: true,
-      builder: (ctx) => Dialog(
-        backgroundColor: const Color(0xFF1E1E1E),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(24, 28, 24, 20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 56,
-                height: 56,
-                decoration: BoxDecoration(
-                  color: const Color(0xFFE8C547).withValues(alpha: 0.12),
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(
-                  Icons.support_agent_rounded,
-                  color: Color(0xFFE8C547),
-                  size: 28,
-                ),
-              ),
-              const SizedBox(height: 16),
-              Text(
-                s.tripAlreadyInProgressTitle,
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 18,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                s.tripAlreadyInProgressBody,
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.6),
-                  fontSize: 14,
-                ),
-              ),
-              const SizedBox(height: 24),
-              SizedBox(
-                width: double.infinity,
-                height: 48,
-                child: ElevatedButton.icon(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFFE8C547),
-                    foregroundColor: Colors.black,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                  icon: const Icon(Icons.chat_bubble_rounded, size: 18),
-                  label: Text(
-                    s.contactSupport,
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  onPressed: () {
-                    Navigator.pop(ctx);
-                    _openSupportChatFromCancel();
-                  },
-                ),
-              ),
-              const SizedBox(height: 10),
-              TextButton(
-                onPressed: () => Navigator.pop(ctx),
-                child: Text(
-                  s.cancel,
-                  style: TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.white.withValues(alpha: 0.6),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  /// Opens the support chat pre-filled with a cancellation request and
-  /// fires the backend action-request so dispatch sees it immediately.
-  Future<void> _openSupportChatFromCancel() async {
-    final tripId = widget.tripId;
-    if (tripId == null) return;
-    // Capture the messenger BEFORE the async gap so we still have a
-    // valid handle even if the parent navigates away while the IIFE
-    // is awaiting the network call.
-    final messenger = _messenger;
-    if (messenger == null) return;
-    final dispatchNotifiedText = S.of(context).dispatchNotifiedSnack;
-    // Fire-and-forget: create the action request. The support chat still
-    // opens regardless so the rider can add context.
-    unawaited(() async {
-      try {
-        await ApiService.requestTripCancel(
-          tripId: tripId,
-          reason: 'rider_requested_via_cancel_button',
-          urgency: 'normal',
-        );
-        messenger.showSnackBar(
-          SnackBar(
-            content: Text(dispatchNotifiedText),
-            behavior: SnackBarBehavior.floating,
-            backgroundColor: const Color(0xFF1a1a1a),
-            duration: const Duration(seconds: 4),
-          ),
-        );
-      } catch (e) {
-        debugPrint('[RiderTracking] requestTripCancel failed: $e');
-      }
-    }());
-    if (!mounted) return;
-    _nav?.push(
-      slideFromRightRoute(
-        ChatScreen(
-          recipientName: 'Support',
-          isSupport: true,
-          tripId: tripId,
-          currentRole: 'rider',
         ),
       ),
     );

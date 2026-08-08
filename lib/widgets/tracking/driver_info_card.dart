@@ -1318,9 +1318,9 @@ extension _RiderTrackingDriverInfoCard on _RiderTrackingScreenState {
                   ),
                   onPressed: () {
                     Navigator.pop(ctx);
-                    _requestCancelViaSupport();
+                    _cancelTripInstantly();
                   },
-                  child: Text(S.of(context).sendCancellationRequest, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+                  child: Text(S.of(context).yesCancelTrip, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
                 ),
               ),
               const SizedBox(height: 10),

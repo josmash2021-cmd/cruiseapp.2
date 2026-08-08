@@ -4,7 +4,8 @@ import 'legal_document_screen.dart';
 /// Rider Terms of Service. Source of truth: docs/rider_terms_of_service.md
 /// (Royal Purple LLC / Florida, Version 1.0) — keep both in sync.
 /// Rendered with the shared neumorphic legal-document widget.
-/// English-only legal content; bracketed placeholders are kept verbatim.
+/// English-only legal content; the remaining bracketed placeholder
+/// ([COUNTY]) is kept verbatim pending launch details.
 class TermsOfServiceScreen extends StatelessWidget {
   const TermsOfServiceScreen({super.key});
 
@@ -12,7 +13,7 @@ class TermsOfServiceScreen extends StatelessWidget {
     LegalSection(
       heading: 'Introduction',
       body: r'''
-These Rider Terms of Service (the "Rider Terms") are entered into by and between **Royal Purple LLC**, a Florida limited liability company, with its principal place of business at **[COMPANY ADDRESS]** ("**Royal Purple**" or the "**Company**"), and each individual who requests or takes rides through the Cruiseinride platform (the "**Rider**" or "**you**"). "**Cruiseinride**" means the transportation network company digital platform, mobile application, and brand owned and operated by Royal Purple LLC. All operations take place in the State of Florida, and these Rider Terms are governed exclusively by the laws of the State of Florida.''',
+These Rider Terms of Service (the "Rider Terms") are entered into by and between **Royal Purple LLC**, a Florida limited liability company ("**Royal Purple**" or the "**Company**"), and each individual who requests or takes rides through the Cruiseinride platform (the "**Rider**" or "**you**"). "**Cruiseinride**" means the transportation network company digital platform, mobile application, and brand owned and operated by Royal Purple LLC. All operations take place in the State of Florida, and these Rider Terms are governed exclusively by the laws of the State of Florida.''',
     ),
     LegalSection(
       heading: '1. The Platform',
@@ -117,7 +118,7 @@ These Rider Terms of Service (the "Rider Terms") are entered into by and between
       body: r'''
 13.1. The Company may suspend or terminate your account for: fraud, payment abuse or chargeback abuse, violations of rider conduct rules, safety incidents, unlawful use of the Platform, or as required by law.
 
-13.2. Where practicable, the Company will state the reason. You may request an internal review by contacting **[APPEALS CONTACT]**.
+13.2. Where practicable, the Company will state the reason. You may request an internal review by contacting **support@cruiseapp.com**.
 
 13.3. You may stop using the Platform and delete your account at any time, subject to legal record-retention obligations.''',
     ),
@@ -159,16 +160,28 @@ These Rider Terms of Service (the "Rider Terms") are entered into by and between
       body: r'''
 19.1. The parties shall first attempt in good faith to resolve any dispute informally by notice under Section 21.
 
-19.2. Disputes not resolved informally shall be resolved in the state or federal courts located in **[COUNTY] County, Florida**, and the parties consent to the personal jurisdiction and venue of those courts.''',
+19.2. **Binding individual arbitration.** Except as provided in Sections 19.5 through 19.8, any dispute, claim, or controversy arising out of or relating to these Rider Terms or the Platform that is not resolved informally shall be resolved by **final and binding individual arbitration** administered by the American Arbitration Association ("**AAA**") under its Consumer Arbitration Rules. The arbitration shall be seated in **[COUNTY] County, Florida**, shall be conducted in English before a single arbitrator, and may be conducted remotely by videoconference where the AAA rules permit. These Rider Terms are governed by the laws of the State of Florida, and the arbitrator shall apply Florida law. Judgment on the award may be entered in any court of competent jurisdiction.
+
+19.3. **CLASS ACTION WAIVER.** YOU AND THE COMPANY AGREE THAT EACH MAY BRING CLAIMS AGAINST THE OTHER **ONLY IN AN INDIVIDUAL CAPACITY** AND NOT AS A PLAINTIFF OR CLASS MEMBER IN ANY PURPORTED CLASS, COLLECTIVE, CONSOLIDATED, OR REPRESENTATIVE ACTION, AND NOT IN ANY PRIVATE ATTORNEY GENERAL ACTION. THE ARBITRATOR MAY NOT CONSOLIDATE THE CLAIMS OF MORE THAN ONE PERSON.
+
+19.4. **JURY TRIAL WAIVER.** TO THE EXTENT ANY CLAIM PROCEEDS IN COURT RATHER THAN ARBITRATION, YOU AND THE COMPANY EACH **WAIVE ANY RIGHT TO A TRIAL BY JURY**.
+
+19.5. **Small-claims carve-out.** Either party may bring an individual claim in the small-claims court of **[COUNTY] County, Florida**, so long as the claim qualifies and remains in that court.
+
+19.6. **30-day opt-out.** You may opt out of this arbitration agreement by emailing **support@cruiseapp.com** within **30 days** of first accepting these Rider Terms, including your name, your account email, and a clear statement that you opt out of arbitration. If you opt out, disputes shall be litigated in the state or federal courts located in **[COUNTY] County, Florida**, still on an individual basis only — the class action waiver in Section 19.3 survives opt-out to the fullest extent permitted by law.
+
+19.7. **Intellectual property.** Either party may seek injunctive or other equitable relief in a court of competent jurisdiction for actual or threatened infringement or misappropriation of intellectual property rights.
+
+19.8. **FCRA exclusion.** This arbitration agreement does not apply to any pre-adverse action or dispute process under the Fair Credit Reporting Act ("**FCRA**"); that administrative process remains unchanged.''',
     ),
     LegalSection(
       heading: '20. Electronic Acceptance and Communications (E-SIGN)',
       body: r'''
 20.1. **Consent to electronic records.** By creating an account or tapping acceptance, you consent to enter into these Rider Terms and to receive all related records electronically — including these Rider Terms, updates to them, receipts, notices, disclosures, and other communications — under the federal Electronic Signatures in Global and National Commerce Act (E-SIGN) and the Florida Uniform Electronic Transaction Act.
 
-20.2. **Retaining copies.** You may view these Rider Terms in the app and may download or retain a copy of them and of your electronic receipts. You may also request a paper copy of any electronic record by contacting **[NOTICE EMAIL]**.
+20.2. **Retaining copies.** You may view these Rider Terms in the app and may download or retain a copy of them and of your electronic receipts. You may also request a paper copy of any electronic record by contacting **support@cruiseapp.com**.
 
-20.3. **Withdrawing consent.** You may withdraw your consent to receive records electronically at any time by contacting **[APPEALS CONTACT]**. Because the Platform operates through electronic communications, withdrawing consent may require you to close your account and stop using the Platform. Withdrawal does not affect the legal validity of records provided electronically before the withdrawal takes effect.
+20.3. **Withdrawing consent.** You may withdraw your consent to receive records electronically at any time by contacting **support@cruiseapp.com**. Because the Platform operates through electronic communications, withdrawing consent may require you to close your account and stop using the Platform. Withdrawal does not affect the legal validity of records provided electronically before the withdrawal takes effect.
 
 20.4. **Keeping your contact information current.** You agree to keep the email address and phone number associated with your account current. You may update them in your account profile in the app.
 
@@ -179,7 +192,7 @@ These Rider Terms of Service (the "Rider Terms") are entered into by and between
     LegalSection(
       heading: '21. Notices',
       body: r'''
-21.1. Notices to the Company: **[COMPANY ADDRESS]** or **[NOTICE EMAIL]**. Notices to you: the email address or phone number associated with your account, or through the app.''',
+21.1. Notices to the Company: by email to **support@cruiseapp.com**. Notices to you: the email address or phone number associated with your account, or through the app.''',
     ),
     LegalSection(
       heading: '22. Updates to These Terms',
@@ -209,7 +222,7 @@ These Rider Terms of Service (the "Rider Terms") are entered into by and between
   Widget build(BuildContext context) {
     return const LegalDocumentScreen(
       title: 'Terms of Service',
-      effectiveDate: 'Version 1.0 — Effective Date: [EFFECTIVE DATE]',
+      effectiveDate: 'Version 1.0 — Effective Date: August 8, 2026',
       sections: _sections,
     );
   }

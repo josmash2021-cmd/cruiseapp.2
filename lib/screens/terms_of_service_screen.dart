@@ -4,8 +4,7 @@ import 'legal_document_screen.dart';
 /// Rider Terms of Service. Source of truth: docs/rider_terms_of_service.md
 /// (Royal Purple LLC / Florida, Version 1.0) — keep both in sync.
 /// Rendered with the shared neumorphic legal-document widget.
-/// English-only legal content; the remaining bracketed placeholder
-/// ([COUNTY]) is kept verbatim pending launch details.
+/// English-only legal content; venue is Miami-Dade County, Florida.
 class TermsOfServiceScreen extends StatelessWidget {
   const TermsOfServiceScreen({super.key});
 
@@ -160,15 +159,15 @@ These Rider Terms of Service (the "Rider Terms") are entered into by and between
       body: r'''
 19.1. The parties shall first attempt in good faith to resolve any dispute informally by notice under Section 21.
 
-19.2. **Binding individual arbitration.** Except as provided in Sections 19.5 through 19.8, any dispute, claim, or controversy arising out of or relating to these Rider Terms or the Platform that is not resolved informally shall be resolved by **final and binding individual arbitration** administered by the American Arbitration Association ("**AAA**") under its Consumer Arbitration Rules. The arbitration shall be seated in **[COUNTY] County, Florida**, shall be conducted in English before a single arbitrator, and may be conducted remotely by videoconference where the AAA rules permit. These Rider Terms are governed by the laws of the State of Florida, and the arbitrator shall apply Florida law. Judgment on the award may be entered in any court of competent jurisdiction.
+19.2. **Binding individual arbitration.** Except as provided in Sections 19.5 through 19.8, any dispute, claim, or controversy arising out of or relating to these Rider Terms or the Platform that is not resolved informally shall be resolved by **final and binding individual arbitration** administered by the American Arbitration Association ("**AAA**") under its Consumer Arbitration Rules. The arbitration shall be seated in **Miami-Dade County, Florida**, shall be conducted in English before a single arbitrator, and may be conducted remotely by videoconference where the AAA rules permit. These Rider Terms are governed by the laws of the State of Florida, and the arbitrator shall apply Florida law. Judgment on the award may be entered in any court of competent jurisdiction.
 
 19.3. **CLASS ACTION WAIVER.** YOU AND THE COMPANY AGREE THAT EACH MAY BRING CLAIMS AGAINST THE OTHER **ONLY IN AN INDIVIDUAL CAPACITY** AND NOT AS A PLAINTIFF OR CLASS MEMBER IN ANY PURPORTED CLASS, COLLECTIVE, CONSOLIDATED, OR REPRESENTATIVE ACTION, AND NOT IN ANY PRIVATE ATTORNEY GENERAL ACTION. THE ARBITRATOR MAY NOT CONSOLIDATE THE CLAIMS OF MORE THAN ONE PERSON.
 
 19.4. **JURY TRIAL WAIVER.** TO THE EXTENT ANY CLAIM PROCEEDS IN COURT RATHER THAN ARBITRATION, YOU AND THE COMPANY EACH **WAIVE ANY RIGHT TO A TRIAL BY JURY**.
 
-19.5. **Small-claims carve-out.** Either party may bring an individual claim in the small-claims court of **[COUNTY] County, Florida**, so long as the claim qualifies and remains in that court.
+19.5. **Small-claims carve-out.** Either party may bring an individual claim in the small-claims court of **Miami-Dade County, Florida**, so long as the claim qualifies and remains in that court.
 
-19.6. **30-day opt-out.** You may opt out of this arbitration agreement by emailing **support@cruiseapp.com** within **30 days** of first accepting these Rider Terms, including your name, your account email, and a clear statement that you opt out of arbitration. If you opt out, disputes shall be litigated in the state or federal courts located in **[COUNTY] County, Florida**, still on an individual basis only — the class action waiver in Section 19.3 survives opt-out to the fullest extent permitted by law.
+19.6. **30-day opt-out.** You may opt out of this arbitration agreement by emailing **support@cruiseapp.com** within **30 days** of first accepting these Rider Terms, including your name, your account email, and a clear statement that you opt out of arbitration. If you opt out, disputes shall be litigated in the state or federal courts located in **Miami-Dade County, Florida**, still on an individual basis only — the class action waiver in Section 19.3 survives opt-out to the fullest extent permitted by law.
 
 19.7. **Intellectual property.** Either party may seek injunctive or other equitable relief in a court of competent jurisdiction for actual or threatened infringement or misappropriation of intellectual property rights.
 

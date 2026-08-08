@@ -298,7 +298,7 @@ controversy arising out of or relating to these Driver Terms or the Platform
 shall be resolved by **final and binding individual arbitration**
 administered by the American Arbitration Association ("**AAA**") under its
 applicable Consumer or Commercial Arbitration Rules. The arbitration shall be
-seated in **[COUNTY] County, Florida**, shall be conducted in English before
+seated in **Miami-Dade County, Florida**, shall be conducted in English before
 a single arbitrator, and the arbitrator shall apply Florida law. Judgment on
 the award may be entered in any court of competent jurisdiction.
 (a) **CLASS ACTION WAIVER.** THE COMPANY AND THE DRIVER AGREE THAT EACH MAY
@@ -310,14 +310,14 @@ ARBITRATOR MAY NOT CONSOLIDATE THE CLAIMS OF MORE THAN ONE PERSON.
 THAN ARBITRATION, THE COMPANY AND THE DRIVER EACH **WAIVE ANY RIGHT TO A
 TRIAL BY JURY**.
 (c) **Small-claims carve-out.** Either party may bring an individual claim in
-the small-claims court of **[COUNTY] County, Florida**, so long as the claim
+the small-claims court of **Miami-Dade County, Florida**, so long as the claim
 qualifies and remains in that court.
 (d) **30-day opt-out.** The Driver may opt out of this arbitration agreement
 by emailing **support@cruiseapp.com** within **30 days** of first accepting
 these Driver Terms, including the Driver's name, account email, and a clear
 statement that the Driver opts out of arbitration. If the Driver opts out,
 disputes shall be litigated in the state or federal courts located in
-**[COUNTY] County, Florida**, still on an individual basis only — the class
+**Miami-Dade County, Florida**, still on an individual basis only — the class
 action waiver in paragraph (a) survives opt-out to the fullest extent
 permitted by law.
 (e) **Intellectual property.** Either party may seek injunctive or other

@@ -262,7 +262,7 @@ relating to these Rider Terms or the Platform that is not resolved
 informally shall be resolved by **final and binding individual
 arbitration** administered by the American Arbitration Association
 ("**AAA**") under its Consumer Arbitration Rules. The arbitration shall be
-seated in **[COUNTY] County, Florida**, shall be conducted in English
+seated in **Miami-Dade County, Florida**, shall be conducted in English
 before a single arbitrator, and may be conducted remotely by
 videoconference where the AAA rules permit. These Rider Terms are governed
 by the laws of the State of Florida, and the arbitrator shall apply
@@ -281,14 +281,14 @@ RATHER THAN ARBITRATION, YOU AND THE COMPANY EACH **WAIVE ANY RIGHT TO A
 TRIAL BY JURY**.
 
 19.5. **Small-claims carve-out.** Either party may bring an individual
-claim in the small-claims court of **[COUNTY] County, Florida**, so long
+claim in the small-claims court of **Miami-Dade County, Florida**, so long
 as the claim qualifies and remains in that court.
 
 19.6. **30-day opt-out.** You may opt out of this arbitration agreement by
 emailing **support@cruiseapp.com** within **30 days** of first accepting
 these Rider Terms, including your name, your account email, and a clear
 statement that you opt out of arbitration. If you opt out, disputes shall
-be litigated in the state or federal courts located in **[COUNTY] County,
+be litigated in the state or federal courts located in **Miami-Dade County,
 Florida**, still on an individual basis only — the class action waiver in
 Section 19.3 survives opt-out to the fullest extent permitted by law.
 

@@ -9,8 +9,9 @@ const kDriverAgreementVersion = '2.1';
 
 /// Driver-facing Independent Contractor Agreement. Source of truth:
 /// docs/driver_agreement.md (Royal Purple LLC / Florida) —
-/// keep both in sync. The remaining bracketed placeholders ([COUNTY],
-/// [INSURANCE DISCLOSURE LINK/REFERENCE], signature block) are kept verbatim.
+/// keep both in sync. Venue is Miami-Dade County, Florida; the remaining
+/// bracketed placeholders ([INSURANCE DISCLOSURE LINK/REFERENCE], signature
+/// block) are kept verbatim.
 class DriverAgreementScreen extends StatelessWidget {
   const DriverAgreementScreen({super.key, this.onAccept});
 
@@ -202,15 +203,15 @@ The specific insurers, policy numbers, and any higher limits applicable to the D
       body: r'''
 18.1. The Parties shall first attempt in good faith to resolve any dispute arising out of this Agreement informally by notice under Section 20.
 
-18.2. **Binding individual arbitration.** Except as provided in Sections 18.5 through 18.8, any dispute, claim, or controversy arising out of or relating to this Agreement that is not resolved informally shall be resolved by **final and binding individual arbitration** administered by the American Arbitration Association ("**AAA**") under its applicable Consumer or Commercial Arbitration Rules. The arbitration shall be seated in **[COUNTY] County, Florida**, shall be conducted in English before a single arbitrator, and the arbitrator shall apply the laws of the State of Florida. Judgment on the award may be entered in any court of competent jurisdiction.
+18.2. **Binding individual arbitration.** Except as provided in Sections 18.5 through 18.8, any dispute, claim, or controversy arising out of or relating to this Agreement that is not resolved informally shall be resolved by **final and binding individual arbitration** administered by the American Arbitration Association ("**AAA**") under its applicable Consumer or Commercial Arbitration Rules. The arbitration shall be seated in **Miami-Dade County, Florida**, shall be conducted in English before a single arbitrator, and the arbitrator shall apply the laws of the State of Florida. Judgment on the award may be entered in any court of competent jurisdiction.
 
 18.3. **CLASS ACTION WAIVER.** THE COMPANY AND THE DRIVER AGREE THAT EACH MAY BRING CLAIMS AGAINST THE OTHER **ONLY IN AN INDIVIDUAL CAPACITY** AND NOT AS A PLAINTIFF OR CLASS MEMBER IN ANY PURPORTED CLASS, COLLECTIVE, CONSOLIDATED, OR REPRESENTATIVE ACTION, AND NOT IN ANY PRIVATE ATTORNEY GENERAL ACTION. THE ARBITRATOR MAY NOT CONSOLIDATE THE CLAIMS OF MORE THAN ONE PERSON.
 
 18.4. **JURY TRIAL WAIVER.** TO THE EXTENT ANY CLAIM PROCEEDS IN COURT RATHER THAN ARBITRATION, THE COMPANY AND THE DRIVER EACH **WAIVE ANY RIGHT TO A TRIAL BY JURY**.
 
-18.5. **Small-claims carve-out.** Either Party may bring an individual claim in the small-claims court of **[COUNTY] County, Florida**, so long as the claim qualifies and remains in that court.
+18.5. **Small-claims carve-out.** Either Party may bring an individual claim in the small-claims court of **Miami-Dade County, Florida**, so long as the claim qualifies and remains in that court.
 
-18.6. **30-day opt-out.** The Driver may opt out of this arbitration agreement by emailing **support@cruiseapp.com** within **30 days** of first accepting this Agreement, including the Driver's name, account email, and a clear statement that the Driver opts out of arbitration. If the Driver opts out, disputes shall be litigated in the state or federal courts located in **[COUNTY] County, Florida**, still on an individual basis only — the class action waiver in Section 18.3 survives opt-out to the fullest extent permitted by law.
+18.6. **30-day opt-out.** The Driver may opt out of this arbitration agreement by emailing **support@cruiseapp.com** within **30 days** of first accepting this Agreement, including the Driver's name, account email, and a clear statement that the Driver opts out of arbitration. If the Driver opts out, disputes shall be litigated in the state or federal courts located in **Miami-Dade County, Florida**, still on an individual basis only — the class action waiver in Section 18.3 survives opt-out to the fullest extent permitted by law.
 
 18.7. **Intellectual property.** Either Party may seek injunctive or other equitable relief in a court of competent jurisdiction for actual or threatened infringement or misappropriation of intellectual property rights.
 

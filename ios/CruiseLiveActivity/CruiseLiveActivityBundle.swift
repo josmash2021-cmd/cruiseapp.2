@@ -108,10 +108,17 @@ private struct OfferCard: View {
     VStack(alignment: .leading, spacing: compact ? 14 : 18) {
       HStack(alignment: .center, spacing: 10) {
         CruiseLogoView(size: compact ? 26 : 34)
-        // The money the driver is being offered, in the size Uber gives
-        // its hourly rate: it is the one number the decision turns on.
-        Text(state.fare)
-          .font(.system(size: compact ? 26 : 34, weight: .heavy))
+        // No price outside the app (user spec 2026-08-08): the fare and
+        // hourly rate are decided INSIDE Cruise, on the offer card. The
+        // server sends fare="" and the island names the event instead.
+        Text(state.fare.isEmpty
+          ? (isSpanish ? "Nueva oferta" : "New Ride Offer")
+          : state.fare)
+          .font(.system(
+            size: state.fare.isEmpty
+              ? (compact ? 15 : 19)
+              : (compact ? 26 : 34),
+            weight: .heavy))
           .foregroundColor(.white)
           .lineLimit(1)
           .minimumScaleFactor(0.6)

@@ -1325,23 +1325,20 @@ class UnmatchedTripRetryAgent:
                 # carries the numbers (fare · $/hr · mi · min), same as
                 # dispatch's offer push — the generic "open Cruise to accept"
                 # copy told the driver nothing worth waking up for.
-                fare_str = f"${estimated_driver_fare:.2f}"
                 minutes = int(trip.duration) if trip.duration else 0
                 miles = float(trip.distance) if trip.distance else 0.0
-                per_hour_str = (f"${estimated_driver_fare / (minutes / 60):.2f}/hr"
-                                if minutes > 0 else None)
                 miles_str = f"{miles:.1f} mi" if miles > 0 else None
                 minutes_str = f"{minutes} min" if minutes > 0 else None
-                offer_body = " · ".join(
-                    s for s in (fare_str, per_hour_str, miles_str, minutes_str) if s
-                )
+                # No price outside the app (2026-08-08): the fare is decided
+                # on the offer card inside Cruise, so neither the island nor
+                # a banner may carry it.
                 if assigned.apns_la_activity_token or assigned.apns_la_start_token:
                     from routers.dispatch import _send_live_activity_offer
                     from utils.helpers import _safe_create_task
                     _safe_create_task(_send_live_activity_offer(
                         assigned,
-                        fare=fare_str,
-                        per_hour=per_hour_str,
+                        fare="",
+                        per_hour="",
                         miles=miles_str,
                         minutes=minutes_str,
                     ))
@@ -1350,7 +1347,7 @@ class UnmatchedTripRetryAgent:
                         _send_fcm_push(
                             assigned.fcm_token,
                             title="New Ride Offer",
-                            body=offer_body,
+                            body="A rider needs a ride — open Cruise to accept.",
                             data={"type": "new_offer", "trip_id": str(trip.id), "offer_id": str(offer.id)},
                             is_offer=True,
                         )

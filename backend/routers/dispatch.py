@@ -755,13 +755,11 @@ async def _send_offer_to_driver(
             "registers one", offer.id, driver.id,
         )
 
-    # The lock-screen copy is all a backgrounded driver sees before deciding
-    # whether to wake the app, so the push itself carries the numbers that
-    # decide: fare, $/hr, trip distance and duration. Trip.distance is miles
-    # and trip.duration whole minutes (see the auto-calc in trips.py), and
-    # either can still be NULL at request time — so every segment except the
-    # fare is optional, and a missing one shortens the list instead of
-    # blanking the body.
+    # Trip.distance is miles and trip.duration whole minutes (see the
+    # auto-calc in trips.py), and either can still be NULL at request time —
+    # so both segments are optional, and a missing one shortens the context
+    # instead of blanking it. The fare itself never leaves the server in a
+    # push: the price is decided inside the app.
     fare_str = f"${estimated_driver_fare:.2f}"
     minutes = int(trip.duration) if trip.duration else 0
     miles = float(trip.distance) if trip.distance else 0.0
@@ -769,9 +767,6 @@ async def _send_offer_to_driver(
                     if minutes > 0 else None)
     miles_str = f"{miles:.1f} mi" if miles > 0 else None
     minutes_str = f"{minutes} min" if minutes > 0 else None
-    offer_body = " · ".join(
-        s for s in (fare_str, per_hour_str, miles_str, minutes_str) if s
-    )
     push_data = {"type": "new_offer", "trip_id": str(trip.id),
                  "offer_id": str(offer.id),
                  "chained": "1" if chained else "0", "fare": fare_str}
@@ -783,7 +778,10 @@ async def _send_offer_to_driver(
         push_data["minutes"] = minutes_str
     if trip.pickup_address:
         push_data["pickup_address"] = trip.pickup_address
-    # Outside the app the offer shows up in exactly ONE place.
+    # Outside the app the offer shows up in exactly ONE place — and WITHOUT
+    # the price (user spec 2026-08-08): the fare is decided inside the app,
+    # so no push, banner or island card carries it. Miles and minutes stay:
+    # they are context for the drive, not the pay for it.
     #
     # iPhone with the Live Activity build (it has registered its APNs
     # channels): the Dynamic Island / lock-screen card IS the notification —
@@ -796,8 +794,8 @@ async def _send_offer_to_driver(
     if driver.apns_la_activity_token or driver.apns_la_start_token:
         _safe_create_task(_send_live_activity_offer(
             driver,
-            fare=fare_str,
-            per_hour=per_hour_str,
+            fare="",
+            per_hour="",
             miles=miles_str,
             minutes=minutes_str,
         ))
@@ -805,7 +803,7 @@ async def _send_offer_to_driver(
         _safe_create_task(_send_fcm_push_async(
             driver.fcm_token or "",
             title="New Ride Offer",
-            body=offer_body,
+            body="A rider needs a ride — open Cruise to accept.",
             data=push_data,
             is_offer=True,
         ))

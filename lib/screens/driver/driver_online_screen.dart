@@ -1102,7 +1102,19 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
           _lastAutoTriggeredOfferId = null;
           _offerRouteShown = false;
           if (_phase == _Phase.searching && _pendingOffers.isNotEmpty) {
-            _autoTriggerRoutePreview(_pendingOffers.first);
+            final current = _previewingOffer;
+            if (current != null) {
+              // The offer card never closed, so _autoTriggerRoutePreview
+              // dedups on it ("already previewing") and draws NOTHING —
+              // the driver came back to a card with no route. Redraw the
+              // same offer directly. _isCardAnimating can be stuck true if
+              // the app was backgrounded mid-sequence (its ticker paused
+              // with the awaits), which would veto the redraw — reset it.
+              _isCardAnimating = false;
+              _onOfferCardTap(current);
+            } else {
+              _autoTriggerRoutePreview(_pendingOffers.first);
+            }
           }
         });
       });

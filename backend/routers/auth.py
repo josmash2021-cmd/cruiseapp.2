@@ -2038,9 +2038,17 @@ async def submit_verification(request: Request, user: User = Depends(_get_curren
         if not db_user:
             raise HTTPException(404, "User not found")
         db_user.id_document_type = body.get("id_document_type", "id_card")
-        db_user.verification_status = "pending"
+        # Riders auto-approve on submission — dispatch review is the DRIVER
+        # gate (car, insurance, background check). A rider's license upload
+        # is the whole identity check, so making them wait for an operator
+        # click only stranded approved-to-be riders at a locked home screen.
+        if db_user.role == "rider":
+            db_user.verification_status = "approved"
+            db_user.is_verified = True
+        else:
+            db_user.verification_status = "pending"
+            db_user.is_verified = False
         db_user.verification_reason = None
-        db_user.is_verified = False
         # Enforce minimum driver age (21+) when a date of birth is provided
         dob = body.get("dob") or body.get("date_of_birth")
         if dob and db_user.role == "driver":
@@ -2235,6 +2243,17 @@ async def submit_verification(request: Request, user: User = Depends(_get_curren
             )
         except Exception as e:
             logging.error("Firestore verification sync failed: %s", e)
+
+    # The rider auto-approval has to reach Firestore too — the app's listener
+    # watches the verifications collection, and the sync above wrote
+    # "pending". This batch flips all three collections to approved, the same
+    # write dispatch's own approval button makes.
+    if _HAS_FIRESTORE and db_user.role == "rider":
+        try:
+            firestore_sync.write_approval(db_user.id, "approve", role="rider")
+        except Exception as e:
+            logging.error("[Verify] rider auto-approval Firestore write failed: %s", e)
+
     try:
         return _user_dict(db_user)
     except Exception as e:

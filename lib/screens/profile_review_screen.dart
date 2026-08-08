@@ -291,6 +291,12 @@ class _ProfileReviewScreenState extends State<ProfileReviewScreen> {
       }
     }));
 
+    // A fresh signup has NOT verified yet — mark it so the home shows the
+    // verify card from the very first frame instead of a live "Where to?"
+    // that locks itself a second later. The KYC screen (auto-approving for
+    // riders now) flips this to 'approved'.
+    await UserSession.updateField('verificationStatus', 'pending');
+
     // Auto-enable biometric login so it appears on next sign-in
     await LocalDataService.setBiometricLogin(true);
 

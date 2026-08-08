@@ -1803,6 +1803,7 @@ class ApiService {
     String? terminal,
     String? pickupZone,
     String? notes,
+    String? paymentIntentId,
   }) async {
     final h = await _authHeaders();
     final res = await _client
@@ -1826,6 +1827,8 @@ class ApiService {
             if (terminal != null) 'terminal': terminal,
             if (pickupZone != null) 'pickup_zone': pickupZone,
             if (notes != null) 'notes': notes,
+            if (paymentIntentId != null)
+              'stripe_payment_intent_id': paymentIntentId,
           }),
         )
         .timeout(const Duration(seconds: 10));

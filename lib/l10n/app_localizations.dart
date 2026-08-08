@@ -5075,6 +5075,10 @@ class S {
         return _es
             ? 'Error de conexión. Revisa tu red e intenta de nuevo.'
             : 'Connection error. Check your network and try again.';
+      case 'client:payment_declined':
+        return _es
+            ? 'Tu pago fue rechazado. Revisa tu método de pago e intenta de nuevo.'
+            : 'Your payment was declined. Check your payment method and try again.';
       default:
         if (rawReason != null && rawReason.isNotEmpty) return rawReason;
         return _es ? 'Tu viaje fue cancelado.' : 'Your trip was cancelled.';

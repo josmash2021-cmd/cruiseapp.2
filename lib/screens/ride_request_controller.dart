@@ -1559,10 +1559,15 @@ extension _RideRequestController on _RideRequestScreenState {
         final isClientError = cancelCode == RiderTripCancelCodes.clientNoInternet ||
             cancelCode == RiderTripCancelCodes.clientNoSession ||
             cancelCode == RiderTripCancelCodes.clientCreateFailed ||
-            cancelCode == RiderTripCancelCodes.clientConnectionError;
+            cancelCode == RiderTripCancelCodes.clientConnectionError ||
+            cancelCode == RiderTripCancelCodes.clientPaymentDeclined;
         if (isClientError) {
           _ctrl.reset();
-          final msg = rawReason ?? S.of(context).tripCancelled;
+          // 402 declines carry the stringified backend detail as rawReason —
+          // show the localized decline message instead of the raw payload.
+          final msg = cancelCode == RiderTripCancelCodes.clientPaymentDeclined
+              ? S.of(context).cancelCodeMessage(cancelCode, rawReason: rawReason)
+              : (rawReason ?? S.of(context).tripCancelled);
           _messenger?.showSnackBar(
             SnackBar(
               behavior: SnackBarBehavior.floating,
@@ -2146,6 +2151,9 @@ extension _RideRequestController on _RideRequestScreenState {
         terminal: state.airportTerminal,
         pickupZone: state.airportPickupZone,
         notes: notes,
+        // Hold placed by _confirmNativePayment before we got here (skipped
+        // in test mode) — the backend captures/cancels it with the trip.
+        paymentIntentId: _heldPaymentIntentId,
       );
 
       if (!mounted) return;
@@ -2176,6 +2184,21 @@ extension _RideRequestController on _RideRequestScreenState {
       );
     } catch (e) {
       if (!mounted) return;
+      // Backend rejected the hold (402 missing/failed PaymentIntent) — show
+      // the same payment-declined dialog as the immediate flow instead of
+      // the generic schedule retry; the reservation was NOT created.
+      if (e is ApiException && e.statusCode == 402) {
+        final option = _ctrl.state.selectedOption;
+        if (option == null) return;
+        final amountCents = (option.priceEstimate * 100).round();
+        await _handlePaymentFailure(
+          error: e,
+          amountCents: amountCents,
+          originalMethod: _selectedPaymentMethod,
+          option: option,
+        );
+        return;
+      }
       _showRetrySnackBar(
         S.of(context).failedToScheduleRide(e.toString()),
         _createScheduledTrip,

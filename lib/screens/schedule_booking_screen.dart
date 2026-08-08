@@ -18,6 +18,7 @@ import '../config/map_theme.dart';
 import 'package:intl/intl.dart';
 
 import '../config/api_keys.dart';
+import '../config/app_config.dart';
 import '../config/app_theme.dart';
 import '../config/page_transitions.dart';
 import '../config/map_styles.dart';
@@ -721,6 +722,38 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen>
           ? 'Flight: ${_airportSelection!.flightNumber}'
           : null;
 
+      // Hold the full estimated fare before the reservation is created —
+      // same holdOnly PaymentIntent as the immediate flow. If the hold is
+      // declined the booking is NOT created. Web and sandbox keep the
+      // existing bypass (no real charge instrument to hold against).
+      String? holdPiId;
+      if (!kIsWeb && !AppConfig.sandboxPayments) {
+        try {
+          final pmId = await LocalDataService.getStripePaymentMethodId();
+          if (pmId != null && pmId.isNotEmpty) {
+            final piResult = await ApiService.createPaymentIntent(
+              amountCents: (fare * 100).round(),
+              paymentMethodId: pmId,
+              holdOnly: true,
+            );
+            final clientSecret = piResult['client_secret'] as String?;
+            // Mock backend (sandbox/tester) — no real hold to send.
+            if (clientSecret == null || !clientSecret.startsWith('mock_')) {
+              final status = piResult['status'] as String?;
+              if (status != 'succeeded' && status != 'requires_capture') {
+                throw ApiException(
+                    402, 'hold_not_authorized:${status ?? 'unknown'}');
+              }
+              holdPiId = piResult['payment_intent_id'] as String?;
+            }
+          }
+        } catch (e) {
+          debugPrint('[Schedule] Hold failed: $e');
+          if (mounted) _showErr(_paymentDeclinedMsg(e));
+          return;
+        }
+      }
+
       final tripData = await ApiService.createTrip(
         riderId: riderId,
         pickupAddress: _pickupAddress,
@@ -737,6 +770,7 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen>
         terminal: _airportSelection?.terminal?.name,
         pickupZone: _airportSelection?.arrivalDoor ?? _airportSelection?.airline,
         notes: notes,
+        paymentIntentId: holdPiId,
       );
 
       final tripId = tripData['id'] as int?;
@@ -811,10 +845,25 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen>
         (_) => false,
       );
     } catch (e) {
-      if (mounted) _showErr(S.of(context).failedToBook('$e'));
+      if (!mounted) return;
+      // 402 = the backend rejected the hold (missing/failed PaymentIntent) —
+      // show the decline reason, not a generic booking failure.
+      if (e is ApiException && e.statusCode == 402) {
+        _showErr(_paymentDeclinedMsg(e));
+      } else {
+        _showErr(S.of(context).failedToBook('$e'));
+      }
     } finally {
       if (mounted) setState(() => _isBooking = false);
     }
+  }
+
+  /// Human message for a declined hold: Stripe errors arrive as a
+  /// stringified dict ({message: …, code: …, decline_code: …}) — extract
+  /// the human message when possible (same pattern as _handlePaymentFailure).
+  String _paymentDeclinedMsg(Object e) {
+    final m = RegExp(r'message: ([^,}]+)').firstMatch(e.toString());
+    return m != null ? m.group(1)!.trim() : S.of(context).cardDeclinedMsg;
   }
 
   void _showErr(String msg) {

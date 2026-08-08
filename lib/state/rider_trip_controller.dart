@@ -237,6 +237,7 @@ class RiderTripCancelCodes {
   static const clientNoSession = 'client:no_session';
   static const clientCreateFailed = 'client:create_failed';
   static const clientConnectionError = 'client:connection_error';
+  static const clientPaymentDeclined = 'client:payment_declined';
 
   /// True when the cancel was the "no driver available" timeout for an
   /// on-demand request. Gets the smooth home-screen handoff + gold toast.
@@ -863,12 +864,21 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
       pollingStarted = true; // guard: keep _isRequesting=true while polling
     } catch (e) {
       debugPrint('dispatchRideRequest failed: $e');
+      // 402 = the backend rejected the hold (missing/failed PaymentIntent).
+      // Surface it as a payment decline, not a generic connection error, so
+      // the rider fixes their card instead of retrying a doomed request.
+      final apiErr = e is ApiException ? e : null;
+      final isPaymentDeclined = apiErr?.statusCode == 402;
       // Rollback to previous state so rider can retry
       _state = _state.copyWith(
         phase: previousPhase,
         selectedOption: previousOption,
-        cancelReason: 'Connection error. Check your network and try again.',
-        cancelCode: RiderTripCancelCodes.clientConnectionError,
+        cancelReason: isPaymentDeclined
+            ? apiErr!.message
+            : 'Connection error. Check your network and try again.',
+        cancelCode: isPaymentDeclined
+            ? RiderTripCancelCodes.clientPaymentDeclined
+            : RiderTripCancelCodes.clientConnectionError,
       );
       notifyListeners();
     } finally {

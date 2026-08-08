@@ -1332,7 +1332,14 @@ class UnmatchedTripRetryAgent:
                 # No price outside the app (2026-08-08): the fare is decided
                 # on the offer card inside Cruise, so neither the island nor
                 # a banner may carry it.
-                if assigned.apns_la_activity_token or assigned.apns_la_start_token:
+                #
+                # Same fallback as dispatch: a registered channel is not
+                # enough — with APNs unconfigured the liveactivity push is a
+                # silent no-op and suppressing the banner leaves the driver
+                # with NOTHING outside the app.
+                from services.apns_liveactivity import apns_configured
+                if (assigned.apns_la_activity_token or assigned.apns_la_start_token) \
+                        and apns_configured():
                     from routers.dispatch import _send_live_activity_offer
                     from utils.helpers import _safe_create_task
                     _safe_create_task(_send_live_activity_offer(

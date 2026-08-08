@@ -265,6 +265,11 @@ async def cancel_payment_intent(intent_id: str, user: User = Depends(_get_curren
         if trip.rider_id != user.id:
             logging.warning("[Payment] Unauthorized cancel attempt on %s by user %s", intent_id, user.id)
             raise HTTPException(403, "You are not authorized to cancel this payment")
+        # A hold tied to an ACTIVE trip is not releasable here — the only
+        # release path is the trip-cancel flow (_release_or_capture_fee_on_cancel),
+        # which also settles any cancellation fee owed.
+        if trip.status not in ("cancelled", "completed"):
+            raise HTTPException(409, "Cannot release the hold while the trip is still active")
     if not _HAS_STRIPE:
         return {"payment_intent_id": intent_id, "status": "canceled", "cancelled": True}
     try:
@@ -296,6 +301,11 @@ async def capture_payment_intent(intent_id: str, user: User = Depends(_get_curre
         if trip.rider_id != user.id:
             logging.warning("[Payment] Unauthorized capture attempt on %s by user %s", intent_id, user.id)
             raise HTTPException(403, "You are not authorized to capture this payment")
+        # A hold tied to an ACTIVE trip is not capturable here — capture
+        # happens through the trip-completion flow (_charge_trip), which
+        # computes the final amount including wait fees and shortfall.
+        if trip.status not in ("cancelled", "completed"):
+            raise HTTPException(409, "Cannot capture the hold while the trip is still active")
     if not _HAS_STRIPE:
         return {"payment_intent_id": intent_id, "status": "succeeded", "captured": True}
     try:

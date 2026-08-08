@@ -328,6 +328,25 @@ async def create_trip(body: CreateTripIn, user: User = Depends(_get_current_user
                 400,
                 "No payment method on file. Please add a card in Payment Methods before booking.",
             )
+        # A card-on-file rider must hold the fare up front — without a
+        # hold the scheduled ride is a free ride when the charge fails.
+        pi_id = body.stripe_payment_intent_id
+        if not pi_id:
+            raise HTTPException(
+                402,
+                "A payment hold is required before booking. Please retry payment.",
+            )
+        if _HAS_STRIPE:
+            try:
+                intent = _stripe_mod.PaymentIntent.retrieve(pi_id)
+                if intent.status != "requires_capture":
+                    raise HTTPException(
+                        402,
+                        f"Payment hold is not valid (status: {intent.status}). Please retry payment.",
+                    )
+            except _stripe_mod.error.StripeError as e:
+                logging.warning("[Trips] Invalid PaymentIntent %s: %s", pi_id, e)
+                raise HTTPException(402, "Payment verification failed. Please retry.")
 
     # A rider books only once the account is approved — identity captured is
     # not enough. Covers immediate, scheduled AND airport rides: all three
@@ -377,6 +396,14 @@ async def create_trip(body: CreateTripIn, user: User = Depends(_get_current_user
         logging.error("create_trip DB error: %s", e)
         await db.rollback()
         raise HTTPException(500, f"Failed to create trip: {e}")
+
+    # If a PaymentIntent hold was provided, mark payment_status as "held"
+    # so the scheduled dispatcher re-verifies it and cancellation
+    # settles it through _release_or_capture_fee_on_cancel.
+    if trip.stripe_payment_intent_id and trip.payment_status == "unpaid":
+        trip.payment_status = "held"
+        await db.commit()
+        await db.refresh(trip)
 
     # ── Dispatch immediately ──
     # Creating a trip used to send it to nobody: offers were only ever made
@@ -1418,6 +1445,20 @@ async def update_trip_status(trip_id: int, status: str = Query(...), user: User 
             # Roll the wait fee into the fare so payment / earnings split
             # downstream see the full amount the rider pays.
             if wait_charge > 0:
+                # Extend the hold to the new total BEFORE raising the fare.
+                # Issuers that don't support incremental authorization →
+                # warning and continue; the completion shortfall charge in
+                # _charge_trip remains the backstop.
+                if trip.stripe_payment_intent_id and _HAS_STRIPE:
+                    try:
+                        _stripe_mod.PaymentIntent.increment_authorization(
+                            trip.stripe_payment_intent_id,
+                            amount=int(round(((trip.fare or 0.0) + wait_charge) * 100)),
+                        )
+                    except Exception as _inc_err:
+                        logging.warning(
+                            "[WaitFee] increment_authorization failed for trip %s: %s",
+                            trip.id, _inc_err)
                 trip.fare = round((trip.fare or 0.0) + wait_charge, 2)
     if canonical_new == "completed":
         trip.completed_at = datetime.now(timezone.utc)

@@ -1878,6 +1878,103 @@ async def _scheduled_ride_dispatcher():
                         continue
 
                     # --------------------------------------------------
+                    # Re-verify the payment hold before dispatching.
+                    # Issuer holds expire (~7 days), so a ride booked far
+                    # ahead can reach dispatch time with a dead hold:
+                    # re-authorize off-session for the current total; if
+                    # the card declines, cancel WITHOUT fee and push the
+                    # rider to update their payment method.
+                    # --------------------------------------------------
+                    if trip.stripe_payment_intent_id and trip.payment_status == "held":
+                        from config import _HAS_STRIPE, _stripe_mod
+                        if _HAS_STRIPE:
+                            try:
+                                _existing_pi = _stripe_mod.PaymentIntent.retrieve(
+                                    trip.stripe_payment_intent_id)
+                                _pi_ok = getattr(_existing_pi, "status", "") == "requires_capture"
+                            except Exception as _pi_err:
+                                logging.warning(
+                                    "[Scheduler] hold retrieve failed trip=%d: %s", trip.id, _pi_err)
+                                _pi_ok = False
+                            if not _pi_ok:
+                                _reauthed = False
+                                try:
+                                    pm_r = await db.execute(
+                                        select(RiderPaymentMethod).where(
+                                            RiderPaymentMethod.user_id == trip.rider_id,
+                                            RiderPaymentMethod.method_type == "stripe_card",
+                                            RiderPaymentMethod.stripe_pm_id.isnot(None),
+                                        ).order_by(
+                                            RiderPaymentMethod.is_default.desc(),
+                                            RiderPaymentMethod.created_at.asc(),
+                                        )
+                                    )
+                                    _pm = pm_r.scalars().first()
+                                    if not _pm:
+                                        raise ValueError("no saved card")
+                                    rider_r = await db.execute(
+                                        select(User).where(User.id == trip.rider_id))
+                                    _rider_row = rider_r.scalar_one_or_none()
+                                    _customer_id = getattr(_rider_row, "stripe_customer_id", None)
+                                    _new_pi = _stripe_mod.PaymentIntent.create(
+                                        amount=max(int(round(float(trip.fare or 0) * 100)), 50),
+                                        currency="usd",
+                                        payment_method=_pm.stripe_pm_id,
+                                        **({"customer": _customer_id} if _customer_id else {}),
+                                        confirm=True,
+                                        off_session=True,
+                                        capture_method="manual",
+                                        automatic_payment_methods={
+                                            "enabled": True, "allow_redirects": "never"},
+                                        metadata={
+                                            "trip_id": str(trip.id),
+                                            "rider_id": str(trip.rider_id),
+                                            "kind": "scheduled_reauth"},
+                                    )
+                                    if _new_pi.status != "requires_capture":
+                                        raise ValueError(f"re-auth status {_new_pi.status}")
+                                    trip.stripe_payment_intent_id = _new_pi.id
+                                    trip.payment_status = "held"
+                                    await db.commit()
+                                    _reauthed = True
+                                    logging.info(
+                                        "[Scheduler] trip=%d hold re-authorized off-session (pi=%s)",
+                                        trip.id, _new_pi.id)
+                                except Exception as _reauth_err:
+                                    logging.warning(
+                                        "[Scheduler] trip=%d hold re-auth DECLINED: %s — cancelling without fee",
+                                        trip.id, _reauth_err)
+                                if not _reauthed:
+                                    trip.status = "cancelled"
+                                    trip.cancel_reason = "payment_declined"
+                                    trip.payment_status = "cancelled"
+                                    trip.updated_at = datetime.now(timezone.utc)
+                                    await db.commit()
+                                    try:
+                                        rider_r = await db.execute(
+                                            select(User).where(User.id == trip.rider_id))
+                                        rider = rider_r.scalar_one_or_none()
+                                        if rider and rider.fcm_token:
+                                            _send_fcm_push(
+                                                token=rider.fcm_token,
+                                                title="Scheduled ride cancelled",
+                                                body="Your payment method was declined. Please update it and book again.",
+                                                data={"type": "scheduled_canceled", "trip_id": str(trip.id)},
+                                            )
+                                    except Exception as _fcm_err:
+                                        logging.warning("[Scheduler] FCM notify rider failed for trip %d: %s", trip.id, _fcm_err)
+                                    if _HAS_FIRESTORE:
+                                        try:
+                                            firestore_sync.sync_trip_status(trip.id, "cancelled")
+                                            firestore_sync.sync_scheduled_ride(
+                                                trip_id=trip.id, rider_id=trip.rider_id,
+                                                status="cancelled",
+                                            )
+                                        except Exception:
+                                            pass
+                                    continue
+
+                    # --------------------------------------------------
                     # Find nearest online driver
                     # --------------------------------------------------
                     drivers_r = await db.execute(

@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from models.database import (
     get_db, SessionLocal, User, Trip, DispatchOffer, Vehicle,
     SupportChat, SupportMessage, ActionRequest, Rating, Notification,
+    RiderPaymentMethod,
 )
 from models.schemas import OwnerLogin, DispatchRequestIn
 import jwt
@@ -1389,22 +1390,43 @@ async def dispatch_request(body: DispatchRequestIn, user: User = Depends(_get_cu
 
     # ── Validate PaymentIntent hold (production only) ──────────
     # A valid hold is required before dispatching drivers to ensure
-    # the rider's card has funds. Skip for test/sandbox modes.
+    # the rider's card has funds. Skip for test/sandbox modes and for
+    # named tester accounts (same allowlist as POST /trips — `user`
+    # comes from the JWT, so it cannot be spoofed by the client).
     is_sandbox = os.environ.get("RAILWAY_ENVIRONMENT_NAME", "") != "production"
+    _raw_testers = os.environ.get("TEST_MODE_RIDER_IDS", "")
+    _tester_ids = {
+        int(p) for p in (s.strip() for s in _raw_testers.split(",")) if p.isdigit()
+    }
     pi_id = data.get("stripe_payment_intent_id")
-    if not is_sandbox and pi_id:
-        try:
-            import stripe as _stripe_mod
-            if _HAS_STRIPE:
-                intent = _stripe_mod.PaymentIntent.retrieve(pi_id)
-                if intent.status not in ("requires_capture", "succeeded"):
+    hold_intent = None
+    if not is_sandbox and user.id not in _tester_ids and _HAS_STRIPE:
+        # A rider with a card on file must hold the fare up front — no
+        # hold means a free ride when the completion charge fails.
+        pm_r = await db.execute(
+            select(RiderPaymentMethod).where(
+                RiderPaymentMethod.user_id == user.id,
+                RiderPaymentMethod.method_type == "stripe_card",
+                RiderPaymentMethod.stripe_pm_id.isnot(None),
+            )
+        )
+        has_card = pm_r.scalar_one_or_none() is not None
+        if has_card and not pi_id:
+            raise HTTPException(
+                402,
+                "A payment hold is required before requesting a ride. Please retry payment.",
+            )
+        if pi_id:
+            try:
+                hold_intent = _stripe_mod.PaymentIntent.retrieve(pi_id)
+                if hold_intent.status != "requires_capture":
                     raise HTTPException(
-                        400,
-                        f"Payment hold is not valid (status: {intent.status}). Please retry payment."
+                        402,
+                        f"Payment hold is not valid (status: {hold_intent.status}). Please retry payment."
                     )
-        except _stripe_mod.error.StripeError as e:
-            logging.warning("[Dispatch] Invalid PaymentIntent %s: %s", pi_id, e)
-            raise HTTPException(400, "Payment verification failed. Please retry.")
+            except _stripe_mod.error.StripeError as e:
+                logging.warning("[Dispatch] Invalid PaymentIntent %s: %s", pi_id, e)
+                raise HTTPException(402, "Payment verification failed. Please retry.")
 
     # ── Apply fare surcharges ──────────────────────────────────
     fare = float(data.get("fare") or 0)
@@ -1431,6 +1453,21 @@ async def dispatch_request(body: DispatchRequestIn, user: User = Depends(_get_cu
     data["scheduled_surcharge"] = scheduled_surcharge
     data["airport_fee_applied"] = airport_fee_applied
     data["meet_greet_fee"] = meet_greet_fee
+
+    # ── Extend the hold if surcharges pushed the fare past it ────
+    # Not all issuers support incremental authorization — on Stripe
+    # error log and continue; the completion shortfall charge in
+    # _charge_trip remains the backstop for the uncovered amount.
+    if hold_intent is not None and data.get("fare"):
+        fare_total_cents = int(round(float(data["fare"]) * 100))
+        if fare_total_cents > int(getattr(hold_intent, "amount", 0) or 0):
+            try:
+                _stripe_mod.PaymentIntent.increment_authorization(
+                    pi_id, amount=fare_total_cents,
+                )
+            except Exception as e:
+                logging.warning(
+                    "[Dispatch] increment_authorization failed for %s: %s", pi_id, e)
 
     trip = Trip(**data)
     db.add(trip)

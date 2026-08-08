@@ -1720,10 +1720,14 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
   // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   //  POLLING & CLOCK
   // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-  void _startPolling() {
+  void _startPolling({bool force = false}) {
     // ── Debounce: ignore rapid-fire calls within 1s ──
+    // `force` skips it for the lifecycle resume: pause cancels _pollT and
+    // nothing retries a debounced start, so a quick background→foreground
+    // flip would otherwise leave the driver with no SSE and no poll.
     final now = DateTime.now();
-    if (_driverOnlineLastStartPolling != null &&
+    if (!force &&
+        _driverOnlineLastStartPolling != null &&
         now.difference(_driverOnlineLastStartPolling!).inMilliseconds < 1000) {
       debugPrint('[DriverOnline] _startPolling debounced (called within 1s)');
       return;
@@ -1871,7 +1875,10 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
         final visible = _phase == _Phase.searching
             ? offers
             : offers.where((o) => o['chained'] == true).toList();
-        if (visible.isEmpty) return;
+        // An empty list still goes through _applyOffers: the hold/expiry
+        // pass there is what retires a pending offer that died server-side
+        // (or went to another driver) when nothing new arrives — skipping
+        // it left the dead card and the Live Activity painted forever.
         _applyOffers(visible);
       },
       onError: (e) => scheduleReconnect('error: $e'),
@@ -2127,11 +2134,12 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       final offers = await ApiService.getDriverPendingOffers(_driverId!);
       if (!mounted) return;
       // Same rule as the SSE listener: outside the searching phase only
-      // chained offers are surfaced.
+      // chained offers are surfaced. An empty list still runs _applyOffers
+      // so the expiry pass can retire offers that died server-side —
+      // skipping it left the card and the Live Activity stuck.
       final visible = _phase == _Phase.searching
           ? offers
           : offers.where((o) => o['chained'] == true).toList();
-      if (visible.isEmpty) return;
       _applyOffers(visible);
     } catch (e) {
       debugPrint('Poll error: $e');
@@ -3153,6 +3161,9 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
           _fullSegTwo = [];
         });
       }
+      // The island mirrors _pendingOffers — without this the rejected offer
+      // stays on the lock screen until the 5s clock backstop catches it.
+      _syncOfferLiveActivity();
       // Guard: don't reset a disposed controller (can throw)
       if (_rejectSlideCtrl != null &&
           (_rejectSlideCtrl!.isAnimating || _rejectSlideCtrl!.isCompleted)) {

@@ -2212,10 +2212,22 @@ class ApiService {
   /// Register the iOS Live Activity push channel with the backend.
   /// kind: 'push_to_start' (starts the island on a killed app) or 'activity'
   /// (updates the running one). Empty token clears the field server-side.
+  ///
+  /// A single failure used to leave the island unpainted for the whole
+  /// session, so a non-2xx or a network error gets ONE delayed retry —
+  /// [_isRetry] keeps the retry from scheduling another one.
   static Future<void> registerLiveActivityToken({
     required String kind,
     required String token,
+    bool isRetry = false,
   }) async {
+    void scheduleRetry() {
+      if (isRetry) return;
+      unawaited(Future.delayed(const Duration(seconds: 10), () {
+        registerLiveActivityToken(kind: kind, token: token, isRetry: true);
+      }));
+    }
+
     try {
       final authToken = await getToken();
       if (authToken == null) {
@@ -2230,8 +2242,10 @@ class ApiService {
           )
           .timeout(const Duration(seconds: 8));
       debugPrint('[LiveActivity] token save $kind → HTTP ${res.statusCode}');
+      if (res.statusCode < 200 || res.statusCode >= 300) scheduleRetry();
     } catch (e) {
       debugPrint('[ApiService] live-activity token save failed: $e');
+      scheduleRetry();
     }
   }
 

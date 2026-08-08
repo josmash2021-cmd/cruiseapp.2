@@ -34,6 +34,10 @@ class LiveActivityService {
         final token = args?['token'] as String? ?? '';
         if (kind.isNotEmpty && token.isNotEmpty) {
           await ApiService.registerLiveActivityToken(kind: kind, token: token);
+        } else {
+          debugPrint(
+              '[LiveActivity] pushToken hook dropped empty kind="$kind" '
+              'token=${token.isEmpty ? '<empty>' : 'set'}');
         }
       }
       return null;

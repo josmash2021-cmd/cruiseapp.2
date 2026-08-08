@@ -35,17 +35,33 @@ _HOST = "https://api.push.apple.com" if _PROD else "https://api.sandbox.push.app
 # Provider JWTs live 60 min max; we re-mint at 50.
 _cached_jwt = None
 _cached_jwt_at = 0.0
+_warned_not_configured = False
+
+
+def apns_configured() -> bool:
+    """True when the APNs credentials are all present — same env vars
+    `_apns_jwt` needs, without minting the token. The dispatcher uses this
+    to decide whether the FCM banner may be skipped in favor of the
+    Live Activity push."""
+    return bool(os.getenv("APNS_KEY_CONTENT")
+                and os.getenv("APNS_KEY_ID")
+                and os.getenv("APNS_TEAM_ID"))
 
 
 def _apns_jwt():
     """ES256 provider token for APNs, or None when not configured."""
-    global _cached_jwt, _cached_jwt_at
+    global _cached_jwt, _cached_jwt_at, _warned_not_configured
     if _cached_jwt and (time.time() - _cached_jwt_at) < 3000:
         return _cached_jwt
     key_b64 = os.getenv("APNS_KEY_CONTENT", "")
     key_id = os.getenv("APNS_KEY_ID", "")
     team_id = os.getenv("APNS_TEAM_ID", "")
     if not (key_b64 and key_id and team_id):
+        if not _warned_not_configured:
+            _warned_not_configured = True
+            logger.warning(
+                "[APNs-LA] not configured (APNS_KEY_CONTENT/APNS_KEY_ID/"
+                "APNS_TEAM_ID missing) — liveactivity pushes are no-ops")
         return None
     try:
         try:

@@ -1113,7 +1113,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
       // and 800 ms later `_clearAllAnnotations` erased it — reinstating only
       // the driver dot. With the latch armed nothing ever drew it again, so
       // the driver watched the route disappear seconds after coming back.
-      _startPolling(); // _startPolling already calls _connectSse()
+      _startPolling(force: true); // _startPolling already calls _connectSse()
       _startClock();
       _startEarningsRefresh();
       // Re-attach the compass dropped on pause, so the arrow is already

@@ -46,10 +46,10 @@ _action_reminder_tasks = BoundedDict[int, asyncio.Task](max_size=2000, name="act
 # Bounded: max 1,000 tasks, entries expire after 5 minutes
 _cascade_tasks = TTLCache[int, asyncio.Task](ttl_seconds=300, max_size=1000, name="cascade_tasks")
 
-# Cascade configuration — wait must match OFFER_TIMEOUT_SECONDS (45s)
+# Cascade configuration — wait must match OFFER_TIMEOUT_SECONDS (20s)
 # so the driver's UI countdown and the server-side expiry are in sync.
 _CASCADE_MAX_DRIVERS = 10      # try up to 10 drivers before giving up
-_CASCADE_WAIT_SECONDS = OFFER_TIMEOUT_SECONDS  # 45s — matches the driver UI countdown
+_CASCADE_WAIT_SECONDS = OFFER_TIMEOUT_SECONDS  # 20s — matches the driver UI countdown
 
 # In-memory route cache: (pickup_lat, pickup_lng, dropoff_lat, dropoff_lng) -> (ts, route_data)
 # Bounded: max 1,000 entries, 5-minute TTL
@@ -791,7 +791,13 @@ async def _send_offer_to_driver(
     # heads-up banner, as before. The switch is per-driver and automatic —
     # the day the new build registers its tokens, banners stop and the card
     # takes over; nothing to flip by hand.
-    if driver.apns_la_activity_token or driver.apns_la_start_token:
+    #
+    # A registered channel is not enough: when APNs is not configured the
+    # liveactivity push is a silent no-op, and suppressing the banner then
+    # leaves the driver with NOTHING outside the app. Fall back to FCM.
+    from services.apns_liveactivity import apns_configured
+    if (driver.apns_la_activity_token or driver.apns_la_start_token) \
+            and apns_configured():
         _safe_create_task(_send_live_activity_offer(
             driver,
             fare="",
@@ -1569,6 +1575,11 @@ async def dispatch_request(body: DispatchRequestIn, user: User = Depends(_get_cu
 
 @router.get("/dispatch/driver/pending", dependencies=[Depends(_verify_api_key)])
 async def get_driver_pending(driver_id: int = Query(...), user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
+    # Security: only allow drivers to read their own offers — the payload
+    # carries the rider's name, phone and photo (same 403 as the SSE stream)
+    if user.id != driver_id or user.role != "driver":
+        raise HTTPException(403, "Not authorized to access this driver's offers")
+
     # Block offers when driver is locked for an upcoming scheduled ride
     from routers.scheduled import driver_is_locked_for_scheduled
     if await driver_is_locked_for_scheduled(driver_id, db):
@@ -1885,6 +1896,9 @@ async def accept_offer(offer_id: int = Query(...), driver_id: int = Query(...), 
     offer.status = "accepted"
     _pending_cache.pop(driver_id, None)  # L3: invalidate cache so next poll is fresh
     _dispatch_status_cache.pop(offer.trip_id, None)  # invalidate status cache on accept
+    # An island started by push-to-start with the app killed is still showing
+    # the offer — the accept happened inside the app, so take it down.
+    _safe_create_task(_clear_live_activity_offer(driver_id))
 
     # Cancel any running auto-cascade for this trip -- a driver accepted
     cascade_task = _cascade_tasks.pop(offer.trip_id, None)

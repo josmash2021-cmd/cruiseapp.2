@@ -1235,7 +1235,20 @@ class _ServerUrlScreenState extends State<_ServerUrlScreen> {
   Future<void> _save() async {
     final url = _ctrl.text.trim();
     if (url.isEmpty) return;
-    await ApiService.setServerUrl(url).timeout(const Duration(seconds: 10));
+    try {
+      await ApiService.setServerUrl(url).timeout(const Duration(seconds: 10));
+    } catch (_) {
+      // Timeout / network error — surface it instead of letting it reach
+      // the zone as an uncaught async error.
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('✗ Could not save URL (timeout or network error)'),
+          duration: Duration(seconds: 3),
+        ),
+      );
+      return;
+    }
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -1252,7 +1265,18 @@ class _ServerUrlScreenState extends State<_ServerUrlScreen> {
       _probeResult = null;
     });
     final url = _ctrl.text.trim();
-    final reached = await ApiService.probeAndSetBestUrl(candidates: [url]).timeout(const Duration(seconds: 10));
+    String? reached;
+    try {
+      reached = await ApiService.probeAndSetBestUrl(candidates: [url]).timeout(const Duration(seconds: 10));
+    } catch (_) {
+      // Timeout — reset the spinner; without this _probing stayed true.
+      if (!mounted) return;
+      setState(() {
+        _probing = false;
+        _probeResult = '✗ Timed out probing server';
+      });
+      return;
+    }
     if (!mounted) return;
     setState(() {
       _probing = false;
@@ -1260,7 +1284,7 @@ class _ServerUrlScreenState extends State<_ServerUrlScreen> {
           ? '✓ Reachable – saved as active URL'
           : '✗ Not reachable (server offline or wrong URL?)';
     });
-    if (reached != null) _ctrl.text = reached;
+    if (reached != null) _ctrl.text = reached!;
   }
 
   Future<void> _autoDetect() async {
@@ -1268,7 +1292,18 @@ class _ServerUrlScreenState extends State<_ServerUrlScreen> {
       _probing = true;
       _probeResult = null;
     });
-    final reached = await ApiService.probeAndSetBestUrl().timeout(const Duration(seconds: 10));
+    String? reached;
+    try {
+      reached = await ApiService.probeAndSetBestUrl().timeout(const Duration(seconds: 10));
+    } catch (_) {
+      // Timeout — reset the spinner; without this _probing stayed true.
+      if (!mounted) return;
+      setState(() {
+        _probing = false;
+        _probeResult = '✗ Timed out auto-detecting server';
+      });
+      return;
+    }
     if (!mounted) return;
     setState(() {
       _probing = false;
@@ -1276,7 +1311,7 @@ class _ServerUrlScreenState extends State<_ServerUrlScreen> {
           ? '✓ Auto-detected: $reached'
           : '✗ No server reachable. Start your backend + tunnel first.';
     });
-    if (reached != null) _ctrl.text = reached;
+    if (reached != null) _ctrl.text = reached!;
   }
 
   @override

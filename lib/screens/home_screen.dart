@@ -2142,6 +2142,13 @@ class _AddressAutocompleteSheetState extends State<_AddressAutocompleteSheet> {
                     separatorBuilder: (context2, idx) =>
                         Divider(color: c.divider, height: 1, indent: 52),
                     itemBuilder: (context, index) {
+                      // Race guard: ListView can request stale indices beyond
+                      // the new itemCount mid-frame when _suggestions is
+                      // replaced by a shorter list. Never index out of
+                      // range — that threw RangeError in production.
+                      if (index < 0 || index >= _suggestions.length) {
+                        return const SizedBox.shrink();
+                      }
                       final s = _suggestions[index];
                       return ListTile(
                         leading: Container(

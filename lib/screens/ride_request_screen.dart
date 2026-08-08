@@ -1022,6 +1022,17 @@ class _RideRequestScreenState extends State<RideRequestScreen>
       onRevoke: () async {
         if (!mounted || !_mapMounted) return;
         debugPrint('[CamSnap] SURFACE REVOKED — map will rebuild at initial camera');
+        // Every annotation handle belongs to the PlatformView being
+        // destroyed, so they all go with it — nulling them here (mirror of
+        // driver_online_controller._releaseMapSurface) is what stops later
+        // writes from poking a dead native channel. onMapCreated re-seeds
+        // them against the fresh map on remount.
+        _mapCtrl = null;
+        _polylineAnnotMgr = null;
+        _pointAnnotMgr = null;
+        _pickupAnnot = null;
+        _dropoffAnnot = null;
+        _routeAnnot = null;
         _setState(() => _mapMounted = false);
         await surfaceRemoved();
       },
@@ -1261,10 +1272,12 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                     _pendingCam = null;
                     // Cache controller for reuse across rider screens
                     MapControllerCache.instance.cache(ctrl);
-                    ctrl.scaleBar.updateSettings(mapbox.ScaleBarSettings(enabled: false));
-                    ctrl.compass.updateSettings(mapbox.CompassSettings(enabled: false));
-                    ctrl.attribution.updateSettings(mapbox.AttributionSettings(enabled: false));
-                    ctrl.logo.updateSettings(mapbox.LogoSettings(enabled: false));
+                    try {
+                      ctrl.scaleBar.updateSettings(mapbox.ScaleBarSettings(enabled: false));
+                      ctrl.compass.updateSettings(mapbox.CompassSettings(enabled: false));
+                      ctrl.attribution.updateSettings(mapbox.AttributionSettings(enabled: false));
+                      ctrl.logo.updateSettings(mapbox.LogoSettings(enabled: false));
+                    } catch (_) {}
                     // Polyline below labels, points always on top.
                     //
                     // Guarded across the awaits: the rider can pop this sheet
@@ -1275,10 +1288,10 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                     final poly = await ctrl.annotations.createPolylineAnnotationManager(
                       below: "road-label",
                     );
-                    if (!mounted) return;
+                    if (!mounted || !identical(_mapCtrl, ctrl)) return;
                     _polylineAnnotMgr = poly;
                     final point = await ctrl.annotations.createPointAnnotationManager();
-                    if (!mounted) return;
+                    if (!mounted || !identical(_mapCtrl, ctrl)) return;
                     _pointAnnotMgr = point;
                     // Retry _drawRoute now that managers are ready. If the
                     // controller fired previewRoute before the map finished

@@ -2845,27 +2845,31 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     _map = ctrl;
     // Cache controller for reuse across driver screens
     MapControllerCache.instance.cache(ctrl);
-    // Disable all interaction — this is a read-only preview map.
-    ctrl.gestures.updateSettings(mapbox.GesturesSettings(
-      scrollEnabled: false,
-      rotateEnabled: false,
-      pinchToZoomEnabled: false,
-      doubleTapToZoomInEnabled: false,
-      doubleTouchToZoomOutEnabled: false,
-      pitchEnabled: false,
-      quickZoomEnabled: false,
-      simultaneousRotateAndPinchToZoomEnabled: false,
-    ));
-    // Hide compass + attribution for clean preview.
-    ctrl.compass.updateSettings(mapbox.CompassSettings(enabled: false));
-    ctrl.attribution.updateSettings(mapbox.AttributionSettings(
-      iconColor: 0x00000000,
-      position: mapbox.OrnamentPosition.BOTTOM_LEFT,
-    ));
-    ctrl.logo.updateSettings(mapbox.LogoSettings(
-      position: mapbox.OrnamentPosition.BOTTOM_LEFT,
-      marginLeft: -100,
-    ));
+    // Disable all interaction — this is a read-only preview map. The whole
+    // block in try/catch: updateSettings are pigeon calls that reject with
+    // PlatformException(channel-error) if the surface dies under us.
+    try {
+      ctrl.gestures.updateSettings(mapbox.GesturesSettings(
+        scrollEnabled: false,
+        rotateEnabled: false,
+        pinchToZoomEnabled: false,
+        doubleTapToZoomInEnabled: false,
+        doubleTouchToZoomOutEnabled: false,
+        pitchEnabled: false,
+        quickZoomEnabled: false,
+        simultaneousRotateAndPinchToZoomEnabled: false,
+      ));
+      // Hide compass + attribution for clean preview.
+      ctrl.compass.updateSettings(mapbox.CompassSettings(enabled: false));
+      ctrl.attribution.updateSettings(mapbox.AttributionSettings(
+        iconColor: 0x00000000,
+        position: mapbox.OrnamentPosition.BOTTOM_LEFT,
+      ));
+      ctrl.logo.updateSettings(mapbox.LogoSettings(
+        position: mapbox.OrnamentPosition.BOTTOM_LEFT,
+        marginLeft: -100,
+      ));
+    } catch (_) {}
   }
 
   /// The camera guard mapbox_safe.dart never had. A non-finite centre — or
@@ -3109,7 +3113,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
         if (_cameraIsSane(cam.center, targetZoom)) {
           ctrl.setCamera(mapbox.CameraOptions(
             center: cam.center, zoom: targetZoom, bearing: prettBearing, pitch: 0.0,
-          ));
+          )).catchError((Object _) {});
         }
       }
       // Place pins + route instantly
@@ -3174,7 +3178,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
       if (_cameraIsSane(camFlat.center, targetZoom)) {
         ctrl.setCamera(mapbox.CameraOptions(
           center: camFlat.center, zoom: targetZoom, bearing: prettBearing, pitch: 0.0,
-        ));
+        )).catchError((Object _) {});
       }
     }
 

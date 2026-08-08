@@ -199,7 +199,7 @@ extension _RideRequestController on _RideRequestScreenState {
         zoom: 16.5,
       ),
       mapbox.MapAnimationOptions(duration: 800),
-    );
+    ).catchError((Object _) {});
   }
 
   // Keep old name as alias for backward compat with any lingering call sites.
@@ -432,7 +432,7 @@ extension _RideRequestController on _RideRequestScreenState {
               coordinates: mapbox.Position(center.longitude, center.latitude),
             ),
             zoom: 15.5,
-          ));
+          )).catchError((Object _) {});
         }
         // Reverse geocode the fix so the pickup label isn't a lie — the
         // seed path keeps the sheet's default label instead.
@@ -508,10 +508,22 @@ extension _RideRequestController on _RideRequestScreenState {
           // it snaps.
           if (_gpsMayMoveCamera) {
             debugPrint('[CamSnap] GPS last-known setCamera -> user location');
-            _mapCtrl?.setCamera(mapbox.CameraOptions(
-              center: mapbox.Point(coordinates: mapbox.Position(lastLl.longitude, lastLl.latitude)),
-              zoom: 15.5,
-            ));
+            // Same channel-error release as _pushCamera (:1145): a rejected
+            // setCamera means the surface is gone, and nulling the handle is
+            // what stops every later write at the first failure.
+            final mc = _mapCtrl;
+            if (mc != null) {
+              mc.setCamera(mapbox.CameraOptions(
+                center: mapbox.Point(coordinates: mapbox.Position(lastLl.longitude, lastLl.latitude)),
+                zoom: 15.5,
+              )).catchError((Object e) {
+                if (identical(_mapCtrl, mc) &&
+                    e is PlatformException &&
+                    e.code == 'channel-error') {
+                  _mapCtrl = null;
+                }
+              });
+            }
           }
         }
       } catch (_) {}
@@ -540,7 +552,7 @@ extension _RideRequestController on _RideRequestScreenState {
         _mapCtrl?.flyTo(
           mapbox.CameraOptions(center: mapbox.Point(coordinates: mapbox.Position(ll.longitude, ll.latitude)), zoom: 15.5),
           mapbox.MapAnimationOptions(duration: 800),
-        );
+        ).catchError((Object _) {});
       }
 
       // Reverse geocode for address

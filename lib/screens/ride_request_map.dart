@@ -639,13 +639,14 @@ extension _RideRequestMap on _RideRequestScreenState {
     _hasAppliedSelectionTilt = false;
     _labelsRevealed = false;
 
-    // Remove listeners then stop running controllers
+    // Remove listeners then stop running controllers — each stop wrapped:
+    // a controller disposed but not nulled throws on stop() (null check).
     _tiltAnim?.removeListener(_applyMapCamera);
-    _tiltCtrl?.stop();
-    _bearingCtrl?.stop();
-    _pinPopCtrl?.stop();
-    _labelPopCtrl?.stop();
-    _routeDrawTicker?.stop();
+    try { _tiltCtrl?.stop(); } catch (_) {}
+    try { _bearingCtrl?.stop(); } catch (_) {}
+    try { _pinPopCtrl?.stop(); } catch (_) {}
+    try { _labelPopCtrl?.stop(); } catch (_) {}
+    try { _routeDrawTicker?.stop(); } catch (_) {}
 
     // NOTE: we no longer force the camera to pitch:0/bearing:0 here —
     // _startCinematicSequence now reads the map's ACTUAL current camera
@@ -2074,7 +2075,7 @@ extension _RideRequestMap on _RideRequestScreenState {
       // gentle instead of a quick flick (user asked for smooth, not
       // rapid camera motion).
       _safeFlyTo(cam, mapbox.MapAnimationOptions(duration: 1400));
-    });
+    }).catchError((Object _) {});
   }
 
   /// Like [_fitRoute] but with an EXPLICIT bottom inset (in pixels)
@@ -2097,7 +2098,7 @@ extension _RideRequestMap on _RideRequestScreenState {
       null, null,
     ).then((cam) {
       _safeFlyTo(cam, mapbox.MapAnimationOptions(duration: 1200));
-    });
+    }).catchError((Object _) {});
   }
 
   void _goToTracking() {
@@ -2311,7 +2312,7 @@ extension _RideRequestMap on _RideRequestScreenState {
         me,
         // 500 ms → 900 ms so the re-center glide never feels like a snap.
         mapbox.MapAnimationOptions(duration: 900),
-      );
+      ).catchError((Object _) {});
     }
   }
 

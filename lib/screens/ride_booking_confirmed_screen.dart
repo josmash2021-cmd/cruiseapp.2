@@ -419,9 +419,10 @@ class _RideBookingConfirmedScreenState extends State<RideBookingConfirmedScreen>
     // Animate tilt 0° → 20°
     if (_tiltAnim != null && _tiltCtrl != null) {
       _tiltAnim!.addListener(() {
+        // Same dead-surface guard: the map may be recreated mid-tilt.
         _mapCtrl?.setCamera(
           mapbox.CameraOptions(pitch: _tiltAnim!.value),
-        );
+        ).catchError((Object _) {});
       });
       _tiltCtrl!.forward();
     }

@@ -117,8 +117,16 @@ class SocketService {
         ? {'token': token}
         : <String, String>{};
 
+    // parseqs.decode (socket_io_common) throws RangeError on query keys
+    // without a value. The JWT already travels via setAuth (handshake
+    // body), so a stray query/fragment carries nothing — strip it.
+    final parsedUrl = Uri.parse(serverUrl);
+    final sanitizedUrl = (parsedUrl.hasQuery || parsedUrl.hasFragment)
+        ? parsedUrl.replace(query: '', fragment: '').toString()
+        : serverUrl;
+
     _socket = io.io(
-      serverUrl,
+      sanitizedUrl,
       io.OptionBuilder()
           // FIX: Use both websocket AND polling for maximum compatibility
           // Some devices/networks block WebSocket but allow HTTP polling

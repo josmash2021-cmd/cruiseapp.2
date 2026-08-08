@@ -644,8 +644,12 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen>
       mapbox.MbxEdgeInsets(top: 80, left: 60, bottom: 80, right: 60),
       null, null,
     ).then((cam) {
-      _mapCtrl?.flyTo(cam, mapbox.MapAnimationOptions(duration: 800));
-    });
+      // The surface can die between the fit and the flight (GPU pressure /
+      // coordinator handoff) — the rejection is async, so it needs a
+      // catchError, not a try.
+      _mapCtrl?.flyTo(cam, mapbox.MapAnimationOptions(duration: 800))
+          .catchError((Object _) {});
+    }).catchError((Object _) {});
   }
 
   // ── Booking ──────────────────────────────────────────────────────────
@@ -1788,6 +1792,13 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen>
                       separatorBuilder: (_, __) =>
                           Divider(height: 1, color: c.border),
                       itemBuilder: (_, i) {
+                        // Race guard: ListView can request stale indices
+                        // beyond the new itemCount mid-frame when
+                        // _suggestions is replaced by a shorter list. Never
+                        // index out of range — RangeError in production.
+                        if (i < 0 || i >= _suggestions.length) {
+                          return const SizedBox.shrink();
+                        }
                         final s = _suggestions[i];
                         return InkWell(
                           onTap: () => _onSelectSuggestion(s),

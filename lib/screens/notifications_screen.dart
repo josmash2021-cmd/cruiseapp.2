@@ -1,5 +1,7 @@
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../config/app_theme.dart';
 import '../config/page_transitions.dart';
 import '../l10n/app_localizations.dart';
@@ -173,8 +175,38 @@ class NotificationsScreen extends StatelessWidget {
   }
 
   void _requestAndGoNext(BuildContext context) async {
-    // Request the real notification permission from the OS
+    // Request the real notification permission from the OS. Android 13+
+    // goes through permission_handler; iOS needs the FirebaseMessaging
+    // prompt (alert + badge + sound) — asking both is harmless on either.
     await Permission.notification.request();
+    try {
+      await FirebaseMessaging.instance.requestPermission(
+        alert: true,
+        badge: true,
+        sound: true,
+      );
+    } catch (_) {}
+
+    // "Allow" must mean ALL of them. The in-app toggles default to on, but
+    // a rider who ever turned one off would tap Allow here and still get
+    // nothing — re-assert every channel on the way through.
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      for (final key in [
+        'notif_master',
+        'notif_ride',
+        'notif_promo',
+        'notif_safety',
+        'notif_payment',
+        'notif_sounds',
+        'notif_vibrate',
+        'sound_trips',
+        'sound_messages',
+      ]) {
+        await prefs.setBool(key, true);
+      }
+    } catch (_) {}
+
     // Regardless of result, proceed to next screen
     if (context.mounted) _goNext(context);
   }

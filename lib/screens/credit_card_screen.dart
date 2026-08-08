@@ -1,11 +1,14 @@
+import 'dart:async';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_stripe/flutter_stripe.dart';
 import '../l10n/app_localizations.dart';
+import '../config/api_keys.dart';
 import '../config/app_theme.dart';
 import '../services/api_service.dart';
 import '../services/local_data_service.dart';
+import '../services/places_service.dart';
 import '../widgets/dismiss_keyboard.dart';
 import '../widgets/neu_style.dart';
 
@@ -30,7 +33,15 @@ class _CreditCardScreenState extends State<CreditCardScreen> {
   static const _goldLight = Color(0xFFF5D990);
 
   final _nameCtrl = TextEditingController();
+  final _addrCtrl = TextEditingController();
+  final _aptCtrl = TextEditingController();
+  final _cityCtrl = TextEditingController();
+  final _stateCtrl = TextEditingController();
   final _zipCtrl = TextEditingController();
+
+  final _places = PlacesService(ApiKeys.webServices);
+  Timer? _addrDebounce;
+  List<PlaceSuggestion> _addrSuggestions = [];
 
   bool _cardComplete = false;
   bool _isLoading = false;
@@ -40,23 +51,87 @@ class _CreditCardScreenState extends State<CreditCardScreen> {
   void initState() {
     super.initState();
     _nameCtrl.addListener(_refresh);
+    _addrCtrl.addListener(_refresh);
+    _aptCtrl.addListener(_refresh);
+    _cityCtrl.addListener(_refresh);
+    _stateCtrl.addListener(_refresh);
     _zipCtrl.addListener(_refresh);
+    _addrCtrl.addListener(_onAddressChanged);
   }
 
   @override
   void dispose() {
+    _addrDebounce?.cancel();
     _nameCtrl.dispose();
+    _addrCtrl.dispose();
+    _aptCtrl.dispose();
+    _cityCtrl.dispose();
+    _stateCtrl.dispose();
     _zipCtrl.dispose();
     super.dispose();
   }
 
   void _refresh() => setState(() {});
 
+  // ── Billing address autocomplete ─────────────────────────────────────
+
+  void _onAddressChanged() {
+    _addrDebounce?.cancel();
+    final q = _addrCtrl.text.trim();
+    if (q.length < 3) {
+      if (_addrSuggestions.isNotEmpty) {
+        setState(() => _addrSuggestions = []);
+      }
+      return;
+    }
+    _addrDebounce = Timer(const Duration(milliseconds: 350), () async {
+      try {
+        final results = await _places.autocomplete(q);
+        if (!mounted) return;
+        setState(() => _addrSuggestions = results.take(5).toList());
+      } catch (_) {}
+    });
+  }
+
+  /// Fill street / city / state / zip from a suggestion like
+  /// "3410 Canopy Trail, Pelham, AL 35124, USA".
+  void _pickAddressSuggestion(PlaceSuggestion s) {
+    final parts = s.description.split(',').map((p) => p.trim()).toList();
+    _addrCtrl.text = parts.isNotEmpty ? parts[0] : s.description;
+    if (parts.length >= 3) {
+      _cityCtrl.text = parts[1];
+      final stateZip =
+          parts[2].split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toList();
+      if (stateZip.isNotEmpty) _stateCtrl.text = stateZip[0];
+      if (stateZip.length > 1) {
+        _zipCtrl.text = stateZip.sublist(1).join(' ');
+      }
+    }
+    _places.resetSession();
+    setState(() => _addrSuggestions = []);
+  }
+
   bool get _canContinue =>
       _cardComplete &&
       _nameCtrl.text.trim().isNotEmpty &&
+      _addrCtrl.text.trim().isNotEmpty &&
+      _cityCtrl.text.trim().isNotEmpty &&
+      _stateCtrl.text.trim().isNotEmpty &&
       _zipCtrl.text.trim().isNotEmpty &&
       !_isLoading;
+
+  BillingDetails get _billingDetails => BillingDetails(
+        name: _nameCtrl.text.trim(),
+        email: widget.email,
+        address: Address(
+          line1: _addrCtrl.text.trim(),
+          line2: _aptCtrl.text.trim(),
+          city: _cityCtrl.text.trim(),
+          state: _stateCtrl.text.trim(),
+          postalCode: _zipCtrl.text.trim(),
+          country: 'US',
+        ),
+      );
 
   Future<void> _submit() async {
     if (!_canContinue) return;
@@ -67,6 +142,28 @@ class _CreditCardScreenState extends State<CreditCardScreen> {
     final last4 = _cardDetails?.last4 ?? '????';
 
     try {
+      // Registration flow has NO account yet — and therefore no JWT. Calling
+      // the authed setup-intent endpoint from here answered 401, the global
+      // 401 handler cleared the session and the app "restarted" at the login
+      // page. So: no token → validate the card directly with Stripe (the
+      // publishable key is enough for createToken) and save it; the
+      // SetupIntent that attaches it for charging runs once the account
+      // exists.
+      final token = await ApiService.getToken();
+      if (token == null) {
+        await Stripe.instance.createToken(
+          CreateTokenParams.card(
+            params: CardTokenParams(
+              name: _nameCtrl.text.trim(),
+              address: _billingDetails.address,
+            ),
+          ),
+        );
+        await _saveCardLocally(brand, last4);
+        if (mounted) Navigator.of(context).pop('$brand:$last4');
+        return;
+      }
+
       // Step 1: Get SetupIntent client_secret from backend
       final clientSecret = await ApiService.createSetupIntent().timeout(const Duration(seconds: 15));
       if (clientSecret == null || !mounted) {
@@ -82,10 +179,7 @@ class _CreditCardScreenState extends State<CreditCardScreen> {
         paymentIntentClientSecret: clientSecret,
         params: PaymentMethodParams.card(
           paymentMethodData: PaymentMethodData(
-            billingDetails: BillingDetails(
-              name: _nameCtrl.text.trim(),
-              email: widget.email,
-            ),
+            billingDetails: _billingDetails,
           ),
         ),
       );
@@ -270,11 +364,17 @@ class _CreditCardScreenState extends State<CreditCardScreen> {
                         child: Row(
                           children: [
                             Expanded(
-                              // flutter_stripe's CardField is native-only —
-                              // on web it throws Platform._operatingSystem.
+                              // flutter_stripe's card fields are native-only —
+                              // on web they throw Platform._operatingSystem.
                               // Show a clean placeholder instead; the "Add
                               // card" button stays disabled because
                               // _cardComplete never becomes true here.
+                              //
+                              // CardFormField (not CardField) with full
+                              // details: createToken reads the card straight
+                              // from the field, which is how a rider with no
+                              // account yet still gets a REAL Stripe
+                              // validation at registration.
                               child: kIsWeb
                                   ? Padding(
                                       padding: const EdgeInsets.symmetric(
@@ -297,15 +397,14 @@ class _CreditCardScreenState extends State<CreditCardScreen> {
                                         ],
                                       ),
                                     )
-                                  : CardField(
+                                  : CardFormField(
                                       enablePostalCode: false,
-                                      style: TextStyle(color: c.textPrimary, fontSize: 16),
-                                      decoration: InputDecoration(
-                                        border: InputBorder.none,
-                                        hintStyle: TextStyle(
-                                          color: c.textTertiary,
-                                          fontSize: 16,
-                                        ),
+                                      dangerouslyGetFullCardDetails: true,
+                                      style: CardFormStyle(
+                                        textColor: c.textPrimary,
+                                        fontSize: 16,
+                                        placeholderColor: c.textTertiary,
+                                        backgroundColor: Colors.transparent,
                                       ),
                                       onCardChanged: (details) {
                                         setState(() {
@@ -331,14 +430,101 @@ class _CreditCardScreenState extends State<CreditCardScreen> {
                       ),
                       const SizedBox(height: 16),
 
-                      // Zip code
+                      // Billing address — with suggestions as they type
                       _buildField(
                         c,
-                        controller: _zipCtrl,
-                        hint: S.of(context).zipPostalCode,
+                        controller: _addrCtrl,
+                        hint: S.of(context).billingAddressHint,
                         icon: Icons.location_on_outlined,
-                        keyboardType: TextInputType.number,
-                        formatters: [LengthLimitingTextInputFormatter(10)],
+                        keyboardType: TextInputType.streetAddress,
+                        capitalization: TextCapitalization.words,
+                      ),
+                      if (_addrSuggestions.isNotEmpty)
+                        Container(
+                          margin: const EdgeInsets.only(top: 6),
+                          decoration: neuBox(radius: 14),
+                          child: Column(
+                            children: [
+                              for (final sg in _addrSuggestions)
+                                GestureDetector(
+                                  behavior: HitTestBehavior.opaque,
+                                  onTap: () => _pickAddressSuggestion(sg),
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 16, vertical: 12),
+                                    child: Row(
+                                      children: [
+                                        Icon(Icons.place_outlined,
+                                            size: 16, color: c.textTertiary),
+                                        const SizedBox(width: 10),
+                                        Expanded(
+                                          child: Text(
+                                            sg.description,
+                                            maxLines: 2,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: TextStyle(
+                                              color: c.textPrimary,
+                                              fontSize: 13.5,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                      const SizedBox(height: 16),
+
+                      // Apt / suite — optional
+                      _buildField(
+                        c,
+                        controller: _aptCtrl,
+                        hint: S.of(context).aptSuiteOptional,
+                        icon: Icons.door_front_door_outlined,
+                        capitalization: TextCapitalization.words,
+                      ),
+                      const SizedBox(height: 16),
+
+                      // City + State + Zip
+                      Row(
+                        children: [
+                          Expanded(
+                            flex: 5,
+                            child: _buildField(
+                              c,
+                              controller: _cityCtrl,
+                              hint: S.of(context).cityHint,
+                              icon: Icons.location_city_rounded,
+                              capitalization: TextCapitalization.words,
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            flex: 3,
+                            child: _buildField(
+                              c,
+                              controller: _stateCtrl,
+                              hint: S.of(context).stateHint,
+                              icon: Icons.map_outlined,
+                              capitalization: TextCapitalization.characters,
+                              formatters: [LengthLimitingTextInputFormatter(2)],
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            flex: 4,
+                            child: _buildField(
+                              c,
+                              controller: _zipCtrl,
+                              hint: S.of(context).zipPostalCode,
+                              icon: Icons.markunread_mailbox_outlined,
+                              keyboardType: TextInputType.number,
+                              formatters: [LengthLimitingTextInputFormatter(10)],
+                            ),
+                          ),
+                        ],
                       ),
                       const SizedBox(height: 16),
 

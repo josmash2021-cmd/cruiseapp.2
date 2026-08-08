@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'welcome_screen.dart';
 import 'home_screen.dart';
 import 'driver/driver_home_screen.dart';
@@ -177,6 +178,12 @@ class _SplashScreenState extends State<SplashScreen>
     // Capture context before any awaits (use_build_context_synchronously)
     final nav = Navigator.of(context);
 
+    // First-run OS permissions, while the animation plays: precise location
+    // and notifications. No-ops on later launches (already granted) and on
+    // web. Not awaited — the dialogs float over the splash and the sequence
+    // keeps its timing either way.
+    unawaited(_requestFirstRunPermissions());
+
     // Start heavy init in parallel with the splash animation
     final initFuture = heavyInit().timeout(
       const Duration(seconds: 12),
@@ -283,6 +290,28 @@ class _SplashScreenState extends State<SplashScreen>
         ),
       ),
     );
+  }
+
+  /// Ask for the two permissions the whole app depends on, on first launch:
+  /// location (precise — pickup pins and driver matching need it) and
+  /// notifications. permission_handler skips the dialog when the permission
+  /// was already decided, so later launches cost nothing.
+  Future<void> _requestFirstRunPermissions() async {
+    try {
+      // Small beat so the splash is actually on screen before the first
+      // system dialog lands on top of it.
+      await Future.delayed(const Duration(milliseconds: 600));
+      final loc = await Permission.locationWhenInUse.status;
+      if (!loc.isGranted) {
+        await Permission.locationWhenInUse.request();
+      }
+      final notif = await Permission.notification.status;
+      if (!notif.isGranted) {
+        await Permission.notification.request();
+      }
+    } catch (e) {
+      debugPrint('[Splash] first-run permission request failed: $e');
+    }
   }
 
   /// Computes which screen to navigate to. Runs in parallel with the full

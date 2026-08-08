@@ -2424,8 +2424,14 @@ class S {
       ? 'Acepto el Acuerdo de Cuenta Conectada de Stripe'
       : "I agree to Stripe's Connected Account Agreement";
   String get securedByStripe => _es
-      ? 'Asegurado por Stripe. No almacenamos tus datos.'
-      : "Secured by Stripe. We don't store your details.";
+      ? 'Tu información está encriptada y segura — nunca la compartimos.'
+      : 'Your information is encrypted and secure — never shared.';
+  String get billingAddressHint =>
+      _es ? 'Dirección de facturación' : 'Billing address';
+  String get aptSuiteOptional =>
+      _es ? 'Apto / Suite (opcional)' : 'Apt / Suite (optional)';
+  String get cityHint => _es ? 'Ciudad' : 'City';
+  String get stateHint => _es ? 'Estado' : 'State';
   String get somethingWentWrong => _es
       ? 'Algo salió mal. Por favor intenta de nuevo.'
       : 'Something went wrong. Please try again.';

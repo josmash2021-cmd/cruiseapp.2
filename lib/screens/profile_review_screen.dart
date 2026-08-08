@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io' if (dart.library.html) 'dart:io';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
@@ -43,6 +44,7 @@ class _ProfileReviewScreenState extends State<ProfileReviewScreen> {
 
   String? _selectedGender;
   bool _dropdownOpen = false;
+  bool _saving = false;
 
   final List<String> _genderOptions = const [
     'Men',
@@ -52,6 +54,12 @@ class _ProfileReviewScreenState extends State<ProfileReviewScreen> {
   ];
 
   void _saveProfile() async {
+    // One tap, one save. Without the guard a double-tap ran two
+    // registrations, and with no spinner the button looked dead while the
+    // network worked.
+    if (_saving) return;
+    setState(() => _saving = true);
+    try {
     // Check if this is a social auth flow (Google/Apple)
     final pendingSocial = await UserSession.getPendingSocialAuth();
     // Grab the password set during registration (null for social flow)
@@ -230,44 +238,14 @@ class _ProfileReviewScreenState extends State<ProfileReviewScreen> {
       }
     }
 
-    // Log terms/privacy consent server-side (E-SIGN record: version, UTC
-    // timestamp, IP, user agent) now that the account exists and the JWT
-    // is stored. The create-account page requires both checkboxes.
-    if (userId != null) {
-      try {
-        await ApiService.recordConsent(
-          consentType: 'terms',
-          action: 'accepted',
-          version: '1.0',
-        );
-        await ApiService.recordConsent(
-          consentType: 'privacy',
-          action: 'accepted',
-          version: '2.0',
-        );
-      } catch (e) {
-        debugPrint('⚠️ Consent logging failed (non-blocking): $e');
-      }
-    }
-
-    // Copy photo to permanent storage (temp picker path gets deleted)
+    // Copy photo to permanent storage (temp picker path gets deleted).
+    // Local file copy — fast, so it stays on the critical path; the UPLOAD
+    // does not (see below).
     String? permanentPhotoPath = widget.photoPath;
     if (widget.photoPath != null && widget.photoPath!.isNotEmpty) {
       permanentPhotoPath = await UserSession.saveProfilePhoto(
         widget.photoPath!,
       );
-    }
-
-    // SINGLE upload: ApiService.uploadPhoto handles Firebase Storage + Firestore + Backend + Cache
-    if (permanentPhotoPath != null && permanentPhotoPath.isNotEmpty) {
-      try {
-        final photoUrl = await ApiService.uploadPhoto(permanentPhotoPath);
-        if (photoUrl.isNotEmpty) {
-          UserSession.photoUrlNotifier.value = photoUrl;
-        }
-      } catch (e) {
-        debugPrint('⚠️ Photo upload failed: $e');
-      }
     }
 
     // Save locally too (for offline/quick reads)
@@ -282,6 +260,36 @@ class _ProfileReviewScreenState extends State<ProfileReviewScreen> {
       password: pendingPass,
       userId: userId,
     );
+
+    // Consent logging and the photo upload used to be awaited here, between
+    // the tap and the transition — two consent calls plus a Firebase upload
+    // is why Save profile "did nothing" for seconds. None of them gate the
+    // next screen, so they run after it is already up.
+    final bgUserId = userId;
+    final bgPhotoPath = permanentPhotoPath;
+    unawaited(Future(() async {
+      if (bgUserId != null) {
+        // E-SIGN record (version, UTC timestamp, IP, user agent).
+        try {
+          await ApiService.recordConsent(
+              consentType: 'terms', action: 'accepted', version: '1.0');
+          await ApiService.recordConsent(
+              consentType: 'privacy', action: 'accepted', version: '2.0');
+        } catch (e) {
+          debugPrint('⚠️ Consent logging failed (non-blocking): $e');
+        }
+      }
+      if (bgPhotoPath != null && bgPhotoPath.isNotEmpty) {
+        try {
+          final photoUrl = await ApiService.uploadPhoto(bgPhotoPath);
+          if (photoUrl.isNotEmpty) {
+            UserSession.photoUrlNotifier.value = photoUrl;
+          }
+        } catch (e) {
+          debugPrint('⚠️ Photo upload failed: $e');
+        }
+      }
+    }));
 
     // Auto-enable biometric login so it appears on next sign-in
     await LocalDataService.setBiometricLogin(true);
@@ -306,6 +314,11 @@ class _ProfileReviewScreenState extends State<ProfileReviewScreen> {
         durationMs: 500,
       ),
     );
+    } finally {
+      // The error paths above all return early; the spinner must come back
+      // off on every one of them or the button stays dead after a failure.
+      if (mounted) setState(() => _saving = false);
+    }
   }
 
   @override
@@ -619,14 +632,23 @@ class _ProfileReviewScreenState extends State<ProfileReviewScreen> {
                           borderRadius: BorderRadius.circular(28),
                         ),
                       ),
-                      onPressed: _saveProfile,
-                      child: Text(
-                        S.of(context).saveProfile,
-                        style: const TextStyle(
-                          fontSize: 17,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
+                      onPressed: _saving ? null : _saveProfile,
+                      child: _saving
+                          ? const SizedBox(
+                              width: 22,
+                              height: 22,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2.5,
+                                color: Color(0xFF1A1400),
+                              ),
+                            )
+                          : Text(
+                              S.of(context).saveProfile,
+                              style: const TextStyle(
+                                fontSize: 17,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
                     ),
                   ),
                 ),

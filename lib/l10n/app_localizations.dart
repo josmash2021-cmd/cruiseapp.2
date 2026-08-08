@@ -4623,6 +4623,9 @@ class S {
   String get verificationFailed => _es
       ? 'Verificación fallida. Intenta de nuevo.'
       : 'Verification failed. Try again.';
+  String get verificationFailedName => _es
+      ? 'No hemos podido verificar tu identidad. Ingresa una identificación que coincida con el nombre y apellido de tu cuenta.'
+      : 'We could not verify your identity. Please provide an ID that matches the first and last name on your account.';
   String get placeLabel => _es ? 'Lugar' : 'Place';
   String addLabelFor(String label) => _es ? 'Agregar $label' : 'Add $label';
   String setLabelAddress(String label) =>

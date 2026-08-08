@@ -57,6 +57,9 @@ class _IdentityVerificationScreenState extends State<IdentityVerificationScreen>
   bool _processing = false;
   bool _verified = false;
   String? _rejectionReason;
+  // Full OCR text read off the ID front at capture — sent as id_ocr_text so
+  // the backend can match the document name against the account name.
+  String _idOcrText = '';
   Timer? _pollTimer;
   StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _firestoreSubscription;
   Map<String, String>? _cachedUser;
@@ -215,7 +218,7 @@ class _IdentityVerificationScreenState extends State<IdentityVerificationScreen>
 
     // Submit to backend
     try {
-      await ApiService.submitVerification(body);
+      await ApiService.submitVerification(body, idOcrText: _idOcrText);
     } catch (e) {
       debugPrint('Verification submission failed: $e');
     }
@@ -395,6 +398,11 @@ class _IdentityVerificationScreenState extends State<IdentityVerificationScreen>
         currentPhoto: _currentDocPhoto,
         totalPhotos: _totalDocPhotos,
         onPhotoTaken: _onDocPhotoTaken,
+        onOcrText: (text) {
+          // Only the FRONT carries the holder's name — the back side of a
+          // license is barcode noise and would overwrite it.
+          if (!_scanningBack) _idOcrText = text;
+        },
         onCancel: () {
           if (_scanningBack) {
             // Go back to front
@@ -1070,6 +1078,12 @@ class _IdentityVerificationScreenState extends State<IdentityVerificationScreen>
   //  Step 6 — Rejected
   // ═══════════════════════════════════════════
   Widget _buildRejected(AppColors c) {
+    // The backend stamps name_mismatch / ocr_unreadable when the OCR name
+    // does not match the account (or nothing readable came off the ID) —
+    // the fix is a better scan, so retry goes back to the doc guidelines
+    // instead of restarting the whole flow.
+    final isNameMismatch = _rejectionReason == 'name_mismatch' ||
+        _rejectionReason == 'ocr_unreadable';
     return Padding(
       key: const ValueKey(6),
       padding: const EdgeInsets.symmetric(horizontal: 24),
@@ -1128,7 +1142,10 @@ class _IdentityVerificationScreenState extends State<IdentityVerificationScreen>
                 const SizedBox(width: 12),
                 Expanded(
                   child: Text(
-                    _rejectionReason ?? 'Your verification was not approved. Please try again.',
+                    isNameMismatch
+                        ? S.of(context).verificationFailedName
+                        : _rejectionReason ??
+                            'Your verification was not approved. Please try again.',
                     style: TextStyle(fontSize: 14, color: c.textPrimary, height: 1.5),
                   ),
                 ),
@@ -1142,13 +1159,19 @@ class _IdentityVerificationScreenState extends State<IdentityVerificationScreen>
             child: ElevatedButton(
               onPressed: () {
                 setState(() {
-                  _step = 0;
                   _docFrontPath = null;
                   _docBackPath = null;
                   _selfiePath = null;
+                  _idOcrText = '';
                   _rejectionReason = null;
-                  _docType = '';
                   _scanningBack = false;
+                  if (isNameMismatch && _docType.isNotEmpty) {
+                    // Re-scan only — back to the guidelines for the same doc.
+                    _step = 7;
+                  } else {
+                    _step = 0;
+                    _docType = '';
+                  }
                 });
               },
               style: ElevatedButton.styleFrom(
@@ -1157,11 +1180,11 @@ class _IdentityVerificationScreenState extends State<IdentityVerificationScreen>
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                 elevation: 0,
               ),
-              child: const FittedBox(
+              child: FittedBox(
                 fit: BoxFit.scaleDown,
                 child: Text(
-                  'Try Again',
-                  style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
+                  S.of(context).tryAgain,
+                  style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
@@ -1225,6 +1248,9 @@ class _InlineDocScanner extends StatefulWidget {
   final int totalPhotos;
   final ValueChanged<String> onPhotoTaken;
   final VoidCallback onCancel;
+  /// Full OCR text of the captured frame — the parent keeps the front-side
+  /// text for the id_ocr_text submission field.
+  final ValueChanged<String>? onOcrText;
 
   const _InlineDocScanner({
     required this.docType,
@@ -1233,6 +1259,7 @@ class _InlineDocScanner extends StatefulWidget {
     required this.totalPhotos,
     required this.onPhotoTaken,
     required this.onCancel,
+    this.onOcrText,
   });
 
   @override
@@ -1246,6 +1273,7 @@ class _InlineDocScannerState extends State<_InlineDocScanner>
   CameraController? _ctrl;
   bool _initialized = false;
   String? _capturedPath;
+  String _capturedOcrText = '';
   bool _capturing = false;
 
   final _textRecognizer = TextRecognizer();
@@ -1501,6 +1529,7 @@ class _InlineDocScannerState extends State<_InlineDocScanner>
       final path = await _cropToFrame(xFile.path, screen);
       final inputImage = InputImage.fromFilePath(path);
       final result = await _textRecognizer.processImage(inputImage);
+      _capturedOcrText = result.text;
       final text = result.text.toLowerCase();
       final isDoc =
           text.contains('license') || text.contains('driver') ||
@@ -1545,6 +1574,7 @@ class _InlineDocScannerState extends State<_InlineDocScanner>
   void _retake() {
     setState(() {
       _capturedPath = null;
+      _capturedOcrText = '';
       _documentDetected = false;
       _detectedHint = '';
     });
@@ -1554,6 +1584,7 @@ class _InlineDocScannerState extends State<_InlineDocScanner>
 
   void _usePhoto() {
     if (_capturedPath == null) return;
+    widget.onOcrText?.call(_capturedOcrText);
     widget.onPhotoTaken(_capturedPath!);
   }
 

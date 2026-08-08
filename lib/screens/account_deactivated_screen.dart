@@ -3,6 +3,7 @@ import '../config/app_theme.dart';
 import '../config/page_transitions.dart';
 import '../l10n/app_localizations.dart';
 import '../services/user_session.dart';
+import 'chat_screen.dart';
 import 'welcome_screen.dart';
 
 class AccountDeactivatedScreen extends StatelessWidget {
@@ -15,6 +16,23 @@ class AccountDeactivatedScreen extends StatelessWidget {
 
     return Scaffold(
       backgroundColor: c.bg,
+      floatingActionButton: FloatingActionButton(
+        tooltip: s.contactSupport,
+        backgroundColor: const Color(0xFFE8C547),
+        foregroundColor: Colors.black,
+        onPressed: () {
+          Navigator.of(context).push(
+            slideFromRightRoute(
+              const ChatScreen(
+                recipientName: 'Support',
+                avatarInitial: 'S',
+                isSupport: true,
+              ),
+            ),
+          );
+        },
+        child: const Icon(Icons.chat_rounded),
+      ),
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 32),

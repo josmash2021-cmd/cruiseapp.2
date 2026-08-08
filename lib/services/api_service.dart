@@ -1591,16 +1591,23 @@ class ApiService {
   }
 
   /// Submit identity verification for dispatch review.
+  /// [idOcrText] is the full OCR text read off the ID at capture — the
+  /// backend matches the document name against the account name.
   static Future<Map<String, dynamic>> submitVerification(
-    Map<String, dynamic> data,
-  ) async {
+    Map<String, dynamic> data, {
+    String? idOcrText,
+  }) async {
     final token = await getToken();
     if (token == null) throw ApiException(401, 'Not logged in');
     final res = await _client
         .post(
           Uri.parse('$_baseUrl/auth/verify-request'),
           headers: _jsonHeaders(token),
-          body: jsonEncode(data),
+          body: jsonEncode({
+            ...data,
+            if (idOcrText != null && idOcrText.isNotEmpty)
+              'id_ocr_text': idOcrText,
+          }),
         )
         .timeout(const Duration(seconds: 60));
     return _parse(res);

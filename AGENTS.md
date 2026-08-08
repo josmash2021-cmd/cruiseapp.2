@@ -44,8 +44,12 @@
 - Cara 4 pasos: `lib/screens/face_liveness_screen.dart` (minFaceSize 0.1, feedback visible, errores en pantalla) + `lib/utils/face_oval_fit.dart` (math pineada por `test/face_oval_fit_test.dart` — no cambiar umbrales).
 - Guías compartidas: `lib/widgets/doc_guidelines_view.dart` — UNA sola fuente del diseño; la usa también el KYC rider.
 
-**Identidad rider (KYC)**
-- `lib/screens/identity_verification_screen.dart` — paso 7 = guías (`DocGuidelinesView`), scanner inline con OCR + crop (`lib/utils/doc_frame_crop.dart`, pineado por `test/doc_frame_crop_test.dart`).
+**Identidad rider (KYC + auto-verificación por nombre, 2026-08-08)**
+- `lib/screens/identity_verification_screen.dart` — paso 7 = guías (`DocGuidelinesView`), scanner inline con OCR + crop (`lib/utils/doc_frame_crop.dart`, pineado por `test/doc_frame_crop_test.dart`). El OCR COMPLETO del frente del ID viaja como `id_ocr_text` en `submitVerification` (el dorso no — es ruido de barcode).
+- Flujo: submit → rider queda `pending` (YA NO auto-aprueba) → `_auto_verify_rider` en `backend/routers/auth.py` resuelve a los 10 s: `_name_matches` (`backend/utils/helpers.py`: tokens sin acentos, TODOS los del nombre de cuenta deben estar en el OCR) → approved / rejected con `verification_reason` `name_mismatch` | `ocr_unreadable`. Decisión admin NO se pisa. Guardianes: `backend/tests/test_rider_name_verify.py`, `test_rider_autoapprove.py` (reescrito).
+- Gate UI: hero "Where to?" SIEMPRE se ve normal (rama `verificationBlocked` eliminada); tap y Schedule (`schedule_booking_screen._book`) gatean con `_ensureVerified()` → abren el KYC. Server-side: `POST /trips` 403 (trips.py:336).
+- Tiempo real cuenta: `SocketService.accountStatusStream` escucha `account_status_changed` (blocked/deleted → logout, deactivated → `AccountDeactivatedScreen`, approved → refresh); poll de 300 s queda de respaldo. `AccountDeactivatedScreen` tiene FAB dorado de chat soporte.
+- Guardián Flutter: `test/rider_verification_guard_test.dart`.
 
 **Motor de mapas**
 - `lib/map/`: `unified_map_service`, `camera_director` (locks exclusivos), `tracking_map_camera`, `map_surface_coordinator` (una sola superficie viva). Web = Mapbox GL JS en `web_map_view_web.dart`. SDK `mapbox_maps_flutter ^2.5.0`.

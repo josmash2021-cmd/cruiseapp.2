@@ -46,6 +46,7 @@ import '../services/driver_wait_estimate.dart';
 import '../services/local_data_service.dart';
 import '../services/notification_service.dart';
 import '../services/places_service.dart';
+import '../services/socket_service.dart';
 import '../services/firebase_auth_recovery.dart';
 import '../l10n/app_localizations.dart';
 import '../services/user_session.dart';
@@ -325,6 +326,9 @@ class _HomeScreenState extends State<HomeScreen>
       const Duration(seconds: 300),
       (_) => _checkAccountStatus(),
     );
+    // Real-time account status push — the poll above stays as fallback.
+    _accountStatusSub =
+        SocketService.accountStatusStream.listen(_onAccountStatusPush);
     HomeScreen.scheduledRideRefresh.addListener(_onScheduledRideRefresh);
   }
 
@@ -508,6 +512,7 @@ class _HomeScreenState extends State<HomeScreen>
     _rideFadeCtrl.dispose();
     _driverCheckTimer?.cancel();
     _accountStatusTimer?.cancel();
+    _accountStatusSub?.cancel();
     _countdownTimer?.cancel();
     _imminentRideTimer?.cancel();
     _pendingSearchTimer?.cancel();
@@ -872,7 +877,34 @@ class _HomeScreenState extends State<HomeScreen>
 
   Timer? _driverCheckTimer;
   Timer? _accountStatusTimer;
+  StreamSubscription<Map<String, dynamic>>? _accountStatusSub;
 
+  /// Server-pushed account status (SocketService.accountStatusStream):
+  /// blocked/deleted → logout to Welcome; deactivated → deactivated screen;
+  /// approved → refresh the local verification state so booking unlocks.
+  /// The 300 s poll in [_checkAccountStatus] stays as the fallback.
+  Future<void> _onAccountStatusPush(Map<String, dynamic> data) async {
+    final status = (data['status'] ?? '').toString();
+    if (!mounted) return;
+    if (status == 'blocked' || status == 'deleted') {
+      _accountStatusTimer?.cancel();
+      await UserSession.logout();
+      if (!mounted) return;
+      Navigator.of(context).pushAndRemoveUntil(
+        smoothFadeRoute(const WelcomeScreen()),
+        (_) => false,
+      );
+    } else if (status == 'deactivated') {
+      _accountStatusTimer?.cancel();
+      if (!mounted) return;
+      Navigator.of(context).pushAndRemoveUntil(
+        smoothFadeRoute(const AccountDeactivatedScreen()),
+        (_) => false,
+      );
+    } else if (status == 'approved') {
+      _checkBackendVerification();
+    }
+  }
 
   Future<void> _checkAccountStatus() async {
     try {

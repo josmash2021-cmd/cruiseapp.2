@@ -34,6 +34,7 @@ import '../utils/app_toast.dart';
 import '../utils/mapbox_safe.dart';
 import '../services/map_controller_cache.dart';
 import 'airport_terminal_sheet.dart';
+import 'identity_verification_screen.dart';
 import 'payment_accounts_screen.dart';
 import 'ride_booking_confirmed_screen.dart';
 import '../widgets/map/circular_pin_renderer.dart';
@@ -648,7 +649,22 @@ class _ScheduleBookingScreenState extends State<ScheduleBookingScreen>
 
   // ── Booking ──────────────────────────────────────────────────────────
 
+  /// Same gate as the home hero (`_ensureVerified` in home_screen.dart): a
+  /// rider without a captured identity gets the verification flow instead
+  /// of a confirmed booking.
+  Future<bool> _ensureVerified() async {
+    final verified = await LocalDataService.isIdentityVerified();
+    if (verified) return true;
+    if (!mounted) return false;
+    final result = await Navigator.of(
+      context,
+    ).push<bool>(slideUpFadeRoute(const IdentityVerificationScreen()));
+    return result == true;
+  }
+
   Future<void> _book() async {
+    if (!await _ensureVerified()) return;
+    if (!mounted) return;
     if (_pickupLatLng == null || _dropoffLatLng == null) {
       _showErr(S.of(context).enterBothAddresses);
       return;

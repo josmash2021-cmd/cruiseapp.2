@@ -48,6 +48,8 @@ class SocketService {
       StreamController<Map<String, dynamic>>.broadcast();
   static var _chatMessageController =
       StreamController<Map<String, dynamic>>.broadcast();
+  static var _accountStatusController =
+      StreamController<Map<String, dynamic>>.broadcast();
 
   /// Stream of driver location updates.
   /// Payload: {trip_id, lat, lng, heading, speed, timestamp}
@@ -68,6 +70,12 @@ class SocketService {
   /// Payload: {trip_id, sender_id, sender_role, message, timestamp}
   static Stream<Map<String, dynamic>> get chatMessageStream =>
       _chatMessageController.stream;
+
+  /// Stream of account status changes pushed by the server.
+  /// Payload: {status: 'blocked'|'deleted'|'deactivated'|'approved', ...}
+  /// The 300 s REST poll on the home screen stays as the fallback.
+  static Stream<Map<String, dynamic>> get accountStatusStream =>
+      _accountStatusController.stream;
 
   // ── Public API ──────────────────────────────────────────────────────
 
@@ -231,6 +239,12 @@ class SocketService {
       debugPrint('[Socket.io] Chat message from ${map['sender_role']}: ${map['message']?.toString().substring(0, math.min(30, (map['message']?.toString().length ?? 0)))}...');
     });
 
+    _socket!.on('account_status_changed', (data) {
+      final map = _toMap(data);
+      _accountStatusController.add(map);
+      debugPrint('[Socket.io] Account status changed: ${map['status']}');
+    });
+
     // Listen to network recovery to proactively reconnect
     NetworkService().onlineNotifier.addListener(_onNetworkChange);
 
@@ -369,6 +383,9 @@ class SocketService {
       if (_chatMessageController.isClosed) {
         _chatMessageController = StreamController<Map<String, dynamic>>.broadcast();
       }
+      if (_accountStatusController.isClosed) {
+        _accountStatusController = StreamController<Map<String, dynamic>>.broadcast();
+      }
       if (_connectionHealthController.isClosed) {
         _connectionHealthController = StreamController<bool>.broadcast();
       }
@@ -415,6 +432,9 @@ class SocketService {
     }
     if (!_chatMessageController.isClosed) {
       _chatMessageController.close();
+    }
+    if (!_accountStatusController.isClosed) {
+      _accountStatusController.close();
     }
     if (!_connectionHealthController.isClosed) {
       _connectionHealthController.close();

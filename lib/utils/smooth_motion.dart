@@ -33,12 +33,16 @@ class SmoothMotion {
 
   /// How much of the remaining angular gap to close per second when applying
   /// the low-pass filter on bearing. Higher = more responsive turns.
-  static const double _bearingLerpPerSec = 2.5;
+  /// 2.5 → 3.5: the arrow visibly trailed the car's turns by ~half a second.
+  static const double _bearingLerpPerSec = 3.5;
 
   /// How much of the residual lat/lng gap to close per second via
   /// proportional correction. Higher = more responsive, follows GPS closer.
-  /// Lowered from 1.8 → 1.2 for silkier gliding — less visible snap to raw GPS.
-  static const double _correctionPerSec = 1.2;
+  /// 1.8 → 1.2 made it silky but put the marker ~0.8 s behind the car —
+  /// "fluid, but late". 2.4 halves that constant (~0.4 s) while the
+  /// constant-velocity leg keeps the glide, so it reads as real-time
+  /// without the snap of raw GPS.
+  static const double _correctionPerSec = 2.4;
 
   /// Freeze velocity after this many seconds without a fresh GPS fix.
   /// 3.5 s allows the dot to keep gliding through brief urban GPS shadows
@@ -81,10 +85,10 @@ class SmoothMotion {
   /// How many fixes in a row the standstill hold has swallowed.
   int _consecutiveHolds = 0;
 
-  /// After this many, the next fix is taken whatever it says. Five fixes is
-  /// a few seconds of a driver standing still — long enough to absorb a
-  /// burst of wander, short enough that a real move cannot be held out.
-  static const int _maxConsecutiveHolds = 5;
+  /// After this many, the next fix is taken whatever it says. Five fixes
+  /// held a car pulling away from a stop for over a second — the "start"
+  /// lag. Three still absorbs a wander burst and lets a real move through.
+  static const int _maxConsecutiveHolds = 3;
 
   /// Provide a new GPS target. Measures velocity from the delta to the
   /// previous target.
@@ -191,8 +195,10 @@ class SmoothMotion {
         final newVLat = dLat / dtSec * speedScale;
         final newVLng = dLng / dtSec * speedScale;
         // Exponential average — absorbs GPS jitter without overfitting.
-        _vLat = _vLat * 0.3 + newVLat * 0.7;
-        _vLng = _vLng * 0.3 + newVLng * 0.7;
+        // 0.3/0.7 → 0.2/0.8: the fresher the speed estimate, the less the
+        // extrapolated glide runs behind (or ahead of) the car.
+        _vLat = _vLat * 0.2 + newVLat * 0.8;
+        _vLng = _vLng * 0.2 + newVLng * 0.8;
       }
     }
     _lastTargetAt = now;

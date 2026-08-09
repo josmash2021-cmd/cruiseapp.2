@@ -47,19 +47,37 @@ void main() {
     final src =
         File('lib/screens/ride_request_screen.dart').readAsStringSync();
 
-    test('cameraOptions prefers _lastCam* over the handoff', () {
+    test('cameraOptions prefers _lastCam* over the handoff outside the picker', () {
       final boot = RegExp(r'cameraOptions:\s*mapbox\.CameraOptions\(');
       final start = boot.firstMatch(src)!.end;
       final block = src.substring(start, start + 900);
-      final lastFrame = block.indexOf('_lastCamCenter?.longitude');
-      final handoff = block.indexOf('widget.handoffLng');
-      expect(lastFrame, isNonNegative,
-          reason: 'the boot camera must read _lastCamCenter');
-      expect(handoff, isNonNegative,
-          reason: 'the handoff stays as the first-open fallback');
-      expect(lastFrame, lessThan(handoff),
-          reason: 'a recreated map boots where the rider left it, '
-              'not at the handoff — this ordering IS the fix');
+      // In non-picker mode the chain is:
+      //   _lastCamCenter?.longitude ?? widget.handoffLng ?? _center!.longitude
+      final nonPickerLng = RegExp(r':\s*\(\s*_lastCamCenter\?\.longitude\s*\?\?\s*'
+          r'widget\.handoffLng\s*\?\?\s*_center!\.longitude\s*\)');
+      expect(nonPickerLng.hasMatch(block), isTrue,
+          reason: 'non-picker mode longitude must prefer the last live frame, '
+              'then handoff, then _center as final fallback');
+      final nonPickerLat = RegExp(r':\s*\(\s*_lastCamCenter\?\.latitude\s*\?\?\s*'
+          r'widget\.handoffLat\s*\?\?\s*_center!\.latitude\s*\)');
+      expect(nonPickerLat.hasMatch(block), isTrue,
+          reason: 'non-picker mode latitude must prefer the last live frame, '
+              'then handoff, then _center as final fallback');
+    });
+
+    test('cameraOptions in picker mode uses the handoff seed, not _lastCamCenter or _center', () {
+      final boot = RegExp(r'cameraOptions:\s*mapbox\.CameraOptions\(');
+      final start = boot.firstMatch(src)!.end;
+      final block = src.substring(start, start + 900);
+      final pickerLng = RegExp(r'widget\.pickerMode\s*\?\s*\(\s*widget\.handoffLng\s*\?\?\s*'
+          r'_center!\.longitude\s*\)\s*:\s*\(');
+      expect(pickerLng.hasMatch(block), isTrue,
+          reason: 'picker mode longitude must come from the handoff seed, '
+              'never from _lastCamCenter or fall through to _center');
+      final pickerLat = RegExp(r'widget\.pickerMode\s*\?\s*\(\s*widget\.handoffLat\s*\?\?\s*'
+          r'_center!\.latitude\s*\)\s*:\s*\(');
+      expect(pickerLat.hasMatch(block), isTrue,
+          reason: 'picker mode latitude must come from the handoff seed');
     });
 
     test('onCameraChangeListener feeds _lastCam*', () {
@@ -84,14 +102,33 @@ void main() {
       // platform-view recreation booted at the handoff seed — the picker
       // snapped back to the seed address mid-drag.
       final start = src.indexOf('void initState() {');
-      final body = src.substring(start, start + 1800);
-      expect(body.contains('_lastCamCenter = LatLng(widget.handoffLat!, widget.handoffLng!)'),
-          isTrue,
+      final body = src.substring(start, start + 8000);
+      final handoffSeed = RegExp(r'handoffCenter\s*=\s*LatLng\('
+          r'widget\.handoffLat!,\s*widget\.handoffLng!\)');
+      expect(handoffSeed.hasMatch(body), isTrue,
+          reason: 'the handoff coordinates must seed a LatLng before it is '
+              'assigned to _lastCamCenter');
+      expect(body.contains('_lastCamCenter = handoffCenter;'), isTrue,
           reason: 'without the seed, a recreation before the first camera '
               'event boots at the handoff/GPS seed — the snap the rider '
               'keeps reporting');
       expect(body.contains('_lastCamPitch = widget.handoffPitch ?? 45.0'), isTrue,
           reason: 'the boot uses the same fallbacks as cameraOptions');
+    });
+
+    test('initState seeds _center to the handoff in picker mode', () {
+      final start = src.indexOf('void initState() {');
+      final body = src.substring(start, start + 8000);
+      final seedCenter = RegExp(r'if\s*\(\s*widget\.pickerMode\s*\)\s*'
+          r'_center\s*=\s*handoffCenter;');
+      expect(seedCenter.hasMatch(body), isTrue,
+          reason: 'in picker mode _center must be the selected prediction, '
+              'not the rider GPS, so every cameraOptions fallback stays on '
+              'the chosen address');
+      final guardCenter = RegExp(r'if\s*\(\s*!\s*widget\.pickerMode\s*\)\s*\{');
+      expect(guardCenter.hasMatch(body), isTrue,
+          reason: 'the normal _center = initialPickupDetails assignment must '
+              'be skipped in picker mode');
     });
   });
 
@@ -99,12 +136,19 @@ void main() {
     final ctrl =
         File('lib/screens/ride_request_controller.dart').readAsStringSync();
 
-    test('_gpsMayMoveCamera closes for picker, phase, route and user', () {
+    test('_gpsMayMoveCamera hard-closes for picker mode before any other term', () {
       final getter = RegExp(r'bool get _gpsMayMoveCamera \{');
       final start = getter.firstMatch(ctrl)!.end;
       final body = ctrl.substring(start, start + 500);
+      expect(body.contains('if (widget.pickerMode)'), isTrue,
+          reason: 'picker mode must short-circuit the gate so a single '
+              'miss in the boolean expression cannot allow a GPS move');
+      final earlyReturn = body.indexOf('if (widget.pickerMode)');
+      final allowed = body.indexOf('final allowed =');
+      expect(earlyReturn, lessThan(allowed),
+          reason: 'the picker short-circuit must come before the allowed '
+              'computation, not after');
       for (final term in [
-        'widget.pickerMode',
         'RiderPhase.pickingLocation',
         '_userTookCamera',
       ]) {

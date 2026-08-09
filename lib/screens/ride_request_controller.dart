@@ -343,8 +343,14 @@ extension _RideRequestController on _RideRequestScreenState {
   /// picker's map on top, and a covered sheet's top-down GPS flyTo is the
   /// snap-back they feel. While the surface is ours the term is a no-op.
   bool get _gpsMayMoveCamera {
+    // Picker mode is a deliberate pin-drop UX: the camera must stay on the
+    // handoff seed (selected address), never fly to the rider's live GPS.
+    // Hard return so a single miss anywhere else in the expression cannot
+    // accidentally allow a GPS move during picking.
+    if (widget.pickerMode) {
+      return false;
+    }
     final allowed = _mapMounted &&
-        !widget.pickerMode &&
         _ctrl.state.phase != RiderPhase.pickingLocation &&
         _ctrl.state.route == null &&
         !_userTookCamera;
@@ -353,8 +359,7 @@ extension _RideRequestController on _RideRequestScreenState {
     // no line from here, the mover is not _initLocation and the hunt goes
     // elsewhere; if it shows one, the guard is being defeated and this says
     // by which term.
-    if (allowed && (widget.pickerMode ||
-        _ctrl.state.phase == RiderPhase.pickingLocation)) {
+    if (allowed && _ctrl.state.phase == RiderPhase.pickingLocation) {
       debugPrint('[RideRequest] GPS camera move ALLOWED during picker — '
           'pickerMode=${widget.pickerMode} phase=${_ctrl.state.phase} '
           'route=${_ctrl.state.route != null} took=$_userTookCamera');

@@ -771,23 +771,53 @@ class _RideRequestScreenState extends State<RideRequestScreen>
   void initState() {
     super.initState();
     // Seed the last-known camera from the SAME values the MapWidget boots
-    // from (2026-08-09, build 573 report). _lastCam* is otherwise null until
-    // the first onCameraChange event — and if that listener does not fire
-    // for user gestures on iOS, it stays null forever. Any platform-view
-    // recreation (cold start: covers and transitions still settling) then
-    // boots from the handoff seed instead of the live frame: the rider
-    // drags the picker to a street and the map snaps back to the seed
-    // address. Seeded here, a recreation before any camera event boots
-    // where the map already is (invisible) and a recreation after a drag
-    // boots where the rider left it.
-    if (widget.handoffLat != null && widget.handoffLng != null) {
-      _lastCamCenter = LatLng(widget.handoffLat!, widget.handoffLng!);
+    // from. _lastCam* is otherwise null until the first onCameraChange event
+    // — and if that listener does not fire for user gestures on iOS, it stays
+    // null forever. Any platform-view recreation (cold start: covers and
+    // transitions still settling) then boots from the handoff seed instead of
+    // the live frame: the rider drags the picker to a street and the map snaps
+    // back to the seed address. Seeded here, a recreation before any camera
+    // event boots where the map already is (invisible) and a recreation after
+    // a drag boots where the rider left it.
+    //
+    // In picker mode the handoff IS the selected prediction. Keep the map
+    // center on that prediction too, so every fallback path (MapWidget
+    // cameraOptions, WebMapView initial center, etc.) opens on the chosen
+    // address and never silently falls back to the rider's live GPS.
+    LatLng? handoffCenter;
+    if (widget.pickerMode) {
+      if (widget.handoffLat != null && widget.handoffLng != null) {
+        handoffCenter = LatLng(widget.handoffLat!, widget.handoffLng!);
+      } else if (!widget.pickerIsPickup && widget.initialDropoffDetails != null) {
+        handoffCenter = LatLng(
+          widget.initialDropoffDetails!.lat,
+          widget.initialDropoffDetails!.lng,
+        );
+      } else if (widget.pickerIsPickup && widget.initialPickupDetails != null) {
+        handoffCenter = LatLng(
+          widget.initialPickupDetails!.lat,
+          widget.initialPickupDetails!.lng,
+        );
+      }
+    } else if (widget.handoffLat != null && widget.handoffLng != null) {
+      handoffCenter = LatLng(widget.handoffLat!, widget.handoffLng!);
+    }
+
+    if (handoffCenter != null) {
+      _lastCamCenter = handoffCenter;
+      if (widget.pickerMode) _center = handoffCenter;
     } else if (_center != null) {
       _lastCamCenter = _center;
     }
     _lastCamZoom = widget.handoffZoom ?? 15.5;
     _lastCamPitch = widget.handoffPitch ?? 45.0;
     _lastCamBearing = widget.handoffBearing ?? 0.0;
+    if (widget.pickerMode) {
+      debugPrint('[PickerBoot] pickerMode handoff=${widget.handoffLat},${widget.handoffLng} '
+          'pickerIsPickup=${widget.pickerIsPickup} '
+          'lastCam=${_lastCamCenter?.latitude},${_lastCamCenter?.longitude} '
+          'center=${_center?.latitude},${_center?.longitude}');
+    }
     unawaited(_acquireMapSurface());
 
     // Restore the method the rider chose to keep, if they ever chose one.
@@ -892,10 +922,24 @@ class _RideRequestScreenState extends State<RideRequestScreen>
     }
 
     // ── Pre-populate map center from initial details so map renders instantly ──
-    if (widget.initialPickupDetails != null) {
-      _center = LatLng(widget.initialPickupDetails!.lat, widget.initialPickupDetails!.lng);
-    } else if (widget.initialDropoffDetails != null) {
-      _center = LatLng(widget.initialDropoffDetails!.lat, widget.initialDropoffDetails!.lng);
+    // In picker mode the center is already seeded to the selected prediction
+    // (handoff) above. Do not override it with the rider's live pickup/GPS
+    // here, or the map opens on the wrong location even though the handoff
+    // coordinates were passed correctly.
+    if (!widget.pickerMode) {
+      if (widget.initialPickupDetails != null) {
+        _center = LatLng(widget.initialPickupDetails!.lat, widget.initialPickupDetails!.lng);
+      } else if (widget.initialDropoffDetails != null) {
+        _center = LatLng(widget.initialDropoffDetails!.lat, widget.initialDropoffDetails!.lng);
+      }
+    } else if (_center == null) {
+      // Absolute fallback: if the handoff seeding above somehow missed,
+      // prefer the prediction we are about to pick.
+      if (widget.pickerIsPickup && widget.initialPickupDetails != null) {
+        _center = LatLng(widget.initialPickupDetails!.lat, widget.initialPickupDetails!.lng);
+      } else if (!widget.pickerIsPickup && widget.initialDropoffDetails != null) {
+        _center = LatLng(widget.initialDropoffDetails!.lat, widget.initialDropoffDetails!.lng);
+      }
     }
 
     // ── Airport selection always takes priority ──
@@ -1277,15 +1321,25 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                   cameraOptions: mapbox.CameraOptions(
                     center: mapbox.Point(
                       coordinates: mapbox.Position(
-                        _lastCamCenter?.longitude ??
-                            widget.handoffLng ?? _center!.longitude,
-                        _lastCamCenter?.latitude ??
-                            widget.handoffLat ?? _center!.latitude,
+                        widget.pickerMode
+                            ? (widget.handoffLng ?? _center!.longitude)
+                            : (_lastCamCenter?.longitude ??
+                                widget.handoffLng ?? _center!.longitude),
+                        widget.pickerMode
+                            ? (widget.handoffLat ?? _center!.latitude)
+                            : (_lastCamCenter?.latitude ??
+                                widget.handoffLat ?? _center!.latitude),
                       ),
                     ),
-                    zoom: _lastCamZoom ?? widget.handoffZoom ?? 15.5,
-                    bearing: _lastCamBearing ?? widget.handoffBearing ?? 0.0,
-                    pitch: _lastCamPitch ?? widget.handoffPitch ?? 45.0,
+                    zoom: widget.pickerMode
+                        ? (widget.handoffZoom ?? 15.5)
+                        : (_lastCamZoom ?? widget.handoffZoom ?? 15.5),
+                    bearing: widget.pickerMode
+                        ? (widget.handoffBearing ?? 0.0)
+                        : (_lastCamBearing ?? widget.handoffBearing ?? 0.0),
+                    pitch: widget.pickerMode
+                        ? (widget.handoffPitch ?? 45.0)
+                        : (_lastCamPitch ?? widget.handoffPitch ?? 45.0),
                   ),
                   onMapCreated: (ctrl) async {
                     // [CamSnap] hunt: a SECOND onMapCreated on this screen

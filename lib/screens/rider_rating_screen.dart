@@ -146,7 +146,18 @@ class _RiderRatingScreenState extends State<RiderRatingScreen>
           comment:
               _anonymousFeedback.isNotEmpty ? _anonymousFeedback : null,
         );
-      } catch (_) {}
+      } catch (_) {
+        // The rating and the TIP are money — they do not fail silently
+        // while the rider believes they were sent (audit #18). Re-arm the
+        // button so they can retry; Skip still exists if they give up.
+        if (!mounted) return;
+        setState(() => _submitting = false);
+        ScaffoldMessenger.maybeOf(context)?.showSnackBar(SnackBar(
+          content: Text(S.of(context).somethingWentWrong),
+          duration: const Duration(seconds: 3),
+        ));
+        return;
+      }
     }
     AnalyticsService.instance.logRideCompleted('', widget.fare, 0, 0);
 
@@ -180,7 +191,11 @@ class _RiderRatingScreenState extends State<RiderRatingScreen>
   @override
   Widget build(BuildContext context) {
     final s = S.of(context);
-    final fare = widget.fare > 0 ? widget.fare : 23.0;
+    // No invented $23 fallback (audit #18): a ride resumed without a fare
+    // made the percentage buttons compute REAL dollar tips off a fiction.
+    // Unknown fare → hide the percentages; the custom-amount field needs
+    // no fare to work.
+    final fare = widget.fare;
     final tipPercents = [15, 20, 25];
     final chipOptions = [
       s.friendlyDriver,
@@ -428,6 +443,9 @@ class _RiderRatingScreenState extends State<RiderRatingScreen>
                     const SizedBox(height: 18),
 
                     // ── Percentage tip buttons ──
+                    // Hidden when the fare is unknown — see the build comment:
+                    // percentages of a made-up number are real dollars wrong.
+                    if (fare > 0)
                     Row(
                       children: tipPercents.map((pct) {
                         final amt =

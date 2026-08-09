@@ -449,6 +449,9 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
       _chainedSnack('Next ride booked — it starts after this dropoff.');
     } catch (e) {
       debugPrint('[Driver] chained accept failed: $e');
+      // It is gone — remember that, or the next SSE/poll delivery paints
+      // the same dead offer again (audit #19).
+      _chainedRejectedIds.add(offerId);
       setState(() => _chainedOffer = null);
       _chainedSnack('That ride is no longer available.');
     } finally {

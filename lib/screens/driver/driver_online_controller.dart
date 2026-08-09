@@ -1119,7 +1119,17 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
   }
 
   void _goOfflineBackend() {
-    if (_driverId == null || _pos == null) return;
+    // GPS-less offline still goes offline (audit #15): the early return on
+    // _pos == null left the app saying offline while the backend kept the
+    // driver online — FCM offers nobody answers, riders waiting on a ghost.
+    // Last-known coords are fine; what matters is is_online: false.
+    if (_driverId == null) return;
+    final offLat = _pos?.latitude ??
+        LocalCache.get<double>('last_driver_lat') ??
+        0.0;
+    final offLng = _pos?.longitude ??
+        LocalCache.get<double>('last_driver_lng') ??
+        0.0;
     AnalyticsService.instance.logDriverOffline();
     // iOS: dismiss the Dynamic Island activity (no-op elsewhere)
     LiveActivityService.stop();
@@ -1139,8 +1149,8 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
         );
     ApiService.updateDriverLocation(
       driverId: _driverId!,
-      lat: _pos!.latitude,
-      lng: _pos!.longitude,
+      lat: offLat,
+      lng: offLng,
       isOnline: false,
     ).catchError((_) => <String, dynamic>{});
   }
@@ -1901,6 +1911,10 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
 
   /// Apply incoming offers to UI (shared by SSE + polling).
   void _applyOffers(List<Map<String, dynamic>> offers) {
+    // Paused means NO offers (audit #14): the dialog promises exactly that,
+    // and before this gate only the backup poll was stopped — SSE kept
+    // delivering cards the whole "pause".
+    if (_isPaused) return;
     int? toInt(dynamic v) {
       if (v == null) return null;
       if (v is int) return v;
@@ -3317,6 +3331,9 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       _animateToPosition(_pos!, zoom: 15.5, bearing: 0, tilt: 0);
     }
     _startPolling();
+    // Same GPS restart as _resetToSearchingOnRemoteCancel: accept stopped
+    // the stream for the trip screen (audit #16).
+    _startPosStream();
     // A ride accepted mid-trip while this one was being driven starts now.
     _handoffChainedOffer();
   }
@@ -3458,8 +3475,29 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     HapticService.mediumImpact();
     _setState(() => _isPaused = true);
 
-    // Stop polling for offers while paused
+    // Stop BOTH offer channels, not just the backup poll (audit #14): SSE
+    // kept delivering cards the whole "pause" while the dialog claimed
+    // "you won't receive new trip requests".
     _pollT?.cancel();
+    _offerSseSub?.cancel();
+    _sseReconnectTimer?.cancel();
+    _sseActive = false;
+
+    // Take down any card already up — paused means no offers, visible or
+    // not. They expire server-side on their own clock; rejecting them from
+    // here would punish the driver's acceptance rate for a pause.
+    if (_pendingOffers.isNotEmpty || _previewingOffer != null) {
+      _setState(() {
+        _pendingOffers = [];
+        _previewingOffer = null;
+        _offerRouteShown = false;
+        _fullSegOne = [];
+        _fullSegTwo = [];
+        _hideFindingBar = false;
+      });
+      unawaited(_clearAllAnnotations().catchError((_) {}));
+      _syncOfferLiveActivity();
+    }
 
     // Show pause dialog with timer options
     showDialog(
@@ -3504,7 +3542,10 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
   void _resumeFromPause() {
     _setState(() => _isPaused = false);
     _pauseTimer?.cancel();
-    _startPolling(); // Resume polling
+    // Force: an explicit user action must not die on the 1s debounce —
+    // a pause/resume flip right after a lifecycle resume would otherwise
+    // leave the driver with no SSE and no poll.
+    _startPolling(force: true);
     _snack('▶️ Back online - receiving trip requests');
   }
 
@@ -3642,6 +3683,17 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       _animateToPosition(_pos!, zoom: 15.5, bearing: 0, tilt: 0);
     }
     _startPolling();
+    // The GPS stream stopped at accept time (STEP 4) for the trip screen.
+    // Every path that lands back on searching in THIS screen must restart
+    // it — left stopped, dispatch and riders saw a frozen car for the rest
+    // of the shift (audit #16). _startPosStream stops any old one first,
+    // so this is safe when one is already running.
+    _startPosStream();
+    // A chained ride booked on the trip screen survives this cancel too:
+    // the pop('cancelled') path leaves it in chainedHandoffOffer, and it is
+    // already locked on the backend — losing it here stranded a ride the
+    // driver had accepted (audit #13).
+    _handoffChainedOffer();
     // The notice replaces the old corner snackbar: a rider cancel is the
     // one event the driver must not miss in their periphery, so it lands
     // centred on a semi-dark wash for ~5 s and then fades out of the way.

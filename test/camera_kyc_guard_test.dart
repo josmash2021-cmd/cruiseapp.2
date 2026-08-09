@@ -58,8 +58,7 @@ void main() {
     });
   });
 
-  group('document scanners capture at full resolution', () {
-    for (final path in [
+  group('document scanners capture at full resolution', () {    for (final path in [
       'lib/screens/identity_verification_screen.dart',
       'lib/screens/driver/license_scanner_screen.dart',
     ]) {
@@ -105,6 +104,39 @@ void main() {
         isFalse,
       );
       expect(src.contains('Our team is reviewing your documents.'), isTrue);
+    });
+  });
+
+  // Session 2026-08-09: prod showed rider 69 (Jhon Martinez) rejected
+  // 'ocr_unreadable' with verification_ocr_text NULL — the OCR was read
+  // ONLY off the frame crop, so any device whose crop maps wrong (sensor
+  // rotation / EXIF not baked) submitted empty text to an auto-reject.
+  group('the auto-verify OCR never depends on the crop alone', () {
+    final src = File('lib/screens/identity_verification_screen.dart')
+        .readAsStringSync();
+
+    test('the full still is OCRed first, the crop is only a fallback', () {
+      final start = src.indexOf('Future<void> _capture() async {');
+      expect(start, isNonNegative, reason: '_capture not found');
+      final body = src.substring(start, start + 1600);
+      final full = body.indexOf('_ocrPath(xFile.path)');
+      final crop = body.indexOf('_ocrPath(path)');
+      expect(full, isNonNegative,
+          reason: 'the auto-verify lives or dies on this text — it must be '
+              'read off the full still first');
+      expect(crop, isNonNegative,
+          reason: 'the crop stays as the fallback, not the only source');
+      expect(full, lessThan(crop),
+          reason: 'crop-first was the bug: a wrong crop map meant empty '
+              'OCR and an automatic ocr_unreadable rejection');
+    });
+
+    test('an OCR failure degrades to empty text, never throws the capture away', () {
+      final start = src.indexOf('Future<({String text, int blocks})> _ocrPath(');
+      expect(start, isNonNegative, reason: '_ocrPath helper not found');
+      final body = src.substring(start, start + 500);
+      expect(body.contains("return (text: '', blocks: 0);"), isTrue,
+          reason: 'a thrown OCR used to skip the text entirely');
     });
   });
 }

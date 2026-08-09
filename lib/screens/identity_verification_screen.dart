@@ -1466,6 +1466,20 @@ class _InlineDocScannerState extends State<_InlineDocScanner>
     super.dispose();
   }
 
+  /// OCR one image file, never throws: an OCR failure must degrade to
+  /// empty text (the caller falls back or the doc-detect just stays off),
+  /// not to a lost capture. Returns the text and its block count.
+  Future<({String text, int blocks})> _ocrPath(String path) async {
+    try {
+      final result =
+          await _textRecognizer.processImage(InputImage.fromFilePath(path));
+      return (text: result.text, blocks: result.blocks.length);
+    } catch (e) {
+      debugPrint('[DocScanner] OCR failed for $path: $e');
+      return (text: '', blocks: 0);
+    }
+  }
+
   /// Cuts the captured photo down to what was inside the brackets.
   ///
   /// Returns [srcPath] untouched on any failure. Nothing here is worth
@@ -1545,20 +1559,29 @@ class _InlineDocScannerState extends State<_InlineDocScanner>
     HapticService.mediumImpact();
     try {
       final xFile = await _ctrl!.takePicture();
-      // Crop first, then read text off the crop: the OCR no longer has to
-      // ignore whatever was on the desk around the document.
+      // Read the text off the FULL still FIRST (2026-08-09): the crop exists
+      // for the upload's cleanliness, but the auto-verify lives or dies on
+      // this text. A crop that maps wrong on some device (sensor rotation /
+      // EXIF not baked) used to leave the OCR empty — the backend then
+      // rejected 'ocr_unreadable' with the ID perfectly legible in the
+      // photo (prod: rider 69, Jhon Martinez, ocr NULL).
+      var ocr = await _ocrPath(xFile.path);
+      // Crop for the upload, and fall back to OCR'ing it only if the full
+      // still gave nothing.
       final path = await _cropToFrame(xFile.path, screen);
-      final inputImage = InputImage.fromFilePath(path);
-      final result = await _textRecognizer.processImage(inputImage);
-      _capturedOcrText = result.text;
-      final text = result.text.toLowerCase();
+      if (ocr.text.isEmpty && path != xFile.path) {
+        ocr = await _ocrPath(path);
+      }
+      _capturedOcrText = ocr.text;
+      debugPrint('[DocScanner] OCR chars: ${ocr.text.length}');
+      final text = ocr.text.toLowerCase();
       final isDoc =
           text.contains('license') || text.contains('driver') ||
           text.contains('dob') || text.contains('exp') ||
           text.contains('class') || text.contains('state') ||
           text.contains('name') || text.contains('address') ||
           text.contains('dl') || text.contains('iss') ||
-          result.blocks.length >= 3;
+          ocr.blocks >= 3;
 
       if (isDoc) {
         if (mounted) {

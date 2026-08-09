@@ -1094,6 +1094,13 @@ async def migrate_postgres(conn):
         ("chat_messages", "legal_hold", "BOOLEAN DEFAULT FALSE"),
         ("support_chats", "legal_hold", "BOOLEAN DEFAULT FALSE"),
         ("support_messages", "legal_hold", "BOOLEAN DEFAULT FALSE"),
+        # FCRA consent fields (2026-08-09): el modelo los tenía y la
+        # migración standalone migrations/add_fcra_consent_fields.py
+        # existía, pero NADA corría esa migración en prod — cada SELECT de
+        # consent_logs reventaba con UndefinedColumn (trampa #0 otra vez).
+        ("consent_logs", "document_id", "VARCHAR(100)"),
+        ("consent_logs", "content_hash", "VARCHAR(64)"),
+        ("consent_logs", "device_info", "TEXT"),
     ]
     for table, col, col_type in migrations:
         try:

@@ -38,6 +38,7 @@
 
 **Driver online / ofertas / viaje**
 - `lib/screens/driver/driver_online_{screen,controller,map}.dart` — preview de oferta con fit a ruta (follow suprimido); tras aceptar, chase por frame zoom 17.5/pitch 55 = navegación turn-by-turn (intencional). `driver_trip_accept_screen.dart` — mini-mapa fit único (pickup+dropoff+ruta, SIN driverPos; zoom −0.2 clamp [9,15.5]; carrito = PNG del tracking rider `car_suv/sedan.png` iconSize 0.50, spec 2026-08-08); GPS solo mueve el carrito. Guardián: `test/driver_trip_minimap_guard_test.dart`.
+- `lib/screens/driver/scheduled_rides_screen.dart` — tabs Requests/My Scheduled, diseño neu (`neuBox`/`neuBase` de `lib/widgets/neu_style.dart`, el sistema compartido — no sombras ad-hoc). Las tarjetas usan `StaticRoutePreview` (imagen estática; markers `pin-s-p+E8C547`/`pin-s-d+FFFFFF`, velo navy 0.30 — el pin blanco a velo 0.50 salía gris). Claim exitoso → `animateTo(1)` + reload de ambas listas (auto-move a My Scheduled). `scheduled_rides_marketplace_screen.dart` está MUERTA (sin referencias). Guardián: `test/driver_scheduled_neu_guard_test.dart`.
 
 **Registro driver — documentos + biometría (Issues 3 y 5, arreglados 2026-08-07)**
 - `lib/screens/driver/driver_signup_screen.dart` (3 pasos). Licencia Front/Back → `license_guidelines_screen.dart` (página de guías) → `license_scanner_screen.dart` (cámara + OCR). Seguro/registro de auto: `_showPickOptions` (cámara/galería).

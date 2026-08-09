@@ -12,6 +12,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../config/api_keys.dart';
 import '../../config/app_theme.dart';
 import '../../widgets/static_route_preview.dart';
+import '../../widgets/neu_style.dart';
 import '../../l10n/app_localizations.dart';
 import '../../models/lat_lng.dart';
 import '../../services/api_service.dart';
@@ -36,8 +37,6 @@ class _ScheduledRidesScreenState extends State<ScheduledRidesScreen>
     with SingleTickerProviderStateMixin {
   static const _gold = Color(0xFFE8C547);
   static const _goldLight = Color(0xFFFBE47A);
-  static const _darkBg = Color(0xFF0F1117);
-  static const _cardBg = Color(0xFF1A1D24);
   static const _airport = Color(0xFF4285F4);
 
   late final TabController _tabCtrl;
@@ -48,8 +47,6 @@ class _ScheduledRidesScreenState extends State<ScheduledRidesScreen>
   bool _loadingAvail = true;
   String? _errorAvail;
   int? _claimingId;
-  final Set<int> _claimedIds = {}; // locally claimed — show cancel
-  int? _cancellingClaimId; // cancel in progress
   DateTime? _lastAvailFetch; // throttle: min 10 s between fetches
   bool _fetchingAvail = false; // guard concurrent calls
 
@@ -229,8 +226,12 @@ class _ScheduledRidesScreenState extends State<ScheduledRidesScreen>
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       ));
-      setState(() => _claimedIds.add(tripId));
+      // The ride belongs to the My Rides tab now: jump there and refresh
+      // both lists so it leaves Requests instead of staying behind as a
+      // persistent "Claimed" badge.
+      _tabCtrl.animateTo(1);
       _loadMyRides(force: true);
+      _loadAvailable(force: true);
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -257,35 +258,6 @@ class _ScheduledRidesScreenState extends State<ScheduledRidesScreen>
     }
   }
 
-  Future<void> _cancelClaimedTrip(int tripId) async {
-    setState(() => _cancellingClaimId = tripId);
-    try {
-      await ApiService.cancelScheduledTrip(tripId);
-      if (!mounted) return;
-      HapticService.mediumImpact();
-      setState(() => _claimedIds.remove(tripId));
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(S.of(context).rideCancelled,
-            style: const TextStyle(
-                color: Colors.black, fontWeight: FontWeight.w600)),
-        backgroundColor: _gold,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      ));
-      _loadMyRides(force: true);
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('${S.of(context).error}: $e'),
-        backgroundColor: Colors.red,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      ));
-    } finally {
-      if (mounted) setState(() => _cancellingClaimId = null);
-    }
-  }
-
   // ─────────────────────────────────────────────
   //  Countdown helper
   // ─────────────────────────────────────────────
@@ -307,12 +279,17 @@ class _ScheduledRidesScreenState extends State<ScheduledRidesScreen>
   Widget build(BuildContext context) {
     final s = S.of(context);
     return Scaffold(
-      backgroundColor: _darkBg,
-      body: NestedScrollView(
+      backgroundColor: neuBase,
+      body: Stack(
+        children: [
+          // Same dotted backdrop as the rider's home, so the neumorphic
+          // cards sit on a surface instead of floating on flat black.
+          const Positioned.fill(child: NeuDotsBackdrop()),
+          NestedScrollView(
         headerSliverBuilder: (ctx, _) => [
           SliverAppBar(
             pinned: true,
-            backgroundColor: _darkBg,
+            backgroundColor: neuBase,
             surfaceTintColor: Colors.transparent,
             elevation: 0,
             leading: GestureDetector(
@@ -425,6 +402,8 @@ class _ScheduledRidesScreenState extends State<ScheduledRidesScreen>
             ),
           ],
         ),
+          ),
+        ],
       ),
     );
   }
@@ -503,7 +482,7 @@ class _ScheduledRidesScreenState extends State<ScheduledRidesScreen>
     return RefreshIndicator(
       onRefresh: onRefresh,
       color: _gold,
-      backgroundColor: _cardBg,
+      backgroundColor: neuSurface,
       child: ListView.builder(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
         itemCount: trips.length,
@@ -561,169 +540,82 @@ class _ScheduledRidesScreenState extends State<ScheduledRidesScreen>
 
     return _cardShell(
       isAirport: false,
-      // A still, not a live map. One of these is mounted per card, and a
-      // native Mapbox surface per card is the crash that closed the app.
-      mapWidget: hasPickup
-          ? StaticRoutePreview(
-              pickupLat: pickupLat,
-              pickupLng: pickupLng,
-              dropoffLat: dropoffLat,
-              dropoffLng: dropoffLng,
-            )
-          : null,
       children: [
-        // Header
+        // 1) Header: clock + date + countdown left, gold fare pill right
         _cardHeader(
           dateStr: dateStr,
           countdown: countdownStr,
           fare: fare,
           isAirport: false,
         ),
-        // Route
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
-          child: _routeRow(pickup, dropoff, isAirport: false),
-        ),
-        // Chips
+        // 2) One row: tier badge + chips
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
           child: Wrap(spacing: 8, runSpacing: 6, children: [
+            TierBadge(rideName: vehicleType),
             _chip(Icons.timer_rounded, countdownStr, _gold),
             if (distKm > 0)
               _chip(Icons.near_me_rounded, '${distKm.toStringAsFixed(1)} km',
                   Colors.blue),
-            TierBadge(rideName: vehicleType),
           ]),
         ),
-        // Action — Accept or Claimed+Cancel
-        if (_claimedIds.contains(tripId)) ...[
-          // ── Claimed badge ──
+        // 3) Route preview — a still, not a live map. One of these is
+        // mounted per card, and a native Mapbox surface per card is the
+        // crash that closed the app.
+        if (hasPickup)
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
-            child: Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(vertical: 11),
-              decoration: BoxDecoration(
-                color: _gold.withValues(alpha: 0.10),
-                borderRadius: BorderRadius.circular(13),
-                border: Border.all(color: _gold.withValues(alpha: 0.35)),
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Icon(Icons.check_circle_rounded,
-                      color: _gold, size: 18),
-                  const SizedBox(width: 6),
-                  Text(S.of(context).claimedLabel,
-                      style: const TextStyle(
-                          color: _gold,
-                          fontWeight: FontWeight.w800,
-                          fontSize: 15)),
-                ],
-              ),
-            ),
-          ),
-          // ── Cancel button (only if >60 min before ride) ──
-          if (scheduledAt != null &&
-              scheduledAt.difference(DateTime.now()).inMinutes > 60)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-              child: GestureDetector(
-                onTap: _cancellingClaimId == tripId
-                    ? null
-                    : () => _cancelClaimedTrip(tripId),
-                child: Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.symmetric(vertical: 11),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFFF5252).withValues(alpha: 0.08),
-                    borderRadius: BorderRadius.circular(13),
-                    border: Border.all(
-                        color: const Color(0xFFFF5252).withValues(alpha: 0.25)),
-                  ),
-                  child: _cancellingClaimId == tripId
-                      ? const Center(
-                          child: SizedBox(
-                              width: 18,
-                              height: 18,
-                              child: CircularProgressIndicator(
-                                  strokeWidth: 2, color: Color(0xFFFF5252))))
-                      : Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            const Icon(Icons.cancel_outlined,
-                                color: Color(0xFFFF5252), size: 16),
-                            const SizedBox(width: 6),
-                            Text(S.of(context).cancelRideTitle,
-                                style: const TextStyle(
-                                    color: Color(0xFFFF5252),
-                                    fontWeight: FontWeight.w700,
-                                    fontSize: 14)),
-                          ],
-                        ),
-                ),
-              ),
-            )
-          else
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-              child: Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(vertical: 11),
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.04),
-                  borderRadius: BorderRadius.circular(13),
-                  border:
-                      Border.all(color: Colors.white.withValues(alpha: 0.08)),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Icon(Icons.support_agent_rounded,
-                        color: Colors.white54, size: 16),
-                    const SizedBox(width: 6),
-                    Text(S.of(context).contactSupportToCancel,
-                        style: const TextStyle(
-                            color: Colors.white54,
-                            fontWeight: FontWeight.w600,
-                            fontSize: 13)),
-                  ],
-                ),
-              ),
-            ),
-        ] else ...[
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+            padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
             child: SizedBox(
+              height: 140,
               width: double.infinity,
-              height: 48,
-              child: ElevatedButton(
-                onPressed: isClaiming ? null : () => _claimTrip(tripId),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: _gold,
-                  foregroundColor: Colors.black,
-                  disabledBackgroundColor: _gold.withValues(alpha: 0.4),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(13),
-                  ),
-                  elevation: 0,
+              child: _previewWithFade(
+                StaticRoutePreview(
+                  pickupLat: pickupLat,
+                  pickupLng: pickupLng,
+                  dropoffLat: dropoffLat,
+                  dropoffLng: dropoffLng,
+                  borderRadius: 14,
                 ),
-                child: isClaiming
-                    ? const SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(
-                            strokeWidth: 2.5, color: Colors.black87),
-                      )
-                    : Text(
-                        S.of(context).acceptRideButton,
-                        style: const TextStyle(
-                            fontWeight: FontWeight.w800, fontSize: 15),
-                      ),
               ),
             ),
           ),
-        ],
+        // 4) Route row
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
+          child: _routeRow(pickup, dropoff, isAirport: false),
+        ),
+        // 5) Primary CTA
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+          child: SizedBox(
+            width: double.infinity,
+            height: 48,
+            child: ElevatedButton(
+              onPressed: isClaiming ? null : () => _claimTrip(tripId),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: _gold,
+                foregroundColor: Colors.black,
+                disabledBackgroundColor: _gold.withValues(alpha: 0.4),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(13),
+                ),
+                elevation: 0,
+              ),
+              child: isClaiming
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2.5, color: Colors.black87),
+                    )
+                  : Text(
+                      S.of(context).acceptRideButton,
+                      style: const TextStyle(
+                          fontWeight: FontWeight.w800, fontSize: 15),
+                    ),
+            ),
+          ),
+        ),
       ],
     );
   }
@@ -734,66 +626,53 @@ class _ScheduledRidesScreenState extends State<ScheduledRidesScreen>
 
   Widget _cardShell({
     required bool isAirport,
-    Widget? mapWidget,
     required List<Widget> children,
   }) {
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
-      decoration: BoxDecoration(
-        color: _cardBg,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(
-          color: isAirport
-              ? _airport.withValues(alpha: 0.25)
-              : Colors.white.withValues(alpha: 0.07),
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.2),
-            blurRadius: 14,
-            offset: const Offset(0, 4),
-          ),
-        ],
+      // Airport trips keep their blue edge; everything else takes the
+      // shared neu border.
+      decoration: neuBox(
+        radius: 20,
+        borderColor: isAirport ? _airport.withValues(alpha: 0.25) : null,
       ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(20),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // ── Mini-map ──
-            if (mapWidget != null)
-              SizedBox(
-                height: 140,
-                width: double.infinity,
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    mapWidget,
-                    // Fade bottom into card
-                    Positioned(
-                      bottom: 0,
-                      left: 0,
-                      right: 0,
-                      child: Container(
-                        height: 32,
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            begin: Alignment.topCenter,
-                            end: Alignment.bottomCenter,
-                            colors: [
-                              Colors.transparent,
-                              _cardBg.withValues(alpha: 0.95),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
+          children: children,
+        ),
+      ),
+    );
+  }
+
+  /// Map thumbnail with its bottom edge fading into the card surface.
+  Widget _previewWithFade(Widget map) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(14),
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          map,
+          Positioned(
+            bottom: 0,
+            left: 0,
+            right: 0,
+            child: Container(
+              height: 32,
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Colors.transparent,
+                    neuSurface.withValues(alpha: 0.95),
                   ],
                 ),
               ),
-            ...children,
-          ],
-        ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -1004,8 +883,6 @@ class _DriverMyRideCardState extends State<_DriverMyRideCard>
     with TickerProviderStateMixin {
   static const _gold = Color(0xFFE8C547);
   static const _goldLight = Color(0xFFFBE47A);
-  static const _darkBg = Color(0xFF0F1117);
-  static const _cardBg = Color(0xFF1A1D24);
   static const _airport = Color(0xFF4285F4);
 
   // ── Expand state ──
@@ -1196,23 +1073,15 @@ class _DriverMyRideCardState extends State<_DriverMyRideCard>
       onTap: _hasCoords ? _toggle : null,
       child: Container(
         margin: const EdgeInsets.only(bottom: 16),
-        decoration: BoxDecoration(
-          color: _cardBg,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: _expanded
-                ? _gold.withValues(alpha: 0.35)
-                : isAirport
-                    ? _airport.withValues(alpha: 0.25)
-                    : Colors.white.withValues(alpha: 0.07),
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.2),
-              blurRadius: 14,
-              offset: const Offset(0, 4),
-            ),
-          ],
+        // Airport trips keep their blue edge, an expanded card its gold
+        // one; everything else takes the shared neu border.
+        decoration: neuBox(
+          radius: 20,
+          borderColor: _expanded
+              ? _gold.withValues(alpha: 0.35)
+              : isAirport
+                  ? _airport.withValues(alpha: 0.25)
+                  : null,
         ),
         child: ClipRRect(
           borderRadius: BorderRadius.circular(20),
@@ -1328,6 +1197,37 @@ class _DriverMyRideCardState extends State<_DriverMyRideCard>
                 ),
               ),
 
+              // ── Chips ──
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                child: Wrap(spacing: 8, runSpacing: 6, children: [
+                  TierBadge(rideName: vehicleType),
+                  if (fare != null && fare > 0)
+                    _chip(Icons.attach_money_rounded,
+                        '\$${fare.toStringAsFixed(2)}', _gold),
+                  if (terminal != null)
+                    _chip(Icons.door_front_door_outlined, terminal, _airport),
+                  if (pickupZone != null)
+                    _chip(Icons.pin_drop_outlined, pickupZone, _airport),
+                ]),
+              ),
+
+              // ── Expandable route preview ──
+              if (_hasCoords)
+                AnimatedSize(
+                  duration: const Duration(milliseconds: 350),
+                  curve: Curves.easeOutCubic,
+                  child: _mapEverExpanded
+                      ? Padding(
+                          padding: const EdgeInsets.fromLTRB(12, 10, 12, 0),
+                          child: SizedBox(
+                            height: _expanded ? 200.0 : 0.0,
+                            child: _buildMiniMap(),
+                          ),
+                        )
+                      : const SizedBox.shrink(),
+                ),
+
               // ── Route row (hides when expanded) ──
               AnimatedCrossFade(
                 firstChild: Padding(
@@ -1408,21 +1308,6 @@ class _DriverMyRideCardState extends State<_DriverMyRideCard>
                 duration: const Duration(milliseconds: 300),
               ),
 
-              // ── Chips ──
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-                child: Wrap(spacing: 8, runSpacing: 6, children: [
-                  TierBadge(rideName: vehicleType),
-                  if (fare != null && fare > 0)
-                    _chip(Icons.attach_money_rounded,
-                        '\$${fare.toStringAsFixed(2)}', _gold),
-                  if (terminal != null)
-                    _chip(Icons.door_front_door_outlined, terminal, _airport),
-                  if (pickupZone != null)
-                    _chip(Icons.pin_drop_outlined, pickupZone, _airport),
-                ]),
-              ),
-
               // ── Notes ──
               if (notes != null && notes.isNotEmpty)
                 Padding(
@@ -1456,97 +1341,9 @@ class _DriverMyRideCardState extends State<_DriverMyRideCard>
                   ),
                 ),
 
-              // ── Expandable animated Mapbox map ──
-              if (_hasCoords)
-                AnimatedSize(
-                  duration: const Duration(milliseconds: 350),
-                  curve: Curves.easeOutCubic,
-                  child: _mapEverExpanded
-                      ? Padding(
-                          padding: const EdgeInsets.fromLTRB(12, 10, 12, 0),
-                          child: SizedBox(
-                            height: _expanded ? 200.0 : 0.0,
-                            child: _buildMiniMap(),
-                          ),
-                        )
-                      : const SizedBox.shrink(),
-                ),
-
-              // ── Cancel button (>60 min) or Contact Support (<60 min) ──
-              if (canCancel)
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
-                  child: GestureDetector(
-                    onTap: _cancelling ? null : _cancelTrip,
-                    child: Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.symmetric(vertical: 11),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFFF5252).withValues(alpha: 0.08),
-                        borderRadius: BorderRadius.circular(13),
-                        border: Border.all(
-                            color: const Color(0xFFFF5252)
-                                .withValues(alpha: 0.25)),
-                      ),
-                      child: _cancelling
-                          ? const Center(
-                              child: SizedBox(
-                                  width: 18,
-                                  height: 18,
-                                  child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                      color: Color(0xFFFF5252))))
-                          : const Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(Icons.cancel_outlined,
-                                    color: Color(0xFFFF5252), size: 16),
-                                SizedBox(width: 6),
-                                Text(
-                                  'Cancel Ride',
-                                  style: TextStyle(
-                                      color: Color(0xFFFF5252),
-                                      fontWeight: FontWeight.w700,
-                                      fontSize: 14),
-                                ),
-                              ],
-                            ),
-                    ),
-                  ),
-                )
-              else
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
-                  child: Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.symmetric(vertical: 11),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.04),
-                      borderRadius: BorderRadius.circular(13),
-                      border: Border.all(
-                          color: Colors.white.withValues(alpha: 0.08)),
-                    ),
-                    child: const Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(Icons.support_agent_rounded,
-                            color: Colors.white54, size: 16),
-                        SizedBox(width: 6),
-                        Text(
-                          'Contact Support to cancel',
-                          style: TextStyle(
-                              color: Colors.white54,
-                              fontWeight: FontWeight.w600,
-                              fontSize: 13),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-
-              // ── Navigate to Pickup button ──
+              // ── Navigate to Pickup button (primary CTA) ──
               Padding(
-                padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+                padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
                 child: GestureDetector(
                   onTap: () async {
                     // Open countdown / ride details screen
@@ -1602,6 +1399,52 @@ class _DriverMyRideCardState extends State<_DriverMyRideCard>
                   ),
                 ),
               ),
+
+              // ── Discreet cancel (>60 min) or Contact Support (<60 min) ──
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+                child: canCancel
+                    ? TextButton(
+                        onPressed: _cancelling ? null : _cancelTrip,
+                        child: _cancelling
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                    strokeWidth: 2, color: Color(0xFFFF5252)))
+                            : const Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.cancel_outlined,
+                                      color: Color(0xFFFF5252), size: 16),
+                                  SizedBox(width: 6),
+                                  Text(
+                                    'Cancel Ride',
+                                    style: TextStyle(
+                                        color: Color(0xFFFF5252),
+                                        fontWeight: FontWeight.w700,
+                                        fontSize: 14),
+                                  ),
+                                ],
+                              ),
+                      )
+                    : const Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.support_agent_rounded,
+                              color: Colors.white54, size: 16),
+                          SizedBox(width: 6),
+                          Text(
+                            'Contact Support to cancel',
+                            style: TextStyle(
+                                color: Colors.white54,
+                                fontWeight: FontWeight.w600,
+                                fontSize: 13),
+                          ),
+                        ],
+                      ),
+              ),
             ],
           ),
         ),
@@ -1623,6 +1466,26 @@ class _DriverMyRideCardState extends State<_DriverMyRideCard>
               pickupLng: _pickupLng!,
               dropoffLat: _dropoffLat,
               dropoffLng: _dropoffLng,
+            ),
+          ),
+          // Fade the bottom edge into the card surface.
+          const Positioned(
+            bottom: 0,
+            left: 0,
+            right: 0,
+            child: IgnorePointer(
+              child: SizedBox(
+                height: 32,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [Colors.transparent, neuSurface],
+                    ),
+                  ),
+                ),
+              ),
             ),
           ),
           if (_routeLoading)

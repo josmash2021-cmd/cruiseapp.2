@@ -153,9 +153,11 @@ class StaticRoutePreview extends StatelessWidget {
       parts.add('path-4+E8C547-0.9($encoded)');
     }
     if (pins) {
-      parts.add('pin-s+E8C547(${f(pickupLng)},${f(pickupLat)})');
+      // Lettered pins: "p" for pickup, "d" for dropoff — at thumbnail size a
+      // bare dot pair is ambiguous about which end of the route is which.
+      parts.add('pin-s-p+E8C547(${f(pickupLng)},${f(pickupLat)})');
       if (_hasDropoff) {
-        parts.add('pin-s+FFFFFF(${f(dropoffLng!)},${f(dropoffLat!)})');
+        parts.add('pin-s-d+FFFFFF(${f(dropoffLng!)},${f(dropoffLat!)})');
       }
     }
 
@@ -207,12 +209,13 @@ class StaticRoutePreview extends StatelessWidget {
               ),
               // The Static Images API cannot recolour layers — the navy
               // every live map wears is painted at runtime, and a static
-              // render comes back in factory dark-v11 grey. A navy veil at
-              // half strength lands the thumbnail in the same family as the
-              // rest of the app (gold route and pins still read through).
+              // render comes back in factory dark-v11 grey. A navy veil
+              // lands the thumbnail in the same family as the rest of the
+              // app (gold route and pins still read through). Kept light:
+              // at half strength the white dropoff pin came out grey.
               IgnorePointer(
                 child: ColoredBox(
-                  color: const Color(0xFF0A1128).withValues(alpha: 0.50),
+                  color: const Color(0xFF0A1128).withValues(alpha: 0.30),
                 ),
               ),
             ],

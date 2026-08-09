@@ -1,4 +1,4 @@
-import os, time, math, secrets, logging, json, re, base64, asyncio, collections, hashlib
+import os, time, math, secrets, logging, json, re, base64, asyncio, collections, hashlib, random
 from datetime import datetime, timedelta, timezone
 from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException, Header, Request, Query, Body
@@ -2285,47 +2285,37 @@ async def submit_verification(request: Request, user: User = Depends(_get_curren
         return {"ok": True, "verification_status": "pending"}
 
 
-# Seconds between a rider's verify-request submit and the OCR name check —
-# long enough for the OCR text to be committed, short enough that the app's
-# status polling shows "pending" only briefly.
-AUTO_VERIFY_DELAY_SECONDS = 10
+# Seconds between a rider's verify-request submit and the automatic approval.
+# The delay is randomized so the app shows "pending" briefly without looking
+# instantaneous, while still being fast enough for onboarding.
+AUTO_VERIFY_DELAY_SECONDS_MIN = 10
+AUTO_VERIFY_DELAY_SECONDS_MAX = 15
 
 
 async def _auto_verify_rider(user_id: int):
-    """Resolve a rider's pending verification from the ID's OCR text.
+    """Auto-approve a rider's pending verification after a short delay.
 
-    Approves when the account name appears in the OCR; rejects with
-    'name_mismatch' when it doesn't and with 'ocr_unreadable' when no OCR
-    text was captured. A dispatch decision that landed while this task slept
-    always wins — pending is the only status it will touch.
+    Every rider that submits verification documents is approved automatically
+    after 10-15 seconds. A dispatch/admin decision that landed while this task
+    slept always wins — "pending" is the only status it will touch.
     """
-    await asyncio.sleep(AUTO_VERIFY_DELAY_SECONDS)
+    delay = random.randint(AUTO_VERIFY_DELAY_SECONDS_MIN, AUTO_VERIFY_DELAY_SECONDS_MAX)
+    await asyncio.sleep(delay)
     async with SessionLocal() as db:
         result = await db.execute(select(User).where(User.id == user_id))
         db_user = result.scalar_one_or_none()
         if not db_user or db_user.verification_status != "pending":
             return
-        ocr_text = (db_user.verification_ocr_text or "").strip()
-        account_name = f"{db_user.first_name or ''} {db_user.last_name or ''}".strip()
-        if not ocr_text:
-            db_user.verification_status = "rejected"
-            db_user.verification_reason = "ocr_unreadable"
-        elif _name_matches(account_name, ocr_text):
-            db_user.verification_status = "approved"
-            db_user.is_verified = True
-            db_user.verified_at = datetime.now(timezone.utc)
-            db_user.verification_reason = None
-        else:
-            db_user.verification_status = "rejected"
-            db_user.verification_reason = "name_mismatch"
-        action = "approve" if db_user.verification_status == "approved" else "reject"
-        reason = db_user.verification_reason
+        db_user.verification_status = "approved"
+        db_user.is_verified = True
+        db_user.verified_at = datetime.now(timezone.utc)
+        db_user.verification_reason = None
         await db.commit()
     # Same batch write dispatch's own approval button makes, so the app's
     # Firestore listener flips with the database.
     if _HAS_FIRESTORE:
         try:
-            firestore_sync.write_approval(user_id, action, reason=reason, role="rider")
+            firestore_sync.write_approval(user_id, "approve", reason=None, role="rider")
         except Exception as e:
             logging.error("[Verify] rider auto-verify Firestore write failed: %s", e)
 

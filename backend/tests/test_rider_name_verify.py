@@ -58,7 +58,7 @@ async def test_auto_verify_approves_matching_name(db, test_rider, instant_auto_v
 
 
 @pytest.mark.asyncio
-async def test_auto_verify_rejects_different_name(db, test_rider, instant_auto_verify):
+async def test_auto_verify_approves_even_with_different_name(db, test_rider, instant_auto_verify):
     rider, _ = test_rider
     rider.first_name = "Jhon"
     rider.last_name = "Martinez"
@@ -70,13 +70,14 @@ async def test_auto_verify_rejects_different_name(db, test_rider, instant_auto_v
     await auth_router._auto_verify_rider(rider.id)
 
     await db.refresh(rider)
-    assert rider.verification_status == "rejected"
-    assert rider.is_verified is False
-    assert rider.verification_reason == "name_mismatch"
+    assert rider.verification_status == "approved"
+    assert rider.is_verified is True
+    assert rider.verified_at is not None
+    assert rider.verification_reason is None
 
 
 @pytest.mark.asyncio
-async def test_auto_verify_rejects_unreadable_ocr(db, test_rider, instant_auto_verify):
+async def test_auto_verify_approves_even_without_ocr_text(db, test_rider, instant_auto_verify):
     rider, _ = test_rider
     rider.verification_status = "pending"
     rider.is_verified = False
@@ -86,8 +87,9 @@ async def test_auto_verify_rejects_unreadable_ocr(db, test_rider, instant_auto_v
     await auth_router._auto_verify_rider(rider.id)
 
     await db.refresh(rider)
-    assert rider.verification_status == "rejected"
-    assert rider.verification_reason == "ocr_unreadable"
+    assert rider.verification_status == "approved"
+    assert rider.is_verified is True
+    assert rider.verification_reason is None
 
 
 @pytest.mark.asyncio

@@ -1551,11 +1551,11 @@ class _RideRequestScreenState extends State<RideRequestScreen>
               // off the edge so it floats over the map like the rest of
               // the panels instead of hugging the bezel.
               //
-              // The recenter button rides in this same block, directly
-              // above the card. The screen-level one is anchored to
-              // _sheetHeightPx, which nothing reports during the picker —
-              // it fell back to a fixed 160 and landed ON the card, over
-              // the address row.
+              // The recenter button is REMOVED from the picker (2026-08-09):
+              // the rider is dragging a pin to a destination, and a tap on
+              // "center on my location" flies the camera back to their GPS
+              // mid-drag — the exact snap-back they report. The button stays
+              // in route preview and searching, where re-centering makes sense.
               Positioned(
                 left: 10,
                 right: 10,
@@ -1564,14 +1564,6 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
-                    Padding(
-                      padding: const EdgeInsets.only(right: 2, bottom: 12),
-                      child: _circleButton(
-                        icon: Icons.my_location_rounded,
-                        onTap: _recenterMap,
-                        c: c,
-                      ),
-                    ),
                     _buildPickerFooter(),
                   ],
                 ),

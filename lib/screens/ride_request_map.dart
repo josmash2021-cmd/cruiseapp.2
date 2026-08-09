@@ -2231,6 +2231,9 @@ extension _RideRequestMap on _RideRequestScreenState {
     // ever run from a tap on the recenter button.
     debugPrint('[CamSnap] _recenterMap() — phase=${_ctrl.state.phase} '
         'pickerMode=${widget.pickerMode}');
+    // The picker's recenter button is removed (2026-08-09); a tap that still
+    // reaches here must not fly the camera to the rider's GPS mid-drag.
+    if (_ctrl.state.phase == RiderPhase.pickingLocation) return;
     // The rider explicitly asked us to re-frame — hand the camera back to
     // the automatic fits.
     _userTookCamera = false;

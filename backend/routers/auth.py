@@ -2301,6 +2301,8 @@ async def _auto_verify_rider(user_id: int):
     """
     delay = random.randint(AUTO_VERIFY_DELAY_SECONDS_MIN, AUTO_VERIFY_DELAY_SECONDS_MAX)
     await asyncio.sleep(delay)
+    fcm_token = None
+    first_name = ""
     async with SessionLocal() as db:
         result = await db.execute(select(User).where(User.id == user_id))
         db_user = result.scalar_one_or_none()
@@ -2310,7 +2312,15 @@ async def _auto_verify_rider(user_id: int):
         db_user.is_verified = True
         db_user.verified_at = datetime.now(timezone.utc)
         db_user.verification_reason = None
+        # Capture primitives before the session closes.
+        fcm_token = db_user.fcm_token
+        first_name = db_user.first_name or ""
         await db.commit()
+    # Invalidate any cached User object so the next HTTP call sees approved.
+    try:
+        invalidate_user_cache(user_id)
+    except Exception as e:
+        logging.warning("[Verify] invalidate_user_cache failed for rider %s: %s", user_id, e)
     # Same batch write dispatch's own approval button makes, so the app's
     # Firestore listener flips with the database.
     if _HAS_FIRESTORE:
@@ -2318,6 +2328,34 @@ async def _auto_verify_rider(user_id: int):
             firestore_sync.write_approval(user_id, "approve", reason=None, role="rider")
         except Exception as e:
             logging.error("[Verify] rider auto-verify Firestore write failed: %s", e)
+    # Push the approval to the rider's open app / Socket.IO room.
+    try:
+        await notify_user(
+            user_id,
+            "account_status_changed",
+            {
+                "status": "approved",
+                "role": "rider",
+                "verification_status": "approved",
+                "is_verified": True,
+                "message": "Your account has been verified!",
+            },
+        )
+        logging.info("[Verify] Socket.IO approval push sent to rider %d", user_id)
+    except Exception as e:
+        logging.warning("[Verify] Socket.IO approval push failed for rider %d: %s", user_id, e)
+    # FCM wake-up push for backgrounded/killed apps so they fetch fresh status.
+    if fcm_token:
+        try:
+            await _send_fcm_push_async(
+                fcm_token,
+                "You're Verified!",
+                f"Hi {first_name}, your account is approved and ready to ride.",
+                {"type": "rider_approved", "user_id": str(user_id), "status": "approved"},
+            )
+            logging.info("[Verify] FCM approval push sent to rider %d", user_id)
+        except Exception as e:
+            logging.warning("[Verify] FCM approval push failed for rider %d: %s", user_id, e)
 
 @router.get("/auth/verification-status", dependencies=[Depends(_verify_api_key)])
 async def verification_status(user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):

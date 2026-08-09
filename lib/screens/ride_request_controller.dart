@@ -336,8 +336,15 @@ extension _RideRequestController on _RideRequestScreenState {
   ///
   /// `widget.pickerMode` is checked as well as the phase because the phase is
   /// only set in a post-frame callback, and the last-known fix can beat it.
+  ///
+  /// `_mapMounted` closes the covered-screen case: a booking sheet sitting
+  /// UNDER the picker has no live surface (the coordinator revoked it), so
+  /// a fix landing then must not write a camera — the rider is dragging the
+  /// picker's map on top, and a covered sheet's top-down GPS flyTo is the
+  /// snap-back they feel. While the surface is ours the term is a no-op.
   bool get _gpsMayMoveCamera {
-    final allowed = !widget.pickerMode &&
+    final allowed = _mapMounted &&
+        !widget.pickerMode &&
         _ctrl.state.phase != RiderPhase.pickingLocation &&
         _ctrl.state.route == null &&
         !_userTookCamera;

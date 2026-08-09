@@ -383,7 +383,22 @@ class _RideRequestScreenState extends State<RideRequestScreen>
   /// Mapbox surfaces, which closes the app on iOS. The picker now revokes
   /// this one and waits for it to be gone before it mounts, and we take the
   /// surface back when it pops.
-  static const String _mapSurfaceOwner = 'RideRequest';
+  ///
+  /// Per-INSTANCE, deliberately not per-type: the booking sheet and the map
+  /// picker are BOTH RideRequestScreen, and the picker is pushed on top of
+  /// the sheet (home → sheet → search → picker). A shared id made the
+  /// coordinator read the picker's acquire as the same owner re-acquiring —
+  /// `_owner == owner` skips the revoke — so the sheet's map stayed alive
+  /// underneath with a live `_mapCtrl`, and its still-running `_initLocation`
+  /// GPS writes (last-known setCamera + fresh-fix flyTo, top-down, the
+  /// rider's own position, landing up to 10 s into a cold start) fired while
+  /// the rider was dragging the picker: the "picker snaps back to my
+  /// location right after login / app open" report. With a unique id the
+  /// picker's acquire revokes the sheet for real, and didPopNext hands the
+  /// surface back when the picker pops.
+  static int _nextMapSurfaceId = 0;
+  late final String _mapSurfaceOwner =
+      'RideRequest-${++_nextMapSurfaceId}';
   bool _mapMounted = false;
 
   /// The camera as the rider last left it, fed by onCameraChangeListener.

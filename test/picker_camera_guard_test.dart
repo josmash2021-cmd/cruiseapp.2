@@ -111,6 +111,39 @@ void main() {
                 'unguarded GPS write is the picker snap-back');
       }
     });
+
+    test('_gpsMayMoveCamera closes when the surface is not ours', () {
+      final getter = RegExp(r'bool get _gpsMayMoveCamera \{');
+      final start = getter.firstMatch(ctrl)!.end;
+      final body = ctrl.substring(start, start + 500);
+      expect(body.contains('_mapMounted'), isTrue,
+          reason: 'a booking sheet covered by the picker has no live '
+              'surface; without this term its late cold-start GPS fix '
+              'flyTo (top-down, rider position) fires while the rider '
+              'drags the picker — the fresh-login snap-back');
+    });
+  });
+
+  group('the map surface owner is per-instance', () {
+    final src =
+        File('lib/screens/ride_request_screen.dart').readAsStringSync();
+
+    test('no shared static owner id remains', () {
+      expect(src.contains('static const String _mapSurfaceOwner'), isFalse,
+          reason: 'the booking sheet and the picker are BOTH '
+              'RideRequestScreen and the picker is pushed on top of the '
+              'sheet — a shared owner id makes MapSurfaceCoordinator skip '
+              'the revoke (_owner == owner), leaving the sheet map alive '
+              'underneath with a live controller');
+    });
+
+    test('the owner id carries a per-instance suffix', () {
+      expect(src.contains('_nextMapSurfaceId'), isTrue,
+          reason: 'each instance needs its own owner id so the picker '
+              'acquire revokes the sheet underneath for real');
+      expect(src.contains("'RideRequest-\${++_nextMapSurfaceId}'"), isTrue,
+          reason: 'the suffix must be unique per instance');
+    });
   });
 
   group('_tryFetchRoute never leaves the picker', () {

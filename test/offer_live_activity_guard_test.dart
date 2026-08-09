@@ -103,4 +103,37 @@ void main() {
               'silently — the island never registers and nothing says why');
     });
   });
+
+  // Session 2026-08-09: tapping the offer push on iOS landed on "Finding
+  // trips" with no card. Root cause: SSE only streams offers cut AFTER
+  // subscribe (no backend snapshot) and the 5s poll stands down the moment
+  // SSE is active — so an offer created while iOS had the socket dead was
+  // never delivered by either channel. Two guards pin the fix.
+  group('offer cut while SSE was dead still reaches the card', () {
+    test('_startPolling fires a one-shot _poll on every (re)start', () {
+      final start = ctrl.indexOf('void _startPolling(');
+      expect(start, isNonNegative, reason: '_startPolling not found');
+      final body = ctrl.substring(start, start + 1800);
+      final sse = body.indexOf('_connectSse();');
+      expect(sse, isNonNegative, reason: '_connectSse call not found');
+      final oneShot = body.indexOf('_poll();', sse);
+      expect(oneShot, isNonNegative,
+          reason: 'without a one-shot fetch, an offer created while the SSE '
+              'socket was dead (iOS background/killed) is never replayed — '
+              'SSE sends no snapshot and the timer skips while SSE is up');
+    });
+
+    test('a late lookup answer is injected, not dropped', () {
+      final main_ = File('lib/main.dart').readAsStringSync();
+      final start = main_.indexOf('lookup.then((result)');
+      expect(start, isNonNegative, reason: 'late-lookup handler not found');
+      final body = main_.substring(start, start + 900);
+      expect(
+          body.contains('DriverOnlineScreen.deepLinkOfferNotifier.value = late'),
+          isTrue,
+          reason: 'the screen goes up bare when the lookup outruns its '
+              'budget; an offer found after that must still be handed over, '
+              'not dropped to a bare "Finding trips" screen');
+    });
+  });
 }

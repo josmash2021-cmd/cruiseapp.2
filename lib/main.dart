@@ -321,7 +321,18 @@ void _openDriverRideOffer({required String offerId, required String tripId}) {
     // Either the lookup outran the budget above or it answered while the
     // route was going up; this is the settled answer either way.
     lookup.then((result) {
-      if (result == null || result.offer != null || !result.reachable) return;
+      if (result == null || !result.reachable) return;
+      final late = result.offer;
+      if (late != null) {
+        // The screen went up bare because the budget expired first, but the
+        // offer IS still pending. Hand it over through the same notifier
+        // the mounted-screen path uses — the pushed DriverOnlineScreen
+        // already listens on it. Dropping this answer was a "Finding trips"
+        // forever case: SSE carries no snapshot, so nothing else ever
+        // delivered it.
+        DriverOnlineScreen.deepLinkOfferNotifier.value = late;
+        return;
+      }
       _showOfferGoneNotice();
     });
   });

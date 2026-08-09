@@ -1741,6 +1741,19 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
 
     _connectSse();
 
+    // One-shot pending fetch, ALWAYS. SSE only streams offers cut AFTER the
+    // connection is up — the backend sends no snapshot on subscribe — and
+    // the timer below stands down the moment _sseActive flips true. An
+    // offer created while the stream was dead (the iOS background/killed
+    // case: the OS drops the socket) is then never replayed, and the poll
+    // never runs: the driver taps the push, the app comes up, SSE
+    // reconnects clean and the screen sits on "Finding trips" forever with
+    // a live offer server-side. Asking once on every (re)start closes that
+    // gap for every entry path — resume, notification tap, cold start.
+    // _applyOffers dedups against anything SSE also delivers, and _poll()
+    // no-ops while one is already in flight.
+    _poll();
+
     // Polling fallback — only fires when SSE is DOWN to save battery.
     // Polls /dispatch/driver/pending every 5s; skipped entirely while SSE is active.
     final myGen = ++_driverOnlinePollingGen;

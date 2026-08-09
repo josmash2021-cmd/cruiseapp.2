@@ -24,6 +24,32 @@ Size uprightFrameSize(Size streamed, int rotationDegrees) {
       : streamed;
 }
 
+/// The upright size of the frame the person is actually being shown.
+///
+/// Which surface that is depends on the platform, because the camera plugin
+/// does not feed the same buffer to the stream and the preview everywhere:
+///
+/// - iOS rotates the buffers NATIVELY at the capture connection, so the
+///   image stream and the preview texture are the SAME upright frame — the
+///   displayed frame is simply the upright stream frame.
+/// - Android draws the preview from the `previewSize` surface (landscape,
+///   e.g. 1280×720), shown on its side by the FittedBox, while the stream
+///   ML Kit measures is a separate, usually smaller, buffer — the displayed
+///   frame is that surface turned upright.
+///
+/// Mapping a stream-space face box against the wrong frame skews it by the
+/// resolution and aspect ratio between the two surfaces — the "~1.33× too
+/// big" that kept "too close" stuck.
+Size displayedFrameSize({
+  required Size streamed,
+  required int rotationDegrees,
+  required Size preview,
+  required bool isAndroid,
+}) {
+  if (isAndroid) return Size(preview.height, preview.width);
+  return uprightFrameSize(streamed, rotationDegrees);
+}
+
 /// Maps a rectangle of the upright camera frame onto the screen it is being
 /// displayed on with `BoxFit.cover`.
 ///

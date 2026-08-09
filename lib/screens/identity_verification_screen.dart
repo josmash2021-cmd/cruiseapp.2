@@ -914,7 +914,7 @@ class _IdentityVerificationScreenState extends State<IdentityVerificationScreen>
           ),
           const SizedBox(height: 12),
           Text(
-            'Your identity verification has been submitted.\nOur dispatch team is reviewing your documents.\nThis usually takes a few minutes.',
+            'Your identity verification has been submitted.\nOur team is reviewing your documents.\nThis usually takes a few minutes.',
             textAlign: TextAlign.center,
             style: TextStyle(fontSize: 15, color: c.textSecondary, height: 1.5),
           ),
@@ -1366,7 +1366,11 @@ class _InlineDocScannerState extends State<_InlineDocScanner>
       (c) => c.lensDirection == CameraLensDirection.back,
       orElse: () => cameras.first,
     );
-    _ctrl = CameraController(rear, ResolutionPreset.high, enableAudio: false);
+    // max, not high: takePicture() captures at the session preset, and at
+    // high (720p) the crop of the document frame lands ~485×306 px — too
+    // soft for OCR to read a single field. On iOS, max also enables
+    // high-resolution stills (~3024×4032, crop ~1527×962).
+    _ctrl = CameraController(rear, ResolutionPreset.max, enableAudio: false);
     try {
       await _ctrl!.initialize().timeout(const Duration(seconds: 5));
       await _ctrl!.setFlashMode(FlashMode.off);
@@ -1379,7 +1383,8 @@ class _InlineDocScannerState extends State<_InlineDocScanner>
       await Future.delayed(const Duration(milliseconds: 500));
       try {
         _ctrl?.dispose();
-        _ctrl = CameraController(rear, ResolutionPreset.high, enableAudio: false);
+        // Same as above: max or the OCR crop comes back illegible.
+        _ctrl = CameraController(rear, ResolutionPreset.max, enableAudio: false);
         await _ctrl!.initialize().timeout(const Duration(seconds: 5));
         await _ctrl!.setFlashMode(FlashMode.off);
         if (mounted) {

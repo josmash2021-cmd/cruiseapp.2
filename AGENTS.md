@@ -42,7 +42,8 @@
 
 **Registro driver — documentos + biometría (Issues 3 y 5, arreglados 2026-08-07)**
 - `lib/screens/driver/driver_signup_screen.dart` (3 pasos). Licencia Front/Back → `license_guidelines_screen.dart` (página de guías) → `license_scanner_screen.dart` (cámara + OCR). Seguro/registro de auto: `_showPickOptions` (cámara/galería).
-- Cara 4 pasos: `lib/screens/face_liveness_screen.dart` (minFaceSize 0.1, feedback visible, errores en pantalla) + `lib/utils/face_oval_fit.dart` (math pineada por `test/face_oval_fit_test.dart` — no cambiar umbrales).
+- Cara 4 pasos: `lib/screens/face_liveness_screen.dart` (minFaceSize 0.1, feedback visible, errores en pantalla) + `lib/utils/face_oval_fit.dart` (math pineada por `test/face_oval_fit_test.dart` — no cambiar umbrales). iOS (2026-08-08): la connection rota los buffers NATIVAMENTE → `_rotationDegrees()` devuelve 0 en iOS (el sensor angle doble-rota y ML Kit ve la cara acostada) y el frame mostrado se deriva del primer frame del stream vía `displayedFrameSize()` (previewSize de iOS reporta el formato del sensor, NO la textura — usarlo pelado zoomea ×1.33). Log `[FaceFit]` 1/s.
+- Scanners de documentos (rider KYC y `license_scanner_screen.dart` driver): `ResolutionPreset.max` SIEMPRE — `high` da stills 720p y el crop del marco queda ~485×306 px (OCR vacío → rechazos `ocr_unreadable`). `test/doc_frame_crop_test.dart` ya pinea stills 3024×4032. Guardián: `test/camera_kyc_guard_test.dart`.
 - Guías compartidas: `lib/widgets/doc_guidelines_view.dart` — UNA sola fuente del diseño; la usa también el KYC rider.
 
 **Identidad rider (KYC + auto-verificación por nombre, 2026-08-08)**

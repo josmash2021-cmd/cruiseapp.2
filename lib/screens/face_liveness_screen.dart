@@ -45,6 +45,12 @@ class _FaceLivenessScreenState extends State<FaceLivenessScreen>
   bool _finishing = false;
   int _frameSkip = 0;
 
+  /// Upright size of the first streamed frame — the REAL texture size.
+  /// `previewSize` reports the negotiated session format (e.g. 1920×1080
+  /// landscape) while the texture at ResolutionPreset.medium is 480×640,
+  /// so the preview is sized from this once it lands (see _buildCameraFill).
+  Size? _streamFrameSize;
+
   // ── Step state ───────────────────────────────────────────────────────────
   _Step _step = _Step.center;
   bool _faceDetected = false;
@@ -266,6 +272,12 @@ class _FaceLivenessScreenState extends State<FaceLivenessScreen>
   // Frame processing
   // ─────────────────────────────────────────────────────────────────────────
   void _onFrame(CameraImage img) {
+    if (_streamFrameSize == null) {
+      // One rebuild so the preview FittedBox switches from the previewSize
+      // fallback to the real texture size (see _buildCameraFill).
+      _streamFrameSize = Size(img.width.toDouble(), img.height.toDouble());
+      if (mounted) setState(() {});
+    }
     if (_processing || _finishing) return;
     if (++_frameSkip % 2 != 0) return; // process every other frame
     _processing = true;
@@ -333,11 +345,18 @@ class _FaceLivenessScreenState extends State<FaceLivenessScreen>
       Size(img.width.toDouble(), img.height.toDouble()),
       _rotationDegrees(),
     );
-    // The box arrives in the STREAM frame, but the preview the person sees
-    // is the previewSize surface (FittedBox cover in _buildCameraFill) —
-    // typically 640×480 vs 1280×720. Map the box into the preview frame
-    // first or it reads ~1.33× too big and "too close" never clears.
-    final displayed = Size(preview.height, preview.width);
+    // The box arrives in the STREAM frame; map it into the frame the person
+    // is actually shown before mapping to the screen. iOS shows the stream
+    // buffer itself (the connection rotates natively); Android shows the
+    // previewSize surface — typically 640×480 vs 1280×720, so mapping the
+    // box straight from the stream frame reads ~1.33× too big and
+    // "too close" never clears.
+    final displayed = displayedFrameSize(
+      streamed: Size(img.width.toDouble(), img.height.toDouble()),
+      rotationDegrees: _rotationDegrees(),
+      preview: preview,
+      isAndroid: AppPlatform.isAndroid,
+    );
     final onScreen = mapImageRectToScreen(
       scaleBoxBetweenFrames(face.boundingBox, upright, displayed),
       displayed,
@@ -604,10 +623,15 @@ class _FaceLivenessScreenState extends State<FaceLivenessScreen>
   // ─────────────────────────────────────────────────────────────────────────
   /// How far the frame has to be turned for the detector to see it upright.
   ///
-  /// iOS ignores this. Android does not, and the sensor angle alone is only
-  /// right by accident while the phone is held portrait: it has to be
-  /// combined with how the device is currently turned, and a front camera
-  /// combines it the other way round from a rear one.
+  /// iOS is always 0: the capture connection rotates the buffers NATIVELY,
+  /// so the stream (and the preview texture) already arrive upright. Telling
+  /// ML Kit the sensor angle double-rotates the frame and it sees the face
+  /// lying sideways — that was the "Center your face" that never cleared.
+  ///
+  /// Android does rotate, and the sensor angle alone is only right by
+  /// accident while the phone is held portrait: it has to be combined with
+  /// how the device is currently turned, and a front camera combines it the
+  /// other way round from a rear one.
   static const _orientationDegrees = <DeviceOrientation, int>{
     DeviceOrientation.portraitUp: 0,
     DeviceOrientation.landscapeLeft: 90,
@@ -618,8 +642,9 @@ class _FaceLivenessScreenState extends State<FaceLivenessScreen>
   int _rotationDegrees() {
     final cam = _cam;
     if (cam == null) return 0;
+    // iOS: the buffers already arrive upright — see the doc comment above.
+    if (!AppPlatform.isAndroid) return 0;
     final sensor = cam.description.sensorOrientation;
-    if (!AppPlatform.isAndroid) return sensor;
     final device = _orientationDegrees[cam.value.deviceOrientation] ?? 0;
     return cam.description.lensDirection == CameraLensDirection.front
         ? (sensor + device) % 360
@@ -798,12 +823,26 @@ class _FaceLivenessScreenState extends State<FaceLivenessScreen>
     final camCtrl = _cam!;
     final preview = camCtrl.value.previewSize;
     if (preview == null) return const SizedBox.expand();
+    // Size the FittedBox child from the REAL texture frame, not previewSize:
+    // on iOS previewSize reports the negotiated session format (1920×1080
+    // landscape) while the texture at ResolutionPreset.medium is 480×640,
+    // and that mismatch is the ~1.33× zoom/crop the preview drew with.
+    // Until the first stream frame lands, fall back to the previewSize swap.
+    final streamed = _streamFrameSize;
+    final displayed = streamed == null
+        ? Size(preview.height, preview.width)
+        : displayedFrameSize(
+            streamed: streamed,
+            rotationDegrees: _rotationDegrees(),
+            preview: preview,
+            isAndroid: AppPlatform.isAndroid,
+          );
     return SizedBox.expand(
       child: FittedBox(
         fit: BoxFit.cover,
         child: SizedBox(
-          width: preview.height,
-          height: preview.width,
+          width: displayed.width,
+          height: displayed.height,
           child: CameraPreview(camCtrl),
         ),
       ),

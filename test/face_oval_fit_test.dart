@@ -158,4 +158,35 @@ void main() {
           reason: 'dx $dx');
     }
   });
+
+  group('displayedFrameSize', () {
+    // iOS rotates the buffers natively, so the stream and the preview
+    // texture are the same upright frame: the displayed frame IS the
+    // stream frame, and previewSize must not enter into it.
+    test('iOS shows the upright stream frame', () {
+      expect(
+        displayedFrameSize(
+          streamed: const Size(480, 640),
+          rotationDegrees: 0,
+          preview: const Size(1920, 1080),
+          isAndroid: false,
+        ),
+        const Size(480, 640),
+      );
+    });
+
+    // Android draws the previewSize surface on its side; the stream is a
+    // separate buffer and does not set what the person sees.
+    test('Android shows the preview surface turned upright', () {
+      expect(
+        displayedFrameSize(
+          streamed: const Size(640, 480),
+          rotationDegrees: 90,
+          preview: const Size(1280, 720),
+          isAndroid: true,
+        ),
+        const Size(720, 1280),
+      );
+    });
+  });
 }

@@ -106,7 +106,10 @@ class _LicenseScannerScreenState extends State<LicenseScannerScreen>
       (c) => c.lensDirection == CameraLensDirection.back,
       orElse: () => cameras.first,
     );
-    _ctrl = CameraController(rear, ResolutionPreset.high, enableAudio: false);
+    // max, not high: takePicture() captures at the session preset, and at
+    // high (720p) the crop of the licence frame lands ~485×306 px — too
+    // soft for OCR to read. On iOS, max also enables high-resolution stills.
+    _ctrl = CameraController(rear, ResolutionPreset.max, enableAudio: false);
     try {
       await _ctrl!.initialize().timeout(const Duration(seconds: 5));
       await _ctrl!.setFlashMode(FlashMode.off);
@@ -122,7 +125,8 @@ class _LicenseScannerScreenState extends State<LicenseScannerScreen>
         _ctrl?.dispose();
         _ctrl = CameraController(
           rear,
-          ResolutionPreset.high,
+          // Same as above: max or the OCR crop comes back illegible.
+          ResolutionPreset.max,
           enableAudio: false,
         );
         await _ctrl!.initialize().timeout(const Duration(seconds: 5));

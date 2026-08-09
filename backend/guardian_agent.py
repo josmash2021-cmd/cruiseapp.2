@@ -1351,11 +1351,32 @@ class UnmatchedTripRetryAgent:
                     ))
                 elif assigned.fcm_token:
                     try:
+                        # Same instant-card payload as dispatch's offer push:
+                        # the tap draws the card from this data, the server
+                        # only confirms after (2026-08-09).
                         _send_fcm_push(
                             assigned.fcm_token,
                             title="New Ride Offer",
                             body="Open Cruise to accept.",
-                            data={"type": "new_offer", "trip_id": str(trip.id), "offer_id": str(offer.id)},
+                            data={
+                                "type": "new_offer",
+                                "trip_id": str(trip.id),
+                                "offer_id": str(offer.id),
+                                "chained": "0",
+                                "fare": f"${estimated_driver_fare:.2f}",
+                                "rider_name": rider_name or "",
+                                "rider_phone": rider_phone or "",
+                                "rider_photo_url": rider_photo or "",
+                                "pickup_lat": "" if trip.pickup_lat is None else str(trip.pickup_lat),
+                                "pickup_lng": "" if trip.pickup_lng is None else str(trip.pickup_lng),
+                                "dropoff_lat": "" if trip.dropoff_lat is None else str(trip.dropoff_lat),
+                                "dropoff_lng": "" if trip.dropoff_lng is None else str(trip.dropoff_lng),
+                                "pickup_address": trip.pickup_address or "",
+                                "dropoff_address": trip.dropoff_address or "",
+                                "vehicle_type": trip.vehicle_type or "",
+                                "driver_earnings": f"{estimated_driver_fare:.2f}",
+                                "offer_timeout_seconds": str(OFFER_TIMEOUT_SECONDS),
+                            },
                             is_offer=True,
                         )
                     except Exception:

@@ -225,7 +225,51 @@ void _handleDriverRideOffer(RemoteMessage message) {
   _openDriverRideOffer(
     offerId: message.data['offer_id']?.toString() ?? '',
     tripId: message.data['trip_id']?.toString() ?? '',
+    data: message.data,
   );
+}
+
+/// The offer card built straight from the push payload (2026-08-09).
+///
+/// The tap must show the offer INSTANTLY — waiting for the pending-offers
+/// round trip first was the "tapped the banner, nothing happened for
+/// seconds" report. The backend now sends every field the card reads
+/// (dispatch.py push_data); the server only confirms after. Returns null
+/// when the payload predates that change (or comes from the local
+/// notification path, which carries ids only) — the caller then keeps the
+/// old lookup-first flow.
+Map<String, dynamic>? _provisionalOfferFromPush(Map<String, dynamic> data) {
+  final offerId = int.tryParse('${data['offer_id'] ?? ''}');
+  final tripId = int.tryParse('${data['trip_id'] ?? ''}');
+  if (offerId == null || tripId == null) return null;
+  // No coordinates, no card worth drawing provisionally — fall back to the
+  // server lookup rather than showing a route-less guess.
+  final pickupLat = double.tryParse('${data['pickup_lat'] ?? ''}');
+  final pickupLng = double.tryParse('${data['pickup_lng'] ?? ''}');
+  if (pickupLat == null || pickupLng == null) return null;
+  return {
+    'offer_id': offerId,
+    'trip_id': tripId,
+    'chained': data['chained'] == '1' || data['chained'] == true,
+    'rider_name': data['rider_name'] ?? '',
+    'rider_phone': data['rider_phone'] ?? '',
+    'rider_photo_url': data['rider_photo_url'] ?? '',
+    'rider_rating': double.tryParse('${data['rider_rating'] ?? ''}') ?? 0.0,
+    'rider_is_new': data['rider_is_new'] == '1' || data['rider_is_new'] == true,
+    'pickup_address': data['pickup_address'] ?? '',
+    'dropoff_address': data['dropoff_address'] ?? '',
+    'pickup_lat': pickupLat,
+    'pickup_lng': pickupLng,
+    'dropoff_lat': double.tryParse('${data['dropoff_lat'] ?? ''}'),
+    'dropoff_lng': double.tryParse('${data['dropoff_lng'] ?? ''}'),
+    'vehicle_type': data['vehicle_type'] ?? '',
+    if (double.tryParse('${data['driver_earnings'] ?? ''}') != null)
+      'driver_earnings': double.parse('${data['driver_earnings']}'),
+    if (double.tryParse('${data['driver_earnings'] ?? ''}') != null)
+      'fare': double.parse('${data['driver_earnings']}'),
+    'offer_timeout_seconds':
+        int.tryParse('${data['offer_timeout_seconds'] ?? ''}') ?? 20,
+  };
 }
 
 /// Route a tap on a local notification written with [_offerPayload].
@@ -255,21 +299,92 @@ typedef _PendingOfferLookup = ({bool reachable, Map<String, dynamic>? offer});
 
 /// Open the driver's online screen ON the offer the notification was about.
 ///
-/// The push names its offer (`offer_id` / `trip_id`, see
-/// backend/routers/dispatch.py) and the cascade hands that same offer to the
-/// next driver OFFER_TIMEOUT_SECONDS later. Both ids used to be dropped here:
-/// the screen went up bare and started looking for whatever dispatch still had
-/// for this driver, so a tap late in the window either found the card after a
-/// round trip of its own, or sat on the "Finding trips" bar without ever
-/// saying the ride had already moved on.
+/// Instant first (2026-08-09): when the push carries the card fields
+/// ([_provisionalOfferFromPush]) the card goes up from the payload itself —
+/// no network in the way, because "tapped the banner and nothing happened
+/// for seconds" was the report. The server then reconciles in the
+/// background: a full pending offer replaces the provisional card, and a
+/// reachable answer WITHOUT it means the cascade reassigned the ride — the
+/// provisional card comes down and the driver is told out loud instead of
+/// being left to work it out.
 ///
-/// Now the offer is looked up by id first and handed to the screen whole, and
-/// a lookup that comes back without it means the cascade reassigned it — which
-/// is said out loud instead of being left to the driver to work out.
-void _openDriverRideOffer({required String offerId, required String tripId}) {
+/// Payloads without the card fields (an older backend, or the local
+/// notification path that carries ids only) keep the old flow: look the
+/// offer up by id first, hand it to the screen whole.
+void _openDriverRideOffer({
+  required String offerId,
+  required String tripId,
+  Map<String, dynamic>? data,
+}) {
   UserSession.getMode().then((mode) async {
     if (mode != 'driver') return;
 
+    final provisional = data != null ? _provisionalOfferFromPush(data) : null;
+
+    void pushScreen(Map<String, dynamic>? deepLinkOffer) {
+      final nav = _navigatorKey.currentState;
+      if (nav == null) return;
+      nav.push(PageRouteBuilder(
+        opaque: false,
+        pageBuilder: (_, __, ___) =>
+            DriverOnlineScreen(
+              deepLinkOffer: deepLinkOffer,
+              // Dispatch only offers rides to drivers who are ALREADY online,
+              // so arriving here from a notification is a resume by
+              // definition. Left at the default `false` the screen replayed
+              // the entire go-online handshake — with an offer waiting and 45
+              // seconds on the clock.
+              resuming: true,
+            ),
+        transitionDuration: const Duration(milliseconds: 280),
+        reverseTransitionDuration: const Duration(milliseconds: 220),
+        transitionsBuilder: (_, anim, __, child) => FadeTransition(
+          opacity: CurvedAnimation(parent: anim, curve: Curves.easeInOut),
+          child: child,
+        ),
+      ));
+    }
+
+    if (provisional != null) {
+      // ── Instant path: card up now, server confirms after ──
+      if (DriverOnlineScreen.mountedCount > 0) {
+        // The screen that DREW this notification is still up. Pushing a
+        // second copy buries the live one; the notifier puts the card on
+        // the mounted screen at once.
+        debugPrint('[FCM] offer tap — injecting provisional card');
+        DriverOnlineScreen.deepLinkOfferNotifier.value = provisional;
+      } else {
+        pushScreen(provisional);
+        debugPrint('[FCM] offer tap → DriverOnlineScreen (provisional card) '
+            'offer=$offerId trip=$tripId');
+      }
+      if (offerId.isEmpty && tripId.isEmpty) return;
+      final found = await _fetchPendingOffer(offerId, tripId)
+          .then<_PendingOfferLookup?>((r) => r)
+          .timeout(_offerLookupBudget, onTimeout: () => null);
+      if (found == null || !found.reachable) {
+        // A dead connection is never reported as a taken ride — and the
+        // provisional card stays: the screen's own poll/SSE reconciles it.
+        return;
+      }
+      final full = found.offer;
+      if (full != null) {
+        // The real offer, with everything the payload cannot carry — same
+        // notifier the mounted path uses; the pushed screen listens too.
+        DriverOnlineScreen.deepLinkOfferNotifier.value = full;
+        return;
+      }
+      // Reachable and NOT pending: the ride already went to the next
+      // driver. Take the provisional card down and say so.
+      final oid = int.tryParse(offerId);
+      if (oid != null) {
+        DriverOnlineScreen.removeOfferNotifier.value = oid;
+      }
+      _showOfferGoneNotice();
+      return;
+    }
+
+    // ── Legacy path (ids only): lookup first, then show ──
     final Future<_PendingOfferLookup?>? lookup =
         offerId.isEmpty && tripId.isEmpty
             ? null
@@ -281,12 +396,6 @@ void _openDriverRideOffer({required String offerId, required String tripId}) {
 
     final nav = _navigatorKey.currentState;
     if (nav == null) return;
-    // The screen that DREW this notification is still up. Pushing a second
-    // copy buries the live one — but returning EMPTY is the iOS bug: the
-    // offer SSE stream is dead in the background there, so "its own stream
-    // has the offer" is only true on Android. Hand the offer to the mounted
-    // screen through the notifier and the card is up now, not whenever the
-    // poll happens to fire.
     if (DriverOnlineScreen.mountedCount > 0) {
       debugPrint('[FCM] offer tap — driver screen already up, injecting offer');
       final offer = found?.offer;
@@ -295,25 +404,7 @@ void _openDriverRideOffer({required String offerId, required String tripId}) {
       }
       return;
     }
-    nav.push(PageRouteBuilder(
-      opaque: false,
-      pageBuilder: (_, __, ___) =>
-          DriverOnlineScreen(
-            deepLinkOffer: found?.offer,
-            // Dispatch only offers rides to drivers who are ALREADY online,
-            // so arriving here from a notification is a resume by
-            // definition. Left at the default `false` the screen replayed
-            // the entire go-online handshake — with an offer waiting and 45
-            // seconds on the clock.
-            resuming: true,
-          ),
-      transitionDuration: const Duration(milliseconds: 280),
-      reverseTransitionDuration: const Duration(milliseconds: 220),
-      transitionsBuilder: (_, anim, __, child) => FadeTransition(
-        opacity: CurvedAnimation(parent: anim, curve: Curves.easeInOut),
-        child: child,
-      ),
-    ));
+    pushScreen(found?.offer);
     debugPrint('[FCM] offer tap → DriverOnlineScreen '
         'offer=$offerId trip=$tripId card=${found?.offer != null}');
 

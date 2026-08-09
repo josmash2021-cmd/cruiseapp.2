@@ -141,6 +141,12 @@ class DriverOnlineScreen extends StatefulWidget {
   /// takes when a trip completes inside the online screen itself.
   static Map<String, dynamic>? chainedHandoffOffer;
 
+  /// The removal half of the instant-tap flow (2026-08-09): the card goes
+  /// up from the push payload before the server answers, and when the
+  /// reconcile says the ride already went to the next driver, this is how
+  /// the provisional card comes back down. Carries the offer id to remove.
+  static final ValueNotifier<int?> removeOfferNotifier = ValueNotifier(null);
+
   const DriverOnlineScreen({
     super.key,
     this.initialPos,
@@ -786,6 +792,8 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     // the SSE stream is dead in the background, so without this the offer
     // only shows up when the poll happens to run).
     DriverOnlineScreen.deepLinkOfferNotifier.addListener(_applyInjectedOffer);
+    DriverOnlineScreen.removeOfferNotifier
+        .addListener(_applyRemoveInjectedOffer);
     // A chained ride handed over by a cancelled trip: already locked on the
     // backend, so it runs the accept flow without re-locking — the same
     // route _handoffChainedOffer takes. Consumed once, never replayed.
@@ -1096,6 +1104,42 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     _applyOffers([offer]);
   }
 
+  /// The reconcile half of the instant-tap flow: the card went up from the
+  /// push payload, and the server now says the ride is no longer pending —
+  /// take it down the same way the expiry pass would, unless the driver
+  /// already beat the reconcile to the Accept button.
+  void _applyRemoveInjectedOffer() {
+    final oid = DriverOnlineScreen.removeOfferNotifier.value;
+    if (oid == null) return;
+    DriverOnlineScreen.removeOfferNotifier.value = null;
+    if (!mounted) return;
+    // An accept in flight (or already committed) outranks the reconcile:
+    // the offer leaves the pending list BECAUSE the driver took it.
+    if (_acceptedOfferIds.contains(oid) ||
+        _offerAcceptState != _OfferAcceptState.normal) {
+      return;
+    }
+    _offerFirstSeenAt.remove(oid.toString());
+    // Filtered out of every later _applyOffers, so the next poll cannot
+    // resurrect a card the server just told us is gone.
+    _rejectedOfferIds.add(oid);
+    _setState(() {
+      _pendingOffers.removeWhere(
+          (o) => (o['offer_id'] as num?)?.toInt() == oid);
+      if (_pendingOffers.isEmpty) _hideFindingBar = false;
+    });
+    final previewing = _previewingOffer;
+    if (previewing != null &&
+        (previewing['offer_id'] as num?)?.toInt() == oid) {
+      _previewingOffer = null;
+      _offerRouteShown = false;
+      _fullSegOne = [];
+      _fullSegTwo = [];
+      unawaited(_clearAllAnnotations().catchError((_) {}));
+    }
+    _syncOfferLiveActivity();
+  }
+
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (!mounted) return;
@@ -1188,6 +1232,8 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     DriverOnlineScreen.mountedCount--;
     WidgetsBinding.instance.removeObserver(this);
     DriverOnlineScreen.deepLinkOfferNotifier.removeListener(_applyInjectedOffer);
+    DriverOnlineScreen.removeOfferNotifier
+        .removeListener(_applyRemoveInjectedOffer);
     if (_networkListener != null) {
       NetworkService().onlineNotifier.removeListener(_networkListener!);
       _networkListener = null;

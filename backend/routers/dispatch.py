@@ -779,6 +779,25 @@ async def _send_offer_to_driver(
         push_data["minutes"] = minutes_str
     if trip.pickup_address:
         push_data["pickup_address"] = trip.pickup_address
+    # Everything the offer card needs to draw INSTANTLY on tap (2026-08-09):
+    # the driver who taps the banner sees the card built from this payload,
+    # and the server's pending list only confirms (or removes) it after.
+    # FCM data is a string map — the client coerces back to numbers.
+    push_data.update({
+        "rider_name": rider_name or "",
+        "rider_phone": rider_phone or "",
+        "rider_photo_url": rider_photo or "",
+        "rider_rating": str(rider_rating_val or 0),
+        "rider_is_new": "1" if rider_rides_count == 0 else "0",
+        "pickup_lat": "" if trip.pickup_lat is None else str(trip.pickup_lat),
+        "pickup_lng": "" if trip.pickup_lng is None else str(trip.pickup_lng),
+        "dropoff_lat": "" if trip.dropoff_lat is None else str(trip.dropoff_lat),
+        "dropoff_lng": "" if trip.dropoff_lng is None else str(trip.dropoff_lng),
+        "dropoff_address": trip.dropoff_address or "",
+        "vehicle_type": trip.vehicle_type or "",
+        "driver_earnings": f"{estimated_driver_fare:.2f}",
+        "offer_timeout_seconds": str(OFFER_TIMEOUT_SECONDS),
+    })
     # Outside the app the offer shows up in exactly ONE place — and WITHOUT
     # the price (user spec 2026-08-08): the fare is decided inside the app,
     # so no push, banner or island card carries it. Miles and minutes stay:

@@ -162,8 +162,7 @@ void main() {
     });
   });
 
-  group('trip end never replays the Go chime', () {
-    test('every return-to-online from a trip is a resume', () {
+  group('trip end never replays the Go chime', () {    test('every return-to-online from a trip is a resume', () {
       final rate =
           File('lib/screens/driver/driver_rate_rider_screen.dart').readAsStringSync();
       final ratePush = rate.indexOf('pageBuilder: (_, anim, __) => DriverOnlineScreen(');
@@ -188,6 +187,71 @@ void main() {
           reason: 'every DriverOnlineScreen the trip screen builds is a '
               'return from a trip the driver is still online for — each one '
               'must carry resuming: true or the chime replays');
+    });
+  });
+
+  // Session 2026-08-09 (ter): the offer tap must show the card INSTANTLY.
+  // The push payload carries every card field; the server only reconciles
+  // after — replaces with the full offer, or takes the provisional card
+  // down when the ride already went elsewhere.
+  group('offer tap draws the card before the network answers', () {
+    test('push_data carries every field the card reads', () {
+      final dispatch =
+          File('backend/routers/dispatch.py').readAsStringSync();
+      final start = dispatch.indexOf('push_data = {');
+      expect(start, isNonNegative, reason: 'push_data not found');
+      final body = dispatch.substring(start, start + 1800);
+      for (final field in [
+        'rider_name',
+        'pickup_lat',
+        'pickup_lng',
+        'dropoff_lat',
+        'dropoff_lng',
+        'dropoff_address',
+        'vehicle_type',
+        'driver_earnings',
+        'offer_timeout_seconds',
+      ]) {
+        expect(body.contains('"$field"'), isTrue,
+            reason: '"$field" missing from push_data — the tap cannot draw '
+                'the card instantly without it');
+      }
+    });
+
+    test('the tap builds and shows a provisional card before the lookup', () {
+      final main_ = File('lib/main.dart').readAsStringSync();
+      expect(main_.contains('_provisionalOfferFromPush'), isTrue,
+          reason: 'the payload → card builder is gone');
+      final start = main_.indexOf('if (provisional != null) {');
+      expect(start, isNonNegative, reason: 'instant branch not found');
+      final instant = main_.indexOf('_fetchPendingOffer(offerId, tripId)', start);
+      final push = main_.indexOf('pushScreen(provisional)', start);
+      final inject = main_.indexOf(
+          'DriverOnlineScreen.deepLinkOfferNotifier.value = provisional',
+          start);
+      expect(instant, isNonNegative);
+      // The card must go up BEFORE the first server round trip.
+      expect(push == -1 || push < instant, isTrue,
+          reason: 'the push happens after the lookup — back to seconds of '
+              'nothing on tap');
+      expect(inject == -1 || inject < instant, isTrue,
+          reason: 'the injection happens after the lookup — same regression');
+    });
+
+    test('a reconcile-gone offer is removed, never while an accept runs', () {
+      final screen =
+          File('lib/screens/driver/driver_online_screen.dart').readAsStringSync();
+      expect(screen.contains('removeOfferNotifier'), isTrue,
+          reason: 'the removal bridge is gone');
+      final start = screen.indexOf('void _applyRemoveInjectedOffer()');
+      expect(start, isNonNegative, reason: 'removal handler not found');
+      final body = screen.substring(start, start + 1300);
+      expect(body.contains('_acceptedOfferIds.contains(oid)'), isTrue,
+          reason: 'the driver can beat the reconcile to Accept — removing '
+              'the card then would kill a ride that is already theirs');
+      expect(body.contains('_clearAllAnnotations()'), isTrue,
+          reason: 'removing the card without the route leaves the yellow '
+              'line painted with no offer behind it');
     });
   });
 }

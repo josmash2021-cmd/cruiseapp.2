@@ -53,8 +53,10 @@ import '../../services/complimentary_drink_service.dart';
 import '../../services/gps_service.dart';
 import '../../services/trip_firestore_service.dart';
 import '../../navigation/nav_state_machine.dart';
+import '../../state/chained_ride_store.dart';
 import '../../utils/responsive.dart';
 import '../../utils/name_helper.dart' as nh;
+import '../../widgets/offer_countdown_ring.dart';
 import '../../services/firebase_auth_recovery.dart';
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -325,6 +327,23 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   /// Web only: GL JS controller for the preview (no surface limit there).
   WebMapController? _webMapCtrl;
 
+  // ── Chained (next-ride) offer over this trip ─────────────────────────────
+  //
+  // Dispatch flags an offer `chained` when it goes to a driver still driving
+  // another trip (backend/routers/dispatch.py). The online screen underneath
+  // hears the same stream, but its card UI is invisible below this one — so
+  // the card lives HERE, on the screen the driver is actually looking at.
+  // The event bus keeps one queue per subscription (event_bus.py), so this
+  // stream is independent of the hidden screen's. Camera and route stay with
+  // the trip being driven: the card is the only thing this feature draws.
+  int? _driverId;
+  StreamSubscription<List<Map<String, dynamic>>>? _chainedSseSub;
+  Timer? _chainedPollTimer;
+  bool _chainedSseActive = false;
+  Map<String, dynamic>? _chainedOffer;
+  final Set<int> _chainedRejectedIds = {};
+  bool _chainedBusy = false;
+
   // ── Trip distance pickup→dropoff ─────────────────────────────────────────
   double get _tripKm {
     const r = 6371.0;
@@ -348,6 +367,229 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
         );
       }
     });
+  }
+
+  // ══════════════════════════════════════════════════════════════════════
+  //  CHAINED (NEXT-RIDE) OFFER over the live trip
+  // ══════════════════════════════════════════════════════════════════════
+
+  void _startChainedOfferListener() {
+    ApiService.getCurrentUserId().then((id) {
+      if (!mounted || id == null) return;
+      _driverId = id;
+      _chainedSseSub = ApiService.streamDriverOffers(id).listen(
+        (offers) {
+          _chainedSseActive = true;
+          _onChainedOffers(offers);
+        },
+        onError: (_) => _chainedStreamDown(),
+        onDone: _chainedStreamDown,
+      );
+    });
+  }
+
+  /// SSE died — poll the same endpoint every 5 s until it comes back.
+  /// Chained offers live 20 s, so a 5 s poll cannot miss one whole.
+  void _chainedStreamDown() {
+    if (!mounted) return;
+    _chainedSseActive = false;
+    _chainedPollTimer ??=
+        Timer.periodic(const Duration(seconds: 5), (_) async {
+      if (!mounted || _chainedSseActive || _driverId == null) return;
+      try {
+        final offers = await ApiService.getDriverPendingOffers(_driverId!);
+        if (!mounted) return;
+        _onChainedOffers(offers);
+      } catch (_) {}
+    });
+  }
+
+  void _onChainedOffers(List<Map<String, dynamic>> offers) {
+    if (!mounted) return;
+    String idOf(Map<String, dynamic> o) =>
+        (o['offer_id'] ?? o['id'] ?? '').toString();
+    final visible = offers.where((o) {
+      // Mid-trip only chained offers belong here — anything else is for the
+      // online screen's flow.
+      if (o['chained'] != true) return false;
+      final oid = (o['offer_id'] as num?)?.toInt();
+      if (oid != null && _chainedRejectedIds.contains(oid)) return false;
+      return true;
+    }).toList();
+    if (visible.isEmpty) return; // dismissal is the countdown ring's job
+    final newest = visible.first;
+    final currentId =
+        _chainedOffer != null ? idOf(_chainedOffer!) : null;
+    if (idOf(newest) != currentId) {
+      // A NEW offer, not a re-send of the card already up: cue the driver
+      // the same way the online screen does on a fresh offer.
+      HapticService.heavyImpact();
+    }
+    setState(() => _chainedOffer = newest);
+  }
+
+  int? get _chainedOfferTimeoutSecs =>
+      (_chainedOffer?['offer_timeout_seconds'] as num?)?.toInt();
+
+  Future<void> _acceptChained() async {
+    final offer = _chainedOffer;
+    if (offer == null || _chainedBusy) return;
+    final offerId = (offer['offer_id'] as num?)?.toInt();
+    if (offerId == null || _driverId == null) {
+      _chainedSnack('Unable to accept — please try again.');
+      return;
+    }
+    setState(() => _chainedBusy = true);
+    try {
+      // Same lock as the online screen's _acceptChainedOffer: the ride is
+      // ours from this moment, inside its countdown window.
+      await ApiService.acceptRideOffer(offerId: offerId, driverId: _driverId!);
+      ChainedRideStore.set(offer);
+      setState(() => _chainedOffer = null);
+      _chainedSnack('Next ride booked — it starts after this dropoff.');
+    } catch (e) {
+      debugPrint('[Driver] chained accept failed: $e');
+      setState(() => _chainedOffer = null);
+      _chainedSnack('That ride is no longer available.');
+    } finally {
+      if (mounted) setState(() => _chainedBusy = false);
+    }
+  }
+
+  /// Reject — by tap or by the countdown ring firing. Either way the driver
+  /// stays on the trip being driven; only the card leaves.
+  Future<void> _rejectChained() async {
+    final offer = _chainedOffer;
+    if (offer == null || _chainedBusy) return;
+    final offerId = (offer['offer_id'] as num?)?.toInt();
+    if (offerId != null) _chainedRejectedIds.add(offerId);
+    setState(() => _chainedOffer = null);
+    if (offerId != null && _driverId != null) {
+      await ApiService.rejectRideOffer(offerId: offerId, driverId: _driverId!)
+          .catchError((_) => <String, dynamic>{});
+    }
+  }
+
+  void _chainedSnack(String msg) {
+    if (!mounted) return;
+    ScaffoldMessenger.maybeOf(context)?.showSnackBar(SnackBar(
+      content: Text(msg),
+      duration: const Duration(seconds: 3),
+    ));
+  }
+
+  /// The next-ride card, floating over the trip page. Compact on purpose:
+  /// the live trip owns the map, the camera and the route — this card never
+  /// touches any of them.
+  Widget _buildChainedOfferCard(Map<String, dynamic> offer) {
+    final s = S.of(context);
+    final fare = (offer['driver_earnings'] as num?)?.toDouble() ??
+        (offer['fare'] as num?)?.toDouble() ??
+        0.0;
+    final riderName =
+        (offer['rider_name'] as String?)?.trim().isNotEmpty == true
+            ? (offer['rider_name'] as String).trim()
+            : s.riderFallback;
+    final pickup = (offer['pickup_address'] as String?) ?? '';
+    final offerId = (offer['offer_id'] as num?)?.toInt() ?? 0;
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: neuBox(radius: 18),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            children: [
+              OfferCountdownRing(
+                key: ValueKey('chained_$offerId'),
+                seconds: _chainedOfferTimeoutSecs ?? kOfferCountdownSeconds,
+                onExpired: _rejectChained,
+                child: Image.asset(
+                  'assets/images/cruise_logo.png',
+                  fit: BoxFit.contain,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(s.newRideOffer,
+                        style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w800)),
+                    const SizedBox(height: 2),
+                    Text(riderName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.65),
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w600)),
+                    if (pickup.isNotEmpty) ...[
+                      const SizedBox(height: 2),
+                      Text(pickup,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                              color: Colors.white.withValues(alpha: 0.45),
+                              fontSize: 12)),
+                    ],
+                  ],
+                ),
+              ),
+              const SizedBox(width: 10),
+              Text('\$${fare.toStringAsFixed(2)}',
+                  style: const TextStyle(
+                      color: _gold,
+                      fontSize: 20,
+                      fontWeight: FontWeight.w900)),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: GestureDetector(
+                  onTap: _chainedBusy ? null : _rejectChained,
+                  child: Container(
+                    height: 44,
+                    decoration: neuBox(radius: 12, pressed: true),
+                    alignment: Alignment.center,
+                    child: Text(s.reject,
+                        style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.7),
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700)),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                flex: 2,
+                child: GestureDetector(
+                  onTap: _chainedBusy ? null : _acceptChained,
+                  child: Container(
+                    height: 44,
+                    decoration: BoxDecoration(
+                      color: _gold,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    alignment: Alignment.center,
+                    child: Text(s.acceptRideButton,
+                        style: const TextStyle(
+                            color: Colors.black,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w800)),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -443,6 +685,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     // Listen for rider confirming pickup in Firestore
     _listenForRiderConfirmation();
     _startStatusPoll();
+    _startChainedOfferListener();
 
     // Start continuous GPS → GpsService so RTDB stays fresh for rider tracking.
     // The online screen's stream may not reliably feed GpsService while this
@@ -580,6 +823,8 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     MapSurfaceCoordinator.instance.release(_mapSurfaceOwner);
+    _chainedSseSub?.cancel();
+    _chainedPollTimer?.cancel();
     unawaited(_liveGps?.stop());
     _gpsSub?.cancel();
     _dropoffGpsSub?.cancel();
@@ -2535,6 +2780,9 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
       _riderConfirmSub?.cancel();
       _statusPollTimer?.cancel();
       try {
+        // A chained ride booked before this cancel is already locked on the
+        // backend — hand it to the fresh online screen instead of losing it.
+        DriverOnlineScreen.chainedHandoffOffer = ChainedRideStore.take();
         Navigator.of(context).pushAndRemoveUntil(
           PageRouteBuilder(
             // resuming: the driver never went offline — no "Go" chime replay.
@@ -3584,9 +3832,17 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   void _exitAfterRemoteCancel() {
     final nav = Navigator.of(context);
     if (nav.canPop()) {
+      // The online screen underneath consumes this when it resets to
+      // searching (_handoffChainedOffer) — a chained ride booked before the
+      // cancel is already locked on the backend and must not die with this
+      // screen.
+      DriverOnlineScreen.chainedHandoffOffer = ChainedRideStore.take();
       nav.pop('cancelled');
       return;
     }
+    // A chained ride booked before this cancel is already locked on the
+    // backend — hand it to the fresh online screen instead of losing it.
+    DriverOnlineScreen.chainedHandoffOffer = ChainedRideStore.take();
     nav.pushAndRemoveUntil(
       PageRouteBuilder(
         // resuming: the driver never went offline — no "Go" chime replay.
@@ -4353,6 +4609,18 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
         ),
       ),
       ),
+
+      // ── Chained (next-ride) offer over the live trip ─────────────────
+      // Floating card, hidden once the completion overlay owns the screen.
+      // It never touches the map, the camera or the route — the trip being
+      // driven keeps all three.
+      if (_chainedOffer != null && !_tripFinished)
+        Positioned(
+          top: top + 8,
+          left: 12,
+          right: 12,
+          child: _buildChainedOfferCard(_chainedOffer!),
+        ),
 
       // ── Phase 4: "Viaje Finalizado" full-screen overlay ───────────────
       if (_tripFinished)

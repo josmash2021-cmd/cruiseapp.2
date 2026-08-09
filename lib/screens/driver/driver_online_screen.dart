@@ -131,6 +131,16 @@ class DriverOnlineScreen extends StatefulWidget {
   static final ValueNotifier<Map<String, dynamic>?> deepLinkOfferNotifier =
       ValueNotifier(null);
 
+  /// A chained ride whose CURRENT trip was cancelled out from under it.
+  ///
+  /// The accept already committed on the backend (the trip screen locked it
+  /// inside its countdown window), so it cannot simply be dropped with the
+  /// trip: the cancel exits set this before building the fresh online
+  /// screen, and the screen runs the normal accept flow on it with
+  /// `alreadyAcceptedOnBackend: true` — the same route _handoffChainedOffer
+  /// takes when a trip completes inside the online screen itself.
+  static Map<String, dynamic>? chainedHandoffOffer;
+
   const DriverOnlineScreen({
     super.key,
     this.initialPos,
@@ -776,6 +786,18 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     // the SSE stream is dead in the background, so without this the offer
     // only shows up when the poll happens to run).
     DriverOnlineScreen.deepLinkOfferNotifier.addListener(_applyInjectedOffer);
+    // A chained ride handed over by a cancelled trip: already locked on the
+    // backend, so it runs the accept flow without re-locking — the same
+    // route _handoffChainedOffer takes. Consumed once, never replayed.
+    final chainedHandoff = DriverOnlineScreen.chainedHandoffOffer;
+    if (chainedHandoff != null) {
+      DriverOnlineScreen.chainedHandoffOffer = null;
+      Future.delayed(const Duration(milliseconds: 600), () {
+        if (mounted) {
+          _acceptOffer(chainedHandoff, alreadyAcceptedOnBackend: true);
+        }
+      });
+    }
     // Once, here — not in the resume branch, which would stack another
     // listener on every return from the background.
     EarningsPrivacy.load();

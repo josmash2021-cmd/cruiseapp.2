@@ -2229,9 +2229,13 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
   /// Called when the current trip leaves the screen (completed or
   /// declined) — the phase is back to searching by then.
   void _handoffChainedOffer() {
-    final next = _chainedNextOffer;
+    // The static half: chained accepts now happen on the trip screen (the
+    // card the driver can actually see mid-trip), and a trip that pops back
+    // here cancelled leaves the booking in chainedHandoffOffer.
+    final next = _chainedNextOffer ?? DriverOnlineScreen.chainedHandoffOffer;
     if (next == null) return;
     _chainedNextOffer = null;
+    DriverOnlineScreen.chainedHandoffOffer = null;
     unawaited(_acceptOffer(next, alreadyAcceptedOnBackend: true));
   }
 

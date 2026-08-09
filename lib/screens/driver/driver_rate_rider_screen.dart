@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import '../../services/haptic_service.dart';
@@ -8,9 +9,11 @@ import 'package:firebase_database/firebase_database.dart';
 import '../../config/page_transitions.dart';
 import '../../models/lat_lng.dart';
 import '../../services/api_service.dart';
+import '../../state/chained_ride_store.dart';
 import '../../widgets/verified_avatar.dart';
 import '../../widgets/static_route_preview.dart';
 import 'driver_online_screen.dart';
+import 'driver_trip_accept_screen.dart';
 import '../../utils/responsive.dart';
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -150,6 +153,11 @@ class _DriverRateRiderScreenState extends State<DriverRateRiderScreen>
     // handoff, and no wait: the online screen's map is simply already there.
     await _fadeCtrl.reverse();
     if (!mounted) return;
+
+    // A chained ride booked mid-trip starts NOW: straight into the next
+    // pickup page, never through "Finding trips" (user spec 2026-08-09).
+    if (ChainedRideStore.hasRide && await _startChainedTrip()) return;
+
     Navigator.of(context).pushAndRemoveUntil(
       PageRouteBuilder(
         pageBuilder: (_, anim, __) => DriverOnlineScreen(
@@ -169,6 +177,89 @@ class _DriverRateRiderScreenState extends State<DriverRateRiderScreen>
       ),
       (route) => false,
     );
+  }
+
+  /// The chained ride booked mid-trip, started straight into its pickup
+  /// page. The offer payload already carries everything the page needs;
+  /// getTrip is only a liveness check — dispatch may have reassigned or
+  /// cancelled the ride while the rating screen was up, and starting a
+  /// dead trip would strand the driver on a page that never advances.
+  /// False → the caller falls back to the normal online screen.
+  Future<bool> _startChainedTrip() async {
+    final offer = ChainedRideStore.take();
+    if (offer == null) return false;
+    final tripId = (offer['trip_id'] as num?)?.toInt() ??
+        (offer['id'] as num?)?.toInt();
+    if (tripId == null) return false;
+    try {
+      final trip = await ApiService.getTrip(tripId);
+      final status = trip['status']?.toString() ?? '';
+      if (status.isEmpty || status == 'cancelled' || status == 'completed') {
+        return false;
+      }
+    } catch (_) {
+      return false;
+    }
+    if (!mounted) return true;
+
+    double numOf(dynamic v) =>
+        v is num ? v.toDouble() : double.tryParse('$v') ?? 0.0;
+    final pickupLat = numOf(offer['pickup_lat']);
+    final pickupLng = numOf(offer['pickup_lng']);
+    if (pickupLat == 0 && pickupLng == 0) return false;
+    final dropLat = numOf(offer['dropoff_lat']);
+    final dropLng = numOf(offer['dropoff_lng']);
+    final pickup = LatLng(pickupLat, pickupLng);
+    // Where the last trip ended is where this one starts from.
+    final driverPos = (widget.dropoffLat != null && widget.dropoffLng != null)
+        ? LatLng(widget.dropoffLat!, widget.dropoffLng!)
+        : pickup;
+    final distKm = _havKm(driverPos, pickup);
+    final eta = (distKm * 1000 / 17.88 / 60).ceil().clamp(1, 99);
+
+    Navigator.of(context).pushAndRemoveUntil(
+      PageRouteBuilder(
+        pageBuilder: (_, anim, __) => DriverTripAcceptScreen(
+          tripId: tripId,
+          riderName: (offer['rider_name'] as String?) ?? 'Rider',
+          riderPhotoUrl: (offer['rider_photo_url'] as String?) ?? '',
+          riderRating: (offer['rider_rating'] as num?)?.toDouble() ?? 0.0,
+          riderIsNew: offer['rider_is_new'] == true,
+          riderId: (offer['rider_id'] as num?)?.toInt(),
+          pickupLatLng: pickup,
+          dropoffLatLng: LatLng(dropLat, dropLng),
+          pickupAddress: (offer['pickup_address'] as String?) ?? '',
+          dropoffAddress: (offer['dropoff_address'] as String?) ?? '',
+          fare: (offer['driver_earnings'] as num?)?.toDouble() ??
+              (offer['fare'] as num?)?.toDouble() ??
+              0.0,
+          vehicleType: (offer['vehicle_type'] as String?) ?? '',
+          driverPos: driverPos,
+          distToPickupKm: distKm,
+          etaMinutes: eta,
+          riderPhone: (offer['rider_phone'] as String?) ?? '',
+        ),
+        transitionsBuilder: (_, anim, __, child) => FadeTransition(
+          opacity: CurvedAnimation(parent: anim, curve: Curves.easeInOut),
+          child: child,
+        ),
+        transitionDuration: const Duration(milliseconds: 400),
+      ),
+      (route) => false,
+    );
+    return true;
+  }
+
+  static double _havKm(LatLng a, LatLng b) {
+    const r = 6371.0;
+    final dLat = (b.latitude - a.latitude) * math.pi / 180;
+    final dLng = (b.longitude - a.longitude) * math.pi / 180;
+    final x = math.sin(dLat / 2) * math.sin(dLat / 2) +
+        math.cos(a.latitude * math.pi / 180) *
+            math.cos(b.latitude * math.pi / 180) *
+            math.sin(dLng / 2) *
+            math.sin(dLng / 2);
+    return r * 2 * math.atan2(math.sqrt(x), math.sqrt(1 - x));
   }
 
   // ── BUILD ─────────────────────────────────────────────────────────────────

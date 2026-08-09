@@ -2097,6 +2097,10 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
 
   void _navigateToHome() {
     _saveRideState();
+    // The rider is leaving tracking BY CHOICE — the fresh HomeScreen about
+    // to be built must not find the persisted ride and push tracking
+    // straight back over their decision (the home↔tracking bounce).
+    HomeScreen.autoResumeConsumed = true;
     _nav?.pushAndRemoveUntil(
       PageRouteBuilder(
         pageBuilder: (_, __, ___) => const HomeScreen(),

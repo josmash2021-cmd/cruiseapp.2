@@ -69,6 +69,15 @@ class HomeScreen extends StatefulWidget {
   /// (driver claimed, driver cancelled). HomeScreen listens and refreshes.
   static final scheduledRideRefresh = ValueNotifier<int>(0);
 
+  /// Process-wide latch for the active-ride auto-resume. Every HomeScreen
+  /// built in-session used to start its own false, so backing out of the
+  /// tracking screen landed on a FRESH home whose _loadSavedData found the
+  /// persisted ride and pushed tracking straight back — the rider could
+  /// never sit on home mid-trip. The auto-resume is a cold-start behavior:
+  /// it fires once per process, and backing out of tracking sets this
+  /// before home is even built.
+  static bool autoResumeConsumed = false;
+
   @override
   State<HomeScreen> createState() => _HomeScreenState();
 }
@@ -233,7 +242,9 @@ class _HomeScreenState extends State<HomeScreen>
 
   // ── Ride completion fade ──
   late AnimationController _rideFadeCtrl;
-  bool _didAutoResumeRide = false; // prevent re-opening tracking on every _loadSavedData
+  // Instance view of the process-wide latch — see HomeScreen.autoResumeConsumed.
+  bool get _didAutoResumeRide => HomeScreen.autoResumeConsumed;
+  set _didAutoResumeRide(bool v) => HomeScreen.autoResumeConsumed = v;
   bool _openingRideFlow = false; // re-entry guard for _openSearchThenRide so back+retry doesn't double-push or skip dropoff
   bool _openingScheduleFlow = false; // re-entry guard for _showScheduleSheet (Schedule + Later switch + Airport via Schedule)
 

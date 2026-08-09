@@ -1,18 +1,13 @@
 import 'dart:ui' as ui;
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../services/haptic_service.dart';
-import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' as mapbox;
 
-import '../config/mapbox_config.dart';
-import '../config/map_theme.dart';
 import '../config/page_transitions.dart';
-import '../map/web_map_view.dart';
 import '../services/api_service.dart';
 import '../services/analytics_service.dart';
-import '../services/map_controller_cache.dart';
 import '../l10n/app_localizations.dart';
+import '../widgets/static_route_preview.dart';
 import '../widgets/verified_avatar.dart';
 import 'home_screen.dart';
 
@@ -202,55 +197,22 @@ class _RiderRatingScreenState extends State<RiderRatingScreen>
         backgroundColor: _bg,
         body: Stack(
           children: [
-            // ── Blurred dark Mapbox map background ──
+            // ── Blurred dark map backdrop ──
+            //
+            // An image, not a live map — the exact fix the driver's rating
+            // screen already carries (driver_rate_rider_screen.dart). What
+            // sits here is under a five-pixel blur and a 45% black scrim:
+            // an abstract dark texture. It WAS a native MapWidget mounted
+            // without MapSurfaceCoordinator, so for the whole incoming
+            // transition it lived next to the tracking screen's full-screen
+            // map — two native Mapbox surfaces, which closes the app on
+            // iOS. At the end of EVERY ride. No pins under that blur.
             Positioned.fill(
               child: IgnorePointer(
-                // The native MapWidget has no web implementation — GL JS
-                // takes over in the browser, same as the booking screens.
-                child: kIsWeb
-                    ? WebMapView(
-                        key: const ValueKey('rider_rating_map_web'),
-                        initialLng: widget.dropoffLng ?? -80.1918,
-                        initialLat: widget.dropoffLat ?? 25.7617,
-                        initialZoom: 14.0,
-                        styleUri: MapboxConfig.styleDark,
-                        onControllerCreated: (c) => c.applyNavyGoldTheme(),
-                      )
-                    : mapbox.MapWidget(
-                  textureView: true,
-                  styleUri: MapboxConfig.styleDark,
-                  cameraOptions: mapbox.CameraOptions(
-                    center: mapbox.Point(
-                      coordinates: mapbox.Position(
-                        widget.dropoffLng ?? -80.1918,
-                        widget.dropoffLat ?? 25.7617,
-                      ),
-                    ),
-                    zoom: 14.0,
-                    pitch: 0,
-                  ),
-                  onMapCreated: (ctrl) async {
-                    // Cache controller for reuse across rider screens
-                    MapControllerCache.instance.cache(ctrl);
-                    await MapTheme.applyNavyGold(ctrl);
-                    await ctrl.gestures.updateSettings(
-                      mapbox.GesturesSettings(
-                        scrollEnabled: false,
-                        rotateEnabled: false,
-                        pitchEnabled: false,
-                        doubleTapToZoomInEnabled: false,
-                        doubleTouchToZoomOutEnabled: false,
-                        quickZoomEnabled: false,
-                        pinchToZoomEnabled: false,
-                      ),
-                    );
-                    await ctrl.compass.updateSettings(
-                      mapbox.CompassSettings(enabled: false),
-                    );
-                    await ctrl.scaleBar.updateSettings(
-                      mapbox.ScaleBarSettings(enabled: false),
-                    );
-                  },
+                child: StaticRoutePreview(
+                  pickupLat: widget.dropoffLat ?? 25.7617,
+                  pickupLng: widget.dropoffLng ?? -80.1918,
+                  pins: false,
                 ),
               ),
             ),

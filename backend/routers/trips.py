@@ -1269,7 +1269,7 @@ async def get_fare_breakdown(trip_id: int, user: User = Depends(_get_current_use
 
 
 @router.patch("/trips/{trip_id}/status", dependencies=[Depends(_verify_api_key)])
-async def update_trip_status(trip_id: int, status: str = Query(...), user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
+async def update_trip_status(trip_id: int, request: Request, status: str = Query(...), user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
     # ── Idempotency pre-check: if the same (trip, status) pair arrived in
     # the last N seconds, short-circuit before touching the DB at all.
     # This fires BEFORE the FOR UPDATE lock so rapid duplicate PATCHes from

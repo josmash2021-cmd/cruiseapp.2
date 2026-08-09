@@ -987,7 +987,23 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
               if (mounted) {
                 await _pickupOverlayCtrl.reverse();
                 if (!mounted) return;
-                _nav?.pushNamedAndRemoveUntil('/home', (route) => false);
+                // A cancelled trip is not resumable: clear the stale local
+                // ride and latch the auto-resume before home can find it.
+                unawaited(LocalDataService.clearActiveRide());
+                HomeScreen.autoResumeConsumed = true;
+                // Direct push, NOT pushNamed('/home'): _getPageForRoute
+                // answers EVERY named route with SplashScreen, so the named
+                // call re-ran the whole boot (splash, heavyInit, FCM
+                // re-attach) instead of just going home.
+                _nav?.pushAndRemoveUntil(
+                  PageRouteBuilder(
+                    pageBuilder: (_, __, ___) => const HomeScreen(),
+                    transitionsBuilder: (_, a, __, child) =>
+                        FadeTransition(opacity: a, child: child),
+                    transitionDuration: const Duration(milliseconds: 300),
+                  ),
+                  (_) => false,
+                );
               }
             },
           ),

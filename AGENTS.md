@@ -59,7 +59,12 @@
 - `lib/map/`: `unified_map_service`, `camera_director` (locks exclusivos), `tracking_map_camera`, `map_surface_coordinator` (una sola superficie viva). Web = Mapbox GL JS en `web_map_view_web.dart`. SDK `mapbox_maps_flutter ^2.5.0`.
 
 **Trip lifecycle backend**
-- `backend/routers/trips.py`: statuses canónicos + `_STATUS_ALIASES` + `_VALID_TRANSITIONS` (forward-only), comisiones `_COMMISSION_BY_TYPE`. `Trip.distance` = MILLAS, `Trip.duration` = MINUTOS; ambos NULL hasta que el viaje completa.
+- `backend/routers/trips.py`: statuses canónicos + `_STATUS_ALIASES` + `_VALID_TRANSITIONS` (forward-only), comisiones `_COMMISSION_BY_TYPE`. `Trip.distance` = MILLAS, `Trip.duration` = MINUTOS; ambos NULL hasta que el viaje completa. La rama **resurrect** (driver continúa un viaje auto-cancelado, cancelled/completed→arrived/in_trip/completed) usa `request.client.host` — `update_trip_status` DEBE declarar `request: Request` o es NameError 500 siempre (bug 2026-08-09, pineado en `backend/tests/test_trip_resurrect_guard.py`).
+
+**Reopen flow (tanda 1 auditoría, 2026-08-09)**
+- Pantallas de rating NUNCA montan MapWidget: el backdrop es `StaticRoutePreview(pins: false)` (imagen) — un mapa nativo ahí vive junto al de tracking durante la transición = 2 superficies = crash iOS al final de CADA viaje. Guardián: `test/reopen_flow_guard_test.dart`.
+- El auto-resume de viaje activo en home es POR PROCESO (`HomeScreen.autoResumeConsumed` estático): salir de tracking con back lo setea ANTES de construir home (`_navigateToHome`) — con latch por instancia, home re-abría tracking siempre (rebote infinito).
+- `_getPageForRoute` (main.dart) responde TODA ruta nombrada con `SplashScreen` — NUNCA `pushNamedAndRemoveUntil('/home')` (re-corre el boot entero); navegar con `const HomeScreen()` directo.
 
 **Pagos / holds (2026-08-08)**
 - Hold OBLIGATORIO del total estimado (capture_method=manual) antes de crear el viaje — inmediato (`/dispatch/request`) y agendado (`POST /trips`): sin PI válido (`requires_capture`) → 402 y no se crea nada (producción; testers/sandbox/`TEST_MODE_RIDER_IDS` con bypass).

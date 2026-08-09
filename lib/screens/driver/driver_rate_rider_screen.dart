@@ -156,6 +156,10 @@ class _DriverRateRiderScreenState extends State<DriverRateRiderScreen>
           initialPos: (widget.dropoffLat != null && widget.dropoffLng != null)
               ? LatLng(widget.dropoffLat!, widget.dropoffLng!)
               : null,
+          // Coming back from a trip is a RESUME, not a go-online: the
+          // driver never went offline, so the "Go" chime must not fire
+          // again (it did, every trip end — sounded like a fresh Go tap).
+          resuming: true,
         ),
         transitionsBuilder: (_, anim, __, child) => FadeTransition(
           opacity: CurvedAnimation(parent: anim, curve: Curves.easeInOut),

@@ -2537,7 +2537,8 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
       try {
         Navigator.of(context).pushAndRemoveUntil(
           PageRouteBuilder(
-            pageBuilder: (_, __, ___) => const DriverOnlineScreen(),
+            // resuming: the driver never went offline — no "Go" chime replay.
+            pageBuilder: (_, __, ___) => const DriverOnlineScreen(resuming: true),
             transitionsBuilder: (_, anim, __, child) =>
                 FadeTransition(opacity: anim, child: child),
             transitionDuration: const Duration(milliseconds: 400),
@@ -3588,8 +3589,9 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     }
     nav.pushAndRemoveUntil(
       PageRouteBuilder(
+        // resuming: the driver never went offline — no "Go" chime replay.
         pageBuilder: (_, __, ___) =>
-            const DriverOnlineScreen(showCancelledNotice: true),
+            const DriverOnlineScreen(showCancelledNotice: true, resuming: true),
         transitionsBuilder: (_, anim, __, child) =>
             FadeTransition(opacity: anim, child: child),
         transitionDuration: const Duration(milliseconds: 400),

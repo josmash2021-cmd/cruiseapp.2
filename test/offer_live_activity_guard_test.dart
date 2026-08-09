@@ -136,4 +136,58 @@ void main() {
               'not dropped to a bare "Finding trips" screen');
     });
   });
+
+  // Session 2026-08-09 (bis): two offer-lifecycle leaks the driver reported
+  // — the yellow route staying painted after the card was gone, and the
+  // "Go" chime replaying at every trip end.
+  group('a dismissed offer never leaves its route behind', () {
+    test('the seg1 draw ticker deletes the half-drawn line on !wanted()', () {
+      final map =
+          File('lib/screens/driver/driver_online_map.dart').readAsStringSync();
+      final start = map.indexOf('Future<void> _drawGoldGlossRoute(');
+      expect(start, isNonNegative, reason: '_drawGoldGlossRoute not found');
+      final body = map.substring(start, start + 3600);
+      // The ticker's branch, not the create-in-flight guard above it.
+      final tickerStart = body.indexOf('createTicker((_) {');
+      expect(tickerStart, isNonNegative, reason: 'ticker not found');
+      final ticker = body.indexOf('if (!mounted || !wanted()) {', tickerStart);
+      expect(ticker, isNonNegative, reason: 'ticker guard not found');
+      final branch = body.substring(ticker, ticker + 700);
+      expect(branch.contains('polyMgr.delete(stale)'), isTrue,
+          reason: 'seg1 stopping without the delete leaves an UNTRACKED '
+              'polyline — _previewPickupAnnot is only assigned at progress '
+              '1.0, so the reject/expire clear has no handle to it and the '
+              'yellow route stays with the card already gone (the append '
+              'variant has always deleted; seg1 must match)');
+    });
+  });
+
+  group('trip end never replays the Go chime', () {
+    test('every return-to-online from a trip is a resume', () {
+      final rate =
+          File('lib/screens/driver/driver_rate_rider_screen.dart').readAsStringSync();
+      final ratePush = rate.indexOf('pageBuilder: (_, anim, __) => DriverOnlineScreen(');
+      expect(ratePush, isNonNegative,
+          reason: 'rate-rider → DriverOnlineScreen not found');
+      expect(
+          rate.substring(ratePush, ratePush + 700).contains('resuming: true'),
+          isTrue,
+          reason: 'coming back from a trip is a RESUME, not a go-online — '
+              'without it _armOnlineChime fires the "Go" sound at every '
+              'trip end');
+
+      final trip =
+          File('lib/screens/driver/driver_trip_accept_screen.dart').readAsStringSync();
+      final pushes =
+          RegExp(r'DriverOnlineScreen\(').allMatches(trip).length;
+      final resumes =
+          RegExp(r'DriverOnlineScreen\((showCancelledNotice: true, )?resuming: true\)')
+              .allMatches(trip)
+              .length;
+      expect(resumes, pushes,
+          reason: 'every DriverOnlineScreen the trip screen builds is a '
+              'return from a trip the driver is still online for — each one '
+              'must carry resuming: true or the chime replays');
+    });
+  });
 }

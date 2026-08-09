@@ -1445,6 +1445,16 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
       if (!mounted || !wanted()) {
         _routeDrawTicker?.stop();
         if (!completer.isCompleted) completer.complete();
+        // Take the half-drawn line back with it. The append variant (seg2)
+        // has always done this; seg1 stopping without the delete left an
+        // UNTRACKED polyline on the map — _previewPickupAnnot is only
+        // assigned at progress 1.0, so the clear that runs on
+        // reject/expire has no handle to it and the yellow route stayed
+        // painted with the offer card already gone.
+        final stale = mainLine;
+        if (stale != null) {
+          polyMgr.delete(stale).catchError((_) {});
+        }
         return;
       }
       if (updating) return;

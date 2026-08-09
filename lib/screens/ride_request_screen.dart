@@ -940,6 +940,10 @@ class _RideRequestScreenState extends State<RideRequestScreen>
       } else if (!widget.pickerIsPickup && widget.initialDropoffDetails != null) {
         _center = LatLng(widget.initialDropoffDetails!.lat, widget.initialDropoffDetails!.lng);
       }
+      // _initLocation no longer back-fills _center in picker mode (the GPS
+      // overwrite was the snap-back), so it MUST be non-null here or the
+      // map never mounts.
+      _center ??= const LatLng(33.5186, -86.8104);
     }
 
     // ── Airport selection always takes priority ──

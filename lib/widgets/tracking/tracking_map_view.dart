@@ -995,40 +995,63 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     // ── Both halves of the ride are framed the same way ──
     // The rider is reading a map, not driving one: whatever is still ahead —
     // the car, the pin it is going to, and the road between them — stays
-    // fully on screen, and the zoom tightens by itself as the gap closes.
-    //
-    // The trip half used to run the Uber-style chase camera instead: pinned
-    // on the car at zoom 17 with a 20° tilt, which is the right shot for the
-    // person steering and the wrong one for the person in the back seat —
-    // they could never see where the ride was going.
+    // fully on screen.
     final isOnTrip =
         _phase == _TrackPhase.onTrip || _phase == _TrackPhase.nearDestination;
     if (_phase != _TrackPhase.arriving && !isOnTrip) return;
 
-    if (isOnTrip && _mapCamera!.isNavChaseActive) {
-      // Leaves the car marker to Mapbox again — _chaseCarAnchor goes null,
-      // so the Flutter-painted chase car stops and the annotation shows.
-      _mapCamera!.stopNavigationChase();
+    if (isOnTrip) {
+      if (_mapCamera!.isNavChaseActive) {
+        // Leaves the car marker to Mapbox again — _chaseCarAnchor goes null,
+        // so the Flutter-painted chase car stops and the annotation shows.
+        _mapCamera!.stopNavigationChase();
+      }
+      // ONE stable frame for the whole ride (user spec 2026-08-09): fit the
+      // full trip route BETWEEN the top card and the bottom sheet and HOLD
+      // it — a moderate zoom-out, no auto-recenter. The per-frame
+      // updateFollowFrame recentered continuously, and its custom span math
+      // let the route slide behind the cards; fitBounds uses the native
+      // padding, so nothing hides. Re-fit ONLY when the frame content
+      // changes (late route seed, restore, a real reroute of the trip
+      // polyline) — never because the car moved.
+      final sig = _tripFitSignature();
+      if (sig != 0 && sig != _lastTripFitSig) {
+        _lastTripFitSig = sig;
+        unawaited(_mapCamera!.fitBounds(
+          points: _tripFramePoints(),
+          topPadding: topPad + 10 + _topCardHeight + 32,
+          bottomPadding: bottomPad + 16 + _bottomCardHeight + 32,
+        ));
+      }
+      return;
     }
 
-    // Each frame KIND opens with its own fit — the approach and the trip,
-    // whose two halves (onTrip / nearDestination) share ONE frame:
-    // _tripFramePoints covers both. The old per-phase reset re-flew the
-    // camera to the same target every time the ETA crossed the 2-minute
-    // line, which in city traffic is every few GPS fixes — a flyTo every
-    // couple of seconds is exactly the "parpadeo" the rider reported, and
-    // it yanked the camera back while they dragged.
-    final frameKind = isOnTrip ? 1 : 0;
-    if (_framedPhaseKind != frameKind) {
-      _framedPhaseKind = frameKind;
+    // Approach phase keeps the per-frame follow: the driver is moving
+    // toward the rider, so the frame has to track that.
+    if (_framedPhaseKind != 0) {
+      _framedPhaseKind = 0;
       _mapCamera!.resetFollowFraming();
     }
 
     _mapCamera!.updateFollowFrame(
-      points: isOnTrip ? _tripFramePoints() : _approachFramePoints(),
+      points: _approachFramePoints(),
       screenSize: screenSize,
       topPadding: topPad + 10 + _topCardHeight + 32,
       bottomPadding: bottomPad + 16 + _bottomCardHeight + 32,
+    );
+  }
+
+  /// Identity of the trip frame's CONTENT, not of the camera: the route
+  /// polyline that must stay visible. The car (_animPos) is deliberately
+  /// NOT part of this — the fit includes it, but its movement must never
+  /// retrigger the fit (that was the auto-recenter the rider killed).
+  int _tripFitSignature() {
+    final pts = _tripRoutePts.length >= 2 ? _tripRoutePts : _routePts;
+    if (pts.length < 2) return 0;
+    return Object.hash(
+      pts.length,
+      pts.first.latitude, pts.first.longitude,
+      pts.last.latitude, pts.last.longitude,
     );
   }
 

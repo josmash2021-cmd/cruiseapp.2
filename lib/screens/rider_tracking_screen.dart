@@ -732,6 +732,11 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   /// so the smoothing is dropped and re-seeded.
   int? _framedPhaseKind;
 
+  /// Content signature the trip frame was last fit to (see
+  /// [_tripFitSignature]). 0 = never fit. The trip camera fits ONCE per
+  /// content change and then holds — user spec 2026-08-09, no auto-recenter.
+  int _lastTripFitSig = 0;
+
   // No camera Ticker of its own: the chase camera runs on _interpTicker,
   // the same frame that moves the car. Two tickers writing to one platform
   // channel with different backpressure made the marker oscillate around

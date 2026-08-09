@@ -133,4 +133,43 @@ void main() {
           reason: 'the bare > 2 exit is the flap');
     });
   });
+
+  // Session 2026-08-09 (bis): the rider asked for NO auto-recenter on the
+  // trip page — one moderate zoom-out that keeps the whole route visible
+  // between the top card and the bottom sheet, fitted once and held.
+  group('the trip camera fits once and holds', () {
+    test('no per-frame updateFollowFrame during the trip', () {
+      final tick = view.indexOf('void _onCameraTick(Duration elapsed)');
+      final tickEnd = tick + 4600;
+      final body = view.substring(
+          tick, tickEnd > view.length ? view.length : tickEnd);
+      final tripBranch = body.indexOf('if (isOnTrip) {');
+      expect(tripBranch, isNonNegative, reason: 'trip branch not found');
+      final arriving = body.indexOf('// Approach phase keeps', tripBranch);
+      expect(arriving, isNonNegative,
+          reason: 'the arriving branch marker moved — window ends there');
+      final branchBody = body.substring(tripBranch, arriving);
+      expect(branchBody.contains('.updateFollowFrame('), isFalse,
+          reason: 'per-frame recentering is exactly what the rider killed — '
+              'the trip fits once per content change and holds');
+      expect(branchBody.contains('fitBounds('), isTrue,
+          reason: 'the one-shot fit uses the native padding so the route '
+              'never hides behind the cards');
+    });
+
+    test('the fit is keyed on route content, never on the car position', () {
+      final sig = view.indexOf('int _tripFitSignature()');
+      expect(sig, isNonNegative, reason: '_tripFitSignature not found');
+      // The body, not the doc comment (which names _animPos to say why it
+      // is excluded).
+      final bodyStart = view.indexOf('final pts =', sig);
+      expect(bodyStart, isNonNegative);
+      final body = view.substring(bodyStart, bodyStart + 400);
+      expect(body.contains('_animPos'), isFalse,
+          reason: 'including the car re-triggers the fit on every GPS fix — '
+              'that IS the auto-recenter');
+      expect(body.contains('_tripRoutePts'), isTrue,
+          reason: 'the signature must track the full-trip polyline');
+    });
+  });
 }

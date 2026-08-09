@@ -63,16 +63,35 @@ void main() {
       'lib/screens/identity_verification_screen.dart',
       'lib/screens/driver/license_scanner_screen.dart',
     ]) {
-      test('$path uses ResolutionPreset.max, never high', () {
-        final src = File(path).readAsStringSync();
+      final src = File(path).readAsStringSync();
+
+      test('$path captures via _capturePreset, never high', () {
         expect(src.contains('ResolutionPreset.high'), isFalse,
             reason: 'high = 720p stills; the document-frame crop lands '
                 '~485×306 px and OCR reads nothing');
         expect(
-          'ResolutionPreset.max'.allMatches(src).length,
+          '_capturePreset,'.allMatches(src).length,
           greaterThanOrEqualTo(2),
-          reason: 'both the first attempt and the retry must capture at max',
+          reason: 'both the first attempt and the retry must use the same '
+              'capture preset getter',
         );
+      });
+
+      test('$path routes iOS to ultraHigh, not max', () {
+        final getter = RegExp(
+            r'static ResolutionPreset get _capturePreset =>');
+        final start = getter.firstMatch(src)!.end;
+        final body = src.substring(start, start + 200);
+        expect(body.contains('AppPlatform.isIOS'), isTrue,
+            reason: 'the preset must branch on iOS');
+        expect(body.contains('ResolutionPreset.ultraHigh'), isTrue,
+            reason: 'the plugin .max branch sets '
+                'isHighResolutionPhotoEnabled on the still capture — on '
+                'iOS 16+ that raises a native NSException and the app '
+                'CLOSES on the first scan tick. ultraHigh (4K) keeps the '
+                'crop OCR-legible through the plain session-preset path');
+        expect(body.contains('ResolutionPreset.max'), isTrue,
+            reason: 'Android keeps max (CameraX has no such branch)');
       });
     }
   });

@@ -17,6 +17,7 @@ import '../services/local_data_service.dart';
 import '../services/user_session.dart';
 import '../services/firebase_auth_recovery.dart';
 import '../utils/doc_frame_crop.dart';
+import '../utils/app_platform.dart';
 import '../widgets/doc_guidelines_view.dart';
 import '../widgets/neu_style.dart';
 
@@ -1270,6 +1271,23 @@ class _InlineDocScannerState extends State<_InlineDocScanner>
     with TickerProviderStateMixin {
   static const _gold = Color(0xFFE8C547);
 
+  /// Capture preset for the scanner — same rule as the driver licence
+  /// scanner (_capturePreset in license_scanner_screen.dart).
+  ///
+  /// max, not high: takePicture() captures at the session preset, and at
+  /// high (720p) the crop of the document frame lands ~485×306 px — too
+  /// soft for OCR to read a single field.
+  ///
+  /// iOS runs ultraHigh (4K), NOT max: the plugin's `.max` branch overrides
+  /// the active format with the sensor's highest-resolution one AND sets
+  /// `isHighResolutionPhotoEnabled` on the still capture — on iOS 16+ that
+  /// capture raises a native NSException (hi-res stills need
+  /// `maxPhotoDimensions`, which the plugin never sets), so the app CLOSES
+  /// on the first 1.5 s scan tick. 4K stills leave the frame crop at
+  /// ~1940×1224 through the plain session-preset path. Android keeps max.
+  static ResolutionPreset get _capturePreset =>
+      AppPlatform.isIOS ? ResolutionPreset.ultraHigh : ResolutionPreset.max;
+
   CameraController? _ctrl;
   bool _initialized = false;
   String? _capturedPath;
@@ -1366,11 +1384,9 @@ class _InlineDocScannerState extends State<_InlineDocScanner>
       (c) => c.lensDirection == CameraLensDirection.back,
       orElse: () => cameras.first,
     );
-    // max, not high: takePicture() captures at the session preset, and at
-    // high (720p) the crop of the document frame lands ~485×306 px — too
-    // soft for OCR to read a single field. On iOS, max also enables
-    // high-resolution stills (~3024×4032, crop ~1527×962).
-    _ctrl = CameraController(rear, ResolutionPreset.max, enableAudio: false);
+    // See _capturePreset: max or the OCR crop comes back illegible —
+    // and on iOS the .max still path closes the app natively.
+    _ctrl = CameraController(rear, _capturePreset, enableAudio: false);
     try {
       await _ctrl!.initialize().timeout(const Duration(seconds: 5));
       await _ctrl!.setFlashMode(FlashMode.off);
@@ -1383,8 +1399,8 @@ class _InlineDocScannerState extends State<_InlineDocScanner>
       await Future.delayed(const Duration(milliseconds: 500));
       try {
         _ctrl?.dispose();
-        // Same as above: max or the OCR crop comes back illegible.
-        _ctrl = CameraController(rear, ResolutionPreset.max, enableAudio: false);
+        // Same preset as the first attempt — see _capturePreset.
+        _ctrl = CameraController(rear, _capturePreset, enableAudio: false);
         await _ctrl!.initialize().timeout(const Duration(seconds: 5));
         await _ctrl!.setFlashMode(FlashMode.off);
         if (mounted) {

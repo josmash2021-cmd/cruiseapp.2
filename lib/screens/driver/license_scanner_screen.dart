@@ -7,6 +7,7 @@ import '../../services/haptic_service.dart';
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../../l10n/app_localizations.dart';
+import '../../utils/app_platform.dart';
 
 /// Full-screen camera scanner with document-frame overlay and OCR.
 /// Detects text on the license to confirm a real document is present,
@@ -23,6 +24,24 @@ class LicenseScannerScreen extends StatefulWidget {
 class _LicenseScannerScreenState extends State<LicenseScannerScreen>
     with TickerProviderStateMixin {
   static const _gold = Color(0xFFE8C547);
+
+  /// Capture preset for the scanner.
+  ///
+  /// max, not high: takePicture() captures at the session preset, and at
+  /// high (720p) the crop of the licence frame lands ~485×306 px — too
+  /// soft for OCR to read.
+  ///
+  /// iOS runs ultraHigh (4K), NOT max. The plugin's `.max` branch overrides
+  /// the active format with the sensor's highest-resolution one AND sets
+  /// `isHighResolutionPhotoEnabled` on the still capture — on iOS 16+ that
+  /// capture raises a native NSException (hi-res stills need
+  /// `maxPhotoDimensions`, which the plugin never sets), so the app CLOSES
+  /// on the first 1.5 s scan tick. 4K stills leave the frame crop at
+  /// ~1940×1224 — comfortably OCR-legible — through the plain session-preset
+  /// path with no format override. Android keeps max: CameraX's fallback
+  /// chain has no such branch.
+  static ResolutionPreset get _capturePreset =>
+      AppPlatform.isIOS ? ResolutionPreset.ultraHigh : ResolutionPreset.max;
 
   CameraController? _ctrl;
   bool _initialized = false;
@@ -106,10 +125,9 @@ class _LicenseScannerScreenState extends State<LicenseScannerScreen>
       (c) => c.lensDirection == CameraLensDirection.back,
       orElse: () => cameras.first,
     );
-    // max, not high: takePicture() captures at the session preset, and at
-    // high (720p) the crop of the licence frame lands ~485×306 px — too
-    // soft for OCR to read. On iOS, max also enables high-resolution stills.
-    _ctrl = CameraController(rear, ResolutionPreset.max, enableAudio: false);
+    // See _capturePreset: max or the OCR crop comes back illegible —
+    // and on iOS the .max still path closes the app natively.
+    _ctrl = CameraController(rear, _capturePreset, enableAudio: false);
     try {
       await _ctrl!.initialize().timeout(const Duration(seconds: 5));
       await _ctrl!.setFlashMode(FlashMode.off);
@@ -125,8 +143,8 @@ class _LicenseScannerScreenState extends State<LicenseScannerScreen>
         _ctrl?.dispose();
         _ctrl = CameraController(
           rear,
-          // Same as above: max or the OCR crop comes back illegible.
-          ResolutionPreset.max,
+          // Same preset as the first attempt — see _capturePreset.
+          _capturePreset,
           enableAudio: false,
         );
         await _ctrl!.initialize().timeout(const Duration(seconds: 5));

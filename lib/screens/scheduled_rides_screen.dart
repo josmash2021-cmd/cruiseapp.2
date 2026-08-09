@@ -559,6 +559,9 @@ class _TripCardState extends State<_TripCard> with TickerProviderStateMixin {
   // â”€â”€ Mini map â”€â”€
   mapbox.MapboxMap? _mapCtrl;
   mapbox.PointAnnotationManager? _pointAnnotMgr;
+  // Flipped by onStyleLoaded — pins/route only attach once the style is
+  // up, or Mapbox renders its default blue markers instead of our pins.
+  bool _styleReady = false;
   mapbox.PolylineAnnotationManager? _polyAnnotMgr;
   mapbox.PolylineAnnotation? _routeAnnot;
   final List<mapbox.PointAnnotation> _markerAnnots = [];
@@ -661,7 +664,11 @@ class _TripCardState extends State<_TripCard> with TickerProviderStateMixin {
       await ctrl.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-anchor', 'bottom');
     } catch (_) {}
     _polyAnnotMgr = await ctrl.annotations.createPolylineAnnotationManager();
-    if (_hasCoords && mounted) _loadRouteAndAnimate();
+    // Only when the style is already up (warm recreation). Custom pin
+    // images attached BEFORE onStyleLoaded render as Mapbox's default
+    // blue markers — every screen whose pins look right places them
+    // after the style load, this one did it on map creation.
+    if (_hasCoords && mounted && _styleReady) _loadRouteAndAnimate();
   }
 
   Future<void> _loadRouteAndAnimate() async {
@@ -1281,6 +1288,13 @@ class _TripCardState extends State<_TripCard> with TickerProviderStateMixin {
             onStyleLoadedListener: (_) async {
               if (_mapCtrl != null) {
                 await MapTheme.applyNavyGold(_mapCtrl!);
+                _styleReady = true;
+                // Cold start: onMapCreated held the route+pins back until
+                // this moment. Managers exist by now in the normal order;
+                // if style beat them, onMapCreated's own gate covers it.
+                if (_hasCoords && mounted && _pointAnnotMgr != null) {
+                  _loadRouteAndAnimate();
+                }
                 if (_pointAnnotMgr != null) {
                   try {
                     await _mapCtrl!.style.setStyleLayerProperty(_pointAnnotMgr!.id, 'icon-pitch-alignment', 'viewport');

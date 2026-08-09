@@ -725,10 +725,12 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   // carries updateChaseFrame for whoever wants a driving view — the rider,
   // who is reading rather than steering, asked to see the whole route.
 
-  /// Phase the route framer is currently seeded for. A change means the
-  /// frame is about to become a different one (driver→pickup vs
-  /// driver→dropoff), so the smoothing is dropped and re-seeded.
-  _TrackPhase? _framedPhase;
+  /// Frame KIND the route framer is currently seeded for: 0 = approach
+  /// (driver→pickup), 1 = trip (either half — onTrip and nearDestination
+  /// share the same full-trip frame, so flipping between them must NOT
+  /// re-seed). A change means the frame is about to become a different one,
+  /// so the smoothing is dropped and re-seeded.
+  int? _framedPhaseKind;
 
   // No camera Ticker of its own: the chase camera runs on _interpTicker,
   // the same frame that moves the car. Two tickers writing to one platform

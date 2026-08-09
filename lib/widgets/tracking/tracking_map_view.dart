@@ -1011,13 +1011,16 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
       _mapCamera!.stopNavigationChase();
     }
 
-    // Each phase opens with its own fit. Without this the framer carried the
-    // smoothed centre and zoom across the phase flip: Start Trip arrived with
-    // the tight zoom the approach had ended on and the camera wrote it out
-    // before gliding — the jerk into a close-up the rider reported at the
-    // exact moment the trip begins.
-    if (_framedPhase != _phase) {
-      _framedPhase = _phase;
+    // Each frame KIND opens with its own fit — the approach and the trip,
+    // whose two halves (onTrip / nearDestination) share ONE frame:
+    // _tripFramePoints covers both. The old per-phase reset re-flew the
+    // camera to the same target every time the ETA crossed the 2-minute
+    // line, which in city traffic is every few GPS fixes — a flyTo every
+    // couple of seconds is exactly the "parpadeo" the rider reported, and
+    // it yanked the camera back while they dragged.
+    final frameKind = isOnTrip ? 1 : 0;
+    if (_framedPhaseKind != frameKind) {
+      _framedPhaseKind = frameKind;
       _mapCamera!.resetFollowFraming();
     }
 

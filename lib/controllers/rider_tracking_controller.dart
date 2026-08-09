@@ -725,10 +725,14 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
         // Fallback: 0.4 mi/min ≈ 24 mph average urban
         _etaMinutes = (_distanceMiles / 0.4).ceil().clamp(1, 999);
       }
-      // Transition to nearDestination when ETA <= 2 min
+      // Transition to nearDestination at ETA <= 2 min — with hysteresis:
+      // back to onTrip only at ETA >= 4. Without the gap a stoplight flips
+      // the phase every GPS fix (ETA 2↔3 min), and every flip used to reset
+      // the follow framing: a flyTo to the same target every couple of
+      // seconds, which is the "parpadeo" the rider reported.
       if (_etaMinutes <= 2 && _phase == _TrackPhase.onTrip) {
         _setState(() => _phase = _TrackPhase.nearDestination);
-      } else if (_etaMinutes > 2 && _phase == _TrackPhase.nearDestination) {
+      } else if (_etaMinutes >= 4 && _phase == _TrackPhase.nearDestination) {
         // Transition back if driver moved away (re-routing)
         _setState(() => _phase = _TrackPhase.onTrip);
       }

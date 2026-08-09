@@ -102,4 +102,35 @@ void main() {
           reason: 'a failed flyTo must un-seed so the next frame retries');
     });
   });
+
+  // Session 2026-08-09: the map flickered between two zooms every couple of
+  // seconds. Root cause: the ETA threshold at 2 minutes had no hysteresis,
+  // so city traffic flipped onTrip ↔ nearDestination every few GPS fixes,
+  // and the framer re-seeded (850 ms flyTo) on EVERY flip — even though
+  // both phases share the exact same frame points.
+  group('no camera reset on the onTrip/nearDestination flip', () {
+    test('the framer resets on frame-KIND changes, not per phase', () {
+      expect(view.contains('_framedPhaseKind'), isTrue,
+          reason: 'the framer must track the frame kind (approach vs trip), '
+              'not the exact phase — onTrip and nearDestination share one '
+              'frame, so flipping between them must not re-seed');
+      expect(view.contains('_framedPhase != _phase'), isFalse,
+          reason: 'per-phase reset re-flew the camera to the same target '
+              'every ETA flap — the 2-second parpadeo');
+    });
+
+    test('the 2-minute line has hysteresis', () {
+      final marker = ctrl.indexOf('_etaMinutes <= 2 && _phase == _TrackPhase.onTrip');
+      expect(marker, isNonNegative,
+          reason: 'enter nearDestination at ETA <= 2');
+      final window = ctrl.substring(marker, marker + 600);
+      expect(window.contains('_etaMinutes >= 4'), isTrue,
+          reason: 'exit must be >= 4, not > 2 — without the gap a '
+              'stoplight flips the phase every GPS fix and each flip used '
+              'to reset the follow framing (the flicker)');
+      expect(window.contains('_etaMinutes > 2 && _phase == _TrackPhase.nearDestination'),
+          isFalse,
+          reason: 'the bare > 2 exit is the flap');
+    });
+  });
 }

@@ -810,7 +810,7 @@ async def _send_offer_to_driver(
         _safe_create_task(_send_fcm_push_async(
             driver.fcm_token or "",
             title="New Ride Offer",
-            body="A rider needs a ride — open Cruise to accept.",
+            body="Open Cruise to accept.",
             data=push_data,
             is_offer=True,
         ))

@@ -1321,10 +1321,10 @@ class UnmatchedTripRetryAgent:
 
                 # Push — same one-place rule as dispatch: an iPhone with its
                 # Live Activity channels registered gets the island card and
-                # NO banner; everyone else gets the FCM heads-up. The body
-                # carries the numbers (fare · $/hr · mi · min), same as
-                # dispatch's offer push — the generic "open Cruise to accept"
-                # copy told the driver nothing worth waking up for.
+                # NO banner; everyone else gets the FCM heads-up. The banner
+                # copy is a bare "Open Cruise to accept." (user spec
+                # 2026-08-09) — miles/minutes ride in the data payload and on
+                # the island, never in the banner text.
                 minutes = int(trip.duration) if trip.duration else 0
                 miles = float(trip.distance) if trip.distance else 0.0
                 miles_str = f"{miles:.1f} mi" if miles > 0 else None
@@ -1354,7 +1354,7 @@ class UnmatchedTripRetryAgent:
                         _send_fcm_push(
                             assigned.fcm_token,
                             title="New Ride Offer",
-                            body="A rider needs a ride — open Cruise to accept.",
+                            body="Open Cruise to accept.",
                             data={"type": "new_offer", "trip_id": str(trip.id), "offer_id": str(offer.id)},
                             is_offer=True,
                         )

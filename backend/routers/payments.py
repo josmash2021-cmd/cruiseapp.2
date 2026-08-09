@@ -1265,7 +1265,17 @@ async def stripe_webhook(request: Request, db: AsyncSession = Depends(get_db)):
             try:
                 trip_r = await db.execute(select(Trip).where(Trip.id == int(trip_id)))
                 trip = trip_r.scalar_one_or_none()
-                if trip:
+                if trip and trip.payment_status == "paid":
+                    # A LATER failure must not un-pay a trip (2026-08-09): the
+                    # fare-shortfall off-session retry (kind=fare_shortfall)
+                    # fires payment_failed AFTER the fare itself was captured —
+                    # this used to flip the trip to "failed" and push the rider
+                    # a "Payment Failed" banner for a ride they had paid for.
+                    logging.info(
+                        "[Stripe Webhook] Trip %s already paid — ignoring payment_failed (pi=%s)",
+                        trip_id, intent.get("id", ""),
+                    )
+                elif trip:
                     trip.payment_status = "failed"
                     await db.commit()
                     logging.info("[Stripe Webhook] Trip %s marked as payment failed", trip_id)

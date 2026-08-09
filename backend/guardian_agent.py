@@ -347,18 +347,40 @@ class DataGuardian:
                         trip_id, status, created_at, rider_id,
                     )
 
-                    # Try to refund if the rider was charged/held. Best-effort:
-                    # if Stripe rejects, mark pending_refund so ops can follow up.
+                    # Settle the money the right way (2026-08-09): a HELD PI
+                    # is requires_capture — it has NO charge, so Refund.create
+                    # raises and the hold stayed pinned to the rider's card
+                    # for ~7 days. _release_or_capture_fee_on_cancel cancels
+                    # the PI instead (instant full release; the fee is 0 —
+                    # no driver ever joined). A genuinely PAID trip still
+                    # gets a real refund.
                     refunded = False
                     new_payment_status = pay_status
-                    if pi_id and pay_status in ("held", "paid"):
+                    from models.database import Trip
+                    from sqlalchemy import select as _select
+                    _trip_row = await session.execute(
+                        _select(Trip).where(Trip.id == trip_id)
+                    )
+                    _trip_obj = _trip_row.scalar_one_or_none()
+                    if _trip_obj is not None and pi_id and pay_status == "held":
+                        from routers.trips import _release_or_capture_fee_on_cancel
+                        new_payment_status = await _release_or_capture_fee_on_cancel(_trip_obj)
+                        logger.info(
+                            "[AutoCancel/Guardian] trip=%d hold released (payment_status=%s)",
+                            trip_id, new_payment_status,
+                        )
+                    elif pi_id and pay_status == "paid":
                         try:
                             from config import _HAS_STRIPE
                             import stripe as _stripe_mod
                             if _HAS_STRIPE:
-                                _stripe_mod.Refund.create(
-                                    payment_intent=pi_id,
-                                    reason="requested_by_customer",
+                                loop = asyncio.get_event_loop()
+                                await loop.run_in_executor(
+                                    None,
+                                    lambda: _stripe_mod.Refund.create(
+                                        payment_intent=pi_id,
+                                        reason="requested_by_customer",
+                                    ),
                                 )
                                 refunded = True
                                 new_payment_status = "refunded"
@@ -399,12 +421,6 @@ class DataGuardian:
                     # Notify guest (web booking) via email + SMS.
                     # Rider-app bookings are notified via Firestore listener.
                     try:
-                        from models.database import Trip
-                        from sqlalchemy import select as _select
-                        _trip_row = await session.execute(
-                            _select(Trip).where(Trip.id == trip_id)
-                        )
-                        _trip_obj = _trip_row.scalar_one_or_none()
                         if _trip_obj and (getattr(_trip_obj, "guest_email", None) or getattr(_trip_obj, "guest_phone", None)):
                             try:
                                 from services.email_service import email_guest_no_driver
@@ -434,7 +450,8 @@ class DataGuardian:
                 # After scheduled_at passes, the reminder loop in main.py
                 # catches any remaining driver-assigned-but-no-pickup cases.
                 sched_result = await session.execute(text("""
-                    SELECT t.id, t.status, t.scheduled_at, t.rider_id
+                    SELECT t.id, t.status, t.scheduled_at, t.rider_id,
+                           t.payment_status, t.stripe_payment_intent_id
                     FROM trips t
                     WHERE t.status IN ('scheduled', 'requested')
                       AND t.scheduled_at IS NOT NULL
@@ -445,19 +462,37 @@ class DataGuardian:
                 sched_stuck = sched_result.fetchall()
 
                 for row in sched_stuck:
-                    trip_id, status, scheduled_at, rider_id = row
+                    trip_id, status, scheduled_at, rider_id, pay_status, pi_id = row
                     logger.warning(
                         "[AutoCancel/Guardian] SCHEDULED trip=%d prev_status=%r "
                         "scheduled_at=%s rider=%s (<=30 min window, no driver) — auto-cancel",
                         trip_id, status, scheduled_at, rider_id,
                     )
+                    # The docstring's promise, kept (2026-08-09): release the
+                    # hold BEFORE writing the cancel, and TELL the rider —
+                    # this used to cancel silently with the money pinned to
+                    # their card for a week.
+                    new_pay = pay_status
+                    from models.database import Trip, User
+                    from sqlalchemy import select as _select
+                    _t = (await session.execute(
+                        _select(Trip).where(Trip.id == trip_id)
+                    )).scalar_one_or_none()
+                    if _t is not None and pi_id and pay_status == "held":
+                        from routers.trips import _release_or_capture_fee_on_cancel
+                        new_pay = await _release_or_capture_fee_on_cancel(_t)
+                        logger.info(
+                            "[AutoCancel/Guardian] scheduled trip=%d hold released (payment_status=%s)",
+                            trip_id, new_pay,
+                        )
                     await session.execute(text("""
                         UPDATE trips
                         SET status = 'cancelled',
                             cancel_reason = 'auto:scheduled_no_driver_30min',
+                            payment_status = :pay_status,
                             updated_at = NOW()
                         WHERE id = :trip_id
-                    """), {"trip_id": trip_id})
+                    """), {"trip_id": trip_id, "pay_status": new_pay})
                     self._trips_fixed += 1
                     try:
                         from config import _HAS_FIRESTORE, firestore_sync
@@ -467,9 +502,28 @@ class DataGuardian:
                                 status="cancelled",
                                 cancel_reason="auto:scheduled_no_driver_30min",
                                 cancelled_by="system",
+                                payment_status=new_pay,
                             )
                     except Exception as fs_err:
                         logger.error(f"Firestore sync for scheduled trip {trip_id} failed: {fs_err}")
+                    # The push the docstring always promised the rider.
+                    try:
+                        _r = (await session.execute(
+                            _select(User).where(User.id == rider_id)
+                        )).scalar_one_or_none()
+                        if _r and _r.fcm_token:
+                            from services.fcm_service import _send_fcm_push
+                            _send_fcm_push(
+                                _r.fcm_token,
+                                title="Scheduled ride cancelled",
+                                body="We couldn't find a driver for your scheduled ride. You were not charged.",
+                                data={"type": "scheduled_cancelled", "trip_id": str(trip_id)},
+                            )
+                    except Exception as _fcm_err:
+                        logger.warning(
+                            "[AutoCancel/Guardian] scheduled-cancel push failed for trip=%d: %s",
+                            trip_id, _fcm_err,
+                        )
 
                 if sched_stuck:
                     await session.commit()
@@ -480,7 +534,8 @@ class DataGuardian:
                 # 180 min (not 60) because driver location goes to Firebase RTDB,
                 # so SQL updated_at only changes on status transitions.
                 ghost_result = await session.execute(text("""
-                    SELECT t.id, t.status, t.driver_id, t.updated_at
+                    SELECT t.id, t.status, t.driver_id, t.updated_at,
+                           t.payment_status, t.stripe_payment_intent_id
                     FROM trips t
                     WHERE t.status IN ('driver_en_route', 'arrived', 'in_trip')
                     AND t.updated_at < NOW() - INTERVAL '180 minutes'
@@ -488,17 +543,30 @@ class DataGuardian:
                 ghosts = ghost_result.fetchall()
 
                 for row in ghosts:
-                    trip_id, status, driver_id, updated_at = row
+                    trip_id, status, driver_id, updated_at, pay_status, pi_id = row
                     logger.warning(
                         "[AutoCancel/Guardian-Ghost] trip=%d prev_status=%r driver=%s "
                         "updated_at=%s (180+ min no update) — auto-cancel",
                         trip_id, status, driver_id, updated_at,
                     )
+                    # Same rule as every other cancel path (2026-08-09): settle
+                    # the hold before writing the cancel. Fee stays 0 — a
+                    # crashed driver app is not the rider's fault.
+                    new_pay = pay_status
+                    from models.database import Trip
+                    from sqlalchemy import select as _select
+                    _t = (await session.execute(
+                        _select(Trip).where(Trip.id == trip_id)
+                    )).scalar_one_or_none()
+                    if _t is not None and pi_id and pay_status == "held":
+                        from routers.trips import _release_or_capture_fee_on_cancel
+                        new_pay = await _release_or_capture_fee_on_cancel(_t)
                     await session.execute(text("""
                         UPDATE trips
-                        SET status = 'cancelled', cancel_reason = 'auto:guardian_ghost_stale'
+                        SET status = 'cancelled', cancel_reason = 'auto:guardian_ghost_stale',
+                            payment_status = :pay_status
                         WHERE id = :trip_id
-                    """), {"trip_id": trip_id})
+                    """), {"trip_id": trip_id, "pay_status": new_pay})
                     self._trips_fixed += 1
                     try:
                         from config import _HAS_FIRESTORE, firestore_sync
@@ -508,6 +576,7 @@ class DataGuardian:
                                 status="cancelled",
                                 cancel_reason="ghost_stale_no_update",
                                 cancelled_by="system",
+                                payment_status=new_pay,
                             )
                     except Exception as fs_err:
                         logger.error(f"Firestore sync for ghost trip {trip_id} failed: {fs_err}")
@@ -813,7 +882,10 @@ class PaymentMonitor:
         async with self._db_session_maker() as db:
             result = await db.execute(
                 select(Trip).where(
-                    Trip.payment_status == "authorized",
+                    # "held" — nothing in the codebase ever writes
+                    # "authorized", which is why this sweep never found a
+                    # single trip (2026-08-09).
+                    Trip.payment_status == "held",
                     Trip.stripe_payment_intent_id.isnot(None),
                     Trip.created_at < cutoff,
                 )
@@ -1098,6 +1170,34 @@ class DispatchTimeoutAgent:
                     "[DispatchTimeoutAgent] Offer %d expired (trip %d) -- no driver accepted in %ds",
                     offer.id, offer.trip_id, self.TIMEOUT_SECS
                 )
+                # Un-orphan the trip (2026-08-09): offers created OUTSIDE the
+                # cascade (the scheduled dispatcher in main.py and
+                # UnmatchedTripRetryAgent both insert DispatchOffer directly)
+                # leave the trip in 'requested' with a driver_id that never
+                # answers — and every retry/cancel path requires driver_id IS
+                # NULL, so the trip sat there forever with the hold pinned.
+                # Hand it back to the retry agent, which re-dispatches
+                # requested + driver_id NULL + no pending offers every 15 s.
+                trip = await db.get(Trip, offer.trip_id)
+                if (trip is not None and trip.status == "requested"
+                        and trip.driver_id is not None):
+                    from sqlalchemy import and_, func
+                    pending_cnt = (await db.execute(
+                        select(func.count()).select_from(DispatchOffer).where(
+                            and_(
+                                DispatchOffer.trip_id == offer.trip_id,
+                                DispatchOffer.status == "pending",
+                                DispatchOffer.id != offer.id,
+                            )
+                        )
+                    )).scalar() or 0
+                    if pending_cnt == 0:
+                        logger.info(
+                            "[DispatchTimeoutAgent] trip %d handed back to retry "
+                            "(assigned driver never answered)",
+                            offer.trip_id,
+                        )
+                        trip.driver_id = None
                 # Notify the rider via SSE if possible
                 try:
                     from services.event_bus import event_bus

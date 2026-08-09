@@ -770,6 +770,24 @@ class _RideRequestScreenState extends State<RideRequestScreen>
   @override
   void initState() {
     super.initState();
+    // Seed the last-known camera from the SAME values the MapWidget boots
+    // from (2026-08-09, build 573 report). _lastCam* is otherwise null until
+    // the first onCameraChange event — and if that listener does not fire
+    // for user gestures on iOS, it stays null forever. Any platform-view
+    // recreation (cold start: covers and transitions still settling) then
+    // boots from the handoff seed instead of the live frame: the rider
+    // drags the picker to a street and the map snaps back to the seed
+    // address. Seeded here, a recreation before any camera event boots
+    // where the map already is (invisible) and a recreation after a drag
+    // boots where the rider left it.
+    if (widget.handoffLat != null && widget.handoffLng != null) {
+      _lastCamCenter = LatLng(widget.handoffLat!, widget.handoffLng!);
+    } else if (_center != null) {
+      _lastCamCenter = _center;
+    }
+    _lastCamZoom = widget.handoffZoom ?? 15.5;
+    _lastCamPitch = widget.handoffPitch ?? 45.0;
+    _lastCamBearing = widget.handoffBearing ?? 0.0;
     unawaited(_acquireMapSurface());
 
     // Restore the method the rider chose to keep, if they ever chose one.

@@ -77,6 +77,22 @@ void main() {
                 'map boots stale');
       }
     });
+
+    test('_lastCam* is seeded from the boot frame in initState', () {
+      // Build 573 report: the fields were null until the first camera event
+      // (and null forever if iOS never fires it for gestures), so any
+      // platform-view recreation booted at the handoff seed — the picker
+      // snapped back to the seed address mid-drag.
+      final start = src.indexOf('void initState() {');
+      final body = src.substring(start, start + 1800);
+      expect(body.contains('_lastCamCenter = LatLng(widget.handoffLat!, widget.handoffLng!)'),
+          isTrue,
+          reason: 'without the seed, a recreation before the first camera '
+              'event boots at the handoff/GPS seed — the snap the rider '
+              'keeps reporting');
+      expect(body.contains('_lastCamPitch = widget.handoffPitch ?? 45.0'), isTrue,
+          reason: 'the boot uses the same fallbacks as cameraOptions');
+    });
   });
 
   group('GPS camera writes stay gated', () {

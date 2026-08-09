@@ -423,7 +423,10 @@ extension _RideRequestController on _RideRequestScreenState {
         if (!mounted) return;
         _setState(() {
           _userLocation = center;
-          _center = center;
+          // In picker mode the map MUST stay on the chosen address (handoff);
+          // overwriting _center with the rider's live GPS makes any later
+          // platform-view recreation boot on their own location instead.
+          if (!widget.pickerMode) _center = center;
           _fetchingLocation = false;
         });
         // Browser geolocation can take seconds (permission prompt) — by
@@ -507,7 +510,8 @@ extension _RideRequestController on _RideRequestScreenState {
           final lastLl = LatLng(lastPos.latitude, lastPos.longitude);
           _setState(() {
             _userLocation = lastLl;
-            _center = lastLl;
+            // Never let a cached GPS fix replace the picker's handoff center.
+            if (!widget.pickerMode) _center = lastLl;
           });
           // Same guard the web branch carries: with a route on screen the
           // camera belongs to the cinematic/route frame, and once the rider
@@ -551,7 +555,8 @@ extension _RideRequestController on _RideRequestScreenState {
       final ll = LatLng(pos.latitude, pos.longitude);
       _setState(() {
         _userLocation = ll;
-        _center = ll;
+        // Picker mode keeps the address the rider is editing, not their GPS.
+        if (!widget.pickerMode) _center = ll;
         _fetchingLocation = false;
       });
       // A cold high-accuracy fix can take up to 10 s: by then the cinematic

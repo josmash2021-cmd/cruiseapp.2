@@ -2368,6 +2368,16 @@ async def web_booking_chat_post(booking_id: int, request: Request, db: AsyncSess
     db.add(msg)
     await db.commit()
     await db.refresh(msg)
+    # Realtime Database mirror — THE channel the driver's chat actually reads
+    # for a trip (chats/{tripId}/messages); the REST poll below is only its
+    # fallback. Without this the driver got the push and an empty thread.
+    try:
+        if _HAS_FIRESTORE and firestore_sync:
+            _safe_create_task(asyncio.to_thread(
+                firestore_sync.send_chat_message_rtdb,
+                booking_id, trip.rider_id, "rider", msg_text))
+    except Exception as _rtdb_err:
+        logging.warning("[WebChat] RTDB mirror failed for trip %d: %s", booking_id, _rtdb_err)
     # Socket.IO instant broadcast — the driver app listens on trip:{id} and
     # renders the bubble in <100ms. Without this the driver only saw the
     # message on its next poll, which is why web chat felt delayed.

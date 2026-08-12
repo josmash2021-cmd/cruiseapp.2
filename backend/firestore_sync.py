@@ -1036,6 +1036,52 @@ def sync_trip_route_change(trip_id: int, *, stops=None, dropoff=None,
         log.error("❌ Route-change sync failed for %d: %s", trip_id, e)
 
 
+_RTDB_URL = os.getenv("FIREBASE_DATABASE_URL",
+                      "https://cruise-af9f1-default-rtdb.firebaseio.com")
+
+
+def send_chat_message_rtdb(trip_id: int, sender_id: int, sender_role: str, text: str) -> bool:
+    """Mirror a trip chat message into the Realtime Database (2026-08-12).
+
+    Both apps read a trip conversation from `chats/{tripId}/messages` over
+    RTDB and only fall back to the REST poll if that stream errors. A message
+    written only to Postgres — which is all the website used to do — was
+    therefore invisible to the driver: they saw the push notification and
+    nothing in the thread. Same node and same shape the app writes
+    (senderId / senderRole / text / timestamp / read), so the bubble lands in
+    the existing UI with no app release.
+    """
+    _ensure_init()
+    try:
+        firebase_admin.get_app()
+    except Exception:
+        log.warning("⚠️  RTDB chat mirror skipped: no Firebase app")
+        return False
+    try:
+        from firebase_admin import db as _rtdb
+    except Exception as e:
+        log.error("❌ RTDB import failed: %s", e)
+        return False
+    now_ms = int(time.time() * 1000)
+    try:
+        _rtdb.reference(f"chats/{trip_id}/messages", url=_RTDB_URL).push({
+            "senderId": str(sender_id),
+            "senderRole": sender_role,
+            "text": text,
+            "timestamp": now_ms,
+            "read": False,
+        })
+        _rtdb.reference(f"chats/{trip_id}", url=_RTDB_URL).update({
+            "lastMessage": text,
+            "lastTimestamp": now_ms,
+        })
+        log.info("💬 Chat mirrored to RTDB chats/%s (%s)", trip_id, sender_role)
+        return True
+    except Exception as e:
+        log.error("❌ RTDB chat mirror failed for trip %s: %s", trip_id, e)
+        return False
+
+
 def sync_rider_confirmed_pickup(trip_id: int) -> bool:
     """The rider confirmed they are physically with the driver (2026-08-12).
 

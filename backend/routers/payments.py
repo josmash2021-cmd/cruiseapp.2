@@ -2535,6 +2535,152 @@ async def web_booking_cancel(booking_id: int, request: Request, db: AsyncSession
     }
 
 
+# ── Web route changes (2026-08-12): mirrors /trips/{id}/stops and
+#    /trips/{id}/destination from routers/trips.py, but authenticated the
+#    web way (origin + WEB_CHECKOUT_KEY) like the other /bookings/web/*.
+#    The extra/new fare comes from the client's anchored math (same table
+#    as the app: stop_pricing.dart) and is clamped to the same honest
+#    bands the app endpoints enforce.
+
+_WEB_ROUTE_CHANGE_STATUSES = ("accepted", "driver_en_route", "arrived", "in_trip")
+
+
+async def _web_notify_driver_route_change(db, trip, title: str, body_text: str):
+    """FCM to the driver — same banner the app's route-change endpoints send."""
+    if not trip.driver_id:
+        return
+    try:
+        drv = (await db.execute(select(User).where(User.id == trip.driver_id))).scalar_one_or_none()
+        if drv and drv.fcm_token:
+            _send_fcm_push(
+                drv.fcm_token,
+                title=title,
+                body=body_text,
+                data={"type": "route_change", "trip_id": str(trip.id)},
+            )
+    except Exception as _fcm_err:
+        logging.warning("[WebStops] FCM failed for trip %d: %s", trip.id, _fcm_err)
+
+
+@router.post("/bookings/web/{booking_id}/stops")
+async def web_booking_add_stop(booking_id: int, request: Request, db: AsyncSession = Depends(get_db)):
+    """Add ONE stop to a web-booked trip (one per trip, like the app)."""
+    _verify_web_origin(request)
+    _web_key_check(request)
+    body = await request.json()
+    try:
+        lat = float(body.get("lat"))
+        lng = float(body.get("lng"))
+        extra = int(body.get("extra_cents"))
+    except (TypeError, ValueError):
+        raise HTTPException(400, "lat, lng and extra_cents are required")
+    label = str(body.get("label") or "").strip()[:200]
+    if not (-90.0 <= lat <= 90.0 and -180.0 <= lng <= 180.0):
+        raise HTTPException(400, "Invalid coordinates")
+
+    r = await db.execute(select(Trip).where(Trip.id == booking_id).with_for_update())
+    trip = r.scalar_one_or_none()
+    if not trip:
+        raise HTTPException(404, "Booking not found")
+    if (trip.status or "") not in _WEB_ROUTE_CHANGE_STATUSES:
+        raise HTTPException(409, f"Trip cannot add a stop from status {trip.status}")
+    existing = []
+    if trip.stops:
+        try:
+            existing = json.loads(trip.stops) or []
+        except Exception:
+            existing = []
+    if existing:
+        raise HTTPException(409, "Trip already has a stop (one per trip)")
+
+    # Money band: floor at the $2.50 stop fee, cap at $200 of extra —
+    # outside that the client math is broken, not the road.
+    if extra < 250:
+        extra = 250
+    if extra > 20000:
+        raise HTTPException(400, "Stop extra out of range")
+
+    stop = {
+        "lat": lat,
+        "lng": lng,
+        "label": label,
+        "extra_cents": extra,
+        "added_at": datetime.now(timezone.utc).isoformat(),
+    }
+    trip.stops = json.dumps([stop])
+    trip.fare = round((trip.fare or 0.0) + extra / 100.0, 2)
+    await db.commit()
+
+    if _HAS_FIRESTORE and firestore_sync:
+        try:
+            firestore_sync.sync_trip_route_change(
+                trip.id, stops=[stop], fare=trip.fare, change_type="stop_added")
+        except Exception as e:
+            logging.error("[WebStops] Firestore sync failed for %s: %s", trip.id, e)
+    await _web_notify_driver_route_change(
+        db, trip, "New stop added",
+        label or "The rider added a stop — open Cruise")
+    logging.info("[WebStops] Trip %s: stop added (+$%.2f) via web", trip.id, extra / 100.0)
+    return {"status": "ok", "stops": [stop], "fare": trip.fare}
+
+
+@router.post("/bookings/web/{booking_id}/destination")
+async def web_booking_change_destination(booking_id: int, request: Request, db: AsyncSession = Depends(get_db)):
+    """Change the destination of a web-booked trip. The client sends the
+    SIGNED fare delta in cents (negative when the new drop-off is closer)."""
+    _verify_web_origin(request)
+    _web_key_check(request)
+    body = await request.json()
+    try:
+        lat = float(body.get("lat"))
+        lng = float(body.get("lng"))
+    except (TypeError, ValueError):
+        raise HTTPException(400, "lat and lng are required")
+    label = str(body.get("label") or "").strip()[:300]
+    if not (-90.0 <= lat <= 90.0 and -180.0 <= lng <= 180.0):
+        raise HTTPException(400, "Invalid coordinates")
+    try:
+        delta = int(body.get("extra_cents"))
+    except (TypeError, ValueError):
+        delta = None
+
+    r = await db.execute(select(Trip).where(Trip.id == booking_id).with_for_update())
+    trip = r.scalar_one_or_none()
+    if not trip:
+        raise HTTPException(404, "Booking not found")
+    if (trip.status or "") not in _WEB_ROUTE_CHANGE_STATUSES:
+        raise HTTPException(409, f"Trip cannot change destination from status {trip.status}")
+
+    trip.dropoff_lat = lat
+    trip.dropoff_lng = lng
+    if label:
+        trip.dropoff_address = label
+    if delta is not None:
+        # Same honest band every fare in this codebase lives in.
+        if not (-20000 <= delta <= 20000):
+            raise HTTPException(400, "Fare delta out of range")
+        new_fare = round((trip.fare or 0.0) + delta / 100.0, 2)
+        if not (3.0 <= new_fare <= 500.0):
+            raise HTTPException(400, "Fare out of range")
+        trip.fare = new_fare
+    await db.commit()
+
+    if _HAS_FIRESTORE and firestore_sync:
+        try:
+            firestore_sync.sync_trip_route_change(
+                trip.id,
+                dropoff={"lat": lat, "lng": lng, "label": trip.dropoff_address},
+                fare=trip.fare,
+                change_type="destination_changed")
+        except Exception as e:
+            logging.error("[WebStops] Firestore sync failed for %s: %s", trip.id, e)
+    await _web_notify_driver_route_change(
+        db, trip, "Destination changed",
+        trip.dropoff_address or "The rider changed the destination — open Cruise")
+    logging.info("[WebStops] Trip %s: destination changed via web", trip.id)
+    return {"status": "ok", "dropoff_address": trip.dropoff_address, "fare": trip.fare}
+
+
 # -------------------------------------------------------
 #  WEB AUTH — Register / Login / Social (for Shopify widget)
 #  Uses WEB_CHECKOUT_KEY instead of HMAC-based _verify_api_key

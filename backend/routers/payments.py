@@ -2364,6 +2364,21 @@ async def web_booking_chat_post(booking_id: int, request: Request, db: AsyncSess
     db.add(msg)
     await db.commit()
     await db.refresh(msg)
+    # Socket.IO instant broadcast — the driver app listens on trip:{id} and
+    # renders the bubble in <100ms. Without this the driver only saw the
+    # message on its next poll, which is why web chat felt delayed.
+    try:
+        from services.socketio_service import emit_chat_message
+        _safe_create_task(emit_chat_message(
+            trip_id=booking_id,
+            sender_id=trip.rider_id,
+            sender_role="rider",
+            message=msg_text,
+            timestamp=int(msg.created_at.timestamp() * 1000) if msg.created_at
+            else int(datetime.now(timezone.utc).timestamp() * 1000),
+        ))
+    except Exception as _sock_err:
+        logging.warning("[WebChat] socket emit failed for trip %d: %s", booking_id, _sock_err)
     # FCM push to driver so the chat bubble pops in the driver app
     try:
         drv_res = await db.execute(select(User).where(User.id == trip.driver_id))
@@ -2538,6 +2553,69 @@ async def web_booking_cancel(booking_id: int, request: Request, db: AsyncSession
         "payment_status": new_payment_status,
         "affected_drivers": len(affected_driver_ids),
     }
+
+
+@router.post("/bookings/web/{booking_id}/rate")
+async def web_booking_rate(booking_id: int, request: Request, db: AsyncSession = Depends(get_db)):
+    """Rate the driver of a finished web booking — the guest counterpart of
+    /trips/{id}/rate. Stars + optional comment only: a web guest has no saved
+    card on file, so there is nothing to charge a tip against and we do not
+    pretend otherwise."""
+    _verify_web_origin(request)
+    _web_key_check(request)
+    body = await request.json()
+    try:
+        stars = int(body.get("stars"))
+    except (TypeError, ValueError):
+        raise HTTPException(400, "stars is required")
+    if stars < 1 or stars > 5:
+        raise HTTPException(400, "Stars must be 1-5")
+    comment = str(body.get("comment") or "").strip()[:500]
+
+    r = await db.execute(select(Trip).where(Trip.id == booking_id))
+    trip = r.scalar_one_or_none()
+    if not trip:
+        raise HTTPException(404, "Booking not found")
+    if (trip.status or "").lower() not in ("completed", "cancelled", "canceled"):
+        raise HTTPException(400, "Trip must be completed before rating")
+    if not trip.driver_id:
+        raise HTTPException(400, "Cannot rate - no driver on this trip")
+    if not trip.rider_id:
+        raise HTTPException(500, "Trip has no rider_id")
+
+    # One rating per trip, same as the app endpoint.
+    dup = await db.execute(
+        select(Rating).where(Rating.trip_id == booking_id, Rating.from_user_id == trip.rider_id)
+    )
+    if dup.scalar_one_or_none():
+        return {"status": "ok", "already": True}
+
+    rating = Rating(
+        trip_id=booking_id,
+        from_user_id=trip.rider_id,
+        to_user_id=trip.driver_id,
+        stars=stars,
+        comment=comment or None,
+    )
+    db.add(rating)
+    await db.commit()
+
+    # Recompute the driver's average so the next rider sees it immediately.
+    try:
+        avg_res = await db.execute(
+            select(func.avg(Rating.stars)).where(Rating.to_user_id == trip.driver_id)
+        )
+        avg = avg_res.scalar()
+        if avg is not None:
+            drv = (await db.execute(select(User).where(User.id == trip.driver_id))).scalar_one_or_none()
+            if drv:
+                drv.average_rating = round(float(avg), 2)
+                await db.commit()
+    except Exception as _avg_err:
+        logging.warning("[WebRate] average recompute failed for trip %d: %s", booking_id, _avg_err)
+
+    logging.info("[WebRate] Trip %s rated %s stars from web", booking_id, stars)
+    return {"status": "ok", "stars": stars}
 
 
 # ── Web route changes (2026-08-12): mirrors /trips/{id}/stops and

@@ -912,6 +912,18 @@ class _RideRequestScreenState extends State<RideRequestScreen>
       TweenSequenceItem(tween: Tween(begin: -8.0, end: 0.0), weight: 1),
     ]).animate(_shakeCtrl);
 
+    // Enter the picker phase SYNCHRONOUSLY — before the state listener is
+    // wired and before the setPickup/setDropoff calls further down. Those
+    // fire _tryFetchRoute, whose "keep the picker phase" guard only holds
+    // if the phase already IS pickingLocation. The old post-frame-only
+    // entry left a pre-first-frame window in which the estimated route
+    // published phase=previewRoute: the typed-dropoff path (search passes
+    // BOTH endpoints) armed the route-preview machinery underneath the
+    // picker, and the first frame rendered the wrong UI. The post-frame
+    // call below stays as an idempotent backstop.
+    if (widget.pickerMode) {
+      _ctrl.startPickingLocation();
+    }
     _ctrl.addListener(_onStateChange);
     // Wire in scheduled/airport params from widget
     if (widget.isAirportTrip) {

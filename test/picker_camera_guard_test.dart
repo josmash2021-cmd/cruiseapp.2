@@ -27,6 +27,34 @@ void main() {
       expect(c.state.phase, RiderPhase.pickingLocation);
     });
 
+    test('picker mode enters pickingLocation synchronously in initState', () {
+      // The typed-dropoff path pushes the picker with BOTH endpoints, and
+      // initState calls setPickup/setDropoff → _tryFetchRoute. Its "keep
+      // the picker phase" guard only holds if the phase is ALREADY
+      // pickingLocation — a post-frame-only entry leaves a pre-first-frame
+      // window where the estimated route publishes phase=previewRoute and
+      // arms the route-preview machinery underneath the picker.
+      final src =
+          File('lib/screens/ride_request_screen.dart').readAsStringSync();
+      final start = src.indexOf('void initState() {');
+      expect(start, isNonNegative);
+      final body = src.substring(start);
+      final syncEntry = body.indexOf(
+          RegExp(r'if\s*\(\s*widget\.pickerMode\s*\)\s*\{\s*'
+              r'_ctrl\.startPickingLocation\(\);'));
+      final listener = body.indexOf('_ctrl.addListener(_onStateChange)');
+      final endpoints = body.indexOf('_ctrl.setPickup(');
+      expect(syncEntry, isNonNegative,
+          reason: 'initState must enter the picker phase synchronously in '
+              'picker mode');
+      expect(syncEntry, lessThan(listener),
+          reason: 'the phase entry must precede the state listener so the '
+              'flip itself cannot re-enter _onStateChange mid-initState');
+      expect(syncEntry, lessThan(endpoints),
+          reason: 'the phase entry must precede setPickup/setDropoff or '
+              '_tryFetchRoute publishes previewRoute under the picker');
+    });
+
     test('finishPickingLocation is the only exit, to previewRoute', () {
       final c = RiderTripController();
       c.startPickingLocation();

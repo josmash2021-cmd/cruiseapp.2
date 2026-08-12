@@ -19,7 +19,7 @@ from utils.security import (
 )
 from utils.helpers import _safe_create_task, _haversine, _abs_photo_url, _user_dict, _resolve_rider_display
 from services.fcm_service import _send_fcm_push
-from services import vehicle_tiers
+from services import vehicle_tiers, web_pricing
 from services.sms_service import notify_guest_welcome
 from services.email_service import email_guest_welcome, email_vip_drink_menu
 from routers.vip import generate_vip_menu_token
@@ -761,6 +761,180 @@ def _verify_web_origin(request: Request):
     if not origin and referer and not any(referer.startswith(o.strip()) for o in WEB_ALLOWED_ORIGINS):
         raise HTTPException(403, "Referer not allowed")
 
+
+# ─────────────────────────────────────────────────────────────────
+#  WEB QUOTES — the server prices the ride, the browser only shows it
+#
+#  book.html computes the fare in JavaScript, so the amount reaching
+#  /payments/web/* was whatever the page chose to send: edit it and the ride
+#  is authorized for less. /bookings/web/quote runs the same engine here,
+#  over a route this server fetched, and hands back a short-lived signed
+#  token. The payment endpoints accept the amount only with a token that
+#  matches it.
+# ─────────────────────────────────────────────────────────────────
+
+MAPBOX_TOKEN = os.getenv(
+    "MAPBOX_TOKEN",
+    "pk.eyJ1Ijoicm95YWxwdXJwbGVjb3JwIiwiYSI6ImNtbHk4cmpsNjExamwzZm9sOGFobXZoZTMifQ.YNkz-m3W7noKKDKbwn9y3w",
+)
+QUOTE_TTL_SECONDS = 30 * 60
+# Tip / rounding headroom: a rider may pay above the quote, never below.
+QUOTE_MAX_OVER_PCT = 1.20
+# Kill switch. "0" downgrades rejection to a logged warning — for use only if a
+# pricing bug starts refusing legitimate rides in production.
+WEB_PRICING_ENFORCE = os.getenv("WEB_PRICING_ENFORCE", "1").strip() not in ("0", "false", "no")
+
+
+def _quote_sign(payload: dict) -> str:
+    return jwt.encode({**payload, "typ": "web_quote"}, JWT_SECRET, algorithm=JWT_ALGORITHM)
+
+
+def _quote_decode(token: str) -> Optional[dict]:
+    """Return the quote claims, or None when the token is absent/invalid/expired."""
+    if not token or not isinstance(token, str):
+        return None
+    try:
+        claims = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+    except jwt.InvalidTokenError:
+        return None
+    if claims.get("typ") != "web_quote":
+        return None
+    return claims
+
+
+def _enforce_quote(amount: int, quote_token: Optional[str], where: str) -> None:
+    """Reject an amount the server did not quote.
+
+    Under-paying is always refused. Paying over the quote is allowed up to
+    QUOTE_MAX_OVER_PCT so a tip or a rounding difference never blocks a ride.
+    A missing token is refused too — otherwise dropping the field would be the
+    way around the check.
+    """
+    claims = _quote_decode(quote_token or "")
+    if claims is None:
+        msg = "no valid quote" if quote_token else "quote missing"
+        if not WEB_PRICING_ENFORCE:
+            logging.error("[WebPricing] %s: %s — ALLOWED (WEB_PRICING_ENFORCE=0), amount=%s", where, msg, amount)
+            return
+        logging.warning("[WebPricing] %s rejected: %s (amount=%s)", where, msg, amount)
+        raise HTTPException(400, "Price could not be verified. Please refresh and try again.")
+    quoted = int(claims.get("cents") or 0)
+    if quoted <= 0 or amount < quoted or amount > int(quoted * QUOTE_MAX_OVER_PCT):
+        if not WEB_PRICING_ENFORCE:
+            logging.error("[WebPricing] %s: amount=%s vs quote=%s — ALLOWED (WEB_PRICING_ENFORCE=0)", where, amount, quoted)
+            return
+        logging.warning("[WebPricing] %s rejected: amount=%s does not match quote=%s", where, amount, quoted)
+        raise HTTPException(400, "The price changed. Please refresh and try again.")
+
+
+async def _mapbox_route(p_lat: float, p_lng: float, d_lat: float, d_lng: float):
+    """Driving distance (m) and duration (s) between two points, or None."""
+    import httpx
+    url = (
+        f"https://api.mapbox.com/directions/v5/mapbox/driving/"
+        f"{p_lng},{p_lat};{d_lng},{d_lat}"
+        f"?overview=false&access_token={MAPBOX_TOKEN}"
+    )
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            r = await client.get(url)
+        if r.status_code != 200:
+            logging.warning("[WebQuote] Mapbox HTTP %s", r.status_code)
+            return None
+        routes = (r.json() or {}).get("routes") or []
+        if not routes:
+            return None
+        return float(routes[0].get("distance") or 0), float(routes[0].get("duration") or 0)
+    except Exception as e:
+        logging.warning("[WebQuote] Mapbox call failed: %s", e)
+        return None
+
+
+@router.post("/bookings/web/quote")
+async def web_quote(request: Request):
+    """Price a website ride and return a signed quote.
+
+    Body: {pickup:{lat,lng}, dropoff:{lat,lng}, vehicle_type, mode:'ride'|'hourly',
+           hours, is_airport, airport_code}
+    Returns every tier's price (the page shows four cards) plus a token per
+    tier; the page sends back the token for whichever the rider picks.
+    """
+    _verify_web_origin(request)
+    client_ip = request.client.host if request.client else "unknown"
+    if _check_web_rate_limit(client_ip):
+        raise HTTPException(429, "Too many requests — try again in a minute")
+    _web_key_check(request)
+
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(400, "Invalid JSON body")
+    if not isinstance(body, dict):
+        raise HTTPException(400, "Body must be an object")
+
+    mode = (body.get("mode") or "ride").lower()
+    airport_code = body.get("airport_code")
+    is_airport = bool(body.get("is_airport"))
+    now = int(time.time())
+    tiers = list(web_pricing.TIERS.keys())
+    out = {"mode": mode, "expires_in": QUOTE_TTL_SECONDS, "tiers": {}}
+
+    if mode == "hourly":
+        hours = body.get("hours") or 0
+        for tier in tiers:
+            cents = web_pricing.total_cents(
+                tier, hours=hours, mode="hourly",
+                airport_code=airport_code, is_airport=is_airport,
+            )
+            if cents <= 0:
+                continue
+            out["tiers"][tier] = {
+                "cents": cents,
+                "quote_token": _quote_sign({
+                    "cents": cents, "tier": tier, "mode": "hourly",
+                    "iat": now, "exp": now + QUOTE_TTL_SECONDS,
+                }),
+            }
+        if not out["tiers"]:
+            raise HTTPException(400, "Invalid hours for an hourly booking")
+        return out
+
+    pickup = body.get("pickup") or {}
+    dropoff = body.get("dropoff") or {}
+    try:
+        p_lat, p_lng = float(pickup.get("lat")), float(pickup.get("lng"))
+        d_lat, d_lng = float(dropoff.get("lat")), float(dropoff.get("lng"))
+    except (TypeError, ValueError):
+        raise HTTPException(400, "pickup and dropoff coordinates are required")
+
+    route = await _mapbox_route(p_lat, p_lng, d_lat, d_lng)
+    if not route:
+        raise HTTPException(503, "Could not calculate the route. Please try again.")
+    meters, seconds = route
+
+    for tier in tiers:
+        cents = web_pricing.total_cents(
+            tier, seconds=seconds, meters=meters, mode="ride",
+            airport_code=airport_code, is_airport=is_airport,
+        )
+        if cents <= 0:
+            continue
+        out["tiers"][tier] = {
+            "cents": cents,
+            "quote_token": _quote_sign({
+                "cents": cents, "tier": tier, "mode": "ride",
+                "mi": round(meters / web_pricing.METERS_PER_MILE, 2),
+                "min": round(seconds / 60.0),
+                "iat": now, "exp": now + QUOTE_TTL_SECONDS,
+            }),
+        }
+    if not out["tiers"]:
+        raise HTTPException(400, "Could not price this route")
+    out["distance_meters"] = round(meters)
+    out["duration_seconds"] = round(seconds)
+    return out
+
+
 @router.post("/payments/web/checkout")
 async def create_web_checkout(request: Request):
     """Create a Stripe Checkout Session for website payments."""
@@ -784,6 +958,7 @@ async def create_web_checkout(request: Request):
 
     if amount <= 0 or amount > 100000:
         raise HTTPException(400, "Invalid amount")
+    _enforce_quote(amount, body.get("quote_token"), "checkout")
 
     # Determine payment methods based on what the client selected
     pm_types = ["card"]
@@ -843,6 +1018,7 @@ async def create_web_payment_intent(request: Request):
 
     if amount <= 0 or amount > 100000:
         raise HTTPException(400, "Invalid amount")
+    _enforce_quote(amount, body.get("quote_token"), "create-intent")
 
     try:
         intent = _stripe_mod.PaymentIntent.create(
@@ -1603,6 +1779,44 @@ async def web_create_booking(request: Request, db: AsyncSession = Depends(get_db
     vehicle_type = (body.get("vehicle_type") or "comfort").lower()
     fare_cents = int(body.get("amount_cents", 0))
     payment_intent_id = body.get("payment_intent_id")
+    # trip.fare is what gets captured when the ride completes, so it must be a
+    # number this server stands behind. Prefer the signed quote; fall back to
+    # re-running the engine over a route we fetch ourselves. Only if both are
+    # unavailable do we keep the client's figure, and then it is logged.
+    _quote_claims = _quote_decode(body.get("quote_token") or "")
+    if _quote_claims and int(_quote_claims.get("cents") or 0) > 0:
+        _server_cents = int(_quote_claims["cents"])
+    else:
+        _server_cents = 0
+        _mode = (body.get("trip_type") or "ride").lower()
+        try:
+            if _mode == "hourly":
+                _server_cents = web_pricing.total_cents(
+                    vehicle_type, hours=body.get("hours") or 0, mode="hourly",
+                    airport_code=body.get("airport_code"), is_airport=bool(body.get("is_airport")),
+                )
+            elif pickup_lat and pickup_lng and dropoff_lat and dropoff_lng:
+                _r = await _mapbox_route(pickup_lat, pickup_lng, dropoff_lat, dropoff_lng)
+                if _r:
+                    _server_cents = web_pricing.total_cents(
+                        vehicle_type, seconds=_r[1], meters=_r[0], mode="ride",
+                        airport_code=body.get("airport_code"), is_airport=bool(body.get("is_airport")),
+                    )
+        except Exception as e:
+            logging.warning("[WebBooking] server-side repricing failed: %s", e)
+    if _server_cents > 0:
+        if fare_cents and fare_cents < _server_cents and WEB_PRICING_ENFORCE:
+            logging.warning(
+                "[WebBooking] rejected: client fare %s below server fare %s (%s)",
+                fare_cents, _server_cents, vehicle_type,
+            )
+            raise HTTPException(400, "The price changed. Please refresh and try again.")
+        if fare_cents != _server_cents:
+            logging.info("[WebBooking] fare %s → %s (server)", fare_cents, _server_cents)
+        # Never bill above the quote; a larger client figure is not a tip here.
+        fare_cents = _server_cents
+    else:
+        logging.warning("[WebBooking] could not reprice — keeping client fare %s", fare_cents)
     scheduled_date = body.get("scheduled_date")
     scheduled_time = body.get("scheduled_time")
     contact_name = body.get("contact_name") or "Web Booking"

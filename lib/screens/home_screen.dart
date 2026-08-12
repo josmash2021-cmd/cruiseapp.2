@@ -492,6 +492,14 @@ class _HomeScreenState extends State<HomeScreen>
         // removed map, throwing once a second from home underneath
         // whatever screen took the surface.
         _homeWebMapCtrl = null;
+        // The NATIVE handle is worse than a dead channel: pigeon channels
+        // are keyed by a recycled suffix, and MapboxMap.dispose() sets no
+        // disposed flag — after the picker mounts on the freed suffix, a
+        // kept _homeMiniMapCtrl writes setCamera(rider live GPS, zoom 15)
+        // once per dot frame INTO THE PICKER'S MAP. That was the "picker
+        // re-centers on me in an infinite loop, can't drag" bug: the GPS
+        // stream and dot ticker keep running while home is covered.
+        _homeMiniMapCtrl = null;
         setState(() => _miniMapSuspended = true);
         await surfaceRemoved();
       },
@@ -516,6 +524,7 @@ class _HomeScreenState extends State<HomeScreen>
         return;
       }
       _homeWebMapCtrl = null; // same stale-handle rule as onRevoke above
+      _homeMiniMapCtrl = null; // native handle too — see onRevoke comment
       setState(() => _miniMapSuspended = true);
       MapSurfaceCoordinator.instance.release(_mapSurfaceOwner);
     });
@@ -873,6 +882,13 @@ class _HomeScreenState extends State<HomeScreen>
   /// dot; the map only has to agree with it.
   void _recenterHomeMiniMap({Duration interval = Duration.zero}) {
     if (!mounted) return;
+    // NEVER write while the mini map is suspended (surface handed to
+    // another screen). The handle is nulled on revoke, but this guard is
+    // the belt to that suspender: a stale native handle here does not
+    // throw — pigeon suffixes get recycled, so the write lands on
+    // WHATEVER MAP NOW OWNS THE SUFFIX (the dropoff picker), re-centering
+    // it on the rider's live GPS once per dot frame.
+    if (_miniMapSuspended) return;
     final lat = _homeDot.lat ?? _currentLatLng?.latitude;
     final lng = _homeDot.lng ?? _currentLatLng?.longitude;
     if (lat == null || lng == null) return;

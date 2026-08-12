@@ -1554,7 +1554,10 @@ app.add_middleware(
     allow_origin_regex=_CORS_LOCALHOST_RE,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type", "X-Api-Key", "X-Timestamp", "X-Nonce", "X-Signature", "X-Device-FP", "X-Client-Version"],
+    # X-Web-Key is sent by the account pages on cruiseinride.com. Leaving it out
+    # failed the preflight, so every request from those pages was rejected by the
+    # browser before it reached an endpoint.
+    allow_headers=["Authorization", "Content-Type", "X-Api-Key", "X-Web-Key", "X-Timestamp", "X-Nonce", "X-Signature", "X-Device-FP", "X-Client-Version"],
 )
 
 

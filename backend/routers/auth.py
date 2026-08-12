@@ -1656,6 +1656,98 @@ async def web_get_chat(trip_id: int, request: Request, db: AsyncSession = Depend
 # dirname(routers/auth.py)/photos — /app/routers/photos — which is not the
 # directory anything serves from, so uploads landed where no reader looks.
 
+@router.post("/auth/web/photo")
+async def web_upload_photo(request: Request, db: AsyncSession = Depends(get_db)):
+    """Profile photo upload from cruiseinride.com — JWT only, no API key/HMAC.
+
+    /auth/photo cannot serve the website: it depends on _verify_api_key, which
+    requires the X-Timestamp/X-Nonce/X-Signature triple only the mobile app can
+    produce, so every upload from the browser came back 422. This is the same
+    upload wearing the /auth/web/* auth scheme, and it writes to the same
+    Firebase Storage path and syncs the same Firestore field, so a photo set
+    from the web shows up in the app and in dispatch.
+    """
+    try:
+        from routers.payments import _verify_web_origin as _vwo
+        _vwo(request)
+    except HTTPException:
+        raise
+    except Exception:
+        pass
+
+    auth = request.headers.get("authorization", "")
+    if not auth.startswith("Bearer "):
+        raise HTTPException(401, "Unauthorized")
+    token = auth.split(" ", 1)[1]
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        user_id = int(payload.get("sub", 0))
+    except (jwt.InvalidTokenError, ValueError):
+        raise HTTPException(401, "Invalid or expired token")
+    if not user_id:
+        raise HTTPException(401, "Invalid token")
+
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(400, "Invalid JSON body")
+    photo_b64 = body.get("photo") if isinstance(body, dict) else None
+    if not photo_b64 or not isinstance(photo_b64, str):
+        raise HTTPException(400, "Missing 'photo' field (base64)")
+    # canvas.toDataURL() hands the browser a "data:image/jpeg;base64,..." string;
+    # accept it rather than making every caller remember to strip the prefix.
+    if photo_b64.startswith("data:"):
+        photo_b64 = photo_b64.partition(",")[2]
+    if len(photo_b64) > 4 * 1024 * 1024:
+        raise HTTPException(413, "Photo data too large")
+    try:
+        photo_bytes = base64.b64decode(photo_b64, validate=True)
+    except Exception:
+        raise HTTPException(400, "Invalid base64 data")
+    if len(photo_bytes) > 3 * 1024 * 1024:
+        raise HTTPException(413, "Photo too large (max 3MB)")
+    if photo_bytes[:2] == b'\xff\xd8':
+        ext, content_type = "jpg", "image/jpeg"
+    elif photo_bytes[:8] == b'\x89PNG\r\n\x1a\n':
+        ext, content_type = "png", "image/png"
+    else:
+        raise HTTPException(400, "Unsupported image format (only JPEG and PNG)")
+    validate_image_bytes(photo_bytes)
+
+    result = await db.execute(select(User).where(User.id == user_id))
+    db_user = result.scalar_one_or_none()
+    if not db_user:
+        raise HTTPException(404, "User not found")
+
+    photo_url = None
+    if firestore_sync:
+        photo_url = firestore_sync.upload_to_firebase_storage(
+            photo_bytes, f"photos/user_{db_user.id}/profile.{ext}", content_type
+        )
+    if not photo_url:
+        raise HTTPException(503, "Photo storage unavailable. Please try again later.")
+
+    db_user.photo_url = photo_url
+    db_user.last_active_at = datetime.now(timezone.utc)
+    await db.commit()
+    await db.refresh(db_user)
+
+    try:
+        invalidate_user_cache(db_user.id)
+    except Exception:
+        pass
+
+    if _HAS_FIRESTORE:
+        try:
+            collection = "drivers" if db_user.role == "driver" else "clients"
+            firestore_sync.update_field(collection, db_user.id, "photoUrl", photo_url)
+        except Exception as e:
+            logging.error("[/auth/web/photo] Firestore sync failed: %s", e)
+
+    logging.info("[/auth/web/photo] user=%s photo updated", db_user.id)
+    return {"photo_url": photo_url}
+
+
 @router.post("/auth/photo", dependencies=[Depends(_verify_api_key)])
 async def upload_photo(request: Request, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
     """Upload profile photo as base64. Saves file and updates user's photo_url."""

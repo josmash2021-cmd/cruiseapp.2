@@ -2618,6 +2618,69 @@ async def web_booking_rate(booking_id: int, request: Request, db: AsyncSession =
     return {"status": "ok", "stars": stars}
 
 
+# ── Rider ↔ driver handshake at the pickup (2026-08-12) ────────────────
+#    The driver's screen sits on "Waiting for your rider" until the trip doc
+#    carries rider_confirmed_pickup; only then does the Start Trip slider
+#    unlock. In the app the rider writes that flag itself; a rider booking
+#    from cruiseinride.com has no Firebase session, so its "I'm with my
+#    driver" button lands here and we write the same flag on its behalf.
+
+_WEB_RIDER_CONFIRM_STATUSES = (
+    "accepted", "driver_assigned", "driver_en_route", "driver_enroute",
+    "arrived", "arrived_at_pickup", "arrived_pickup", "driver_arrived",
+)
+
+
+@router.post("/bookings/web/{booking_id}/rider-confirmed")
+async def web_booking_rider_confirmed(booking_id: int, request: Request, db: AsyncSession = Depends(get_db)):
+    """Rider confirms they are with the driver — unlocks the driver's Start Trip."""
+    _verify_web_origin(request)
+    _web_key_check(request)
+
+    r = await db.execute(select(Trip).where(Trip.id == booking_id))
+    trip = r.scalar_one_or_none()
+    if not trip:
+        raise HTTPException(404, "Booking not found")
+    raw = (trip.status or "").lower()
+    # Already rolling: the driver started without waiting for us. Nothing to
+    # unlock, and no reason to make the website show an error for it.
+    if raw in ("in_trip", "on_trip", "in_progress", "trip_started", "rider_onboard"):
+        return {"status": "ok", "already": True}
+    if raw not in _WEB_RIDER_CONFIRM_STATUSES:
+        raise HTTPException(409, f"Trip cannot be confirmed from status {trip.status}")
+    if not trip.driver_id:
+        raise HTTPException(409, "Trip has no driver yet")
+
+    synced = False
+    if _HAS_FIRESTORE and firestore_sync:
+        try:
+            synced = bool(firestore_sync.sync_rider_confirmed_pickup(trip.id))
+        except Exception as e:
+            logging.error("[WebRiderConfirm] Firestore sync failed for %s: %s", trip.id, e)
+
+    # Push as well: the flag alone only shows if the driver has the trip screen
+    # open. The banner is what gets them to look at the phone.
+    try:
+        drv = (await db.execute(select(User).where(User.id == trip.driver_id))).scalar_one_or_none()
+        if drv and drv.fcm_token:
+            _send_fcm_push(
+                drv.fcm_token,
+                title="Your rider is with you",
+                body="The rider confirmed they are in the car — you can start the trip.",
+                data={"type": "rider_confirmed_pickup", "trip_id": str(trip.id)},
+            )
+    except Exception as _fcm_err:
+        logging.warning("[WebRiderConfirm] FCM failed for trip %d: %s", trip.id, _fcm_err)
+
+    logging.info("[WebRiderConfirm] Trip %s: rider confirmed pickup from web (synced=%s)",
+                 trip.id, synced)
+    if not synced:
+        # Without the Firestore write the driver never sees it — say so, so the
+        # website can fall back to the chat message instead of lying to the rider.
+        raise HTTPException(503, "Could not notify the driver")
+    return {"status": "ok", "synced": True}
+
+
 # ── Web route changes (2026-08-12): mirrors /trips/{id}/stops and
 #    /trips/{id}/destination from routers/trips.py, but authenticated the
 #    web way (origin + WEB_CHECKOUT_KEY) like the other /bookings/web/*.

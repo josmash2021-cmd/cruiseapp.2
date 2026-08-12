@@ -1036,6 +1036,29 @@ def sync_trip_route_change(trip_id: int, *, stops=None, dropoff=None,
         log.error("❌ Route-change sync failed for %d: %s", trip_id, e)
 
 
+def sync_rider_confirmed_pickup(trip_id: int) -> bool:
+    """The rider confirmed they are physically with the driver (2026-08-12).
+
+    In the app the rider's own screen writes this flag straight to Firestore;
+    a rider booking from cruiseinride.com has no Firebase session, so the web
+    endpoint writes it here instead. Same doc, same field: the driver's
+    snapshot listener fires the moment this merge lands and swaps
+    "Waiting for your rider" for the Start Trip slider — no polling in between.
+    Returns True when the write landed, so the caller can fall back to chat."""
+    _ensure_init()
+    if _db is None:
+        return False
+    data = {"rider_confirmed_pickup": True, "confirmed_at": _ts()}
+    try:
+        _retry_sync(lambda: _db.collection("trips").document(f"sql_{trip_id}")
+                    .set(data, merge=True, timeout=_FS_TIMEOUT))
+        log.info("🔄 Synced rider_confirmed_pickup sql_%d", trip_id)
+        return True
+    except Exception as e:
+        log.error("❌ rider_confirmed_pickup sync failed for %d: %s", trip_id, e)
+        return False
+
+
 def sync_trip_released(trip_id: int):
     """Put a trip back in the dispatch queue and strip its driver.
 

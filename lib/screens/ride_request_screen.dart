@@ -1322,28 +1322,32 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                   // "snap back to my location" was exactly that reset. With
                   // the last known frame as the boot frame, a rebuild is
                   // invisible no matter what causes it.
+                  //
+                  // Picker mode goes through the SAME chain (2026-08-11).
+                  // Build 575 special-cased it to the handoff seed, which
+                  // re-opened the cold-start bug the chain exists to close:
+                  // every recreation UNDID the rider's drag and re-centered
+                  // the pin on the seed — for "Choose on map" the seed is
+                  // the rider's own location, hence "the pin keeps snapping
+                  // to me and only right after app open" (recreations are a
+                  // cold-start thing; a warm session has none). The fear
+                  // behind 575 — GPS leaking into the boot frame — is now
+                  // structurally impossible: initState seeds _lastCam* from
+                  // the handoff, onCameraChange feeds it real frames only,
+                  // and in picker mode GPS never writes _center (1870dfeb)
+                  // nor the camera (_gpsMayMoveCamera hard-closes).
                   cameraOptions: mapbox.CameraOptions(
                     center: mapbox.Point(
                       coordinates: mapbox.Position(
-                        widget.pickerMode
-                            ? (widget.handoffLng ?? _center!.longitude)
-                            : (_lastCamCenter?.longitude ??
-                                widget.handoffLng ?? _center!.longitude),
-                        widget.pickerMode
-                            ? (widget.handoffLat ?? _center!.latitude)
-                            : (_lastCamCenter?.latitude ??
-                                widget.handoffLat ?? _center!.latitude),
+                        _lastCamCenter?.longitude ??
+                            widget.handoffLng ?? _center!.longitude,
+                        _lastCamCenter?.latitude ??
+                            widget.handoffLat ?? _center!.latitude,
                       ),
                     ),
-                    zoom: widget.pickerMode
-                        ? (widget.handoffZoom ?? 15.5)
-                        : (_lastCamZoom ?? widget.handoffZoom ?? 15.5),
-                    bearing: widget.pickerMode
-                        ? (widget.handoffBearing ?? 0.0)
-                        : (_lastCamBearing ?? widget.handoffBearing ?? 0.0),
-                    pitch: widget.pickerMode
-                        ? (widget.handoffPitch ?? 45.0)
-                        : (_lastCamPitch ?? widget.handoffPitch ?? 45.0),
+                    zoom: _lastCamZoom ?? widget.handoffZoom ?? 15.5,
+                    bearing: _lastCamBearing ?? widget.handoffBearing ?? 0.0,
+                    pitch: _lastCamPitch ?? widget.handoffPitch ?? 45.0,
                   ),
                   onMapCreated: (ctrl) async {
                     // [CamSnap] hunt: a SECOND onMapCreated on this screen

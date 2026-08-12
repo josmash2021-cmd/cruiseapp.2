@@ -494,6 +494,13 @@ class ApiService {
   /// meaning the driver logged in on another device and this session is invalid.
   static void Function()? onSessionExpiredNewDevice;
 
+  /// Fired after every successful [_saveToken]. Wired in main.dart to
+  /// SocketService: the boot-time socket init runs before a brand-new user
+  /// has any token, the server rejects the anonymous handshake, and nothing
+  /// ever retried with the fresh JWT — so first-session pushes (e.g. the
+  /// auto-verify approval) were lost until an app restart.
+  static void Function()? onTokenSaved;
+
   /// Public wrapper for saving auth tokens (used by demo account direct login).
   static Future<void> saveToken(String token) => _saveToken(token);
   static Future<void> saveRefreshToken(String token) => _saveRefreshToken(token);
@@ -506,6 +513,11 @@ class ApiService {
     // SECURITY: Never store JWT in SharedPreferences (plaintext on rooted devices).
     // Only use Keystore/Keychain via SecurityService (flutter_secure_storage).
     SecurityService.logSecurityEvent('token_stored');
+    try {
+      onTokenSaved?.call();
+    } catch (e) {
+      debugPrint('[Api] onTokenSaved callback failed: $e');
+    }
   }
 
   static Future<void> _saveRefreshToken(String token) async {

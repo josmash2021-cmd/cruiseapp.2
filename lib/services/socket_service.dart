@@ -33,6 +33,13 @@ class SocketService {
   static bool _disposed = false;
   static String? _currentTripRoom;
 
+  /// A build currently running inside [init]. Concurrent callers (several
+  /// screens call init(); onTokenSaved can fire DURING init via its own
+  /// refreshAccessToken) join this future instead of racing it — two
+  /// concurrent io.io() builds would leak a socket with live listeners
+  /// duplicating every event.
+  static Future<void>? _initInFlight;
+
   // ── Heartbeat ───────────────────────────────────────────────────────
   static Timer? _heartbeatTimer;
   static DateTime? _lastPongTime;
@@ -85,6 +92,20 @@ class SocketService {
 
   /// Initialize Socket.io connection.
   static Future<void> init() async {
+    if (_initialized || _disposed) return;
+    final joined = _initInFlight;
+    if (joined != null) return joined;
+    final completer = Completer<void>();
+    _initInFlight = completer.future;
+    try {
+      await _initInner();
+    } finally {
+      completer.complete();
+      _initInFlight = null;
+    }
+  }
+
+  static Future<void> _initInner() async {
     if (_initialized || _disposed) return;
 
     final serverUrl = ApiService.activeServerUrl;
@@ -253,10 +274,49 @@ class SocketService {
       debugPrint('[Socket.io] Account status changed: ${map['status']}');
     });
 
-    // Listen to network recovery to proactively reconnect
+    // Listen to network recovery to proactively reconnect.
+    // remove-then-add: reconnectWithFreshToken() re-runs init() on a live
+    // service, and a duplicated listener would fire this twice per event.
+    NetworkService().onlineNotifier.removeListener(_onNetworkChange);
     NetworkService().onlineNotifier.addListener(_onNetworkChange);
 
     _initialized = true;
+  }
+
+  /// Rebuild the socket with the freshest JWT — call after login/signup.
+  ///
+  /// The boot-time [init] runs before a brand-new user has any token, so
+  /// the handshake goes out anonymous and the server REJECTS it ("Rejected
+  /// anonymous connection"). The client burns its 5 reconnect attempts on
+  /// the same tokenless handshake and gives up — and `_initialized` makes
+  /// [init] a no-op forever after. Net effect: a rider's first session has
+  /// no socket, so `account_status_changed` (the auto-verify approval push)
+  /// lands in an empty `user:{id}` room and the home screen stays on
+  /// "Verification pending" until the app is killed and reopened.
+  ///
+  /// Only the socket is torn down; the static stream controllers survive,
+  /// so every existing `.listen` on the streams keeps working.
+  static Future<void> reconnectWithFreshToken() async {
+    if (_disposed) {
+      reconnect(); // handles the disposed path (recreates controllers)
+      return;
+    }
+    // A build is mid-flight (this callback can fire from init's own token
+    // refresh): wait for it rather than tearing down under it. If it came
+    // up connected it already carried the fresh token — done. If it was
+    // rejected (built with the pre-login token), fall through and rebuild.
+    final inFlight = _initInFlight;
+    if (inFlight != null) {
+      await inFlight;
+      if (_connected || _disposed) return;
+    }
+    debugPrint('[Socket.io] Rebuilding socket with fresh token');
+    _socket?.dispose();
+    _socket = null;
+    _connected = false;
+    _connecting = false;
+    _initialized = false;
+    await init();
   }
 
   /// Proactively reconnect when network comes back online

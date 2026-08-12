@@ -340,6 +340,18 @@ class _HomeScreenState extends State<HomeScreen>
     // Real-time account status push — the poll above stays as fallback.
     _accountStatusSub =
         SocketService.accountStatusStream.listen(_onAccountStatusPush);
+    // Pending-approval poll. Every real-time approval channel can be dead
+    // for a brand-new session (socket born before the token, Firestore
+    // rules deny the listener, FCM token not registered yet), and the
+    // 300 s account poll above never asks about approval — so the rider
+    // sat on "Verification pending" until an app restart. This asks the
+    // backend directly every 20 s, but ONLY while the banner state is
+    // actually pending (identity captured, not yet approved) — a no-op
+    // string check for everyone else.
+    _pendingVerifyTimer = Timer.periodic(
+      const Duration(seconds: 20),
+      (_) => _pollPendingVerification(),
+    );
     HomeScreen.scheduledRideRefresh.addListener(_onScheduledRideRefresh);
   }
 
@@ -376,6 +388,7 @@ class _HomeScreenState extends State<HomeScreen>
     if (state == AppLifecycleState.paused) {
       _driverCheckTimer?.cancel();
       _accountStatusTimer?.cancel();
+      _pendingVerifyTimer?.cancel();
       _countdownTimer?.cancel();
       _imminentRideTimer?.cancel();
       // Battery fix: fully release the GPS stream and its watchdog while
@@ -408,6 +421,15 @@ class _HomeScreenState extends State<HomeScreen>
         const Duration(seconds: 300),
         (_) => _checkAccountStatus(),
       );
+      // Restart the pending-approval poll (cancelled on pause) and fire
+      // one check immediately: an approval that landed while backgrounded
+      // should unlock the instant the rider comes back, not 20 s later.
+      _pendingVerifyTimer?.cancel();
+      _pendingVerifyTimer = Timer.periodic(
+        const Duration(seconds: 20),
+        (_) => _pollPendingVerification(),
+      );
+      _pollPendingVerification();
       _updateImminentRide();
       _imminentRideTimer?.cancel();
       _imminentRideTimer = Timer.periodic(
@@ -523,6 +545,7 @@ class _HomeScreenState extends State<HomeScreen>
     _rideFadeCtrl.dispose();
     _driverCheckTimer?.cancel();
     _accountStatusTimer?.cancel();
+    _pendingVerifyTimer?.cancel();
     _accountStatusSub?.cancel();
     _countdownTimer?.cancel();
     _imminentRideTimer?.cancel();
@@ -599,9 +622,21 @@ class _HomeScreenState extends State<HomeScreen>
         if (!_isVerified && mounted) setState(() => _isVerified = true);
         return true;
       }
+      // Not approved in memory — ask the backend ONCE right now before
+      // saying "wait". Every real-time approval channel can be dead in a
+      // fresh session (socket born before the token, Firestore rules
+      // deny, FCM token unregistered) and the 20 s poll may not have
+      // ticked yet; a rider auto-approved seconds ago must not be blocked
+      // by a stale flag.
+      await _checkBackendVerification();
+      if (!mounted) return false;
+      if (_verificationStatus == 'approved') {
+        if (!_isVerified) setState(() => _isVerified = true);
+        return true;
+      }
       // Verified on device, not yet approved — the answer is "wait", not
       // the verification flow again.
-      if (mounted) _showApprovalRequiredDialog();
+      _showApprovalRequiredDialog();
       return false;
     }
     if (!mounted) return false;
@@ -888,7 +923,19 @@ class _HomeScreenState extends State<HomeScreen>
 
   Timer? _driverCheckTimer;
   Timer? _accountStatusTimer;
+  Timer? _pendingVerifyTimer;
   StreamSubscription<Map<String, dynamic>>? _accountStatusSub;
+
+  /// 20 s tick while (and only while) the account sits in "Verification
+  /// pending": identity captured on device but not approved yet. Resolves
+  /// the approval over HTTP so the rider unlocks without any working push
+  /// channel — and without restarting the app.
+  Future<void> _pollPendingVerification() async {
+    if (!mounted || _verificationStatus == 'approved') return;
+    final captured = await LocalDataService.isIdentityVerified();
+    if (!captured || !mounted) return;
+    await _checkBackendVerification();
+  }
 
   /// Server-pushed account status (SocketService.accountStatusStream):
   /// blocked/deleted → logout to Welcome; deactivated → deactivated screen;

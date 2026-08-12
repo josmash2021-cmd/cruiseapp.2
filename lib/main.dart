@@ -1323,6 +1323,21 @@ class _UberCloneAppState extends State<UberCloneApp>
       }
     };
 
+    // A fresh JWT just landed (login/signup/refresh). If the socket is not
+    // connected, rebuild it with the new token: the boot-time init runs
+    // BEFORE a brand-new user has any token, the server rejects that
+    // anonymous handshake, and the client gives up — leaving the whole
+    // first session without the `user:{id}` room, so the auto-verify
+    // approval push (`account_status_changed`) never reached the app and
+    // "Verification pending" stuck until an app restart. A healthy
+    // connected socket is left alone: routine token refreshes must not
+    // drop it mid-trip.
+    ApiService.onTokenSaved = () {
+      if (!SocketService.isConnected) {
+        unawaited(SocketService.reconnectWithFreshToken());
+      }
+    };
+
     // Driver session replaced on another device — show dialog then force logout
     ApiService.onSessionExpiredNewDevice = () {
       final nav = _navigatorKey.currentState;

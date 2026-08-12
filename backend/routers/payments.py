@@ -2240,6 +2240,11 @@ async def web_booking_status(booking_id: int, request: Request, db: AsyncSession
             # relevant destination (pickup if en route/arrived, dropoff if in trip).
             try:
                 if driver.lat is not None and driver.lng is not None:
+                    # The website tracker draws the driver's car on the map with
+                    # these — same freshness the ETA below is computed from
+                    # (driver app persists GPS every ≤3s while online).
+                    resp["driver_lat"] = float(driver.lat)
+                    resp["driver_lng"] = float(driver.lng)
                     raw_lower = (trip.status or "").lower()
                     if raw_lower in ("in_trip", "on_trip", "in_progress") and trip.dropoff_lat is not None:
                         tgt_lat, tgt_lng = float(trip.dropoff_lat), float(trip.dropoff_lng or 0)

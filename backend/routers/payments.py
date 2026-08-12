@@ -2349,6 +2349,164 @@ async def web_check_exists(request: Request, db: AsyncSession = Depends(get_db))
     return {"exists": r.scalar_one_or_none() is not None}
 
 
+# -------------------------------------------------------
+#  WEB PAYMENT METHODS — list / add card from cruiseinride.com
+#  JWT-authenticated (the rider's vr_at token), no HMAC. The mobile
+#  equivalents (/riders/payment-methods, /payments/setup-intent,
+#  /users/me/payment-methods/sync) all hang off _verify_api_key, whose
+#  X-Timestamp/X-Nonce/X-Signature triple the browser cannot produce.
+# -------------------------------------------------------
+
+async def _web_jwt_user(request: Request, db: AsyncSession) -> User:
+    """Resolve the signed-in rider for /auth/web/* endpoints that act on an
+    account: origin check + the user JWT (not the web checkout key)."""
+    _verify_web_origin(request)
+    auth = request.headers.get("authorization", "")
+    if not auth.startswith("Bearer "):
+        raise HTTPException(401, "Unauthorized")
+    token = auth.split(" ", 1)[1]
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        user_id = int(payload.get("sub", 0))
+    except (jwt.InvalidTokenError, ValueError):
+        raise HTTPException(401, "Invalid or expired token")
+    if not user_id:
+        raise HTTPException(401, "Invalid token")
+    r = await db.execute(select(User).where(User.id == user_id))
+    user = r.scalar_one_or_none()
+    if not user:
+        raise HTTPException(404, "User not found")
+    return user
+
+
+@router.get("/auth/web/payment-methods")
+async def web_list_payment_methods(request: Request, db: AsyncSession = Depends(get_db)):
+    """Saved payment methods for the signed-in rider. Card details
+    (brand/last4/exp) come from Stripe by customer, so cards saved from the
+    app and from the web both show up with the same data."""
+    user = await _web_jwt_user(request, db)
+    r = await db.execute(
+        select(RiderPaymentMethod).where(RiderPaymentMethod.user_id == user.id)
+        .order_by(RiderPaymentMethod.is_default.desc(), RiderPaymentMethod.created_at.desc())
+    )
+    rows = r.scalars().all()
+    default_ids = {m.stripe_pm_id for m in rows if m.is_default}
+    stripe_cards = []
+    if _HAS_STRIPE and user.stripe_customer_id:
+        try:
+            listing = _stripe_mod.PaymentMethod.list(
+                customer=user.stripe_customer_id, type="card", limit=20
+            )
+            stripe_cards = list(getattr(listing, "data", []) or [])
+        except Exception as e:
+            logging.warning("[/auth/web/payment-methods] Stripe list failed for %s: %s", user.id, e)
+    out, seen = [], set()
+    for pm in stripe_cards:
+        card = getattr(pm, "card", None)
+        out.append({
+            "stripe_pm_id": pm.id,
+            "method_type": "stripe_card",
+            "brand": getattr(card, "brand", None),
+            "last4": getattr(card, "last4", None),
+            "exp_month": getattr(card, "exp_month", None),
+            "exp_year": getattr(card, "exp_year", None),
+            "is_default": pm.id in default_ids,
+        })
+        seen.add(pm.id)
+    for m in rows:
+        if m.stripe_pm_id in seen:
+            continue
+        out.append({
+            "stripe_pm_id": m.stripe_pm_id,
+            "method_type": m.method_type,
+            "display_name": m.display_name,
+            "brand": None, "last4": None, "exp_month": None, "exp_year": None,
+            "is_default": m.is_default,
+        })
+    return out
+
+
+@router.post("/auth/web/payments/setup-intent")
+async def web_create_setup_intent(request: Request, db: AsyncSession = Depends(get_db)):
+    """SetupIntent so the website can save a card (or US bank account when
+    the Stripe account has it enabled) for off-session charging."""
+    user = await _web_jwt_user(request, db)
+    if not _HAS_STRIPE:
+        raise HTTPException(503, "Stripe not configured")
+    customer_id = await _get_or_create_stripe_customer(user, db)
+    if not customer_id:
+        raise HTTPException(500, "Could not initialise payment customer")
+    last_err = None
+    for types in (["card", "us_bank_account"], ["card"]):
+        try:
+            intent = _stripe_mod.SetupIntent.create(
+                customer=customer_id,
+                usage="off_session",
+                payment_method_types=types,
+                metadata={"user_id": str(user.id), "source": "web"},
+            )
+            return {"client_secret": intent.client_secret, "customer_id": customer_id}
+        except _stripe_mod.error.StripeError as e:
+            # us_bank_account may not be enabled on the account — retry card-only
+            last_err = e
+            continue
+    raise HTTPException(400, str(getattr(last_err, "user_message", None) or last_err))
+
+
+@router.post("/auth/web/payment-methods/sync")
+async def web_sync_payment_method(request: Request, db: AsyncSession = Depends(get_db)):
+    """Persist a Stripe PaymentMethod the browser just confirmed, mirroring
+    POST /users/me/payment-methods/sync so web-added cards appear in the app.
+    Verifies the PM hangs off this rider's Stripe customer before saving."""
+    user = await _web_jwt_user(request, db)
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(400, "Invalid JSON body")
+    if not isinstance(body, dict):
+        raise HTTPException(400, "Body must be an object")
+    pm_id = (body.get("stripe_pm_id") or "").strip()
+    if not pm_id:
+        raise HTTPException(400, "stripe_pm_id is required")
+    display_name = (body.get("display_name") or "Card").strip()[:60] or "Card"
+    set_default = bool(body.get("set_default"))
+    if _HAS_STRIPE:
+        try:
+            pm = _stripe_mod.PaymentMethod.retrieve(pm_id)
+            pm_customer = getattr(pm, "customer", None)
+            if pm_customer and user.stripe_customer_id and pm_customer != user.stripe_customer_id:
+                raise HTTPException(403, "Payment method belongs to another customer")
+        except HTTPException:
+            raise
+        except Exception as e:
+            logging.warning("[/auth/web/payment-methods/sync] PM retrieve failed: %s", e)
+    existing_r = await db.execute(
+        select(RiderPaymentMethod).where(
+            RiderPaymentMethod.user_id == user.id,
+            RiderPaymentMethod.stripe_pm_id == pm_id,
+        )
+    )
+    existing = existing_r.scalar_one_or_none()
+    if existing:
+        return {"status": "already_exists", "method_id": existing.id}
+    if set_default:
+        await db.execute(
+            text("UPDATE rider_payment_methods SET is_default = FALSE WHERE user_id = :uid"),
+            {"uid": user.id},
+        )
+    method = RiderPaymentMethod(
+        user_id=user.id,
+        method_type=(body.get("method_type") or "stripe_card"),
+        display_name=display_name,
+        stripe_pm_id=pm_id,
+        is_default=set_default,
+    )
+    db.add(method)
+    await db.commit()
+    await db.refresh(method)
+    return {"status": "created", "method_id": method.id}
+
+
 @router.post("/auth/web/register")
 async def web_register(request: Request, db: AsyncSession = Depends(get_db)):
     """Register a new rider from the Shopify widget."""

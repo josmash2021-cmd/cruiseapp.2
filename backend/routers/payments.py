@@ -2225,6 +2225,10 @@ async def web_booking_status(booking_id: int, request: Request, db: AsyncSession
         "status": _web_status,
         "raw_status": trip.status,
         "booking_id": trip.id,
+        # The rating card needs the real fare to offer honest 15/20/25% tips,
+        # and tip_amount tells it whether this trip was tipped already.
+        "fare": round(float(trip.fare or 0.0), 2),
+        "tip_amount": round(float(trip.tip_amount or 0.0), 2),
     }
 
     if trip.driver_id:
@@ -2616,6 +2620,185 @@ async def web_booking_rate(booking_id: int, request: Request, db: AsyncSession =
 
     logging.info("[WebRate] Trip %s rated %s stars from web", booking_id, stars)
     return {"status": "ok", "stars": stars}
+
+
+# ── Tips from the website (2026-08-12) ─────────────────────────────────
+#    The app tips off the rider's saved card (/trips/{id}/rate → tip_amount)
+#    and credits 100% of it to the driver. A web rider may have no card on
+#    file, so this endpoint has two doors:
+#      1. saved card  → charged off_session right here, one tap, like the app
+#      2. no card     → returns a PaymentIntent the browser confirms, and the
+#                       page calls back with its id so we can verify and credit
+#    Money is only credited once Stripe says the charge succeeded.
+
+_WEB_TIP_MIN_CENTS = 100
+_WEB_TIP_MAX_CENTS = 10000
+
+
+async def _web_tip_credit(db, trip, amount_cents: int, intent_id: str):
+    """100% of the tip goes to the driver — same split the app applies."""
+    if trip.stripe_tip_payment_intent_id:
+        logging.warning("[WebTip] Trip %s already credited (%s), skipping",
+                        trip.id, trip.stripe_tip_payment_intent_id)
+        return
+    amt = round(amount_cents / 100.0, 2)
+    trip.tip_amount = round((trip.tip_amount or 0.0) + amt, 2)
+    trip.stripe_tip_payment_intent_id = intent_id
+    if trip.driver_earnings:
+        trip.driver_earnings = round(trip.driver_earnings + amt, 2)
+    drv = (await db.execute(select(User).where(User.id == trip.driver_id))).scalar_one_or_none()
+    if drv:
+        drv.pending_balance = round((drv.pending_balance or 0.0) + amt, 2)
+        drv.total_earnings = round((drv.total_earnings or 0.0) + amt, 2)
+    # The web rating already inserted the Rating row; hang the tip on it so
+    # the driver's history shows the same shape an app tip does.
+    if trip.rider_id:
+        rating = (await db.execute(select(Rating).where(
+            Rating.trip_id == trip.id, Rating.from_user_id == trip.rider_id
+        ))).scalar_one_or_none()
+        if rating:
+            rating.tip_amount = round((rating.tip_amount or 0.0) + amt, 2)
+    await db.commit()
+    logging.info("[WebTip] Trip %s: $%.2f credited to driver %s", trip.id, amt, trip.driver_id)
+
+    try:
+        from models.database import Notification
+        db.add(Notification(
+            user_id=trip.driver_id,
+            title="New tip",
+            body=f"Your rider left you a ${amt:.2f} tip!",
+            notif_type="trip",
+        ))
+        await db.commit()
+    except Exception as e:
+        logging.warning("[WebTip] notification failed for trip %s: %s", trip.id, e)
+    try:
+        if drv and drv.fcm_token:
+            _send_fcm_push(
+                drv.fcm_token,
+                title="You got a tip 🎉",
+                body=f"Your rider left you a ${amt:.2f} tip.",
+                data={"type": "tip", "trip_id": str(trip.id)},
+            )
+    except Exception as e:
+        logging.warning("[WebTip] FCM failed for trip %s: %s", trip.id, e)
+
+
+@router.post("/bookings/web/{booking_id}/tip")
+async def web_booking_tip(booking_id: int, request: Request, db: AsyncSession = Depends(get_db)):
+    """Tip the driver of a finished web booking. Two-step for guests."""
+    _verify_web_origin(request)
+    _web_key_check(request)
+    body = await request.json()
+    try:
+        cents = int(body.get("amount_cents"))
+    except (TypeError, ValueError):
+        raise HTTPException(400, "amount_cents is required")
+    if cents < _WEB_TIP_MIN_CENTS or cents > _WEB_TIP_MAX_CENTS:
+        raise HTTPException(400, "Tip must be between $1 and $100")
+
+    trip = (await db.execute(select(Trip).where(Trip.id == booking_id))).scalar_one_or_none()
+    if not trip:
+        raise HTTPException(404, "Booking not found")
+    if (trip.status or "").lower() not in ("completed", "ended"):
+        raise HTTPException(409, "Trip must be completed before tipping")
+    if not trip.driver_id:
+        raise HTTPException(409, "Trip has no driver")
+    if trip.stripe_tip_payment_intent_id or (trip.tip_amount or 0.0) > 0:
+        raise HTTPException(409, "This trip was already tipped")
+    if not _HAS_STRIPE or not _stripe_mod:
+        raise HTTPException(503, "Stripe not configured")
+
+    loop = asyncio.get_event_loop()
+
+    # Door 2, second half: the browser already paid — verify with Stripe and credit.
+    pi_id = str(body.get("payment_intent_id") or "").strip()
+    if pi_id:
+        try:
+            pi = await asyncio.wait_for(
+                loop.run_in_executor(None, lambda: _stripe_mod.PaymentIntent.retrieve(pi_id)),
+                timeout=15.0,
+            )
+        except Exception as e:
+            logging.error("[WebTip] retrieve %s failed: %s", pi_id, e)
+            raise HTTPException(502, "Could not verify the tip payment")
+        meta = pi.get("metadata") or {}
+        if str(meta.get("trip_id")) != str(trip.id) or meta.get("type") != "tip":
+            raise HTTPException(400, "That payment does not belong to this trip")
+        if pi.get("status") != "succeeded":
+            raise HTTPException(402, "Tip payment not completed")
+        paid = int(pi.get("amount_received") or pi.get("amount") or 0)
+        if paid < _WEB_TIP_MIN_CENTS:
+            raise HTTPException(400, "Tip amount too small")
+        await _web_tip_credit(db, trip, paid, pi_id)
+        return {"status": "ok", "paid": True, "tip_cents": paid}
+
+    # Door 1: rider with a session and a card on file → charge it off_session.
+    user = None
+    tok = str(body.get("user_token") or "").strip()
+    if tok:
+        try:
+            payload = jwt.decode(tok, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+            uid = int(payload.get("sub") or 0)
+            if uid:
+                user = (await db.execute(
+                    select(User).where(User.id == uid, User.role == "rider")
+                )).scalar_one_or_none()
+        except Exception as e:
+            logging.warning("[WebTip] user_token decode failed: %s", e)
+    if user and user.stripe_customer_id:
+        pm = (await db.execute(
+            select(RiderPaymentMethod).where(
+                RiderPaymentMethod.user_id == user.id,
+                RiderPaymentMethod.method_type == "stripe_card",
+                RiderPaymentMethod.stripe_pm_id.isnot(None),
+            ).order_by(RiderPaymentMethod.is_default.desc())
+        )).scalars().first()
+        if pm:
+            try:
+                intent = await asyncio.wait_for(
+                    loop.run_in_executor(None, lambda: _stripe_mod.PaymentIntent.create(
+                        amount=cents,
+                        currency="usd",
+                        customer=user.stripe_customer_id,
+                        payment_method=pm.stripe_pm_id,
+                        confirm=True,
+                        off_session=True,
+                        automatic_payment_methods={"enabled": True, "allow_redirects": "never"},
+                        description=f"Tip - Cruise trip {trip.id}",
+                        metadata={"trip_id": str(trip.id), "type": "tip",
+                                  "rider_id": str(user.id), "source": "web"},
+                    )),
+                    timeout=20.0,
+                )
+                if intent.status == "succeeded":
+                    await _web_tip_credit(db, trip, cents, intent.id)
+                    return {"status": "ok", "paid": True, "tip_cents": cents,
+                            "card": pm.display_name}
+                logging.warning("[WebTip] saved card ended in %s for trip %s",
+                                intent.status, trip.id)
+            except Exception as e:
+                # Expired card, 3DS required, anything: fall through to the
+                # browser flow instead of losing the tip.
+                logging.warning("[WebTip] saved-card charge failed for trip %s: %s", trip.id, e)
+
+    # Door 2, first half: no usable card on file — the browser pays.
+    try:
+        intent = await asyncio.wait_for(
+            loop.run_in_executor(None, lambda: _stripe_mod.PaymentIntent.create(
+                amount=cents,
+                currency="usd",
+                automatic_payment_methods={"enabled": True},
+                description=f"Tip - Cruise trip {trip.id}",
+                metadata={"trip_id": str(trip.id), "type": "tip", "source": "web"},
+            )),
+            timeout=20.0,
+        )
+    except Exception as e:
+        logging.error("[WebTip] intent create failed for trip %s: %s", trip.id, e)
+        raise HTTPException(502, "Could not start the tip payment")
+    return {"status": "requires_payment", "client_secret": intent.client_secret,
+            "payment_intent_id": intent.id, "tip_cents": cents}
 
 
 # ── Rider ↔ driver handshake at the pickup (2026-08-12) ────────────────

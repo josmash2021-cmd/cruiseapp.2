@@ -2192,14 +2192,17 @@ async def _web_dispatch_to_drivers(
         logging.exception("[WebDispatch] Error for trip %d: %s", trip_id, e)
 
 
-@router.post("/drivers/web/nearby")
+@router.post("/bookings/web/nearby-driver")
 async def web_nearby_driver(request: Request, db: AsyncSession = Depends(get_db)):
     """How far (in minutes) is the nearest online driver from a point?
 
     The booking page polls this for its "Faster" badge, shown when a driver
     is ~10 min or less from the rider's pickup. Same web-key auth as the
     other web endpoints. Returns only coarse data (minutes + a count) — never
-    the drivers' actual positions."""
+    the drivers' actual positions.
+
+    Lives under /bookings/web/ because the Cloudflare Worker in front only
+    proxies allowlisted path prefixes (/drivers/* answered path_not_allowed)."""
     _verify_web_origin(request)
     client_ip = request.client.host if request.client else "unknown"
     if _check_web_rate_limit(client_ip):

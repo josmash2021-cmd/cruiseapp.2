@@ -2192,6 +2192,48 @@ async def _web_dispatch_to_drivers(
         logging.exception("[WebDispatch] Error for trip %d: %s", trip_id, e)
 
 
+@router.post("/drivers/web/nearby")
+async def web_nearby_driver(request: Request, db: AsyncSession = Depends(get_db)):
+    """How far (in minutes) is the nearest online driver from a point?
+
+    The booking page polls this for its "Faster" badge, shown when a driver
+    is ~10 min or less from the rider's pickup. Same web-key auth as the
+    other web endpoints. Returns only coarse data (minutes + a count) — never
+    the drivers' actual positions."""
+    _verify_web_origin(request)
+    client_ip = request.client.host if request.client else "unknown"
+    if _check_web_rate_limit(client_ip):
+        raise HTTPException(429, "Too many requests — try again in a minute")
+    _web_key_check(request)
+
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(400, "Invalid JSON body")
+    try:
+        lat, lng = float(body.get("lat")), float(body.get("lng"))
+    except (TypeError, ValueError):
+        raise HTTPException(400, "lat and lng are required")
+
+    r = await db.execute(
+        select(User).where(
+            User.role == "driver",
+            User.is_online == True,
+            User.lat != None,
+            User.lng != None,
+            User.status == "active",
+        )
+    )
+    drivers = r.scalars().all()
+    if not drivers:
+        return {"eta_minutes": None, "online_drivers": 0}
+
+    km = min(_haversine(lat, lng, float(d.lat), float(d.lng)) for d in drivers)
+    # Same 40 km/h average city speed the live tracker uses for its ETA.
+    eta_min = max(1, int(round((km / 40.0) * 60.0)))
+    return {"eta_minutes": eta_min, "online_drivers": len(drivers)}
+
+
 @router.get("/bookings/web/{booking_id}/status")
 async def web_booking_status(booking_id: int, request: Request, db: AsyncSession = Depends(get_db)):
     """Poll status of a web booking. Returns driver + vehicle info once a driver accepts."""

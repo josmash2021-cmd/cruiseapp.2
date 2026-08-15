@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException, Header, Request, Query, Body
 from fastapi.responses import JSONResponse, FileResponse, Response
-from sqlalchemy import select, func, and_, text
+from sqlalchemy import select, func, and_, or_, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from models.database import (
     get_db, SessionLocal, User, Trip, RiderPaymentMethod, Vehicle, DispatchOffer, Rating,
@@ -3389,6 +3389,26 @@ async def web_active_trip(request: Request, db: AsyncSession = Depends(get_db)):
         .limit(1)
     )
     trip = r.scalar_one_or_none()
+    if not trip:
+        # Fallback for web bookings created before rider-attribution: they
+        # hang off the shared web@cruiseinride.com system user, so match on
+        # the guest fields instead (guest_email, or the last 10 digits of
+        # guest_phone inside the stored phone string).
+        conditions = []
+        user_email = (user.email or "").strip().lower()
+        if user_email:
+            conditions.append(func.lower(Trip.guest_email) == user_email)
+        phone_digits = re.sub(r"\D", "", user.phone or "")[-10:]
+        if len(phone_digits) >= 7:
+            conditions.append(Trip.guest_phone.contains(phone_digits))
+        if conditions:
+            r = await db.execute(
+                select(Trip)
+                .where(and_(or_(*conditions), Trip.status.in_(_ACTIVE_TRIP_STATUSES)))
+                .order_by(Trip.id.desc())
+                .limit(1)
+            )
+            trip = r.scalar_one_or_none()
     if not trip:
         return {"active": False}
     payload = await _web_trip_status_payload(trip, db)

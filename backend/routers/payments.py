@@ -3323,7 +3323,10 @@ async def web_check_exists(request: Request, db: AsyncSession = Depends(get_db))
             select(User).where(User.phone == identifier, User.role == role)
             .where(User.status.notin_(["deleted", "pending_deletion"]))
         )
-    return {"exists": r.scalar_one_or_none() is not None}
+    user = r.scalar_one_or_none()
+    # first_name solo cuando la cuenta existe: la web lo usa para el saludo
+    # "Bienvenido de nuevo, <nombre>" en vez de derivarlo del correo.
+    return {"exists": user is not None, "first_name": (user.first_name or "") if user else ""}
 
 
 # -------------------------------------------------------

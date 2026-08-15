@@ -2331,23 +2331,18 @@ async def _get_or_create_support_chat(user: User, db: AsyncSession, subject: str
     if locale.startswith("es"):
         hello = f"Hola {first}" if first else "Hola"
         welcome_text = (
-            f"{hello}, soy un sistema automatizado de Cruise.\n\n"
-            "Cuenteme que paso y lo resolvemos ahora mismo. Puedo cancelar un "
-            "viaje, revisar un cobro, tramitar un reembolso, ayudarle a "
-            "recuperar algo que dejo en el carro, o reportar un problema con "
-            "la app.\n\n"
-            "Escriba con sus palabras, no hace falta que elija una categoria."
+            f"{hello}, soy tu asistente de IA de Cruise. Puedo ayudarte con "
+            "la mayoria de los problemas de soporte. Elige una opcion abajo o "
+            "cuentame lo que paso. Si no puedo resolverlo, te conecto con un "
+            "agente."
         )
     else:
         hello = f"Hi {first}" if first else "Hi"
         welcome_text = (
-            f"{hello}, I'm an automated system from Cruise.\n\n"
-            "Tell me what happened and we'll sort it out. I can cancel a "
-            "ride, look into a charge, start a refund, help you get back "
-            "something you left in the car, or report a problem with the "
-            "app.\n\n"
-            "Just say it in your own words — you don't need to pick a "
-            "category."
+            f"{hello}, I'm your Cruise AI assistant! I can help with most "
+            "support issues. Select an option below or describe your issue "
+            "to get started. If I can't resolve your issue, I'll connect "
+            "you with an agent."
         )
     # "bot", not "system": the app renders a system message as a small grey
     # pill centred on the screen, which is right for "Ana joined the chat" and

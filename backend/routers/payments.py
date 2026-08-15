@@ -2262,17 +2262,10 @@ async def web_nearby_driver(request: Request, db: AsyncSession = Depends(get_db)
     return {"eta_minutes": eta_min, "online_drivers": len(drivers)}
 
 
-@router.get("/bookings/web/{booking_id}/status")
-async def web_booking_status(booking_id: int, request: Request, db: AsyncSession = Depends(get_db)):
-    """Poll status of a web booking. Returns driver + vehicle info once a driver accepts."""
-    _verify_web_origin(request)
-    _web_key_check(request)
-
-    r = await db.execute(select(Trip).where(Trip.id == booking_id))
-    trip = r.scalar_one_or_none()
-    if not trip:
-        raise HTTPException(404, "Booking not found")
-
+async def _web_trip_status_payload(trip: Trip, db: AsyncSession) -> dict:
+    """Serialise a trip exactly the way GET /bookings/web/{id}/status does —
+    shared with /auth/web/active-trip so the web tracker resumes with the
+    same payload shape it already polls."""
     # Normalise internal trip states into the simple vocabulary the
     # Shopify widget understands (requested / accepted / in_progress /
     # completed / cancelled). The widget flips to the "Driver Found"
@@ -2299,6 +2292,14 @@ async def web_booking_status(booking_id: int, request: Request, db: AsyncSession
         # and tip_amount tells it whether this trip was tipped already.
         "fare": round(float(trip.fare or 0.0), 2),
         "tip_amount": round(float(trip.tip_amount or 0.0), 2),
+        # Pickup/dropoff so the web tracker can redraw the route when it
+        # resumes from /auth/web/active-trip instead of a fresh booking.
+        "pickup_address": trip.pickup_address or "",
+        "dropoff_address": trip.dropoff_address or "",
+        "pickup_lat": float(trip.pickup_lat) if trip.pickup_lat is not None else None,
+        "pickup_lng": float(trip.pickup_lng) if trip.pickup_lng is not None else None,
+        "dropoff_lat": float(trip.dropoff_lat) if trip.dropoff_lat is not None else None,
+        "dropoff_lng": float(trip.dropoff_lng) if trip.dropoff_lng is not None else None,
     }
 
     if trip.driver_id:
@@ -2379,6 +2380,19 @@ async def web_booking_status(booking_id: int, request: Request, db: AsyncSession
                 resp["vehicle_color"] = vehicle.color or ""
 
     return resp
+
+
+@router.get("/bookings/web/{booking_id}/status")
+async def web_booking_status(booking_id: int, request: Request, db: AsyncSession = Depends(get_db)):
+    """Poll status of a web booking. Returns driver + vehicle info once a driver accepts."""
+    _verify_web_origin(request)
+    _web_key_check(request)
+
+    r = await db.execute(select(Trip).where(Trip.id == booking_id))
+    trip = r.scalar_one_or_none()
+    if not trip:
+        raise HTTPException(404, "Booking not found")
+    return await _web_trip_status_payload(trip, db)
 
 
 @router.get("/bookings/web/{booking_id}/chat")
@@ -3357,6 +3371,29 @@ async def _web_jwt_user(request: Request, db: AsyncSession) -> User:
     if not user:
         raise HTTPException(404, "User not found")
     return user
+
+
+@router.get("/auth/web/active-trip")
+async def web_active_trip(request: Request, db: AsyncSession = Depends(get_db)):
+    """The signed-in rider's most recent live trip, serialised exactly like
+    GET /bookings/web/{id}/status so the web tracker can resume mid-ride.
+    Returns {"active": false} when there is nothing in flight."""
+    user = await _web_jwt_user(request, db)
+    # Same "live" vocabulary as GET /trips/active in routers/trips.py —
+    # completed/cancelled/no_show states are excluded by construction.
+    from routers.trips import _ACTIVE_TRIP_STATUSES
+    r = await db.execute(
+        select(Trip)
+        .where(and_(Trip.rider_id == user.id, Trip.status.in_(_ACTIVE_TRIP_STATUSES)))
+        .order_by(Trip.id.desc())
+        .limit(1)
+    )
+    trip = r.scalar_one_or_none()
+    if not trip:
+        return {"active": False}
+    payload = await _web_trip_status_payload(trip, db)
+    payload.setdefault("booking_id", trip.id)
+    return {"active": True, "trip": payload}
 
 
 @router.get("/auth/web/payment-methods")

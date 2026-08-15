@@ -7,7 +7,7 @@ from sqlalchemy import select, func, and_, or_, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from models.database import (
     get_db, SessionLocal, User, Trip, RiderPaymentMethod, Vehicle, DispatchOffer, Rating,
-    OTPCode,
+    OTPCode, SupportChat, SupportMessage,
 )
 from models.schemas import PaymentIntentIn, PayPalOrderIn, PayPalCaptureIn, RiderPaymentMethodIn, BankAccountAttachIn
 from utils.security import (
@@ -3414,6 +3414,118 @@ async def web_active_trip(request: Request, db: AsyncSession = Depends(get_db)):
     payload = await _web_trip_status_payload(trip, db)
     payload.setdefault("booking_id", trip.id)
     return {"active": True, "trip": payload}
+
+
+# ── Web support chat (JWT web, misma tabla SupportChat/SupportMessage que la app) ──
+
+@router.post("/auth/web/support/chat")
+async def web_support_chat(request: Request, db: AsyncSession = Depends(get_db)):
+    """Create or return the signed-in rider's open support chat. Same
+    create/reuse logic as POST /support/chats (fresh after 6h idle, bot
+    welcome message), shared via routers.support._get_or_create_support_chat."""
+    from routers.support import _get_or_create_support_chat
+    user = await _web_jwt_user(request, db)
+    chat = await _get_or_create_support_chat(user, db)
+    return {"chat_id": chat["id"]}
+
+
+@router.get("/auth/web/support/chat/{chat_id}/messages")
+async def web_support_messages(chat_id: int, request: Request, db: AsyncSession = Depends(get_db)):
+    """Poll the rider's own support chat. Same ordering and created_at
+    (isoformat) as GET /support/chats/{id}/messages in routers/support.py."""
+    from routers.support import _advance_supervisor_script
+    user = await _web_jwt_user(request, db)
+    chat_r = await db.execute(select(SupportChat).where(SupportChat.id == chat_id))
+    chat = chat_r.scalar_one_or_none()
+    if not chat or chat.user_id != user.id:
+        raise HTTPException(404, "Chat not found")
+    try:
+        await _advance_supervisor_script(chat, db)
+    except Exception as e:
+        logging.warning("[web-support] script advance failed for chat %s: %s", chat_id, e)
+    r = await db.execute(
+        select(SupportMessage).where(SupportMessage.chat_id == chat_id)
+        .order_by(SupportMessage.created_at.asc())
+    )
+    messages = r.scalars().all()
+    for m in messages:
+        if m.sender_id != user.id and not m.is_read:
+            m.is_read = True
+    await db.commit()
+    return {
+        "messages": [{
+            "id": m.id,
+            "sender_role": m.sender_role,
+            "message": m.message,
+            "created_at": m.created_at.isoformat() if m.created_at else None,
+        } for m in messages],
+        "bot_phase": chat.bot_phase or "welcome",
+    }
+
+
+@router.post("/auth/web/support/chat/{chat_id}/messages")
+async def web_support_send(chat_id: int, request: Request, db: AsyncSession = Depends(get_db)):
+    """Send a rider message from the browser. Same rate limit (10/min per
+    user) and same bot-reply trigger as POST /support/chats/{id}/messages."""
+    from routers import support as _support
+    user = await _web_jwt_user(request, db)
+
+    # Rate limit: max 10 messages per minute per user (shared bucket with the app)
+    _now = time.monotonic()
+    _uid_key = f"support_msg_{user.id}"
+    _msg_timestamps = _support._support_msg_rate.get(_uid_key, [])
+    _msg_timestamps = [t for t in _msg_timestamps if _now - t < 60]
+    if len(_msg_timestamps) >= 10:
+        raise HTTPException(429, "Too many messages. Please wait a moment.")
+    _msg_timestamps.append(_now)
+    _support._support_msg_rate[_uid_key] = _msg_timestamps
+
+    body = await request.json()
+    msg_text = (body.get("message") or "").strip()
+    if not msg_text:
+        raise HTTPException(400, "Message cannot be empty")
+    if len(msg_text) > 1000:
+        raise HTTPException(400, "Message too long (max 1000 characters)")
+
+    chat_r = await db.execute(select(SupportChat).where(SupportChat.id == chat_id))
+    chat = chat_r.scalar_one_or_none()
+    if not chat or chat.user_id != user.id:
+        raise HTTPException(404, "Chat not found")
+
+    msg = SupportMessage(chat_id=chat_id, sender_id=user.id, sender_role="rider", message=msg_text)
+    db.add(msg)
+    chat.updated_at = datetime.now(timezone.utc)
+    chat.last_user_message_at = datetime.now(timezone.utc)
+    await db.commit()
+    await db.refresh(msg)
+
+    # Cancel any existing inactivity task for this chat
+    old_task = _support._inactivity_tasks.pop(chat_id, None)
+    if old_task and not old_task.done():
+        old_task.cancel()
+
+    # Sync to Firestore + notify dispatch, like the app endpoint does
+    user_full = f"{user.first_name} {user.last_name}".strip()
+    if _support._HAS_FIRESTORE:
+        try:
+            _support.firestore_sync.sync_support_message(chat_id, msg.id, user.id,
+                                                          user_full, "rider", msg_text)
+            _support.firestore_sync.sync_dispatch_notification(
+                chat_id, user_full, "new_message",
+                f"{user_full}: {msg_text[:100]}"
+            )
+        except Exception as e:
+            logging.error("Firestore web support msg sync failed: %s", e)
+
+    # AI bot reply (24/7) unless real dispatch took over the chat
+    bot_phase_snapshot = chat.bot_phase
+    if bot_phase_snapshot != "dispatch_takeover":
+        _safe_create_task(_support._background_bot_reply(chat_id, msg_text, user.first_name or "Cliente", bot_phase_snapshot))
+
+    # Start inactivity timer
+    _support._inactivity_tasks[chat_id] = _safe_create_task(_support._check_chat_inactivity(chat_id))
+
+    return {"ok": True}
 
 
 @router.get("/auth/web/payment-methods")

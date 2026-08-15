@@ -2238,13 +2238,19 @@ async def create_or_get_support_chat(request: Request, user: User = Depends(_get
     body = await request.json()
     subject = (body.get("subject") or "").strip()
     locale = (body.get("locale") or "en").strip()[:5]
+    fresh = bool(body.get("fresh"))
+    return await _get_or_create_support_chat(user, db, subject=subject, locale=locale, fresh=fresh)
+
+
+async def _get_or_create_support_chat(user: User, db: AsyncSession, subject: str = "", locale: str = "en", fresh: bool = False):
+    """Create or return the user's open support chat. Shared with the web
+    endpoint /auth/web/support/chat in routers/payments.py."""
     # The caller is starting a new conversation (the driver accepted another
     # trip) and does not want the previous transcript. Without this every
     # user has exactly one chat for life: the open one is handed back forever,
     # so a chat that was escalated once stays escalated — and an escalated
     # chat never gets another bot reply (see bot_phase == "dispatch_takeover"
     # in send_support_message). That is why support went dead for drivers.
-    fresh = bool(body.get("fresh"))
 
     # Check for existing open chat
     result = await db.execute(

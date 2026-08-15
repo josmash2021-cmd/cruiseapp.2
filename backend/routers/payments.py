@@ -999,7 +999,7 @@ async def create_web_checkout(request: Request):
 # -------------------------------------------------------
 
 @router.post("/payments/web/create-intent")
-async def create_web_payment_intent(request: Request):
+async def create_web_payment_intent(request: Request, db: AsyncSession = Depends(get_db)):
     """Create a Stripe PaymentIntent for native Apple Pay / Google Pay."""
     _verify_web_origin(request)
     client_ip = request.client.host if request.client else "unknown"
@@ -1020,15 +1020,38 @@ async def create_web_payment_intent(request: Request):
         raise HTTPException(400, "Invalid amount")
     _enforce_quote(amount, body.get("quote_token"), "create-intent")
 
+    # If the web flow forwards a rider JWT in `user_token`, resolve the rider
+    # and attach their Stripe customer so the saved PaymentMethod stays usable
+    # for off-session charges (shortfall on completion, hold re-auth) — same
+    # as the app's /payments/create-intent.
+    customer_id = None
+    user_token = body.get("user_token") or ""
+    if user_token:
+        try:
+            payload = jwt.decode(user_token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+            uid = int(payload.get("sub") or 0)
+            if uid:
+                r = await db.execute(select(User).where(User.id == uid, User.role == "rider"))
+                u = r.scalar_one_or_none()
+                if u and u.status not in ("deleted", "pending_deletion"):
+                    customer_id = await _get_or_create_stripe_customer(u, db)
+        except Exception as _e:
+            logging.warning("[WebPayIntent] user_token decode failed: %s", _e)
+
     try:
-        intent = _stripe_mod.PaymentIntent.create(
-            amount=amount,
-            currency=currency,
-            automatic_payment_methods={"enabled": True},
-            capture_method="manual",  # HOLD — authorize only, capture later
-            description=description,
-            metadata=metadata,
-        )
+        intent_params = {
+            "amount": amount,
+            "currency": currency,
+            "automatic_payment_methods": {"enabled": True},
+            "capture_method": "manual",  # HOLD — authorize only, capture later
+            "description": description,
+            "metadata": metadata,
+        }
+        if customer_id:
+            intent_params["customer"] = customer_id
+            # setup_future_usage is only valid when a customer is attached.
+            intent_params["setup_future_usage"] = "off_session"
+        intent = _stripe_mod.PaymentIntent.create(**intent_params)
         logging.info("[WebPayIntent] HOLD created: %s (amount=%d %s)", intent.id, amount, currency)
         return {
             "client_secret": intent.client_secret,

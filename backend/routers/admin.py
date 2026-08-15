@@ -174,10 +174,9 @@ async def admin_list_trips(
         _rn, _rp = _resolve_rider_display(t, rider_obj)
         td["rider_name"] = _rn
         td["rider_phone"] = _rp
-        # Flag so dispatch UI can tag web bookings visually if it wants to.
-        td["is_web_booking"] = bool(
-            (getattr(t, "guest_first_name", None) or getattr(t, "guest_last_name", None) or getattr(t, "guest_phone", None))
-        )
+        # Kept for API compatibility — web bookings are intentionally
+        # indistinguishable from app bookings, so this is always False.
+        td["is_web_booking"] = False
         if t.driver_id and t.driver_id in users_map:
             td["driver_name"] = users_map[t.driver_id][0]
             td["driver_phone"] = users_map[t.driver_id][1]
@@ -1348,8 +1347,8 @@ async def get_active_trips(db: AsyncSession = Depends(get_db)):
                 "fare": trip.fare,
                 "created_at": trip.created_at.isoformat() if trip.created_at else None,
                 "vehicle_type": trip.vehicle_type,
-                "is_web_booking": is_web,
-                "source": "web" if is_web else ("app" if rider else "system"),
+                "is_web_booking": False,
+                "source": "app" if (rider or is_web) else "system",
             })
 
         return {"trips": trips}

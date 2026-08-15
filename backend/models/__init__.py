@@ -3,7 +3,7 @@ from .database import (
     User, ConsentLog, Trip, FareSplit, DispatchOffer, PayoutMethod,
     RiderPaymentMethod, Wallet, WalletTransaction, Cashout, Vehicle,
     Document, Rating, ChatMessage, SupportChat, SupportMessage,
-    ActionRequest, Notification, PromoCode, PasswordResetToken,
+    ActionRequest, Notification, PromoCode, PasswordResetToken, OTPCode,
     Referral, FavoriteLocation, DriverIncentive, SurgeZone, ServiceArea,
     migrate_add_columns, migrate_postgres, column_missing,
 )

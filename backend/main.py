@@ -106,7 +106,7 @@ from models.database import (
     User, ConsentLog, Trip, FareSplit, DispatchOffer, PayoutMethod,
     RiderPaymentMethod, Wallet, WalletTransaction, Cashout, Vehicle,
     Document, Rating, ChatMessage, SupportChat, SupportMessage,
-    ActionRequest, Notification, PromoCode, PasswordResetToken,
+    ActionRequest, Notification, PromoCode, PasswordResetToken, OTPCode,
     Referral, FavoriteLocation, DriverIncentive, SurgeZone, ServiceArea,
     AuditLog,
     column_missing as _column_missing,

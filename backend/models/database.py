@@ -576,6 +576,25 @@ class PasswordResetToken(Base):
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 
+class OTPCode(Base):
+    __tablename__ = "otp_codes"
+    id = Column(Integer, primary_key=True, index=True)
+    # Email (lowercased) or phone in E.164 — who the code was sent to.
+    identifier = Column(String(255), nullable=False, index=True)
+    # 'email' | 'sms'
+    channel = Column(String(10), nullable=False)
+    # SHA-256 hex of the 6-digit code — never the code itself. Nullable so a
+    # verified row can carry only an otp_token (single-use login ticket).
+    code_hash = Column(String(64), nullable=True)
+    # Single-use token issued after a successful verify, consumed by
+    # /auth/web/complete-login. 64 hex chars, expires with the row.
+    otp_token = Column(String(64), nullable=True, index=True)
+    # Wrong guesses so far; the row dies at the limit (same as password reset).
+    attempts = Column(Integer, default=0, nullable=False)
+    expires_at = Column(Float, nullable=False)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+
 class Referral(Base):
     __tablename__ = "referrals"
     id = Column(Integer, primary_key=True, index=True)

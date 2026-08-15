@@ -7,6 +7,7 @@ from sqlalchemy import select, func, and_, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from models.database import (
     get_db, SessionLocal, User, Trip, RiderPaymentMethod, Vehicle, DispatchOffer, Rating,
+    OTPCode,
 )
 from models.schemas import PaymentIntentIn, PayPalOrderIn, PayPalCaptureIn, RiderPaymentMethodIn, BankAccountAttachIn
 from utils.security import (
@@ -22,6 +23,7 @@ from services.fcm_service import _send_fcm_push
 from services import vehicle_tiers, web_pricing
 from services.sms_service import notify_guest_welcome
 from services.email_service import email_guest_welcome, email_vip_drink_menu
+from services.email_sms_service import _send_email, _send_sms
 from routers.vip import generate_vip_menu_token
 from sqlalchemy.exc import IntegrityError
 import jwt
@@ -3093,6 +3095,214 @@ async def web_booking_change_destination(booking_id: int, request: Request, db: 
 #  Uses WEB_CHECKOUT_KEY instead of HMAC-based _verify_api_key
 # -------------------------------------------------------
 
+# ── Web OTP (login verification) ────────────────────────────────────────
+# In-memory send throttles, same pattern as utils/security.py
+# _check_password_reset_rate. Per-code guess attempts live on the DB row.
+_WEB_OTP_TTL = 600               # 10 minutes, code and otp_token alike
+_WEB_OTP_MAX_ATTEMPTS = 5        # wrong guesses before the code dies
+_WEB_OTP_SEND_WINDOW = 900       # 15 min
+_WEB_OTP_MAX_SENDS = 3           # per identifier per window
+_WEB_OTP_IP_WINDOW = 3600        # 1 hour
+_WEB_OTP_IP_MAX_SENDS = 10       # per IP per window
+_web_otp_send_tracker: dict = {}  # identifier -> [monotonic timestamps]
+_web_otp_ip_tracker: dict = {}    # ip -> [monotonic timestamps]
+
+
+def _web_otp_rate_limited(identifier: str, ip: str) -> bool:
+    """True if this send should be denied (3/identifier/15min + 10/IP/hour)."""
+    now = time.monotonic()
+    sends = [t for t in _web_otp_send_tracker.get(identifier, []) if now - t < _WEB_OTP_SEND_WINDOW]
+    _web_otp_send_tracker[identifier] = sends
+    ip_sends = [t for t in _web_otp_ip_tracker.get(ip, []) if now - t < _WEB_OTP_IP_WINDOW]
+    _web_otp_ip_tracker[ip] = ip_sends
+    return len(sends) >= _WEB_OTP_MAX_SENDS or len(ip_sends) >= _WEB_OTP_IP_MAX_SENDS
+
+
+def _record_web_otp_send(identifier: str, ip: str):
+    now = time.monotonic()
+    _web_otp_send_tracker.setdefault(identifier, []).append(now)
+    _web_otp_ip_tracker.setdefault(ip, []).append(now)
+
+
+def _web_normalize_phone_e164(identifier: str) -> str:
+    """+1XXXXXXXXXX — same normalization the mobile OTP flow uses."""
+    digits = re.sub(r"\D", "", identifier)
+    if digits.startswith("1") and len(digits) == 11:
+        digits = digits[1:]
+    return f"+1{digits}"
+
+
+def _web_mask_email(addr: str) -> str:
+    """j•••h@gmail.com — enough to recognise, not enough to read out."""
+    name, _, domain = addr.partition("@")
+    if not domain:
+        return addr
+    if len(name) <= 2:
+        return f"{name[:1]}•••@{domain}"
+    return f"{name[0]}•••{name[-1]}@{domain}"
+
+
+def _web_mask_phone(phone: str) -> str:
+    """+1 (•••) •••-7890 — last four only, enough to recognise."""
+    digits = re.sub(r"\D", "", phone)
+    if len(digits) < 4:
+        return "+1 (•••) •••-••••"
+    return f"+1 (•••) •••-{digits[-4:]}"
+
+
+def _web_otp_email_html(code: str) -> str:
+    """Same template the mobile /auth/send-otp uses (routers/auth.py)."""
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/></head>
+<body style="margin:0;padding:0;background-color:#f0f0f0;font-family:'Helvetica Neue',Arial,sans-serif">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f0f0f0;padding:40px 0"><tr><td align="center">
+<table role="presentation" width="600" cellpadding="0" cellspacing="0"><tr><td align="center" style="padding-bottom:24px">
+<h1 style="margin:0;font-size:28px;font-weight:700;color:#d4a843;letter-spacing:2px">Cruise</h1>
+</td></tr></table>
+<table role="presentation" width="600" cellpadding="0" cellspacing="0" style="background-color:#ffffff;border-radius:8px;overflow:hidden"><tr><td style="padding:48px 40px;text-align:center">
+<h2 style="margin:0 0 8px;font-size:26px;font-weight:700;color:#1a1a2e">Verify your email address</h2>
+<p style="margin:0 0 32px;font-size:16px;color:#6b6b6b">Use the code below, which expires in 10 minutes.</p>
+<table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 auto"><tr>
+<td style="background-color:#f7f7f7;border:1px solid #e0e0e0;border-radius:8px;padding:20px 48px">
+<span style="font-size:40px;font-weight:800;letter-spacing:12px;color:#1a1a2e">{code}</span>
+</td></tr></table>
+</td></tr></table>
+<table role="presentation" width="600" cellpadding="0" cellspacing="0"><tr>
+<td style="padding:24px 40px;text-align:center;background-color:#f7f7f7;border-radius:0 0 8px 8px">
+<p style="margin:0;font-size:14px;color:#999999">If you didn't request this code, you can safely ignore this email.</p>
+</td></tr><tr><td align="center" style="padding-top:24px">
+<p style="margin:0;font-size:12px;color:#bbbbbb">&mdash; Cruise App</p>
+</td></tr></table>
+</td></tr></table>
+</body></html>"""
+
+
+@router.post("/auth/web/send-otp")
+async def web_send_otp(request: Request, db: AsyncSession = Depends(get_db)):
+    """Send a 6-digit login code by SMS or email for the web flow.
+
+    Only the SHA-256 of the code is stored (TTL 10 min); previous live codes
+    for the same identifier are deleted. The answer is always the same shape
+    whether or not the identifier belongs to an account, so this endpoint
+    cannot be used to enumerate users.
+    """
+    _verify_web_origin(request)
+    _web_key_check(request)
+    body = await request.json()
+    identifier = (body.get("identifier") or "").strip()
+    lang = (body.get("lang") or "es").strip().lower()
+    if not identifier:
+        raise HTTPException(400, "identifier required")
+
+    # Normalise and pick the channel from the identifier shape.
+    if "@" in identifier:
+        channel = "email"
+        identifier = identifier.lower()
+        masked = _web_mask_email(identifier)
+    else:
+        channel = "sms"
+        identifier = _web_normalize_phone_e164(identifier)
+        masked = _web_mask_phone(identifier)
+
+    client_ip = request.client.host if request.client else "unknown"
+    if _web_otp_rate_limited(identifier, client_ip):
+        raise HTTPException(429, "Too many attempts. Try again in a few minutes.")
+    _record_web_otp_send(identifier, client_ip)
+
+    code = f"{secrets.randbelow(1000000):06d}"
+    code_hash = hashlib.sha256(code.encode()).hexdigest()
+
+    # One live code per identifier: wipe previous codes and stale tokens.
+    await db.execute(
+        OTPCode.__table__.delete().where(OTPCode.identifier == identifier)
+    )
+    db.add(OTPCode(
+        identifier=identifier,
+        channel=channel,
+        code_hash=code_hash,
+        expires_at=time.time() + _WEB_OTP_TTL,
+    ))
+    await db.commit()
+
+    # Deliver. Both senders are blocking — run them off the event loop.
+    # A delivery failure is logged but never leaked to the caller.
+    try:
+        loop = asyncio.get_event_loop()
+        if channel == "email":
+            sent = await loop.run_in_executor(None, lambda: _send_email(
+                identifier,
+                "Your Cruise Verification Code",
+                _web_otp_email_html(code),
+                template_params={"code": code},
+            ))
+        else:
+            if lang.startswith("en"):
+                msg = f"Your CruiseInRide code is: {code}"
+            else:
+                msg = f"Tu código CruiseInRide es: {code}"
+            sent = await loop.run_in_executor(None, lambda: _send_sms(identifier, msg))
+        if not sent:
+            logging.warning("[WebOTP] %s delivery failed for %s", channel, masked)
+    except Exception as e:
+        logging.warning("[WebOTP] %s send error for %s: %s", channel, masked, e)
+
+    logging.info("[WebOTP] Code sent via %s to %s (hash=%s)",
+                 channel, masked, code_hash[:8])
+    return {"ok": True, "channel": channel, "masked": masked}
+
+
+@router.post("/auth/web/verify-otp")
+async def web_verify_otp(request: Request, db: AsyncSession = Depends(get_db)):
+    """Check a web login code. On success returns a single-use otp_token
+    (TTL 10 min) that /auth/web/complete-login requires. Failures are
+    generic and count against the row, which dies at 5 attempts."""
+    _verify_web_origin(request)
+    _web_key_check(request)
+    body = await request.json()
+    identifier = (body.get("identifier") or "").strip()
+    code = (body.get("code") or "").strip()
+    if not identifier or not code:
+        raise HTTPException(400, "identifier and code required")
+
+    if "@" in identifier:
+        identifier = identifier.lower()
+    else:
+        identifier = _web_normalize_phone_e164(identifier)
+
+    r = await db.execute(
+        select(OTPCode).where(
+            OTPCode.identifier == identifier,
+            OTPCode.code_hash.isnot(None),
+            OTPCode.expires_at > time.time(),
+        ).order_by(OTPCode.created_at.desc())
+    )
+    row = r.scalars().first()
+    if not row or row.attempts >= _WEB_OTP_MAX_ATTEMPTS:
+        return {"ok": False}
+
+    if row.code_hash != hashlib.sha256(code.encode()).hexdigest():
+        row.attempts += 1
+        await db.commit()
+        logging.warning("[WebOTP] Invalid code for %s (attempt %d/%d)",
+                        identifier, row.attempts, _WEB_OTP_MAX_ATTEMPTS)
+        return {"ok": False}
+
+    # Verified: replace the code row with a single-use otp_token row.
+    otp_token = secrets.token_hex(32)
+    await db.delete(row)
+    db.add(OTPCode(
+        identifier=identifier,
+        channel=row.channel,
+        code_hash=None,
+        otp_token=otp_token,
+        expires_at=time.time() + _WEB_OTP_TTL,
+    ))
+    await db.commit()
+    logging.info("[WebOTP] Verified for %s, otp_token issued", identifier)
+    return {"ok": True, "otp_token": otp_token}
+
+
 @router.post("/auth/web/check-exists")
 async def web_check_exists(request: Request, db: AsyncSession = Depends(get_db)):
     """Check if email or phone already exists (web-safe, no HMAC needed)."""
@@ -3437,18 +3647,35 @@ async def web_login(request: Request, db: AsyncSession = Depends(get_db)):
 
     _clear_login_failures(client_ip)
     login_token = _create_login_token(user.id)
-    return {"login_token": login_token, "method": "web"}
+    return {"login_token": login_token, "method": "web", "requires_otp": True}
 
 
 @router.post("/auth/web/complete-login")
 async def web_complete_login(request: Request, db: AsyncSession = Depends(get_db)):
-    """Exchange login_token for full JWT (web flow skips OTP)."""
+    """Exchange login_token + otp_token for full JWT. The web flow requires
+    OTP: the otp_token comes from /auth/web/verify-otp and is single-use —
+    it is deleted here whether the rest of the exchange succeeds or not."""
     _verify_web_origin(request)
     _web_key_check(request)
     body = await request.json()
     login_token = body.get("login_token", "")
+    otp_token = (body.get("otp_token") or "").strip()
     if not login_token:
         raise HTTPException(400, "login_token required")
+    if not otp_token:
+        raise HTTPException(401, "otp_required")
+
+    r = await db.execute(
+        select(OTPCode).where(
+            OTPCode.otp_token == otp_token,
+            OTPCode.expires_at > time.time(),
+        )
+    )
+    otp_row = r.scalar_one_or_none()
+    if not otp_row:
+        raise HTTPException(401, "otp_required")
+    await db.delete(otp_row)
+    await db.commit()
 
     try:
         payload = jwt.decode(login_token, JWT_SECRET, algorithms=[JWT_ALGORITHM])

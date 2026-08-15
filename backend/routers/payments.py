@@ -1,7 +1,7 @@
 import os, time, math, secrets, logging, json, re, base64, asyncio, collections, hashlib, hmac
 from datetime import datetime, timedelta, timezone
 from typing import Optional, List
-from fastapi import APIRouter, Depends, HTTPException, Header, Request, Query, Body
+from fastapi import APIRouter, Depends, HTTPException, Header, Request, Query, Body, UploadFile, File
 from fastapi.responses import JSONResponse, FileResponse, Response
 from sqlalchemy import select, func, and_, or_, text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -3488,13 +3488,35 @@ async def web_support_messages(chat_id: int, request: Request, db: AsyncSession 
         if m.sender_id != user.id and not m.is_read:
             m.is_read = True
     await db.commit()
-    return {
-        "messages": [{
+    from routers.support import _ATTACH_PREFIX
+    from services.storage import get_signed_url
+    out_messages = []
+    for m in messages:
+        d = {
             "id": m.id,
             "sender_role": m.sender_role,
             "message": m.message,
             "created_at": m.created_at.isoformat() if m.created_at else None,
-        } for m in messages],
+            "attachment_url": None,
+            "attachment_type": None,
+        }
+        # Attachments ride in the message text as "||ATT||<s3 key>" (see
+        # routers/support.py). Swap the stored key for a fresh signed URL —
+        # never expose the raw key to the browser.
+        raw = m.message or ""
+        if raw.startswith(_ATTACH_PREFIX):
+            key = raw[len(_ATTACH_PREFIX):].strip()
+            d["message"] = ""
+            ext = key.rsplit(".", 1)[-1].lower() if "." in key else ""
+            d["attachment_type"] = "image" if ext in ("jpg", "jpeg", "png", "webp", "heic") else "pdf"
+            if key:
+                try:
+                    d["attachment_url"] = await get_signed_url(key)
+                except Exception as e:
+                    logging.warning("[web-support] presign failed for %s: %s", key, e)
+        out_messages.append(d)
+    return {
+        "messages": out_messages,
         "bot_phase": chat.bot_phase or "welcome",
     }
 
@@ -3560,6 +3582,102 @@ async def web_support_send(chat_id: int, request: Request, db: AsyncSession = De
 
     # Start inactivity timer
     _support._inactivity_tasks[chat_id] = _safe_create_task(_support._check_chat_inactivity(chat_id))
+
+    return {"ok": True}
+
+
+@router.post("/auth/web/support/chat/{chat_id}/end")
+async def web_support_end(chat_id: int, request: Request, db: AsyncSession = Depends(get_db)):
+    """Close the rider's own support chat from the browser. Same owner check
+    and side effects as PATCH /support/chats/{id}/close-user in
+    routers/support.py. Idempotent: an already-closed chat returns ok too,
+    and POST /auth/web/support/chat will open a fresh one afterwards
+    (_get_or_create_support_chat only reuses chats with status == "open")."""
+    from routers import support as _support
+    user = await _web_jwt_user(request, db)
+    chat_r = await db.execute(select(SupportChat).where(SupportChat.id == chat_id))
+    chat = chat_r.scalar_one_or_none()
+    if not chat or chat.user_id != user.id:
+        raise HTTPException(404, "Chat not found")
+    if chat.status != "closed":
+        chat.status = "closed"
+        chat.updated_at = datetime.now(timezone.utc)
+        await db.commit()
+
+        # Cancel any pending inactivity task
+        task = _support._inactivity_tasks.pop(chat_id, None)
+        if task and not task.done():
+            task.cancel()
+
+        if _support._HAS_FIRESTORE:
+            try:
+                _support.firestore_sync.sync_support_chat(
+                    chat.id, chat.user_id,
+                    user.first_name, user.last_name,
+                    getattr(user, "photo_url", None), user.role,
+                    chat.subject, "closed",
+                )
+            except Exception as e:
+                logging.error("Firestore web close chat sync failed: %s", e)
+
+        # Agent 2 (Follow-up): schedule satisfaction check 24h from now
+        _chat_lang = getattr(chat, "locale", "en") or "en"
+        _safe_create_task(_support._followup_task(chat_id, user.id, _chat_lang))
+
+    return {"ok": True}
+
+
+@router.post("/auth/web/support/chat/{chat_id}/attachments")
+async def web_support_attachment(chat_id: int, request: Request, file: UploadFile = File(...), db: AsyncSession = Depends(get_db)):
+    """Attach a photo or PDF to the rider's own support chat from the
+    browser. Stores the SupportMessage EXACTLY like
+    POST /support/chats/{id}/attachments in routers/support.py (message =
+    "||ATT||<s3 key>"), so dispatch and the app render it identically. Type
+    and size are enforced inside upload_file, which sniffs magic bytes."""
+    from routers import support as _support
+    from services.storage import upload_file
+    user = await _web_jwt_user(request, db)
+    chat_r = await db.execute(select(SupportChat).where(SupportChat.id == chat_id))
+    chat = chat_r.scalar_one_or_none()
+    if not chat or chat.user_id != user.id:
+        raise HTTPException(404, "Chat not found")
+
+    data = await file.read()
+    if not data:
+        raise HTTPException(400, "Empty file")
+
+    try:
+        result = await upload_file(
+            data,
+            folder=f"support/{chat_id}",
+            content_type=file.content_type or "application/octet-stream",
+        )
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except RuntimeError as e:
+        raise HTTPException(503, str(e))
+
+    row = SupportMessage(
+        chat_id=chat_id,
+        sender_id=user.id,
+        sender_role="rider",
+        message=f"{_support._ATTACH_PREFIX}{result['key']}",
+    )
+    db.add(row)
+    chat.updated_at = datetime.now(timezone.utc)
+    chat.last_user_message_at = datetime.now(timezone.utc)
+    await db.commit()
+    await db.refresh(row)
+
+    if _support._HAS_FIRESTORE:
+        try:
+            _support.firestore_sync.sync_support_message(
+                chat_id, row.id, user.id,
+                f"{user.first_name or ''}".strip(),
+                row.sender_role, row.message,
+            )
+        except Exception as e:
+            logging.warning("[web-support] attachment sync failed for %s: %s", chat_id, e)
 
     return {"ok": True}
 

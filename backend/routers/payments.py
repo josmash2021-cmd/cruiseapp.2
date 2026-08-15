@@ -3366,8 +3366,44 @@ async def _web_jwt_user(request: Request, db: AsyncSession) -> User:
         raise HTTPException(401, "Invalid or expired token")
     if not user_id:
         raise HTTPException(401, "Invalid token")
-    r = await db.execute(select(User).where(User.id == user_id))
-    user = r.scalar_one_or_none()
+    try:
+        r = await db.execute(select(User).where(User.id == user_id))
+        user = r.scalar_one_or_none()
+    except Exception as _col_err:
+        # Same schema-drift guard as _get_current_user in utils/security.py:
+        # prod has lagged the User model before, and without this every
+        # /auth/web/* endpoint 500s on a valid token while the app survives
+        # on its raw-SQL fallback. A transient User reads None for unset
+        # attributes, which downstream code already tolerates.
+        _err_str = str(_col_err).lower()
+        if not ("column" in _err_str or "does not exist" in _err_str):
+            raise
+        logging.warning("[web-auth] ORM user query failed (%s) — raw SQL fallback", _col_err)
+        # Postgres aborts the whole transaction on a failed statement; without
+        # this rollback the fallback SELECT dies with InFailedSqlTransaction.
+        try:
+            await db.rollback()
+        except Exception:
+            pass
+        user = None
+        for _cols in (
+            "id, email, phone, first_name, last_name, role, status, stripe_customer_id, active_session_id",
+            "id, email, role, status, active_session_id",
+        ):
+            try:
+                _raw = await db.execute(
+                    text(f"SELECT {_cols} FROM users WHERE id = :uid"), {"uid": user_id}
+                )
+                row = _raw.fetchone()
+            except Exception:
+                continue
+            if not row:
+                break  # user genuinely gone
+            user = User(id=row.id, email=row.email, role=row.role, status=row.status)
+            for _attr in ("phone", "first_name", "last_name", "stripe_customer_id", "active_session_id"):
+                setattr(user, _attr, getattr(row, _attr, None))
+            setattr(user, "fcm_token", None)
+            break
     if not user:
         raise HTTPException(404, "User not found")
     return user

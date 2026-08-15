@@ -898,6 +898,7 @@ async def migrate_add_columns(conn):
         ("support_chats", "last_user_message_at", "DATETIME"),
         ("support_chats", "supervisor_connected", "BOOLEAN DEFAULT 0"),
         ("support_chats", "ai_disabled", "BOOLEAN DEFAULT 0"),
+        ("support_chats", "locale", "VARCHAR(5) DEFAULT 'en'"),
         ("chat_messages", "legal_hold", "BOOLEAN DEFAULT 0"),
         ("support_chats", "legal_hold", "BOOLEAN DEFAULT 0"),
         ("support_messages", "legal_hold", "BOOLEAN DEFAULT 0"),
@@ -1110,6 +1111,10 @@ async def migrate_postgres(conn):
         ("support_chats", "last_user_message_at", "TIMESTAMP WITH TIME ZONE"),
         ("support_chats", "supervisor_connected", "BOOLEAN DEFAULT FALSE"),
         ("support_chats", "ai_disabled", "BOOLEAN DEFAULT FALSE"),
+        # locale was in the model (welcome ES/EN) but in NO migration list —
+        # every ORM select(SupportChat) 500'd with UndefinedColumn in prod
+        # (trampa #0 otra vez, igual que trips.stops y consent_logs).
+        ("support_chats", "locale", "VARCHAR(5) DEFAULT 'en'"),
         ("chat_messages", "legal_hold", "BOOLEAN DEFAULT FALSE"),
         ("support_chats", "legal_hold", "BOOLEAN DEFAULT FALSE"),
         ("support_messages", "legal_hold", "BOOLEAN DEFAULT FALSE"),

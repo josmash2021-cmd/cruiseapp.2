@@ -118,6 +118,7 @@ MIGRATIONS = [
     ("support_chats", "needs_escalation", "BOOLEAN DEFAULT FALSE"),
     ("support_chats", "last_user_message_at", "TIMESTAMP WITH TIME ZONE"),
     ("support_chats", "supervisor_connected", "BOOLEAN DEFAULT FALSE"),
+    ("support_chats", "locale", "VARCHAR(5) DEFAULT 'en'"),
     ("rider_payment_methods", "stripe_pm_id", "VARCHAR(100)"),
     ("rider_payment_methods", "dwolla_funding_source_id", "VARCHAR(100)"),
     ("rider_payment_methods", "account_number_encrypted", "VARCHAR(255)"),

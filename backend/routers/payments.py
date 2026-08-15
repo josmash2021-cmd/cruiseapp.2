@@ -3461,7 +3461,14 @@ async def web_support_chat(request: Request, db: AsyncSession = Depends(get_db))
     welcome message), shared via routers.support._get_or_create_support_chat."""
     from routers.support import _get_or_create_support_chat
     user = await _web_jwt_user(request, db)
-    chat = await _get_or_create_support_chat(user, db)
+    # idioma inicial desde la página (es/en); luego el bot sigue el idioma
+    # de cada mensaje del cliente automáticamente
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    locale = (body.get("locale") or "en").strip()[:5]
+    chat = await _get_or_create_support_chat(user, db, locale=locale)
     return {"chat_id": chat["id"]}
 
 

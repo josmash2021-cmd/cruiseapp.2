@@ -53,7 +53,9 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   }
 
   /// Original values loaded from the session — the Save button only appears
-  /// when email/phone differ from these or a new photo was picked.
+  /// when any editable field differs from these or a new photo was picked.
+  String _origFirstName = '';
+  String _origLastName = '';
   String _origEmail = '';
   String _origPhone = '';
 
@@ -63,6 +65,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
 
   bool get _hasChanges =>
       _pendingPhotoPath != null ||
+      _firstNameCtrl.text.trim() != _origFirstName.trim() ||
+      _lastNameCtrl.text.trim() != _origLastName.trim() ||
       _emailCtrl.text.trim() != _origEmail.trim() ||
       _phoneE164(_phoneCtrl.text) != _origPhone;
 
@@ -71,6 +75,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   @override
   void initState() {
     super.initState();
+    _firstNameCtrl.addListener(_onFieldChanged);
+    _lastNameCtrl.addListener(_onFieldChanged);
     _emailCtrl.addListener(_onFieldChanged);
     _phoneCtrl.addListener(_onFieldChanged);
     _loadUser();
@@ -78,6 +84,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
 
   @override
   void dispose() {
+    _firstNameCtrl.removeListener(_onFieldChanged);
+    _lastNameCtrl.removeListener(_onFieldChanged);
     _emailCtrl.removeListener(_onFieldChanged);
     _phoneCtrl.removeListener(_onFieldChanged);
     _firstNameCtrl.dispose();
@@ -96,6 +104,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       _emailCtrl.text = user?['email'] ?? '';
       // Stored as E.164 or bare digits; shown formatted.
       _phoneCtrl.text = formatUsPhone(_phoneDigits(user?['phone'] ?? ''));
+      _origFirstName = _firstNameCtrl.text;
+      _origLastName = _lastNameCtrl.text;
       _origEmail = _emailCtrl.text;
       _origPhone = _phoneE164(_phoneCtrl.text);
       _photoPath = user?['photoPath'] ?? '';
@@ -209,6 +219,10 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     final last = _lastNameCtrl.text.trim();
     if (first.isEmpty) {
       _showSnack('First name is required');
+      return;
+    }
+    if (last.isEmpty) {
+      _showSnack('Last name is required');
       return;
     }
 
@@ -491,7 +505,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                       S.of(context).firstName,
                       _firstNameCtrl,
                       Icons.person_outline_rounded,
-                      readOnly: true,
                     ),
                     const SizedBox(height: 14),
                     _field(
@@ -499,7 +512,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                       S.of(context).lastName,
                       _lastNameCtrl,
                       Icons.person_outline_rounded,
-                      readOnly: true,
                     ),
                     const SizedBox(height: 14),
                     _field(

@@ -1325,12 +1325,13 @@ async def update_me(request: Request, user: User = Depends(_get_current_user), d
         if (db_user.phone_changes_count or 0) >= 3:
             raise HTTPException(400, "Maximum phone changes reached (3)")
         db_user.phone_changes_count = (db_user.phone_changes_count or 0) + 1
-    # Block name changes - first_name and last_name cannot be changed
-    updates.pop("first_name", None)
-    updates.pop("last_name", None)
     for key in _SAFE_SELF_UPDATE_FIELDS:
         if key in updates:
             val = updates[key]
+            if key in ("first_name", "last_name"):
+                if not isinstance(val, str) or not val.strip():
+                    raise HTTPException(400, f"{key} cannot be empty")
+                val = val.strip()
             # Never allow photo_url to be set to None or empty - use /auth/photo-url to set it
             if key == "photo_url" and (not val or not isinstance(val, str) or not val.startswith("http")):
                 continue

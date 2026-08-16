@@ -2593,12 +2593,12 @@ async def get_support_messages_dispatch(chat_id: int, db: AsyncSession = Depends
 @router.post("/support/chats/{chat_id}/messages", dependencies=[Depends(_verify_api_key)])
 async def send_support_message(chat_id: int, request: Request, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
     """Send a message in a support chat (rider/driver side)."""
-    # Rate limit: max 10 messages per minute per user
+    # Rate limit: max 60 messages per minute per user (generous for real-time support)
     _now = time.monotonic()
     _uid_key = f"support_msg_{user.id}"
     _msg_timestamps = _support_msg_rate.get(_uid_key, [])
     _msg_timestamps = [t for t in _msg_timestamps if _now - t < 60]
-    if len(_msg_timestamps) >= 10:
+    if len(_msg_timestamps) >= 60:
         raise HTTPException(429, "Too many messages. Please wait a moment.")
     _msg_timestamps.append(_now)
     _support_msg_rate[_uid_key] = _msg_timestamps

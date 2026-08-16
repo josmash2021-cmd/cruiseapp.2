@@ -3535,12 +3535,12 @@ async def web_support_send(chat_id: int, request: Request, db: AsyncSession = De
     from routers import support as _support
     user = await _web_jwt_user(request, db)
 
-    # Rate limit: max 10 messages per minute per user (shared bucket with the app)
+    # Rate limit: max 60 messages per minute per user (shared bucket with the app)
     _now = time.monotonic()
     _uid_key = f"support_msg_{user.id}"
     _msg_timestamps = _support._support_msg_rate.get(_uid_key, [])
     _msg_timestamps = [t for t in _msg_timestamps if _now - t < 60]
-    if len(_msg_timestamps) >= 10:
+    if len(_msg_timestamps) >= 60:
         raise HTTPException(429, "Too many messages. Please wait a moment.")
     _msg_timestamps.append(_now)
     _support._support_msg_rate[_uid_key] = _msg_timestamps

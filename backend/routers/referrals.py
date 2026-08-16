@@ -357,9 +357,12 @@ async def get_my_referrals(
     _bonus_dollars = int(REFERRER_BONUS)
     return {
         "referral_code": code,
+        # The download link is the smart /download redirect (iPhone → App
+        # Store, Android handled there too once the Play listing exists).
         "share_message": (
             f"Sign up for Cruise with my code {code} — complete 2 rides "
-            f"of $25+ and we BOTH get ${_bonus_dollars} in Cruise Cash!"
+            f"of $25+ and we BOTH get ${_bonus_dollars} in Cruise Cash! "
+            f"Download: https://cruiseinride.com/download"
         ),
         "balance_cents": bal.balance_cents,
         "lifetime_earned_cents": bal.lifetime_earned_cents,

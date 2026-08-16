@@ -184,7 +184,7 @@ class _ReferralScreenState extends State<ReferralScreen>
     final s = S.of(context);
     final msg = _shareMessage.isNotEmpty
         ? _shareMessage
-        : 'Use my Cruise code $_code!';
+        : 'Use my Cruise code $_code! Download: https://cruiseinride.com/download';
     try {
       final box = context.findRenderObject() as RenderBox?;
       final origin = box != null

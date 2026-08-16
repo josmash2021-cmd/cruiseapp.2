@@ -24,6 +24,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:flutter/foundation.dart' show kDebugMode, kIsWeb;
 import '../utils/mapbox_safe.dart';
+import '../utils/driver_location_settings.dart';
 import 'airport_terminal_sheet.dart';
 import 'airport_direction_screen.dart';
 import 'biometric_consent_screen.dart';
@@ -813,10 +814,10 @@ class _HomeScreenState extends State<HomeScreen>
       _locationSub?.cancel();
       _locationSub =
           Geolocator.getPositionStream(
-            locationSettings: const LocationSettings(
-              accuracy: LocationAccuracy.bestForNavigation,
-              distanceFilter: 0,
-            ),
+            // riderLocationSettings, not a bare LocationSettings: the bare
+            // form floors Android at one fix per 5 s (native default
+            // interval), so the dot froze and then jumped metres at once.
+            locationSettings: riderLocationSettings(distanceFilter: 0),
           ).listen((Position p) {
             if (!mounted) return;
             _lastGpsFixAt = DateTime.now();
@@ -827,7 +828,9 @@ class _HomeScreenState extends State<HomeScreen>
             _headingSource.onFix(p);
             // Feed the mini map dot (SmoothMotion glides) + throttled
             // follow camera — the platform channel stays unsaturated.
-            _feedHomeDot(ll.latitude, ll.longitude);
+            _feedHomeDot(ll.latitude, ll.longitude,
+                accuracyM: p.accuracy,
+                timestampMs: p.timestamp.millisecondsSinceEpoch.toDouble());
             _recenterHomeMiniMap();
           }, onError: (Object e) {
             // Platform channel errors (permission revoked, location services
@@ -853,7 +856,8 @@ class _HomeScreenState extends State<HomeScreen>
   /// Always ends with a direct draw: the ticker bails out when the dot
   /// hasn't moved (gold_location_dot.dart — `if (!posChanged) return`),
   /// so a stationary rider gets no redraw from it at all.
-  void _feedHomeDot(double lat, double lng) {
+  void _feedHomeDot(double lat, double lng,
+      {double? accuracyM, double? timestampMs}) {
     if (_homeDot.lat == null) {
       _homeDot.snapTo(lat, lng);
       // First real fix: put the map there at once. Waiting for the next
@@ -862,7 +866,8 @@ class _HomeScreenState extends State<HomeScreen>
       _recenterHomeMiniMap();
     } else {
       _homeDot.ensureRunning();
-      _homeDot.setTarget(lat, lng);
+      _homeDot.setTarget(lat, lng,
+          accuracyM: accuracyM, timestampMs: timestampMs);
     }
   }
 

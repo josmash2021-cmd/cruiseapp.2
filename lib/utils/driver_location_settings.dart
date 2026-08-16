@@ -88,3 +88,39 @@ LocationSettings driverLocationSettings({
   }
   return LocationSettings(accuracy: accuracy, distanceFilter: distanceFilter);
 }
+
+/// Location settings for the rider's own dot (home mini map, pickup seeding).
+///
+/// Same Android cadence trap as the driver stream above, minus the
+/// foreground-service machinery — the rider is tracked while the app is
+/// open, not on shift. A bare `LocationSettings` on Android floors delivery
+/// at one fix per 5 s (geolocator_android's default interval), which is why
+/// the home mini-map dot sat still for seconds and then jumped metres at
+/// once: SmoothMotion froze its extrapolation long before the next fix.
+LocationSettings riderLocationSettings({
+  LocationAccuracy accuracy = LocationAccuracy.bestForNavigation,
+  int distanceFilter = 0,
+  Duration intervalDuration = const Duration(milliseconds: 500),
+}) {
+  if (kIsWeb) {
+    return LocationSettings(accuracy: accuracy, distanceFilter: distanceFilter);
+  }
+  if (Platform.isIOS || Platform.isMacOS) {
+    return AppleSettings(
+      accuracy: accuracy,
+      distanceFilter: distanceFilter,
+      pauseLocationUpdatesAutomatically: false,
+      activityType: ActivityType.otherNavigation,
+    );
+  }
+  if (Platform.isAndroid) {
+    return AndroidSettings(
+      accuracy: accuracy,
+      distanceFilter: distanceFilter,
+      // See driverLocationSettings: without this the marker steps instead
+      // of glides — one fix per 5 s no matter how small distanceFilter is.
+      intervalDuration: intervalDuration,
+    );
+  }
+  return LocationSettings(accuracy: accuracy, distanceFilter: distanceFilter);
+}

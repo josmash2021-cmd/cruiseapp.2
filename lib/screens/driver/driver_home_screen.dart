@@ -1485,7 +1485,9 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
         // now — see the _headingSource subscription in initState — and this
         // hands the fix over so the service can decide whether the car is
         // going fast enough for the GPS course to be the better answer.
-        _goldDot.setTarget(ll.latitude, ll.longitude, accuracyM: p.accuracy);
+        _goldDot.setTarget(ll.latitude, ll.longitude,
+            accuracyM: p.accuracy,
+            timestampMs: p.timestamp.millisecondsSinceEpoch.toDouble());
         _headingSource.onFix(p);
         // Keep publishing while online — the driver can be on this screen
         // mid-shift now. See _feedGpsUploads.

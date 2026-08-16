@@ -31,6 +31,10 @@ class SmoothMotion {
 
   DateTime? _lastTargetAt;
 
+  /// Capture timestamp (epoch millis) of the last accepted fix, when the
+  /// feed carries one. Arrival time paces a feed that doesn't.
+  double? _lastTargetTsMs;
+
   /// How much of the remaining angular gap to close per second when applying
   /// the low-pass filter on bearing. Higher = more responsive turns.
   /// 2.5 → 3.5: the arrow visibly trailed the car's turns by ~half a second.
@@ -45,10 +49,11 @@ class SmoothMotion {
   static const double _correctionPerSec = 2.4;
 
   /// Freeze velocity after this many seconds without a fresh GPS fix.
-  /// 3.5 s allows the dot to keep gliding through brief urban GPS shadows
-  /// (tunnels, buildings) without stalling, while still freezing if GPS
-  /// is truly lost.
-  static const double _maxExtrapolationSec = 3.5;
+  /// 5 s covers the real gaps seen on cellular (tower handoffs, burst
+  /// delivery) and the rider's relayed feed; the old 3.5 s froze the marker
+  /// mid-gap and the next fix then arrived to a stopped marker with metres
+  /// of backlog — the freeze-then-jump cycle.
+  static const double _maxExtrapolationSec = 5.0;
 
   /// The fraction of the remaining gap to close in [dtSec], for a filter that
   /// closes [ratePerSec] of it per second, at any frame rate.
@@ -87,8 +92,11 @@ class SmoothMotion {
 
   /// After this many, the next fix is taken whatever it says. Five fixes
   /// held a car pulling away from a stop for over a second — the "start"
-  /// lag. Three still absorbs a wander burst and lets a real move through.
-  static const int _maxConsecutiveHolds = 3;
+  /// lag. Three still stacked into a visible freeze-jump-freeze cycle in
+  /// slow traffic (hold the fix, stall, then close metres of backlog in
+  /// one correction). Two absorbs a wander burst and lets a real move
+  /// through before the stall is felt.
+  static const int _maxConsecutiveHolds = 2;
 
   /// Provide a new GPS target. Measures velocity from the delta to the
   /// previous target.
@@ -97,11 +105,20 @@ class SmoothMotion {
   /// own reported radius of uncertainty — `Position.accuracy` — and sizes
   /// the standstill hold below. Without it the hold falls back to the old
   /// flat 15 m, which is wider than a road.
+  ///
+  /// [timestampMs] is when the fix was CAPTURED (epoch millis), not when it
+  /// arrived. Relayered feeds (the rider watching the driver over
+  /// socket/RTDB) deliver fixes in bursts; measuring speed between arrival
+  /// times reads a 3-fix burst as a sprint followed by a standstill, which
+  /// is the accelerate-brake pulsing the old feed showed. When both the
+  /// last and current fix carry a sane timestamp, the delta between them
+  /// is what paces the glide.
   void setTarget(
     double lat,
     double lng, {
     double? bearing,
     double? accuracyM,
+    double? timestampMs,
   }) {
     // The busiest entry point, and the one that was not checking.
     //
@@ -113,12 +130,24 @@ class SmoothMotion {
     // map. Dropping the fix costs one update out of the one per second the
     // platform sends.
     if (!lat.isFinite || !lng.isFinite) return;
-    if (bearing != null) setBearing(bearing);
 
     final now = DateTime.now();
+    // Wall-clock sanity for the capture timestamp: future or prehistoric
+    // timestamps are ignored and the arrival time paces that fix instead.
+    final nowMs = now.millisecondsSinceEpoch.toDouble();
+    final double? fixTsMs =
+        (timestampMs != null && timestampMs.isFinite && timestampMs > 0)
+            ? timestampMs
+            : null;
     if (_targetLat != null && _lastTargetAt != null) {
-      final dtSec =
+      var dtSec =
           now.difference(_lastTargetAt!).inMilliseconds / 1000.0;
+      // Prefer capture-to-capture spacing over arrival-to-arrival when the
+      // feed carries real timestamps (see the docstring).
+      if (fixTsMs != null && _lastTargetTsMs != null) {
+        final tsDt = (fixTsMs - _lastTargetTsMs!) / 1000.0;
+        if (tsDt > 0.05 && tsDt < 10.0) dtSec = tsDt;
+      }
       if (dtSec > 0.05 && dtSec < 10.0) {
         final dLat = lat - _targetLat!;
         final dLng = lng - _targetLng!;
@@ -135,8 +164,16 @@ class SmoothMotion {
         // rockets the dot across the map.
         if (impliedSpeed > 60.0) {
           snapTo(lat, lng, bearing: bearing);
+          if (fixTsMs != null) _lastTargetTsMs = fixTsMs;
           return;
         }
+
+        // A stopped or crawling car's GPS heading is noise — it swings
+        // 30-90° between fixes at a traffic light, and applying it made the
+        // arrow tremble while parked. Only a fix that shows real movement
+        // is allowed to aim the marker; compass-fed setBearing keeps
+        // turning it meanwhile.
+        if (bearing != null && impliedSpeed >= 1.0) setBearing(bearing);
 
         // After a long gap the average speed over the gap says nothing
         // about how fast the car is moving NOW — it crept through traffic
@@ -163,6 +200,9 @@ class SmoothMotion {
         // one good to 40 m that has moved 8 m has not necessarily. Floored
         // at 2.5 m because no fix is better than that in a street, and
         // capped at the old 15 so a wild accuracy figure cannot widen it.
+        // (The freeze-then-jump in slow traffic was NOT this radius — it
+        // was the per-hold velocity halving stacked with 3 consecutive
+        // holds; both are softened below.)
         final holdRadiusM = (accuracyM == null ||
                 !accuracyM.isFinite ||
                 accuracyM <= 0)
@@ -173,7 +213,7 @@ class SmoothMotion {
           math.pow(_vLng * 111320.0 * cosLat, 2) +
               math.pow(_vLat * 110540.0, 2),
         );
-        // And never more than a few in a row.
+        // And never more than a couple in a row.
         //
         // Whatever the radius, a run of fixes that all agree on a new place
         // is not noise. Without this a marker could be held indefinitely by
@@ -183,11 +223,16 @@ class SmoothMotion {
             distM < holdRadiusM &&
             _consecutiveHolds < _maxConsecutiveHolds) {
           _consecutiveHolds++;
-          // Bleed off residual velocity and refresh the timestamp so the
-          // extrapolation freeze doesn't kick in — but keep the old target.
-          _vLat *= 0.5;
-          _vLng *= 0.5;
+          // Bleed off a little residual velocity and refresh the timestamp
+          // so the extrapolation freeze doesn't kick in — but keep the old
+          // target. Halving it per held fix (the old 0.5) killed the glide
+          // after two holds: a car creeping through traffic stalled dead
+          // and then jumped to catch up. 0.85 settles a truly parked car
+          // while letting a creeping one keep rolling.
+          _vLat *= 0.85;
+          _vLng *= 0.85;
           _lastTargetAt = now;
+          if (fixTsMs != null) _lastTargetTsMs = fixTsMs;
           return;
         }
         _consecutiveHolds = 0;
@@ -199,9 +244,17 @@ class SmoothMotion {
         // extrapolated glide runs behind (or ahead of) the car.
         _vLat = _vLat * 0.2 + newVLat * 0.8;
         _vLng = _vLng * 0.2 + newVLng * 0.8;
+      } else if (bearing != null) {
+        // No usable spacing (duplicate ts, huge gap): no speed to judge by,
+        // keep the old behaviour and take the bearing as sent.
+        setBearing(bearing);
       }
+    } else if (bearing != null) {
+      // First fix of the session — nothing to measure against yet.
+      setBearing(bearing);
     }
     _lastTargetAt = now;
+    _lastTargetTsMs = fixTsMs ?? _lastTargetTsMs;
     _targetLat = lat;
     _targetLng = lng;
 
@@ -371,6 +424,7 @@ class SmoothMotion {
     _vLng = 0;
     _consecutiveHolds = 0;
     _lastTargetAt = DateTime.now();
+    _lastTargetTsMs = null;
   }
 
   /// Reset to an uninitialised state (driver went offline, trip cancelled).
@@ -385,5 +439,6 @@ class SmoothMotion {
     _targetBearing = 0;
     _consecutiveHolds = 0;
     _lastTargetAt = null;
+    _lastTargetTsMs = null;
   }
 }

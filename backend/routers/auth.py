@@ -1006,8 +1006,12 @@ async def firebase_token(user: User = Depends(_get_current_user)):
 @router.get("/auth/me", dependencies=[Depends(_verify_api_key)])
 async def get_me(user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
     # Mark user as online when they call /auth/me (heartbeat)
-    # Drivers AND riders: calling /auth/me means the app is open and active
-    if not user.is_online:
+    # Riders only: a driver goes online ONLY through the explicit online
+    # toggle (PATCH /drivers/{id}/location with is_online=True). The app
+    # calls /auth/me on every resume and token check, and flipping drivers
+    # here resurrected offline drivers in the DB — dispatch re-verifies the
+    # flag before pushing, so they kept getting ride offers while offline.
+    if not user.is_online and user.role != "driver":
         try:
             await db.execute(
                 User.__table__.update().where(User.__table__.c.id == user.id).values(is_online=True)
@@ -1063,7 +1067,11 @@ async def get_dashboard(user: User = Depends(_get_current_user), db: AsyncSessio
     This eliminates 5-10 separate HTTP requests per screen open.
     """
     # ── 1. User profile (same as /auth/me) ────────────────────────────
-    if not user.is_online:
+    # Riders only — a driver goes online exclusively via the online toggle.
+    # The driver home screen calls this endpoint on every open, and flipping
+    # drivers here silently resurrected offline drivers into dispatch
+    # eligibility (offers pushed to drivers who never went online).
+    if not user.is_online and user.role != "driver":
         try:
             await db.execute(
                 User.__table__.update().where(User.__table__.c.id == user.id).values(is_online=True)
@@ -1291,6 +1299,11 @@ async def go_offline(user: User = Depends(_get_current_user), db: AsyncSession =
     db_user = result.scalar_one_or_none()
     if db_user and db_user.is_online:
         db_user.is_online = False
+        if db_user.role == "driver":
+            # Same retirement the location endpoint does — an offline driver
+            # must hold no pending offers (late push taps raise dead cards).
+            from routers.dispatch import expire_pending_offers_for_driver  # lazy: import cycle
+            await expire_pending_offers_for_driver(db, db_user.id, "driver went offline")
         await db.commit()
         if _HAS_FIRESTORE:
             try:

@@ -2180,6 +2180,9 @@ async def _web_dispatch_to_drivers(
             ) or ""
 
             # Fetch online drivers with known location (match vehicle_type if possible)
+            # Same activity bar as live dispatch (dispatch.py: active_cutoff):
+            # a stale is_online flag alone is not proof the driver is on shift.
+            active_cutoff = datetime.now(timezone.utc) - timedelta(minutes=15)
             result = await db.execute(
                 select(User).where(
                     User.role == "driver",
@@ -2187,6 +2190,8 @@ async def _web_dispatch_to_drivers(
                     User.lat != None,
                     User.lng != None,
                     User.status == "active",
+                    User.last_active_at != None,
+                    User.last_active_at >= active_cutoff,
                 )
             )
             all_drivers = result.scalars().all()

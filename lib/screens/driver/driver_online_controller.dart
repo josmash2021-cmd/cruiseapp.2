@@ -1081,6 +1081,8 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       return;
     }
     // _isGoingOnline is already true from _verifyAndGoOnline; keep it true
+    // Explicit go-online clears the offline latch so heartbeats count again.
+    _wentOffline = false;
     // Save last known location for startup pre-caching
     LocalCache.set('last_driver_lat', _pos!.latitude);
     LocalCache.set('last_driver_lng', _pos!.longitude);
@@ -1164,6 +1166,10 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     // This prevents the backend from marking the driver offline due to
     // inactivity while the app is backgrounded.
     _bgHeartbeatTimer = Timer.periodic(const Duration(seconds: 30), (_) async {
+      // Never re-assert online after the driver went offline — see
+      // _wentOffline. One heartbeat landing after the offline write used
+      // to resurrect the driver in the DB and the offers kept coming.
+      if (_wentOffline) return;
       if (_driverId == null || _pos == null) return;
       try {
         await ApiService.updateDriverLocation(
@@ -1244,7 +1250,9 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
         _currentSpeedMph = (pos.speed * 2.23694).clamp(0.0, 200.0);
         // Snap to route polyline — prevents GPS drift off-road
         final snappedLL = _snapToRoute(newLL);
-        _smoothMoveTo(snappedLL, _smoothedBearing, accuracyM: pos.accuracy);
+        _smoothMoveTo(snappedLL, _smoothedBearing,
+            accuracyM: pos.accuracy,
+            timestampMs: pos.timestamp.millisecondsSinceEpoch.toDouble());
 
         // Feed GpsService for RTDB upload (800ms throttled)
         _gpsService.updatePosition(newLL, pos.heading, pos.speed);
@@ -1538,12 +1546,13 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     });
   }
 
-  void _smoothMoveTo(LatLng target, double heading, {double? accuracyM}) {
+  void _smoothMoveTo(LatLng target, double heading,
+      {double? accuracyM, double? timestampMs}) {
     // accuracyM sizes the standstill jitter hold — see SmoothMotion. Without
     // it the hold falls back to a flat 15 m, which is wider than a road, and
     // a parked driver gets drawn on the pavement and left there.
     _motion.setTarget(target.latitude, target.longitude,
-        bearing: heading, accuracyM: accuracyM);
+        bearing: heading, accuracyM: accuracyM, timestampMs: timestampMs);
     // Seed _pos on the very first fix so the first render doesn't start
     // from (0, 0) — the ticker fills it in subsequent frames.
     if (_pos == null && _motion.hasPosition) {
@@ -2229,6 +2238,119 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     }
   }
 
+  /// Minutos de anticipación a partir de los cuales una oferta es una reserva.
+  ///
+  /// Mismo umbral con el que la tarjeta decide pintar el badge "VIAJE
+  /// RESERVADO" (driver_online_widgets.dart): una reserva web para "ahora
+  /// mismo" también trae `scheduled_at`, y esa es un viaje inmediato. Lo que
+  /// el driver ve en la tarjeta y lo que pasa al aceptar tienen que coincidir.
+  static const int _reservationLeadMinutes = 3;
+
+  bool _isReservationOffer(Map<String, dynamic> r) {
+    final raw = r['scheduled_at'];
+    if (raw == null) return false;
+    final at = DateTime.tryParse(raw.toString())?.toLocal();
+    if (at == null) return false;
+    return at.difference(DateTime.now()).inMinutes >= _reservationLeadMinutes;
+  }
+
+  /// Aceptar una reserva no es empezar a manejar.
+  ///
+  /// El viaje queda asignado a este driver —el backend lo deja en
+  /// `scheduled_accepted` y sale en "Mis viajes programados"—, pero el pickup
+  /// es dentro de horas o días: no hay a dónde navegar todavía, y el driver lo
+  /// arranca él mismo cuando llegue la hora.
+  ///
+  /// Sin esta rama, aceptar una reserva metía al driver en el lienzo de viaje
+  /// activo con ruta al pickup incluida, y la escritura optimista a Firestore
+  /// del flujo normal ponía `driver_en_route` — que la app del pasajero lee
+  /// como "tu conductor va en camino" para un viaje de la semana que viene.
+  Future<void> _acceptReservationOffer(
+    Map<String, dynamic> r,
+    int? offerId, {
+    bool alreadyAcceptedOnBackend = false,
+  }) async {
+    if (offerId == null || _driverId == null) {
+      _snack('Unable to accept — please try again.');
+      return;
+    }
+    if (!alreadyAcceptedOnBackend) {
+      if (_acceptedOfferIds.contains(offerId)) return;
+      _acceptedOfferIds.add(offerId);
+    }
+
+    HapticService.heavyImpact();
+    _setState(() {
+      _offerAcceptState = _OfferAcceptState.routing;
+      _acceptingCardId = offerId.toString();
+    });
+    try {
+      if (!alreadyAcceptedOnBackend) {
+        await ApiService.acceptRideOffer(
+          offerId: offerId,
+          driverId: _driverId!,
+        );
+      }
+      _dropReservationCard(r, offerId);
+      // El contador de reservas es lo único que cambia en pantalla: se
+      // refresca ya en vez de esperar el poll de 90s.
+      unawaited(_fetchScheduledCount());
+      _snack('Viaje reservado aceptado — lo verás en Viajes Programados.');
+    } catch (e) {
+      debugPrint('[DriverOnline] reservation accept failed: $e');
+      _acceptedOfferIds.remove(offerId);
+      _dropReservationCard(r, offerId);
+      _snack('That ride is no longer available.');
+    } finally {
+      if (mounted) {
+        _setState(() {
+          _offerAcceptState = _OfferAcceptState.normal;
+          _acceptingCardId = null;
+        });
+      }
+    }
+  }
+
+  /// Retira la tarjeta de la reserva y, si su ruta estaba dibujada, la borra
+  /// del mapa. Las demás ofertas siguen vivas: tomar una reserva no saca al
+  /// driver de la cola de viajes inmediatos.
+  void _dropReservationCard(Map<String, dynamic> r, int offerId) {
+    final oid = (r['offer_id'] ?? r['id'] ?? '').toString();
+    _offerFirstSeenAt.remove(oid);
+    _offerCardHeights.remove(oid);
+    _expandedOfferIds.remove(oid);
+    _routeCache.remove(oid);
+    _tappedCardIds.remove(oid);
+    final wasPreviewing = _previewingOffer != null &&
+        (_previewingOffer!['offer_id'] ?? _previewingOffer!['id'] ?? '')
+                .toString() ==
+            oid;
+
+    if (mounted) {
+      _setState(() {
+        _pendingOffers = _pendingOffers
+            .where((o) => (o['offer_id'] ?? o['id'] ?? '').toString() != oid)
+            .toList();
+        if (_pendingOffers.isEmpty) {
+          _hideFindingBar = false;
+          // Igual que en el descarte: un PageView con índice viejo revienta
+          // al reconstruirse cuando llega la próxima oferta.
+          if (_offerPageCtrl.hasClients) _offerPageCtrl.jumpTo(0);
+        }
+        if (wasPreviewing) {
+          _previewingOffer = null;
+          _offerRouteShown = false;
+          _fullSegOne = [];
+          _fullSegTwo = [];
+        }
+      });
+    }
+    _syncOfferLiveActivity();
+    if (wasPreviewing) {
+      unawaited(_clearAllAnnotations().catchError((_) {}));
+    }
+  }
+
   void _dropPendingOffer(int offerId) {
     final oid = offerId.toString();
     _setState(() {
@@ -2299,6 +2421,16 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
         _snack('Unable to accept — please try again.');
         return;
       }
+    }
+
+    // Reserva: aceptarla no es empezar a manejar. Va antes que la rama
+    // encadenada a propósito — un viaje de la próxima semana no es "el
+    // siguiente viaje después de este dropoff", y el driver puede tomarlo
+    // esté manejando o no.
+    if (_isReservationOffer(r)) {
+      await _acceptReservationOffer(r, offerId,
+          alreadyAcceptedOnBackend: alreadyAcceptedOnBackend);
+      return;
     }
 
     // Chained accept: an offer that arrived while this driver is still on
@@ -3439,6 +3571,10 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       return;
     }
     HapticService.mediumImpact();
+    // Silence every isOnline:true writer BEFORE the offline write leaves —
+    // the other order let a queued heartbeat flip the driver back online.
+    _wentOffline = true;
+    _stopBackgroundHeartbeat();
     _goOfflineBackend();
 
     // Cancel all background tasks before navigating to prevent post-dispose crashes

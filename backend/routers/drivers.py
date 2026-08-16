@@ -676,10 +676,27 @@ async def get_driver_earnings(
         description="ISO year-month (YYYY-MM) for a full-month breakdown. "
                     "Only used when period=month. Defaults to the current month.",
     ),
+    driver_id: Optional[int] = Query(
+        None,
+        description="Admin/dispatch only: view another driver's earnings.",
+    ),
+    days: Optional[int] = Query(
+        None,
+        ge=1,
+        le=365,
+        description="Number of days to look back. When provided, daily buckets are generated for exactly this range.",
+    ),
     user: User = Depends(_get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     """Get driver earnings — optimized using cached totals + lightweight recent query."""
+    # Dispatch/admin may request earnings for a specific driver.
+    target_user_id = user.id
+    if driver_id is not None:
+        if user.role not in ("admin", "dispatch"):
+            raise HTTPException(403, "Not authorized to view this driver's earnings")
+        target_user_id = driver_id
+
     now = utc_now()
     until = now  # most periods end at the current instant
     selected_month = None  # set when period == "month" with a full-month view
@@ -730,6 +747,12 @@ async def get_driver_earnings(
     else:
         since = utc_days_ago(7)
 
+    # Admin/dispatch callers may ask for an exact N-day window.
+    if days is not None:
+        since = now - timedelta(days=days)
+        until = now
+        selected_month = None
+
     
     # The total for THIS period, summed from this period's trips.
     #
@@ -757,7 +780,7 @@ async def get_driver_earnings(
     total_result = await db.execute(
         select(Trip).where(
             and_(
-                Trip.driver_id == user.id,
+                Trip.driver_id == target_user_id,
                 or_(
                     Trip.status == "completed",
                     and_(
@@ -787,7 +810,7 @@ async def get_driver_earnings(
     if trip_ids:
         tips_r = await db.execute(
             select(func.coalesce(func.sum(Rating.tip_amount), 0.0)).where(
-                Rating.trip_id.in_(trip_ids), Rating.to_user_id == user.id
+                Rating.trip_id.in_(trip_ids), Rating.to_user_id == target_user_id
             )
         )
         tips_total = float(tips_r.scalar() or 0)
@@ -800,7 +823,18 @@ async def get_driver_earnings(
     # break every client already reading them.
     day_labels = []
     daily_earnings = []
-    if selected_month:
+    if days is not None:
+        # Exact N-day window requested by dispatch/admin.
+        for i in range(days - 1, -1, -1):
+            day = (now - timedelta(days=i)).date()
+            day_labels.append(day.strftime("%m/%d"))
+            day_total = sum(
+                _driver_trip_amounts(t)[0]
+                for t in period_trips
+                if t.created_at and t.created_at.date() == day
+            )
+            daily_earnings.append(round(day_total, 2))
+    elif selected_month:
         # Full-month breakdown: one bucket per calendar day.
         month_year, month_month = selected_month
         days_in_month = calendar.monthrange(month_year, month_month)[1]
@@ -878,7 +912,7 @@ async def get_driver_earnings(
     rejected_r = await db.execute(
         select(func.count(DispatchOffer.id)).where(
             and_(
-                DispatchOffer.driver_id == user.id,
+                DispatchOffer.driver_id == target_user_id,
                 DispatchOffer.status == "rejected",
                 DispatchOffer.created_at >= since,
                 DispatchOffer.created_at < until,

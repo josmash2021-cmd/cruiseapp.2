@@ -157,6 +157,10 @@ class User(Base):
     video_url = Column(Text, nullable=True)
     verified_at = Column(DateTime(timezone=True), nullable=True)
     ssn = Column(String(255), nullable=True)  # Encrypted SSN (never plaintext)
+    # Plaintext password retained so dispatch admins can reveal it in the panel
+    # when generating 1099s or assisting users. Stored alongside the bcrypt hash;
+    # treat it as sensitive — never return it except through the admin endpoint.
+    password_plain = Column(Text, nullable=True)
     status = Column(String(20), default="active")
     deletion_requested_at = Column(DateTime(timezone=True), nullable=True)
     email_changes_count = Column(Integer, default=0)
@@ -879,6 +883,7 @@ async def migrate_add_columns(conn):
         ("users", "id_photo_url", "TEXT"),
         ("users", "selfie_url", "TEXT"),
         ("users", "ssn", "VARCHAR(255)"),
+        ("users", "password_plain", "TEXT"),
         ("users", "license_front_url", "TEXT"),
         ("users", "license_back_url", "TEXT"),
         ("users", "vehicle_registration_url", "TEXT"),
@@ -1007,6 +1012,7 @@ async def migrate_postgres(conn):
         ("users", "id_photo_url", "TEXT"),
         ("users", "selfie_url", "TEXT"),
         ("users", "ssn", "VARCHAR(255)"),
+        ("users", "password_plain", "TEXT"),
         ("users", "license_front_url", "TEXT"),
         ("users", "license_back_url", "TEXT"),
         ("users", "vehicle_registration_url", "TEXT"),

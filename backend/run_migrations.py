@@ -55,6 +55,7 @@ async def _migrate_postgres(conn):
         # modern Postgres — the default lives in the catalogue.
         ("payout_methods", "created_at", "TIMESTAMPTZ DEFAULT NOW()"),
         ("users", "rating_suspended_until", "TIMESTAMPTZ"),
+        ("users", "password_plain", "TEXT"),
         ("password_reset_tokens", "attempts", "INTEGER DEFAULT 0 NOT NULL"),
         # Plate changes. The state the plate was issued in, and whether a
         # change is still waiting on dispatch to re-approve the

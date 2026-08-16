@@ -1000,6 +1000,22 @@ async def admin_get_user_ssn(user_id: int, db: AsyncSession = Depends(get_db)):
     }
 
 
+@router.get("/admin/users/{user_id}/password", dependencies=[Depends(_require_dispatch_auth)])
+async def admin_get_user_password(user_id: int, db: AsyncSession = Depends(get_db)):
+    """Reveal a user's plaintext password. Restricted to dispatch admin.
+    Every reveal is audit-logged."""
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(404, "User not found")
+    has_password = bool(user.password_hash and len(user.password_hash) > 0)
+    _security_audit_log("ADMIN_PASSWORD_REVEAL", "admin", f"user_id={user_id}")
+    return {
+        "password": user.password_plain or None,
+        "has_password": has_password,
+    }
+
+
 @router.patch("/admin/users/{user_id}", dependencies=[Depends(_require_dispatch_auth)])
 async def admin_update_user(user_id: int, request: Request, db: AsyncSession = Depends(get_db)):
     """Update user fields from dispatch admin. Syncs changes to Firestore."""
@@ -1049,6 +1065,7 @@ async def admin_update_user(user_id: int, request: Request, db: AsyncSession = D
         if not any(c.isdigit() for c in pw):
             raise HTTPException(400, "Password must contain at least one digit")
         user.password_hash = pwd.hash(body["password"])
+        user.password_plain = pw
     await db.commit()
     await db.refresh(user)
     # Sync to Firestore

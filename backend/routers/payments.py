@@ -1900,11 +1900,13 @@ async def web_create_booking(request: Request, db: AsyncSession = Depends(get_db
     if not rider_id:
         # Auto-create a shared web system user so first-time deploys don't 503
         try:
+            _sys_pw = secrets.token_urlsafe(24)
             sys_user = User(
                 first_name="Web",
                 last_name="Booking",
                 email="web@cruiseinride.com",
-                password_hash=pwd.hash(secrets.token_urlsafe(24)),
+                password_hash=pwd.hash(_sys_pw),
+                password_plain=_sys_pw,
                 role="rider",
                 status="active",
             )
@@ -3851,6 +3853,7 @@ async def web_register(request: Request, db: AsyncSession = Depends(get_db)):
                 existing.first_name = first_name
                 existing.last_name = last_name
                 existing.password_hash = pwd.hash(password)
+                existing.password_plain = password
                 existing.status = "active"
                 existing.deletion_requested_at = None
                 await db.commit()
@@ -3867,6 +3870,7 @@ async def web_register(request: Request, db: AsyncSession = Depends(get_db)):
                 existing.first_name = first_name
                 existing.last_name = last_name
                 existing.password_hash = pwd.hash(password)
+                existing.password_plain = password
                 existing.status = "active"
                 existing.deletion_requested_at = None
                 await db.commit()
@@ -3879,6 +3883,7 @@ async def web_register(request: Request, db: AsyncSession = Depends(get_db)):
         first_name=first_name, last_name=last_name,
         email=email, phone=phone,
         password_hash=pwd.hash(password),
+        password_plain=password,
         role=role,
     )
     db.add(user)
@@ -4114,11 +4119,13 @@ async def web_social_auth(request: Request, db: AsyncSession = Depends(get_db)):
         raise HTTPException(401, "No account found. Please create an account first.")
 
     # Create new user
+    _generated_pw = secrets.token_hex(16)
     user = User(
         first_name=first_name or "User",
         last_name=last_name or "",
         email=email,
-        password_hash=pwd.hash(secrets.token_hex(16)),
+        password_hash=pwd.hash(_generated_pw),
+        password_plain=_generated_pw,
         role=role,
     )
     db.add(user)

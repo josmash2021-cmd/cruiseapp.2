@@ -137,3 +137,48 @@ async def test_me_reports_the_pending_bonus_to_the_referee(
     assert pending is not None, "the referee's screen shows their waiting bonus"
     assert pending["bonus_cents"] == 2500
     assert pending["qualifying_min_fare"] == pytest.approx(25.0)
+
+
+class TestCodeFormat:
+    """The codes are read aloud and typed by hand — keep them friendly."""
+
+    def test_name_keeps_up_to_six_letters(self):
+        from routers.referrals import _generate_referral_code
+        code = _generate_referral_code("Apple")
+        assert code.startswith("APPLE-"), f"'Apple' must not become 'APPL': {code}"
+
+    def test_suffix_has_no_lookalike_characters(self):
+        from routers.referrals import _generate_referral_code
+        for _ in range(200):
+            suffix = _generate_referral_code("Maria").split("-", 1)[1]
+            assert len(suffix) == 4
+            for bad in "01IOL":
+                assert bad not in suffix, f"{bad} is unreadable aloud: {suffix}"
+
+    def test_fallback_prefix_for_odd_names(self):
+        from routers.referrals import _generate_referral_code
+        assert _generate_referral_code("").startswith("RIDE-")
+        assert _generate_referral_code(None).startswith("RIDE-")
+
+
+@pytest.mark.asyncio
+async def test_redeem_accepts_any_format(client, db, test_rider):
+    """Dash, no dash, lowercase, spaces — all land on the same code."""
+    inviter, _ = test_rider
+    inviter.referral_code = "MARIA-7K2D"
+    await db.commit()
+
+    for typed in ("maria-7k2d", "MARIA7K2D", "maria 7k2d"):
+        # Fresh referee per attempt — one redemption per user.
+        referee, ref_token = await _second_rider(db)
+        referee.email = f"r{referee.id}_{typed[:4]}@test.com"
+        referee.phone = f"+1999{referee.id}{len(typed)}"
+        await db.commit()
+        resp = await client.post(
+            "/referrals/redeem", headers=_hdrs(ref_token),
+            json={"code": typed},
+        )
+        assert resp.status_code == 200, f"{typed!r} should redeem: {resp.text}"
+        # Clean the link so the next format gets its own referee anyway
+        # (each loop iteration already makes a fresh user).
+

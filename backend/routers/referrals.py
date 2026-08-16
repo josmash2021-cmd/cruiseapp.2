@@ -12,7 +12,6 @@ layer stays small and consistent.
 """
 import logging
 import secrets
-import string
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -60,14 +59,29 @@ REFEREE_BONUS = 25.0             # new rider's Cruise Cash ($)
 # ─────────────────────────────────────────────────────────────────────
 
 def _generate_referral_code(first_name: Optional[str]) -> str:
-    """Build a friendly code like 'JHON-A4F9' (name prefix up to 4 chars
-    + dash + 4 random alphanumerics). Caller must check uniqueness."""
+    """Build a friendly code like 'MARIA-7K2D' (name prefix up to 6 chars
+    + dash + 4 random characters).
+
+    Readability rules (2026-08-16): the name keeps up to 6 letters so
+    'Apple' doesn't become the broken-looking 'APPL', and the suffix
+    alphabet drops the look-alikes (0/O, 1/I/L) — these codes get read
+    aloud and typed by hand. Caller must check uniqueness."""
     base = (first_name or "").strip().upper()
-    base = "".join(ch for ch in base if ch.isalpha())[:4]
+    base = "".join(ch for ch in base if ch.isalpha())[:6]
     if len(base) < 2:
         base = "RIDE"
-    suffix = "".join(secrets.choice(string.ascii_uppercase + string.digits) for _ in range(4))
+    # No 0/O/1/I/L — indistinguishable over the phone or in handwriting.
+    alphabet = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
+    suffix = "".join(secrets.choice(alphabet) for _ in range(4))
     return f"{base}-{suffix}"
+
+
+def _normalize_referral_code(raw: str) -> str:
+    """Accept a code however the user typed it: any case, with or without
+    the dash, stray spaces included. Returns the comparison form
+    (uppercase alphanumerics only) — 'apple-7k2d', 'APPLE 7K2D' and
+    'apple7k2d' all land on the same code."""
+    return "".join(ch for ch in raw.upper() if ch.isalnum())
 
 
 async def _ensure_referral_code(user: User, db: AsyncSession) -> str:
@@ -91,7 +105,7 @@ async def _ensure_referral_code(user: User, db: AsyncSession) -> str:
             return candidate
     # Extremely unlikely fallback — collision-resistant 8-char code.
     fallback = "RIDE-" + "".join(
-        secrets.choice(string.ascii_uppercase + string.digits) for _ in range(8)
+        secrets.choice("ABCDEFGHJKMNPQRSTUVWXYZ23456789") for _ in range(8)
     )
     user.referral_code = fallback
     try:
@@ -391,14 +405,18 @@ async def redeem_referral_code(
       - The redeemer must not already have a referrer.
       - Same email/phone as the inviter is rejected.
     """
-    raw = (body.get("code") or "").strip().upper()
+    raw = _normalize_referral_code(body.get("code") or "")
     if not raw:
         raise HTTPException(400, "Referral code is required")
     if user.referred_by_user_id is not None:
         raise HTTPException(400, "You already redeemed a referral code")
 
+    # Format-agnostic match: stored codes carry the dash, the redeemer may
+    # not have typed it (or used lowercase, or added spaces).
     inviter_res = await db.execute(
-        select(User).where(User.referral_code == raw)
+        select(User).where(
+            func.upper(func.replace(User.referral_code, "-", "")) == raw
+        )
     )
     inviter = inviter_res.scalar_one_or_none()
     if inviter is None:
@@ -414,7 +432,7 @@ async def redeem_referral_code(
     ref = Referral(
         referrer_id=inviter.id,
         referee_id=user.id,
-        referral_code=raw,
+        referral_code=inviter.referral_code or raw,
         status="pending",
         qualified_trips_count=0,
         qualified_trips_required=REF_QUALIFYING_TRIPS,
@@ -438,7 +456,7 @@ async def transfer_cruise_cash(
 ):
     """Rider-to-rider transfer. Recipient is identified by their
     referral_code (most memorable). Amount is in dollars on the wire."""
-    recipient_code = (body.get("recipient_code") or "").strip().upper()
+    recipient_code = _normalize_referral_code(body.get("recipient_code") or "")
     amount = body.get("amount")
     note = (body.get("note") or "").strip()[:200]
     try:
@@ -450,7 +468,11 @@ async def transfer_cruise_cash(
     if not recipient_code:
         raise HTTPException(400, "Recipient code is required")
 
-    res = await db.execute(select(User).where(User.referral_code == recipient_code))
+    res = await db.execute(
+        select(User).where(
+            func.upper(func.replace(User.referral_code, "-", "")) == recipient_code
+        )
+    )
     recipient = res.scalar_one_or_none()
     if recipient is None:
         raise HTTPException(404, "Recipient not found")

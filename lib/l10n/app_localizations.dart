@@ -3781,6 +3781,35 @@ class S {
   String get shareSheetFailed => _es
       ? 'No se pudo abrir el menú de compartir. Copia tu código.'
       : 'Could not open share sheet. Try copying your code instead.';
+  String get referralCodeOptional =>
+      _es ? 'Código de referido (opcional)' : 'Referral code (optional)';
+  String get driverWelcomeBonusNote => _es
+      ? 'Gana \$25 al completar tus primeros 2 viajes'
+      : 'Earn \$25 after your first 2 rides';
+
+  // ── Driver referral milestones (2026-08-16) ─────────────────────────────────
+  String driverEarnSubMilestones(
+          String m1Amount, int m1Rides, String m2Amount, int m2Rides) =>
+      _es
+          ? 'Gana $m1Amount cuando tu referido complete $m1Rides viajes, y $m2Amount más cuando llegue a $m2Rides'
+          : 'Earn $m1Amount when your referral completes $m1Rides rides, plus $m2Amount more when they reach $m2Rides';
+  String driverHowStep2Milestones(
+          String m1Amount, int m1Rides, String m2Amount, int m2Rides) =>
+      _es
+          ? 'Se registra como conductor con tu código. A los $m1Rides viajes ganas $m1Amount; a los $m2Rides, $m2Amount más.'
+          : 'They sign up as a driver with your code. At $m1Rides rides you earn $m1Amount; at $m2Rides, $m2Amount more.';
+  String driverHowWelcomeBonus(String amount, int rides) => _es
+      ? 'Tu referido también gana: $amount al completar sus primeros $rides viajes.'
+      : 'Your referral wins too: $amount after their first $rides rides.';
+  String driverShareWelcome(String amount, int rides) => _es
+      ? '¡Conduce con Cruise! Regístrate con mi código y gana $amount al completar tus primeros $rides viajes.'
+      : 'Drive with Cruise! Sign up with my code and earn $amount after your first $rides rides.';
+  String driverShareMilestones(
+          String m1Amount, int m1Rides, String m2Amount, int m2Rides) =>
+      _es
+          ? 'Yo gano $m1Amount cuando completes $m1Rides viajes, ¡y $m2Amount más cuando llegues a $m2Rides!'
+          : 'I earn $m1Amount when you complete $m1Rides rides, and $m2Amount more when you reach $m2Rides!';
+  String get statusMilestone1 => _es ? 'HITO 1 PAGADO' : 'MILESTONE 1 PAID';
 
   // ── Driver Insurance Screen ────────────────────────────────────────────────
   String get cruiseDriverProtectionTitle =>

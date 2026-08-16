@@ -686,6 +686,9 @@ class DriverReferral(Base):
     expires_at = Column(DateTime(timezone=True), nullable=False, index=True)
     qualified_at = Column(DateTime(timezone=True), nullable=True)
     paid_at = Column(DateTime(timezone=True), nullable=True)
+    # When the referred driver's own welcome bonus ($25 after their first
+    # 2 rides) was credited. NULL = not paid yet. (2026-08-16 milestones.)
+    referee_bonus_paid_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True),
                         default=lambda: datetime.now(timezone.utc))
 
@@ -1131,6 +1134,9 @@ async def migrate_postgres(conn):
         ("consent_logs", "document_id", "VARCHAR(100)"),
         ("consent_logs", "content_hash", "VARCHAR(64)"),
         ("consent_logs", "device_info", "TEXT"),
+        # Driver referral milestones (2026-08-16): referee welcome bonus
+        # paid flag. In THIS boot list or prod never gets it (trampa #0).
+        ("driver_referrals", "referee_bonus_paid_at", "TIMESTAMP WITH TIME ZONE"),
     ]
     for table, col, col_type in migrations:
         try:

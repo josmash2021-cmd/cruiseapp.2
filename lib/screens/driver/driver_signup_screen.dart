@@ -286,6 +286,10 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
   final _confirmPassCtrl = TextEditingController();
   bool _obscureConfirm = true;
 
+  // Optional referral code — a driver who signs up with someone's code
+  // earns $25 after their first 2 rides (redeemed right after register).
+  final _refCodeCtrl = TextEditingController();
+
   // Date of birth — drivers must be at least 21 (server re-validates).
   DateTime? _dob;
   static const int _minDriverAge = 21;
@@ -388,6 +392,7 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
     _passwordCtrl.removeListener(_onPasswordChanged);
     _passwordCtrl.dispose();
     _confirmPassCtrl.dispose();
+    _refCodeCtrl.dispose();
     _makeCtrl.dispose();
     _modelCtrl.dispose();
     _yearCtrl.dispose();
@@ -937,6 +942,19 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
         debugPrint('⚠️ Document upload failed: $e');
         // Non-blocking — documents can be re-submitted
       }
+
+      // Referral code (optional field on step 0). Non-blocking: a bad or
+      // late code must never abort registration — the driver can redeem it
+      // later from the Refer Friends screen.
+      final refCode = _refCodeCtrl.text.trim();
+      if (refCode.isNotEmpty) {
+        try {
+          await ApiService.redeemDriverReferralCode(refCode);
+          debugPrint('✅ Driver referral code redeemed at signup');
+        } catch (e) {
+          debugPrint('⚠️ Referral code redeem failed (non-blocking): $e');
+        }
+      }
       await LocalDataService.setDriverApprovalStatus('pending');
     } on ApiException catch (e) {
       if (!mounted) return;
@@ -1374,6 +1392,16 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
               onPressed: () =>
                   setState(() => _obscureConfirm = !_obscureConfirm),
             ),
+          ),
+          const SizedBox(height: 16),
+          // Optional: a referrer's code. Any format works — the backend
+          // normalizes dashes/case. Worth $25 to THIS driver after their
+          // first 2 rides, so it's placed where they can't miss it.
+          _field(
+            ctrl: _refCodeCtrl,
+            label: S.of(context).referralCodeOptional,
+            icon: Icons.card_giftcard_outlined,
+            capitalize: true,
           ),
           // ── Password requirements checklist — 2 per column ──
           Padding(

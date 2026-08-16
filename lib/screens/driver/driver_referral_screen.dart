@@ -40,10 +40,60 @@ class _DriverReferralScreenState extends State<DriverReferralScreen> {
   int _pendingCents = 0;
   List<Map<String, dynamic>> _referees = const [];
 
+  /// Milestone schedule from the backend (falls back to the flat totals).
+  int _m1Rides = 50;
+  int _m1Cents = 5000;
+  int _m2Rides = 200;
+  int _m2Cents = 15000;
+  int _refereeBonusCents = 2500;
+  int _refereeBonusRides = 2;
+
+  // Redeem-someone-else's-code mini form (driver who skipped it at signup)
+  final _redeemCtl = TextEditingController();
+  bool _redeeming = false;
+  String? _redeemError;
+  String? _redeemSuccess;
+
   @override
   void initState() {
     super.initState();
     _load();
+  }
+
+  @override
+  void dispose() {
+    _redeemCtl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _redeem() async {
+    final s = S.of(context);
+    final code = _redeemCtl.text.trim().toUpperCase();
+    if (code.isEmpty) return;
+    setState(() {
+      _redeeming = true;
+      _redeemError = null;
+      _redeemSuccess = null;
+    });
+    try {
+      final res = await ApiService.redeemDriverReferralCode(code);
+      if (!mounted) return;
+      _redeemCtl.clear();
+      setState(() {
+        _redeeming = false;
+        _redeemSuccess = (res['referrer_name'] as String?) != null
+            ? s.linkedToName(res['referrer_name'] as String)
+            : s.codeRedeemed;
+      });
+      HapticService.mediumImpact();
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _redeeming = false;
+        _redeemError = e.toString().replaceFirst('ApiException: ', '');
+      });
+      HapticService.heavyImpact();
+    }
   }
 
   Future<void> _load() async {
@@ -52,11 +102,24 @@ class _DriverReferralScreenState extends State<DriverReferralScreen> {
       if (!mounted) return;
       final settings =
           (data['settings'] as Map?)?.cast<String, dynamic>() ?? const {};
+      final milestones = (settings['milestones'] as List?) ?? const [];
       setState(() {
         _code = (data['code'] as String?) ?? '';
         _amountCents = (settings['amount_cents'] as int?) ?? 20000;
-        _ridesRequired = (settings['rides_required'] as int?) ?? 50;
-        _expiryDays = (settings['expiry_days'] as int?) ?? 60;
+        _ridesRequired = (settings['rides_required'] as int?) ?? 200;
+        _expiryDays = (settings['expiry_days'] as int?) ?? 180;
+        if (milestones.length >= 2) {
+          final m1 = (milestones[0] as Map).cast<String, dynamic>();
+          final m2 = (milestones[1] as Map).cast<String, dynamic>();
+          _m1Rides = (m1['rides'] as num?)?.toInt() ?? 50;
+          _m1Cents = (m1['amount_cents'] as num?)?.toInt() ?? 5000;
+          _m2Rides = (m2['rides'] as num?)?.toInt() ?? 200;
+          _m2Cents = (m2['amount_cents'] as num?)?.toInt() ?? 15000;
+        }
+        _refereeBonusCents =
+            (settings['referee_bonus_cents'] as num?)?.toInt() ?? 2500;
+        _refereeBonusRides =
+            (settings['referee_bonus_rides'] as num?)?.toInt() ?? 2;
         _totalEarnedCents = (data['total_earned_cents'] as int?) ?? 0;
         _pendingCents = (data['pending_cents'] as int?) ?? 0;
         _referees = ((data['referees'] as List?) ?? const [])
@@ -88,12 +151,12 @@ class _DriverReferralScreenState extends State<DriverReferralScreen> {
   void _shareInvite() {
     if (_code.isEmpty) return;
     HapticService.mediumImpact();
-    final amount = _dollars(_amountCents);
-    final rides = _ridesRequired;
     final s = S.of(context);
+    // The deal, milestone-shaped: the new driver's $25 welcome hook first
+    // (that's what makes them use the code), then what the referrer earns.
     final text =
-        '${s.driverShareIntro(amount)}\n\n'
-        '${s.driverShareSteps(rides)}\n\n'
+        '${s.driverShareWelcome(_dollars(_refereeBonusCents), _refereeBonusRides)}\n\n'
+        '${s.driverShareMilestones(_dollars(_m1Cents), _m1Rides, _dollars(_m2Cents), _m2Rides)}\n\n'
         'Code: $_code\n'
         'https://cruiseinride.com/drive/$_code';
     unawaited(shareText(context, text, subject: s.driverShareSubject));
@@ -159,6 +222,10 @@ class _DriverReferralScreenState extends State<DriverReferralScreen> {
                     _buildCodeCard(s),
                     const SizedBox(height: 14),
 
+                    // ── Redeem someone else's code (skipped at signup) ──
+                    _buildRedeemBlock(s),
+                    const SizedBox(height: 14),
+
                     // ── Aggregate stats (earned / pending / referrals) ──
                     _buildStats(s),
                     const SizedBox(height: 14),
@@ -170,8 +237,11 @@ class _DriverReferralScreenState extends State<DriverReferralScreen> {
                       iconColor: _gold,
                       lines: [
                         s.driverHowStep1,
-                        s.driverHowStep2(_ridesRequired, _expiryDays),
+                        s.driverHowStep2Milestones(
+                            _dollars(_m1Cents), _m1Rides, _dollars(_m2Cents), _m2Rides),
                         s.driverHowStep3(_dollars(_amountCents)),
+                        s.driverHowWelcomeBonus(
+                            _dollars(_refereeBonusCents), _refereeBonusRides),
                       ],
                     ),
                     const SizedBox(height: 12),
@@ -239,7 +309,8 @@ class _DriverReferralScreenState extends State<DriverReferralScreen> {
           ),
           const SizedBox(height: 6),
           Text(
-            s.driverEarnSub(_ridesRequired, _expiryDays),
+            s.driverEarnSubMilestones(
+                _dollars(_m1Cents), _m1Rides, _dollars(_m2Cents), _m2Rides),
             textAlign: TextAlign.center,
             style: TextStyle(
               color: Colors.white.withValues(alpha: 0.65),
@@ -323,6 +394,105 @@ class _DriverReferralScreenState extends State<DriverReferralScreen> {
           ],
         ),
       ),
+    );
+  }
+
+  /// For the driver who signed up WITHOUT a code: one redemption is still
+  /// allowed here (backend enforces one-per-driver). Same pattern as the
+  /// rider screen's redeem block.
+  Widget _buildRedeemBlock(S s) {
+    final showSuccess = _redeemSuccess != null;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+          decoration: BoxDecoration(
+            color: _surface,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _redeemCtl,
+                  textCapitalization: TextCapitalization.characters,
+                  enabled: !_redeeming && !showSuccess,
+                  cursorColor: _gold,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 1.0,
+                  ),
+                  decoration: InputDecoration(
+                    hintText: s.gotInviteCode,
+                    hintStyle: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.35),
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                    ),
+                    border: InputBorder.none,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              GestureDetector(
+                onTap: (_redeeming || showSuccess) ? null : _redeem,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 16, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: showSuccess ? const Color(0xFF22C55E) : _gold,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: _redeeming
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                              strokeWidth: 2.2, color: Colors.black),
+                        )
+                      : Text(
+                          showSuccess ? '✓' : s.redeemLabel,
+                          style: const TextStyle(
+                            color: Colors.black,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: 0.6,
+                          ),
+                        ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        if (_redeemError != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 6, left: 4),
+            child: Text(
+              _redeemError!,
+              style: const TextStyle(
+                color: Color(0xFFEF9A9A),
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        if (_redeemSuccess != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 6, left: 4),
+            child: Text(
+              _redeemSuccess!,
+              style: const TextStyle(
+                color: Color(0xFF22C55E),
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+      ],
     );
   }
 
@@ -431,7 +601,15 @@ class _DriverReferralScreenState extends State<DriverReferralScreen> {
     final photoUrl = r['photo_url'] as String?;
     final status = (r['status'] as String?) ?? 'pending';
     final ridesDone = (r['rides_completed'] as int?) ?? 0;
-    final ridesNeeded = (r['rides_required'] as int?) ?? _ridesRequired;
+    // Progress toward the NEXT unpaid milestone, not the far one: a bar
+    // crawling toward 200 looks dead for weeks, a bar filling toward 50
+    // keeps both sides checking it.
+    final int ridesNeeded;
+    if (status == 'pending') {
+      ridesNeeded = _m1Rides;
+    } else {
+      ridesNeeded = (r['rides_required'] as int?) ?? _m2Rides;
+    }
     final progress = ridesNeeded > 0
         ? (ridesDone / ridesNeeded).clamp(0.0, 1.0)
         : 0.0;
@@ -442,6 +620,10 @@ class _DriverReferralScreenState extends State<DriverReferralScreen> {
       case 'qualified':
         statusColor = const Color(0xFF22C55E);
         statusLabel = s.statusPaid;
+        break;
+      case 'milestone1':
+        statusColor = const Color(0xFF22C55E);
+        statusLabel = s.statusMilestone1;
         break;
       case 'expired':
         statusColor = const Color(0xFFEF4444);

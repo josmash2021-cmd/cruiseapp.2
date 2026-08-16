@@ -66,7 +66,7 @@ void main() {
     final api = File('lib/services/api_service.dart').readAsStringSync();
 
     test('the scanner keeps the full OCR text of the capture', () {
-      expect(verify.contains('_capturedOcrText = result.text;'), isTrue,
+      expect(verify.contains('_capturedOcrText = ocr.text;'), isTrue,
           reason: 'only the keyword check survives — the name match on the '
               'backend needs the full OCR text');
       expect(verify.contains('onOcrText'), isTrue,

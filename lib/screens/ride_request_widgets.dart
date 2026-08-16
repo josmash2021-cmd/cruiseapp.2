@@ -1279,7 +1279,6 @@ extension _RideRequestWidgets on _RideRequestScreenState {
     final double ccApplied = (_cruiseCashCents / 100.0)
         .clamp(0.0, 50.0)
         .clamp(0.0, promoPrice);
-    final bool hasCC = ccApplied > 0;
     final double finalPrice = (promoPrice - ccApplied).clamp(0.0, double.infinity);
     // Zero means the fares have not landed. A dash, never "$0.00".
     final bool priceKnown = basePrice > 0;
@@ -1500,17 +1499,41 @@ extension _RideRequestWidgets on _RideRequestScreenState {
             else
               // .vipRide__rideDetail__price: clamp(18,5vw,22)
               // weight 800 color #fff.
-              Text(
-                opt.priceEstimate > 0
-                    ? '\$${opt.priceEstimate.toStringAsFixed(2)}'
-                    : '—',
-                style: const TextStyle(
-                  fontFamily: 'Poppins',
-                  color: Colors.white,
-                  fontSize: 22,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: -0.3,
-                ),
+              //
+              // Shows the promo / Cruise Cash math computed above: the
+              // discounted price big, the original struck through beside
+              // it — charging less than the number on screen is a surprise
+              // the wrong way, and the grid card already shows both.
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.baseline,
+                textBaseline: TextBaseline.alphabetic,
+                children: [
+                  if (priceKnown && finalPrice < basePrice) ...[
+                    Text(
+                      oldPriceText,
+                      style: TextStyle(
+                        fontFamily: 'Poppins',
+                        color: Colors.white.withValues(alpha: 0.45),
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        decoration: TextDecoration.lineThrough,
+                        decorationColor: Colors.white.withValues(alpha: 0.45),
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                  ],
+                  Text(
+                    priceText,
+                    style: const TextStyle(
+                      fontFamily: 'Poppins',
+                      color: Colors.white,
+                      fontSize: 22,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: -0.3,
+                    ),
+                  ),
+                ],
               ),
           ],
         ),

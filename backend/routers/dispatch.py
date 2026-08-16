@@ -863,6 +863,35 @@ async def _clear_live_activity_offer(driver_id: int) -> None:
                         driver_id, e)
 
 
+async def expire_pending_offers_for_driver(db: AsyncSession, driver_id: int,
+                                           reason: str) -> int:
+    """Retire every pending offer a driver holds — used when they go offline.
+
+    An offline driver cannot accept anything, but a pending offer still
+    answers getDriverPendingOffers for its whole timeout window: a push sent
+    before the offline lands, the rider taps it, and the dead offer card
+    comes up. Expiring here (both offline endpoints call this) makes the
+    server agree with the toggle the moment it flips. Returns how many
+    offers were retired. The caller owns the commit.
+    """
+    offers = (
+        await db.execute(
+            select(DispatchOffer).where(
+                DispatchOffer.driver_id == driver_id,
+                DispatchOffer.status == "pending",
+            )
+        )
+    ).scalars().all()
+    for offer in offers:
+        offer.status = "expired"
+        logging.info("[Dispatch] expiring offer %s for driver %s — %s",
+                     offer.id, driver_id, reason)
+    if offers:
+        _pending_cache.pop(driver_id, None)
+        _safe_create_task(_clear_live_activity_offer(driver_id))
+    return len(offers)
+
+
 async def _send_live_activity_offer(driver, *, fare, per_hour, miles, minutes) -> None:
     """Offer → the driver's Live Activity, straight over APNs. Fail-soft."""
     try:
@@ -1961,9 +1990,26 @@ async def accept_offer(offer_id: int = Query(...), driver_id: int = Query(...), 
     if cascade_task and not cascade_task.done():
         cascade_task.cancel()
 
+    # A reservation accepted ahead of time must NOT activate: the ride is
+    # hours or days away. `scheduled_accepted` is the same state the
+    # marketplace claim writes, and the scheduler flips it to
+    # `scheduled_active` at ride time (main.py). Without this branch a
+    # priority offer from dispatch on a reservation went straight to
+    # driver_en_route and the rider's app announced a driver on the way for
+    # a trip next week.
+    #
+    # Gated on the status, not the clock: once the scheduler has activated
+    # or re-queued the reservation it is an ordinary ride and takes the
+    # ordinary path.
+    accepted_status = (
+        "scheduled_accepted"
+        if trip.status == "scheduled" and trip.scheduled_at is not None
+        else "driver_en_route"
+    )
+
     trip.driver_id = driver_id
     trip.driver_assigned_at = datetime.now(timezone.utc)
-    trip.status = "driver_en_route"
+    trip.status = accepted_status
     await db.commit()
 
     # Sync to Firestore so rider sees driver assigned in real time (non-blocking)
@@ -1976,7 +2022,7 @@ async def accept_offer(offer_id: int = Query(...), driver_id: int = Query(...), 
                     veh_result = await _db.execute(select(Vehicle).where(Vehicle.user_id == driver_id))
                     veh = veh_result.scalar_one_or_none()
                     firestore_sync.sync_trip_status(
-                        trip_id=trip.id, status="driver_en_route",
+                        trip_id=trip.id, status=accepted_status,
                         driver_id=driver_id,
                         driver_name=f"{drv.first_name} {drv.last_name}" if drv else None,
                         driver_phone=drv.phone if drv else None,
@@ -2014,7 +2060,7 @@ async def accept_offer(offer_id: int = Query(...), driver_id: int = Query(...), 
                 _driver_trips = _stats_row.trip_count if _stats_row else 0
                 _driver_rating = round(float(_stats_row.avg_rating), 1) if (_stats_row and _stats_row.avg_rating is not None and _stats_row.trip_count > 0) else None
             await event_bus.push_trip_update(trip.id, {
-                "status": "driver_en_route",
+                "status": accepted_status,
                 "trip_id": trip.id,
                 "driver_id": driver_id,
                 "driver_name": f"{drv.first_name} {drv.last_name}" if drv else "Driver",
@@ -2068,13 +2114,25 @@ async def accept_offer(offer_id: int = Query(...), driver_id: int = Query(...), 
             drv2 = drv_result2.scalar_one_or_none()
             driver_display = f"{drv2.first_name} {drv2.last_name}" if drv2 else "Your driver"
 
-            # Push notification via FCM (works for ALL trip types)
+            # Push notification via FCM (works for ALL trip types).
+            # A reservation taken days early is not "on the way" — saying so
+            # sends the rider to the door for a ride next week.
+            _is_reservation = accepted_status == "scheduled_accepted"
             if rider and rider.fcm_token:
                 _send_fcm_push(
                     rider.fcm_token,
-                    title="Driver Found!",
-                    body=f"{driver_display} is on the way to pick you up.",
-                    data={"type": "driver_assigned", "trip_id": str(trip.id), "driver_id": str(driver_id)},
+                    title="Conductor asignado" if _is_reservation else "Driver Found!",
+                    body=(
+                        f"{driver_display} tomó tu viaje reservado. Te avisamos "
+                        "cuando esté en camino."
+                        if _is_reservation
+                        else f"{driver_display} is on the way to pick you up."
+                    ),
+                    data={
+                        "type": "scheduled_claimed" if _is_reservation else "driver_assigned",
+                        "trip_id": str(trip.id),
+                        "driver_id": str(driver_id),
+                    },
                 )
 
             # SMS via Twilio (non-blocking -- don't slow down accept response)

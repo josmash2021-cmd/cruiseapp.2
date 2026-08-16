@@ -1569,6 +1569,14 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   /// Background heartbeat timer — keeps driver "online" in backend when app is backgrounded.
   Timer? _bgHeartbeatTimer;
 
+  /// Set the moment the driver goes offline. The 30s background heartbeat
+  /// writes isOnline:true — one already in flight (or one tick queued
+  /// behind the offline PATCH) used to land AFTER the offline write and
+  /// silently flip the driver back online in the DB, so offers kept
+  /// arriving. Checked by every isOnline:true writer; cleared on the next
+  /// explicit go-online.
+  bool _wentOffline = false;
+
   /// Dynamic bottom padding for the GoogleMap based on active overlays
   double get _mapBottomPadding {
     final screenH = MediaQuery.of(context).size.height;

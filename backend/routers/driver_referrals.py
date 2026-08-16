@@ -2,9 +2,13 @@
 
 Separate from the rider Cruise Cash referrals (see routers/referrals.py).
 A driver shares a personal code; when another person signs up as a
-driver using that code AND completes N rides as a driver within the
-expiry window, the referrer earns a flat cash bonus credited to their
-``users.pending_balance`` (cashable in the next payout).
+driver using that code AND works through the milestone schedule, cash
+bonuses are credited to ``users.pending_balance`` (cashable in the next
+payout):
+
+  * referred driver's first 2 rides    → the REFERRED driver earns $25
+  * referred driver's 50 rides / 60 d  → the referrer earns $50
+  * referred driver's 200 rides / 180d → the referrer earns $150 more
 
 Endpoints:
   GET  /driver-referrals/me     - my code + referees + total earned + pending
@@ -18,18 +22,17 @@ Helpers:
       flips status to 'expired' for referrals past their expires_at.
 
 Configurable via the AppConfig table (admin-tunable, no redeploy):
-  driver_referral_amount_cents   default 20000  ($200)
-  driver_referral_rides_required default 50
-  driver_referral_expiry_days    default 60
+  driver_referral_m1_rides / _m1_cents / _m1_days   default 50 / 5000 / 60
+  driver_referral_m2_rides / _m2_cents / _m2_days   default 200 / 15000 / 180
+  driver_referee_bonus_rides / _cents               default 2 / 2500
 """
 import logging
 import secrets
-import string
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Body, Depends, HTTPException
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.database import (
@@ -50,6 +53,20 @@ router = APIRouter()
 # ─────────────────────────────────────────────────────────────────────
 
 _DEFAULTS = {
+    # Milestone 1: referred driver's first 50 rides (within 60 days)
+    # pay the referrer $50.
+    "driver_referral_m1_rides": "50",
+    "driver_referral_m1_cents": "5000",
+    "driver_referral_m1_days": "60",
+    # Milestone 2: 200 rides total (within 180 days) pays $150 more.
+    "driver_referral_m2_rides": "200",
+    "driver_referral_m2_cents": "15000",
+    "driver_referral_m2_days": "180",
+    # Welcome bonus: the REFERRED driver pockets $25 cash after their
+    # first 2 rides — the reason to sign up with a code at all.
+    "driver_referee_bonus_rides": "2",
+    "driver_referee_bonus_cents": "2500",
+    # Legacy keys kept for older AppConfig rows; the milestone keys win.
     "driver_referral_amount_cents": "20000",
     "driver_referral_rides_required": "50",
     "driver_referral_expiry_days": "60",
@@ -70,10 +87,26 @@ async def _get_config_int(db: AsyncSession, key: str) -> int:
 
 
 async def _get_referral_settings(db: AsyncSession) -> dict:
+    """The milestone schedule + the legacy flat keys (the app's current
+    screen still reads amount_cents / rides_required / expiry_days)."""
+    m1_rides = await _get_config_int(db, "driver_referral_m1_rides")
+    m1_cents = await _get_config_int(db, "driver_referral_m1_cents")
+    m1_days = await _get_config_int(db, "driver_referral_m1_days")
+    m2_rides = await _get_config_int(db, "driver_referral_m2_rides")
+    m2_cents = await _get_config_int(db, "driver_referral_m2_cents")
+    m2_days = await _get_config_int(db, "driver_referral_m2_days")
     return {
-        "amount_cents": await _get_config_int(db, "driver_referral_amount_cents"),
-        "rides_required": await _get_config_int(db, "driver_referral_rides_required"),
-        "expiry_days": await _get_config_int(db, "driver_referral_expiry_days"),
+        # New milestone structure.
+        "milestones": [
+            {"rides": m1_rides, "amount_cents": m1_cents, "days": m1_days},
+            {"rides": m2_rides, "amount_cents": m2_cents, "days": m2_days},
+        ],
+        "referee_bonus_rides": await _get_config_int(db, "driver_referee_bonus_rides"),
+        "referee_bonus_cents": await _get_config_int(db, "driver_referee_bonus_cents"),
+        # Legacy flat view (totals) for the existing app screen.
+        "amount_cents": m1_cents + m2_cents,
+        "rides_required": m2_rides,
+        "expiry_days": m2_days,
     }
 
 
@@ -82,15 +115,24 @@ async def _get_referral_settings(db: AsyncSession) -> dict:
 # ─────────────────────────────────────────────────────────────────────
 
 def _generate_driver_code(first_name: Optional[str]) -> str:
-    """Build a friendly code like 'JHON-DRV-A4F9'. Caller checks unique."""
+    """Build a friendly code like 'MARIA-DRV-7K2D'. Caller checks unique.
+
+    Readability rules (same as the rider codes): up to 6 letters of the
+    name, and a suffix alphabet without look-alikes (0/O, 1/I/L) — these
+    get read aloud and typed by hand."""
     base = (first_name or "").strip().upper()
-    base = "".join(ch for ch in base if ch.isalpha())[:4]
+    base = "".join(ch for ch in base if ch.isalpha())[:6]
     if len(base) < 2:
         base = "DRVR"
-    suffix = "".join(
-        secrets.choice(string.ascii_uppercase + string.digits) for _ in range(4)
-    )
+    alphabet = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
+    suffix = "".join(secrets.choice(alphabet) for _ in range(4))
     return f"{base}-DRV-{suffix}"
+
+
+def _normalize_driver_code(raw: str) -> str:
+    """Accept a code however it was typed: any case, dashes or not,
+    stray spaces. Comparison form = uppercase alphanumerics only."""
+    return "".join(ch for ch in raw.upper() if ch.isalnum())
 
 
 async def _ensure_driver_code(user: User, db: AsyncSession) -> str:
@@ -137,16 +179,25 @@ async def get_my_driver_referrals(
     referees = []
     total_earned_cents = 0
     pending_cents = 0
+    m1 = settings["milestones"][0]
     for r in referrals:
         referee_res = await db.execute(
             select(User.id, User.first_name, User.last_name, User.photo_url)
             .where(User.id == r.referred_driver_id)
         )
         ref = referee_res.first()
-        if r.status == "qualified" and r.paid_at is not None:
-            total_earned_cents += r.bonus_amount_cents or 0
-        elif r.status == "pending":
-            pending_cents += r.bonus_amount_cents or 0
+        # Earned = what was actually credited: full bonus once paid_at is
+        # set (legacy qualified rows and milestone-2 rows both land there),
+        # milestone-1 amount for rows that only cleared the first bar.
+        if r.paid_at is not None:
+            earned = r.bonus_amount_cents or 0
+        elif r.qualified_at is not None:
+            earned = m1["amount_cents"]
+        else:
+            earned = 0
+        total_earned_cents += earned
+        if r.status in ("pending", "milestone1"):
+            pending_cents += (r.bonus_amount_cents or settings["amount_cents"]) - earned
         referees.append({
             "id": r.id,
             "referred_driver_id": r.referred_driver_id,
@@ -159,6 +210,7 @@ async def get_my_driver_referrals(
             "rides_completed": r.rides_completed or 0,
             "rides_required": r.rides_required or settings["rides_required"],
             "bonus_amount_cents": r.bonus_amount_cents or settings["amount_cents"],
+            "earned_cents": earned,
             "expires_at": r.expires_at.isoformat() if r.expires_at else None,
             "qualified_at": r.qualified_at.isoformat() if r.qualified_at else None,
             "created_at": r.created_at.isoformat() if r.created_at else None,
@@ -190,7 +242,7 @@ async def redeem_driver_code(
     if (user.role or "").lower() != "driver":
         raise HTTPException(403, "Only drivers can redeem driver referral codes")
 
-    code = (payload.get("code") or "").strip().upper()
+    code = _normalize_driver_code(payload.get("code") or "")
     if not code:
         raise HTTPException(400, "code required")
 
@@ -202,9 +254,12 @@ async def redeem_driver_code(
     if existing.scalar_one_or_none() is not None:
         raise HTTPException(409, "This driver has already redeemed a referral code")
 
-    # Look up the referrer
+    # Look up the referrer (format-agnostic: stored codes carry dashes,
+    # the redeemer may not have typed them)
     rr = await db.execute(
-        select(User).where(User.driver_referral_code == code)
+        select(User).where(
+            func.upper(func.replace(User.driver_referral_code, "-", "")) == code
+        )
     )
     referrer = rr.scalar_one_or_none()
     if referrer is None:
@@ -222,7 +277,7 @@ async def redeem_driver_code(
     referral = DriverReferral(
         referrer_driver_id=referrer.id,
         referred_driver_id=user.id,
-        referral_code=code,
+        referral_code=referrer.driver_referral_code or code,
         status="pending",
         rides_completed=0,
         rides_required=settings["rides_required"],
@@ -255,23 +310,63 @@ async def redeem_driver_code(
 #  Hooks called from trips.py
 # ─────────────────────────────────────────────────────────────────────
 
+async def _credit_cash(db: AsyncSession, driver: User, cents: int) -> None:
+    """Credit a cash referral payout to a driver's pending_balance."""
+    dollars = cents / 100.0
+    driver.pending_balance = round((driver.pending_balance or 0.0) + dollars, 2)
+    driver.total_earnings = round((driver.total_earnings or 0.0) + dollars, 2)
+
+
+def _push(driver: User, title: str, body: str, cents: int, tag: str) -> None:
+    """FCM, best-effort and fire-and-forget — this runs inside the
+    trip-completion path, so a slow token must never stall it."""
+    if not driver.fcm_token:
+        return
+    try:
+        _safe_create_task(
+            _send_fcm_push_async(
+                driver.fcm_token,
+                title,
+                body,
+                data={"type": tag, "amount_cents": str(cents)},
+            ),
+            name=f"{tag}_{driver.id}",
+        )
+    except Exception as e:
+        logging.warning("[driver_referrals] FCM failed for user %s: %s",
+                        driver.id, e)
+
+
+def _aware(dt: datetime) -> datetime:
+    """SQLite hands back naive datetimes for DateTime(timezone=True)
+    columns; Postgres hands back aware ones. Comparing mixed is a crash —
+    normalize to aware-UTC at every comparison site."""
+    return dt.replace(tzinfo=timezone.utc) if dt.tzinfo is None else dt
+
+
 async def bump_driver_referral_progress(
     db: AsyncSession, driver_id: int
 ) -> None:
-    """Call this when a driver completes a trip. If the driver was
-    referred AND their referral is still ``pending`` AND not expired,
-    increment ``rides_completed``. When they hit the threshold, flip to
-    ``qualified``, credit the referrer's pending_balance, and FCM-notify
-    the referrer.
+    """Call this when a driver completes a trip. Advances the referral
+    milestones (2026-08-16):
 
-    Safe no-op for non-referred drivers and for already-qualified or
-    already-expired referrals. Wraps the inner work in try/except so a
-    failure here can never block a trip completion."""
+      * rides 2   → the REFERRED driver pockets their $25 welcome bonus;
+      * rides 50  → the referrer gets milestone 1 ($50), but only if the
+                    count was reached inside the 60-day window — missing
+                    the window expires the whole referral;
+      * rides 200 → the referrer gets milestone 2 ($150), inside 180 days.
+
+    Rows minted before milestones exist keep their legacy single payout
+    (rides_required == 50, one flat bonus) — they were promised that.
+
+    Safe no-op for non-referred drivers and for finished/expired
+    referrals. Wraps the inner work in try/except so a failure here can
+    never block a trip completion."""
     try:
         r = await db.execute(
             select(DriverReferral).where(
                 DriverReferral.referred_driver_id == driver_id,
-                DriverReferral.status == "pending",
+                DriverReferral.status.in_(["pending", "milestone1"]),
             )
         )
         ref = r.scalar_one_or_none()
@@ -279,53 +374,97 @@ async def bump_driver_referral_progress(
             return  # Not referred, or already qualified/expired
 
         now = datetime.now(timezone.utc)
-        if ref.expires_at and ref.expires_at < now:
+        if ref.expires_at and _aware(ref.expires_at) < now:
             ref.status = "expired"
             await db.commit()
             return
 
         ref.rides_completed = (ref.rides_completed or 0) + 1
-        if ref.rides_completed >= (ref.rides_required or 50):
-            # Qualified — credit the referrer.
+
+        # ── Legacy rows: one flat payout at rides_required ──
+        if (ref.rides_required or 0) == 50 and ref.qualified_at is None \
+                and ref.paid_at is None and ref.referee_bonus_paid_at is None:
+            if ref.rides_completed >= (ref.rides_required or 50):
+                referrer_res = await db.execute(
+                    select(User).where(User.id == ref.referrer_driver_id)
+                )
+                referrer = referrer_res.scalar_one_or_none()
+                if referrer is not None:
+                    cents = ref.bonus_amount_cents or 0
+                    await _credit_cash(db, referrer, cents)
+                    ref.status = "qualified"
+                    ref.qualified_at = now
+                    ref.paid_at = now
+                    _push(referrer, "Referral bonus earned!",
+                          f"You just earned ${cents // 100} from a driver you "
+                          "referred. Cash out anytime.", cents,
+                          "driver_referral_qualified")
+            await db.commit()
+            return
+
+        settings = await _get_referral_settings(db)
+        m1, m2 = settings["milestones"][0], settings["milestones"][1]
+
+        # ── Referee welcome bonus: $25 after their first 2 rides ──
+        if ref.referee_bonus_paid_at is None and \
+                ref.rides_completed >= settings["referee_bonus_rides"]:
+            referee_res = await db.execute(
+                select(User).where(User.id == ref.referred_driver_id)
+            )
+            referee = referee_res.scalar_one_or_none()
+            if referee is not None:
+                cents = settings["referee_bonus_cents"]
+                await _credit_cash(db, referee, cents)
+                ref.referee_bonus_paid_at = now
+                _push(referee, "Welcome bonus earned!",
+                      f"You just earned ${cents // 100} for completing your "
+                      "first rides. Cash out anytime.", cents,
+                      "driver_referral_welcome")
+
+        # ── Milestone 1: 50 rides inside the 60-day window ──
+        if ref.qualified_at is None:
+            m1_deadline = (_aware(ref.created_at) + timedelta(days=m1["days"])) \
+                if ref.created_at else None
+            if m1_deadline and now > m1_deadline:
+                # Missed the first window — the whole referral dies here,
+                # whatever the count. (Anything the referee already pocketed
+                # stays pocketed.)
+                ref.status = "expired"
+                await db.commit()
+                return
+            if ref.rides_completed >= m1["rides"]:
+                referrer_res = await db.execute(
+                    select(User).where(User.id == ref.referrer_driver_id)
+                )
+                referrer = referrer_res.scalar_one_or_none()
+                if referrer is not None:
+                    cents = m1["amount_cents"]
+                    await _credit_cash(db, referrer, cents)
+                    ref.qualified_at = now
+                    ref.status = "milestone1"
+                    _push(referrer, "Referral bonus earned!",
+                          f"You just earned ${cents // 100} — a driver you "
+                          f"referred completed {m1['rides']} rides. "
+                          f"${m2['amount_cents'] // 100} more at "
+                          f"{m2['rides']}.", cents,
+                          "driver_referral_milestone1")
+
+        # ── Milestone 2: 200 rides inside the 180-day window ──
+        elif ref.paid_at is None and ref.rides_completed >= m2["rides"]:
             referrer_res = await db.execute(
                 select(User).where(User.id == ref.referrer_driver_id)
             )
             referrer = referrer_res.scalar_one_or_none()
             if referrer is not None:
-                bonus_dollars = (ref.bonus_amount_cents or 0) / 100.0
-                referrer.pending_balance = round(
-                    (referrer.pending_balance or 0.0) + bonus_dollars, 2
-                )
-                referrer.total_earnings = round(
-                    (referrer.total_earnings or 0.0) + bonus_dollars, 2
-                )
-                ref.status = "qualified"
-                ref.qualified_at = now
+                cents = m2["amount_cents"]
+                await _credit_cash(db, referrer, cents)
                 ref.paid_at = now
-
-                # FCM push — best-effort, swallow errors. Fire-and-forget so a
-                # slow token cannot stall the trip-completion path this runs on;
-                # _safe_create_task keeps a strong ref and logs any failure.
-                if referrer.fcm_token:
-                    try:
-                        _safe_create_task(
-                            _send_fcm_push_async(
-                                referrer.fcm_token,
-                                "Referral bonus earned!",
-                                f"You just earned ${bonus_dollars:.0f} from a "
-                                "driver you referred. Cash out anytime.",
-                                data={
-                                    "type": "driver_referral_qualified",
-                                    "amount_cents": str(ref.bonus_amount_cents),
-                                },
-                            ),
-                            name=f"driver_referral_bonus_push_{referrer.id}",
-                        )
-                    except Exception as e:
-                        logging.warning(
-                            "[driver_referrals] FCM failed for user %s: %s",
-                            referrer.id, e,
-                        )
+                ref.status = "qualified"
+                _push(referrer, "Referral bonus earned!",
+                      f"You just earned ${cents // 100} — a driver you "
+                      f"referred completed {m2['rides']} rides. Cash out "
+                      "anytime.", cents,
+                      "driver_referral_milestone2")
 
         await db.commit()
     except Exception as e:
@@ -336,12 +475,14 @@ async def bump_driver_referral_progress(
 
 
 async def expire_stale_driver_referrals(db: AsyncSession) -> int:
-    """Background job — flip pending referrals past their expiry to
-    'expired'. Returns count flipped. Safe to call repeatedly."""
+    """Background job — flip referrals past their final expiry to
+    'expired'. Covers both live statuses ('pending' and the post-
+    milestone-1 'milestone1'). Returns count flipped. Safe to call
+    repeatedly."""
     now = datetime.now(timezone.utc)
     r = await db.execute(
         select(DriverReferral).where(
-            DriverReferral.status == "pending",
+            DriverReferral.status.in_(["pending", "milestone1"]),
             DriverReferral.expires_at < now,
         )
     )

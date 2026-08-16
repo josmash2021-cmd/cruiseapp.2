@@ -1980,11 +1980,18 @@ async def _scheduled_ride_dispatcher():
                     # --------------------------------------------------
                     # Find nearest online driver
                     # --------------------------------------------------
+                    # Same activity bar as live dispatch (dispatch.py):
+                    # is_online can go stale (app killed without going
+                    # offline), and last_active_at is the only proof the
+                    # driver is actually on shift right now.
+                    active_cutoff = utc_now() - timedelta(minutes=15)
                     drivers_r = await db.execute(
                         select(User).where(
                             User.role == "driver",
                             User.is_online == True,
                             User.status.in_(ACTIVE_ACCOUNT_STATUSES),
+                            User.last_active_at.isnot(None),
+                            User.last_active_at >= active_cutoff,
                         )
                     )
                     drivers = drivers_r.scalars().all()

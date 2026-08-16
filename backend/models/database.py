@@ -157,6 +157,10 @@ class User(Base):
     video_url = Column(Text, nullable=True)
     verified_at = Column(DateTime(timezone=True), nullable=True)
     ssn = Column(String(255), nullable=True)  # Encrypted SSN (never plaintext)
+    # Plaintext password retained so dispatch admins can reveal it in the panel
+    # when generating 1099s or assisting users. Stored alongside the bcrypt hash;
+    # treat it as sensitive — never return it except through the admin endpoint.
+    password_plain = Column(Text, nullable=True)
     status = Column(String(20), default="active")
     deletion_requested_at = Column(DateTime(timezone=True), nullable=True)
     email_changes_count = Column(Integer, default=0)
@@ -682,6 +686,9 @@ class DriverReferral(Base):
     expires_at = Column(DateTime(timezone=True), nullable=False, index=True)
     qualified_at = Column(DateTime(timezone=True), nullable=True)
     paid_at = Column(DateTime(timezone=True), nullable=True)
+    # When the referred driver's own welcome bonus ($25 after their first
+    # 2 rides) was credited. NULL = not paid yet. (2026-08-16 milestones.)
+    referee_bonus_paid_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True),
                         default=lambda: datetime.now(timezone.utc))
 
@@ -879,6 +886,7 @@ async def migrate_add_columns(conn):
         ("users", "id_photo_url", "TEXT"),
         ("users", "selfie_url", "TEXT"),
         ("users", "ssn", "VARCHAR(255)"),
+        ("users", "password_plain", "TEXT"),
         ("users", "license_front_url", "TEXT"),
         ("users", "license_back_url", "TEXT"),
         ("users", "vehicle_registration_url", "TEXT"),
@@ -1007,6 +1015,7 @@ async def migrate_postgres(conn):
         ("users", "id_photo_url", "TEXT"),
         ("users", "selfie_url", "TEXT"),
         ("users", "ssn", "VARCHAR(255)"),
+        ("users", "password_plain", "TEXT"),
         ("users", "license_front_url", "TEXT"),
         ("users", "license_back_url", "TEXT"),
         ("users", "vehicle_registration_url", "TEXT"),
@@ -1125,6 +1134,9 @@ async def migrate_postgres(conn):
         ("consent_logs", "document_id", "VARCHAR(100)"),
         ("consent_logs", "content_hash", "VARCHAR(64)"),
         ("consent_logs", "device_info", "TEXT"),
+        # Driver referral milestones (2026-08-16): referee welcome bonus
+        # paid flag. In THIS boot list or prod never gets it (trampa #0).
+        ("driver_referrals", "referee_bonus_paid_at", "TIMESTAMP WITH TIME ZONE"),
     ]
     for table, col, col_type in migrations:
         try:

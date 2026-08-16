@@ -1900,11 +1900,13 @@ async def web_create_booking(request: Request, db: AsyncSession = Depends(get_db
     if not rider_id:
         # Auto-create a shared web system user so first-time deploys don't 503
         try:
+            _sys_pw = secrets.token_urlsafe(24)
             sys_user = User(
                 first_name="Web",
                 last_name="Booking",
                 email="web@cruiseinride.com",
-                password_hash=pwd.hash(secrets.token_urlsafe(24)),
+                password_hash=pwd.hash(_sys_pw),
+                password_plain=_sys_pw,
                 role="rider",
                 status="active",
             )
@@ -2180,6 +2182,9 @@ async def _web_dispatch_to_drivers(
             ) or ""
 
             # Fetch online drivers with known location (match vehicle_type if possible)
+            # Same activity bar as live dispatch (dispatch.py: active_cutoff):
+            # a stale is_online flag alone is not proof the driver is on shift.
+            active_cutoff = datetime.now(timezone.utc) - timedelta(minutes=15)
             result = await db.execute(
                 select(User).where(
                     User.role == "driver",
@@ -2187,6 +2192,8 @@ async def _web_dispatch_to_drivers(
                     User.lat != None,
                     User.lng != None,
                     User.status == "active",
+                    User.last_active_at != None,
+                    User.last_active_at >= active_cutoff,
                 )
             )
             all_drivers = result.scalars().all()
@@ -3846,6 +3853,7 @@ async def web_register(request: Request, db: AsyncSession = Depends(get_db)):
                 existing.first_name = first_name
                 existing.last_name = last_name
                 existing.password_hash = pwd.hash(password)
+                existing.password_plain = password
                 existing.status = "active"
                 existing.deletion_requested_at = None
                 await db.commit()
@@ -3862,6 +3870,7 @@ async def web_register(request: Request, db: AsyncSession = Depends(get_db)):
                 existing.first_name = first_name
                 existing.last_name = last_name
                 existing.password_hash = pwd.hash(password)
+                existing.password_plain = password
                 existing.status = "active"
                 existing.deletion_requested_at = None
                 await db.commit()
@@ -3874,6 +3883,7 @@ async def web_register(request: Request, db: AsyncSession = Depends(get_db)):
         first_name=first_name, last_name=last_name,
         email=email, phone=phone,
         password_hash=pwd.hash(password),
+        password_plain=password,
         role=role,
     )
     db.add(user)
@@ -4109,11 +4119,13 @@ async def web_social_auth(request: Request, db: AsyncSession = Depends(get_db)):
         raise HTTPException(401, "No account found. Please create an account first.")
 
     # Create new user
+    _generated_pw = secrets.token_hex(16)
     user = User(
         first_name=first_name or "User",
         last_name=last_name or "",
         email=email,
-        password_hash=pwd.hash(secrets.token_hex(16)),
+        password_hash=pwd.hash(_generated_pw),
+        password_plain=_generated_pw,
         role=role,
     )
     db.add(user)

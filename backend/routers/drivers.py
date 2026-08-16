@@ -281,14 +281,33 @@ async def update_driver_location(driver_id: int, body: DriverLocationIn, user: U
 
     # Update DB (lightweight - no SELECT needed, use the authenticated user object)
     # Throttle DB writes: persist at most every 3s per driver (in-memory is always fresh)
+    #
+    # The throttle covers lat/lng ONLY. An is_online flip bypasses it and
+    # writes immediately: going offline through this endpoint while a
+    # heartbeat had written <3s earlier used to skip the whole block, so the
+    # DB kept the driver online and dispatch — which re-verifies the flag in
+    # the DB before every push — kept sending offers to a driver who had
+    # just gone offline. last_active_at goes with the flip: a driver who is
+    # offline must not look "active" to the last_active_at filters either.
     _last_write = _driver_last_db_write.get(driver_id, 0.0)
-    if (_now - _last_write) >= _DB_WRITE_THROTTLE:
+    _online_flipped = bool(body.is_online) != bool(user.is_online)
+    if _online_flipped or (_now - _last_write) >= _DB_WRITE_THROTTLE:
         user.lat = body.lat
         user.lng = body.lng
         user.is_online = body.is_online
-        user.last_active_at = utc_now()
+        if body.is_online:
+            user.last_active_at = utc_now()
         await db.commit()
         _driver_last_db_write[driver_id] = _now
+
+    # Going offline retires every pending offer immediately — an offline
+    # driver cannot accept, and leaving them "pending" lets a late-tapped
+    # push raise a dead offer card (see expire_pending_offers_for_driver).
+    if _online_flipped and not body.is_online:
+        from routers.dispatch import expire_pending_offers_for_driver  # lazy: import cycle
+        _retired = await expire_pending_offers_for_driver(db, driver_id, "driver went offline")
+        if _retired:
+            await db.commit()
 
     # Invalidate nearby cache cells near this driver's new position
     _stale = [k for k in _nearby_cache if abs(k[0] - round(body.lat, 3)) < 0.01 and abs(k[1] - round(body.lng, 3)) < 0.01]

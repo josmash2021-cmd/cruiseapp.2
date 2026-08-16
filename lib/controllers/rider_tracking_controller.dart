@@ -532,9 +532,11 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     // Feed the motion engine first — every packet from every channel lands
     // here, and the engine decides what is movement and what is parked-car
     // GPS wander. No accuracy travels on the socket; 8 m is a fair street-
-    // level standstill radius for phone GPS.
+    // level standstill radius for phone GPS. timestampMs is the driver's own
+    // capture time: arrival spacing on a relayed feed comes in bursts, and
+    // pacing velocity by bursts reads as accelerate-brake pulsing.
     _carMotion.setTarget(ll.latitude, ll.longitude,
-        bearing: bearing, accuracyM: 8.0);
+        bearing: bearing, accuracyM: 8.0, timestampMs: timestampMs);
     // 2026-04-27 diagnostic: log every incoming GPS so we can see in
     // device logs whether the rider is even RECEIVING the driver
     // updates. If this never prints while the car sits frozen, the
@@ -662,6 +664,15 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
         _tgtTraveledM = newTarget;
         _directTargetPos = null;
         _directTargetBearing = null;
+        // Steer with the road: while the fix sits on the route, the tangent
+        // under the car is its heading. The GPS course arrives relayed at
+        // ~1 Hz and at city speeds swings in steps — the car turned in
+        // visible jolts. The tangent stream (18 m look-ahead, same source
+        // the chase camera uses) is carved by SmoothMotion's low-pass into
+        // one continuous turn. Off-route fixes keep the GPS heading.
+        if (lateralM < 30) {
+          _carMotion.setBearing(_posAtDistUltraSmooth(clampedM).$2);
+        }
       } else {
         // Too far from route — use raw GPS lerp as fallback. The reroute
         // itself was already considered by _updateOffRouteState above.

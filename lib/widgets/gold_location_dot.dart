@@ -252,9 +252,12 @@ class GoldLocationDot {
   /// rather than forward them.
   /// [accuracyM] is the fix's own reported uncertainty, which sizes the
   /// standstill jitter hold — see SmoothMotion.setTarget.
+  /// [timestampMs] is the fix's own capture time (epoch millis) — it paces
+  /// the velocity estimate when the feed arrives in bursts.
   void setTarget(double lat, double lng,
-          {double? bearing, double? accuracyM}) =>
-      _motion.setTarget(lat, lng, bearing: bearing, accuracyM: accuracyM);
+          {double? bearing, double? accuracyM, double? timestampMs}) =>
+      _motion.setTarget(lat, lng,
+          bearing: bearing, accuracyM: accuracyM, timestampMs: timestampMs);
 
   /// Aim the marker without moving it.
   ///

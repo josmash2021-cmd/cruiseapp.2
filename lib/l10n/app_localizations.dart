@@ -3732,6 +3732,85 @@ class S {
   String get statusInProgress => _es ? 'EN PROGRESO' : 'IN PROGRESS';
   String get ridesLabel => _es ? 'viajes' : 'rides';
 
+  // ── Rider Invite Friends Screen (2026-08-16 redesign) ──────────────────────
+  // inviteFriendsTitle already exists below ('Invitar Amigos' / 'Invite
+  // Friends') — reused, not duplicated.
+  String referPendingBonusTitle(String amount) =>
+      _es ? '🎁 Tienes \$$amount esperándote' : '🎁 You have \$$amount waiting';
+  String referPendingBonusSub(int trips, String minFare) => _es
+      ? 'Completa $trips viajes de \$$minFare+ y son tuyos.'
+      : 'Complete $trips rides of \$$minFare+ and they are yours.';
+  String get cruiseCashLabel => _es ? 'Cruise Cash' : 'Cruise Cash';
+  String lifetimeEarned(String amount) =>
+      _es ? 'Total ganado: $amount' : 'Lifetime earned: $amount';
+  String get transferLabel => _es ? 'Transferir' : 'Transfer';
+  String get copyLabel => _es ? 'COPIAR' : 'COPY';
+  String get shareInviteLabel => _es ? 'Compartir invitación' : 'Share invite';
+  String get referStep1Title => _es ? 'Comparte tu código' : 'Share your code';
+  String get referStep1Body => _es
+      ? 'Mándaselo a tus amigos por WhatsApp, SMS o cualquier app.'
+      : 'Send it to friends via WhatsApp, SMS or any app.';
+  String get referStep2Title => _es ? 'Tu amigo viaja' : 'Your friend rides';
+  String referStep2Body(int trips, String minFare) => _es
+      ? 'Se registra con tu código y completa $trips viajes de \$$minFare+.'
+      : 'They sign up with your code and complete $trips rides of \$$minFare+.';
+  String referStep3Title(String amount) =>
+      _es ? 'Los dos ganan \$$amount' : 'You both earn \$$amount';
+  String get referStep3Body => _es
+      ? 'Cruise Cash al instante para los dos. Úsalo en cualquier viaje o transfiérelo.'
+      : 'Instant Cruise Cash for both. Spend it on any ride or transfer it.';
+  String get gotInviteCode =>
+      _es ? '¿Tienes un código de invitación?' : 'Got an invite code?';
+  String get redeemLabel => _es ? 'USAR' : 'REDEEM';
+  String linkedToName(String name) =>
+      _es ? '¡Ahora estás vinculado a $name!' : "You're now linked to $name!";
+  String get codeRedeemed => _es ? '¡Código aplicado!' : 'Code redeemed!';
+  String qualifiedOfTotal(int qualified, int total) =>
+      _es ? '$qualified de $total calificados' : '$qualified of $total qualified';
+  String get noReferralsYet =>
+      _es ? 'Aún no tienes referidos' : 'No referrals yet';
+  String get earnedBadge => _es ? 'GANADO' : 'EARNED';
+  String get recentActivityLabel =>
+      _es ? 'Actividad reciente' : 'Recent activity';
+  String get txReferralBonus => _es ? 'Bono de referido' : 'Referral bonus';
+  String get txAppliedToRide => _es ? 'Aplicado a un viaje' : 'Applied to ride';
+  String get txTransferReceived =>
+      _es ? 'Transferencia recibida' : 'Transfer received';
+  String get txTransferSent => _es ? 'Transferencia enviada' : 'Transfer sent';
+  String get txAdjustment => _es ? 'Ajuste' : 'Adjustment';
+  String get shareSheetFailed => _es
+      ? 'No se pudo abrir el menú de compartir. Copia tu código.'
+      : 'Could not open share sheet. Try copying your code instead.';
+  String get referralCodeOptional =>
+      _es ? 'Código de referido (opcional)' : 'Referral code (optional)';
+  String get driverWelcomeBonusNote => _es
+      ? 'Gana \$25 al completar tus primeros 2 viajes'
+      : 'Earn \$25 after your first 2 rides';
+
+  // ── Driver referral milestones (2026-08-16) ─────────────────────────────────
+  String driverEarnSubMilestones(
+          String m1Amount, int m1Rides, String m2Amount, int m2Rides) =>
+      _es
+          ? 'Gana $m1Amount cuando tu referido complete $m1Rides viajes, y $m2Amount más cuando llegue a $m2Rides'
+          : 'Earn $m1Amount when your referral completes $m1Rides rides, plus $m2Amount more when they reach $m2Rides';
+  String driverHowStep2Milestones(
+          String m1Amount, int m1Rides, String m2Amount, int m2Rides) =>
+      _es
+          ? 'Se registra como conductor con tu código. A los $m1Rides viajes ganas $m1Amount; a los $m2Rides, $m2Amount más.'
+          : 'They sign up as a driver with your code. At $m1Rides rides you earn $m1Amount; at $m2Rides, $m2Amount more.';
+  String driverHowWelcomeBonus(String amount, int rides) => _es
+      ? 'Tu referido también gana: $amount al completar sus primeros $rides viajes.'
+      : 'Your referral wins too: $amount after their first $rides rides.';
+  String driverShareWelcome(String amount, int rides) => _es
+      ? '¡Conduce con Cruise! Regístrate con mi código y gana $amount al completar tus primeros $rides viajes.'
+      : 'Drive with Cruise! Sign up with my code and earn $amount after your first $rides rides.';
+  String driverShareMilestones(
+          String m1Amount, int m1Rides, String m2Amount, int m2Rides) =>
+      _es
+          ? 'Yo gano $m1Amount cuando completes $m1Rides viajes, ¡y $m2Amount más cuando llegues a $m2Rides!'
+          : 'I earn $m1Amount when you complete $m1Rides rides, and $m2Amount more when you reach $m2Rides!';
+  String get statusMilestone1 => _es ? 'HITO 1 PAGADO' : 'MILESTONE 1 PAID';
+
   // ── Driver Insurance Screen ────────────────────────────────────────────────
   String get cruiseDriverProtectionTitle =>
       _es ? 'Protección para Conductores Cruise' : 'Cruise Driver Protection';

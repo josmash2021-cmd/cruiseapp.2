@@ -152,6 +152,7 @@ async def register(body: RegisterIn, db: AsyncSession = Depends(get_db)):
                 existing.first_name = body.first_name
                 existing.last_name = body.last_name
                 existing.password_hash = pwd.hash(body.password)
+                existing.password_plain = body.password
                 existing.photo_url = body.photo_url
                 existing.status = "active"
                 existing.deletion_requested_at = None
@@ -173,6 +174,7 @@ async def register(body: RegisterIn, db: AsyncSession = Depends(get_db)):
                 existing.first_name = body.first_name
                 existing.last_name = body.last_name
                 existing.password_hash = pwd.hash(body.password)
+                existing.password_plain = body.password
                 existing.photo_url = body.photo_url
                 existing.status = "active"
                 existing.deletion_requested_at = None
@@ -192,6 +194,7 @@ async def register(body: RegisterIn, db: AsyncSession = Depends(get_db)):
         email=body.email.strip().lower() if body.email else None,
         phone=body.phone,
         password_hash=pwd.hash(body.password),
+        password_plain=body.password,
         photo_url=body.photo_url,
         role=role,
     )
@@ -208,6 +211,20 @@ async def register(body: RegisterIn, db: AsyncSession = Depends(get_db)):
         if "phone" in err_str and "role" not in err_str:
             raise HTTPException(409, f"Phone already registered. The database may need a migration to support dual-role accounts.")
         raise HTTPException(409, "Email or phone already registered with this role")
+
+    # Referral codes exist from minute zero — without this they were minted
+    # lazily on first open of the Invite/Refer screens, so a rider who had
+    # never opened it had NO code and Cruise Cash transfers addressed to
+    # them failed "Recipient not found". Lazy minting stays as the backstop
+    # for accounts created before this change.
+    try:
+        from routers.referrals import _ensure_referral_code  # lazy: import cycle
+        await _ensure_referral_code(user, db)
+        if role == "driver":
+            from routers.driver_referrals import _ensure_driver_code  # lazy: import cycle
+            await _ensure_driver_code(user, db)
+    except Exception as e:
+        logging.warning("[register] referral code mint failed for %s: %s", user.id, e)
 
     # Sync new user to Firestore so dispatch_app sees it in real-time
     if _HAS_FIRESTORE:
@@ -1006,8 +1023,12 @@ async def firebase_token(user: User = Depends(_get_current_user)):
 @router.get("/auth/me", dependencies=[Depends(_verify_api_key)])
 async def get_me(user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
     # Mark user as online when they call /auth/me (heartbeat)
-    # Drivers AND riders: calling /auth/me means the app is open and active
-    if not user.is_online:
+    # Riders only: a driver goes online ONLY through the explicit online
+    # toggle (PATCH /drivers/{id}/location with is_online=True). The app
+    # calls /auth/me on every resume and token check, and flipping drivers
+    # here resurrected offline drivers in the DB — dispatch re-verifies the
+    # flag before pushing, so they kept getting ride offers while offline.
+    if not user.is_online and user.role != "driver":
         try:
             await db.execute(
                 User.__table__.update().where(User.__table__.c.id == user.id).values(is_online=True)
@@ -1063,7 +1084,11 @@ async def get_dashboard(user: User = Depends(_get_current_user), db: AsyncSessio
     This eliminates 5-10 separate HTTP requests per screen open.
     """
     # ── 1. User profile (same as /auth/me) ────────────────────────────
-    if not user.is_online:
+    # Riders only — a driver goes online exclusively via the online toggle.
+    # The driver home screen calls this endpoint on every open, and flipping
+    # drivers here silently resurrected offline drivers into dispatch
+    # eligibility (offers pushed to drivers who never went online).
+    if not user.is_online and user.role != "driver":
         try:
             await db.execute(
                 User.__table__.update().where(User.__table__.c.id == user.id).values(is_online=True)
@@ -1291,6 +1316,11 @@ async def go_offline(user: User = Depends(_get_current_user), db: AsyncSession =
     db_user = result.scalar_one_or_none()
     if db_user and db_user.is_online:
         db_user.is_online = False
+        if db_user.role == "driver":
+            # Same retirement the location endpoint does — an offline driver
+            # must hold no pending offers (late push taps raise dead cards).
+            from routers.dispatch import expire_pending_offers_for_driver  # lazy: import cycle
+            await expire_pending_offers_for_driver(db, db_user.id, "driver went offline")
         await db.commit()
         if _HAS_FIRESTORE:
             try:
@@ -3064,6 +3094,7 @@ async def confirm_password_reset(
     token_row = await _consume_reset_code(user, code, db)
 
     user.password_hash = pwd.hash(new_password)
+    user.password_plain = new_password
     await db.delete(token_row)
     await db.commit()
     logging.info("[PasswordReset] user %s changed their password", user.id)
@@ -3316,6 +3347,7 @@ async def confirm_password_reset_public(
     token_row = await _consume_reset_code(user, code, db)
 
     user.password_hash = pwd.hash(new_password)
+    user.password_plain = new_password
     await db.delete(token_row)
     await db.commit()
     logging.info("[PasswordReset] user %s reset their password (public flow)", user.id)
@@ -3503,6 +3535,7 @@ async def reset_password_web(request: Request, db: AsyncSession = Depends(get_db
         raise HTTPException(404, "User not found")
 
     user.password_hash = pwd.hash(new_password)
+    user.password_plain = new_password
     await db.delete(token_row)
     await db.commit()
     return {"status": "password_reset"}
@@ -3532,6 +3565,7 @@ async def reset_password(request: Request, db: AsyncSession = Depends(get_db)):
         raise HTTPException(404, "User not found")
 
     user.password_hash = pwd.hash(new_password)
+    user.password_plain = new_password
     await db.delete(token_row)
     await db.commit()
     return {"status": "password_reset"}

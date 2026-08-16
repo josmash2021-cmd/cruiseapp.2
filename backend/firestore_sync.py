@@ -16,6 +16,9 @@ from typing import Optional
 import firebase_admin
 from firebase_admin import credentials, firestore, storage
 
+from utils.helpers import _haversine
+from services.vehicle_tiers import normalize_tier
+
 log = logging.getLogger("firestore_sync")
 
 # ── Init ─────────────────────────────────────────────────
@@ -817,6 +820,16 @@ def sync_trip(trip_id: int, rider_id: int, rider_name: str, rider_phone: str,
     if _db is None:
         return
     doc_id = f"sql_{trip_id}"
+    # Estimated route metrics. Trip.distance/duration only get their real
+    # values when the trip completes (routers/trips.py), a state cancelled
+    # trips never reach — without this seed the dispatch panel shows
+    # "0.0 mi / 0 min" on every cancelled ride. Same haversine + 2 min/mi
+    # heuristic trips.py uses as its own fallback.
+    est_miles = 0.0
+    if pickup_lat and dropoff_lat:
+        est_miles = round(_haversine(pickup_lat, pickup_lng,
+                                     dropoff_lat, dropoff_lng) * 0.621371, 1)
+    est_minutes = max(1, int(est_miles * 2)) if est_miles > 0 else 0
     data = {
         "passengerId": f"sql_{rider_id}",
         "passengerName": rider_name,
@@ -829,10 +842,17 @@ def sync_trip(trip_id: int, rider_id: int, rider_name: str, rider_phone: str,
         "dropoffLng": dropoff_lng,
         "status": status,
         "fare": fare or 0.0,
-        "distance": 0.0,
-        "duration": 0,
-        "paymentMethod": "cash",
-        "vehicleType": vehicle_type or "Economy",
+        # Miles under the *_miles key: the dispatch model treats plain
+        # `distance` as kilometres, so writing miles there halved the number
+        # it rendered.
+        "distance_miles": est_miles,
+        "duration": est_minutes,
+        # Every rider-app trip is paid by Stripe card hold (routers/dispatch.py
+        # rejects requests without one) — "cash" here was a placeholder.
+        "paymentMethod": "card",
+        # Canonical tier (standard/compact/premium/black), not the ride-picker
+        # display name the app sends ("VIP", "SUV XL", ...).
+        "vehicleType": normalize_tier(vehicle_type),
         "isScheduled": scheduled_at is not None,
         "scheduledAt": _ts(scheduled_at),
         "isAirport": is_airport or False,
@@ -995,7 +1015,9 @@ def sync_trip_status(trip_id: int, status: str,
     if cancelled_by:
         data["cancelledBy"] = cancelled_by
     if distance is not None:
-        data["distance"] = distance
+        # Trip.distance is MILES — write it under the *_miles key, not plain
+        # `distance`, which the dispatch model reads as kilometres.
+        data["distance_miles"] = distance
     if duration is not None:
         data["duration"] = duration
     if payment_status is not None:

@@ -208,9 +208,27 @@ async def get_available_scheduled_trips(
 
     driver_state = await _state_for(lat, lng) if (lat and lng) else None
 
+    # Tier guard (same rule as dispatch): a driver only sees cards their
+    # car can actually serve — showing a Black reservation to a Standard
+    # driver ends in a 403 on tap, which reads as a bug, not a rule.
+    from services.vehicle_tiers import eligible_tiers, normalize_tier
+    from models.database import Vehicle
+    veh = await db.execute(
+        select(Vehicle.vehicle_type).where(Vehicle.user_id == user.id)
+    )
+    driver_vtype = (veh.scalar_one_or_none() or "standard")
+    eligible_request_tiers = {
+        req for req in ("standard", "compact", "premium", "black")
+        if driver_vtype.strip().lower() in eligible_tiers(req)
+    }
+
     cards = []
     dropped = 0
+    tier_dropped = 0
     for t in trips:
+        if normalize_tier(t.vehicle_type) not in eligible_request_tiers:
+            tier_dropped += 1
+            continue
         if lat and lng and t.pickup_lat and t.pickup_lng:
             dist = _haversine(lat, lng, t.pickup_lat, t.pickup_lng)
             if dist > radius_km:
@@ -222,10 +240,11 @@ async def get_available_scheduled_trips(
                 continue
         cards.append(_scheduled_trip_card(t, lat, lng))
 
-    if dropped:
+    if dropped or tier_dropped:
         logging.info(
             "[StateFilter] scheduled browse for driver %s in %s — hid %d "
-            "out-of-state trip(s)", user.id, driver_state, dropped,
+            "out-of-state, %d wrong-tier trip(s)",
+            user.id, driver_state, dropped, tier_dropped,
         )
 
     return cards
@@ -257,6 +276,20 @@ async def claim_scheduled_trip(
         raise HTTPException(404, "Trip not found")
     if trip.status != "scheduled" or trip.driver_id is not None:
         raise HTTPException(409, "This ride has already been claimed")
+
+    # Tier guard — claiming by hand must obey the same rule as every
+    # dispatched offer (vehicle_tiers.eligible_tiers): a Standard car
+    # cannot take a Black reservation just because the marketplace showed
+    # the card.
+    from routers.dispatch import _filter_drivers_by_vehicle_tier  # lazy: import cycle
+    tier_ok = await _filter_drivers_by_vehicle_tier(
+        db, [user.id], trip.vehicle_type or "standard",
+    )
+    if user.id not in tier_ok:
+        raise HTTPException(
+            403,
+            "Your vehicle tier cannot claim this ride category",
+        )
 
     # Same state, enforced here and not only in the browse.
     #

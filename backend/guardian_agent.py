@@ -1356,6 +1356,19 @@ class UnmatchedTripRetryAgent:
                     self._retries += 1
                     continue
 
+                # Tier guard — the same rule live dispatch applies
+                # (vehicle_tiers.eligible_tiers). The retry loop used to
+                # re-offer any trip to the nearest car whatever its tier.
+                from routers.dispatch import _filter_drivers_by_vehicle_tier  # lazy: import cycle
+                tier_ok = await _filter_drivers_by_vehicle_tier(
+                    db, [d.id for d in drivers],
+                    trip.vehicle_type or "standard",
+                )
+                drivers = [d for d in drivers if d.id in tier_ok]
+                if not drivers:
+                    self._retries += 1
+                    continue
+
                 drivers_sorted = sorted(
                     drivers,
                     key=lambda d: _haversine(trip.pickup_lat, trip.pickup_lng, d.lat or 0, d.lng or 0),

@@ -2201,6 +2201,22 @@ async def _web_dispatch_to_drivers(
                 logging.info("[WebDispatch] No online drivers for trip %d — rider will see searching state", trip_id)
                 return
 
+            # Tier guard — same rule as live dispatch
+            # (vehicle_tiers.eligible_tiers). This path used to offer any
+            # tier's work to the nearest car whatever it was.
+            from routers.dispatch import _filter_drivers_by_vehicle_tier  # lazy: import cycle
+            tier_ok = await _filter_drivers_by_vehicle_tier(
+                db, [d.id for d in all_drivers],
+                trip.vehicle_type or "standard",
+            )
+            all_drivers = [d for d in all_drivers if d.id in tier_ok]
+            if not all_drivers:
+                logging.info(
+                    "[WebDispatch] Trip %d: no eligible driver for tier %s",
+                    trip_id, trip.vehicle_type,
+                )
+                return
+
             # Sort by distance
             nearby = sorted(
                 [(d, _haversine(pickup_lat, pickup_lng, d.lat, d.lng)) for d in all_drivers],

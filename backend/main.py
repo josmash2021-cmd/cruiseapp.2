@@ -1998,6 +1998,24 @@ async def _scheduled_ride_dispatcher():
                     if not drivers:
                         continue
 
+                    # Tier guard — the same rule live dispatch applies
+                    # (vehicle_tiers.eligible_tiers): a Standard car never
+                    # sees Compact/Premium/Black work, Compact only serves
+                    # Standard+Compact, Premium only Premium, Black serves
+                    # Premium+Black. This path used to skip it entirely.
+                    from routers.dispatch import _filter_drivers_by_vehicle_tier  # lazy: import cycle
+                    tier_ok = await _filter_drivers_by_vehicle_tier(
+                        db, [d.id for d in drivers],
+                        trip.vehicle_type or "standard",
+                    )
+                    drivers = [d for d in drivers if d.id in tier_ok]
+                    if not drivers:
+                        logging.info(
+                            "[Scheduler] Trip %d: no eligible driver for tier %s",
+                            trip.id, trip.vehicle_type,
+                        )
+                        continue
+
                     best = None
                     best_dist = float("inf")
                     for d in drivers:

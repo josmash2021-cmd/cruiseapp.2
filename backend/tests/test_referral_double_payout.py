@@ -1,10 +1,10 @@
 """Guard: the referral promise pays BOTH sides, once, on real money only.
 
-The 2026-08-16 policy: the referred rider's FIRST completed trip of
-$25+ credits $15 Cruise Cash to the referrer AND $15 to the referee,
-at the same moment. Before this, the share message said "we both get
-$50" but only the referrer was ever paid — the referee's half of the
-promise was never wired.
+The 2026-08-16 rev-2 policy: the referred rider's first TWO completed
+trips of $25+ credit $25 Cruise Cash to the referrer AND $25 to the
+referee, at the same moment. Before this, the share message said "we
+both get $50" but only the referrer was ever paid — the referee's half
+of the promise was never wired.
 """
 import bcrypt as _bcrypt
 import jwt as _jwt
@@ -53,7 +53,7 @@ async def _balance(db, user_id):
 
 
 @pytest.mark.asyncio
-async def test_both_sides_are_paid_on_the_first_qualifying_ride(
+async def test_both_sides_are_paid_after_two_qualifying_rides(
     client, db, test_rider
 ):
     inviter, _ = test_rider
@@ -67,24 +67,30 @@ async def test_both_sides_are_paid_on_the_first_qualifying_ride(
     )
     assert resp.status_code == 200, resp.text
 
-    # A trip under the threshold pays nobody.
+    # Under the threshold: pays nobody, does not count.
     await credit_referrer_if_qualified(db, referee.id, 24.99, ref_trip_id=1)
     assert await _balance(db, inviter.id) == 0
     assert await _balance(db, referee.id) == 0
 
-    # The first $25+ trip pays BOTH, immediately.
+    # First qualifying ride: counts, but pays nobody yet.
     await credit_referrer_if_qualified(db, referee.id, 25.0, ref_trip_id=2)
     await db.commit()
-    assert await _balance(db, inviter.id) == 1500, "referrer gets $15"
-    assert await _balance(db, referee.id) == 1500, (
+    assert await _balance(db, inviter.id) == 0
+    assert await _balance(db, referee.id) == 0
+
+    # Second qualifying ride: BOTH are paid, immediately.
+    await credit_referrer_if_qualified(db, referee.id, 40.0, ref_trip_id=3)
+    await db.commit()
+    assert await _balance(db, inviter.id) == 2500, "referrer gets $25"
+    assert await _balance(db, referee.id) == 2500, (
         "the friend's promised bonus — the half that was never wired"
     )
 
     # And only once — later trips must not pay again.
-    await credit_referrer_if_qualified(db, referee.id, 60.0, ref_trip_id=3)
+    await credit_referrer_if_qualified(db, referee.id, 60.0, ref_trip_id=4)
     await db.commit()
-    assert await _balance(db, inviter.id) == 1500
-    assert await _balance(db, referee.id) == 1500
+    assert await _balance(db, inviter.id) == 2500
+    assert await _balance(db, referee.id) == 2500
 
 
 @pytest.mark.asyncio
@@ -105,10 +111,10 @@ async def test_redeem_seeds_the_new_policy_on_the_row(client, db, test_rider):
             select(Referral).where(Referral.referee_id == referee.id)
         )
     ).scalar_one()
-    assert ref.qualified_trips_required == 1
+    assert ref.qualified_trips_required == 2
     assert ref.qualifying_min_fare == pytest.approx(25.0)
-    assert ref.referrer_bonus == pytest.approx(15.0)
-    assert ref.referee_bonus == pytest.approx(15.0)
+    assert ref.referrer_bonus == pytest.approx(25.0)
+    assert ref.referee_bonus == pytest.approx(25.0)
 
 
 @pytest.mark.asyncio
@@ -129,5 +135,5 @@ async def test_me_reports_the_pending_bonus_to_the_referee(
     assert resp.status_code == 200, resp.text
     pending = resp.json()["my_pending_bonus"]
     assert pending is not None, "the referee's screen shows their waiting bonus"
-    assert pending["bonus_cents"] == 1500
+    assert pending["bonus_cents"] == 2500
     assert pending["qualifying_min_fare"] == pytest.approx(25.0)

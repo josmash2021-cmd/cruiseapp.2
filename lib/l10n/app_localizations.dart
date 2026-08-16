@@ -3735,16 +3735,11 @@ class S {
   // ── Rider Invite Friends Screen (2026-08-16 redesign) ──────────────────────
   // inviteFriendsTitle already exists below ('Invitar Amigos' / 'Invite
   // Friends') — reused, not duplicated.
-  String referHeroTitle(String amount) =>
-      _es ? 'REGALA \$$amount, GANA \$$amount' : 'GIVE \$$amount, GET \$$amount';
-  String referHeroSub(String amount, String minFare) => _es
-      ? 'Tu amigo completa su primer viaje de \$$minFare+ y los dos ganan \$$amount en Cruise Cash al instante.'
-      : 'Your friend completes their first ride of \$$minFare+ and you both get \$$amount in Cruise Cash instantly.';
   String referPendingBonusTitle(String amount) =>
       _es ? '🎁 Tienes \$$amount esperándote' : '🎁 You have \$$amount waiting';
-  String referPendingBonusSub(String minFare) => _es
-      ? 'Completa tu primer viaje de \$$minFare+ y son tuyos.'
-      : 'Complete your first ride of \$$minFare+ and they are yours.';
+  String referPendingBonusSub(int trips, String minFare) => _es
+      ? 'Completa $trips viajes de \$$minFare+ y son tuyos.'
+      : 'Complete $trips rides of \$$minFare+ and they are yours.';
   String get cruiseCashLabel => _es ? 'Cruise Cash' : 'Cruise Cash';
   String lifetimeEarned(String amount) =>
       _es ? 'Total ganado: $amount' : 'Lifetime earned: $amount';
@@ -3756,9 +3751,9 @@ class S {
       ? 'Mándaselo a tus amigos por WhatsApp, SMS o cualquier app.'
       : 'Send it to friends via WhatsApp, SMS or any app.';
   String get referStep2Title => _es ? 'Tu amigo viaja' : 'Your friend rides';
-  String referStep2Body(String minFare) => _es
-      ? 'Se registra con tu código y completa su primer viaje de \$$minFare+.'
-      : 'They sign up with your code and complete their first ride of \$$minFare+.';
+  String referStep2Body(int trips, String minFare) => _es
+      ? 'Se registra con tu código y completa $trips viajes de \$$minFare+.'
+      : 'They sign up with your code and complete $trips rides of \$$minFare+.';
   String referStep3Title(String amount) =>
       _es ? 'Los dos ganan \$$amount' : 'You both earn \$$amount';
   String get referStep3Body => _es

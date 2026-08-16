@@ -13,15 +13,14 @@ import 'transfer_cruise_cash_screen.dart';
 ///
 /// Layout (top to bottom):
 ///   1. Back button + title
-///   2. Hero card — "GIVE $15, GET $15" with the deal spelled out
-///   3. Pending-bonus banner (only when THIS rider redeemed a code and
+///   2. Pending-bonus banner (only when THIS rider redeemed a code and
 ///      hasn't qualified yet — their welcome bonus waiting)
-///   4. Referral code chip (tap to copy) + big Share button
-///   5. Cruise Cash balance card + Transfer
-///   6. "How it works" 3-step explainer
-///   7. Redeem-someone-else's-code mini form
-///   8. List of referees with per-row progress bar
-///   9. Recent Cruise Cash transactions
+///   3. Referral code chip (tap to copy) + big Share button
+///   4. Cruise Cash balance card + Transfer
+///   5. "How it works" 3-step explainer
+///   6. Redeem-someone-else's-code mini form
+///   7. List of referees with per-row progress bar
+///   8. Recent Cruise Cash transactions
 ///
 /// The deal itself (amounts, qualifying fare) comes from the backend's
 /// policy payload — change it once in referrals.py and every screen,
@@ -52,8 +51,9 @@ class _ReferralScreenState extends State<ReferralScreen>
   List<Map<String, dynamic>> _transactions = [];
 
   /// The deal, as the backend currently offers it (policy payload).
-  double _bonusDollars = 15;
+  double _bonusDollars = 25;
   double _minFareDollars = 25;
+  int _tripsRequired = 2;
   Map<String, dynamic>? _myPendingBonus;
 
   // Redeem-someone-else's-code mini form
@@ -138,9 +138,11 @@ class _ReferralScreenState extends State<ReferralScreen>
             .map((e) => Map<String, dynamic>.from(e as Map))
             .toList();
         _bonusDollars =
-            (policy['referrer_bonus'] as num?)?.toDouble() ?? 15.0;
+            (policy['referrer_bonus'] as num?)?.toDouble() ?? 25.0;
         _minFareDollars =
             (policy['qualifying_min_fare'] as num?)?.toDouble() ?? 25.0;
+        _tripsRequired =
+            (policy['qualifying_trips_required'] as num?)?.toInt() ?? 2;
         _myPendingBonus = (info['my_pending_bonus'] as Map?)
             ?.map((k, v) => MapEntry(k.toString(), v));
         _loading = false;
@@ -237,23 +239,21 @@ class _ReferralScreenState extends State<ReferralScreen>
                   children: [
                     _buildHeader(),
                     const SizedBox(height: 20),
-                    _entryItem(0, _buildHeroCard()),
                     if (_myPendingBonus != null) ...[
+                      _entryItem(0, _buildPendingBonusBanner()),
                       const SizedBox(height: 16),
-                      _entryItem(1, _buildPendingBonusBanner()),
                     ],
+                    _entryItem(1, _buildCodeCard()),
                     const SizedBox(height: 16),
-                    _entryItem(2, _buildCodeCard()),
-                    const SizedBox(height: 16),
-                    _entryItem(3, _buildBalanceCard()),
+                    _entryItem(2, _buildBalanceCard()),
                     const SizedBox(height: 28),
-                    _entryItem(4, _buildHowItWorks()),
+                    _entryItem(3, _buildHowItWorks()),
                     const SizedBox(height: 24),
-                    _entryItem(5, _buildRedeemBlock()),
+                    _entryItem(4, _buildRedeemBlock()),
                     const SizedBox(height: 28),
-                    _entryItem(6, _buildRefereesSection()),
+                    _entryItem(5, _buildRefereesSection()),
                     const SizedBox(height: 24),
-                    _entryItem(7, _buildTransactionsSection()),
+                    _entryItem(6, _buildTransactionsSection()),
                   ],
                 ),
               ),
@@ -334,64 +334,6 @@ class _ReferralScreenState extends State<ReferralScreen>
     );
   }
 
-  /// The deal, front and centre. Gold on dark: the one card on this screen
-  /// that is allowed to shout.
-  Widget _buildHeroCard() {
-    final s = S.of(context);
-    final amount = _deal(_bonusDollars);
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(22, 24, 22, 22),
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [_gold, _goldLight],
-        ),
-        borderRadius: BorderRadius.circular(24),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            width: 46,
-            height: 46,
-            decoration: BoxDecoration(
-              color: Colors.black.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(14),
-            ),
-            alignment: Alignment.center,
-            child: const Icon(Icons.card_giftcard_rounded,
-                color: Colors.black, size: 26),
-          ),
-          const SizedBox(height: 16),
-          Text(
-            s.referHeroTitle(amount),
-            style: const TextStyle(
-              fontFamily: 'Poppins',
-              color: Colors.black,
-              fontSize: 26,
-              fontWeight: FontWeight.w900,
-              letterSpacing: -0.5,
-              height: 1.1,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            s.referHeroSub(amount, _deal(_minFareDollars)),
-            style: TextStyle(
-              fontFamily: 'Poppins',
-              color: Colors.black.withValues(alpha: 0.65),
-              fontSize: 13.5,
-              fontWeight: FontWeight.w600,
-              height: 1.35,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   /// Shown only to a rider who redeemed someone's code and hasn't taken
   /// their qualifying ride yet — the welcome bonus they already have
   /// waiting, so the promise is visible from day one.
@@ -400,6 +342,7 @@ class _ReferralScreenState extends State<ReferralScreen>
     final b = _myPendingBonus!;
     final bonusCents = (b['bonus_cents'] as num?)?.toInt() ?? 0;
     final minFare = (b['qualifying_min_fare'] as num?)?.toDouble() ?? 25.0;
+    final trips = (b['qualified_trips_required'] as num?)?.toInt() ?? 2;
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
@@ -428,7 +371,7 @@ class _ReferralScreenState extends State<ReferralScreen>
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  s.referPendingBonusSub(_deal(minFare)),
+                  s.referPendingBonusSub(trips, _deal(minFare)),
                   style: TextStyle(
                     fontFamily: 'Poppins',
                     color: Colors.white.withValues(alpha: 0.6),
@@ -663,7 +606,7 @@ class _ReferralScreenState extends State<ReferralScreen>
         _sectionHeader(s.howItWorksTitle),
         _step(1, Icons.share_rounded, s.referStep1Title, s.referStep1Body),
         _step(2, Icons.directions_car_rounded, s.referStep2Title,
-            s.referStep2Body(_deal(_minFareDollars))),
+            s.referStep2Body(_tripsRequired, _deal(_minFareDollars))),
         _step(3, Icons.savings_rounded, s.referStep3Title(_deal(_bonusDollars)),
             s.referStep3Body),
       ],

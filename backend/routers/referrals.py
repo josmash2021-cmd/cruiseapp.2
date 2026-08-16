@@ -32,26 +32,27 @@ from utils.security import _get_current_user, _verify_api_key
 router = APIRouter()
 
 # ─────────────────────────────────────────────────────────────────────
-#  Referral policy (2026-08-16)
+#  Referral policy (2026-08-16, rev 2)
 #
-#  ONE qualifying ride pays BOTH sides. The old deal ($50 to the
-#  referrer after the referee's 2 rides of $50+, nothing for the
-#  referee despite the "we both get $50" share message) was both a
-#  broken promise and a slow hook — weeks before anyone saw a cent.
+#  The referee's first TWO rides of $25+ pay BOTH sides $25 in Cruise
+#  Cash at the same moment. (Rev 1 was one $25+ ride paying $15/$15;
+#  the old deal — $50 after 2 rides of $50+, referee never paid — was
+#  both a broken promise and a slow hook.)
 #
-#  The economics: $15 + $15 costs the platform $30 per acquired rider,
-#  and only AFTER that rider has already paid a real $25+ ride — fake
-#  accounts can't farm it because every bonus rides on real money, and
-#  Cruise Cash is only spendable on rides (never cashable, $50/ride cap).
+#  The economics: $25 + $25 costs the platform $50 per acquired rider,
+#  and only AFTER that rider has already paid two real $25+ rides —
+#  fake accounts can't farm it because every bonus rides on real money,
+#  and Cruise Cash is only spendable on rides (never cashable, $50/ride
+#  cap).
 #
 #  These constants seed NEW Referral rows; each row carries its own copy
 #  so referrals created under an older policy still pay what they
 #  promised.
 # ─────────────────────────────────────────────────────────────────────
-REF_QUALIFYING_MIN_FARE = 25.0   # referee's first ride must cost at least this
-REF_QUALIFYING_TRIPS = 1         # one qualifying ride unlocks both bonuses
-REFERRER_BONUS = 15.0            # inviter's Cruise Cash ($)
-REFEREE_BONUS = 15.0             # new rider's Cruise Cash ($)
+REF_QUALIFYING_MIN_FARE = 25.0   # each qualifying ride must cost at least this
+REF_QUALIFYING_TRIPS = 2         # this many qualifying rides unlock both bonuses
+REFERRER_BONUS = 25.0            # inviter's Cruise Cash ($)
+REFEREE_BONUS = 25.0             # new rider's Cruise Cash ($)
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -357,8 +358,8 @@ async def get_my_referrals(
     return {
         "referral_code": code,
         "share_message": (
-            f"Sign up for Cruise with my code {code} — after your first "
-            f"ride we BOTH get ${_bonus_dollars} in Cruise Cash!"
+            f"Sign up for Cruise with my code {code} — complete 2 rides "
+            f"of $25+ and we BOTH get ${_bonus_dollars} in Cruise Cash!"
         ),
         "balance_cents": bal.balance_cents,
         "lifetime_earned_cents": bal.lifetime_earned_cents,

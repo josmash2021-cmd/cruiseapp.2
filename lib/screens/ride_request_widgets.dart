@@ -1266,26 +1266,14 @@ extension _RideRequestWidgets on _RideRequestScreenState {
     // still loading.
     final String distanceText = _ctrl.state.route?.distanceText ?? '— mi';
 
-    // Promo math: when the rider entered through the 10% off button,
-    // widget.applyPromo is true and the rendered price is 90% of the
-    // estimate. We keep the original priceEstimate visible (struck
-    // through, smaller, gray) so they SEE the discount being applied.
-    final bool promoOn = widget.applyPromo;
-    final double basePrice = opt.priceEstimate;
-    final double promoPrice = promoOn ? basePrice * 0.9 : basePrice;
-    // Cruise Cash preview: capped at $50/ride and never below 0. Backend
-    // re-applies the same math at dispatch time, so what the rider sees
-    // here is what they'll be charged.
-    final double ccApplied = (_cruiseCashCents / 100.0)
-        .clamp(0.0, 50.0)
-        .clamp(0.0, promoPrice);
-    final double finalPrice = (promoPrice - ccApplied).clamp(0.0, double.infinity);
-    // Zero means the fares have not landed. A dash, never "$0.00".
-    final bool priceKnown = basePrice > 0;
-    final String priceText =
-        priceKnown ? '\$${finalPrice.toStringAsFixed(2)}' : '—';
-    final String oldPriceText =
-        priceKnown ? '\$${basePrice.toStringAsFixed(2)}' : '—';
+    // One source for this math — see _promoPrice. The expanded card and
+    // the detail panel must show the same numbers the backend charges.
+    final promo = _promoPrice(opt);
+    final double basePrice = promo.basePrice;
+    final double finalPrice = promo.finalPrice;
+    final bool priceKnown = promo.priceKnown;
+    final String priceText = promo.priceText;
+    final String oldPriceText = promo.oldPriceText;
 
     return Container(
       key: ValueKey('horizontal_${opt.id}'),
@@ -1456,11 +1444,47 @@ extension _RideRequestWidgets on _RideRequestScreenState {
     );
   }
 
+  /// Promo / Cruise Cash price math for an option — ONE source for the
+  /// expanded card and the detail panel.
+  ///
+  /// The panel used to render the raw estimate while dispatch charged the
+  /// discounted fare: the rider saw $25 and paid $20. A surprise in the
+  /// rider's favour is still a surprise — both surfaces show the same
+  /// numbers now.
+  ///
+  /// Promo math: when the rider entered through the 10% off button,
+  /// widget.applyPromo is true and the rendered price is 90% of the
+  /// estimate. We keep the original priceEstimate visible (struck
+  /// through, smaller, gray) so they SEE the discount being applied.
+  /// Cruise Cash preview: capped at $50/ride and never below 0. Backend
+  /// re-applies the same math at dispatch time, so what the rider sees
+  /// here is what they'll be charged.
+  ({double basePrice, double finalPrice, bool priceKnown, String priceText, String oldPriceText})
+      _promoPrice(RideOption opt) {
+    final double basePrice = opt.priceEstimate;
+    final double promoPrice = widget.applyPromo ? basePrice * 0.9 : basePrice;
+    final double ccApplied = (_cruiseCashCents / 100.0)
+        .clamp(0.0, 50.0)
+        .clamp(0.0, promoPrice);
+    final double finalPrice =
+        (promoPrice - ccApplied).clamp(0.0, double.infinity);
+    // Zero means the fares have not landed. A dash, never "$0.00".
+    final bool priceKnown = basePrice > 0;
+    return (
+      basePrice: basePrice,
+      finalPrice: finalPrice,
+      priceKnown: priceKnown,
+      priceText: priceKnown ? '\$${finalPrice.toStringAsFixed(2)}' : '—',
+      oldPriceText: priceKnown ? '\$${basePrice.toStringAsFixed(2)}' : '—',
+    );
+  }
+
   // Detail panel shown below the 3-card grid once the user has picked a
   // tier. Sunken neumorphic well with the same three stat chips as the
   // collapsed card (ETA, trip miles, capacity) plus the big price — no
   // description line.
   Widget _buildRideDetailPanel(AppColors c, RideOption opt) {
+    final promo = _promoPrice(opt);
 
     // 650ms cubic-bezier(.4,0,.2,1) slide-down 6px — matches the web's
     // .vipRide__rideDetail animation keyframe vipRideDetailIn.
@@ -1500,18 +1524,17 @@ extension _RideRequestWidgets on _RideRequestScreenState {
               // .vipRide__rideDetail__price: clamp(18,5vw,22)
               // weight 800 color #fff.
               //
-              // Shows the promo / Cruise Cash math computed above: the
-              // discounted price big, the original struck through beside
-              // it — charging less than the number on screen is a surprise
-              // the wrong way, and the grid card already shows both.
+              // Same numbers the expanded card shows (one helper, both
+              // surfaces): discounted price big, original struck through.
               Row(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.baseline,
                 textBaseline: TextBaseline.alphabetic,
                 children: [
-                  if (priceKnown && finalPrice < basePrice) ...[
+                  if (promo.priceKnown &&
+                      promo.finalPrice < promo.basePrice) ...[
                     Text(
-                      oldPriceText,
+                      promo.oldPriceText,
                       style: TextStyle(
                         fontFamily: 'Poppins',
                         color: Colors.white.withValues(alpha: 0.45),
@@ -1524,7 +1547,7 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                     const SizedBox(width: 6),
                   ],
                   Text(
-                    priceText,
+                    promo.priceText,
                     style: const TextStyle(
                       fontFamily: 'Poppins',
                       color: Colors.white,

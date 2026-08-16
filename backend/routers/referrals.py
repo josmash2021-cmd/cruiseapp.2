@@ -31,6 +31,28 @@ from utils.security import _get_current_user, _verify_api_key
 
 router = APIRouter()
 
+# ─────────────────────────────────────────────────────────────────────
+#  Referral policy (2026-08-16)
+#
+#  ONE qualifying ride pays BOTH sides. The old deal ($50 to the
+#  referrer after the referee's 2 rides of $50+, nothing for the
+#  referee despite the "we both get $50" share message) was both a
+#  broken promise and a slow hook — weeks before anyone saw a cent.
+#
+#  The economics: $15 + $15 costs the platform $30 per acquired rider,
+#  and only AFTER that rider has already paid a real $25+ ride — fake
+#  accounts can't farm it because every bonus rides on real money, and
+#  Cruise Cash is only spendable on rides (never cashable, $50/ride cap).
+#
+#  These constants seed NEW Referral rows; each row carries its own copy
+#  so referrals created under an older policy still pay what they
+#  promised.
+# ─────────────────────────────────────────────────────────────────────
+REF_QUALIFYING_MIN_FARE = 25.0   # referee's first ride must cost at least this
+REF_QUALIFYING_TRIPS = 1         # one qualifying ride unlocks both bonuses
+REFERRER_BONUS = 15.0            # inviter's Cruise Cash ($)
+REFEREE_BONUS = 15.0             # new rider's Cruise Cash ($)
+
 
 # ─────────────────────────────────────────────────────────────────────
 #  Helpers (also imported by routers/trips.py and routers/dispatch.py)
@@ -197,8 +219,10 @@ async def credit_referrer_if_qualified(
 ) -> None:
     """Hook called from trips.py when a trip COMPLETES. If the rider was
     referred and this trip's fare crosses the qualifying threshold,
-    increment the parent Referral counter; if it reaches the required
-    target, credit the referrer their bonus.
+    increment the parent Referral counter; when it reaches the required
+    target, BOTH sides are paid their Cruise Cash bonus (the referrer's
+    and the referee's — the share message promises "we both get", and
+    until 2026-08-16 only the referrer was ever credited).
 
     Safe to call for non-referred riders (no-op)."""
     if trip_fare is None or trip_fare <= 0:
@@ -209,14 +233,14 @@ async def credit_referrer_if_qualified(
     ref = res.scalar_one_or_none()
     if ref is None or ref.referrer_paid:
         return
-    if trip_fare < (ref.qualifying_min_fare or 50.0):
+    if trip_fare < (ref.qualifying_min_fare or REF_QUALIFYING_MIN_FARE):
         return
     ref.qualified_trips_count = (ref.qualified_trips_count or 0) + 1
-    if ref.qualified_trips_count >= (ref.qualified_trips_required or 2):
+    if ref.qualified_trips_count >= (ref.qualified_trips_required or REF_QUALIFYING_TRIPS):
         ref.status = "qualified"
         ref.qualified_at = datetime.now(timezone.utc)
         ref.referrer_paid = True
-        bonus_cents = int(round((ref.referrer_bonus or 50.0) * 100))
+        bonus_cents = int(round((ref.referrer_bonus or REFERRER_BONUS) * 100))
         await credit_cruise_cash(
             db, ref.referrer_id, bonus_cents,
             kind="earned_referral",
@@ -224,7 +248,19 @@ async def credit_referrer_if_qualified(
             counterparty_user_id=referee_id,
             note="Referral bonus",
         )
-        # Push notification — let the rider know their $50 just landed.
+        # The other half of the promise: the referred friend gets their
+        # bonus at the same moment. Paid per the row's own policy values,
+        # so referrals minted under an older deal still honor it.
+        referee_bonus_cents = int(round((ref.referee_bonus or REFEREE_BONUS) * 100))
+        if referee_bonus_cents > 0:
+            await credit_cruise_cash(
+                db, referee_id, referee_bonus_cents,
+                kind="earned_referral",
+                ref_referral_id=ref.id,
+                counterparty_user_id=ref.referrer_id,
+                note="Welcome referral bonus",
+            )
+        # Push notification — let both riders know their bonus landed.
         # Failures are tolerated (no FCM token, network blip, etc.).
         try:
             from services.fcm_service import _send_fcm_push_async
@@ -240,16 +276,30 @@ async def credit_referrer_if_qualified(
                 _safe_create_task(
                     _send_fcm_push_async(
                         _ru.fcm_token,
-                        "🎉 You earned $50 Cruise Cash!",
-                        "Your referral completed 2 qualifying rides. Spend it on any trip.",
+                        f"🎉 You earned ${bonus_cents // 100} Cruise Cash!",
+                        "Your referral completed their qualifying ride. Spend it on any trip.",
                         data={"type": "cruise_cash_earned",
                               "amount_cents": str(bonus_cents)},
                     ),
                     name=f"referral_bonus_push_{ref.referrer_id}",
                 )
+            if referee_bonus_cents > 0:
+                _r2 = await db.execute(_sel(_U).where(_U.id == referee_id))
+                _ru2 = _r2.scalar_one_or_none()
+                if _ru2 and _ru2.fcm_token:
+                    _safe_create_task(
+                        _send_fcm_push_async(
+                            _ru2.fcm_token,
+                            f"🎉 You earned ${referee_bonus_cents // 100} Cruise Cash!",
+                            "Your referral welcome bonus just landed. Spend it on any trip.",
+                            data={"type": "cruise_cash_earned",
+                                  "amount_cents": str(referee_bonus_cents)},
+                        ),
+                        name=f"referral_welcome_push_{referee_id}",
+                    )
         except Exception as e:
-            logging.warning("[referrals] FCM notify failed for referrer %s: %s",
-                            ref.referrer_id, e)
+            logging.warning("[referrals] FCM notify failed for referral %s: %s",
+                            ref.id, e)
     await db.flush()
 
 
@@ -288,21 +338,38 @@ async def get_my_referrals(
             "created_at": ref.created_at.isoformat() if ref.created_at else None,
             "reward_cents": int(round((ref.referrer_bonus or 50.0) * 100)),
         })
+    # If THIS user signed up with someone's code and hasn't qualified yet,
+    # their screen shows the "your bonus is waiting" banner.
+    my_ref = (
+        await db.execute(
+            select(Referral).where(Referral.referee_id == user.id)
+        )
+    ).scalar_one_or_none()
+    my_pending_bonus = None
+    if my_ref is not None and not my_ref.referrer_paid:
+        my_pending_bonus = {
+            "bonus_cents": int(round((my_ref.referee_bonus or REFEREE_BONUS) * 100)),
+            "qualified_trips_count": my_ref.qualified_trips_count or 0,
+            "qualified_trips_required": my_ref.qualified_trips_required or REF_QUALIFYING_TRIPS,
+            "qualifying_min_fare": my_ref.qualifying_min_fare or REF_QUALIFYING_MIN_FARE,
+        }
+    _bonus_dollars = int(REFERRER_BONUS)
     return {
         "referral_code": code,
         "share_message": (
-            f"Use my Cruise code {code} when you sign up — we both get "
-            f"$50 in Cruise Cash for rides!"
+            f"Sign up for Cruise with my code {code} — after your first "
+            f"ride we BOTH get ${_bonus_dollars} in Cruise Cash!"
         ),
         "balance_cents": bal.balance_cents,
         "lifetime_earned_cents": bal.lifetime_earned_cents,
         "lifetime_spent_cents": bal.lifetime_spent_cents,
         "referees": referees,
+        "my_pending_bonus": my_pending_bonus,
         "policy": {
-            "qualifying_min_fare": 50.0,
-            "qualifying_trips_required": 2,
-            "referrer_bonus": 50.0,
-            "referee_bonus": 50.0,
+            "qualifying_min_fare": REF_QUALIFYING_MIN_FARE,
+            "qualifying_trips_required": REF_QUALIFYING_TRIPS,
+            "referrer_bonus": REFERRER_BONUS,
+            "referee_bonus": REFEREE_BONUS,
             "max_per_ride_cents": 5000,
         },
     }
@@ -346,10 +413,10 @@ async def redeem_referral_code(
         referral_code=raw,
         status="pending",
         qualified_trips_count=0,
-        qualified_trips_required=2,
-        qualifying_min_fare=50.0,
-        referrer_bonus=50.0,
-        referee_bonus=50.0,
+        qualified_trips_required=REF_QUALIFYING_TRIPS,
+        qualifying_min_fare=REF_QUALIFYING_MIN_FARE,
+        referrer_bonus=REFERRER_BONUS,
+        referee_bonus=REFEREE_BONUS,
     )
     db.add(ref)
     await db.commit()

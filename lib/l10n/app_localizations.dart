@@ -3732,6 +3732,61 @@ class S {
   String get statusInProgress => _es ? 'EN PROGRESO' : 'IN PROGRESS';
   String get ridesLabel => _es ? 'viajes' : 'rides';
 
+  // ── Rider Invite Friends Screen (2026-08-16 redesign) ──────────────────────
+  // inviteFriendsTitle already exists below ('Invitar Amigos' / 'Invite
+  // Friends') — reused, not duplicated.
+  String referHeroTitle(String amount) =>
+      _es ? 'REGALA \$$amount, GANA \$$amount' : 'GIVE \$$amount, GET \$$amount';
+  String referHeroSub(String amount, String minFare) => _es
+      ? 'Tu amigo completa su primer viaje de \$$minFare+ y los dos ganan \$$amount en Cruise Cash al instante.'
+      : 'Your friend completes their first ride of \$$minFare+ and you both get \$$amount in Cruise Cash instantly.';
+  String referPendingBonusTitle(String amount) =>
+      _es ? '🎁 Tienes \$$amount esperándote' : '🎁 You have \$$amount waiting';
+  String referPendingBonusSub(String minFare) => _es
+      ? 'Completa tu primer viaje de \$$minFare+ y son tuyos.'
+      : 'Complete your first ride of \$$minFare+ and they are yours.';
+  String get cruiseCashLabel => _es ? 'Cruise Cash' : 'Cruise Cash';
+  String lifetimeEarned(String amount) =>
+      _es ? 'Total ganado: $amount' : 'Lifetime earned: $amount';
+  String get transferLabel => _es ? 'Transferir' : 'Transfer';
+  String get copyLabel => _es ? 'COPIAR' : 'COPY';
+  String get shareInviteLabel => _es ? 'Compartir invitación' : 'Share invite';
+  String get referStep1Title => _es ? 'Comparte tu código' : 'Share your code';
+  String get referStep1Body => _es
+      ? 'Mándaselo a tus amigos por WhatsApp, SMS o cualquier app.'
+      : 'Send it to friends via WhatsApp, SMS or any app.';
+  String get referStep2Title => _es ? 'Tu amigo viaja' : 'Your friend rides';
+  String referStep2Body(String minFare) => _es
+      ? 'Se registra con tu código y completa su primer viaje de \$$minFare+.'
+      : 'They sign up with your code and complete their first ride of \$$minFare+.';
+  String referStep3Title(String amount) =>
+      _es ? 'Los dos ganan \$$amount' : 'You both earn \$$amount';
+  String get referStep3Body => _es
+      ? 'Cruise Cash al instante para los dos. Úsalo en cualquier viaje o transfiérelo.'
+      : 'Instant Cruise Cash for both. Spend it on any ride or transfer it.';
+  String get gotInviteCode =>
+      _es ? '¿Tienes un código de invitación?' : 'Got an invite code?';
+  String get redeemLabel => _es ? 'USAR' : 'REDEEM';
+  String linkedToName(String name) =>
+      _es ? '¡Ahora estás vinculado a $name!' : "You're now linked to $name!";
+  String get codeRedeemed => _es ? '¡Código aplicado!' : 'Code redeemed!';
+  String qualifiedOfTotal(int qualified, int total) =>
+      _es ? '$qualified de $total calificados' : '$qualified of $total qualified';
+  String get noReferralsYet =>
+      _es ? 'Aún no tienes referidos' : 'No referrals yet';
+  String get earnedBadge => _es ? 'GANADO' : 'EARNED';
+  String get recentActivityLabel =>
+      _es ? 'Actividad reciente' : 'Recent activity';
+  String get txReferralBonus => _es ? 'Bono de referido' : 'Referral bonus';
+  String get txAppliedToRide => _es ? 'Aplicado a un viaje' : 'Applied to ride';
+  String get txTransferReceived =>
+      _es ? 'Transferencia recibida' : 'Transfer received';
+  String get txTransferSent => _es ? 'Transferencia enviada' : 'Transfer sent';
+  String get txAdjustment => _es ? 'Ajuste' : 'Adjustment';
+  String get shareSheetFailed => _es
+      ? 'No se pudo abrir el menú de compartir. Copia tu código.'
+      : 'Could not open share sheet. Try copying your code instead.';
+
   // ── Driver Insurance Screen ────────────────────────────────────────────────
   String get cruiseDriverProtectionTitle =>
       _es ? 'Protección para Conductores Cruise' : 'Cruise Driver Protection';

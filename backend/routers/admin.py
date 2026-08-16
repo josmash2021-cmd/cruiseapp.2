@@ -2099,3 +2099,63 @@ async def admin_wipe_firestore():
     _security_audit_log("ADMIN_WIPE_FIRESTORE", "admin", json.dumps(results))
     return {"status": "ok", "deleted": results}
 
+
+def _admin_trip_driver_earnings(trip: Trip) -> float:
+    """Best-effort driver earnings for the admin earnings endpoint."""
+    if trip.driver_earnings is not None:
+        return float(trip.driver_earnings)
+    # Fallback to the default 70/30 split when the field hasn't been backfilled.
+    tip = float(trip.tip_amount or 0.0)
+    base = round(float(trip.fare or 0.0) * 0.7, 2)
+    return round(base + tip, 2)
+
+
+@router.get("/admin/drivers/{driver_id}/earnings", dependencies=[Depends(_require_dispatch_auth)])
+async def admin_get_driver_earnings(
+    driver_id: int,
+    days: int = Query(7, ge=1, le=365),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return a driver's earnings over the last N days for the dispatch panel."""
+    since = utc_now() - timedelta(days=days)
+    result = await db.execute(
+        select(Trip).where(
+            and_(
+                Trip.driver_id == driver_id,
+                or_(
+                    Trip.status == "completed",
+                    and_(
+                        Trip.status == "cancelled",
+                        Trip.driver_earnings.isnot(None),
+                        Trip.driver_earnings > 0,
+                    ),
+                ),
+                Trip.created_at >= since,
+            )
+        )
+    )
+    trips = result.scalars().all()
+
+    total = 0.0
+    by_day: dict[date, float] = {}
+    for t in trips:
+        earn = _admin_trip_driver_earnings(t)
+        total += earn
+        if t.created_at:
+            day = t.created_at.date()
+            by_day[day] = by_day.get(day, 0.0) + earn
+
+    day_labels = []
+    daily_earnings = []
+    for i in range(days - 1, -1, -1):
+        day = (utc_now() - timedelta(days=i)).date()
+        day_labels.append(day.strftime("%m/%d"))
+        daily_earnings.append(round(by_day.get(day, 0.0), 2))
+
+    return {
+        "total": round(total, 2),
+        "trips_count": len(trips),
+        "daily_earnings": daily_earnings,
+        "day_labels": day_labels,
+    }
+

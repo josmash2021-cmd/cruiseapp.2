@@ -377,6 +377,7 @@ class SocketService {
     required double lng,
     double heading = 0,
     double speed = 0,
+    int? capturedAtMs,
   }) {
     if (_socket == null || !_connected) return;
 
@@ -387,7 +388,13 @@ class SocketService {
       'lng': lng,
       'heading': heading,
       'speed': speed,
+      // Send time (kept for the latency log on the rider side).
       'timestamp': timestamp,
+      // When the GPS fix was CAPTURED. The rider's SmoothMotion paces its
+      // velocity estimate by this, not by send time: re-sends of the same
+      // fix share one captured_at, so the rider dedups them instead of
+      // measuring a 0 m/s "fix" that poisons the glide.
+      'captured_at': capturedAtMs ?? timestamp,
     });
   }
 

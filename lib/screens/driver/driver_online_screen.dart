@@ -575,6 +575,11 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   Uint8List? _goldPinBytes;
   bool _dotPopDone = false; // true after first-appearance pop completes
   double _dotPopScale = 0.0; // 0→1.15→1.0 during pop, then 1.0
+  // Route-snap state (see _snapToRoute in driver_online_map.dart): hysteresis
+  // on the snap boundary and continuity on the polyline segment, so the
+  // marker never flickers between the lane and raw GPS.
+  bool _routeSnapActive = false;
+  int _snapSegIdx = -1;
   // Re-asserts the dot annotation while the smooth ticker is parked (driver
   // stationary). Without it a dot that failed to appear — or whose final
   // pop-scale flush was dropped mid-IPC — stays wrong until the driver moves.

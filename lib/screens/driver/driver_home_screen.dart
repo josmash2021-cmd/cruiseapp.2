@@ -931,7 +931,8 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   /// driver could not be online and standing here at the same time. They can:
   /// the Home button on the online screen is explicitly a look-at-home, not
   /// a go-off-shift.
-  void _feedGpsUploads(LatLng pos, double heading, double speed) {
+  void _feedGpsUploads(LatLng pos, double heading, double speed,
+      {DateTime? capturedAt}) {
     // An active trip counts even if the online flag has not caught up.
     //
     // A driver who walks back to this screen mid-ride has a passenger
@@ -942,7 +943,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     final id = _driverId;
     if (id == null) return;
     _gpsService.startTracking(id.toString()); // no-op once already tracking
-    _gpsService.updatePosition(pos, heading, speed);
+    _gpsService.updatePosition(pos, heading, speed, capturedAt: capturedAt);
   }
 
   void _followHomeCameraToDriver() {
@@ -1500,6 +1501,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
           ll,
           _headingSource.value ?? _usableHeading(p) ?? 0,
           p.speed,
+          capturedAt: p.timestamp,
         );
         debugPrint(
             '[DriverHome] GPS update: ${ll.latitude.toStringAsFixed(5)},${ll.longitude.toStringAsFixed(5)} '

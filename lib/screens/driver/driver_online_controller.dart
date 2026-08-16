@@ -1255,7 +1255,8 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
             timestampMs: pos.timestamp.millisecondsSinceEpoch.toDouble());
 
         // Feed GpsService for RTDB upload (800ms throttled)
-        _gpsService.updatePosition(newLL, pos.heading, pos.speed);
+        _gpsService.updatePosition(newLL, pos.heading, pos.speed,
+            capturedAt: pos.timestamp);
 
         _trimRouteBehindDriver(snappedLL);
 

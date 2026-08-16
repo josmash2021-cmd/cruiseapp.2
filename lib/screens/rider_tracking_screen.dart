@@ -293,6 +293,10 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   Timer? _carHeartbeatTimer;  // forces car recreation if it never appeared
   LatLng? _directTargetPos; // for GPS fallback: lerp target when off-route
   double? _directTargetBearing; // RTDB bearing fallback when projection cannot be used
+  /// Route-snap hysteresis state: once the car is glued to the polyline it
+  /// stays glued until the fix lands clearly off it. The flat 150 m in/out
+  /// rule flickered the car between the lane and raw GPS near the boundary.
+  bool _carSnapActive = false;
 
   // ── Animated route draw ──
   Ticker? _routeDrawTicker;

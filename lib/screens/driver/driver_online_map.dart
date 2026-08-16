@@ -321,14 +321,24 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
   }
 
   /// Snap a raw GPS coordinate to the nearest point on the active route polyline.
-  /// Only snaps within 40 m — beyond that threshold the raw GPS is authoritative.
+  ///
+  /// Hysteresis on the boundary, and continuity on the segment. The old flat
+  /// 40 m in/out rule flickered: a fix at 39 m snapped to the lane, the next
+  /// at 41 m fell back to raw GPS — the marker visibly hopped between the
+  /// lane and the shoulder once per fix. Now the snap engages under 35 m and
+  /// only releases past 55 m, and on parallel lanes the projection stays on
+  /// the segment it was on unless another is clearly (8 m) closer — divided
+  /// highways used to flip the marker between carriageways.
   LatLng _snapToRoute(LatLng raw) {
     if (_routePts.length < 2 ||
         (_phase != _Phase.enRouteToPickup && _phase != _Phase.inTrip)) {
+      _routeSnapActive = false;
+      _snapSegIdx = -1;
       return raw;
     }
     double bestDist = double.infinity;
     LatLng best = raw;
+    int bestIdx = -1;
     for (int i = 0; i < _routePts.length - 1; i++) {
       final candidate = _closestPointOnSegment(
         raw,
@@ -339,9 +349,30 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
       if (d < bestDist) {
         bestDist = d;
         best = candidate;
+        bestIdx = i;
       }
     }
-    return bestDist <= 0.040 ? best : raw; // 40 m snap radius
+    // Lane continuity: keep the segment we are on unless another wins by a
+    // real margin (8 m) — not by GPS noise. _hav is kilometres here.
+    if (_snapSegIdx >= 0 && _snapSegIdx < _routePts.length - 1) {
+      final prev = _closestPointOnSegment(
+          raw, _routePts[_snapSegIdx], _routePts[_snapSegIdx + 1]);
+      final dPrev = _hav(raw, prev);
+      if (dPrev < bestDist + 0.008) {
+        best = prev;
+        bestDist = dPrev;
+        bestIdx = _snapSegIdx;
+      }
+    }
+    final limitKm = _routeSnapActive ? 0.055 : 0.035;
+    if (bestDist <= limitKm) {
+      _routeSnapActive = true;
+      _snapSegIdx = bestIdx;
+      return best;
+    }
+    _routeSnapActive = false;
+    _snapSegIdx = -1;
+    return raw;
   }
 
   /// Closest point on segment [a→b] to point [p] (flat lat/lng approximation).

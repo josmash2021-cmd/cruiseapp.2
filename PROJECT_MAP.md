@@ -306,7 +306,6 @@
 |---------|--------|-------------|
 | `lib/navigation/nav_state_machine.dart` | 🟡 IMPORTANTE | Máquina de estados de fases de viaje del conductor. |
 | `lib/navigation/route_service.dart` | 🟢 EDITABLE | Servicio de rutas. |
-| `lib/navigation/smooth_motion.dart` | 🟢 EDITABLE | Movimiento suave del coche en mapa. |
 | `lib/navigation/car_renderers.dart` | 🟢 EDITABLE | Renderizado de coches. |
 | `lib/navigation/game_car_renderer.dart` | 🟢 EDITABLE | Renderer de coche estilo juego. |
 | `lib/navigation/offers_controller.dart` | 🟢 EDITABLE | Controlador de ofertas. |

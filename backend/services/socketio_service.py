@@ -307,7 +307,8 @@ async def driver_location(sid: str, data: dict):
         "lng": -118.2437,
         "heading": 90.5,
         "speed": 15.3,
-        "timestamp": 1704067200000
+        "timestamp": 1704067200000,
+        "captured_at": 1704067199600  # optional, GPS fix capture time (ms)
     }
     """
     trip_id = data.get("trip_id")
@@ -323,6 +324,13 @@ async def driver_location(sid: str, data: dict):
         "speed": data.get("speed", 0),
         "timestamp": data.get("timestamp", int(time.time() * 1000)),
     }
+    # GPS capture time (client clock). The rider's motion engine paces the
+    # car's glide by this, not by send time — and re-sends of the same fix
+    # share one captured_at, so the rider dedups them. Optional: old app
+    # builds don't send it and the rider falls back to `timestamp`.
+    captured_at = data.get("captured_at")
+    if isinstance(captured_at, (int, float)) and captured_at > 0:
+        payload["captured_at"] = captured_at
 
     await sio.emit("driver_location_update", payload, room=room, skip_sid=sid)
 

@@ -352,8 +352,11 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       }
 
       _markChannelAlive();
+      // captured_at = when the driver's GPS took the fix (paces the glide
+      // and dedups socket re-sends of the same fix); timestamp = send time.
       _onRealDriverLocation(LatLng(lat, lng), bearing: bearing, speed: speed,
-          timestampMs: _fixTimestampMs(data['timestamp']));
+          timestampMs:
+              _fixTimestampMs(data['captured_at'] ?? data['timestamp']));
     });
 
     // Listen for trip status updates
@@ -507,6 +510,19 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
         debugPrint('[RiderTracking] Dropping stale fix (${(last - timestampMs).round()}ms old)');
         return;
       }
+      // Same fix RE-SENT: the driver's GpsService re-publishes the latest
+      // position on its own cadence, so the same capture timestamp arrives
+      // 3-4× per fix. Letting those through measured 0 m/s between identical
+      // points and dragged the glide velocity to the floor — the pulse-stop
+      // pulse. Identical ts + identical position carries no new information.
+      if (last != null &&
+          timestampMs == last &&
+          _lastAcceptedFixLat != null &&
+          _lastAcceptedFixLng != null &&
+          (ll.latitude - _lastAcceptedFixLat!).abs() < 1e-6 &&
+          (ll.longitude - _lastAcceptedFixLng!).abs() < 1e-6) {
+        return;
+      }
     } else {
       // No payload timestamp: dedupe the same fix arriving through a second
       // channel (socket + RTDB both carry the driver's last write).
@@ -616,14 +632,20 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     bool shouldProjectOntoRoute = !isArrivingWithoutApproach && _segDist.isNotEmpty && _routePts.length >= 2;
     if (shouldProjectOntoRoute) {
       final projectedM = _projectOntoRoute(ll);
-      // Accept projection when close enough to route (< 150m lateral)
+      // Accept projection when close enough to route, with hysteresis:
+      // engage under 120 m lateral, hold until 180 m. The old flat 150 m
+      // rule let a fix at 149 m snap to the lane and the next at 151 m fall
+      // back to raw GPS — the car visibly hopped off the road and back once
+      // per packet near the boundary.
       final snappedPos = _posAtDistUltraSmooth(projectedM.clamp(0.0, _segDist.last)).$1;
       final lateralM = _hav(ll, snappedPos) * 1609.34;
       // Off-route bookkeeping + auto-reroute trigger. Runs on EVERY fix with
       // a route on screen, not just past the 150 m visual fallback — the
       // 45 m threshold with hysteresis lives in _updateOffRouteState.
       _updateOffRouteState(lateralM, ll);
-      if (lateralM < 150) {
+      final snapLimitM = _carSnapActive ? 180.0 : 120.0;
+      if (lateralM < snapLimitM) {
+        _carSnapActive = true;
         final clampedM = projectedM.clamp(0.0, _segDist.last);
         // 2026-04-27 FIX: was `clampedM >= _traveledM - 5` which silently
         // dropped every GPS update where the driver appeared to retreat
@@ -676,12 +698,14 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       } else {
         // Too far from route — use raw GPS lerp as fallback. The reroute
         // itself was already considered by _updateOffRouteState above.
+        _carSnapActive = false;
         _directTargetPos = ll;
         _directTargetBearing = bearing;
       }
     } else {
       // No route available OR arriving without approach route yet OR driver far from route:
       // use raw GPS lerp so the car appears at the driver's real position.
+      _carSnapActive = false;
       _directTargetPos = ll;
       _directTargetBearing = bearing;
     }
@@ -1534,8 +1558,11 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
         }
       }
       _markChannelAlive();
+      // captured_at = when the driver's GPS took the fix (paces the glide
+      // and dedups socket re-sends of the same fix); timestamp = send time.
       _onRealDriverLocation(LatLng(lat, lng), bearing: bearing, speed: speed,
-          timestampMs: _fixTimestampMs(data['timestamp']));
+          timestampMs:
+              _fixTimestampMs(data['captured_at'] ?? data['timestamp']));
     }, onError: (e) {
       debugPrint('[RiderTracking] RTDB stream error: $e');
       _pollFailCount++;

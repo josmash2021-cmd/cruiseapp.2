@@ -893,6 +893,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
           LatLng(pos.latitude, pos.longitude),
           pos.heading,
           pos.speed,
+          capturedAt: pos.timestamp,
         );
         // Refresh the distance chip. The stream already only fires every 5 m,
         // and rebuilding is skipped unless the rounded label would change —
@@ -943,6 +944,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
             LatLng(lastPos.latitude, lastPos.longitude),
             lastPos.heading,
             lastPos.speed,
+            capturedAt: lastPos.timestamp,
           );
         }
       }

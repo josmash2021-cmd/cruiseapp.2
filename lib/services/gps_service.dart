@@ -54,6 +54,7 @@ class GpsService {
   LatLng? _currentPos;
   double _currentHeading = 0;
   double _currentSpeed = 0;
+  int? _currentCapturedAtMs;
   String? _activeDriverId;
   String? _activeTripId;
   bool _presenceSetUp = false;
@@ -111,10 +112,15 @@ class GpsService {
   }
 
   /// Feed the latest GPS fix from the screen's Geolocator stream.
-  void updatePosition(LatLng pos, double heading, double speed) {
+  /// [capturedAt] is the fix's own `Position.timestamp` — it travels to the
+  /// rider as `captured_at` so the car's glide is paced by when the fix was
+  /// taken, not by when the upload throttle happened to send it.
+  void updatePosition(LatLng pos, double heading, double speed,
+      {DateTime? capturedAt}) {
     _currentPos = pos;
     _currentHeading = heading;
     _currentSpeed = speed;
+    _currentCapturedAtMs = capturedAt?.millisecondsSinceEpoch;
 
     // Adapt upload cadence to trip state / speed.
     _adaptSocketIOInterval(speed);
@@ -280,6 +286,7 @@ class GpsService {
       lng: pos.longitude,
       heading: _currentHeading,
       speed: _currentSpeed,
+      capturedAtMs: _currentCapturedAtMs,
     );
 
     _lastSocketIOPos = pos;
@@ -308,6 +315,10 @@ class GpsService {
       'speed': _currentSpeed,
       'tripId': _activeTripId,
       'timestamp': ServerValue.timestamp,
+      // Client-side capture time of the fix (ms epoch). The rider prefers
+      // this over `timestamp` to pace the car's glide: server write time
+      // reflects the upload cadence, not the fix spacing.
+      if (_currentCapturedAtMs != null) 'captured_at': _currentCapturedAtMs,
       'status': 'online',
     };
 

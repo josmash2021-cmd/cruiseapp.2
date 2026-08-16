@@ -362,8 +362,10 @@ async def update_driver_location(driver_id: int, body: DriverLocationIn, user: U
         logger.warning("Redis geo update failed for driver %s: %s", driver_id, _redis_err)
 
     # Sync driver location to Firestore (non-blocking).
-    # When going offline, skip lat/lng update so the rider map isn't poisoned with (0,0).
-    if _HAS_FIRESTORE and body.is_online:
+    # Always sync, even when going offline, so Dispatch shows the real state.
+    # sync_driver_location keeps lat/lng untouched on offline updates to avoid
+    # poisoning the rider map with (0,0) when GPS is unavailable.
+    if _HAS_FIRESTORE:
         def _sync_fs():
             try:
                 firestore_sync.sync_driver_location(driver_id, body.lat, body.lng, body.is_online)

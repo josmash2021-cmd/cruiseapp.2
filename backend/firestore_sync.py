@@ -371,12 +371,18 @@ def sync_driver_location(user_id: int, lat: float, lng: float, is_online: bool):
         # Hottest write in the file (every GPS heartbeat, per driver). It runs
         # on the executor pool, so a wedged gRPC channel would pin one pool
         # thread per heartbeat until the pool starved — hence the timeout.
-        _db.collection("drivers").document(doc_id).set({
+        data = {
             "isOnline": is_online,
-            "lat": lat,
-            "lng": lng,
             "lastSeen": _ts(),
-        }, merge=True, timeout=_FS_TIMEOUT)
+        }
+        # Only update coordinates while online. When the driver goes offline
+        # GPS may fall back to (0,0) and we don't want to poison the map.
+        if is_online:
+            data["lat"] = lat
+            data["lng"] = lng
+        _db.collection("drivers").document(doc_id).set(
+            data, merge=True, timeout=_FS_TIMEOUT
+        )
     except Exception as e:
         log.error("❌ Driver location sync failed for %d: %s", user_id, e)
 

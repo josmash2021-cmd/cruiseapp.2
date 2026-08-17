@@ -316,7 +316,12 @@ async def claim_scheduled_trip(
             )
 
     now = datetime.now(timezone.utc)
-    minutes_until = (trip.scheduled_at - now).total_seconds() / 60 if trip.scheduled_at else 0
+    # SQLite returns naive datetimes; Postgres returns aware. Normalise so
+    # the subtraction works on both (same _aware pattern as driver_referrals).
+    sched_at = trip.scheduled_at
+    if sched_at is not None and sched_at.tzinfo is None:
+        sched_at = sched_at.replace(tzinfo=timezone.utc)
+    minutes_until = (sched_at - now).total_seconds() / 60 if sched_at else 0
     if minutes_until < MIN_ADVANCE_MINUTES:
         raise HTTPException(400, "This ride is too close to pickup time — it will be dispatched automatically")
 

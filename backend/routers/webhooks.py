@@ -202,6 +202,15 @@ async def _handle_payment_intent_succeeded(data_object: dict, client_ip: str):
         trip.payment_status = "paid"
         trip.stripe_payment_intent_id = payment_intent_id
         trip.updated_at = datetime.now(timezone.utc)
+        # Real-money rule (2026-08-17): a completed trip whose fare had not
+        # landed yet at completion (e.g. ACH "processing") earned no driver
+        # split there — credit it now that the money actually moved.
+        if trip.status == "completed":
+            try:
+                from routers.trips import _credit_driver_earnings
+                await _credit_driver_earnings(db, trip)
+            except Exception as e:
+                logger.error("[StripeWH] driver split failed for trip %s: %s", trip_id, e)
         await db.commit()
 
     logger.info("[StripeWH] Trip %s marked paid (pi=%s)", trip_id, payment_intent_id)

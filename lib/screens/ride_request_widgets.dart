@@ -815,7 +815,12 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                         // desactivado").
                         enabled: !_isProcessingPayment &&
                             _hasAnyPaymentMethod &&
-                            !_noDriversNearby &&
+                            // Only an IMMEDIATE request is gated on drivers
+                            // being around right now — a reservation goes to
+                            // the scheduled marketplace and drivers claim it
+                            // ahead of time, so an empty city must not block
+                            // the Reserve button (2026-08-17).
+                            (_isScheduledMode || !_noDriversNearby) &&
                             faresReady &&
                             !_cruiseCashShort(option),
                         isLoading: _isProcessingPayment,
@@ -831,10 +836,7 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                         // check, picking a future date AFTER the screen
                         // is already mounted leaves the label stuck on
                         // "Request Ride".
-                        label: (widget.scheduledAt != null ||
-                                widget.isAirportTrip ||
-                                _ctrl.state.scheduledAt != null ||
-                                _ctrl.state.isAirportTrip)
+                        label: _isScheduledMode
                             ? S.of(context).bookScheduledRide
                             : S.of(context).requestRide,
                         onTap: () {
@@ -2190,6 +2192,28 @@ extension _RideRequestWidgets on _RideRequestScreenState {
     final pickup = _ctrl.state.pickup;
     if (pickup == null) return const SizedBox.shrink();
 
+    // Scheduled/airport mode: the ride is in the future, so "a driver can
+    // be here in 5-20 min" — and worse, "No drivers near your area" —
+    // answers a question nobody asked. The reservation goes to the
+    // scheduled marketplace; say so instead (2026-08-17).
+    if (_isScheduledMode) {
+      return SizedBox(
+        height: 34,
+        child: Align(
+          alignment: Alignment.centerLeft,
+          child: Text(
+            S.of(context).availableToReserve,
+            style: TextStyle(
+              fontFamily: 'Poppins',
+              fontSize: 11.5,
+              fontWeight: FontWeight.w600,
+              color: Colors.white.withValues(alpha: 0.80),
+            ),
+          ),
+        ),
+      );
+    }
+
     // Per tier: the range answers "when can a driver of THIS category be
     // here", from the drivers actually eligible to take it — not one
     // shared number stamped on every card.
@@ -2345,6 +2369,21 @@ extension _RideRequestWidgets on _RideRequestScreenState {
     final est = DriverWaitEstimate.cached(pickup.lat, pickup.lng);
     return est != null && est.driverCount == 0;
   }
+
+  /// True when this booking is for LATER (scheduled ride or airport trip),
+  /// not an immediate dispatch. Reads from BOTH widget params (set at push
+  /// time) and controller state (mutable — flips when an inline schedule
+  /// picker fires _ctrl.setSchedule on the already-mounted screen).
+  ///
+  /// A reservation needs NO driver online right now: it goes to the
+  /// scheduled marketplace where drivers claim it ahead of time, with the
+  /// auto-dispatcher as backup. So the "no drivers nearby" gate and the
+  /// wait-time line only apply to immediate requests.
+  bool get _isScheduledMode =>
+      widget.scheduledAt != null ||
+      widget.isAirportTrip ||
+      _ctrl.state.scheduledAt != null ||
+      _ctrl.state.isAirportTrip;
 
   /// Re-frame the map on the route after the rider picks a tier.
   ///

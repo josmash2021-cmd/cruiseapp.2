@@ -2069,6 +2069,10 @@ class S {
   // Selected vehicle card when the tier has nobody nearby.
   String get noDriversNearArea =>
       _es ? 'No hay drivers cerca de tu área' : 'No drivers near your area';
+  // Selected vehicle card in scheduled/airport mode — the ride is in the
+  // future, so the wait-time line becomes a reservation note instead.
+  String get availableToReserve =>
+      _es ? 'Disponible para reservar' : 'Available to reserve';
   // Brand names — stay in English in both languages, like "Cruise Cash".
   String get cruiseBalance => 'Cruise Balance';
   String get cardEntryMobileOnly => _es

@@ -192,9 +192,21 @@ async def _credit_driver_cancellation_fee(db, trip: Trip) -> tuple[float, float]
       - driver.pending_balance / total_earnings incremented by the driver share
     Returns (driver_share, platform_share). No-op when there is no fee or
     no assigned driver.
+
+    REAL-MONEY RULE (2026-08-17): the fee only counts once Stripe actually
+    captured it — _release_or_capture_fee_on_cancel flips payment_status to
+    "paid" on a successful partial capture. A fee that was assessed but
+    never collected (test-mode rides, released holds) must NOT pay the
+    driver money that never arrived.
     """
     fee = float(trip.cancellation_fee or 0.0)
     if fee <= 0 or not trip.driver_id:
+        return 0.0, 0.0
+    if trip.payment_status != "paid":
+        logging.info(
+            "[CancelFee] Trip %s fee $%.2f NOT credited — payment_status=%s (fee never captured)",
+            trip.id, fee, trip.payment_status,
+        )
         return 0.0, 0.0
     driver_share = round(fee * DRIVER_SHARE_RATE, 2)
     platform_share = round(fee - driver_share, 2)
@@ -210,6 +222,48 @@ async def _credit_driver_cancellation_fee(db, trip: Trip) -> tuple[float, float]
         trip.id, fee, driver_share, platform_share,
     )
     return driver_share, platform_share
+
+
+async def _credit_driver_earnings(db, trip: Trip) -> bool:
+    """Split a COMPLETED trip's fare (vehicle-type commission) and credit the
+    driver's balances.
+
+    REAL-MONEY RULE (2026-08-17): only a trip whose fare was actually
+    collected (payment_status == "paid") may credit the driver. Test-mode
+    rides and failed charges used to hand drivers payable money that never
+    arrived. Trips still settling (ACH "processing") are credited by the
+    payment_intent.succeeded webhook through this same helper.
+
+    Idempotent: driver_earnings NOT NULL means the split already ran.
+    Tips are NOT included here — they are credited by the tip endpoint when
+    the tip charge itself succeeds (and added onto driver_earnings there
+    once it exists), so this helper splits only the fare.
+    Returns True when the credit was applied.
+    """
+    if trip.status != "completed" or not trip.driver_id \
+            or not (trip.fare and trip.fare > 0):
+        return False
+    if trip.driver_earnings is not None:
+        return False
+    if trip.payment_status != "paid":
+        logging.info(
+            "[Split] Trip %s NOT credited — payment_status=%s (fare not collected)",
+            trip.id, trip.payment_status,
+        )
+        return False
+    platform_rate, driver_rate = _get_commission(trip.vehicle_type)
+    trip.platform_fee = round(trip.fare * platform_rate, 2)
+    trip.driver_earnings = round(trip.fare * driver_rate, 2)
+    _drv_res = await db.execute(select(User).where(User.id == trip.driver_id))
+    _drv = _drv_res.scalar_one_or_none()
+    if _drv:
+        _drv.pending_balance = round((_drv.pending_balance or 0.0) + trip.driver_earnings, 2)
+        _drv.total_earnings = round((_drv.total_earnings or 0.0) + trip.driver_earnings, 2)
+    logging.info(
+        "[Split] Trip %s fare %.2f split: driver %.2f / company %.2f",
+        trip.id, trip.fare, trip.driver_earnings, trip.platform_fee,
+    )
+    return True
 
 # ---====================================================
 #  TRIP  ENDPOINTS
@@ -984,6 +1038,15 @@ async def charge_trip_endpoint(trip_id: int, user: User = Depends(_get_current_u
     if trip.payment_status == "paid":
         return {"status": "already_paid", "payment_intent_id": trip.stripe_payment_intent_id}
     result = await _charge_trip(trip, db)
+    # A manual charge that lands on an already-completed trip must run the
+    # same driver split as the auto-charge path — otherwise the fare is
+    # collected but the driver is never credited.
+    if trip.payment_status == "paid":
+        try:
+            if await _credit_driver_earnings(db, trip):
+                await db.commit()
+        except Exception as e:
+            logging.error("[Charge] driver split failed for trip %s: %s", trip_id, e)
     return result
 
 
@@ -1478,19 +1541,12 @@ async def update_trip_status(trip_id: int, request: Request, status: str = Query
         elif not trip.duration and trip.distance:
             # Last resort: estimate from distance
             trip.duration = max(1, int(trip.distance * 2))
-    # Auto-calculate earnings split (vehicle-type-dependent commission).
+    # Earnings split — REAL-MONEY RULE (2026-08-17): the driver's share is
+    # credited ONLY from collected money. The auto-charge below runs AFTER
+    # this point, so the credit fires right after the charge outcome is
+    # known (or later, via the payment_intent.succeeded webhook for ACH).
     # `trip.fare` already includes any wait-time surcharge added in the
-    # in_trip branch above, so the driver's % naturally covers it too.
-    if canonical_new == "completed" and trip.fare and trip.fare > 0 and trip.driver_id:
-        platform_rate, driver_rate = _get_commission(trip.vehicle_type)
-        tip = trip.tip_amount or 0.0
-        trip.platform_fee = round(trip.fare * platform_rate, 2)
-        trip.driver_earnings = round((trip.fare * driver_rate) + tip, 2)
-        _drv_res = await db.execute(select(User).where(User.id == trip.driver_id))
-        _drv = _drv_res.scalar_one_or_none()
-        if _drv:
-            _drv.pending_balance = round((_drv.pending_balance or 0.0) + trip.driver_earnings, 2)
-            _drv.total_earnings = round((_drv.total_earnings or 0.0) + trip.driver_earnings, 2)
+    # in_trip branch above.
 
     # Referral progress hook — if the rider was referred and this trip's
     # fare crosses the qualifying threshold ($50 by default), bump the
@@ -1664,6 +1720,17 @@ async def update_trip_status(trip_id: int, request: Request, status: str = Query
             charge_result = await _charge_trip(trip, db)
         except Exception as e:
             logging.error("[AutoCharge] Failed for trip %s: %s", trip_id, e)
+
+    # Credit the driver's split ONLY now that the charge outcome is known
+    # (2026-08-17 real-money rule). Covers: card hold captured above, trips
+    # already paid before completion (ACH settled mid-trip) and the mock_paid
+    # no-Stripe path. ACH still "processing" is credited by the webhook.
+    if canonical_new == "completed" and trip.payment_status == "paid":
+        try:
+            if await _credit_driver_earnings(db, trip):
+                await db.commit()
+        except Exception as e:
+            logging.error("[Split] credit failed for trip %s: %s", trip_id, e)
 
     # --- FCM push notifications ===
     try:
@@ -2775,17 +2842,12 @@ async def add_tip(trip_id: int, tip_amount: float = Body(..., ge=0, le=100), use
         raise HTTPException(403, "Only the rider can tip")
     if trip.status != "completed":
         raise HTTPException(400, "Can only tip completed trips")
-    trip.tip_amount = round((trip.tip_amount or 0.0) + tip_amount, 2)
-    if trip.driver_id:
-        drv_res = await db.execute(select(User).where(User.id == trip.driver_id))
-        drv = drv_res.scalar_one_or_none()
-        if drv:
-            drv.pending_balance = round((drv.pending_balance or 0.0) + tip_amount, 2)
-            drv.total_earnings = round((drv.total_earnings or 0.0) + tip_amount, 2)
-        if trip.driver_earnings is not None:
-            trip.driver_earnings = round(trip.driver_earnings + tip_amount, 2)
-    # Charge tip from rider's saved card (100% goes to driver)
+    # Charge tip from rider's saved card FIRST (100% goes to driver).
+    # REAL-MONEY RULE (2026-08-17): the driver is credited ONLY when the
+    # charge actually succeeds — until then this credited the tip before
+    # even attempting the charge, paying drivers money that never arrived.
     stripe_status = "not_charged"
+    tip_intent_id = None
     if _HAS_STRIPE and tip_amount >= 0.50:
         try:
             pm_r = await db.execute(
@@ -2814,10 +2876,28 @@ async def add_tip(trip_id: int, tip_amount: float = Body(..., ge=0, le=100), use
                     timeout=10.0,
                 )
                 stripe_status = intent.status
-                trip.stripe_tip_payment_intent_id = intent.id
+                tip_intent_id = intent.id
         except Exception as e:
             logging.error("[Tip] Stripe charge failed for trip %s: %s", trip_id, e)
             stripe_status = "failed"
+    # Without the Stripe SDK (dev/test) there is no charge to wait for; the
+    # tip applies as before. With Stripe, only a succeeded charge credits.
+    tip_collected = stripe_status == "succeeded" or not _HAS_STRIPE
+    if not tip_collected:
+        await db.commit()
+        return {"status": "ok", "tip_amount": 0.0, "stripe_status": stripe_status,
+                "message": "Tip charge did not go through — driver not credited."}
+    trip.tip_amount = round((trip.tip_amount or 0.0) + tip_amount, 2)
+    if tip_intent_id:
+        trip.stripe_tip_payment_intent_id = tip_intent_id
+    if trip.driver_id:
+        drv_res = await db.execute(select(User).where(User.id == trip.driver_id))
+        drv = drv_res.scalar_one_or_none()
+        if drv:
+            drv.pending_balance = round((drv.pending_balance or 0.0) + tip_amount, 2)
+            drv.total_earnings = round((drv.total_earnings or 0.0) + tip_amount, 2)
+        if trip.driver_earnings is not None:
+            trip.driver_earnings = round(trip.driver_earnings + tip_amount, 2)
     await db.commit()
     return {"status": "ok", "tip_amount": tip_amount, "stripe_status": stripe_status}
 

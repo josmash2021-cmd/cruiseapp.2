@@ -1447,6 +1447,15 @@ async def stripe_webhook(request: Request, db: AsyncSession = Depends(get_db)):
                     trip.payment_status = "paid"
                     if payment_intent_id:
                         trip.stripe_payment_intent_id = payment_intent_id
+                    # Real-money rule (2026-08-17): a completed trip credited
+                    # no driver split at completion time because the money
+                    # had not landed yet (e.g. ACH "processing") — pay it now.
+                    if trip.status == "completed":
+                        try:
+                            from routers.trips import _credit_driver_earnings
+                            await _credit_driver_earnings(db, trip)
+                        except Exception as e:
+                            logging.error("[Stripe Webhook] driver split failed for trip %s: %s", trip_id, e)
                     await db.commit()
                     logging.info(
                         "[Stripe Webhook] Trip %s payment confirmed via webhook (pi=%s)",

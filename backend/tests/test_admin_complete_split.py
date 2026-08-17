@@ -1,5 +1,10 @@
 """Admin PATCH completion must run the money pipeline (platform_fee +
-driver_earnings + balances), and never twice."""
+driver_earnings + balances), and never twice.
+
+The 2026-08-17 real-money rule gates the split on the fare being COLLECTED,
+so the fixture trip is already payment_status="paid" — an unpaid completion
+crediting the driver is covered (as a no-credit) by
+test_earnings_real_money_guard.py."""
 import pytest
 
 
@@ -15,6 +20,7 @@ async def test_admin_complete_computes_split_once(client, test_rider, test_drive
         pickup_address="A", dropoff_address="B",
         pickup_lat=1.0, pickup_lng=1.0, dropoff_lat=1.1, dropoff_lng=1.1,
         fare=10.0, vehicle_type="comfort", status="in_trip",
+        payment_status="paid",
     )
     db.add(trip)
     await db.commit()

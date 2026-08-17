@@ -45,6 +45,7 @@ import os, time, hmac, hashlib, math, secrets, logging, collections, re, json, s
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 from contextlib import asynccontextmanager
 import asyncio
 from typing import Optional, List
@@ -160,23 +161,31 @@ from middleware.rate_limit import rate_limiter as _tiered_rate_limiter
 # which is the day the driver was promised. Setting this to Wednesday, as it
 # briefly was, would have paid them on Friday.
 #
-# Monday is 0. 02:00 UTC is Sunday 21:00 in Alabama, so the run fires late
-# Sunday evening local — after the week it is paying for has closed, which is
-# the point.
+# Monday is 0. The run fires at 00:00 local in Alabama (America/Chicago —
+# the operating region is Alabama + Florida), right as the Mon–Sun week it
+# pays for closes. Florida (Eastern) sees it as 1:00 AM. Computed in the
+# local zone, not fixed UTC, so DST never drifts it an hour off midnight.
 _PAYOUT_WEEKDAY = 0
-_PAYOUT_HOUR_UTC = 2
+_PAYOUT_TZ = ZoneInfo("America/Chicago")
 
 
 def _next_payout_run() -> datetime:
-    """Return the next payday at 02:00 UTC (or today if it is payday and before 2 AM)."""
-    now = datetime.now(timezone.utc)
-    days_ahead = (_PAYOUT_WEEKDAY - now.weekday()) % 7
-    if days_ahead == 0 and now.hour >= _PAYOUT_HOUR_UTC:
-        days_ahead = 7
-    target = (now + timedelta(days=days_ahead)).replace(
-        hour=_PAYOUT_HOUR_UTC, minute=0, second=0, microsecond=0
+    """Return the next payday: Monday 00:00 America/Chicago.
+
+    A process that boots on payday within the grace window just after
+    midnight still runs today (a redeploy landing at 00:00:xx must not push
+    the payout a whole week out).
+    """
+    now_local = datetime.now(_PAYOUT_TZ)
+    days_ahead = (_PAYOUT_WEEKDAY - now_local.weekday()) % 7
+    target = (now_local + timedelta(days=days_ahead)).replace(
+        hour=0, minute=0, second=0, microsecond=0
     )
-    return target
+    if days_ahead == 0 and now_local < target + timedelta(minutes=10):
+        return datetime.now(timezone.utc)
+    if target <= now_local:
+        target += timedelta(days=7)
+    return target.astimezone(timezone.utc)
 
 # ── Weekly auto-payout ────────────────────────────────────────────────────
 #

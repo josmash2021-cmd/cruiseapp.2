@@ -16,7 +16,7 @@ from fastapi import (
     UploadFile, File,
 )
 from fastapi.responses import JSONResponse, FileResponse, Response
-from sqlalchemy import select, func, and_, or_, text
+from sqlalchemy import select, func, and_, or_, text, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 from models.database import (
     get_db, SessionLocal, User, Trip, SupportChat, SupportMessage, ActionRequest,
@@ -2811,6 +2811,50 @@ async def close_support_chat_user(chat_id: int, user: User = Depends(_get_curren
     _safe_create_task(_followup_task(chat_id, user.id, _chat_lang))
 
     return {"status": "closed"}
+
+
+async def _delete_support_chat_records(db: AsyncSession, chat_id: int) -> None:
+    """Delete a support chat and everything that hangs off it."""
+    await db.execute(delete(ActionRequest).where(ActionRequest.chat_id == chat_id))
+    await db.execute(delete(SupportMessage).where(SupportMessage.chat_id == chat_id))
+    await db.execute(delete(SupportChat).where(SupportChat.id == chat_id))
+
+
+def _firestore_delete_chat(chat_id: int) -> None:
+    if not _HAS_FIRESTORE:
+        return
+    try:
+        firestore_sync.delete_support_chat(chat_id)
+    except Exception as e:
+        logging.error("Firestore delete chat sync failed: %s", e)
+
+
+# NOTE: declared BEFORE /support/chats/{chat_id} so "closed" wins the match.
+@router.delete("/support/chats/closed", dependencies=[Depends(_require_dispatch_auth)])
+async def delete_closed_support_chats(db: AsyncSession = Depends(get_db)):
+    """Delete ALL closed support chats (dispatch only)."""
+    result = await db.execute(
+        select(SupportChat.id).where(SupportChat.status == "closed"))
+    chat_ids = [row[0] for row in result.all()]
+    for cid in chat_ids:
+        await _delete_support_chat_records(db, cid)
+    await db.commit()
+    for cid in chat_ids:
+        _firestore_delete_chat(cid)
+    return {"deleted": len(chat_ids)}
+
+
+@router.delete("/support/chats/{chat_id}", dependencies=[Depends(_require_dispatch_auth)])
+async def delete_support_chat(chat_id: int, db: AsyncSession = Depends(get_db)):
+    """Delete one support chat (dispatch only)."""
+    result = await db.execute(select(SupportChat).where(SupportChat.id == chat_id))
+    chat = result.scalar_one_or_none()
+    if not chat:
+        raise HTTPException(404, "Chat not found")
+    await _delete_support_chat_records(db, chat_id)
+    await db.commit()
+    _firestore_delete_chat(chat_id)
+    return {"status": "deleted"}
 
 
 # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•

@@ -453,6 +453,22 @@ def sync_support_chat(chat_id: int, user_id: int, first_name: str, last_name: st
         log.error("❌ Support chat sync failed for %d: %s", chat_id, e)
 
 
+def delete_support_chat(chat_id: int):
+    """Remove a support chat and its messages from Firestore."""
+    _ensure_init()
+    if _db is None:
+        return
+    doc_id = f"chat_{chat_id}"
+    try:
+        ref = _db.collection("support_chats").document(doc_id)
+        for msg in ref.collection("messages").stream():
+            msg.reference.delete()
+        ref.delete()
+        log.info("🗑️ Deleted support chat %d from Firestore", chat_id)
+    except Exception as e:
+        log.error("❌ Support chat delete failed for %d: %s", chat_id, e)
+
+
 def sync_support_message(chat_id: int, msg_id: int, sender_id: int,
                           sender_name: str, sender_role: str, message: str):
     """Add a support message to Firestore."""

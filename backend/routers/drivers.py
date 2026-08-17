@@ -211,6 +211,12 @@ def _driver_trip_amounts(trip: Trip) -> tuple[float, float]:
         total = round(float(trip.driver_earnings), 2)
         base = round(max(total - tip, 0.0), 2)
         return base, total
+    # Real-money rule (2026-08-17): for a TERMINAL trip (completed/cancelled)
+    # an uncollected fare reads as $0 — recomputing the share from fare would
+    # show the driver money that never arrived (test-mode rides, failed
+    # charges). Trips still in flight keep the live estimate below.
+    if trip.status in ("completed", "cancelled") and trip.payment_status != "paid":
+        return 0.0, 0.0
     # Use vehicle-type-dependent rate instead of flat DRIVER_SHARE_RATE
     driver_rate = _get_driver_rate(getattr(trip, "vehicle_type", None))
     base = round(float(trip.fare or 0.0) * driver_rate, 2)

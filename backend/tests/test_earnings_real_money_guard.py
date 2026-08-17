@@ -142,3 +142,27 @@ async def test_captured_cancel_fee_credits_driver(db, test_rider, test_driver):
     assert platform_share == 1.50
     drv = (await db.execute(select(User).where(User.id == driver.id))).scalar_one()
     assert drv.pending_balance == 3.50
+
+
+async def test_unpaid_terminal_trip_displays_zero(db, test_rider, test_driver):
+    """Display fallback must not resurrect money for uncollected fares.
+
+    Both driver-facing fallbacks (_driver_trip_amounts for the earnings
+    page, _driver_visible_trip_dict for trip payloads) recompute the share
+    from fare when driver_earnings is NULL — fine for a trip in flight,
+    wrong for a terminal trip that was never paid.
+    """
+    from routers.drivers import _driver_trip_amounts
+    from routers.trips import _driver_visible_trip_dict
+
+    rider, _ = test_rider
+    driver, _ = test_driver
+    trip = await _make_trip(db, rider, driver, status="completed", payment_status="unpaid")
+    assert _driver_trip_amounts(trip) == (0.0, 0.0)
+    assert _driver_visible_trip_dict(trip)["driver_earnings"] == 0.0
+
+    # A trip still in flight keeps its live estimate (the driver needs to
+    # see the fare of the ride they are driving).
+    live = await _make_trip(db, rider, driver, status="in_trip", payment_status="held")
+    assert _driver_trip_amounts(live)[1] > 0
+    assert _driver_visible_trip_dict(live)["driver_earnings"] > 0

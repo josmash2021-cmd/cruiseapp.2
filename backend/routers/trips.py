@@ -159,6 +159,10 @@ def _driver_visible_trip_dict(trip: Trip) -> dict:
     platform_rate, driver_rate = _get_commission(getattr(trip, "vehicle_type", None))
     if trip.driver_earnings is not None:
         visible_fare = round(float(trip.driver_earnings), 2)
+    elif trip.status in ("completed", "cancelled") and trip.payment_status != "paid":
+        # Real-money rule (2026-08-17): a terminal trip whose fare was never
+        # collected shows the driver $0 — never the recomputed share.
+        visible_fare = 0.0
     else:
         visible_fare = round((float(trip.fare or 0.0) * driver_rate) + tip, 2)
     data["fare"] = visible_fare

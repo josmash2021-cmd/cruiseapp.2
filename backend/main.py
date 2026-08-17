@@ -75,7 +75,7 @@ from document_approval_agent import document_approval_agent
 from rating_moderator_agent import rating_moderator_agent
 from cruise_level_agent import cruise_level_agent
 from chat_retention_agent import chat_retention_agent
-from proactive_support_agent import run_proactive_agent_loop
+from proactive_support_agent import run_proactive_agent_loop  # noqa: F401 — agent disabled, kept for reference
 from wait_timeout_agent import wait_timeout_agent
 
 # Socket.io real-time service
@@ -867,7 +867,9 @@ async def _start_scheduler_agents() -> None:
     # Re-enabled agents with longer intervals to reduce PgBouncer churn
     _spawn_background(_schedule_weekly_payouts(), "weekly_payouts")
     _spawn_background(_backup_scheduler(), "backup_scheduler")
-    _spawn_background(run_proactive_agent_loop(), "proactive_support")
+    # Proactive support agent DISABLED (2026-08-17): it opened support chats
+    # automatically (first-trip congrats to drivers, bad-trip outreach to
+    # riders) and those system-created threads must not exist.
     _spawn_background(_scheduled_rides_available_notify_loop(), "scheduled_rides_notify")
     _spawn_background(_nightly_reconcile_loop(), "nightly_reconcile")
     _spawn_background(_driver_referral_expiry_loop(), "driver_referral_expiry")

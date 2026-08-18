@@ -1369,6 +1369,26 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
   /// The burst queue stays impossible (one in flight, one pending, ever) and
   /// the ease arrives as a glide instead of a pop.
   void _writeCamera(mapbox.CameraOptions options) {
+    // Web: there is no native Mapbox controller — the per-frame follow has
+    // to drive GL JS instead. flyTo(durationMs: 0) is an instant jump, so
+    // the 60 fps ticker chases exactly like the native setCamera path. This
+    // was the "the map never moves on web" hole: writes went to a null _map
+    // and the arrow glided off screen with the camera left behind.
+    if (kIsWeb) {
+      final web = _webMap;
+      if (web == null) return;
+      final center = options.center?.coordinates;
+      if (center == null) return;
+      web.flyTo(
+        lng: center.lng.toDouble(),
+        lat: center.lat.toDouble(),
+        zoom: options.zoom,
+        bearing: options.bearing,
+        pitch: options.pitch,
+        durationMs: 0,
+      );
+      return;
+    }
     final map = _map;
     if (map == null) return;
     _pendingCamWrite = options;

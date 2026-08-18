@@ -646,6 +646,11 @@ async def admin_delete_trip(trip_id: int, db: AsyncSession = Depends(get_db)):
             400, f"Trip is '{trip.status}' — cancel it before deleting")
     await _purge_trips_cascade(db, [trip_id])
     await db.commit()
+    if _HAS_FIRESTORE:
+        try:
+            firestore_sync.delete_trip(trip_id)
+        except Exception as e:
+            logging.error("Firestore trip delete sync failed: %s", e)
     _security_audit_log("ADMIN_TRIP_DELETED", "admin", f"trip_id={trip_id}")
     return {"deleted": True}
 
@@ -2058,6 +2063,37 @@ async def delete_promo(promo_id: str):
     fdb.collection("promo_codes").document(promo_id).delete()
     _security_audit_log("PROMO_DELETED", "admin", promo_id)
     return {"status": "ok"}
+
+
+@router.post("/admin/firestore/prune-trips", dependencies=[Depends(_require_dispatch_auth)])
+async def admin_prune_firestore_trips(db: AsyncSession = Depends(get_db)):
+    """Delete Firestore `trips` mirrors whose backend row no longer exists.
+
+    Trips deleted from the database before the mirror cleanup existed (or
+    wiped directly in SQL) leave `trips/sql_<id>` docs behind, and every
+    Firestore-backed counter in dispatch keeps counting the ghosts.
+    """
+    if not _HAS_FIRESTORE:
+        raise HTTPException(503, "Firestore not available")
+    from firebase_admin import firestore as _fs
+    fs = _fs.client()
+    live_ids = set((await db.execute(select(Trip.id))).scalars().all())
+    deleted = 0
+    for doc in fs.collection("trips").stream():
+        data = doc.to_dict() or {}
+        sql_id = data.get("sqliteId")
+        if sql_id is None and doc.id.startswith("sql_"):
+            try:
+                sql_id = int(doc.id[4:])
+            except ValueError:
+                sql_id = None
+        # Docs without a backend id can't be verified — keep them rather
+        # than risk deleting a real reservation written only by the app.
+        if sql_id is not None and int(sql_id) not in live_ids:
+            doc.reference.delete()
+            deleted += 1
+    _security_audit_log("ADMIN_PRUNE_FIRESTORE_TRIPS", "admin", f"deleted={deleted}")
+    return {"status": "ok", "deleted": deleted}
 
 
 @router.post("/admin/wipe-firestore", dependencies=[Depends(_require_dispatch_auth)])

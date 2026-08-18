@@ -453,6 +453,18 @@ def sync_support_chat(chat_id: int, user_id: int, first_name: str, last_name: st
         log.error("❌ Support chat sync failed for %d: %s", chat_id, e)
 
 
+def delete_trip(trip_id: int):
+    """Remove a trip mirror from Firestore after its backend row is deleted."""
+    _ensure_init()
+    if _db is None:
+        return
+    try:
+        _db.collection("trips").document(f"sql_{trip_id}").delete()
+        log.info("🗑️ Deleted trip sql_%d from Firestore", trip_id)
+    except Exception as e:
+        log.error("❌ Trip delete from Firestore failed for %d: %s", trip_id, e)
+
+
 def delete_support_chat(chat_id: int):
     """Remove a support chat and its messages from Firestore."""
     _ensure_init()

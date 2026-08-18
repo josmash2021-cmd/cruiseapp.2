@@ -617,6 +617,17 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   /// panels responsive — right for panels, far too slow for an arrow
   /// turning through a bend. This repaints only the marker.
   final ValueNotifier<int> _markerFrame = ValueNotifier<int>(0);
+
+  // ── Diagnóstico de movimiento (panel oculto; long-press en la zona del
+  // chip de earnings). Los 4 eslabones de la cadena por segundo: fixes
+  // GPS, ticks del motor, escrituras de cámara, flushes de anotación. El
+  // número lento señala el eslabón roto: GPS ~1 = feed del teléfono; tick
+  // bajo = ticker muerto; cam/anot bajas con tick alto = canal nativo.
+  int _diagFixes = 0, _diagTicks = 0, _diagCamWrites = 0, _diagAnnotUpdates = 0;
+  final ValueNotifier<String> motionDiag = ValueNotifier<String>('');
+  bool motionDiagVisible = false;
+  Timer? _diagTimer;
+
   bool _annotCreateBusy =
       false; // prevents parallel create/delete (stricter than update)
   bool _isClearingAnnotations = false; // prevents create during clear
@@ -763,6 +774,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     DriverOnlineScreen.mountedCount++;
     _enforceDriverRole();
     WidgetsBinding.instance.addObserver(this);
+    _startMotionDiag();
     // The trip screen handed us a cancelled trip: show the notice as soon
     // as the first frame is down, not from inside initState.
     if (widget.showCancelledNotice) {
@@ -1236,6 +1248,8 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   void dispose() {
     DriverOnlineScreen.mountedCount--;
     WidgetsBinding.instance.removeObserver(this);
+    _diagTimer?.cancel();
+    motionDiag.dispose();
     DriverOnlineScreen.deepLinkOfferNotifier.removeListener(_applyInjectedOffer);
     DriverOnlineScreen.removeOfferNotifier
         .removeListener(_applyRemoveInjectedOffer);

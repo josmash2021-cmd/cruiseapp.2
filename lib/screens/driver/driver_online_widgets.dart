@@ -123,6 +123,47 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                   ]);
                 },
               )),
+              // Hotspot invisible: long-press en la zona del chip de
+              // earnings muestra/oculta el panel de diagnóstico de
+              // movimiento (GPS/tick/cam/anot por segundo).
+              Positioned(
+                top: 0,
+                left: 0,
+                right: 0,
+                height: 110,
+                child: GestureDetector(
+                  behavior: HitTestBehavior.translucent,
+                  onLongPress: toggleMotionDiag,
+                ),
+              ),
+              if (motionDiagVisible)
+                Positioned(
+                  top: 112,
+                  left: 16,
+                  right: 16,
+                  child: IgnorePointer(
+                    child: ListenableBuilder(
+                      listenable: motionDiag,
+                      builder: (context, _) => Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.75),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          motionDiag.value,
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            color: Color(0xFFE8C547),
+                            fontSize: 12,
+                            fontFamily: 'monospace',
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
             ],
           );
         },

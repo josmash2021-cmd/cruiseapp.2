@@ -182,6 +182,7 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
       // write above already captured the latest position — no info lost.
       if (_annotUpdateBusy) return;
       _annotUpdateBusy = true;
+      _diagAnnotUpdates++;
       try {
         await pointMgr.update(_goldDotAnnot!);
       } catch (_) {
@@ -248,6 +249,7 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
 
       if (_annotUpdateBusy) return;
       _annotUpdateBusy = true;
+      _diagAnnotUpdates++;
       try {
         await pointMgr.update(_carAnnot!);
       } catch (_) {

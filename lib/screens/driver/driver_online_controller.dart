@@ -1231,6 +1231,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       },
       onPosition: (pos) {
         if (!mounted) return;
+        _diagFixes++;
         final newLL = LatLng(pos.latitude, pos.longitude);
         // Where the arrow points is decided by _headingSource, not here.
         //
@@ -1401,6 +1402,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     if (opts == null) return;
     _pendingCamWrite = null;
     _camWriteBusy = true;
+    _diagCamWrites++;
     try {
       // A write that never settles must not latch the gate: the timeout
       // frees it, and the pending flush still carries the freshest frame.
@@ -1653,11 +1655,32 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     _setRouteAnnotation(List.from(_routePts), _navyRoute);
   }
 
+  // ── Diagnóstico de movimiento (panel oculto; long-press en el chip de
+  // earnings para mostrarlo). Cuenta por segundo los 4 eslabones de la
+  // cadena: fixes GPS, ticks del motor, escrituras de cámara y flushes de
+  // anotación. Cuando el marcador "avanza cada segundo", el número que va
+  // lento dice qué eslabón es: GPS ~1 = feed del teléfono; tick bajo =
+  // ticker muerto; cam/anot bajas con tick alto = canal nativo ahogado.
+  void _startMotionDiag() {
+    _diagTimer ??= Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted) return;
+      motionDiag.value =
+          'GPS $_diagFixes/s · tick $_diagTicks/s · cam $_diagCamWrites/s · anot $_diagAnnotUpdates/s';
+      _diagFixes = _diagTicks = _diagCamWrites = _diagAnnotUpdates = 0;
+    });
+  }
+
+  void toggleMotionDiag() {
+    motionDiagVisible = !motionDiagVisible;
+    _setState(() {});
+  }
+
   /// Continuous 60fps ticker — Google-Maps-style constant-velocity advance
   /// via [SmoothMotion]. Never resets, never stutters, keeps gliding at the
   /// measured speed between GPS fixes instead of decelerating into a stall.
   void _onSmoothTick(Duration elapsed) {
     if (!mounted || _pos == null) return;
+    _diagTicks++;
     // Self-correcting stop. _releaseMapSurface already stops the ticker, and
     // both start paths now check the map first — this is the backstop for
     // any future one that forgets, because a ticker running against a map

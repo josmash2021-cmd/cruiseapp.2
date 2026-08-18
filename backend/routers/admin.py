@@ -2075,23 +2075,8 @@ async def admin_prune_firestore_trips(db: AsyncSession = Depends(get_db)):
     """
     if not _HAS_FIRESTORE:
         raise HTTPException(503, "Firestore not available")
-    from firebase_admin import firestore as _fs
-    fs = _fs.client()
     live_ids = set((await db.execute(select(Trip.id))).scalars().all())
-    deleted = 0
-    for doc in fs.collection("trips").stream():
-        data = doc.to_dict() or {}
-        sql_id = data.get("sqliteId")
-        if sql_id is None and doc.id.startswith("sql_"):
-            try:
-                sql_id = int(doc.id[4:])
-            except ValueError:
-                sql_id = None
-        # Docs without a backend id can't be verified — keep them rather
-        # than risk deleting a real reservation written only by the app.
-        if sql_id is not None and int(sql_id) not in live_ids:
-            doc.reference.delete()
-            deleted += 1
+    deleted = firestore_sync.prune_trips(live_ids)
     _security_audit_log("ADMIN_PRUNE_FIRESTORE_TRIPS", "admin", f"deleted={deleted}")
     return {"status": "ok", "deleted": deleted}
 

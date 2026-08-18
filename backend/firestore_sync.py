@@ -465,6 +465,36 @@ def delete_trip(trip_id: int):
         log.error("❌ Trip delete from Firestore failed for %d: %s", trip_id, e)
 
 
+def prune_trips(live_ids) -> int:
+    """Delete `trips` docs whose backend id is not in [live_ids].
+
+    Docs without a backend id can't be verified and are kept — better an
+    orphan on screen than a real reservation gone.
+    """
+    _ensure_init()
+    if _db is None:
+        return 0
+    deleted = 0
+    for doc in _db.collection("trips").stream():
+        data = doc.to_dict() or {}
+        sql_id = data.get("sqliteId")
+        if sql_id is None and doc.id.startswith("sql_"):
+            try:
+                sql_id = int(doc.id[4:])
+            except ValueError:
+                sql_id = None
+        try:
+            sql_id = int(sql_id) if sql_id is not None else None
+        except (ValueError, TypeError):
+            sql_id = None
+        if sql_id is not None and sql_id not in live_ids:
+            doc.reference.delete()
+            deleted += 1
+    if deleted:
+        log.info("🗑️ Pruned %d orphan trip docs from Firestore", deleted)
+    return deleted
+
+
 def delete_support_chat(chat_id: int):
     """Remove a support chat and its messages from Firestore."""
     _ensure_init()

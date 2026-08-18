@@ -1735,7 +1735,13 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                 child: _enterTopWrap(
                   Column(
                     children: [
-                      Center(child: _earningsPill(isDark)),
+                      // Long-press en el chip: muestra/oculta el panel de
+                      // diagnóstico de movimiento (GPS/tick/cam/anot).
+                      GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onLongPress: toggleMotionDiag,
+                        child: Center(child: _earningsPill(isDark)),
+                      ),
                     ],
                   ),
                 ),

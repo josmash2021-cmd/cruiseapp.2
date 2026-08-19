@@ -1719,9 +1719,30 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     _lastTickElapsed = elapsed;
     final dtSec = dtMs / 1000.0;
 
-    _motion.tick(dtSec);
+    // tick() devuelve si posición O rumbo cambiaron este frame.
+    final frameMoved = _motion.tick(dtSec);
     _pos = LatLng(_motion.lat!, _motion.lng!);
     _heading = _motion.bearing;
+
+    // HEAT FIX (2026-08-19): un driver parado no necesita 120 escrituras de
+    // cámara por segundo ni repaints del marcador — eso era el teléfono
+    // caliente. En movimiento NADA cambia: frameMoved es true en cada frame
+    // de un desplazamiento (y en cada giro de la flecha por la brújula), así
+    // que la fluidez queda intacta; solo se salta el trabajo cuando el motor
+    // reporta que ni la posición ni el rumbo cambiaron este frame.
+    // Excepción: el ease de zoom de entrada (solo fase searching) necesita
+    // sus frames aunque el carro esté quieto.
+    final needsFrames =
+        frameMoved || (_phase == _Phase.searching && !_zoomEaseDone);
+    if (!needsFrames) {
+      // Los paneles siguen actualizando su reloj a ritmo bajo.
+      final nowMs0 = DateTime.now().millisecondsSinceEpoch;
+      if (nowMs0 - _lastUiRebuildMs >= 500) {
+        _lastUiRebuildMs = nowMs0;
+        _setState(() {});
+      }
+      return;
+    }
 
     // Unified camera following (single source of truth for all phases)
     // Skip camera control when offer animation is running or route is previewing

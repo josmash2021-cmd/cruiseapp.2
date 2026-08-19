@@ -112,6 +112,17 @@ class SmoothMotion {
   double get bearing => _bearing;
   bool get hasPosition => _lat != null;
 
+  /// Current measured glide speed in m/s — diagnostics: when the marker
+  /// "steps once per fix", this reading near zero while the car moves means
+  /// the velocity measurement is dying on the feed, not the renderer.
+  double get speedMps {
+    if (_lat == null || _targetLat == null) return 0;
+    final cosLat = math.cos((_targetLat ?? _lat!) * math.pi / 180.0);
+    return math.sqrt(
+      math.pow(_vLng * 111320.0 * cosLat, 2) + math.pow(_vLat * 110540.0, 2),
+    );
+  }
+
   /// How many fixes in a row the standstill hold has swallowed.
   int _consecutiveHolds = 0;
 

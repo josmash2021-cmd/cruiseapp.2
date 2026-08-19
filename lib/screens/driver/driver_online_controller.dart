@@ -1233,6 +1233,18 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
         if (!mounted) return;
         _diagFixes++;
         final newLL = LatLng(pos.latitude, pos.longitude);
+        // Diagnóstico: distancia y dt real entre fixes consecutivos.
+        final prevFix = _diagLastFixLL;
+        if (prevFix != null) {
+          _diagLastFixDistM = _hav(prevFix, newLL) * 1000;
+          final prevAt = _diagLastFixAt;
+          if (prevAt != null) {
+            _diagLastFixDtMs =
+                DateTime.now().difference(prevAt).inMilliseconds;
+          }
+        }
+        _diagLastFixLL = newLL;
+        _diagLastFixAt = DateTime.now();
         // Where the arrow points is decided by _headingSource, not here.
         //
         // This used to read pos.heading directly and throw it away below
@@ -1664,8 +1676,16 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
   void _startMotionDiag() {
     _diagTimer ??= Timer.periodic(const Duration(seconds: 1), (_) {
       if (!mounted) return;
+      // v = velocidad medida por el motor (mph). Si el carro va a 30 mph y
+      // esto lee ~0, la velocidad muere al medirse — el marcador solo puede
+      // avanzar cuando llega un fix (el "salto cada segundo"). fixΔ = distancia
+      // y dt entre los dos últimos fixes, para ver qué entrega el teléfono.
+      final vMph = (_motion.speedMps * 2.23694).toStringAsFixed(0);
+      final fixInfo = _diagLastFixDtMs > 0
+          ? ' · fix ${_diagLastFixDistM.toStringAsFixed(0)}m/${(_diagLastFixDtMs / 1000).toStringAsFixed(1)}s'
+          : '';
       motionDiag.value =
-          'GPS $_diagFixes/s · tick $_diagTicks/s · cam $_diagCamWrites/s · anot $_diagAnnotUpdates/s';
+          'GPS $_diagFixes/s · tick $_diagTicks/s · cam $_diagCamWrites/s · anot $_diagAnnotUpdates/s · v $vMph mph$fixInfo';
       _diagFixes = _diagTicks = _diagCamWrites = _diagAnnotUpdates = 0;
     });
   }

@@ -627,6 +627,10 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   final ValueNotifier<String> motionDiag = ValueNotifier<String>('');
   bool motionDiagVisible = false;
   Timer? _diagTimer;
+  LatLng? _diagLastFixLL;
+  DateTime? _diagLastFixAt;
+  double _diagLastFixDistM = 0;
+  int _diagLastFixDtMs = 0;
 
   bool _annotCreateBusy =
       false; // prevents parallel create/delete (stricter than update)

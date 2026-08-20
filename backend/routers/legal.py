@@ -63,7 +63,7 @@ async def get_background_check_disclosure():
 
 @router.get("/legal/driver-terms-of-service", dependencies=[Depends(_verify_api_key)])
 async def get_driver_terms_of_service():
-    """Driver Terms of Service (Royal Purple LLC / Florida).
+    """Driver Terms of Service (Cruise in Ride LLC / Florida).
 
     Returns the full markdown plus a sha256 content hash the client logs via
     POST /auth/consent to prove which exact text was accepted.

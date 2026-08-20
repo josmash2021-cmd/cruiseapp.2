@@ -13,8 +13,8 @@
 > prevails over these Driver Terms in case of conflict on classification,
 > schedule freedom, exclusivity, freedom to decline trips, and compensation.
 
-These Driver Terms are entered into by and between **Royal Purple LLC**, a
-Florida limited liability company ("**Royal Purple**" or the "**Company**"),
+These Driver Terms are entered into by and between **Cruise in Ride LLC**, a
+Florida limited liability company ("**Cruise in Ride**" or the "**Company**"),
 and each individual who applies to drive or drives on the Cruiseinride
 platform (the "**Driver**"). "**Cruiseinride**" means the transportation network company
 digital platform, mobile application, and brand owned and operated by Royal
@@ -24,7 +24,7 @@ of Florida, and these Driver Terms are governed exclusively by Florida law.
 ## 1. The Platform and the Relationship
 
 1.1. Cruiseinride is a technology platform that connects independent drivers
-with riders requesting transportation. Royal Purple LLC is a transportation
+with riders requesting transportation. Cruise in Ride LLC is a transportation
 network company under Fla. Stat. § 627.748 and **does not provide
 transportation services and does not employ any drivers**.
 
@@ -268,7 +268,7 @@ Driver shall cease displaying Company trade dress; and platform access ends.
 
 12.4. **Internal review and appeals.** The Driver may request an internal
 review of any suspension, deactivation, or rating-based action by contacting
-**support@cruiseapp.com**. The Company will review the request and respond
+**support@cruiseinride.com**. The Company will review the request and respond
 within a reasonable period. This review expressly includes cases in which the
 Driver makes a plausible claim that the action resulted from discrimination
 prohibited by law.
@@ -313,7 +313,7 @@ TRIAL BY JURY**.
 the small-claims court of **Miami-Dade County, Florida**, so long as the claim
 qualifies and remains in that court.
 (d) **30-day opt-out.** The Driver may opt out of this arbitration agreement
-by emailing **support@cruiseapp.com** within **30 days** of first accepting
+by emailing **support@cruiseinride.com** within **30 days** of first accepting
 these Driver Terms, including the Driver's name, account email, and a clear
 statement that the Driver opts out of arbitration. If the Driver opts out,
 disputes shall be litigated in the state or federal courts located in
@@ -329,7 +329,7 @@ Reporting Act ("**FCRA**") described in the Background Check Disclosure and
 Authorization; that administrative process remains unchanged.
 
 14.3. **Notices.** Notices to the Company: by email to
-**support@cruiseapp.com**. Notices to the Driver: the contact information
+**support@cruiseinride.com**. Notices to the Driver: the contact information
 associated with the Driver's account or through the app.
 
 14.4. **Amendments.** The Company may update these Driver Terms with notice

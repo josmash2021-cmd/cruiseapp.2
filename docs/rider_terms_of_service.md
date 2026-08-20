@@ -3,19 +3,19 @@
 **Version 1.0 — Production Candidate — Effective Date: August 8, 2026**
 
 These Rider Terms of Service (the "**Rider Terms**") are entered into by and
-between **Royal Purple LLC**, a Florida limited liability company
-("**Royal Purple**" or the "**Company**"), and each individual who requests
+between **Cruise in Ride LLC**, a Florida limited liability company
+("**Cruise in Ride**" or the "**Company**"), and each individual who requests
 or takes rides through the Cruiseinride platform (the "**Rider**" or
 "**you**"). "**Cruiseinride**"
 means the transportation network company digital platform, mobile
-application, and brand owned and operated by Royal Purple LLC. All operations
+application, and brand owned and operated by Cruise in Ride LLC. All operations
 take place in the State of Florida, and these Rider Terms are governed
 exclusively by the laws of the State of Florida.
 
 ## 1. The Platform
 
 1.1. Cruiseinride is a technology platform that connects riders with
-independent drivers. **Royal Purple LLC does not provide transportation
+independent drivers. **Cruise in Ride LLC does not provide transportation
 services.** Transportation is provided by independent contractor drivers.
 
 1.2. The Company operates as a transportation network company under Fla.
@@ -189,7 +189,7 @@ abuse or chargeback abuse, violations of rider conduct rules, safety
 incidents, unlawful use of the Platform, or as required by law.
 
 13.2. Where practicable, the Company will state the reason. You may request
-an internal review by contacting **support@cruiseapp.com**.
+an internal review by contacting **support@cruiseinride.com**.
 
 13.3. You may stop using the Platform and delete your account at any time,
 subject to legal record-retention obligations.
@@ -285,7 +285,7 @@ claim in the small-claims court of **Miami-Dade County, Florida**, so long
 as the claim qualifies and remains in that court.
 
 19.6. **30-day opt-out.** You may opt out of this arbitration agreement by
-emailing **support@cruiseapp.com** within **30 days** of first accepting
+emailing **support@cruiseinride.com** within **30 days** of first accepting
 these Rider Terms, including your name, your account email, and a clear
 statement that you opt out of arbitration. If you opt out, disputes shall
 be litigated in the state or federal courts located in **Miami-Dade County,
@@ -313,10 +313,10 @@ and the Florida Uniform Electronic Transaction Act.
 20.2. **Retaining copies.** You may view these Rider Terms in the app and may
 download or retain a copy of them and of your electronic receipts. You may
 also request a paper copy of any electronic record by contacting
-**support@cruiseapp.com**.
+**support@cruiseinride.com**.
 
 20.3. **Withdrawing consent.** You may withdraw your consent to receive
-records electronically at any time by contacting **support@cruiseapp.com**.
+records electronically at any time by contacting **support@cruiseinride.com**.
 Because the Platform operates through electronic communications, withdrawing
 consent may require you to close your account and stop using the Platform.
 Withdrawal does not affect the legal validity of records provided
@@ -338,7 +338,7 @@ account ID.
 
 ## 21. Notices
 
-21.1. Notices to the Company: by email to **support@cruiseapp.com**.
+21.1. Notices to the Company: by email to **support@cruiseinride.com**.
 Notices to you: the email address or phone number associated with your
 account, or through the app.
 

@@ -4349,7 +4349,7 @@ class ApiService {
   }
 
   /// Fetch the Cruiseinride Driver Terms of Service document
-  /// (Royal Purple LLC / Florida). Returns `{document_id, version,
+  /// (Cruise in Ride LLC / Florida). Returns `{document_id, version,
   /// content_hash, content_markdown}`.
   static Future<Map<String, dynamic>> fetchDriverTermsOfService() async {
     final h = await _authHeaders();

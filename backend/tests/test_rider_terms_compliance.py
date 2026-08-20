@@ -124,11 +124,11 @@ def test_wait_fee_schedule_consistent_between_ui_and_backend():
     assert r"\$10.00" not in l10n
 
 
-# ── 4. Support email is support@cruiseapp.com everywhere ──────────────────
+# ── 4. Support email is support@cruiseinride.com everywhere ──────────────────
 
 
 def test_support_email_is_correct_repo_wide():
-    stale = "support@" + "cruiseinride.com"  # avoid matching this test file
+    stale = "support@" + "cruise" + "app.com"  # avoid matching this test file
     offenders = []
     for top in ("lib", "backend", "docs", "api", "n8n", "web"):
         for dirpath, dirnames, filenames in os.walk(os.path.join(REPO_ROOT, top)):

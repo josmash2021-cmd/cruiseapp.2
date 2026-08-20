@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'legal_document_screen.dart';
 
 /// Privacy Policy. Source of truth: docs/privacy_policy.md
-/// (Royal Purple LLC / Florida, Version 2.0) — keep both in sync.
+/// (Cruise in Ride LLC / Florida, Version 2.0) — keep both in sync.
 /// Rendered with the shared neumorphic legal-document widget.
 /// English-only legal content, matching the legal docs.
 class PrivacyPolicyScreen extends StatelessWidget {
@@ -12,7 +12,7 @@ class PrivacyPolicyScreen extends StatelessWidget {
     LegalSection(
       heading: 'Introduction',
       body: r'''
-This Privacy Policy (the "Policy") explains how **Royal Purple LLC**, a Florida limited liability company ("**Royal Purple**", "**we**", "**us**", or the "**Company**"), collects, uses, shares, and protects personal information in connection with the **Cruiseinride** platform, application, and brand that the Company owns and operates (the "Platform").
+This Privacy Policy (the "Policy") explains how **Cruise in Ride LLC**, a Florida limited liability company ("**Cruise in Ride**", "**we**", "**us**", or the "**Company**"), collects, uses, shares, and protects personal information in connection with the **Cruiseinride** platform, application, and brand that the Company owns and operates (the "Platform").
 
 The Company operates as a transportation network company under Florida TNC law (**Fla. Stat. § 627.748**). Prearranged rides offered through the Platform are provided only in the State of Florida. Personal information may be processed and stored in the United States by the Company and by the service providers identified in this Policy.
 
@@ -175,7 +175,7 @@ Subject to applicable law, you may:
 - control push, SMS, and email preferences in the app settings; and
 - control location and other device permissions in your device settings.
 
-To exercise these rights, contact **support@cruiseapp.com**. To protect your account, we may need to verify your identity (for example, through the contact information registered to your account) before fulfilling a request. We respond to requests within the time required by applicable law.''',
+To exercise these rights, contact **support@cruiseinride.com**. To protect your account, we may need to verify your identity (for example, through the contact information registered to your account) before fulfilling a request. We respond to requests within the time required by applicable law.''',
     ),
     LegalSection(
       heading: '14. Children',
@@ -190,7 +190,7 @@ We may update this Policy. Minor changes take effect when the updated version is
     LegalSection(
       heading: '16. Contact',
       body: r'''
-Privacy questions and requests: by email to **support@cruiseapp.com**.''',
+Privacy questions and requests: by email to **support@cruiseinride.com**.''',
     ),
   ];
 

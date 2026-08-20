@@ -10,7 +10,7 @@ import '../../l10n/app_localizations.dart';
 /// license number/state, and explicit consent before initiating the check.
 ///
 /// FCRA: the standalone "Background Check Disclosure and Authorization"
-/// document (Royal Purple LLC) must be accepted via its own dedicated
+/// document (Cruise in Ride LLC) must be accepted via its own dedicated
 /// checkbox, separate from every other consent (terms, privacy, ICA).
 class BackgroundCheckConsentScreen extends StatefulWidget {
   const BackgroundCheckConsentScreen({super.key});
@@ -473,7 +473,7 @@ class _BackgroundCheckConsentScreenState
                         child: Padding(
                           padding: const EdgeInsets.only(top: 10),
                           child: Text(
-                            'I have received, read, and agree to the Background Check Disclosure and Authorization. I authorize Royal Purple LLC to obtain consumer reports about me as described in that document.',
+                            'I have received, read, and agree to the Background Check Disclosure and Authorization. I authorize Cruise in Ride LLC to obtain consumer reports about me as described in that document.',
                             style: TextStyle(
                               color: Colors.white.withValues(alpha: 0.7),
                               fontSize: 13,

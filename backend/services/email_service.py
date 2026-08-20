@@ -31,7 +31,7 @@ BRAND_MUTED = "#8a7e4e"
 BRAND_BORDER = "rgba(232,197,71,.22)"
 
 LOGO_URL = "https://cdn.shopify.com/s/files/1/0805/8640/8191/files/Untitled_design_069defa2-9e36-4d98-831f-f776d4c6f7a5.png?v=1772961171"
-SUPPORT_EMAIL = "support@cruiseapp.com"
+SUPPORT_EMAIL = "support@cruiseinride.com"
 SUPPORT_PHONE = "+1 (205) 555-0100"  # placeholder — update if needed
 
 

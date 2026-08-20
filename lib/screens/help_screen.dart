@@ -629,7 +629,7 @@ class _HelpScreenState extends State<HelpScreen> {
 
   Future<void> _launchEmail(BuildContext context) async {
     final uri = Uri.parse(
-      'mailto:support@cruiseapp.com?subject=Help%20Request',
+      'mailto:support@cruiseinride.com?subject=Help%20Request',
     );
     if (await canLaunchUrl(uri)) await launchUrl(uri);
   }
@@ -806,7 +806,7 @@ class _HelpTopicDetailScreenState extends State<_HelpTopicDetailScreen> {
                         ),
                         onPressed: () async {
                           final uri = Uri.parse(
-                            'mailto:support@cruiseapp.com?subject=${Uri.encodeComponent(widget.topic.title)}',
+                            'mailto:support@cruiseinride.com?subject=${Uri.encodeComponent(widget.topic.title)}',
                           );
                           if (await canLaunchUrl(uri)) await launchUrl(uri);
                         },

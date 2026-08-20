@@ -7,13 +7,13 @@
 > completed and all flagged provisions verified by counsel before release.
 
 This Independent Contractor Agreement (the "**Agreement**") is entered into by
-and between **Royal Purple LLC**, a Florida limited liability company
-("**Royal Purple**" or the "**Company**"), and the individual who accepts
+and between **Cruise in Ride LLC**, a Florida limited liability company
+("**Cruise in Ride**" or the "**Company**"), and the individual who accepts
 this Agreement electronically through the Cruiseinride application (the
 "**Driver**" and, together with the Company, the "**Parties**").
 
 "**Cruiseinride**" means the transportation network company digital platform,
-mobile application, and brand owned and operated by Royal Purple LLC. This
+mobile application, and brand owned and operated by Cruise in Ride LLC. This
 Agreement is separate from, and supplemental to, the Cruiseinride Driver
 Terms of Service (the "**Terms of Service**").
 
@@ -43,7 +43,7 @@ Agreement.**
 local taxes on the Driver's earnings, including self-employment tax, and for
 any required estimated tax payments.
 
-1.5. **Digital network only.** Royal Purple LLC provides a digital network
+1.5. **Digital network only.** Cruise in Ride LLC provides a digital network
 and **does not provide transportation services** and does not employ any
 drivers, consistent with Fla. Stat. § 627.748. Transportation is provided
 solely by independent contractor drivers.
@@ -322,7 +322,7 @@ continues until terminated under this Section.
 
 14.2. **Termination by the Driver.** The Driver may terminate this Agreement
 at any time by discontinuing use of the platform and providing notice through
-the app or to **support@cruiseapp.com**.
+the app or to **support@cruiseinride.com**.
 
 14.3. **Termination by the Company.** The Company may terminate this
 Agreement by notice to the Driver. Termination of this Agreement ends the
@@ -347,7 +347,7 @@ safety, the Company will provide notice of the reason.
 
 14.6. **Internal review.** The Driver may request an internal review of a
 suspension, deactivation, or rating-based action by contacting
-**support@cruiseapp.com**. The Company will review the request and respond
+**support@cruiseinride.com**. The Company will review the request and respond
 within a reasonable period. **This review expressly includes actions based on
 the rider-rating system, and the Company will conduct a review whenever the
 Driver makes a plausible claim that any such action resulted from
@@ -418,7 +418,7 @@ in the small-claims court of **Miami-Dade County, Florida**, so long as the
 claim qualifies and remains in that court.
 
 18.6. **30-day opt-out.** The Driver may opt out of this arbitration
-agreement by emailing **support@cruiseapp.com** within **30 days** of first
+agreement by emailing **support@cruiseinride.com** within **30 days** of first
 accepting this Agreement, including the Driver's name, account email, and a
 clear statement that the Driver opts out of arbitration. If the Driver opts
 out, disputes shall be litigated in the state or federal courts located in
@@ -447,7 +447,7 @@ classification law of any other state.
 ## 20. Notices
 
 20.1. Notices to the Company shall be sent by email to
-**support@cruiseapp.com**. Notices to the Driver shall be sent to the email
+**support@cruiseinride.com**. Notices to the Driver shall be sent to the email
 address or phone number associated with the Driver's account, or through the
 app. Notice is effective upon delivery (email/app).
 
@@ -488,7 +488,7 @@ device information, and the Driver's account ID.
 again for acceptance under a new version number before taking effect as to
 the Driver. The Driver may access the current version and the Driver's
 acceptance history through the app or upon request to
-**support@cruiseapp.com**.
+**support@cruiseinride.com**.
 
 ## 23. Entire Agreement; Amendments; Severability; Waiver; Assignment; Force Majeure
 
@@ -524,7 +524,7 @@ survive.
 
 ---
 
-**ROYAL PURPLE LLC**  
+**CRUISE IN RIDE LLC**  
 By: ___________________________  Name: [AUTHORIZED SIGNATORY]  Title: [TITLE]  Date: [DATE]
 
 **DRIVER**  

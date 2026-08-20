@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 /// Guard tests: the in-app legal texts must reflect the Florida rider terms
-/// (Royal Purple LLC / Fla. Stat. § 627.748), not the retired Alabama drafts.
+/// (Cruise in Ride LLC / Fla. Stat. § 627.748), not the retired Alabama drafts.
 void main() {
   const legalScreens = [
     'lib/screens/terms_of_service_screen.dart',
@@ -36,8 +36,8 @@ void main() {
     final content =
         File('lib/screens/terms_of_service_screen.dart').readAsStringSync();
 
-    test('references Royal Purple LLC', () {
-      expect(content.contains('Royal Purple LLC'), isTrue);
+    test('references Cruise in Ride LLC', () {
+      expect(content.contains('Cruise in Ride LLC'), isTrue);
     });
 
     test('references Florida', () {

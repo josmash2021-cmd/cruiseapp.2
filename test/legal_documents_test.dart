@@ -44,7 +44,7 @@ void main() {
 
   for (final entry in screens.entries) {
     group(entry.key, () {
-      testWidgets('renders Florida / Royal Purple LLC content, no Alabama-era text',
+      testWidgets('renders Florida / Cruise in Ride LLC content, no Alabama-era text',
           (WidgetTester tester) async {
         await tester.pumpWidget(MaterialApp(home: entry.value));
         await tester.pumpAndSettle();
@@ -55,8 +55,8 @@ void main() {
           expect(content.contains(term), isFalse,
               reason: '${entry.key} still renders banned term "$term"');
         }
-        expect(content.contains('Royal Purple LLC'), isTrue,
-            reason: '${entry.key} must reference Royal Purple LLC');
+        expect(content.contains('Cruise in Ride LLC'), isTrue,
+            reason: '${entry.key} must reference Cruise in Ride LLC');
         expect(content.contains('Florida'), isTrue,
             reason: '${entry.key} must reference Florida');
       });

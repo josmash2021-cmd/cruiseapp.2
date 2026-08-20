@@ -5,7 +5,7 @@ import '../../services/api_service.dart';
 import '../../services/analytics_service.dart';
 import '../../l10n/app_localizations.dart';
 
-/// Cruiseinride Driver Terms of Service (Royal Purple LLC / Florida) with
+/// Cruiseinride Driver Terms of Service (Cruise in Ride LLC / Florida) with
 /// its own dedicated acceptance — separate from the FCRA background check
 /// disclosure and the Independent Contractor Agreement.
 ///
@@ -251,7 +251,7 @@ class _DriverTermsScreenState extends State<DriverTermsScreen> {
                     const SizedBox(width: 12),
                     Expanded(
                       child: Text(
-                        'Royal Purple LLC · Florida. These terms govern your use of the Cruiseinride platform as a driver.',
+                        'Cruise in Ride LLC · Florida. These terms govern your use of the Cruiseinride platform as a driver.',
                         style: TextStyle(
                           color: Colors.white.withValues(alpha: 0.8),
                           fontSize: 13,

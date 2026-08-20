@@ -2,8 +2,8 @@
 
 **Version 2.0 — Production Candidate — Effective Date: August 8, 2026**
 
-This Privacy Policy (the "**Policy**") explains how **Royal Purple LLC**, a
-Florida limited liability company ("**Royal Purple**", "**we**", "**us**",
+This Privacy Policy (the "**Policy**") explains how **Cruise in Ride LLC**, a
+Florida limited liability company ("**Cruise in Ride**", "**we**", "**us**",
 or the "**Company**"), collects, uses, shares, and protects personal
 information in connection with the **Cruiseinride** platform, application,
 and brand that the Company owns and operates (the "**Platform**").
@@ -280,7 +280,7 @@ Subject to applicable law, you may:
 - control push, SMS, and email preferences in the app settings; and
 - control location and other device permissions in your device settings.
 
-To exercise these rights, contact **support@cruiseapp.com**. To protect your
+To exercise these rights, contact **support@cruiseinride.com**. To protect your
 account, we may need to verify your identity (for example, through the
 contact information registered to your account) before fulfilling a
 request. We respond to requests within the time required by applicable law.
@@ -308,4 +308,4 @@ law.
 
 ## 16. Contact
 
-Privacy questions and requests: by email to **support@cruiseapp.com**.
+Privacy questions and requests: by email to **support@cruiseinride.com**.

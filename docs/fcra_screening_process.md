@@ -11,7 +11,7 @@
 
 ## 1. Scope
 
-This process applies to consumer reports obtained by **Royal Purple LLC**
+This process applies to consumer reports obtained by **Cruise in Ride LLC**
 (the "**Company**") in connection with an application to drive, and continued
 engagement as an independent contractor Driver, on the **Cruiseinride**
 platform.
@@ -92,7 +92,7 @@ correct or delete inaccurate, incomplete, or unverifiable information.
 
 Questions about the screening process, requests for a copy of your report,
 or questions about a notice you received may be sent to
-**support@cruiseapp.com**.
+**support@cruiseinride.com**.
 
 ## 7. Refusing or Withdrawing Authorization
 
@@ -111,7 +111,7 @@ Accordingly:
   are again in place.
 
 This is a consequence of a legal eligibility requirement, not a penalty. You
-may contact **support@cruiseapp.com** with questions before deciding.
+may contact **support@cruiseinride.com** with questions before deciding.
 
 ---
 
@@ -145,7 +145,7 @@ may contact **support@cruiseapp.com** with questions before deciding.
    `summary_rights_deliveries` table with channel, document version, and UTC
    timestamp.
 4. **Contact email — RESOLVED.** The background-check contact is
-   **support@cruiseapp.com**, the Company's monitored support mailbox
+   **support@cruiseinride.com**, the Company's monitored support mailbox
    (`backend/services/email_service.py`).
 5. **Separate acceptance flow — IMPLEMENTED.** The in-app consent screen
    (`lib/screens/driver/background_check_consent_screen.dart`) uses a
@@ -163,7 +163,7 @@ may contact **support@cruiseapp.com** with questions before deciding.
    legal documents (Rider Terms of Service, Driver Terms of Service,
    Independent Contractor Agreement, Privacy Policy, Insurance Disclosure,
    this document, and the standalone Disclosure and Authorization) identify
-   **Royal Purple LLC (Florida)** under Fla. Stat. § 627.748, and the in-app
+   **Cruise in Ride LLC (Florida)** under Fla. Stat. § 627.748, and the in-app
    legal screens (Terms of Service, Privacy Policy, Driver Agreement) render
    those same Florida documents. The legacy Alabama document has been
    archived at `docs/archive/terms_of_service_alabama_legacy.md` and is no

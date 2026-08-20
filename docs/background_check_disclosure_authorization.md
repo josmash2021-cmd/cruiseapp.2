@@ -14,7 +14,7 @@
 
 ## 1. Disclosure
 
-**Royal Purple LLC**, a Florida limited liability company (the
+**Cruise in Ride LLC**, a Florida limited liability company (the
 "**Company**"), may obtain consumer reports about you in connection with
 your application to drive, and your continued engagement as an independent
 contractor Driver, on the **Cruiseinride** platform operated by the

@@ -931,10 +931,10 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
               _helpRow(
                 Icons.email_rounded,
                 S.of(context).emailUs,
-                'support@cruiseapp.com',
+                'support@cruiseinride.com',
                 () {
                   Navigator.pop(ctx);
-                  launchUrl(Uri.parse('mailto:support@cruiseapp.com'));
+                  launchUrl(Uri.parse('mailto:support@cruiseinride.com'));
                 },
               ),
               _helpRow(

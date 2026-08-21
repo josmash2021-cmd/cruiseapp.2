@@ -30,7 +30,7 @@ _NAME_TRACKING = 0.10   # em
 _PHONE_POS = (157, 282)  # px — left 14.9%, top 47%
 _PHONE_SIZE = 30
 _PHONE_TRACKING = 0.06  # em
-_MAX_TEXT_PX = 540      # name area ends right before the QR frame
+_MAX_TEXT_PX = 470      # name stops well before the QR frame (never touches it)
 
 
 @lru_cache(maxsize=1)

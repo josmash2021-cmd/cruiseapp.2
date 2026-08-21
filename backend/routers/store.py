@@ -52,8 +52,8 @@ router = APIRouter()
 # BACK face (name + phone); the front is the fixed Cruise design.
 PRODUCTS = {
     "business_card": {
-        "name_es": "Tarjetas de presentación personalizadas (paquete de 100)",
-        "name_en": "Personalized business cards (pack of 100)",
+        "name_es": "Tarjetas de presentación personalizadas (paquete de 50)",
+        "name_en": "Personalized business cards (pack of 50)",
         "price_cents": 1000,
         "customizable": True,
     },

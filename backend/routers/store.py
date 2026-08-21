@@ -54,7 +54,7 @@ PRODUCTS = {
     "business_card": {
         "name_es": "Tarjetas de presentación personalizadas (paquete de 100)",
         "name_en": "Personalized business cards (pack of 100)",
-        "price_cents": 2500,
+        "price_cents": 1000,
         "customizable": True,
     },
     "car_sign": {

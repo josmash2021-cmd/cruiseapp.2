@@ -54,13 +54,13 @@ async def test_checkout_prices_server_side(client, test_driver, db):
     from models.database import StoreOrder
     from sqlalchemy import select
     order = (await db.execute(select(StoreOrder))).scalar_one()
-    assert order.total_cents == 2500 * 2  # 2 packs at the SERVER price
+    assert order.total_cents == 1000 * 2  # 2 packs at the SERVER price
     assert order.status == "pending"
     assert order.custom_name == "Jhon Martinez"
 
     # The Stripe line items carry the server price too
     call = mock_stripe.checkout.Session.create.call_args.kwargs
-    assert call["line_items"][0]["price_data"]["unit_amount"] == 2500
+    assert call["line_items"][0]["price_data"]["unit_amount"] == 1000
 
 
 async def test_checkout_card_requires_personalization(client, test_driver):

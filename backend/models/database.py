@@ -734,6 +734,35 @@ class DriverIncentive(Base):
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 
+class StoreOrder(Base):
+    """Driver merch order from the website store (cruiseinride.com/store).
+
+    Only registered drivers may order. Payment is a Stripe Checkout Session
+    paid up front (merch, not a ride — no hold/capture split, no driver
+    earnings). Status: pending (session created) → paid (confirmed after
+    Stripe redirect) | cancelled.
+    """
+    __tablename__ = "store_orders"
+    id = Column(Integer, primary_key=True, index=True)
+    driver_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    # [{"product_id": "business_card", "qty": 2, "unit_cents": 2500}, ...]
+    items_json = Column(Text, nullable=False)
+    # Card personalization (back face): driver's own name + phone.
+    custom_name = Column(String(120), nullable=True)
+    custom_phone = Column(String(40), nullable=True)
+    ship_name = Column(String(160), nullable=False)
+    ship_address1 = Column(String(200), nullable=False)
+    ship_address2 = Column(String(200), nullable=True)
+    ship_city = Column(String(100), nullable=False)
+    ship_state = Column(String(50), nullable=False)
+    ship_zip = Column(String(20), nullable=False)
+    total_cents = Column(Integer, nullable=False)
+    status = Column(String(20), default="pending", index=True)
+    stripe_session_id = Column(String(120), nullable=True, unique=True)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    paid_at = Column(DateTime(timezone=True), nullable=True)
+
+
 class SurgeZone(Base):
     __tablename__ = "surge_zones"
     id = Column(Integer, primary_key=True, index=True)

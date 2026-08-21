@@ -1425,8 +1425,9 @@ async def update_me(request: Request, user: User = Depends(_get_current_user), d
 @router.patch("/auth/web/profile")
 async def web_update_profile(request: Request, db: AsyncSession = Depends(get_db)):
     """Web widget profile edit. JWT-authenticated (no API key) so it can be
-    called directly from the Shopify widget. Unlike /auth/me this allows
-    first_name / last_name edits."""
+    called directly from the Shopify widget. first_name / last_name are NOT
+    editable here (or anywhere on the web): the name is tied to the account
+    verification, so those keys are silently ignored."""
     try:
         from routers.payments import _verify_web_origin as _vwo
         _vwo(request)
@@ -1459,7 +1460,7 @@ async def web_update_profile(request: Request, db: AsyncSession = Depends(get_db
     if not isinstance(body, dict):
         raise HTTPException(400, "Body must be an object")
 
-    _ALLOWED = ("first_name", "last_name", "phone", "email", "photo_url")
+    _ALLOWED = ("phone", "email", "photo_url")
     cleaned: dict = {}
     for key in _ALLOWED:
         if key not in body:

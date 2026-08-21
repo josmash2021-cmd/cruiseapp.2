@@ -6,17 +6,21 @@ prices HERE (never trusts client amounts), builds a Stripe Checkout Session
 per order, and confirms payment after the redirect back. Merch is paid up
 front — no hold, no capture split, nothing touches driver earnings.
 """
+import hashlib
+import hmac
 import json
 import logging
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from config import _HAS_STRIPE, _stripe_mod, STRIPE_SECRET
+from config import _HAS_STRIPE, _stripe_mod, STRIPE_SECRET, PUBLIC_URL
 from models.database import StoreOrder, User, get_db
+from services.store_card_image import render_card_png
 from utils.security import JWT_SECRET, JWT_ALGORITHM
 from fastapi import Request
 import jwt as _jwt
@@ -101,6 +105,31 @@ class CheckoutIn(BaseModel):
 
 class ConfirmIn(BaseModel):
     session_id: str = Field(min_length=5, max_length=120)
+
+
+# ── Signed card image ────────────────────────────────────────────────────
+# The owner notification email links the personalized card image. The link
+# must work from a mail client (no JWT), so access is an HMAC signature of
+# the order id — unguessable, never expires, and only ever exposes the
+# card's back face (name + phone the driver typed).
+def _card_sig(order_id: int) -> str:
+    return hmac.new(
+        JWT_SECRET.encode(), f"store-card:{order_id}".encode(), hashlib.sha256
+    ).hexdigest()[:32]
+
+
+@router.get("/store/card-image/{order_id}.png")
+async def store_card_image(order_id: int, sig: str = "",
+                           db: AsyncSession = Depends(get_db)):
+    if not hmac.compare_digest(sig, _card_sig(order_id)):
+        raise HTTPException(403, "Invalid signature")
+    r = await db.execute(select(StoreOrder).where(StoreOrder.id == order_id))
+    order = r.scalar_one_or_none()
+    if not order:
+        raise HTTPException(404, "Order not found")
+    png = render_card_png(order.custom_name or "", order.custom_phone or "")
+    return Response(content=png, media_type="image/png",
+                    headers={"Cache-Control": "public, max-age=86400"})
 
 
 @router.get("/store/products")
@@ -234,25 +263,63 @@ async def store_confirm(
     order.paid_at = datetime.now(timezone.utc)
     await db.commit()
 
-    # Notify the owner (production/fulfillment) — best effort.
+    # Notify the owner (production/fulfillment) + confirm to the driver.
+    # Both best effort: the order is already paid and must not 500 on a
+    # mail provider hiccup.
+    items = json.loads(order.items_json)
+    items_txt = ", ".join(
+        f"{PRODUCTS.get(i['product_id'], {}).get('name_en', i['product_id'])} x{i['qty']}"
+        for i in items)
+    ship_txt = (f"{order.ship_name}, {order.ship_address1} "
+                f"{order.ship_address2 or ''}, {order.ship_city}, "
+                f"{order.ship_state} {order.ship_zip}")
     try:
         from services.email_sms_service import _send_email
-        items = json.loads(order.items_json)
-        items_txt = ", ".join(
-            f"{PRODUCTS.get(i['product_id'], {}).get('name_en', i['product_id'])} x{i['qty']}"
-            for i in items)
+        card_img = (
+            f"{PUBLIC_URL}/store/card-image/{order.id}.png?sig={_card_sig(order.id)}"
+        )
         _send_email(
             OWNER_NOTIFY_EMAIL,
             f"New store order #{order.id} — ${order.total_cents / 100:.2f}",
             f"<h3>Order #{order.id} (PAID)</h3>"
-            f"<p><b>Driver:</b> {user.first_name} {user.last_name} (id {user.id}, {user.email})</p>"
+            f"<p><b>Driver:</b> {user.first_name} {user.last_name} "
+            f"(id {user.id}, {user.email}, {user.phone or '-'})</p>"
             f"<p><b>Items:</b> {items_txt}</p>"
-            f"<p><b>Card personalization:</b> {order.custom_name or '-'} · {order.custom_phone or '-'}</p>"
-            f"<p><b>Ship to:</b> {order.ship_name}, {order.ship_address1} "
-            f"{order.ship_address2 or ''}, {order.ship_city}, {order.ship_state} {order.ship_zip}</p>",
+            f"<p><b>Card personalization:</b> {order.custom_name or '-'} · "
+            f"{order.custom_phone or '-'}</p>"
+            f"<p><b>Ship to:</b> {ship_txt}</p>"
+            f"<p><b>Total paid:</b> ${order.total_cents / 100:.2f} "
+            f"(Stripe session {order.stripe_session_id})</p>"
+            f"<p><b>Card back (print):</b></p>"
+            f"<p><img src=\"{card_img}\" alt=\"business card\" "
+            f"style=\"max-width:520px;border-radius:10px\"></p>",
+            skip_emailjs=True,
         )
     except Exception as e:
         logging.warning("[Store] owner notify failed for order %s: %s", order.id, e)
+
+    try:
+        from services.email_sms_service import _send_email
+        _send_email(
+            user.email,
+            f"¡Felicidades por tu nuevo pedido! — Orden #{order.id}",
+            f"<div style=\"font-family:Arial,sans-serif\">"
+            f"<h2>¡Felicidades por tu nuevo pedido, {user.first_name}!</h2>"
+            f"<p>Tu pago se procesó correctamente y tu pedido ya está en "
+            f"producción.</p>"
+            f"<p><b>Orden:</b> #{order.id}<br>"
+            f"<b>Productos:</b> {items_txt}<br>"
+            f"<b>Personalización:</b> {order.custom_name or '-'} · "
+            f"{order.custom_phone or '-'}<br>"
+            f"<b>Envío a:</b> {ship_txt}<br>"
+            f"<b>Total:</b> ${order.total_cents / 100:.2f}</p>"
+            f"<p><b>Tiempo estimado de entrega: 3 a 5 días hábiles.</b></p>"
+            f"<p>Gracias por rodar con Cruise.<br>— Equipo Cruise in Ride</p>"
+            f"</div>",
+            skip_emailjs=True,
+        )
+    except Exception as e:
+        logging.warning("[Store] driver confirm email failed for order %s: %s", order.id, e)
 
     logging.info("[Store] order %s PAID (driver %s)", order.id, user.id)
     return {"status": "paid", "order_id": order.id}

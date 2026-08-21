@@ -3359,17 +3359,18 @@ async def web_check_exists(request: Request, db: AsyncSession = Depends(get_db))
     role = body.get("role", "rider")
     if not identifier:
         raise HTTPException(400, "identifier required")
+    # Sin filtro de rol: la web es multi-rol (la tienda es de drivers y el
+    # resto del sitio de riders) y quien entra por /auth a secas no declara
+    # rol — con el filtro, un driver existente caía al registro como si la
+    # cuenta no existiera. El rol pedido solo ordena la preferencia.
+    base = select(User).where(User.status.notin_(["deleted", "pending_deletion"]))
     if "@" in identifier:
-        r = await db.execute(
-            select(User).where(func.lower(User.email) == identifier, User.role == role)
-            .where(User.status.notin_(["deleted", "pending_deletion"]))
-        )
+        base = base.where(func.lower(User.email) == identifier)
     else:
-        r = await db.execute(
-            select(User).where(User.phone == identifier, User.role == role)
-            .where(User.status.notin_(["deleted", "pending_deletion"]))
-        )
-    user = r.scalar_one_or_none()
+        base = base.where(User.phone == identifier)
+    r = await db.execute(base)
+    candidates = r.scalars().all()
+    user = next((u for u in candidates if u.role == role), candidates[0] if candidates else None)
     # first_name solo cuando la cuenta existe: la web lo usa para el saludo
     # "Bienvenido de nuevo, <nombre>" en vez de derivarlo del correo.
     return {"exists": user is not None, "first_name": (user.first_name or "") if user else ""}
@@ -3997,16 +3998,24 @@ async def web_login(request: Request, db: AsyncSession = Depends(get_db)):
     if _check_login_throttle(client_ip):
         raise HTTPException(429, "Too many attempts. Try again in a few minutes.")
 
-    # Find user by email or phone
+    # Find user by email or phone — sin filtro de rol (mismo motivo que
+    # /auth/web/check-exists): la web es multi-rol y el rol pedido solo fija
+    # la preferencia cuando el mismo correo/teléfono tiene cuenta en ambos.
     if "@" in identifier:
         r = await db.execute(
-            select(User).where(func.lower(User.email) == identifier.lower(), User.role == role)
+            select(User).where(func.lower(User.email) == identifier.lower())
         )
     else:
-        r = await db.execute(select(User).where(User.phone == identifier, User.role == role))
-    user = r.scalar_one_or_none()
+        r = await db.execute(select(User).where(User.phone == identifier))
+    candidates = r.scalars().all()
+    candidates.sort(key=lambda u: 0 if u.role == role else 1)
+    user = None
+    for u in candidates:
+        if pwd.verify(password, u.password_hash):
+            user = u
+            break
 
-    if not user or not pwd.verify(password, user.password_hash):
+    if not user:
         _record_login_failure(client_ip)
         raise HTTPException(401, "Invalid credentials")
 
@@ -4124,11 +4133,15 @@ async def web_social_auth(request: Request, db: AsyncSession = Depends(get_db)):
     if not email:
         raise HTTPException(400, "Could not extract email from token")
 
-    # Find or create user
+    # Find or create user. Se busca en TODOS los roles (preferencia al rol
+    # pedido): antes, un driver entrando con Google desde /auth a secas no
+    # aparecía por el filtro de rol y se le creaba una cuenta rider duplicada
+    # con el mismo correo.
     r = await db.execute(
-        select(User).where(func.lower(User.email) == email, User.role == role)
+        select(User).where(func.lower(User.email) == email)
     )
-    user = r.scalar_one_or_none()
+    candidates = r.scalars().all()
+    user = next((u for u in candidates if u.role == role), candidates[0] if candidates else None)
 
     if user:
         if user.status in ("deleted", "pending_deletion"):

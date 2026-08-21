@@ -30,7 +30,7 @@ _NAME_TRACKING = 0.10   # em
 _PHONE_POS = (157, 282)  # px — left 14.9%, top 47%
 _PHONE_SIZE = 30
 _PHONE_TRACKING = 0.06  # em
-_MAX_TEXT_PX = 480      # clip long names like the CSS max-width does
+_MAX_TEXT_PX = 540      # name area ends right before the QR frame
 
 
 @lru_cache(maxsize=1)
@@ -54,14 +54,36 @@ def _draw_tracked(draw: ImageDraw.ImageDraw, xy, text: str,
             break
 
 
+def _tracked_width(draw: ImageDraw.ImageDraw, text: str,
+                   font: ImageFont.FreeTypeFont, tracking_em: float) -> float:
+    if not text:
+        return 0.0
+    glyphs = sum(draw.textlength(ch, font=font) for ch in text)
+    return glyphs + font.size * tracking_em * (len(text) - 1)
+
+
+def _fit_font(draw: ImageDraw.ImageDraw, text: str, start: int, minimum: int,
+              tracking_em: float, max_px: float) -> ImageFont.FreeTypeFont:
+    """Largest font (<= start) whose tracked width fits max_px — long names
+    shrink instead of clipping, like the site's fitText()."""
+    size = start
+    while size > minimum and _tracked_width(draw, text, _font(size), tracking_em) > max_px:
+        size -= 2
+    return _font(size)
+
+
 def render_card_png(name: str, phone: str) -> bytes:
     """Back face of the card with name/phone drawn. Returns PNG bytes."""
     im = _template().copy()
     draw = ImageDraw.Draw(im)
-    _draw_tracked(draw, _NAME_POS, (name or "").strip().upper(),
-                  _font(_NAME_SIZE), _NAME_TRACKING)
-    _draw_tracked(draw, _PHONE_POS, (phone or "").strip(),
-                  _font(_PHONE_SIZE), _PHONE_TRACKING)
+    name_txt = (name or "").strip().upper()
+    phone_txt = (phone or "").strip()
+    _draw_tracked(draw, _NAME_POS, name_txt,
+                  _fit_font(draw, name_txt, _NAME_SIZE, 20, _NAME_TRACKING, _MAX_TEXT_PX),
+                  _NAME_TRACKING)
+    _draw_tracked(draw, _PHONE_POS, phone_txt,
+                  _fit_font(draw, phone_txt, _PHONE_SIZE, 18, _PHONE_TRACKING, 400),
+                  _PHONE_TRACKING)
     buf = io.BytesIO()
     im.save(buf, format="PNG", optimize=True)
     return buf.getvalue()

@@ -892,6 +892,18 @@ class ZeroToleranceAudit(Base):
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 
+class LoginActivity(Base):
+    """One row per successful web login — powers Security > Login activity."""
+    __tablename__ = "login_activity"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    user_agent = Column(Text, nullable=True)
+    device_type = Column(String(20), nullable=False)  # iphone/android/tablet/computer
+    device_label = Column(String(120), nullable=False)  # e.g. "iPhone", "Windows PC"
+    ip = Column(String(45), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), index=True)
+
+
 # ═══════════════════════════════════════════════════════
 #  Migration helpers
 # ═══════════════════════════════════════════════════════
@@ -1030,6 +1042,17 @@ async def migrate_add_columns(conn):
             from_status VARCHAR(30),
             to_status VARCHAR(30) NOT NULL,
             notes TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    """))
+    await conn.execute(sa.text("""
+        CREATE TABLE IF NOT EXISTS login_activity (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            user_agent TEXT,
+            device_type VARCHAR(20),
+            device_label VARCHAR(120),
+            ip VARCHAR(45),
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )
     """))
@@ -1239,6 +1262,28 @@ async def migrate_postgres(conn):
                 await conn.execute(text(_ddl))
         except Exception as _e:
             logging.warning("Postgres zero-tolerance DDL skip: %s", _e)
+
+    # ── Login activity (web Security > Login activity) ──
+    for _ddl in (
+        """
+        CREATE TABLE IF NOT EXISTS login_activity (
+            id SERIAL PRIMARY KEY,
+            user_id INTEGER NOT NULL REFERENCES users(id),
+            user_agent TEXT,
+            device_type VARCHAR(20),
+            device_label VARCHAR(120),
+            ip VARCHAR(45),
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS idx_login_activity_user ON login_activity (user_id)",
+        "CREATE INDEX IF NOT EXISTS idx_login_activity_created ON login_activity (created_at)",
+    ):
+        try:
+            async with conn.begin_nested():
+                await conn.execute(text(_ddl))
+        except Exception as _e:
+            logging.warning("Postgres login_activity DDL skip: %s", _e)
 
     # ── Performance indexes for hot-path queries ──
     _indexes = [

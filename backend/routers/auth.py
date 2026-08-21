@@ -10,7 +10,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from models.database import (
     get_db, SessionLocal, User, ConsentLog, Vehicle, Document, Trip, Rating,
-    ChatMessage, DispatchOffer, PasswordResetToken,
+    ChatMessage, DispatchOffer, PasswordResetToken, LoginActivity,
 )
 from models.schemas import (
     RegisterIn, CheckExistsIn, LoginIn, CompleteLoginIn, SocialAuthIn,
@@ -45,6 +45,54 @@ from utils.ssn_encryption import (
 )
 
 router = APIRouter()
+
+
+def _classify_device(ua: str) -> tuple:
+    """Classify a user-agent string into (device_type, device_label)."""
+    ua_l = (ua or "").lower()
+    if "iphone" in ua_l:
+        return "iphone", "iPhone"
+    if "ipad" in ua_l:
+        return "tablet", "iPad"
+    if "android" in ua_l:
+        # Android tablets omit "Mobile" from the UA string
+        if "mobile" in ua_l:
+            return "android", "Android phone"
+        return "tablet", "Android tablet"
+    if "macintosh" in ua_l or "mac os x" in ua_l:
+        return "computer", "Mac"
+    if "windows" in ua_l:
+        return "computer", "Windows PC"
+    if "linux" in ua_l:
+        return "computer", "Linux PC"
+    return "computer", "Device"
+
+
+async def _record_login_activity(db: AsyncSession, request: Request, user_id: int):
+    """Best-effort insert of a LoginActivity row after a successful login.
+
+    Never breaks the login flow: any failure is logged and swallowed.
+    """
+    try:
+        ua = request.headers.get("user-agent", "") if request else ""
+        if not ua.strip():
+            return
+        device_type, device_label = _classify_device(ua)
+        ip = request.client.host if request and request.client else None
+        db.add(LoginActivity(
+            user_id=user_id,
+            user_agent=ua,
+            device_type=device_type,
+            device_label=device_label,
+            ip=ip,
+        ))
+        await db.commit()
+    except Exception as e:
+        logging.warning("[login-activity] record failed for user %s: %s", user_id, e)
+        try:
+            await db.rollback()
+        except Exception:
+            pass
 
 
 async def _create_driver_aware_token(
@@ -392,6 +440,8 @@ async def login(body: LoginIn, request: Request, db: AsyncSession = Depends(get_
 
     # Successful login ï¿½ clear failures
     _clear_login_failures(client_ip)
+
+    await _record_login_activity(db, request, user.id)
 
     # Apple App Store review bypass: skip OTP, return tokens directly.
     # These accounts must log in with email+password ONLY — no OTP screen,
@@ -761,7 +811,7 @@ async def verify_email(
 
 
 @router.post("/auth/complete-login", dependencies=[Depends(_verify_api_key)])
-async def complete_login(body: CompleteLoginIn, db: AsyncSession = Depends(get_db)):
+async def complete_login(body: CompleteLoginIn, request: Request, db: AsyncSession = Depends(get_db)):
     try:
         payload = jwt.decode(body.login_token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
         if payload.get("type") != "login":
@@ -818,6 +868,8 @@ async def complete_login(body: CompleteLoginIn, db: AsyncSession = Depends(get_d
     except Exception as e:
         logging.warning("guest trip link on complete_login failed: %s", e)
 
+    await _record_login_activity(db, request, _user_id)
+
     token = await _create_driver_aware_token(
         _user_id, _user_role, _user_status, user, db
     )
@@ -826,7 +878,7 @@ async def complete_login(body: CompleteLoginIn, db: AsyncSession = Depends(get_d
 
 # -- Social Auth (Google / Apple) -------------------------
 @router.post("/auth/social", dependencies=[Depends(_verify_api_key)])
-async def social_auth(body: SocialAuthIn, db: AsyncSession = Depends(get_db)):
+async def social_auth(body: SocialAuthIn, request: Request, db: AsyncSession = Depends(get_db)):
     """Authenticate via Google or Apple OAuth ID token.
 
     * Verifies the ID token with the provider.
@@ -956,6 +1008,8 @@ async def social_auth(body: SocialAuthIn, db: AsyncSession = Depends(get_db)):
         await link_guest_trips_to_user(db, user)
     except Exception as e:
         logging.warning("guest trip link on social_auth failed: %s", e)
+
+    await _record_login_activity(db, request, user.id)
 
     token = await _create_driver_aware_token_from_user(user, db)
     refresh = _create_refresh_token(user.id)
@@ -1554,6 +1608,42 @@ async def web_get_me(request: Request, db: AsyncSession = Depends(get_db)):
         data["average_rating"] = None
         data["ratings_count"] = 0
     return data
+
+
+@router.get("/auth/web/login-activity")
+async def web_get_login_activity(request: Request, db: AsyncSession = Depends(get_db)):
+    """Web-safe login activity — JWT only, no HMAC/API key (same pattern as web_get_me).
+
+    Returns the caller's logins from the last 30 days, newest first, max 50.
+    """
+    auth = request.headers.get("authorization", "")
+    if not auth.startswith("Bearer "):
+        raise HTTPException(401, "Unauthorized")
+    token = auth.split(" ", 1)[1]
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        user_id = int(payload.get("sub", 0))
+    except jwt.InvalidTokenError:
+        raise HTTPException(401, "Invalid or expired token")
+    cutoff = datetime.now(timezone.utc) - timedelta(days=30)
+    result = await db.execute(
+        select(LoginActivity)
+        .where(LoginActivity.user_id == user_id, LoginActivity.created_at >= cutoff)
+        .order_by(LoginActivity.created_at.desc())
+        .limit(50)
+    )
+    rows = result.scalars().all()
+    return {
+        "items": [
+            {
+                "device_type": r.device_type,
+                "device_label": r.device_label,
+                "ip": r.ip,
+                "logged_in_at": r.created_at.isoformat() if r.created_at else None,
+            }
+            for r in rows
+        ]
+    }
 
 
 @router.get("/auth/web/trips")

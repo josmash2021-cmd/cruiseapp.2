@@ -17,7 +17,32 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import _HAS_STRIPE, _stripe_mod, STRIPE_SECRET
 from models.database import StoreOrder, User, get_db
-from utils.security import _get_current_user, _verify_api_key
+from utils.security import JWT_SECRET, JWT_ALGORITHM
+from fastapi import Request
+import jwt as _jwt
+
+# ── Web-safe auth ────────────────────────────────────────────────────────
+# The store is consumed by cruiseinride.com, which cannot produce the app
+# HMAC signature headers — same reason /auth/web/me exists. The driver JWT
+# alone authenticates (same trust level as every /auth/web/* endpoint).
+async def _get_store_user(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> User:
+    auth = request.headers.get("authorization", "")
+    if not auth.startswith("Bearer "):
+        raise HTTPException(401, "Not authenticated")
+    try:
+        payload = _jwt.decode(auth.split(" ", 1)[1], JWT_SECRET,
+                              algorithms=[JWT_ALGORITHM])
+        user_id = int(payload.get("sub", 0))
+    except (_jwt.InvalidTokenError, ValueError):
+        raise HTTPException(401, "Invalid or expired token")
+    r = await db.execute(select(User).where(User.id == user_id))
+    user = r.scalar_one_or_none()
+    if not user:
+        raise HTTPException(401, "Invalid or expired token")
+    return user
 
 router = APIRouter()
 
@@ -78,8 +103,8 @@ class ConfirmIn(BaseModel):
     session_id: str = Field(min_length=5, max_length=120)
 
 
-@router.get("/store/products", dependencies=[Depends(_verify_api_key)])
-async def list_products(user: User = Depends(_get_current_user)):
+@router.get("/store/products")
+async def list_products(user: User = Depends(_get_store_user)):
     """Catalog with server-side prices. Drivers only."""
     _require_driver(user)
     return {
@@ -92,10 +117,10 @@ async def list_products(user: User = Depends(_get_current_user)):
     }
 
 
-@router.post("/store/checkout", dependencies=[Depends(_verify_api_key)])
+@router.post("/store/checkout")
 async def store_checkout(
     body: CheckoutIn,
-    user: User = Depends(_get_current_user),
+    user: User = Depends(_get_store_user),
     db: AsyncSession = Depends(get_db),
 ):
     """Create the order (pending) + a Stripe Checkout Session for it."""
@@ -172,10 +197,10 @@ async def store_checkout(
     return {"url": session.url, "order_id": order.id}
 
 
-@router.post("/store/confirm", dependencies=[Depends(_verify_api_key)])
+@router.post("/store/confirm")
 async def store_confirm(
     body: ConfirmIn,
-    user: User = Depends(_get_current_user),
+    user: User = Depends(_get_store_user),
     db: AsyncSession = Depends(get_db),
 ):
     """Confirm payment after the Stripe redirect and mark the order paid.

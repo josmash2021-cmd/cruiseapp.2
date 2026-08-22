@@ -65,29 +65,21 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
     // PlatformView starts rendering tiles right away. Annotation managers
     // are created in a background microtask inside onMapCreated.
     if (!_mapMounted) {
-      return Container(
-        color: const Color(0xFF07080D),
-        child: const Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              CircularProgressIndicator(
-                color: Color(0xFFE8C547),
-                strokeWidth: 2,
-              ),
-              SizedBox(height: 16),
-              Text(
-                'Finding trips...',
-                style: TextStyle(
-                  color: Color(0xFFE8C547),
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                  letterSpacing: 0.5,
-                ),
-              ),
-            ],
-          ),
-        ),
+      // No black loading screen (driver spec 2026-08-22): the home
+      // screen's native map is already down and ours is still coming up —
+      // two live Mapbox surfaces can never overlap, so the gap is real.
+      // What fills it is a still of the same dark map at the same camera
+      // home was showing (zoom 16, driver centred), with the same dot the
+      // live map paints. The handoff reads as the map easing from 16 to
+      // 15.5 in place — Lyft's small zoom-out — not as a page change with
+      // a spinner in the middle.
+      return Stack(
+        fit: StackFit.expand,
+        children: [
+          Positioned.fill(
+              child: StaticMapSnapshot(center: _pos!, zoom: 16)),
+          Center(child: GoldLocationDotOverlay(bearing: _heading)),
+        ],
       );
     }
     // Read once, and hand it down. _mapSurface used to reach back for `_pos!`
@@ -1048,7 +1040,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                               S.of(context).findingTrips,
                               style: TextStyle(
                                 color: Colors.white.withValues(alpha: 0.5),
-                                fontSize: 14,
+                                fontSize: 16,
                                 fontWeight: FontWeight.w600,
                               ),
                             ),
@@ -1139,7 +1131,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                             S.of(context).findingTrips,
                             style: TextStyle(
                               color: textMuted,
-                              fontSize: 14,
+                              fontSize: 16,
                               fontWeight: FontWeight.w600,
                             ),
                           ),
@@ -3849,16 +3841,15 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
               ],
             ),
             transitionBuilder: (child, anim) => FadeTransition(
-              // Nearly sequential: the Interval holds the incoming line
-              // invisible until the outgoing one has finished most of its
-              // fade (the same curve, mirrored by the switcher, drives the
-              // way out), so the swap reads as "one leaves, then one
-              // arrives" — never two sentences printed on top of each
-              // other. The slide that used to ride this is what made the
-              // incoming line climb over the old one mid-word.
+              // Fully sequential (driver spec 2026-08-22): the incoming
+              // line stays invisible until the outgoing one is GONE. The
+              // old 0.4 interval let the incoming line start fading in at
+              // 40% while the outgoing one still had a third of its ink —
+              // ten frames of two sentences printed on top of each other,
+              // which read as one garbled word.
               opacity: CurvedAnimation(
                 parent: anim,
-                curve: const Interval(0.4, 1.0, curve: Curves.easeOut),
+                curve: const Interval(0.55, 1.0, curve: Curves.easeOut),
               ),
               child: child,
             ),
@@ -3877,10 +3868,12 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                     // in the opposite state. It was drawn in the muted grey
                     // the icons beside it use, so the one line saying what the
                     // app is doing was dimmer than the furniture around it.
+                    // 15 → 17 (driver spec 2026-08-22): the one line that
+                    // says what the app is doing, a touch bigger.
                     style: const TextStyle(
                       fontFamily: 'Poppins',
                       color: Colors.white,
-                      fontSize: 15,
+                      fontSize: 17,
                       fontWeight: FontWeight.w600,
                     ),
                   ),

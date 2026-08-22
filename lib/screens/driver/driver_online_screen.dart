@@ -42,6 +42,7 @@ import '../../services/analytics_service.dart';
 import '../../services/chat_service.dart';
 import '../../widgets/offline_banner.dart';
 import '../../widgets/gold_location_dot.dart';
+import '../../widgets/static_map_snapshot.dart';
 import '../../utils/smooth_motion.dart';
 import '../../config/api_keys.dart';
 import '../../config/map_styles.dart';

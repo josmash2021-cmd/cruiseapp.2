@@ -53,6 +53,13 @@ LocationSettings driverLocationSettings({
   Duration intervalDuration = const Duration(milliseconds: 500),
   required String notificationTitle,
   required String notificationText,
+  // False for a driver who is OFFLINE (driver spec 2026-08-22): the blue
+  // iOS status pill and the Android foreground-service notification are
+  // the "this app is tracking you in the background" signals, and they
+  // may only exist while the driver is actually working. An offline
+  // stream keeps feeding the in-app map dot but stops the moment the
+  // app leaves the foreground.
+  bool background = true,
 }) {
   if (kIsWeb) {
     return LocationSettings(accuracy: accuracy, distanceFilter: distanceFilter);
@@ -61,12 +68,13 @@ LocationSettings driverLocationSettings({
     return AppleSettings(
       accuracy: accuracy,
       distanceFilter: distanceFilter,
-      allowBackgroundLocationUpdates: true,
+      allowBackgroundLocationUpdates: background,
       pauseLocationUpdatesAutomatically: false,
       // The blue status pill while we track in the background. Not
       // decoration — it is what stops this reading as a location grab, and
-      // iOS expects it for a continuously-tracking app.
-      showBackgroundLocationIndicator: true,
+      // iOS expects it for a continuously-tracking app. Offline drivers get
+      // neither the pill nor the tracking.
+      showBackgroundLocationIndicator: background,
       activityType: ActivityType.automotiveNavigation,
     );
   }
@@ -77,13 +85,15 @@ LocationSettings driverLocationSettings({
       // See the doc comment above: without this the native default floors
       // delivery at one fix per 5 s and the marker steps instead of glides.
       intervalDuration: intervalDuration,
-      foregroundNotificationConfig: ForegroundNotificationConfig(
-        notificationTitle: notificationTitle,
-        notificationText: notificationText,
-        notificationChannelName: 'Cruise driver location',
-        enableWakeLock: true,
-        setOngoing: true,
-      ),
+      foregroundNotificationConfig: background
+          ? ForegroundNotificationConfig(
+              notificationTitle: notificationTitle,
+              notificationText: notificationText,
+              notificationChannelName: 'Cruise driver location',
+              enableWakeLock: true,
+              setOngoing: true,
+            )
+          : null,
     );
   }
   return LocationSettings(accuracy: accuracy, distanceFilter: distanceFilter);

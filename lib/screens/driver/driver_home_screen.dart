@@ -54,6 +54,7 @@ import 'scheduled_ride_details_screen.dart';
 import '../../l10n/app_localizations.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import '../../widgets/gold_location_dot.dart';
+import '../../widgets/static_map_snapshot.dart';
 import '../../widgets/user_profile_photo.dart';
 import '../../widgets/velocity_aware_panel.dart';
 import '../../utils/responsive.dart';
@@ -498,6 +499,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       final wasOnline = prefs.getBool('driver_was_online') ?? false;
       if (wasOnline && !_isStillOnline) {
         setState(() => _isStillOnline = true);
+        _syncPosStreamMode();
         _startTripPolling();
       }
     });
@@ -1458,65 +1460,93 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       );
 
       // ── Real-time GPS stream ──
-      // distanceFilter: 2 -> accept fixes every 2 meters.
-      // SmoothMotion interpolates smoothly between fixes.
-      // Balance between accuracy and battery life.
-      //
-      // Background-capable, same as every other driver stream: the driver
-      // can be online on this screen (see _feedGpsUploads), and a bare
-      // LocationSettings stops publishing the moment the app leaves the
-      // foreground — the passenger's car freezes and the ghost agent starts
-      // counting the driver inactive. See driverLocationSettings.
-      final s = S.of(context);
-      _posStream?.cancel();
-      _posStream = Geolocator.getPositionStream(
-        locationSettings: driverLocationSettings(
-          distanceFilter: 2,
-          notificationTitle: s.driverLocationNotifTitle,
-          notificationText: s.driverLocationNotifOnline,
-        ),
-      ).listen((p) {
-        if (!mounted) return;
-        final ll = LatLng(p.latitude, p.longitude);
-        _currentLatLng = ll;
-        // Position here, direction separately.
-        //
-        // The bearing used to ride along with the fix, which meant the arrow
-        // could only turn when the driver moved. It comes from the compass
-        // now — see the _headingSource subscription in initState — and this
-        // hands the fix over so the service can decide whether the car is
-        // going fast enough for the GPS course to be the better answer.
-        _goldDot.setTarget(ll.latitude, ll.longitude,
-            accuracyM: p.accuracy,
-            timestampMs: p.timestamp.millisecondsSinceEpoch.toDouble());
-        _headingSource.onFix(p);
-        // Keep publishing while online — the driver can be on this screen
-        // mid-shift now. See _feedGpsUploads.
-        //
-        // The rider watches this to see which way the car is pointing, so it
-        // gets the compass too: a driver waiting at the pickup used to be
-        // published as heading 0 — facing north whichever way they had
-        // actually parked.
-        _feedGpsUploads(
-          ll,
-          _headingSource.value ?? _usableHeading(p) ?? 0,
-          p.speed,
-          capturedAt: p.timestamp,
-        );
-        debugPrint(
-            '[DriverHome] GPS update: ${ll.latitude.toStringAsFixed(5)},${ll.longitude.toStringAsFixed(5)} '
-            'speed=${p.speed.toStringAsFixed(1)}m/s accuracy=${p.accuracy.toStringAsFixed(1)}m');
-        // Camera follow is handled per dot-tick in _updateMyLocAnnotation
-        // (instant setCamera at ~30fps). The old 800ms-throttled flyTo
-        // restarted its animation on every fix and made the map — and the
-        // dot relative to the screen — visibly jump.
-      }, onError: (Object e) {
-        // Without this, a PlatformException from the geolocator channel
-        // (permission revoked mid-shift, location services toggled) escapes
-        // as an unhandled async error and is reported as a FATAL crash.
-        debugPrint('[DriverHome] position stream error: $e');
-      });
+      _startHomePosStream();
     } catch (_) {}
+  }
+
+  /// Which mode the current stream runs in — background-capable while the
+  /// driver is online, foreground-only when offline.
+  bool _posStreamIsBackground = false;
+
+  /// (Re)start the position stream with the mode that matches the driver's
+  /// online state.
+  ///
+  /// distanceFilter: 2 -> accept fixes every 2 meters.
+  /// SmoothMotion interpolates smoothly between fixes.
+  /// Balance between accuracy and battery life.
+  ///
+  /// Background-capable ONLY while online (driver spec 2026-08-22): an
+  /// offline driver backgrounding or closing the app must NOT keep the
+  /// blue iOS pill / Android foreground notification alive — location in
+  /// the background is a working-shift privilege. Online on this screen
+  /// still needs the background stream (see _feedGpsUploads): a bare
+  /// LocationSettings stops publishing the moment the app leaves the
+  /// foreground, the passenger's car freezes and the ghost agent starts
+  /// counting the driver inactive. See driverLocationSettings.
+  void _startHomePosStream() {
+    final s = S.of(context);
+    final bg = _isStillOnline;
+    _posStream?.cancel();
+    _posStream = Geolocator.getPositionStream(
+      locationSettings: driverLocationSettings(
+        distanceFilter: 2,
+        background: bg,
+        notificationTitle: s.driverLocationNotifTitle,
+        notificationText: s.driverLocationNotifOnline,
+      ),
+    ).listen((p) {
+      if (!mounted) return;
+      final ll = LatLng(p.latitude, p.longitude);
+      _currentLatLng = ll;
+      // Position here, direction separately.
+      //
+      // The bearing used to ride along with the fix, which meant the arrow
+      // could only turn when the driver moved. It comes from the compass
+      // now — see the _headingSource subscription in initState — and this
+      // hands the fix over so the service can decide whether the car is
+      // going fast enough for the GPS course to be the better answer.
+      _goldDot.setTarget(ll.latitude, ll.longitude,
+          accuracyM: p.accuracy,
+          timestampMs: p.timestamp.millisecondsSinceEpoch.toDouble());
+      _headingSource.onFix(p);
+      // Keep publishing while online — the driver can be on this screen
+      // mid-shift now. See _feedGpsUploads.
+      //
+      // The rider watches this to see which way the car is pointing, so it
+      // gets the compass too: a driver waiting at the pickup used to be
+      // published as heading 0 — facing north whichever way they had
+      // actually parked.
+      _feedGpsUploads(
+        ll,
+        _headingSource.value ?? _usableHeading(p) ?? 0,
+        p.speed,
+        capturedAt: p.timestamp,
+      );
+      debugPrint(
+          '[DriverHome] GPS update: ${ll.latitude.toStringAsFixed(5)},${ll.longitude.toStringAsFixed(5)} '
+          'speed=${p.speed.toStringAsFixed(1)}m/s accuracy=${p.accuracy.toStringAsFixed(1)}m');
+      // Camera follow is handled per dot-tick in _updateMyLocAnnotation
+      // (instant setCamera at ~30fps). The old 800ms-throttled flyTo
+      // restarted its animation on every fix and made the map — and the
+      // dot relative to the screen — visibly jump.
+    }, onError: (Object e) {
+      // Without this, a PlatformException from the geolocator channel
+      // (permission revoked mid-shift, location services toggled) escapes
+      // as an unhandled async error and is reported as a FATAL crash.
+      debugPrint('[DriverHome] position stream error: $e');
+    });
+    _posStreamIsBackground = bg;
+  }
+
+  /// Online state just flipped — put the stream in the matching mode.
+  /// iOS only applies allowBackgroundLocationUpdates on a NEW location
+  /// request, so a flag change mid-stream does nothing until the stream
+  /// is recreated. No-op before the first stream exists (its creation
+  /// reads the flag itself) and when the mode already matches.
+  void _syncPosStreamMode() {
+    if (_posStream == null) return;
+    if (_posStreamIsBackground == _isStillOnline) return;
+    _startHomePosStream();
   }
 
   Future<void> _loadDriverData() async {
@@ -1948,21 +1978,14 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
         transitionDuration: const Duration(milliseconds: 420),
         reverseTransitionDuration: const Duration(milliseconds: 300),
         transitionsBuilder: (ctx2, anim, anim2b, child) {
+          // Pure crossfade (driver spec 2026-08-22): both sides of this
+          // transition show the same map still over the same camera (see
+          // StaticMapSnapshot), so any slide or scale reads as the page
+          // changing under the driver. A fade reads as what it is — the
+          // same screen going online.
           final curved =
               CurvedAnimation(parent: anim, curve: Curves.easeOutCubic);
-          return FadeTransition(
-            opacity: curved,
-            child: SlideTransition(
-              position: Tween<Offset>(
-                begin: const Offset(0, 0.02),
-                end: Offset.zero,
-              ).animate(curved),
-              child: ScaleTransition(
-                scale: Tween<double>(begin: 0.98, end: 1.0).animate(curved),
-                child: child,
-              ),
-            ),
-          );
+          return FadeTransition(opacity: curved, child: child);
         },
       ),
     );
@@ -1996,6 +2019,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     if (!mounted) return;
     final stillOnline = result?['stillOnline'] == true;
     setState(() => _isStillOnline = stillOnline);
+    _syncPosStreamMode();
     PrefsCache.instance
         .then((p) => p.setBool('driver_was_online', stillOnline));
     _refreshStats();
@@ -2141,6 +2165,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       if (!mounted) return;
       final stillOnline = result?['stillOnline'] == true;
       setState(() => _isStillOnline = stillOnline);
+      _syncPosStreamMode();
       PrefsCache.instance
           .then((p) => p.setBool('driver_was_online', stillOnline));
       _refreshStats();
@@ -2312,10 +2337,14 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   // ═══════════════════════════════════════════════════
   Widget _buildMap() {
     // While a trip screen sits on top of us the native map stays unmounted
-    // — see _mapSuspended. Solid base color underneath; none of it is
-    // visible until the trip screen pops and the map remounts.
+    // — see _mapSuspended. The gap is NOT a blank card any more (driver
+    // spec 2026-08-22): a still of the same dark map at the camera the
+    // driver was just looking at, so the offline→online handoff reads as
+    // one map easing in place, not a page change over a black rectangle.
     if (_mapSuspended) {
-      return Container(color: neuBase);
+      final c = _currentLatLng;
+      if (kIsWeb || c == null) return Container(color: neuBase);
+      return StaticMapSnapshot(center: c, zoom: 16);
     }
     // Use Google Maps on both iOS and Android
     // Mapbox Maps Flutter has no web implementation — its MapWidget crashes
@@ -4490,6 +4519,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
           _activeTripData = active;
           _isStillOnline = true;
         });
+        _syncPosStreamMode();
         return;
       }
 
@@ -4566,6 +4596,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
         _activeTripData = trip;
         _isStillOnline = true;
       });
+      _syncPosStreamMode();
       // Auto-navigate to the active trip screen
       if (mounted) _resumeActiveTrip();
     } catch (e) {

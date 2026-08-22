@@ -815,7 +815,9 @@ async def _send_offer_to_driver(
     #
     # A registered channel is not enough: when APNs is not configured the
     # liveactivity push is a silent no-op, and suppressing the banner then
-    # leaves the driver with NOTHING outside the app. Fall back to FCM.
+    # leaves the driver with NOTHING outside the app. Fall back to FCM —
+    # and the same fallback rides inside _send_live_activity_offer for the
+    # case where the island push itself does not land.
     from services.apns_liveactivity import apns_configured
     if (driver.apns_la_activity_token or driver.apns_la_start_token) \
             and apns_configured():
@@ -825,6 +827,7 @@ async def _send_offer_to_driver(
             per_hour=per_hour_str,
             miles=miles_str,
             minutes=minutes_str,
+            fcm_data=push_data,
         ))
     else:
         _safe_create_task(_send_fcm_push_async(
@@ -893,8 +896,17 @@ async def expire_pending_offers_for_driver(db: AsyncSession, driver_id: int,
     return len(offers)
 
 
-async def _send_live_activity_offer(driver, *, fare, per_hour, miles, minutes) -> None:
-    """Offer → the driver's Live Activity, straight over APNs. Fail-soft."""
+async def _send_live_activity_offer(driver, *, fare, per_hour, miles, minutes,
+                                    fcm_data: dict | None = None) -> None:
+    """Offer → the driver's Live Activity, straight over APNs. Fail-soft.
+
+    The island was supposed to BE the notification — the caller suppressed
+    the FCM banner on the strength of this push. So when the push does not
+    land (dead channel, transient APNs error, anything), the FCM banner
+    goes out as backup for the SAME offer: no driver, on a new build or an
+    old one, may ever end up with no notification at all (spec 2026-08-22).
+    """
+    outcome: str | None = None
     try:
         from services.apns_liveactivity import send_live_activity_offer
         outcome = await send_live_activity_offer(
@@ -918,8 +930,20 @@ async def _send_live_activity_offer(driver, *, fare, per_hour, miles, minutes) -
             logging.warning(
                 "[LiveActivity] cleared %s for driver %s", outcome, driver.id)
     except Exception as e:
+        outcome = outcome or "error"
         logging.warning("[LiveActivity] offer push failed for driver %s: %s",
                         driver.id, e)
+    if outcome is not None and fcm_data is not None:
+        logging.info(
+            "[LiveActivity] island push did not land (%s) for driver %s — "
+            "FCM banner goes out as backup", outcome, driver.id)
+        await _send_fcm_push_async(
+            driver.fcm_token or "",
+            title="New Ride Offer",
+            body="Open Cruise to accept.",
+            data=fcm_data,
+            is_offer=True,
+        )
 
 
 async def _auto_cascade(trip_id: int, first_offer_id: int, first_driver_id: int) -> None:

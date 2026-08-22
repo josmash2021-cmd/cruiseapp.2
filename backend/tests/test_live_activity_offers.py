@@ -151,6 +151,59 @@ class TestAStaleChannelIsCleared:
                  else "apns_la_activity_token")
         assert getattr(driver, other) is not None
 
+    async def test_a_failed_island_push_falls_back_to_the_fcm_banner(
+            self, monkeypatch, db, test_driver):
+        """Spec 2026-08-22 ("no debe fallar"): the island IS the
+        notification only while it lands. Any push failure re-arms the FCM
+        banner for the SAME offer — no driver ever ends up with nothing."""
+        from routers import dispatch
+        driver, _ = test_driver
+        driver.fcm_token = "fcm-123"
+        await db.commit()
+
+        async def _fake_send(**kwargs):
+            return "error"
+        monkeypatch.setattr(
+            apns_liveactivity, "send_live_activity_offer", _fake_send)
+
+        fcm_calls = []
+
+        async def _fake_fcm(token, **kwargs):
+            fcm_calls.append((token, kwargs))
+        monkeypatch.setattr(dispatch, "_send_fcm_push_async", _fake_fcm)
+
+        await dispatch._send_live_activity_offer(
+            driver, fare="$6.14", per_hour="$33.49/hr", miles="2.4 mi",
+            minutes="9 min", fcm_data={"type": "new_offer"})
+
+        assert fcm_calls and fcm_calls[0][0] == "fcm-123"
+        assert fcm_calls[0][1]["is_offer"] is True
+        assert fcm_calls[0][1]["data"] == {"type": "new_offer"}
+
+    async def test_a_landed_island_push_sends_no_banner(
+            self, monkeypatch, db, test_driver):
+        """The other half of the rule: a landed island push means NO FCM
+        banner — the offer must never say itself twice."""
+        from routers import dispatch
+        driver, _ = test_driver
+
+        async def _fake_send(**kwargs):
+            return None
+        monkeypatch.setattr(
+            apns_liveactivity, "send_live_activity_offer", _fake_send)
+
+        fcm_calls = []
+
+        async def _fake_fcm(token, **kwargs):
+            fcm_calls.append(kwargs)
+        monkeypatch.setattr(dispatch, "_send_fcm_push_async", _fake_fcm)
+
+        await dispatch._send_live_activity_offer(
+            driver, fare="$6.14", per_hour="$33.49/hr", miles="2.4 mi",
+            minutes="9 min", fcm_data={"type": "new_offer"})
+
+        assert not fcm_calls
+
 
 class TestTheFcmFallback:
     """FIX 2: a registered LA channel must NOT suppress the FCM banner when

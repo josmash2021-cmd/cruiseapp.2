@@ -77,29 +77,42 @@ void main() {
     });
   });
 
-  group('hero Ride / Schedule', () {
+  group('hero Where to? + Ride/Schedule switch', () {
     final start = widgets.indexOf('Widget _buildHeroCTA() {');
     final block = widgets.substring(start, start + 4000);
 
-    test('keeps the verification gate on the way out', () {
+    test('the hero paints "Where to?" again and gates on the way out', () {
       expect(block, contains('_ensureVerified()'));
       expect(block, isNot(contains('verificationBlocked')));
+      expect(block, isNot(contains('heroRideSchedule')),
+          reason: 'the two-row card is gone — the original hero is back');
+      // The headline itself renders in the content builder below the CTA.
+      final content = widgets.indexOf('Widget _buildHeroWhereToContent(');
+      expect(content, greaterThan(-1));
+      expect(widgets.substring(content, content + 900),
+          contains('whereToQuestion'));
     });
 
-    test('Ride entry gates and opens the search-then-ride flow', () {
-      final ride = block.indexOf('Future<void> openRide()');
-      expect(ride, greaterThan(-1));
-      final rideBlock = block.substring(ride, ride + 320);
-      expect(rideBlock, contains('_ensureVerified()'));
-      expect(rideBlock, contains('_openSearchThenRide()'));
+    test('the switch is Ride (bolt) / Schedule (calendar)', () {
+      final sw = widgets.indexOf('Widget _buildRideScheduleSwitch()');
+      expect(sw, greaterThan(-1));
+      final swBlock = widgets.substring(sw, sw + 3400);
+      expect(swBlock, contains('.rideLabel'));
+      expect(swBlock, contains('Icons.bolt_rounded'));
+      expect(swBlock, contains('.schedule,'));
+      expect(swBlock, contains('Icons.calendar_month_rounded'));
+      expect(swBlock, isNot(contains('nowLabel')),
+          reason: 'Now/Later labels are gone');
     });
 
-    test('Schedule entry gates and calls the single schedule call site', () {
-      final sched = block.indexOf('Future<void> openSchedule()');
-      expect(sched, greaterThan(-1));
-      final schedBlock = block.substring(sched, sched + 320);
-      expect(schedBlock, contains('_ensureVerified()'));
-      expect(schedBlock, contains('_openScheduleSheet()'));
+    test('both sides of the switch gate through _ensureVerified', () {
+      final sw = widgets.indexOf('Widget _buildRideScheduleSwitch()');
+      final swBlock = widgets.substring(sw, sw + 3400);
+      final gates = RegExp('ensureVerified').allMatches(swBlock).length;
+      expect(gates, greaterThanOrEqualTo(2),
+          reason: 'Ride and Schedule must each gate');
+      expect(swBlock, contains('_openScheduleSheet()'),
+          reason: 'Schedule opens the hub via the single call site');
     });
   });
 

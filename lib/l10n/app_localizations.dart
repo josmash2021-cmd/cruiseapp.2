@@ -4581,15 +4581,7 @@ class S {
   String get schedMapDismiss => _es ? 'Descartar' : 'Dismiss';
   String get schedMapReserve => _es ? 'RESERVAR' : 'RESERVE';
 
-  // ── Rider home redesign (Ride / Schedule hero) + permissions screen ──
-  String get heroRideScheduleTitle =>
-      _es ? 'Viaje / Programar' : 'Ride / Schedule';
-  String get heroRideRow => _es ? 'Viaje' : 'Ride';
-  String get heroRideRowSubtitle =>
-      _es ? 'Pide un viaje ahora' : 'Request a ride now';
-  String get heroScheduleRow => _es ? 'Programar' : 'Schedule';
-  String get heroScheduleRowSubtitle =>
-      _es ? 'Reserva para más tarde' : 'Book for later';
+  // ── Rider home redesign (permissions screen) ──
   String get permsTitle => _es ? 'Permisos' : 'Permissions';
   String get permsSubtitle => _es
       ? 'Cruise funciona mejor con esto activado.'

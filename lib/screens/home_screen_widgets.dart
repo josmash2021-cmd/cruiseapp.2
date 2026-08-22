@@ -352,42 +352,17 @@ extension _HomeScreenWidgets on _HomeScreenState {
     return s.goodEvening;
   }
 
-  // ─── Hero CTA Card — transforms between "Ride / Schedule" / searching / "Ride in progress" ───
+  // ─── Hero CTA Card — transforms between "Where to?" / searching / "Ride in progress" ───
   Widget _buildHeroCTA() {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final active = _activeRide != null;
     final searching = _pendingSearchTripId != null && !active;
     final imminent = _hasImminentRide;
     final zoneBlocked = !_serviceZoneActive && _activeServiceStates.isNotEmpty;
-    // The card always paints its two entries — verification is enforced on
-    // the way out (_ensureVerified downstream), not by swapping the hero
-    // for a verify card.
+    // The card always paints "Where to?" — verification is enforced on the
+    // way out (_ensureVerified downstream), not by swapping the hero for a
+    // verify card.
     final disabled = !active && !imminent && zoneBlocked;
-
-    // The two idle entries. BOTH gate through _ensureVerified: the hero
-    // always looks normal, but only an approved rider gets past a tap —
-    // the gate opens the KYC flow (or the pending-approval dialog) when
-    // the account is not approved.
-    Future<void> openRide() async {
-      if (zoneBlocked) {
-        _showZoneBlockedDialog();
-        return;
-      }
-      if (!await _ensureVerified()) return;
-      await _openSearchThenRide();
-    }
-
-    // Single call site for the schedule entry — a later iteration swaps
-    // WHERE this points, not how it is gated.
-    Future<void> openSchedule() async {
-      if (zoneBlocked) {
-        _showZoneBlockedDialog();
-        return;
-      }
-      if (!await _ensureVerified()) return;
-      await _openScheduleSheet();
-    }
-
     return GestureDetector(
       onTap: () async {
         if (active) {
@@ -401,7 +376,50 @@ extension _HomeScreenWidgets on _HomeScreenState {
           await _openScheduledRideLive();
           return;
         }
-        // Idle: the two rows carry their own gated taps.
+        if (zoneBlocked) {
+          showDialog<void>(
+            context: context,
+            builder: (ctx) => AlertDialog(
+              backgroundColor: const Color(0xFF1C1E24),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+              ),
+              title: Row(
+                children: [
+                  const Icon(
+                    Icons.location_off_rounded,
+                    color: Color(0xFFE8C547),
+                  ),
+                  const SizedBox(width: 10),
+                  Text(
+                    S.of(ctx).serviceZoneTitle,
+                    style: const TextStyle(color: Colors.white, fontSize: 16),
+                  ),
+                ],
+              ),
+              content: Text(
+                S.of(ctx).noServiceState,
+                style: const TextStyle(color: Colors.white70, fontSize: 14),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(ctx).pop(),
+                  child: Text(
+                    S.of(ctx).understood,
+                    style: const TextStyle(color: Color(0xFFE8C547)),
+                  ),
+                ),
+              ],
+            ),
+          );
+          return;
+        }
+        // Verification gate: the hero always paints "Where to?" but only a
+        // verified rider gets past the tap — _ensureVerified opens the KYC
+        // flow (or the pending-approval dialog) when the account is not
+        // approved.
+        if (!await _ensureVerified()) return;
+        await _openSearchThenRide();
       },
       child: Opacity(
         opacity: disabled ? 0.55 : 1.0,
@@ -412,10 +430,10 @@ extension _HomeScreenWidgets on _HomeScreenState {
               ? Responsive.h(195)
               : searching
                   ? Responsive.h(80)
-                  : Responsive.h(196),
+                  : Responsive.h(155),
           decoration: neuBox(radius: 28),
           child: Container(
-            padding: const EdgeInsets.fromLTRB(24, 18, 24, 18),
+            padding: const EdgeInsets.all(24),
             child: AnimatedSwitcher(
               duration: const Duration(milliseconds: 400),
               switchInCurve: Curves.easeInOutCubic,
@@ -428,9 +446,7 @@ extension _HomeScreenWidgets on _HomeScreenState {
                       ? _buildSearchingDriverContent()
                       : imminent
                           ? _buildHeroUpcomingRide()
-                          : _buildHeroRideScheduleContent(
-                              isDark, disabled, zoneBlocked,
-                              openRide, openSchedule),
+                          : _buildHeroWhereToContent(isDark, disabled, zoneBlocked),
             ),
           ),
         ),
@@ -438,180 +454,174 @@ extension _HomeScreenWidgets on _HomeScreenState {
     );
   }
 
-  /// The "outside the service zone" notice, shared by both hero entries.
-  void _showZoneBlockedDialog() {
-    showDialog<void>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFF1C1E24),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(20),
-        ),
-        title: Row(
-          children: [
-            const Icon(
-              Icons.location_off_rounded,
-              color: Color(0xFFE8C547),
-            ),
-            const SizedBox(width: 10),
-            Text(
-              S.of(ctx).serviceZoneTitle,
-              style: const TextStyle(color: Colors.white, fontSize: 16),
-            ),
-          ],
-        ),
-        content: Text(
-          S.of(ctx).noServiceState,
-          style: const TextStyle(color: Colors.white70, fontSize: 14),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: Text(
-              S.of(ctx).understood,
-              style: const TextStyle(color: Color(0xFFE8C547)),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // ─── "Ride / Schedule" idle content inside the hero card ───
-  Widget _buildHeroRideScheduleContent(
-    bool isDark,
-    bool disabled,
-    bool zoneBlocked,
-    Future<void> Function() onRide,
-    Future<void> Function() onSchedule,
-  ) {
-    final s = S.of(context);
-    final titleColor = disabled
-        ? Colors.white.withValues(alpha: 0.25)
-        : isDark
-            ? Colors.white
-            : const Color(0xFF1C1C1E);
-    return Column(
-      key: const ValueKey('hero_ride_schedule'),
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisAlignment: MainAxisAlignment.center,
+  // ─── "Where to?" content inside the hero card ───
+  Widget _buildHeroWhereToContent(bool isDark, bool disabled, bool zoneBlocked) {
+    return Row(
+      key: const ValueKey('hero_where_to'),
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        Text(
-          s.heroRideScheduleTitle.toUpperCase(),
-          style: TextStyle(
-            color: disabled
-                ? _gold.withValues(alpha: 0.3)
-                : _gold,
-            fontSize: Responsive.sp(11),
-            fontWeight: FontWeight.w800,
-            letterSpacing: 2.0,
-          ),
-        ),
-        const SizedBox(height: 10),
-        _heroEntryRow(
-          icon: Icons.directions_car_rounded,
-          title: s.heroRideRow,
-          subtitle: s.heroRideRowSubtitle,
-          titleColor: titleColor,
-          onTap: onRide,
-        ),
-        Padding(
-          padding: const EdgeInsets.symmetric(vertical: 4),
-          child: Divider(
-            color: Colors.white.withValues(alpha: 0.07),
-            height: 1,
-          ),
-        ),
-        _heroEntryRow(
-          icon: Icons.calendar_month_rounded,
-          title: s.heroScheduleRow,
-          subtitle: s.heroScheduleRowSubtitle,
-          titleColor: titleColor,
-          onTap: onSchedule,
-        ),
-        if (disabled && zoneBlocked) ...[
-          const SizedBox(height: 8),
-          Row(
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(
-                Icons.location_off_rounded,
-                color: Colors.white.withValues(alpha: 0.35),
-                size: 14,
-              ),
-              const SizedBox(width: 6),
-              Expanded(
-                child: Text(
-                  s.noDriversInState,
-                  style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.35),
-                    fontSize: 12,
-                    fontWeight: FontWeight.w500,
-                  ),
-                  maxLines: 2,
+              Text(
+                S.of(context).whereToQuestion,
+                style: TextStyle(
+                  color: disabled
+                      ? Colors.white.withValues(alpha: 0.25)
+                      : isDark
+                      ? Colors.white
+                      : const Color(0xFF1C1C1E),
+                  fontSize: Responsive.sp(28),
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: -1,
                 ),
               ),
+              const SizedBox(height: 8),
+              if (disabled && zoneBlocked)
+                Row(
+                  children: [
+                    Icon(
+                      Icons.location_off_rounded,
+                      color: Colors.white.withValues(alpha: 0.35),
+                      size: 14,
+                    ),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        S.of(context).noDriversInState,
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.35),
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                        ),
+                        maxLines: 2,
+                      ),
+                    ),
+                  ],
+                )
+              else ...[
+                const SizedBox(height: 4),
+                _buildRideScheduleSwitch(),
+              ],
             ],
           ),
-        ],
+        ),
+        const SizedBox(width: 12),
+        Container(
+          width: 36,
+          height: 36,
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.08),
+            shape: BoxShape.circle,
+            border: Border.all(
+              color: Colors.white.withValues(alpha: 0.10),
+            ),
+          ),
+          child: const Icon(
+            Icons.arrow_forward_ios_rounded,
+            color: Colors.white,
+            size: 16,
+          ),
+        ),
       ],
     );
   }
 
-  /// One hero entry: icon disc + title/subtitle + chevron, whole row tappable.
-  Widget _heroEntryRow({
-    required IconData icon,
-    required String title,
-    required String subtitle,
-    required Color titleColor,
-    required Future<void> Function() onTap,
-  }) {
-    return GestureDetector(
-      onTap: () async => onTap(),
-      behavior: HitTestBehavior.opaque,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 6),
-        child: Row(
+  // ─── Ride/Schedule segmented switch — pressed track + sliding gold thumb ───
+  //
+  // The old Now/Later switch, renamed (2026-08-22): Ride (bolt) is the
+  // normal flow — it just parks the thumb on this side, exactly what "Now"
+  // did; Schedule (calendar) opens the schedule hub, what "Later" did.
+  // Both sides gate through _ensureVerified now (rider verification rule).
+  Widget _buildRideScheduleSwitch() {
+    const segW = 96.0;
+    const segH = 34.0;
+
+    Widget seg(String label, IconData icon, bool active, VoidCallback onTap) {
+      return GestureDetector(
+        onTap: onTap,
+        behavior: HitTestBehavior.opaque,
+        child: SizedBox(
+          width: segW,
+          height: segH,
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                icon,
+                size: 15,
+                color: active
+                    ? Colors.black
+                    : Colors.white.withValues(alpha: 0.5),
+              ),
+              const SizedBox(width: 5),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w800,
+                  color: active
+                      ? Colors.black
+                      : Colors.white.withValues(alpha: 0.5),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return Container(
+      decoration: neuBox(radius: 21, pressed: true),
+      padding: const EdgeInsets.all(4),
+      child: SizedBox(
+        width: segW * 2,
+        height: segH,
+        child: Stack(
           children: [
-            Container(
-              width: 40,
-              height: 40,
-              decoration: BoxDecoration(
-                color: _gold.withValues(alpha: 0.12),
-                shape: BoxShape.circle,
-                border: Border.all(color: _gold.withValues(alpha: 0.25)),
-              ),
-              child: Icon(icon, color: _gold, size: 20),
-            ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    style: TextStyle(
-                      color: titleColor,
-                      fontSize: Responsive.sp(17),
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: -0.3,
+            // Sliding gold thumb
+            AnimatedPositioned(
+              duration: const Duration(milliseconds: 250),
+              curve: Curves.easeOutCubic,
+              left: _rideNow ? 0 : segW,
+              top: 0,
+              bottom: 0,
+              width: segW,
+              child: Container(
+                decoration: BoxDecoration(
+                  color: _gold,
+                  borderRadius: BorderRadius.circular(segH / 2),
+                  boxShadow: [
+                    BoxShadow(
+                      color: _gold.withValues(alpha: 0.35),
+                      blurRadius: 10,
+                      offset: const Offset(0, 3),
                     ),
-                  ),
-                  const SizedBox(height: 1),
-                  Text(
-                    subtitle,
-                    style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.45),
-                      fontSize: Responsive.sp(12),
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
-            Icon(
-              Icons.chevron_right_rounded,
-              color: Colors.white.withValues(alpha: 0.5),
-              size: 22,
+            // Segments on top (labels stay tappable over the thumb)
+            Row(
+              children: [
+                seg(S.of(context).rideLabel, Icons.bolt_rounded, _rideNow,
+                    () async {
+                  // Same gate as the hero tap — an unverified rider gets
+                  // the KYC flow, not the thumb flip.
+                  if (!await _ensureVerified()) return;
+                  if (!_rideNow) _setState(() => _rideNow = true);
+                }),
+                seg(S.of(context).schedule, Icons.calendar_month_rounded,
+                    !_rideNow, () async {
+                  if (!await _ensureVerified()) return;
+                  if (_rideNow) {
+                    _setState(() => _rideNow = false);
+                    _openScheduleSheet();
+                  }
+                }),
+              ],
             ),
           ],
         ),
@@ -1364,11 +1374,12 @@ extension _HomeScreenWidgets on _HomeScreenState {
       },
     ];
 
-    // Card width tuned for the peek: ~74% of the screen leaves the next
+    // Card width tuned for the peek: ~62% of the screen leaves the next
     // card's edge visible without turning the current one into a strip.
-    final cardW = (screenW * 0.74).clamp(240.0, 340.0);
+    // (Was 0.74 — the first pass read too big, the car art dominated.)
+    final cardW = (screenW * 0.62).clamp(205.0, 300.0);
     return SizedBox(
-      height: 236,
+      height: 196,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         // The 24 aligns card #1 with the page margins; the right side gets

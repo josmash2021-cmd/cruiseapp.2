@@ -105,6 +105,8 @@ class _HomeScreenState extends State<HomeScreen>
   List<TripHistoryItem> _recentTrips = [];
   List<FrequentDestination> _topDestinations = [];
   bool _loadingSavedData = true;
+  // Hero switch thumb position: true = Ride (bolt), false = Schedule.
+  bool _rideNow = true;
   int _dockIndex = 0; // 0=Ride, 1=Schedule, 2=Account
 
   // Scheduled ride indicator

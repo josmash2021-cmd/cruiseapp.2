@@ -118,7 +118,9 @@ void main() {
 
   group('fleet carousel ("More ways to ride")', () {
     final start = widgets.indexOf('Widget _buildFleetStack(');
-    final block = widgets.substring(start, start + 5600);
+    // Wide enough to reach the Continue label past the AspectRatio band
+    // (the window was 5600 and the shared-frame box pushed it out).
+    final block = widgets.substring(start, start + 6600);
 
     test('is a horizontal carousel with peek, not the quarter-width row', () {
       expect(block, contains('ListView.separated('));

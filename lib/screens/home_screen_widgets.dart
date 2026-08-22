@@ -261,10 +261,10 @@ extension _HomeScreenWidgets on _HomeScreenState {
                 ),
               ],
 
-                const SizedBox(height: 32),
-
-                // Room so the last card scrolls clear of the floating dock.
-                SizedBox(height: 96 + botPad),
+              // Room so the last card scrolls clear of the floating dock —
+              // and no more than that. 96 left a visible band of empty page
+              // under the content at full scroll (user spec 2026-08-22).
+              SizedBox(height: 78 + botPad),
                   ],
                 ),
               ),
@@ -1423,17 +1423,27 @@ extension _HomeScreenWidgets on _HomeScreenState {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // Car photo, larger than the old row could afford.
+                      // Every car renders inside the SAME box — Black's
+                      // aspect ratio (845x318 ≈ 2.657). The four PNGs run
+                      // 2.56–2.86 wide, and in a plain Expanded each scaled
+                      // to its own aspect, so the sedan read visibly
+                      // smaller than the Suburban (user spec 2026-08-22:
+                      // "all the same size as the Black one"). AspectRatio
+                      // in the centered band gives them one shared frame;
+                      // the worst case differs by ~7% inside it.
                       Expanded(
                         child: Center(
-                          child: CarImage3D(
-                            assetPath: 'assets/images/${v['image']}',
-                            cacheWidth: 640,
-                            alignment: Alignment.bottomCenter,
-                            fallback: Icon(
-                              Icons.directions_car_rounded,
-                              color: _gold.withValues(alpha: 0.5),
-                              size: 56,
+                          child: AspectRatio(
+                            aspectRatio: 845 / 318,
+                            child: CarImage3D(
+                              assetPath: 'assets/images/${v['image']}',
+                              cacheWidth: 640,
+                              alignment: Alignment.bottomCenter,
+                              fallback: Icon(
+                                Icons.directions_car_rounded,
+                                color: _gold.withValues(alpha: 0.5),
+                                size: 56,
+                              ),
                             ),
                           ),
                         ),
@@ -1920,7 +1930,9 @@ extension _HomeScreenWidgets on _HomeScreenState {
     final labels = [s.rideLabel, s.schedule, s.accountLabel];
 
     return Container(
-      margin: EdgeInsets.fromLTRB(32, 0, 32, bottomPad + 10),
+      // Lifted a touch off the bottom edge (was bottomPad + 10) — user spec
+      // 2026-08-22: the dock sits "a little higher".
+      margin: EdgeInsets.fromLTRB(32, 0, 32, bottomPad + 20),
       padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
       decoration: neuBox(radius: 24),
       child: Row(

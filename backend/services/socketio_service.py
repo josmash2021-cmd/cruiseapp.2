@@ -335,6 +335,42 @@ async def driver_location(sid: str, data: dict):
     await sio.emit("driver_location_update", payload, room=room, skip_sid=sid)
 
 
+@sio.event
+async def rider_location(sid: str, data: dict):
+    """Receive rider GPS update and broadcast to trip room.
+
+    The mirror of driver_location, for the pickup window (user spec
+    2026-08-22): the driver's navigation view paints the rider as a gold
+    walking figure so a rider who moved away from the pin is still found.
+    The rider app only publishes while the trip is pre-pickup and honours
+    its privacy toggle client-side; the relay stays dumb on purpose, same
+    as the driver's.
+
+    Expected payload: same shape as driver_location.
+    """
+    trip_id = data.get("trip_id")
+    if trip_id is None:
+        return
+
+    room = f"trip:{trip_id}"
+    payload = {
+        "trip_id": trip_id,
+        "lat": data.get("lat"),
+        "lng": data.get("lng"),
+        "heading": data.get("heading", 0),
+        "speed": data.get("speed", 0),
+        "timestamp": data.get("timestamp", int(time.time() * 1000)),
+    }
+    # Same captured_at contract as the driver path: the driver-side motion
+    # engine paces the figure's glide by fix capture time and dedups
+    # re-sends of the same fix.
+    captured_at = data.get("captured_at")
+    if isinstance(captured_at, (int, float)) and captured_at > 0:
+        payload["captured_at"] = captured_at
+
+    await sio.emit("rider_location_update", payload, room=room, skip_sid=sid)
+
+
 # ═══════════════════════════════════════════════════════════════════════
 #  Trip status
 # ═══════════════════════════════════════════════════════════════════════

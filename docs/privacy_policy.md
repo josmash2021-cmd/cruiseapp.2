@@ -90,10 +90,12 @@ differently for drivers and riders:
   the app. On iOS, Driver location is currently collected while the app is
   in use.
 - **Riders:** Rider location is collected while the app is in use
-  (foreground) to suggest pickups, match the rider with drivers, and —
-  during a trip — share trip progress with the driver and support safety
-  features. We do not collect Rider location in the background when the app
-  is not in use.
+  (foreground) to suggest pickups and match the rider with drivers. During
+  a trip, we share the Rider's location with the driver to support
+  accurate pickups and safety features — this continues if the Rider
+  minimizes the app, but only until the driver picks the Rider up or the
+  trip ends or is canceled. We never collect Rider location in the
+  background if the app is closed, or outside a trip.
 
 **Your controls.** You can disable or limit location permission at any time
 in your device settings (on iOS you can choose "While Using the App"; on

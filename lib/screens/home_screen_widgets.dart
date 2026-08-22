@@ -1353,24 +1353,28 @@ extension _HomeScreenWidgets on _HomeScreenState {
         'desc': s.fleetBlackDesc,
         'image': 'cruisert1.png',
         'rideId': 'suburban',
+        'scale': 1.0,
       },
       {
         'displayName': 'PREMIUM',
         'desc': s.fleetPremiumDesc,
         'image': 'cruisert_suvxl.png',
         'rideId': 'suv_xl',
+        'scale': 0.987,
       },
       {
         'displayName': 'COMPACT',
         'desc': s.fleetCompactDesc,
         'image': 'cruisert_compact.png',
         'rideId': 'camry',
+        'scale': 0.95,
       },
       {
         'displayName': 'STANDARD',
         'desc': s.fleetStandardDesc,
         'image': 'cruisert3.png',
         'rideId': 'fusion',
+        'scale': 1.05,
       },
     ];
 
@@ -1424,25 +1428,29 @@ extension _HomeScreenWidgets on _HomeScreenState {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       // Every car renders inside the SAME box — Black's
-                      // aspect ratio (845x318 ≈ 2.657). The four PNGs run
-                      // 2.56–2.86 wide, and in a plain Expanded each scaled
-                      // to its own aspect, so the sedan read visibly
-                      // smaller than the Suburban (user spec 2026-08-22:
-                      // "all the same size as the Black one"). AspectRatio
-                      // in the centered band gives them one shared frame;
-                      // the worst case differs by ~7% inside it.
+                      // aspect ratio (845x318 ≈ 2.657) — and each PNG gets
+                      // its own scale so the VISIBLE BODY (measured by
+                      // alpha coverage, not canvas) is the same height on
+                      // all four cards: the tall SUV bodies read bigger
+                      // and the low sedan smaller at an identical frame
+                      // (user spec 2026-08-22). Anchored at the wheels so
+                      // the ground line never moves.
                       Expanded(
                         child: Center(
                           child: AspectRatio(
                             aspectRatio: 845 / 318,
-                            child: CarImage3D(
-                              assetPath: 'assets/images/${v['image']}',
-                              cacheWidth: 640,
+                            child: Transform.scale(
+                              scale: v['scale'] as double,
                               alignment: Alignment.bottomCenter,
-                              fallback: Icon(
-                                Icons.directions_car_rounded,
-                                color: _gold.withValues(alpha: 0.5),
-                                size: 56,
+                              child: CarImage3D(
+                                assetPath: 'assets/images/${v['image']}',
+                                cacheWidth: 640,
+                                alignment: Alignment.bottomCenter,
+                                fallback: Icon(
+                                  Icons.directions_car_rounded,
+                                  color: _gold.withValues(alpha: 0.5),
+                                  size: 56,
+                                ),
                               ),
                             ),
                           ),

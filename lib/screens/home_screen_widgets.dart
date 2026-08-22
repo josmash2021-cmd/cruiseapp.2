@@ -210,10 +210,9 @@ extension _HomeScreenWidgets on _HomeScreenState {
               child: _buildFleetHeader(),
             ),
               const SizedBox(height: 16),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 24),
-                child: RepaintBoundary(child: _buildFleetStack(screenW)),
-              ),
+              // No horizontal padding here: the carousel owns its insets so
+              // the next card can peek past the screen edge.
+              RepaintBoundary(child: _buildFleetStack(screenW)),
 
               const SizedBox(height: 36),
 
@@ -1037,7 +1036,7 @@ extension _HomeScreenWidgets on _HomeScreenState {
     // back; build web WITH the token or you will see CARTO again.
     if (_activeRide != null) {
       return Container(
-        height: Responsive.h(190),
+        height: Responsive.h(220),
         decoration: neuBox(radius: 24),
         child: Center(
           child: Icon(
@@ -1059,7 +1058,7 @@ extension _HomeScreenWidgets on _HomeScreenState {
     final pos = _currentLatLng;
     if (pos == null) {
       return Container(
-        height: Responsive.h(190),
+        height: Responsive.h(220),
         decoration: neuBox(radius: 24),
         alignment: Alignment.center,
         child: Text(
@@ -1074,7 +1073,9 @@ extension _HomeScreenWidgets on _HomeScreenState {
     }
 
     return Container(
-      height: Responsive.h(190),
+      // Taller card (2026-08-22 spec: ~15% more presence) — all three
+      // branches (placeholder / no-fix / live) share the one number.
+      height: Responsive.h(220),
       decoration: neuBox(radius: 24),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(24),
@@ -1326,222 +1327,134 @@ extension _HomeScreenWidgets on _HomeScreenState {
     );
   }
 
-  // ─── Fleet: Premium dark cards with gold particles ───
+  // ─── Fleet: "More ways to ride" carousel (2026-08-22) ───
+  //
+  // Was a row of four narrow cards squeezed to quarter width; now a
+  // horizontal carousel of full-size cards, the next one peeking past the
+  // screen edge. Same tiers, same order (BLACK → PREMIUM → COMPACT →
+  // STANDARD), same car art, same way in (`_openSearchThenRide`) — only
+  // the reading changed.
   Widget _buildFleetStack(double screenW) {
     final active = _activeRide != null;
-
     final s = S.of(context);
     final vehicles = [
       {
-        'tier': 'VIP',
         'displayName': 'BLACK',
-        'desc': s.vipDesc,
-        'features': s.vipFeatures,
-        'idx': 0,
+        'desc': s.fleetBlackDesc,
         'image': 'cruisert1.png',
+        'rideId': 'suburban',
       },
       {
-        'tier': 'SUV_XL',
         'displayName': 'PREMIUM',
-        'desc': s.suvXlDesc,
-        'features': s.suvXlFeatures,
-        'idx': 1,
+        'desc': s.fleetPremiumDesc,
         'image': 'cruisert_suvxl.png',
+        'rideId': 'suv_xl',
       },
       {
-        // 'tier' is the internal key — it maps to the 'camry' ride id and
-        // picks the badge styling, so it stays PREMIUM. Only what the rider
-        // reads changes.
-        'tier': 'PREMIUM',
         'displayName': 'COMPACT',
-        'desc': s.premiumDesc,
-        'features': s.premiumFeatures,
-        'idx': 2,
+        'desc': s.fleetCompactDesc,
         'image': 'cruisert_compact.png',
+        'rideId': 'camry',
       },
       {
-        'tier': 'COMFORT',
         'displayName': 'STANDARD',
-        'desc': s.comfortDesc,
-        'features': s.comfortFeatures,
-        'idx': 3,
+        'desc': s.fleetStandardDesc,
         'image': 'cruisert3.png',
+        'rideId': 'fusion',
       },
     ];
 
-    // The card keeps its shape as tiers are added instead of getting
-    // narrower against a fixed height. Four tiers in the width three used
-    // to have would otherwise leave a card half as wide as it is tall —
-    // stretched, which is exactly what a vehicle card must not look like.
-    // Same geometry as the picker's cards, down to the numbers: 8 px apart,
-    // height 1.10 x width, everything inside scaled off a 120 px base. They
-    // are the same card in two places, and at 1 : 1.39 this one carried a
-    // band of dead air the other did not.
-    const double gap = 8.0;
-    final double cardW = (screenW - 48 - gap * 3) / 4;
-    final double cardH = (cardW * 1.10).clamp(84.0, 120.0);
-    final double k = cardH / 120.0;
-
-    return Row(
-      children: vehicles.map((v) {
-        final idx = v['idx'] as int;
-        final tier = v['tier'] as String;
-        final displayName = v['displayName'] as String;
-        final isVIP = tier == 'VIP';
-
-        final rideId = isVIP
-            ? 'suburban'
-            : tier == 'SUV_XL'
-                ? 'suv_xl'
-                : tier == 'PREMIUM'
-                    ? 'camry'
-                    : 'fusion';
-
-        return Expanded(
-          child: Padding(
-            padding: EdgeInsets.only(right: idx < 3 ? gap : 0),
-            child: IgnorePointer(
-              ignoring: active,
-              child: Opacity(
-                opacity: active ? 0.45 : 1.0,
-                child: GestureDetector(
-                  onTap: () => _openSearchThenRide(rideId: rideId),
-                  child: Container(
-                    height: cardH,
-                    clipBehavior: Clip.antiAlias,
-                    // No ring on any of them.
-                    //
-                    // PREMIUM carried a permanent gold border, which read as
-                    // "this one is selected" on a row where nothing is
-                    // selected — these four are a way in, not a choice being
-                    // held. The picker lost the same marking for the same
-                    // reason.
-                    decoration: neuBox(radius: 24),
-                    child: Stack(
-                      children: [
-                        // Display name pinned to the top
-                        Positioned(
-                          top: cardH * 0.083,
-                          left: 8,
-                          right: 8,
-                          child: FittedBox(
-                            fit: BoxFit.scaleDown,
-                            child: Text(
-                              displayName,
-                              textAlign: TextAlign.center,
-                              maxLines: 1,
-                              style: TextStyle(
+    // Card width tuned for the peek: ~74% of the screen leaves the next
+    // card's edge visible without turning the current one into a strip.
+    final cardW = (screenW * 0.74).clamp(240.0, 340.0);
+    return SizedBox(
+      height: 236,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        // The 24 aligns card #1 with the page margins; the right side gets
+        // the same so the LAST card does not kiss the screen edge.
+        padding: const EdgeInsets.symmetric(horizontal: 24),
+        physics: const BouncingScrollPhysics(),
+        itemCount: vehicles.length,
+        separatorBuilder: (_, __) => const SizedBox(width: 14),
+        itemBuilder: (ctx, i) {
+          final v = vehicles[i];
+          return IgnorePointer(
+            ignoring: active,
+            child: Opacity(
+              opacity: active ? 0.45 : 1.0,
+              child: GestureDetector(
+                onTap: () =>
+                    _openSearchThenRide(rideId: v['rideId'] as String),
+                child: Container(
+                  width: cardW,
+                  clipBehavior: Clip.antiAlias,
+                  decoration: neuBox(radius: 24),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Car photo, larger than the old row could afford.
+                      Expanded(
+                        child: Center(
+                          child: CarImage3D(
+                            assetPath: 'assets/images/${v['image']}',
+                            cacheWidth: 640,
+                            alignment: Alignment.bottomCenter,
+                            fallback: Icon(
+                              Icons.directions_car_rounded,
+                              color: _gold.withValues(alpha: 0.5),
+                              size: 56,
+                            ),
+                          ),
+                        ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              v['displayName'] as String,
+                              style: const TextStyle(
                                 color: Colors.white,
-                                fontSize: math.max(10.0, 13 * k),
+                                fontSize: 16,
                                 fontWeight: FontWeight.w800,
-                                letterSpacing: 0.5,
+                                letterSpacing: 0.6,
                               ),
                             ),
-                          ),
-                        ),
-                        // The wait, under the car.
-                        //
-                        // Just the range — no "of wait", no icon. On a card
-                        // this size the number is the whole message, and a
-                        // label beside it would take the room the car needs.
-                        Positioned(
-                          left: 8,
-                          right: 8,
-                          bottom: cardH * 0.122,
-                          child: Text(
-                            // Same tier keys the ride screen's estimate
-                            // uses — BLACK/PREMIUM/COMPACT/STANDARD map
-                            // straight down.
-                            _homeWaitRangeText(displayName.toLowerCase()),
-                            textAlign: TextAlign.center,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              color: Colors.white.withValues(alpha: 0.55),
-                              fontSize: math.max(10.0, 11 * k),
-                              fontWeight: FontWeight.w700,
-                              letterSpacing: 0.2,
-                            ),
-                          ),
-                        ),
-                        // Car centred in the band the title and the wait
-                        // line leave between them.
-                        //
-                        // Measured, not guessed: the title runs to y=32 and
-                        // the wait line starts at y=126, so a 58 px car
-                        // placed at y=50 has 18 px of air above and below.
-                        // Anchoring it to the bottom instead pushed it onto
-                        // the minutes — that is how they ended up behind
-                        // the wheels — and left the card top-heavy.
-                        // Nearly edge to edge now (2 px margins, was 10):
-                        // the render is far wider than it is tall, so on a
-                        // card this narrow the width is what sets the car's
-                        // size — wider box, bigger car. The band is also a
-                        // touch taller (0.42, was 0.383) without touching
-                        // the title above or the wait line below.
-                        Positioned(
-                          left: 8,
-                          right: 8,
-                          top: cardH * 0.28,
-                          child: SizedBox(
-                            height: cardH * 0.40,
-                            child: CarImage3D(
-                              assetPath: 'assets/images/${v['image']}',
-                              cacheWidth: 640,
-                              alignment: Alignment.bottomCenter,
-                              fallback: Icon(
-                                Icons.directions_car_rounded,
-                                color: _gold.withValues(alpha: 0.5),
-                                size: 40,
+                            const SizedBox(height: 4),
+                            Text(
+                              v['desc'] as String,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: Colors.white.withValues(alpha: 0.55),
+                                fontSize: 12.5,
+                                fontWeight: FontWeight.w500,
+                                height: 1.35,
                               ),
                             ),
-                          ),
+                            const SizedBox(height: 8),
+                            Text(
+                              s.continueArrow,
+                              style: const TextStyle(
+                                color: _gold,
+                                fontSize: 13.5,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ],
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
                 ),
               ),
             ),
-          ),
-        );
-      }).toList(),
+          );
+        },
+      ),
     );
-  }
-
-  /// The wait range for the tier cards on this screen.
-  ///
-  /// Reads the shared cache and asks for it once if it is not there yet —
-  /// the same answer the ride screen uses, so the rider is not told one
-  /// thing here and another after tapping through. Blank until it lands
-  /// rather than a guess that changes.
-  String _homeWaitRangeText(String tier) {
-    final pos = _currentLatLng;
-    if (pos == null) return '';
-    final est =
-        DriverWaitEstimate.cached(pos.latitude, pos.longitude, tier: tier);
-    if (est == null) {
-      // Not fetched yet. Kick it off and repaint when it arrives; the
-      // request is shared and cached PER TIER, so four cards cause four
-      // calls once — each card answers for its own category's drivers.
-      unawaited(
-        DriverWaitEstimate.fetch(
-                lat: pos.latitude, lng: pos.longitude, tier: tier)
-            .then((_) {
-          if (mounted) setState(() {});
-        }),
-      );
-      return '';
-    }
-    // Nothing at all when nobody is out there, not "No drivers available".
-    //
-    // These four cards are a menu, not an answer — the rider has not asked
-    // for anything yet, and telling them the town is empty before they have
-    // named a destination reads as the app turning them away at the door.
-    // The booking sheet is where the question is actually put, and that is
-    // where the empty answer belongs; it says so in full there.
-    if (est.driverCount == 0) return '';
-    return est.rangeLabel;
   }
 
   // ─── Quick access grid (Home, Work, places) ───

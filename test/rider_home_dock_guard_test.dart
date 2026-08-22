@@ -103,6 +103,62 @@ void main() {
     });
   });
 
+  group('fleet carousel ("More ways to ride")', () {
+    final start = widgets.indexOf('Widget _buildFleetStack(');
+    final block = widgets.substring(start, start + 5600);
+
+    test('is a horizontal carousel with peek, not the quarter-width row', () {
+      expect(block, contains('ListView.separated('));
+      expect(block, contains('scrollDirection: Axis.horizontal'));
+      expect(block, isNot(contains('return Row(')),
+          reason: 'the four-across Row was replaced by the carousel');
+    });
+
+    test('four tiers in BLACK → PREMIUM → COMPACT → STANDARD order', () {
+      final black = block.indexOf("'BLACK'");
+      final premium = block.indexOf("'PREMIUM'");
+      final compact = block.indexOf("'COMPACT'");
+      final standard = block.indexOf("'STANDARD'");
+      expect(black, greaterThan(-1));
+      expect(black, lessThan(premium));
+      expect(premium, lessThan(compact));
+      expect(compact, lessThan(standard));
+    });
+
+    test('the approved one-liners ride the cards', () {
+      for (final key in [
+        'fleetBlackDesc',
+        'fleetPremiumDesc',
+        'fleetCompactDesc',
+        'fleetStandardDesc',
+      ]) {
+        expect(block, contains(key), reason: 'missing $key');
+      }
+      final l10n =
+          File('lib/l10n/app_localizations.dart').readAsStringSync();
+      expect(l10n, contains('Seats for 7 with room for bags'));
+      expect(l10n, contains('Everyday sedan rides at our lowest price'));
+    });
+
+    test('tap reuses the existing tier handler', () {
+      expect(block, contains('_openSearchThenRide(rideId:'),
+          reason: 'the carousel must enter the flow through the same '
+              'handler the row used');
+      expect(block, contains('continueArrow'));
+    });
+
+    test('same car art as before, just bigger', () {
+      for (final asset in [
+        'cruisert1.png',
+        'cruisert_suvxl.png',
+        'cruisert_compact.png',
+        'cruisert3.png',
+      ]) {
+        expect(block, contains(asset), reason: 'missing $asset');
+      }
+    });
+  });
+
   group('permissions', () {
     test('the cold-start permissions page exists and opens Settings', () {
       final perms =

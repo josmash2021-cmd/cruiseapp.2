@@ -4711,6 +4711,22 @@ class S {
       _es ? 'Número de puerta' : 'Door number';
   String get noteChipPickingUp =>
       _es ? 'Recogerás a' : "You'll be picking up";
+
+  // ── Home fleet carousel ("More ways to ride", 2026-08-22) ──
+  // Approved one-liners per tier — not the picker copy, do not merge them.
+  String get fleetBlackDesc => _es
+      ? '7 puestos y espacio para maletas — tipo Suburban'
+      : 'Seats for 7 with room for bags — Suburban-style rides';
+  String get fleetPremiumDesc => _es
+      ? 'Cómodo y amplio, hasta 6 personas'
+      : 'Comfortable, roomier rides for up to 6';
+  String get fleetCompactDesc => _es
+      ? 'SUV compacta o sedán cómodo'
+      : 'A compact SUV or a comfy sedan';
+  String get fleetStandardDesc => _es
+      ? 'Sedán de todos los días, al mejor precio'
+      : 'Everyday sedan rides at our lowest price';
+  String get continueArrow => _es ? 'Continuar →' : 'Continue →';
   // Exact texts from the Shopify widget's __vrSearchMsgs rotation
   // (snippets-ride-request-airport.liquid:286).
   String get searchStatusMsg1 => _es ? 'Casi listo...' : 'Almost there...';

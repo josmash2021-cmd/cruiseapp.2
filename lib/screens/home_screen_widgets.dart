@@ -1353,28 +1353,24 @@ extension _HomeScreenWidgets on _HomeScreenState {
         'desc': s.fleetBlackDesc,
         'image': 'cruisert1.png',
         'rideId': 'suburban',
-        'scale': 1.0,
       },
       {
         'displayName': 'PREMIUM',
         'desc': s.fleetPremiumDesc,
         'image': 'cruisert_suvxl.png',
         'rideId': 'suv_xl',
-        'scale': 0.987,
       },
       {
         'displayName': 'COMPACT',
         'desc': s.fleetCompactDesc,
         'image': 'cruisert_compact.png',
         'rideId': 'camry',
-        'scale': 0.95,
       },
       {
         'displayName': 'STANDARD',
         'desc': s.fleetStandardDesc,
         'image': 'cruisert3.png',
         'rideId': 'fusion',
-        'scale': 1.05,
       },
     ];
 
@@ -1428,29 +1424,24 @@ extension _HomeScreenWidgets on _HomeScreenState {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       // Every car renders inside the SAME box — Black's
-                      // aspect ratio (845x318 ≈ 2.657) — and each PNG gets
-                      // its own scale so the VISIBLE BODY (measured by
-                      // alpha coverage, not canvas) is the same height on
-                      // all four cards: the tall SUV bodies read bigger
-                      // and the low sedan smaller at an identical frame
-                      // (user spec 2026-08-22). Anchored at the wheels so
-                      // the ground line never moves.
+                      // aspect ratio (845x318 ≈ 2.657) — and the text block
+                      // below is FIXED height: a 1-line description used to
+                      // leave a taller photo band on that card, which is
+                      // why Premium/Compact rendered visibly bigger than
+                      // Black/Standard (user report 2026-08-22). Same band
+                      // on all four cards = same size car on all four.
                       Expanded(
                         child: Center(
                           child: AspectRatio(
                             aspectRatio: 845 / 318,
-                            child: Transform.scale(
-                              scale: v['scale'] as double,
+                            child: CarImage3D(
+                              assetPath: 'assets/images/${v['image']}',
+                              cacheWidth: 640,
                               alignment: Alignment.bottomCenter,
-                              child: CarImage3D(
-                                assetPath: 'assets/images/${v['image']}',
-                                cacheWidth: 640,
-                                alignment: Alignment.bottomCenter,
-                                fallback: Icon(
-                                  Icons.directions_car_rounded,
-                                  color: _gold.withValues(alpha: 0.5),
-                                  size: 56,
-                                ),
+                              fallback: Icon(
+                                Icons.directions_car_rounded,
+                                color: _gold.withValues(alpha: 0.5),
+                                size: 56,
                               ),
                             ),
                           ),
@@ -1471,15 +1462,21 @@ extension _HomeScreenWidgets on _HomeScreenState {
                               ),
                             ),
                             const SizedBox(height: 4),
-                            Text(
-                              v['desc'] as String,
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                color: Colors.white.withValues(alpha: 0.55),
-                                fontSize: 12,
-                                fontWeight: FontWeight.w500,
-                                height: 1.3,
+                            // Fixed two-line box: the band above (and with
+                            // it the car's size) must not depend on whether
+                            // the description wraps.
+                            SizedBox(
+                              height: 32,
+                              child: Text(
+                                v['desc'] as String,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  color: Colors.white.withValues(alpha: 0.55),
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w500,
+                                  height: 1.3,
+                                ),
                               ),
                             ),
                             const SizedBox(height: 8),

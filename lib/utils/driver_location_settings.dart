@@ -70,11 +70,12 @@ LocationSettings driverLocationSettings({
       distanceFilter: distanceFilter,
       allowBackgroundLocationUpdates: background,
       pauseLocationUpdatesAutomatically: false,
-      // The blue status pill while we track in the background. Not
-      // decoration — it is what stops this reading as a location grab, and
-      // iOS expects it for a continuously-tracking app. Offline drivers get
-      // neither the pill nor the tracking.
-      showBackgroundLocationIndicator: background,
+      // Never the blue pill (driver spec 2026-08-22): while the driver is
+      // working, the Live Activity — the Cruise icon in the Dynamic Island,
+      // the lock-screen card on phones without one — is the visible "you
+      // are online and being tracked" indicator. The blue status pill
+      // duplicated it and read as a location grab.
+      showBackgroundLocationIndicator: false,
       activityType: ActivityType.automotiveNavigation,
     );
   }

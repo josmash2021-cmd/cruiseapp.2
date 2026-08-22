@@ -51,6 +51,52 @@ router = APIRouter()
 _COMMISSION_BY_TYPE = vehicle_tiers.COMMISSION
 _DEFAULT_COMMISSION = vehicle_tiers.DEFAULT_COMMISSION
 
+# Scheduled-ride cancellation policy (rider cancels BEFORE dispatch).
+# One place only: the app's cancellation-policy page shows these exact
+# numbers, and test_scheduled_cancel_fee.py compares both sources so the
+# page can never drift from what the hold actually captures.
+#
+# Free while the pickup is more than this many minutes out, or while no
+# driver has been found; inside the window with a driver assigned, the
+# tier fee below, capped by the trip's upfront fare.
+SCHEDULED_CANCEL_FREE_WINDOW_MIN = 60
+SCHEDULED_CANCEL_FEE_BY_TIER = {
+    "compact": 10.0,
+    "standard": 15.0,
+    "premium": 25.0,
+    "black": 35.0,
+}
+
+
+def _scheduled_cancel_fee(trip) -> float:
+    """Cancellation fee for a scheduled ride that has not been dispatched.
+
+    Returns dollars (0.0 = free). The on-demand $5 rule below is untouched:
+    it governs trips already dispatched (driver_en_route and beyond).
+    """
+    # No driver found → waived, whatever the clock says.
+    if trip.driver_id is None:
+        return 0.0
+    ref = getattr(trip, "scheduled_at", None)
+    if ref is not None:
+        # SQLite returns tz-naive datetimes — normalize before subtracting
+        # from tz-aware now (Postgres timestamptz is already aware).
+        if ref.tzinfo is None:
+            ref = ref.replace(tzinfo=timezone.utc)
+        minutes_left = (ref - datetime.now(timezone.utc)).total_seconds() / 60
+        if minutes_left > SCHEDULED_CANCEL_FREE_WINDOW_MIN:
+            return 0.0
+    fee = SCHEDULED_CANCEL_FEE_BY_TIER.get(
+        vehicle_tiers.normalize_tier(getattr(trip, "vehicle_type", None)),
+        SCHEDULED_CANCEL_FEE_BY_TIER["standard"],
+    )
+    # Never more than the upfront price — "or your upfront price, whichever
+    # is lower", as the policy page promises.
+    fare_total = float(getattr(trip, "fare", None) or 0.0)
+    if fare_total > 0:
+        return min(fee, fare_total)
+    return fee
+
 # Alias map: Flutter driver app sends variant status names that must be
 # normalised to canonical values before transition checks or DB storage.
 def _vehicle_key(vehicle_type: str | None) -> str:
@@ -1903,8 +1949,14 @@ async def cancel_trip(trip_id: int, request: Request, user: User = Depends(_get_
     # Apply $5 cancellation fee if driver was already en route and rider waited > 2 min
     # Use driver_assigned_at for accurate en-route timing (not updated_at which
     # changes on any trip update).
+    #
+    # Scheduled rides that have NOT been dispatched play by the published
+    # policy instead (see _scheduled_cancel_fee): free >60 min out or with
+    # no driver found; tier fee capped by the upfront fare inside the hour.
     cancellation_fee = 0.0
-    if trip.status in ("driver_en_route", "driver_arriving", "driver_arrived", "arrived"):
+    if trip.status in ("scheduled", "scheduled_accepted"):
+        cancellation_fee = _scheduled_cancel_fee(trip)
+    elif trip.status in ("driver_en_route", "driver_arriving", "driver_arrived", "arrived"):
         reference_time = trip.driver_assigned_at or trip.updated_at
         # SQLite returns tz-naive datetimes — normalize before subtracting
         # from tz-aware now (Postgres timestamptz is already aware).

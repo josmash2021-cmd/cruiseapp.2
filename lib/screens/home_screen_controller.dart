@@ -890,9 +890,17 @@ extension _HomeScreenController on _HomeScreenState {
     }
   }
 
-  void _openScheduleFlow() => _showScheduleSheet();
-
-  Future<void> _openScheduleSheet() => _showScheduleSheet();
+  /// The one entry into scheduling (dock tab + hero row). Opens the hub;
+  /// the hub's own button drives the datetime page and the shared booking
+  /// continuation (schedule_flow_entry.dart). The legacy sheet chain was
+  /// retired with the hub (2026-08-22).
+  Future<void> _openScheduleSheet() async {
+    // Same gate the old sheet had: an unapproved rider never sees the
+    // booking flow — the hub's gate lives at its entry, not inside it.
+    if (!await _ensureVerified()) return;
+    if (!mounted) return;
+    Navigator.of(context).push(slideUpFadeRoute(const ScheduleHubScreen()));
+  }
 
   void _resumeActiveRide() {
     // Idempotency guard: both this path (local-cache resume) and
@@ -957,12 +965,13 @@ extension _HomeScreenController on _HomeScreenState {
 
   /// Opens the scheduled ride's live state: if the trip is already active
   /// (en route / arrived / in trip), navigates to RiderTrackingScreen at the
-  /// current phase. Otherwise falls back to the ScheduledRidesScreen list.
+  /// current phase. Otherwise falls back to the schedule hub (the rider's
+  /// scheduled-rides list screen was retired with the hub, 2026-08-22).
   Future<void> _openScheduledRideLive() async {
     final ride = _nextScheduledRide;
     if (ride == null) {
       await Navigator.of(context).push(
-        slideFromRightRoute(const ScheduledRidesScreen()),
+        slideFromRightRoute(const ScheduleHubScreen()),
       );
       _loadSavedData();
       return;
@@ -1029,10 +1038,10 @@ extension _HomeScreenController on _HomeScreenState {
       debugPrint('[HomeScreen] Scheduled ride live check failed: $e');
     }
 
-    // Fallback: open scheduled rides list
+    // Fallback: open the schedule hub
     if (!mounted) return;
     await Navigator.of(context).push(
-      slideFromRightRoute(const ScheduledRidesScreen()),
+      slideFromRightRoute(const ScheduleHubScreen()),
     );
     _loadSavedData();
   }

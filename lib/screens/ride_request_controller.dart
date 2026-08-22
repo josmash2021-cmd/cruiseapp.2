@@ -1308,8 +1308,41 @@ extension _RideRequestController on _RideRequestScreenState {
   }
 
   /// Processes payment directly from the route preview sheet.
-  Future<void> _startRideDirectly(AppColors c, RideOption? option) async {
-    if (option == null) return;
+  /// "Select {tier}" opens the pickup-confirm page (2026-08-22 spec): the
+  /// rider drags the pin to the exact spot and may leave a driver note
+  /// BEFORE paying. The page hands the confirmed pin + note back through
+  /// [onConfirm], which writes them into the trip state and runs the SAME
+  /// payment/dispatch pipeline the button used to run inline — the hold
+  /// order, the 402 decline path and the test-mode bypass are untouched.
+  Future<void> _openPickupConfirm(AppColors c, RideOption option) async {
+    final state = _ctrl.state;
+    final pickup = state.pickup;
+    final dropoff = state.dropoff;
+    if (pickup == null || dropoff == null) return;
+    if (!mounted) return;
+    await Navigator.of(context).push<bool>(
+      slideUpFadeRoute(SetPickupLocationScreen(
+        pickup: pickup,
+        pickupLabel: state.pickupLabel,
+        dropoff: dropoff,
+        dropoffLabel: state.dropoffLabel,
+        tierName: TierInfo.displayTitle(option.name),
+        priceText: '\$${option.priceEstimate.toStringAsFixed(2)}',
+        paymentLabel: _paymentLabel(_selectedPaymentMethod),
+        isApplePay: _selectedPaymentMethod == 'apple_pay',
+        onConfirm: (picked, note) async {
+          // The dragged pin IS the pickup now; the note rides into the
+          // booking notes (compose happens in the create/dispatch calls).
+          _ctrl.setPickup(picked, picked.address);
+          _ctrl.setPickupNote(note);
+          await _startRideDirectly(c, option);
+        },
+      )),
+    );
+    // Back from the pin page without paying — nothing to do.
+  }
+
+  Future<void> _startRideDirectly(AppColors c, RideOption? option) async {    if (option == null) return;
 
     // Resolved once, and before the re-entrancy guard below — never between
     // that guard and _rideFlowLocked. An await in that gap spans event-loop
@@ -2160,9 +2193,13 @@ extension _RideRequestController on _RideRequestScreenState {
       // _autoApplyAirportSelection — read it straight from there so both
       // scheduled createTrip and immediate dispatchRideRequest agree.
       final flight = state.airportFlight?.trim();
-      final notes = (flight != null && flight.isNotEmpty)
-          ? 'Flight: $flight'
-          : null;
+      final noteLines = <String>[
+        if ((state.stopAddress ?? '').isNotEmpty)
+          'Stop: ${state.stopAddress}',
+        if (flight != null && flight.isNotEmpty) 'Flight: $flight',
+        if ((state.pickupNote ?? '').isNotEmpty) state.pickupNote!,
+      ];
+      final notes = noteLines.isEmpty ? null : noteLines.join('\n');
 
       await ApiService.createTrip(
         riderId: userId,

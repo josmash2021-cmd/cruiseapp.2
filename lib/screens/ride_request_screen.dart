@@ -54,12 +54,13 @@ import '../widgets/gold_pin_renderer.dart';
 import '../widgets/map/animated_map_label.dart';
 
 import '../widgets/map/circular_pin_renderer.dart';
+import '../widgets/tier_badge.dart';
 import '../widgets/verified_avatar.dart';
+import 'set_pickup_location_screen.dart';
 import '../utils/mapbox_safe.dart';
 import 'ride_booking_confirmed_screen.dart';
 import 'ride_payment_method_screen.dart';
 import 'tap_to_pay_screen.dart';
-import 'scheduled_rides_screen.dart';
 import 'searching_driver_screen.dart';
 import 'waiting_for_driver_screen.dart';
 import 'home_screen.dart';
@@ -103,6 +104,9 @@ class RideRequestScreen extends StatefulWidget {
   final String? initialDropoffAddress;
   final PlaceDetails? initialPickupDetails;
   final PlaceDetails? initialDropoffDetails;
+  /// The intermediate stop chosen on the addresses page ("+"). Travels in
+  /// the booking notes ("Stop: …") — the create endpoint takes no stop field.
+  final String? initialStopAddress;
   final String? initialPickupLabel;
   final String? initialDropoffLabel;
   final RouteResult? preloadedRoute;
@@ -130,6 +134,7 @@ class RideRequestScreen extends StatefulWidget {
     this.scheduledAt,
     this.airportSelection,
     this.initialDropoffAddress,
+    this.initialStopAddress,
     this.initialPickupDetails,
     this.initialDropoffDetails,
     this.initialPickupLabel,
@@ -590,7 +595,23 @@ class _RideRequestScreenState extends State<RideRequestScreen>
     }
     if (!mounted) return;
     final id = stored;
-    if (id == null || id.isEmpty) return;
+    if (id == null || id.isEmpty) {
+      // iPhone with Apple Pay available: it is the preselected default
+      // (2026-08-22 spec). Android and unsupported devices keep the old
+      // "choose a method" empty state.
+      if (AppPlatform.isIOS && !kIsWeb) {
+        try {
+          final supported =
+              await stripe.Stripe.instance.isPlatformPaySupported(
+            googlePay: const stripe.IsGooglePaySupportedParams(),
+          );
+          if (supported && mounted) {
+            _setState(() => _selectedPaymentMethod = 'apple_pay');
+          }
+        } catch (_) {}
+      }
+      return;
+    }
     // Ordered on purpose: this restore and the gate resolution were both
     // unawaited futures, so whichever landed last won, and a stored
     // 'test_mode' landing second put the free ride back on the button.
@@ -931,6 +952,9 @@ class _RideRequestScreenState extends State<RideRequestScreen>
     }
     if (widget.scheduledAt != null) {
       _ctrl.setSchedule(widget.scheduledAt);
+    }
+    if ((widget.initialStopAddress ?? '').isNotEmpty) {
+      _ctrl.setStopAddress(widget.initialStopAddress);
     }
 
     // ── Pre-populate map center from initial details so map renders instantly ──

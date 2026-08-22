@@ -82,6 +82,10 @@
 			</dict>
 		</dict>
 	</dict>
+	<key>NSCalendarsUsageDescription</key>
+	<string>Cruise reads your upcoming calendar events to suggest rides you may want to schedule.</string>
+	<key>NSCalendarsFullAccessUsageDescription</key>
+	<string>Cruise reads your upcoming calendar events to suggest rides you may want to schedule.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Cruise uses your location while the app is open to show nearby drivers, calculate routes, and track your trip.</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>

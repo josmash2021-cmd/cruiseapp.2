@@ -4580,6 +4580,137 @@ class S {
       _es ? 'Buscar en esta zona' : 'Search this area';
   String get schedMapDismiss => _es ? 'Descartar' : 'Dismiss';
   String get schedMapReserve => _es ? 'RESERVAR' : 'RESERVE';
+
+  // ── Rider home redesign (Ride / Schedule hero) + permissions screen ──
+  String get heroRideScheduleTitle =>
+      _es ? 'Viaje / Programar' : 'Ride / Schedule';
+  String get heroRideRow => _es ? 'Viaje' : 'Ride';
+  String get heroRideRowSubtitle =>
+      _es ? 'Pide un viaje ahora' : 'Request a ride now';
+  String get heroScheduleRow => _es ? 'Programar' : 'Schedule';
+  String get heroScheduleRowSubtitle =>
+      _es ? 'Reserva para más tarde' : 'Book for later';
+  String get permsTitle => _es ? 'Permisos' : 'Permissions';
+  String get permsSubtitle => _es
+      ? 'Cruise funciona mejor con esto activado.'
+      : 'Cruise works best with these on.';
+  String get permsLocation => _es ? 'Ubicación' : 'Location';
+  String get permsLocationDesc => _es
+      ? 'Para ubicarte en el mapa y encontrar conductores cerca.'
+      : 'To place you on the map and find drivers nearby.';
+  String get permsNotifications => _es ? 'Notificaciones' : 'Notifications';
+  String get permsNotificationsDesc => _es
+      ? 'Para avisarte cuando tu conductor llega y sobre tu viaje.'
+      : 'To tell you when your driver arrives and about your trip.';
+  String get permsEnabled => _es ? 'Activado' : 'Enabled';
+  String get permsMissing => _es ? 'Falta' : 'Missing';
+
+  // ── Schedule hub + datetime + policy + airline select (2026-08-22) ──
+  String get scheduleHubTitle => _es ? 'Programar' : 'Schedule';
+  String get scheduleHubHeadline =>
+      _es ? 'Planifica. Viaja relajado.' : 'Plan ahead. Ride relaxed.';
+  String get scheduleHubSubtext => _es
+      ? "Vuelo temprano. Cena tarde. Esa reunión inaplazable... reserva con tiempo."
+      : "Early flight. Late dinner. Can't-miss meeting... book ahead.";
+  // scheduleARide reuses the existing key ('Programar un Viaje' /
+  // 'Schedule a Ride') defined up in the schedule block — no duplicate.
+  String get scheduleHubToolsTitle =>
+      _es ? 'Herramientas inteligentes' : 'Smart planning tools';
+  String get calendarCardTitle => _es ? 'Tus calendarios' : 'Your calendars';
+  String get calendarCardSubtitle => _es
+      ? 'Recibe recordatorios personalizados'
+      : 'Get personalized reminders';
+  String get calendarConnectButton => 'Apple Calendar';
+  String get calendarDeniedBody => _es
+      ? 'Sin acceso al calendario. Actívalo en Ajustes para ver tus próximos eventos aquí.'
+      : 'Calendar access is off. Enable it in Settings to see your upcoming events here.';
+  String get calendarNoEvents => _es
+      ? 'No hay eventos en los próximos 7 días.'
+      : 'No events in the next 7 days.';
+  String get calendarUntitledEvent =>
+      _es ? 'Evento sin título' : 'Untitled event';
+  String get calendarScheduleRide =>
+      _es ? 'Programar viaje' : 'Schedule ride';
+
+  String get schedDateTimeTitle =>
+      _es ? 'Programar un viaje' : 'Schedule a ride';
+  String get schedDepart => _es ? 'Salida' : 'Depart';
+  String get schedArrive => _es ? 'Llegada' : 'Arrive';
+  String schedEstimatedRideTime(int minutes) => _es
+      ? 'Tiempo estimado del viaje: $minutes min'
+      : 'Estimated ride time: $minutes min';
+  String schedDropoffAt(String time) =>
+      _es ? 'Llegada: $time' : 'Drop-off: $time';
+  String schedPickupAt(String time) =>
+      _es ? 'Recogida: $time' : 'Pickup: $time';
+  String get schedPriorityNote => _es
+      ? 'Los viajes programados tienen emparejamiento prioritario. Te avisaremos cuando un conductor acepte tu viaje.'
+      : "Scheduled rides get priority matching. You'll be notified when a driver accepts your ride.";
+  String get schedCancelEditFree =>
+      _es ? 'Cancela o edita gratis' : 'Cancel or edit for free';
+  String get schedToday => _es ? 'Hoy' : 'Today';
+  String get schedTomorrow => _es ? 'Mañana' : 'Tomorrow';
+
+  String get cancelPolicyTitle =>
+      _es ? 'Política de cancelación' : 'Cancellation policy';
+  String get cancelPolicyIntro => _es
+      ? 'Cancela tu viaje gratis hasta 1 hora antes de la recogida. Se te cobrará una tarifa de cancelación si cancelas dentro de la hora previa a tu viaje programado. Si no se ha encontrado conductor, la tarifa se exime.'
+      : "Cancel your ride for free up to 1 hour before pickup. You'll be charged a cancellation fee if you cancel within 1 hour of your scheduled ride. If a driver hasn't been found, your fee will be waived.";
+  String cancelPolicyFeeLine(int fee) => _es
+      ? 'Tarifa de cancelación: \$$fee o el precio inicial, el menor.'
+      : 'Cancellation Fee: \$$fee or your upfront price, whichever is lower.';
+
+  String get airlineSelectTitle =>
+      _es ? 'Selecciona tu aerolínea' : 'Select your airline';
+  String get airlineSkip => _es ? 'Omitir' : 'Skip';
+  String airlinePopularAt(String code) =>
+      _es ? 'Aerolíneas populares en $code' : 'Popular airlines at $code';
+  String get airlineSeeMore =>
+      _es ? 'Ver más aerolíneas' : 'See more airlines';
+  String get airlineSearchHint =>
+      _es ? 'Buscar aerolínea' : 'Search airlines';
+  String get airlineNoResults => _es ? 'Sin resultados' : 'No results';
+
+  // ── Rider booking flow rebuild (2026-08-22): addresses page, Select
+  // {tier}, pickup-pin page, note sheet ──
+  String get addressTitleStart => _es ? 'Inicio' : 'Start';
+  String get addressTitleDestination => _es ? 'Destino' : 'Destination';
+  String get stopFieldLabel => _es ? 'Parada' : 'Stop';
+  String get scheduleAheadChip =>
+      _es ? 'Programar con tiempo' : 'Schedule ahead';
+  String selectTierLabel(String tier) =>
+      _es ? 'Seleccionar $tier' : 'Select $tier';
+
+  String get setPickupTitle => _es
+      ? 'Ajusta tu punto de recogida'
+      : 'Set your pickup location';
+  String get setPickupSub => _es
+      ? 'Arrastra el mapa o edita la dirección para fijar tu recogida'
+      : 'Drag map or edit address to set your pickup';
+  String get pickupLocationField =>
+      _es ? 'Punto de recogida' : 'Pickup location';
+  // addNoteForDriver reuses the existing key defined in the trip block —
+  // the "+" affordance is the icon next to it, not the text.
+  String get addNoteForDriverButton =>
+      _es ? 'Agregar nota para el conductor' : 'Add note for driver';
+  String get noteSheetTitle => _es
+      ? 'Para una recogida sin fricción, agrega una nota.'
+      : 'For a smooth pickup, add a note.';
+  String get pickupNoteField => _es ? 'Nota de recogida' : 'Pickup note';
+  String payWith(String method) =>
+      _es ? 'Pagar con $method' : 'Pay with $method';
+  String get recommendedPin => _es ? 'Recomendado' : 'Recommended';
+
+  String get noteChipGateCode => _es ? 'Código de portón' : 'Gate code';
+  String get noteChipWearing => _es ? 'Llevo puesto' : "I'm wearing";
+  String get noteChipCorner =>
+      _es ? 'Estoy en la esquina de' : "I'm at the corner of";
+  String get noteChipInFront =>
+      _es ? 'Estoy frente a' : "I'm in front of";
+  String get noteChipDoorNumber =>
+      _es ? 'Número de puerta' : 'Door number';
+  String get noteChipPickingUp =>
+      _es ? 'Recogerás a' : "You'll be picking up";
   // Exact texts from the Shopify widget's __vrSearchMsgs rotation
   // (snippets-ride-request-airport.liquid:286).
   String get searchStatusMsg1 => _es ? 'Casi listo...' : 'Almost there...';

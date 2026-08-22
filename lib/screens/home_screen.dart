@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:math' as math;
-import 'dart:ui' as ui;
 import 'package:audioplayers/audioplayers.dart';
 
 import '../services/audio_session_config.dart';
@@ -25,16 +24,12 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/foundation.dart' show kDebugMode, kIsWeb;
 import '../utils/mapbox_safe.dart';
 import '../utils/driver_location_settings.dart';
-import 'airport_terminal_sheet.dart';
-import 'airport_direction_screen.dart';
 import 'biometric_consent_screen.dart';
-import 'choose_ride_type_screen.dart';
 import 'identity_verification_screen.dart';
-import 'schedule_ride_flow.dart';
+import 'schedule_hub_screen.dart';
 import 'pickup_dropoff_search_screen.dart';
 import 'ride_request_screen.dart';
 import 'rider_tracking_screen.dart';
-import 'scheduled_rides_screen.dart';
 import 'trip_receipt_screen.dart';
 import 'account_screen.dart';
 import '../config/api_keys.dart';
@@ -53,6 +48,7 @@ import '../l10n/app_localizations.dart';
 import '../services/user_session.dart';
 import 'welcome_screen.dart';
 import 'account_deactivated_screen.dart';
+import 'rider_permissions_screen.dart';
 import '../widgets/neu_style.dart';
 import '../widgets/gold_location_dot.dart';
 import '../widgets/car_image_3d.dart';
@@ -100,18 +96,16 @@ class _HomeScreenState extends State<HomeScreen>
   void _setState(VoidCallback fn) { if (mounted) setState(fn); }
   // Brand colors — premium shiny gold
 
-  late AnimationController _boltFlashCtrl;
-  late AnimationController _promoShimmerCtrl;
-  bool _promoUsed = false;
-  int _promoTripsLeft = 0; // trips needed to unlock next promo
-  bool _rideNow = true;
-  bool _driversOnline = false;
+  // The bolt/promo animation controllers and the promo counters left with
+  // the circular shortcut row (2026-08-22 home redesign); the promo data
+  // itself still loads in _loadSavedData for the request flow.
+  // The drivers-online probe and the promo counters left with the circular
+  // shortcut row they fed (2026-08-22 redesign); the promo data itself still
+  // loads in _loadSavedData for the inbox notification.
   List<FavoritePlace> _favorites = [];
   List<TripHistoryItem> _recentTrips = [];
   List<FrequentDestination> _topDestinations = [];
-  List<AppNotificationItem> _notifications = [];
   bool _loadingSavedData = true;
-  bool _hasActivePromo = false;
   int _dockIndex = 0; // 0=Ride, 1=Schedule, 2=Account
 
   // Scheduled ride indicator
@@ -247,7 +241,6 @@ class _HomeScreenState extends State<HomeScreen>
   bool get _didAutoResumeRide => HomeScreen.autoResumeConsumed;
   set _didAutoResumeRide(bool v) => HomeScreen.autoResumeConsumed = v;
   bool _openingRideFlow = false; // re-entry guard for _openSearchThenRide so back+retry doesn't double-push or skip dropoff
-  bool _openingScheduleFlow = false; // re-entry guard for _showScheduleSheet (Schedule + Later switch + Airport via Schedule)
 
 
 
@@ -257,33 +250,27 @@ class _HomeScreenState extends State<HomeScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    // Optimized: fewer animation controllers to reduce CPU usage
-    _boltFlashCtrl = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 400),
-    );
-    _promoShimmerCtrl = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1500),
-    );
     _rideFadeCtrl = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 600),
       value: 1.0, // fully visible
     );
-    // Flash bolt every 2 seconds
-    _boltFlashLoop();
     // Defer heavy loading until after first frame for faster startup
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         _loadSavedData();
-        _loadPromoUsed();
         _preloadSounds();
         // Register/refresh the rider FCM token (covers fresh logins).
         unawaited(NotificationService.registerTokenWithBackend());
       }
     });
-    _fetchCurrentLocation();
+    // Rider permission flow (once per install: location → notifications;
+    // then once per cold start: the status page while anything is missing).
+    // The map's location fetch waits for it so the two never race the same
+    // system dialog.
+    _runRiderPermissionFlow().whenComplete(() {
+      if (mounted) _fetchCurrentLocation();
+    });
     // Eagerly load cached user name so greeting never shows "Rider"
     UserSession.getUser().then((user) {
       if (user != null && mounted && _firstName.isEmpty) {
@@ -315,16 +302,8 @@ class _HomeScreenState extends State<HomeScreen>
     _headingSub = _headingSource.stream.listen((deg) {
       _homeDot.setBearing(deg);
     });
-    // Defer driver check until after first frame to avoid blocking startup
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _checkDriversOnline();
-    });
     _listenServiceZones();
     _listenVerificationStatus();
-    _driverCheckTimer = Timer.periodic(
-      const Duration(seconds: 120),
-      (_) => _checkDriversOnline(),
-    );
     // Imminent ride timer — refreshes every 60 seconds
     _imminentRideTimer = Timer.periodic(
       const Duration(seconds: 60),
@@ -387,7 +366,6 @@ class _HomeScreenState extends State<HomeScreen>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.paused) {
-      _driverCheckTimer?.cancel();
       _accountStatusTimer?.cancel();
       _pendingVerifyTimer?.cancel();
       _countdownTimer?.cancel();
@@ -399,10 +377,7 @@ class _HomeScreenState extends State<HomeScreen>
       _gpsStreamWatchdog?.cancel();
       _gpsStreamWatchdog = null;
       // Pause animations to save CPU/GPU when backgrounded
-      _promoShimmerCtrl.stop();
     } else if (state == AppLifecycleState.resumed) {
-      // Resume looping animations
-      _promoShimmerCtrl.repeat();
       // FIX: Restart GPS stream — Geolocator stream can die in background
       // on some Android/iOS devices. Re-establish it after resume.
       _fetchCurrentLocation();
@@ -410,12 +385,6 @@ class _HomeScreenState extends State<HomeScreen>
       _startLocationWatchdogs();
       // Ensure the mini map dot ticker is running after resume.
       _homeDot.ensureRunning();
-      _checkDriversOnline();
-      _driverCheckTimer?.cancel();
-      _driverCheckTimer = Timer.periodic(
-        const Duration(seconds: 120),
-        (_) => _checkDriversOnline(),
-      );
       _checkAccountStatus();
       _accountStatusTimer?.cancel();
       _accountStatusTimer = Timer.periodic(
@@ -550,10 +519,7 @@ class _HomeScreenState extends State<HomeScreen>
     _headingSub?.cancel();
     _headingSource.dispose();
     _miniDotFrame.dispose();
-    _boltFlashCtrl.dispose();
-    _promoShimmerCtrl.dispose();
     _rideFadeCtrl.dispose();
-    _driverCheckTimer?.cancel();
     _accountStatusTimer?.cancel();
     _pendingVerifyTimer?.cancel();
     _accountStatusSub?.cancel();
@@ -671,11 +637,62 @@ class _HomeScreenState extends State<HomeScreen>
     return false;
   }
 
+  // ── Rider permission flow ────────────────────────────────────────────────
+  //
+  /// True once the status page was shown this process — it reappears on the
+  /// next cold start while a permission is still missing, never twice in one.
+  static bool _permsScreenShownThisProcess = false;
+
+  /// Ordered permission asks for the rider (spec 2026-08-22).
+  ///
+  /// Fresh install, first home after login/signup: location FIRST, then
+  /// notifications — once per install (`rider_perms_prompted_v1`). The map's
+  /// own `_fetchCurrentLocation` is deferred until this settles so the two
+  /// never race the same system dialog.
+  ///
+  /// Later cold starts with a session: whatever is still missing gets the
+  /// [RiderPermissionsScreen] status page (Settings route), once per process
+  /// — iOS will not show the system dialog a second time, so re-asking in
+  /// app would be a dead tap.
+  Future<void> _runRiderPermissionFlow() async {
+    if (kIsWeb) return;
+    try {
+      final mode = await UserSession.getMode();
+      if (mode != 'rider' || !mounted) return;
+      final prefs = await SharedPreferences.getInstance();
+      if (!mounted) return;
+      final prompted = prefs.getBool('rider_perms_prompted_v1') == true;
+      if (!prompted) {
+        // 1. Location.
+        var perm = await Geolocator.checkPermission();
+        if (perm == LocationPermission.denied) {
+          perm = await Geolocator.requestPermission();
+        }
+        if (!mounted) return;
+        // 2. Notifications — after location, never before.
+        await NotificationService.requestPermission();
+        if (!mounted) return;
+        unawaited(NotificationService.registerTokenWithBackend());
+        await prefs.setBool('rider_perms_prompted_v1', true);
+        // The system dialogs just ran; the status page would double-ask.
+        return;
+      }
+      if (_permsScreenShownThisProcess) return;
+      final locPerm = await Geolocator.checkPermission();
+      final locOk = locPerm == LocationPermission.always ||
+          locPerm == LocationPermission.whileInUse;
+      final notifOk = await NotificationService.isPermissionGranted();
+      if (!mounted || (locOk && notifOk)) return;
+      _permsScreenShownThisProcess = true;
+      await Navigator.of(context)
+          .push(slideUpFadeRoute(const RiderPermissionsScreen()));
+    } catch (_) {}
+  }
+
   /// Told to a rider whose identity is captured but whose account is still
   /// waiting on approval: booking stays locked, and re-opening the KYC flow
   /// would not change that.
-  void _showApprovalRequiredDialog() {
-    showDialog<void>(
+  void _showApprovalRequiredDialog() {    showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: const Color(0xFF1C1E24),
@@ -942,7 +959,6 @@ class _HomeScreenState extends State<HomeScreen>
   /// same notifier on the driver screens.
   final ValueNotifier<int> _miniDotFrame = ValueNotifier<int>(0);
 
-  Timer? _driverCheckTimer;
   Timer? _accountStatusTimer;
   Timer? _pendingVerifyTimer;
   StreamSubscription<Map<String, dynamic>>? _accountStatusSub;
@@ -1008,301 +1024,6 @@ class _HomeScreenState extends State<HomeScreen>
     } catch (_) {}
   }
 
-  Future<void> _loadPromoUsed() async {
-    final used = await LocalDataService.getPromoUsed();
-    final prefs = await SharedPreferences.getInstance();
-    final tripsLeft = prefs.getInt('promo_trips_left') ?? 0;
-    if (mounted) {
-      setState(() {
-        _promoUsed = used && tripsLeft > 0;
-        _promoTripsLeft = tripsLeft;
-      });
-    }
-  }
-
-  Future<void> _checkDriversOnline() async {
-    try {
-      if (_currentLatLng == null) return;
-      final lat = _currentLatLng!.latitude;
-      final lng = _currentLatLng!.longitude;
-      final count = await ApiService.getNearbyDriversCount(lat: lat, lng: lng);
-      if (mounted) setState(() => _driversOnline = count > 0);
-    } catch (_) {
-      if (mounted) setState(() => _driversOnline = false);
-    }
-  }
-
-  Future<void> _showPromoWelcomeDialog() async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) {
-        final c = AppColors.of(ctx);
-        return AlertDialog(
-          backgroundColor: c.panel,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(24),
-          ),
-          contentPadding: const EdgeInsets.fromLTRB(28, 28, 28, 12),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 64,
-                height: 64,
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [Color(0xFFE8C547), Color(0xFFFBE47A)],
-                  ),
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(
-                  Icons.card_giftcard_rounded,
-                  color: Colors.black,
-                  size: 32,
-                ),
-              ),
-              const SizedBox(height: 20),
-              Text(
-                S.of(context).welcomeGift,
-                style: TextStyle(
-                  color: c.textPrimary,
-                  fontSize: 22,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-              const SizedBox(height: 12),
-              Text(
-                S.of(context).promoWelcomeBody,
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: c.textSecondary,
-                  fontSize: 14,
-                  height: 1.5,
-                ),
-              ),
-              const SizedBox(height: 24),
-              SizedBox(
-                width: double.infinity,
-                height: 48,
-                child: ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFFE8C547),
-                    foregroundColor: Colors.black,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                    elevation: 0,
-                  ),
-                  onPressed: () => Navigator.of(ctx).pop(true),
-                  child: Text(
-                    S.of(context).applyAndRide,
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 8),
-              TextButton(
-                onPressed: () => Navigator.of(ctx).pop(false),
-                child: Text(
-                  S.of(context).cancel,
-                  style: TextStyle(color: c.textTertiary, fontSize: 14),
-                ),
-              ),
-            ],
-          ),
-        );
-      },
-    );
-
-    if (confirmed == true && mounted) {
-      // Do NOT mark the promo as used here. The previous flow burned
-      // the discount the moment the rider tapped "Apply and Ride",
-      // even if they backed out without requesting the trip. Now the
-      // promo is only consumed once the ride is actually confirmed
-      // (LocalDataService.usePromo is called inside the trip-request
-      // success path). If the rider cancels along the way, the 10%
-      // stays available on the next attempt.
-      //
-      // Reuse the standard Now flow (search -> ride_request) so the
-      // promo button shares the same re-entry guards and pickup/dropoff
-      // experience, just with applyPromo=true so the picked vehicle
-      // card shows the discounted price.
-      await _openSearchThenRide(applyPromo: true);
-    }
-  }
-
-  void _showPromoLockedDialog() {
-    final c = AppColors.of(context);
-    final completed = 3 - _promoTripsLeft;
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: c.panel,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        contentPadding: const EdgeInsets.fromLTRB(24, 24, 24, 16),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 56,
-              height: 56,
-              decoration: BoxDecoration(
-                color: const Color(0xFFE8C547).withValues(alpha: 0.12),
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(
-                Icons.lock_rounded,
-                color: Color(0xFFE8C547),
-                size: 28,
-              ),
-            ),
-            const SizedBox(height: 16),
-            Text(
-              S.of(context).promoLocked,
-              style: TextStyle(
-                color: c.textPrimary,
-                fontSize: 20,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-            const SizedBox(height: 10),
-            Text(
-              'Complete $_promoTripsLeft more ride${_promoTripsLeft == 1 ? '' : 's'} to unlock your next 10% discount!',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                color: c.textSecondary,
-                fontSize: 14,
-                height: 1.5,
-              ),
-            ),
-            const SizedBox(height: 16),
-            // Progress bar
-            ClipRRect(
-              borderRadius: BorderRadius.circular(6),
-              child: LinearProgressIndicator(
-                value: completed / 3.0,
-                minHeight: 8,
-                backgroundColor: Colors.white.withValues(alpha: 0.08),
-                valueColor: const AlwaysStoppedAnimation<Color>(
-                  Color(0xFFE8C547),
-                ),
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              S.of(context).promoLockedProgress(completed),
-              style: TextStyle(
-                color: c.textTertiary,
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            const SizedBox(height: 16),
-            SizedBox(
-              width: double.infinity,
-              height: 44,
-              child: ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFFE8C547),
-                  foregroundColor: Colors.black,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  elevation: 0,
-                ),
-                onPressed: () => Navigator.pop(ctx),
-                child: Text(
-                  S.of(context).gotIt,
-                  style: const TextStyle(fontWeight: FontWeight.w700),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  void _showFastRideUnavailableDialog() {
-    final c = AppColors.of(context);
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: c.panel,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        contentPadding: const EdgeInsets.fromLTRB(24, 24, 24, 16),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 56,
-              height: 56,
-              decoration: BoxDecoration(
-                color: Colors.orange.withValues(alpha: 0.12),
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(
-                Icons.bolt_rounded,
-                color: Colors.orange,
-                size: 28,
-              ),
-            ),
-            const SizedBox(height: 16),
-            Text(
-              S.of(context).fastRideUnavailableTitle,
-              style: TextStyle(
-                color: c.textPrimary,
-                fontSize: 18,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-            const SizedBox(height: 10),
-            Text(
-              S.of(context).fastRideUnavailable,
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                color: c.textSecondary,
-                fontSize: 14,
-                height: 1.5,
-              ),
-            ),
-            const SizedBox(height: 20),
-            SizedBox(
-              width: double.infinity,
-              height: 44,
-              child: ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFFE8C547),
-                  foregroundColor: Colors.black,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  elevation: 0,
-                ),
-                onPressed: () => Navigator.pop(ctx),
-                child: Text(
-                  S.of(context).understood,
-                  style: TextStyle(fontWeight: FontWeight.w700),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  void _boltFlashLoop() async {
-    while (mounted) {
-      await Future.delayed(const Duration(seconds: 2));
-      if (!mounted) break;
-      _boltFlashCtrl.forward().then((_) {
-        if (mounted) _boltFlashCtrl.reverse();
-      });
-    }
-  }
-
   Future<void> _loadSavedData() async {
     // Promo generation must finish first (it writes data read below)
     final newPromoGenerated =
@@ -1325,37 +1046,29 @@ class _HomeScreenState extends State<HomeScreen>
           .catchError((_) => <TripHistoryItem>[]),        // 1
       LocalDataService.getTopDestinations(limit: 3)
           .catchError((_) => <FrequentDestination>[]),    // 2
-      LocalDataService.getNotifications()
-          .catchError((_) => <AppNotificationItem>[]),    // 3
       UserSession.getUser()
-          .catchError((_) => null),                       // 4
-      LocalDataService.hasActivePromo()
-          .catchError((_) => false),                      // 5
+          .catchError((_) => null),                       // 3
       LocalDataService.getActiveRide()
-          .catchError((_) => null),                       // 6
+          .catchError((_) => null),                       // 4
       LocalDataService.isIdentityVerified()
-          .catchError((_) => false),                      // 7
+          .catchError((_) => false),                      // 5
       _loadNextScheduledRide()
-          .catchError((_) => null),                       // 8
+          .catchError((_) => null),                       // 6
     ]);
 
     final favorites = results[0] as List<FavoritePlace>;
     final trips = results[1] as List<TripHistoryItem>;
     final topDestinations = results[2] as List<FrequentDestination>;
-    final notifications = results[3] as List<AppNotificationItem>;
-    final user = results[4] as Map<String, dynamic>?;
-    final hasPromo = results[5] as bool;
-    final activeRide = results[6] as ActiveRideInfo?;
-    final verified = results[7] as bool;
-    final nextScheduled = results[8] as Map<String, dynamic>?;
+    final user = results[3] as Map<String, dynamic>?;
+    final activeRide = results[4] as ActiveRideInfo?;
+    final verified = results[5] as bool;
+    final nextScheduled = results[6] as Map<String, dynamic>?;
 
     if (!mounted) return;
     setState(() {
       _favorites = favorites;
       _recentTrips = trips;
       _topDestinations = topDestinations;
-      _notifications = notifications;
-      _hasActivePromo = hasPromo;
       _activeRide = activeRide;
       _isVerified = verified;
       // A local verified hit also counts as resolved.
@@ -1429,10 +1142,6 @@ class _HomeScreenState extends State<HomeScreen>
       }
     } catch (_) {}
     return null;
-  }
-
-  int get _unreadNotifications {
-    return _notifications.where((item) => !item.read).length;
   }
 
   @override
@@ -1540,189 +1249,6 @@ class _HomeScreenState extends State<HomeScreen>
     }
   }
 
-  Future<void> _showScheduleSheet() async {
-    // Re-entry guard so back-then-retry from any step inside the
-    // schedule/airport flow can't re-open the picker on top of itself
-    // or skip a step. Released in finally so every early return + back
-    // pop + uncaught navigator error still frees the lock.
-    if (_openingScheduleFlow) return;
-    // Gate BEFORE the picker: an unapproved rider never reaches the
-    // Airport/Schedule page at all. This used to be checked after the
-    // calendar, so the whole flow looked open to accounts that cannot
-    // actually book.
-    if (!await _ensureVerified()) return;
-    if (!mounted) return;
-    _openingScheduleFlow = true;
-    try {
-      // First show Airport/Schedule choice — now a full-screen picker
-      // with animated cards and dynamic calendar date.
-      final choice = await Navigator.of(context).push<String>(
-        slideUpFadeRoute(const ChooseRideTypeScreen()),
-      );
-
-      // If cancelled or no choice, revert to Now
-      if (choice == null || !mounted) {
-        if (mounted) setState(() => _rideNow = true);
-        return;
-      }
-
-      // ── Airport branch: direction picker FIRST (Take me TO / Pick me
-      // up FROM), then date & time, then the airport terminal sheet. ──
-      if (choice == 'airport') {
-        final direction = await Navigator.of(context).push<AirportDirection>(
-          slideUpFadeRoute(const AirportDirectionScreen()),
-        );
-        if (direction == null || !mounted) {
-          if (mounted) setState(() => _rideNow = true);
-          return;
-        }
-
-        final airportTime = await showScheduleRideFlow(
-          context,
-          initialPickupLat: _currentLatLng?.latitude,
-          initialPickupLng: _currentLatLng?.longitude,
-          initialIsAirport: true,
-        );
-        if (airportTime == null || !mounted) {
-          if (mounted) setState(() => _rideNow = true);
-          return;
-        }
-        final (scheduledAt, _, _) = airportTime;
-
-        if (!await _ensureVerified()) return;
-        if (!mounted) return;
-
-        final airportResult = await showModalBottomSheet<AirportSelection>(
-          context: context,
-          isScrollControlled: true,
-          backgroundColor: Colors.transparent,
-          useSafeArea: true,
-          builder: (_) => AirportTerminalSheet(
-            isDark: AppColors.of(context).isDark,
-            initialDirection: direction,
-          ),
-        );
-        if (airportResult == null || !mounted) {
-          if (mounted) setState(() => _rideNow = true);
-          return;
-        }
-        Navigator.of(context).push(
-          slideUpFadeRoute(
-            RideRequestScreen(
-              scheduledAt: scheduledAt,
-              isAirportTrip: true,
-              airportSelection: airportResult,
-            ),
-          ),
-        );
-        return;
-      }
-
-      // ── Schedule branch: calendar + time picker first, then the
-      // pickup/dropoff search (or the airport sheet if the user flipped
-      // the airport toggle inside the calendar). ──
-      final result = await showScheduleRideFlow(
-        context,
-        initialPickupLat: _currentLatLng?.latitude,
-        initialPickupLng: _currentLatLng?.longitude,
-      );
-
-      if (result == null || !mounted) {
-        if (mounted) setState(() => _rideNow = true);
-        return;
-      }
-
-      final (scheduledAt, isAirportFromToggle, searchResult) = result;
-      final bool isAirportTrip = isAirportFromToggle;
-
-      if (!await _ensureVerified()) return;
-      if (!mounted) return;
-
-      if (isAirportTrip) {
-        // Airport branch — pick airport / terminal / airline / flight
-        // BEFORE creating the trip, then push ride_request with both
-        // the scheduledAt and the airport selection.
-        final airportResult = await showModalBottomSheet<AirportSelection>(
-          context: context,
-          isScrollControlled: true,
-          backgroundColor: Colors.transparent,
-          useSafeArea: true,
-          builder: (_) =>
-              AirportTerminalSheet(isDark: AppColors.of(context).isDark),
-        );
-        if (airportResult == null || !mounted) {
-          if (mounted) setState(() => _rideNow = true);
-          return;
-        }
-        Navigator.of(context).push(
-          slideUpFadeRoute(
-            RideRequestScreen(
-              scheduledAt: scheduledAt,
-              isAirportTrip: true,
-              airportSelection: airportResult,
-            ),
-          ),
-        );
-        return;
-      }
-
-      // Schedule (non-airport) branch — the flow already pushed the
-      // pickup/dropoff search ON TOP of the time picker, so back goes
-      // to "Select Time" instead of home. The confirmed addresses come
-      // back inside the flow record.
-      if (searchResult == null) {
-        if (mounted) setState(() => _rideNow = true);
-        return;
-      }
-
-      final pickupDetails = searchResult['pickup'] as PlaceDetails?;
-      final dropoffDetails = searchResult['dropoff'] as PlaceDetails?;
-      final pickupLabel = searchResult['pickupLabel'] as String? ?? '';
-      final dropoffLabel = searchResult['dropoffLabel'] as String? ?? '';
-
-      if (dropoffDetails == null) {
-        if (mounted) setState(() => _rideNow = true);
-        return;
-      }
-
-      final effectivePickup = pickupDetails ?? (
-        _currentLatLng != null
-            ? PlaceDetails(
-                address: pickupLabel.isNotEmpty
-                    ? pickupLabel
-                    : S.of(context).currentLocation,
-                lat: _currentLatLng!.latitude,
-                lng: _currentLatLng!.longitude,
-              )
-            : null
-      );
-
-      final effectiveDropoffLabel = dropoffLabel.isNotEmpty
-          ? dropoffLabel
-          : dropoffDetails.address;
-
-      Navigator.of(context).push(
-        slideUpFadeRoute(
-          RideRequestScreen(
-            scheduledAt: scheduledAt,
-            isAirportTrip: false,
-            initialPickupDetails: effectivePickup,
-            initialDropoffDetails: dropoffDetails,
-            initialPickupLabel: pickupLabel,
-            initialDropoffLabel: effectiveDropoffLabel,
-            initialDropoffAddress: effectiveDropoffLabel,
-          ),
-        ),
-      );
-    } finally {
-      // Always release the guard, then refresh saved data so the home
-      // never reads stale _activeRide on the next attempt.
-      if (mounted) {
-        _openingScheduleFlow = false;
-        _loadSavedData();
-      }
-    }
-  }
 
   void _openMapWithDropoff(String query) async {
     if (_activeRide != null) {
@@ -1892,121 +1418,6 @@ class _HomeScreenState extends State<HomeScreen>
     await LocalDataService.saveFavorite(
       FavoritePlace(label: 'Place 2', address: address),
     );
-    await _loadSavedData();
-  }
-
-  Future<void> _openNotificationsSheet() async {
-    final c = AppColors.of(context);
-    await showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: c.panel,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      enableDrag: true,
-      useSafeArea: true,
-      isScrollControlled: true,
-      constraints: BoxConstraints(
-        maxHeight: MediaQuery.of(context).size.height * 0.6,
-      ),
-      builder: (context) {
-        return SafeArea(
-          top: false,
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 20),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Drag handle
-                Center(
-                  child: Container(
-                    width: 40,
-                    height: 4.5,
-                    margin: const EdgeInsets.only(bottom: 12),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(40),
-                    ),
-                  ),
-                ),
-                Text(
-                  S.of(context).notificationsTitle,
-                  style: TextStyle(
-                    color: c.textPrimary,
-                    fontSize: 20,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                const SizedBox(height: 10),
-                if (_notifications.isEmpty)
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    child: Text(
-                      S.of(context).noNotificationsYet,
-                      style: TextStyle(color: c.textSecondary),
-                    ),
-                  )
-                else
-                  Flexible(
-                    child: ListView.builder(
-                      physics: const BouncingScrollPhysics(),
-                      shrinkWrap: true,
-                      itemCount: _notifications.length > 10
-                          ? 10
-                          : _notifications.length,
-                      itemBuilder: (ctx, i) {
-                        final item = _notifications[i];
-                        return ListTile(
-                          contentPadding: EdgeInsets.zero,
-                          leading: Container(
-                            width: 38,
-                            height: 38,
-                            decoration: BoxDecoration(
-                              color: _gold.withValues(alpha: 0.10),
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: Icon(
-                              item.type == 'ride'
-                                  ? Icons.directions_car_filled_rounded
-                                  : item.type == 'promo'
-                                  ? Icons.local_offer_rounded
-                                  : Icons.notifications_rounded,
-                              color: _gold,
-                              size: 18,
-                            ),
-                          ),
-                          title: Text(
-                            item.title,
-                            style: TextStyle(
-                              color: c.textPrimary,
-                              fontWeight: FontWeight.w600,
-                              fontSize: 14,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          subtitle: Text(
-                            item.message,
-                            style: TextStyle(
-                              color: c.textSecondary,
-                              fontSize: 13,
-                            ),
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-
-    await LocalDataService.markNotificationsAsRead();
     await _loadSavedData();
   }
 }

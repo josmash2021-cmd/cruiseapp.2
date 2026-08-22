@@ -44,18 +44,22 @@ void main() {
   });
 
   group('schedule booking is verification-gated', () {
+    // The schedule entry moved: schedule_booking_screen.dart is gone
+    // (2026-08-22 flow rebuild) and the gate now sits at the hub entry in
+    // the home controller — an unapproved rider never reaches the hub.
     final src =
-        File('lib/screens/schedule_booking_screen.dart').readAsStringSync();
+        File('lib/screens/home_screen_controller.dart').readAsStringSync();
+    final home = File('lib/screens/home_screen.dart').readAsStringSync();
 
-    test('_book() calls _ensureVerified before confirming', () {
-      expect(src.contains('Future<bool> _ensureVerified()'), isTrue,
-          reason: 'the schedule flow needs the same gate as the home hero');
-      final book = RegExp(r'Future<void> _book\(\) async \{');
-      final start = book.firstMatch(src)!.end;
-      final block = src.substring(start, start + 300);
+    test('the hub entry calls _ensureVerified before pushing', () {
+      final fn = RegExp(r'Future<void> _openScheduleSheet\(\) async \{');
+      final start = fn.firstMatch(src)!.end;
+      final block = src.substring(start, start + 400);
       expect(block.contains('_ensureVerified()'), isTrue,
-          reason: 'an unverified rider could confirm a scheduled booking');
-      expect(src.contains('IdentityVerificationScreen'), isTrue,
+          reason: 'an unverified rider could open the schedule flow');
+      expect(block.contains('ScheduleHubScreen'), isTrue,
+          reason: 'the schedule entry is the hub since 2026-08-22');
+      expect(home.contains('IdentityVerificationScreen'), isTrue,
           reason: 'the gate must open the verification flow');
     });
   });

@@ -1035,7 +1035,14 @@ Future<void> heavyInit() async {
           FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
 
           final messaging = FirebaseMessaging.instance;
-          await messaging.requestPermission(alert: true, badge: true, sound: true);
+          // No session yet = fresh install at the welcome screen: the rider's
+          // home sequence owns the asks there (location first, notifications
+          // second, after login/signup) instead of a pre-login system dialog
+          // at boot. With a session the OS answer is already settled and this
+          // just returns it.
+          if (await ApiService.getToken() != null) {
+            await messaging.requestPermission(alert: true, badge: true, sound: true);
+          }
 
           // iOS: suppress all FCM banner notifications while the app is in
           // the foreground. The foreground handler below already updates the

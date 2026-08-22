@@ -824,24 +824,14 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                             faresReady &&
                             !_cruiseCashShort(option),
                         isLoading: _isProcessingPayment,
-                        // "Reserve Now" for both scheduled rides AND
-                        // airport bookings (both go through pre-pickup
-                        // confirmation flow). "Request Ride" only for
-                        // immediate dispatch from the home Where-to.
-                        //
-                        // Reads from BOTH widget params (set at push
-                        // time) and controller state (mutable — flips
-                        // when an inline schedule picker fires
-                        // _ctrl.setSchedule). Without the controller
-                        // check, picking a future date AFTER the screen
-                        // is already mounted leaves the label stuck on
-                        // "Request Ride".
-                        label: _isScheduledMode
-                            ? S.of(context).bookScheduledRide
-                            : S.of(context).requestRide,
+                        // "Select {tier}" (2026-08-22): the button no longer
+                        // pays inline — it opens the pickup-pin page first,
+                        // and the SAME payment pipeline runs from there.
+                        label: S.of(context).selectTierLabel(
+                            TierInfo.displayTitle(option.name)),
                         onTap: () {
                           HapticService.mediumImpact();
-                          _startRideDirectly(c, option);
+                          _openPickupConfirm(c, option);
                         },
                       ),
                     ),

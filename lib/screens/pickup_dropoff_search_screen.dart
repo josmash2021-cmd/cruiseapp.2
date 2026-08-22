@@ -15,6 +15,8 @@ import '../services/places_service.dart';
 import '../widgets/neu_style.dart';
 import 'map_picker_screen.dart';
 import 'ride_request_screen.dart';
+import 'schedule_datetime_screen.dart';
+import 'schedule_flow_entry.dart';
 
 // ═══════════════════════════════════════════════════════════════════
 //  Design tokens (match Shopify "vipRide__locPicker")
@@ -42,6 +44,16 @@ class PickupDropoffSearchScreen extends StatefulWidget {
   final DateTime? scheduledAt;
   final bool isAirportTrip;
 
+  /// 2026-08-22: the page is a LINK in the schedule chain (hub → addresses
+  /// → datetime → booking). In chain mode a confirmed address pair continues
+  /// to the Depart/Arrive wheels instead of pushing RideRequestScreen, and
+  /// the map fine-tune step is skipped — the pin is confirmed at the end,
+  /// on the pickup page.
+  final bool scheduleChain;
+
+  /// Calendar shortcut prefill: the event start seeds the datetime wheels.
+  final DateTime? schedulePrefill;
+
   const PickupDropoffSearchScreen({
     super.key,
     this.initialPickupText = 'Current location',
@@ -49,6 +61,8 @@ class PickupDropoffSearchScreen extends StatefulWidget {
     this.initialPickupLng,
     this.scheduledAt,
     this.isAirportTrip = false,
+    this.scheduleChain = false,
+    this.schedulePrefill,
   });
 
   @override
@@ -83,6 +97,21 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
   bool _editingPickup = false;
   bool _editingDropoff = true;
 
+  // Optional mid-trip stop ("+" on the fields card). The backend takes at
+  // most ONE extra stop and only via the live-trip endpoint, so at booking
+  // time it travels inside the notes line ("Stop: …") — see
+  // ride_request_controller's notes composition.
+  bool _editingStop = false;
+  bool _showStop = false;
+  final _stopCtrl = TextEditingController();
+  final _stopFocus = FocusNode();
+  PlaceDetails? _stopDetails;
+  String _stopLabel = '';
+
+  /// In chain mode the page stops pushing RideRequestScreen once — the flag
+  /// flips when the chain has already consumed the confirmed pair.
+  bool _scheduleChainLive = false;
+
   PlaceDetails? _pickupDetails;
   PlaceDetails? _dropoffDetails;
   String _pickupLabel = '';
@@ -94,6 +123,7 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
   @override
   void initState() {
     super.initState();
+    _scheduleChainLive = widget.scheduleChain;
 
     _pickupCtrl.text = widget.initialPickupText;
     _pickupLabel = widget.initialPickupText;
@@ -190,8 +220,10 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
     _debounce?.cancel();
     _pickupCtrl.dispose();
     _dropoffCtrl.dispose();
+    _stopCtrl.dispose();
     _pickupFocus.dispose();
     _dropoffFocus.dispose();
+    _stopFocus.dispose();
     super.dispose();
   }
 
@@ -238,7 +270,20 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
     final details = await _placesService.details(suggestion.placeId);
     if (details == null || !mounted) return;
 
-    if (_editingDropoff) {
+    if (_editingStop) {
+      setState(() {
+        _stopDetails = details;
+        _stopLabel = suggestion.description;
+        _stopCtrl.text = suggestion.description;
+        _suggestions = [];
+        // The stop is in — the next empty field takes the focus.
+        if (_dropoffDetails == null) {
+          _editingStop = false;
+          _editingDropoff = true;
+        }
+      });
+      if (_dropoffDetails == null) _dropoffFocus.requestFocus();
+    } else if (_editingDropoff) {
       setState(() {
         _dropoffDetails = details;
         _dropoffLabel = suggestion.description;
@@ -249,8 +294,14 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
       // rider can fine-tune the exact dropoff pin before we route to
       // ride_request — matches the live web behavior where tapping a
       // dropoff suggestion drops the rider into the map confirm step.
+      // In the schedule chain the pin confirm happens at the END (the
+      // pickup page), so the chain continues straight to the wheels.
       if (_pickupDetails != null) {
-        await _confirmDropoffOnMap(details);
+        if (_scheduleChainLive) {
+          await _continueScheduleChain();
+        } else {
+          await _confirmDropoffOnMap(details);
+        }
       } else {
         if (mounted) {
           setState(() {
@@ -481,9 +532,70 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
     }
   }
 
+  /// Schedule chain continuation: addresses are set → route estimate → the
+  /// Depart/Arrive wheels → the shared booking tail (airline page when the
+  /// dropoff is an airport, then RideRequestScreen).
+  Future<void> _continueScheduleChain() async {
+    final dropoff = _dropoffDetails;
+    if (dropoff == null) return;
+
+    // The estimate rides into the wheels page so Depart shows the real
+    // drop-off clock time and Arrive the real pickup time. No route → the
+    // page omits those lines rather than guessing.
+    int? estimatedMinutes;
+    final origin = _pickupDetails;
+    if (origin != null) {
+      try {
+        final route = await DirectionsService(ApiKeys.webServices).getRoute(
+          origin: LatLng(origin.lat, origin.lng),
+          destination: LatLng(dropoff.lat, dropoff.lng),
+        );
+        final secs = route?.durationSeconds;
+        if (secs != null && secs > 0) {
+          estimatedMinutes = (secs / 60).ceil();
+        }
+      } catch (_) {}
+    }
+    if (!mounted) return;
+
+    final record = await Navigator.of(context)
+        .push<(DateTime, Map<String, dynamic>)?>(
+      slideUpFadeRoute(ScheduleDateTimeScreen(
+        initialPickupLat: origin?.lat ?? widget.initialPickupLat,
+        initialPickupLng: origin?.lng ?? widget.initialPickupLng,
+        initialDateTime: widget.schedulePrefill,
+        estimatedMinutes: estimatedMinutes,
+        // Addresses already chosen — Next bubbles the pair straight up.
+        prefilledPickup: _pickupDetails,
+        prefilledDropoff: dropoff,
+        prefilledPickupLabel: _pickupLabel,
+        prefilledDropoffLabel:
+            _dropoffLabel.isNotEmpty ? _dropoffLabel : dropoff.address,
+        prefilledStopAddress: _stopDetails != null
+            ? (_stopLabel.isNotEmpty ? _stopLabel : _stopDetails!.address)
+            : null,
+      )),
+    );
+    if (record == null || !mounted) return;
+    final (scheduledAt, searchResult) = record;
+    await continueScheduleToBooking(
+      context,
+      scheduledAt: scheduledAt,
+      searchResult: searchResult,
+      fallbackPickupLat: origin?.lat ?? widget.initialPickupLat,
+      fallbackPickupLng: origin?.lng ?? widget.initialPickupLng,
+    );
+  }
+
   Future<void> _returnResults() async {
     if (_dropoffDetails == null) {
       Navigator.of(context).pop();
+      return;
+    }
+    // Schedule chain: addresses first, then the Depart/Arrive wheels —
+    // RideRequestScreen comes at the end of the chain, not here.
+    if (_scheduleChainLive) {
+      await _continueScheduleChain();
       return;
     }
 
@@ -586,8 +698,55 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
                 padding: const EdgeInsets.fromLTRB(14, 14, 14, 0),
                 child: Column(
                   children: [
-                    // ── Top row: back + fields + swap ──
+                    // ── Title row: X + dynamic centered title ──
+                    // "Schedule a ride" in the schedule chain · "Start" while
+                    // the pickup is unset or being changed · "Destination"
+                    // once the pickup is in place (2026-08-22 redesign).
+                    _buildTitleRow(),
+                    const SizedBox(height: 12),
+
+                    // ── Top row: fields + add-stop ──
                     _buildTopRow(),
+
+                    // ── "Schedule ahead" — enters the schedule chain with
+                    // the addresses already typed (immediate mode only) ──
+                    if (!_scheduleChainLive && widget.scheduledAt == null) ...[
+                      const SizedBox(height: 10),
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: GestureDetector(
+                          onTap: () {
+                            HapticService.lightImpact();
+                            setState(() => _scheduleChainLive = true);
+                            if (_pickupDetails != null &&
+                                _dropoffDetails != null) {
+                              _continueScheduleChain();
+                            }
+                          },
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 14, vertical: 8),
+                            decoration: neuBox(radius: 20),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(Icons.schedule_rounded,
+                                    color: _gold, size: 15),
+                                const SizedBox(width: 6),
+                                Text(
+                                  S.of(context).scheduleAheadChip,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 12.5,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
 
                 const SizedBox(height: 16),
 
@@ -641,25 +800,45 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
     );
   }
 
+  Widget _buildTitleRow() {
+    final s = S.of(context);
+    final String title;
+    if (_scheduleChainLive || widget.scheduledAt != null) {
+      title = s.schedDateTimeTitle; // "Schedule a ride"
+    } else if (_editingPickup || _pickupDetails == null) {
+      // No pickup yet — or the rider tapped Start to change it.
+      title = s.addressTitleStart;
+    } else {
+      title = s.addressTitleDestination;
+    }
+    return Row(
+      children: [
+        // X, not a back arrow — this page closes the flow.
+        _CircleBtn(
+          icon: Icons.close_rounded,
+          onTap: () => Navigator.of(context).pop(),
+        ),
+        Expanded(
+          child: Center(
+            child: Text(
+              title,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 17,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(width: 38), // balance the X
+      ],
+    );
+  }
+
   Widget _buildTopRow() {
-    // Web layout: three siblings at the top — back button (38×38
-    // floating), fields container (flex:1 wrapping both pickup and
-    // dropoff inputs with a single shared background), and the swap
-    // button (34×34 floating). The back and swap have margin-top so
-    // they vertically align with the top half of the two-row fields.
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // .vipRide__locPicker__back — 38×38 circle, margin-top:8
-        Padding(
-          padding: const EdgeInsets.only(top: 8),
-          child: _CircleBtn(
-            icon: Icons.arrow_back_rounded,
-            onTap: () => Navigator.of(context).pop(),
-          ),
-        ),
-        const SizedBox(width: 10),
-
         // .vipRide__locPicker__fieldsWrap — restyled to the shared
         // neumorphic surface. The gold dot + connector line inside are
         // unchanged; the fields keep their subtle/transparent backgrounds.
@@ -686,6 +865,7 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
                             setState(() {
                               _editingPickup = true;
                               _editingDropoff = false;
+                              _editingStop = false;
                               _suggestions = [];
                             });
                             // Live-resolve the rider's GPS into a real
@@ -714,16 +894,61 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
                           height: 1,
                           color: Colors.white.withValues(alpha: 0.06),
                         ),
+                        // Optional intermediate stop — appears from the "+"
+                        // on the right of the card, between Start and
+                        // Destination, and leaves with its ✕.
+                        if (_showStop) ...[
+                          _buildField(
+                            dot: const _Dot(pickup: true),
+                            label: S.of(context).stopFieldLabel,
+                            labelColor: _gold,
+                            controller: _stopCtrl,
+                            focusNode: _stopFocus,
+                            onTap: () {
+                              setState(() {
+                                _editingPickup = false;
+                                _editingDropoff = false;
+                                _editingStop = true;
+                                _suggestions = [];
+                              });
+                              final txt = _stopCtrl.text.trim();
+                              if (txt.length >= 2) _onTextChanged(txt);
+                            },
+                            onChanged: _editingStop ? _onTextChanged : null,
+                            onSubmitted:
+                                _editingStop ? _onFieldSubmitted : null,
+                            active: _editingStop,
+                            placeholderHint: S.of(context).stopFieldLabel,
+                            isPickup: true,
+                            trailing: GestureDetector(
+                              onTap: () => setState(() {
+                                _showStop = false;
+                                _editingStop = false;
+                                _stopDetails = null;
+                                _stopLabel = '';
+                                _stopCtrl.clear();
+                              }),
+                              child: Icon(Icons.close_rounded,
+                                  color: Colors.white.withValues(alpha: 0.4),
+                                  size: 18),
+                            ),
+                          ),
+                          Container(
+                            height: 1,
+                            color: Colors.white.withValues(alpha: 0.06),
+                          ),
+                        ],
                         _buildField(
                           dot: const _Dot(pickup: false),
                           label: S.of(context).whereTo,
-                          labelColor: Colors.white.withValues(alpha: 0.5),
+                          labelColor: _gold,
                           controller: _dropoffCtrl,
                           focusNode: _dropoffFocus,
                           onTap: () {
                             setState(() {
                               _editingPickup = false;
                               _editingDropoff = true;
+                              _editingStop = false;
                               _suggestions = [];
                             });
                             // Auto-search existing text so suggestions
@@ -756,6 +981,27 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
                 ),
               ),
         ),
+        const SizedBox(width: 10),
+        // "+" — add an intermediate stop. One at a time: the backend holds
+        // at most one extra stop per trip.
+        if (!_showStop)
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: _CircleBtn(
+              icon: Icons.add_rounded,
+              onTap: () {
+                HapticService.lightImpact();
+                setState(() {
+                  _showStop = true;
+                  _editingPickup = false;
+                  _editingDropoff = false;
+                  _editingStop = true;
+                  _suggestions = [];
+                });
+                _stopFocus.requestFocus();
+              },
+            ),
+          ),
       ],
     );
   }
@@ -772,6 +1018,8 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
     required bool active,
     required String placeholderHint,
     required bool isPickup,
+    // Optional right-side affordance (the stop field's remove ✕).
+    Widget? trailing,
   }) {
     // .vipRide__locPicker__field
     //   display:flex; align-items:center; gap:12px;
@@ -849,6 +1097,10 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
                 ),
               ),
             ),
+            if (trailing != null) ...[
+              const SizedBox(width: 8),
+              trailing,
+            ],
           ],
         ),
       ),

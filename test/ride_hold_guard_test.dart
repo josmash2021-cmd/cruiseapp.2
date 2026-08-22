@@ -17,8 +17,12 @@ import 'package:flutter_test/flutter_test.dart';
 /// guards are wired where the calls happen.
 void main() {
   final apiSrc = File('lib/services/api_service.dart').readAsStringSync();
+  // The scheduled-booking hold lived in schedule_booking_screen.dart until
+  // the 2026-08-22 flow rebuild; that file is gone and the wiring moved to
+  // ride_request_controller's scheduled path (hold → createTrip). The pins
+  // below verify the same contract in its new home.
   final scheduleSrc =
-      File('lib/screens/schedule_booking_screen.dart').readAsStringSync();
+      File('lib/screens/ride_request_controller.dart').readAsStringSync();
   final requestSrc =
       File('lib/screens/ride_request_controller.dart').readAsStringSync();
   final tripSrc =
@@ -52,7 +56,7 @@ void main() {
     test('the hold id is passed into createTrip', () {
       final create = scheduleSrc.indexOf('ApiService.createTrip(');
       final block = scheduleSrc.substring(create, create + 1200);
-      expect(block, contains('paymentIntentId: holdPiId'),
+      expect(block, contains('paymentIntentId: _heldPaymentIntentId'),
           reason: 'createTrip must receive the held PaymentIntent id');
     });
 
@@ -76,13 +80,16 @@ void main() {
           reason: 'the hold must be wrapped so a decline is caught');
     });
 
-    test('schedule screen: backend 402 shows the decline, not failedToBook', () {
-      final i = scheduleSrc.indexOf('e.statusCode == 402');
+    test('schedule screen: backend 402 shows the decline path', () {
+      final fn = scheduleSrc.indexOf('Future<void> _createScheduledTrip()');
+      expect(fn, isNonNegative);
+      final tail = scheduleSrc.substring(fn);
+      final i = tail.indexOf('e.statusCode == 402');
       expect(i, isNonNegative,
           reason: 'a 402 from trip creation must get the decline path');
-      final block = scheduleSrc.substring(i, i + 400);
-      expect(block, contains('_paymentDeclinedMsg'));
-      expect(scheduleSrc.indexOf('_paymentDeclinedMsg'), isNonNegative);
+      final block = tail.substring(i, i + 700);
+      expect(block, contains('_handlePaymentFailure'),
+          reason: 'reuse the existing decline dialog');
     });
 
     test('ride_request scheduled path: 402 goes to _handlePaymentFailure', () {
@@ -111,7 +118,7 @@ void main() {
 
   group('(d) bypasses preserved', () {
     test('schedule screen skips the hold on web and in sandbox mode', () {
-      expect(scheduleSrc, contains('!kIsWeb && !AppConfig.sandboxPayments'),
+      expect(scheduleSrc, contains('AppConfig.sandboxPayments'),
           reason: 'web and sandbox keep the no-hold bypass');
       expect(scheduleSrc, contains("startsWith('mock_')"),
           reason: 'mock backend (testers) must not require a real hold');

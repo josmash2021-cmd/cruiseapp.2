@@ -123,6 +123,15 @@ class RiderTripState {
   final String? airportPickupZone; // door (from) or airline (to)
   final String? airportFlight;
 
+  /// The rider's note for the driver ("I'm at the corner of…"), saved on
+  /// the pickup-confirm page. Travels in the booking notes.
+  final String? pickupNote;
+
+  /// The optional intermediate stop chosen on the addresses page. The
+  /// booking endpoint takes no stop field, so it travels in the notes
+  /// ("Stop: …") — the live-trip stop endpoint stays the real-time path.
+  final String? stopAddress;
+
   // Backend trip IDs
   final int? tripId;
   final String? firestoreTripId;
@@ -157,6 +166,8 @@ class RiderTripState {
     this.airportTerminal,
     this.airportPickupZone,
     this.airportFlight,
+    this.pickupNote,
+    this.stopAddress,
     this.tripId,
     this.firestoreTripId,
     this.cancelReason,
@@ -183,6 +194,8 @@ class RiderTripState {
     String? airportTerminal,
     String? airportPickupZone,
     String? airportFlight,
+    String? pickupNote,
+    String? stopAddress,
     int? tripId,
     String? firestoreTripId,
     String? cancelReason,
@@ -208,6 +221,8 @@ class RiderTripState {
       airportTerminal: airportTerminal ?? this.airportTerminal,
       airportPickupZone: airportPickupZone ?? this.airportPickupZone,
       airportFlight: airportFlight ?? this.airportFlight,
+      pickupNote: pickupNote ?? this.pickupNote,
+      stopAddress: stopAddress ?? this.stopAddress,
       tripId: tripId ?? this.tripId,
       firestoreTripId: firestoreTripId ?? this.firestoreTripId,
       cancelReason: cancelReason ?? this.cancelReason,
@@ -370,6 +385,21 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
     _state = _state.copyWith(dropoff: place, dropoffLabel: label);
     notifyListeners();
     _tryFetchRoute();
+  }
+
+  /// The driver's note from the pickup-confirm page. Empty clears — the
+  /// copyWith null-coalesce cannot express "back to null", so the cleared
+  /// state is the empty string and the notes composition skips empties.
+  void setPickupNote(String? note) {
+    _state = _state.copyWith(pickupNote: note?.trim() ?? '');
+    notifyListeners();
+  }
+
+  /// The intermediate stop from the addresses page (same clearing rule as
+  /// the note: empty string, not null).
+  void setStopAddress(String? address) {
+    _state = _state.copyWith(stopAddress: address?.trim() ?? '');
+    notifyListeners();
   }
 
   /// Retry fetching the route after a failure.
@@ -820,9 +850,15 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
       }
 
       final flight = _state.airportFlight?.trim();
-      final notes = (flight != null && flight.isNotEmpty)
-          ? 'Flight: $flight'
-          : null;
+      // Booking notes carry everything the driver must read: the optional
+      // intermediate stop, the flight number, and the rider's pickup note.
+      final noteLines = <String>[
+        if ((_state.stopAddress ?? '').isNotEmpty)
+          'Stop: ${_state.stopAddress}',
+        if (flight != null && flight.isNotEmpty) 'Flight: $flight',
+        if ((_state.pickupNote ?? '').isNotEmpty) _state.pickupNote!,
+      ];
+      final notes = noteLines.isEmpty ? null : noteLines.join('\n');
 
       final result = await ApiService.dispatchRideRequest(
         riderId: userId,

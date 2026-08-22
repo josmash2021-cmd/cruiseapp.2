@@ -31,7 +31,7 @@ import 'saved_addresses_screen.dart';
 import 'ride_history_screen.dart';
 import 'promo_code_screen.dart';
 import 'referral_screen.dart';
-import 'scheduled_rides_screen.dart';
+import 'schedule_hub_screen.dart';
 
 class AccountScreen extends StatefulWidget {
   const AccountScreen({super.key});
@@ -591,7 +591,7 @@ class _AccountScreenState extends State<AccountScreen> with SecureScreenMixin {
       case 'scheduled':
         Navigator.of(
           context,
-        ).push(slideFromRightRoute(const ScheduledRidesScreen()));
+        ).push(slideFromRightRoute(const ScheduleHubScreen()));
         break;
       case 'promos':
         Navigator.of(

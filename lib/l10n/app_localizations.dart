@@ -1232,7 +1232,7 @@ class S {
   String get referFriends => _es ? 'Referir Amigos' : 'Refer Friends';
   String get earnBonuses => _es ? 'Gana bonificaciones' : 'Earn bonuses';
   String get scheduledTripsMenu =>
-      _es ? 'Viajes Programados' : 'Scheduled Trips';
+      _es ? 'Viajes Programados' : 'Scheduled Rides';
   String get upcomingRides =>
       _es ? 'Viajes asignados próximos' : 'Upcoming assigned rides';
   String get vehiclesLabel => _es ? 'Vehículos' : 'Vehicles';
@@ -4557,6 +4557,29 @@ class S {
   String get cancelRideBody => _es
       ? 'El viaje volverá al marketplace y otro conductor podrá tomarlo.'
       : 'The ride will return to the marketplace and another driver can take it.';
+
+  // ── Scheduled rides map screen ──
+  String get schedMapTitle =>
+      _es ? 'Viajes programados' : 'Scheduled rides';
+  String schedMapYourRides(int count) =>
+      _es ? 'Tus viajes ($count)' : 'Your rides ($count)';
+  String get schedMapAirport => _es ? 'Aeropuerto' : 'Airport';
+  String get schedMapDate => _es ? 'Fecha' : 'Date';
+  String get schedMapDateToday => _es ? 'Hoy' : 'Today';
+  String get schedMapDateTomorrow => _es ? 'Mañana' : 'Tomorrow';
+  String get schedMapTime => _es ? 'Hora' : 'Time';
+  String get schedMapTimeMorning => _es ? 'Mañana' : 'Morning';
+  String get schedMapTimeAfternoon => _es ? 'Tarde' : 'Afternoon';
+  String get schedMapTimeNight => _es ? 'Noche' : 'Night';
+  String get schedMapAvailable =>
+      _es ? 'Viajes disponibles' : 'Available rides';
+  String get schedMapMoveToSearch => _es
+      ? 'Mueve el mapa para buscar viajes'
+      : 'Move map to search for rides';
+  String get schedMapSearchArea =>
+      _es ? 'Buscar en esta zona' : 'Search this area';
+  String get schedMapDismiss => _es ? 'Descartar' : 'Dismiss';
+  String get schedMapReserve => _es ? 'RESERVAR' : 'RESERVE';
   // Exact texts from the Shopify widget's __vrSearchMsgs rotation
   // (snippets-ride-request-airport.liquid:286).
   String get searchStatusMsg1 => _es ? 'Casi listo...' : 'Almost there...';

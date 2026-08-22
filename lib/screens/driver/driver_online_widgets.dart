@@ -984,6 +984,16 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                 }),
               ),
             ),
+          // ── Accept — flat gold pill floating on the map, OUTSIDE the
+          // card (driver spec 2026-08-22, Uber's Reserve pill style: no
+          // dark box behind it). It acts on the page the driver is
+          // looking at, so it lives here where the current index is
+          // known, not inside any one card.
+          if (_pendingOffers.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 10, 16, 6),
+              child: _buildAcceptButton(_pendingOffers[safeIdx], currentOid),
+            ),
           // â”€â”€ Scrollable card list (hidden when collapsed) â”€â”€
 
           // â”€â”€ "Finding trips" bar at the bottom â”€â”€
@@ -1852,13 +1862,6 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
             ],
           );
         }),
-
-        const SizedBox(height: 16),
-        _offerDivider(),
-        const SizedBox(height: 16),
-
-        // ── Accept ──────────────────────────────────────────────────
-        _buildAcceptButton(offer, offerId),
       ],
     );
   }
@@ -2108,9 +2111,12 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
     _setState(() => _offerCardHeights[offerId] = size.height);
   }
 
-  /// Responsive card height: adapts to screen so Accept button never gets cut.
+  /// Responsive card height: adapts to screen so the card is never cut.
+  /// The Accept button no longer lives in the card (2026-08-22 — it is a
+  /// gold pill floating on the map under the card, added by
+  /// _rideOfferCards), so neither its 54 nor its divider are terms here.
   double _offerCardHeight(BuildContext context) {
-    // Tight fit — no wasted space below the Accept button. The old
+    // Tight fit — no wasted space below the rider row. The old
     // _ShimmerBadge row (Comfort/Premium/VIP) is gone so the base
     // height drops by ~22 px. We add per-badge allowance only when
     // the current offer actually shows badges per the new stack-of-
@@ -2152,25 +2158,15 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
     // Every term of the card's height, so this stops drifting away from
     // the layout every time a gap changes. Text rows use Roboto's own
     // line height (~1.17 x the font size), which is what Flutter lays out
-    // with — guessing "about 20" for a 15 px line is what left the Accept
-    // button cut off once already.
+    // with — guessing "about 20" for a 15 px line is what left a button
+    // cut off once already.
     const double pad = 16 + 14;
     const double fareBlock = 35.2 + 4 + 14.6 + 10 + 26.1; // fare, rate, pills
     // + 24 for the box's own vertical padding.
     const double routeBlock = _kOfferStopH + 22 + _kOfferStopH + 24;
     const double divider = 16 + 1 + 16;
     const double riderRow = 17.6;
-    const double accept = 54;
-    // Room so Accept is never clipped.
-    //
-    // This used to be as small as it could be, because every spare pixel
-    // sat under the button and pushed the card up the screen. That is no
-    // longer true: the card is anchored to the bottom of this height, so
-    // slack now lands above it, over the map. It costs nothing to be
-    // generous here and it is the only thing standing between a
-    // mis-measured row and a cut-off Accept button.
-    //
-    // And this only has to survive one frame: the card measures itself and
+    // This only has to survive one frame: the card measures itself and
     // the container animates to the real height, so the estimate's job is
     // just to start too tall rather than too short — a short first frame
     // is the one that paints overflow stripes.
@@ -2181,12 +2177,15 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
         routeBlock +
         divider +
         riderRow +
-        divider +
-        accept +
         slack;
     return base + extra;
   }
 
+  /// The Accept pill — a flat gold stadium floating directly on the map
+  /// under the offer card (driver spec 2026-08-22, modelled on Uber's
+  /// Reserve pill): no dark box, no border, no card behind it. It lives
+  /// OUTSIDE the card (added by _rideOfferCards) so the card itself ends
+  /// at the rider row.
   Widget _buildAcceptButton(Map<String, dynamic> offer, String offerId) {
     final bool isAccepting = _offerAcceptState == _OfferAcceptState.routing &&
         _acceptingCardId == offerId;
@@ -2207,26 +2206,10 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
           width: double.infinity,
           height: 54,
           decoration: BoxDecoration(
-            // Not pure black: the neumorphic surface taken halfway to
-            // black, so the button sits one step darker than the card
-            // without becoming a hole in it. White letters on top, and
-            // the border keeps the same gold the "+ Tips" text wears.
             color: isAccepting
-                ? Color.lerp(neuSurface, Colors.black, 0.45)!
-                    .withValues(alpha: 0.5)
-                : Color.lerp(neuSurface, Colors.black, 0.45),
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color: const Color(0xFFE8C547).withValues(alpha: 0.45),
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.35),
-                offset: const Offset(0, 3),
-                blurRadius: 8,
-                spreadRadius: -2,
-              ),
-            ],
+                ? const Color(0xFFE8C547).withValues(alpha: 0.55)
+                : const Color(0xFFE8C547),
+            borderRadius: BorderRadius.circular(27),
           ),
           child: Center(
             child: isAccepting
@@ -2235,15 +2218,15 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                     height: 20,
                     child: CircularProgressIndicator(
                       strokeWidth: 2.5,
-                      valueColor: AlwaysStoppedAnimation(Colors.white),
+                      valueColor: AlwaysStoppedAnimation(Colors.black),
                     ),
                   )
                 : Text(
                     S.of(context).accept,
                     style: const TextStyle(
-                      color: Colors.white,
+                      color: Colors.black,
                       fontSize: 16,
-                      fontWeight: FontWeight.bold,
+                      fontWeight: FontWeight.w800,
                     ),
                   ),
           ),

@@ -798,14 +798,15 @@ async def _send_offer_to_driver(
         "driver_earnings": f"{estimated_driver_fare:.2f}",
         "offer_timeout_seconds": str(OFFER_TIMEOUT_SECONDS),
     })
-    # Outside the app the offer shows up in exactly ONE place — and WITHOUT
-    # the price (user spec 2026-08-08): the fare is decided inside the app,
-    # so no push, banner or island card carries it. Miles and minutes stay:
-    # they are context for the drive, not the pay for it.
+    # Outside the app the offer shows up in exactly ONE place. Miles and
+    # minutes ride along as context for the drive.
     #
     # iPhone with the Live Activity build (it has registered its APNs
     # channels): the Dynamic Island / lock-screen card IS the notification —
-    # an FCM banner on top of it is the same offer saying itself twice.
+    # an FCM banner on top of it is the same offer saying itself twice. The
+    # card carries the fare and hourly rate (driver spec 2026-08-22: the
+    # island shows logo · fare · "$X/hr est. rate for this ride" · mi · min,
+    # same numbers the in-app card draws from).
     #
     # Android and older iOS builds (no channel registered yet): the FCM
     # heads-up banner, as before. The switch is per-driver and automatic —
@@ -820,8 +821,8 @@ async def _send_offer_to_driver(
             and apns_configured():
         _safe_create_task(_send_live_activity_offer(
             driver,
-            fare="",
-            per_hour="",
+            fare=fare_str,
+            per_hour=per_hour_str,
             miles=miles_str,
             minutes=minutes_str,
         ))

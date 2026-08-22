@@ -45,15 +45,15 @@ struct CruiseLogoView: View {
 
 // ═══════════════════════════════════════════════════════════════════
 //  Offer card — what the driver sees from inside another app when a
-//  ride comes in (user spec 2026-08-06, modelled on the Uber driver
-//  widget but in Cruise gold).
+//  ride comes in (modelled on the Uber driver widget, in Cruise gold).
 //
-//  Top row:  logo · fare · gold pill with the hourly rate · miles with
-//            minutes under them.
-//  Bottom:   car ── pickup ── dropoff, a route drawn as one line. The
-//            distance and time are NOT repeated at the dropoff end the
-//            way Uber does it: they are already up top, and this strip
-//            is 60 pt tall on a lock screen.
+//  Top row:  logo · fare big with the hourly rate UNDER it as plain
+//            text ("$33.49/hr est. rate for this ride" — no gold pill,
+//            driver spec 2026-08-22) · miles with minutes under them.
+//            The block hugs the TOP edge of the surface, never the
+//            middle.
+//  Bottom:   car ── pickup ── dropoff, one thin line with slightly
+//            larger stops (same spec).
 // ═══════════════════════════════════════════════════════════════════
 
 private struct OfferEndCap: View {
@@ -72,11 +72,11 @@ private struct OfferEndCap: View {
 
 private struct OfferRouteBar: View {
   var compact: Bool = false
-  // 28/38, was 22/30 (driver request 2026-08-06). The line thickens with
-  // them so the bar keeps its proportions instead of the caps looking stuck
-  // onto a thread.
-  private var cap: CGFloat { compact ? 28 : 38 }
-  private var line: CGFloat { compact ? 5 : 6 }
+  // 32/42 caps on a 3/4 line (driver spec 2026-08-22): a thin thread
+  // with slightly larger stops, instead of the old 28/38 on 5/6 where
+  // the line fought the caps for attention.
+  private var cap: CGFloat { compact ? 32 : 42 }
+  private var line: CGFloat { compact ? 3 : 4 }
 
   var body: some View {
     HStack(spacing: 0) {
@@ -102,53 +102,44 @@ private struct OfferCard: View {
   var state: CruiseActivityAttributes.ContentState
   var compact: Bool = false
 
+  private var estRateLine: String {
+    isSpanish ? "tarifa est. de este viaje" : "est. rate for this ride"
+  }
+
   var body: some View {
-    // 14/18, was 8/12: the money row sat almost on top of the route bar,
-    // which read as one crowded block instead of two things to look at.
-    VStack(alignment: .leading, spacing: compact ? 14 : 18) {
-      HStack(alignment: .center, spacing: 10) {
-        CruiseLogoView(size: compact ? 26 : 34)
-        // No price outside the app (user spec 2026-08-08): the fare and
-        // hourly rate are decided INSIDE Cruise, on the offer card. The
-        // server sends fare="" and the island names the event instead.
-        Text(state.fare.isEmpty
-          ? (isSpanish ? "Nueva oferta" : "New Ride Offer")
-          : state.fare)
-          .font(.system(
-            size: state.fare.isEmpty
-              ? (compact ? 15 : 19)
-              : (compact ? 26 : 34),
-            weight: .heavy))
-          .foregroundColor(.white)
-          .lineLimit(1)
-          .minimumScaleFactor(0.6)
-        if !state.perHour.isEmpty {
-          // Dart hands this over localised and to the cent ("$32.45/hr",
-          // "$32.45/h"), so it is half again as wide as the whole-dollar
-          // string this row was first laid out for. Scale rather than
-          // truncate: a rate missing its last digit is worse than a small
-          // one. The scale sits on the Text so the capsule hugs whatever
-          // width it settles at, and the compact pill gives back 2 pt of
-          // side padding — in the island that is about one character.
-          Text(state.perHour)
-            .font(.system(size: compact ? 13 : 15, weight: .heavy))
-            .foregroundColor(.black)
+    VStack(alignment: .leading, spacing: compact ? 10 : 14) {
+      HStack(alignment: .top, spacing: 10) {
+        CruiseLogoView(size: compact ? 30 : 40)
+        VStack(alignment: .leading, spacing: 3) {
+          Text(state.fare.isEmpty
+            ? (isSpanish ? "Nueva oferta" : "New Ride Offer")
+            : state.fare)
+            .font(.system(
+              size: state.fare.isEmpty
+                ? (compact ? 17 : 21)
+                : (compact ? 30 : 38),
+              weight: .heavy))
+            .foregroundColor(.white)
             .lineLimit(1)
-            .minimumScaleFactor(0.75)
-            .padding(.horizontal, compact ? 6 : 10)
-            .padding(.vertical, compact ? 3 : 5)
-            // Rounded rect, not a Capsule: at this height a capsule reads
-            // as a lozenge and fights the squarer card around it.
-            .background(RoundedRectangle(cornerRadius: compact ? 7 : 9)
-              .fill(cruiseGold))
+            .minimumScaleFactor(0.6)
+          if !state.perHour.isEmpty {
+            // Plain text, not the gold pill (driver spec 2026-08-22):
+            // the boxed rate read as a second price tag; the sentence
+            // reads as what it is — an estimate.
+            Text("\(state.perHour) \(estRateLine)")
+              .font(.system(size: compact ? 12 : 14, weight: .semibold))
+              .foregroundColor(.white.opacity(0.6))
+              .lineLimit(1)
+              .minimumScaleFactor(0.7)
+          }
         }
         Spacer(minLength: 4)
         VStack(alignment: .trailing, spacing: 1) {
           Text(state.miles)
-            .font(.system(size: compact ? 14 : 17, weight: .heavy))
+            .font(.system(size: compact ? 16 : 19, weight: .heavy))
             .foregroundColor(.white)
           Text(state.minutes)
-            .font(.system(size: compact ? 11 : 13, weight: .semibold))
+            .font(.system(size: compact ? 12 : 14, weight: .semibold))
             .foregroundColor(.white.opacity(0.55))
         }
         // Both inherit these. Anything over an hour arrives from Dart as
@@ -157,19 +148,11 @@ private struct OfferCard: View {
         .lineLimit(1)
         .minimumScaleFactor(0.7)
       }
-      // The money to the top edge, the route to the bottom one, and the gap
-      // between them rather than around them.
-      //
-      // The system hands the lock-screen banner a height of its own and
-      // SwiftUI centres whatever it is given inside it, so both rows used to
-      // sit in the middle with dead space above and below. On a surface this
-      // small that space is the most expensive thing on it. This Spacer
-      // makes the stack claim the full height, which pushes the route bar
-      // down and leaves the fare where the eye lands first.
-      //
-      // Only in the banner: the Dynamic Island's expanded region is sized to
-      // its content, so a Spacer there would stretch the region open instead
-      // of moving anything inside it.
+      // Banner only: the lock screen hands the banner a fixed height and
+      // centres whatever it is given, so this Spacer claims the height —
+      // money row on the top edge, route bar on the bottom one. The
+      // island's expanded region is sized and top-aligned at the call
+      // site instead; a Spacer here would stretch the region open.
       if !compact { Spacer(minLength: 0) }
       OfferRouteBar(compact: compact)
     }
@@ -242,11 +225,14 @@ struct CruiseLiveActivityWidget: Widget {
           DynamicIslandExpandedRegion(.bottom) {
             OfferCard(state: state, compact: true)
               .padding(.horizontal, 4)
-              // Lifted off both edges. The money row was sitting almost on
-              // the island's rim, which is what made the whole thing read as
-              // one squashed oval rather than a card.
-              .padding(.top, 8)
-              .padding(.bottom, 6)
+              // Fixed height, top-aligned (driver spec 2026-08-22): the
+              // region centres its content vertically, which left the
+              // money floating in the middle of the island. 98 pt covers
+              // the two-line fare block (fare 30 + rate line) plus the
+              // 32 pt route bar; top alignment keeps the fare where the
+              // eye lands first.
+              .frame(height: 98, alignment: .top)
+              .padding(.top, 2)
           }
         } compactLeading: {
           CruiseLogoView(size: 23)

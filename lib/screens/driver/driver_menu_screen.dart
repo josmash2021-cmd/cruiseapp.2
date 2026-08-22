@@ -24,7 +24,7 @@ import 'driver_referral_screen.dart';
 import 'driver_earnings_screen.dart';
 import 'cruise_level_screen.dart';
 import 'payout_methods_screen.dart';
-import 'scheduled_rides_screen.dart';
+import 'scheduled_rides_map_screen.dart';
 import '../about_screen.dart';
 import '../../l10n/app_localizations.dart';
 import '../../utils/responsive.dart';
@@ -418,7 +418,7 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
                       s.upcomingRides,
                       () => Navigator.of(context).push(
                         slideFromRightRoute(
-                          const ScheduledRidesScreen(initialTab: 1),
+                          const ScheduledRidesMapScreen(),
                         ),
                       ),
                     ),

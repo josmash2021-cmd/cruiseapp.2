@@ -42,6 +42,12 @@ class LiveActivityService {
       }
       return null;
     });
+    // Tell native the handler is up. The push-to-start token emits at
+    // process start — seconds before Dart runs — and only re-emits on
+    // rotation, so without this handshake that first token is dropped and
+    // the backend can never paint an offer on the island while the app is
+    // backgrounded. Native caches every emission and replays them now.
+    _invoke('pushTokenHookReady', null);
   }
 
   /// Driver went online — put the Cruise logo in the Dynamic Island.

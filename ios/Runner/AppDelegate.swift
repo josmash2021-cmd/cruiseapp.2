@@ -58,6 +58,16 @@ import ActivityKit
         CruiseLiveActivityManager.shared.offer(
           fare: fare, perHour: perHour, miles: miles, minutes: minutes)
         result(true)
+      case "pushTokenHookReady":
+        // Dart's pushToken handler just came up. Replay whatever Apple
+        // handed us before anybody was listening — the push-to-start
+        // token emits at process start, seconds before Dart runs, and
+        // without this replay that first emission is dropped and the
+        // backend never learns the channel (prod had every driver row
+        // with NULL Live Activity tokens: offers to a backgrounded app
+        // could only ever arrive as the plain FCM banner).
+        CruiseLiveActivityManager.shared.flushPendingTokens()
+        result(true)
       case "stop":
         CruiseLiveActivityManager.shared.stop()
         result(true)
@@ -122,6 +132,26 @@ final class CruiseLiveActivityManager {
   var onPushToken: ((String, String) -> Void)?
   private var pushToStartObserverStarted = false
 
+  /// Latest token seen per kind ("push_to_start" | "activity"). iOS emits
+  /// the push-to-start token at app launch — before Dart has installed
+  /// its handler — and only re-emits on rotation, which effectively never
+  /// happens within a session. The cache plus flushPendingTokens() is what
+  /// keeps that first emission from being dropped.
+  private var latestTokens: [String: String] = [:]
+
+  private func forwardToken(_ kind: String, _ token: String) {
+    latestTokens[kind] = token
+    onPushToken?(kind, token)
+  }
+
+  /// Dart calls this once its pushToken handler is installed: replay any
+  /// token that arrived while nobody was listening.
+  func flushPendingTokens() {
+    for (kind, token) in latestTokens {
+      onPushToken?(kind, token)
+    }
+  }
+
   private func hex(_ data: Data) -> String {
     data.map { String(format: "%02x", $0) }.joined()
   }
@@ -137,7 +167,7 @@ final class CruiseLiveActivityManager {
         for await data in Activity<CruiseActivityAttributes>.pushToStartTokenUpdates {
           let t = hex(data)
           NSLog("[LiveActivity] push-to-start token EMITTED (%d bytes) — forwarding to Dart", data.count)
-          onPushToken?("push_to_start", t)
+          forwardToken("push_to_start", t)
         }
         NSLog("[LiveActivity] push-to-start token stream ENDED")
       }
@@ -150,12 +180,12 @@ final class CruiseLiveActivityManager {
   private func observeActivityPushToken(_ a: Activity<CruiseActivityAttributes>) {
     if let data = a.pushToken {
       NSLog("[LiveActivity] activity token EMITTED (%d bytes) — forwarding to Dart", data.count)
-      onPushToken?("activity", hex(data))
+      forwardToken("activity", hex(data))
     }
     Task {
       for await data in a.pushTokenUpdates {
         NSLog("[LiveActivity] activity token ROTATED (%d bytes) — forwarding to Dart", data.count)
-        onPushToken?("activity", hex(data))
+        forwardToken("activity", hex(data))
       }
     }
   }
@@ -196,6 +226,18 @@ final class CruiseLiveActivityManager {
         )
         self.activity = act
         self.observeActivityPushToken(act)
+        // Re-register the push-to-start channel on every shift start.
+        // Its launch-time emission races Dart's handler install and
+        // loses, and rotations are too rare to rely on — reading the
+        // current value here, when Dart is guaranteed to be listening,
+        // is what keeps the backend's copy fresh.
+        if #available(iOS 17.2, *) {
+          Task {
+            if let data = await Activity<CruiseActivityAttributes>.pushToStartToken {
+              self.forwardToken("push_to_start", self.hex(data))
+            }
+          }
+        }
       } catch {
         // Denied in Settings, backgrounded, or system limit. Logged because
         // a start that quietly failed is why offer() later finds nothing

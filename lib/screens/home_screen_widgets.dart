@@ -1374,12 +1374,12 @@ extension _HomeScreenWidgets on _HomeScreenState {
       },
     ];
 
-    // Card width tuned for the peek: ~62% of the screen leaves the next
+    // Card width tuned for the peek: ~54% of the screen leaves the next
     // card's edge visible without turning the current one into a strip.
-    // (Was 0.74 — the first pass read too big, the car art dominated.)
-    final cardW = (screenW * 0.62).clamp(205.0, 300.0);
+    // (Was 0.74 → 0.62 — two passes read too big, the car art dominated.)
+    final cardW = (screenW * 0.54).clamp(190.0, 265.0);
     return SizedBox(
-      height: 196,
+      height: 167,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         // The 24 aligns card #1 with the page margins; the right side gets
@@ -1387,7 +1387,7 @@ extension _HomeScreenWidgets on _HomeScreenState {
         padding: const EdgeInsets.symmetric(horizontal: 24),
         physics: const BouncingScrollPhysics(),
         itemCount: vehicles.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 14),
+        separatorBuilder: (_, __) => const SizedBox(width: 12),
         itemBuilder: (ctx, i) {
           final v = vehicles[i];
           return IgnorePointer(
@@ -1400,7 +1400,26 @@ extension _HomeScreenWidgets on _HomeScreenState {
                 child: Container(
                   width: cardW,
                   clipBehavior: Clip.antiAlias,
-                  decoration: neuBox(radius: 24),
+                  // The card's top half fades out so the car floats on the
+                  // page backdrop (Lyft-style, 2026-08-22). The gradient is
+                  // on the card itself — not a mask on the image — so the
+                  // fade survives the car's transparent pixels. No border,
+                  // no shadow: either would trace a visible frame around
+                  // the faded top. Solid neu surface by ~45% down, where
+                  // the text lives — legibility is untouched.
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(24),
+                    gradient: const LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      stops: [0.0, 0.45, 1.0],
+                      colors: [
+                        Colors.transparent,
+                        neuSurface,
+                        neuSurface,
+                      ],
+                    ),
+                  ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -1440,9 +1459,9 @@ extension _HomeScreenWidgets on _HomeScreenState {
                               overflow: TextOverflow.ellipsis,
                               style: TextStyle(
                                 color: Colors.white.withValues(alpha: 0.55),
-                                fontSize: 12.5,
+                                fontSize: 12,
                                 fontWeight: FontWeight.w500,
-                                height: 1.35,
+                                height: 1.3,
                               ),
                             ),
                             const SizedBox(height: 8),

@@ -170,6 +170,16 @@ void main() {
         expect(block, contains(asset), reason: 'missing $asset');
       }
     });
+
+    test('the card top fades so the car floats on the page', () {
+      expect(block, contains('LinearGradient('));
+      expect(block, contains('Colors.transparent'),
+          reason: 'top of the card must fade to transparent');
+      expect(block, contains('neuSurface'),
+          reason: 'the text zone stays on the solid neu surface');
+      expect(block, isNot(contains('boxShadow')),
+          reason: 'a shadow would trace a frame around the faded top');
+    });
   });
 
   group('permissions', () {

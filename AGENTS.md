@@ -95,7 +95,7 @@
 2. **El bloque `notification` del FCM SE QUEDA** — sin él Android no dispara `onMessageOpenedApp`/`getInitialMessage` y el tap no hace nada. El dedup vive en el cliente (bg handler retorna temprano en ofertas).
 3. **Sonido APNs custom:** el `.wav` debe ser miembro del target Runner en `project.pbxproj` (lo es desde 2026-08-07). Si falta, iOS cae al sonido default SIN error ni log.
 4. **`Runner.entitlements` lleva `aps-environment=production`** (2026-08-07) — exige la capability Push Notifications en el App ID de App Store Connect o la firma falla.
-5. **Cambios nativos NO viajan por Shorebird OTA** (pbxproj, entitlements, AndroidManifest, pods): requieren build completo (Codemagic iOS / build Android).
+5. **TODO build (iOS y Android) se compila por Codemagic** — no hay OTA. Cambios nativos (pbxproj, entitlements, AndroidManifest, pods) y de Dart requieren build completo por Codemagic.
 6. **`pickerMode` queda `true` tras un Confirm exitoso** — jamás gates con `widget.pickerMode`; gatea por fase `pickingLocation`.
 7. **Checklist anti-bug-silencioso (aplicar a TODO fix):** (a) ¿el archivo/asset es miembro del bundle/target nativo? (b) ¿el error llega a la UI o solo a `debugPrint`/`catch (_) {}`? (c) ¿todo gate de fase/estado tiene su camino de salida explícito? (d) ¿el push lleva contenido visible o solo ids? (e) ¿hay entradas HERMANAS al mismo flujo (front/back, cámara/galería, Android/iOS) que necesitan el mismo cambio? — grep por hermanos, no solo el caso reportado.
 8. **`face_liveness_screen_new.dart` fue borrado** (duplicado muerto con el bug yuv420 + catch silencioso) — no recrear ni re-importar.
@@ -107,7 +107,7 @@
 
 ## 🚦 Edit safety
 
-**Nunca editar sin aprobación explícita:** `pubspec.yaml`, `codemagic.yaml`, `shorebird.yaml`, `railway.toml`, `firebase.json`, `.firebaserc`, `database.rules.json`, `firestore.rules`, `storage.rules`, `android/app/build.gradle.kts`, signing en `ios/Runner.xcodeproj/` (agregar RECURSOS como sonidos sí está permitido si el fix lo requiere — verificado 2026-08-07), `backend/models/database.py` (sin plan de migración), `backend/migrations/*.py` ya corridas, `backend/migrate.py`, `backend/config.py`, `backend/utils/security.py` (sin tests de regresión), docs legales en `docs/` (privacy/ToS/agreements), `.github/copilot-instructions.md`, `.github/agents/*.md`, `.github/workflows/*.yml`, `CLAUDE.md`.
+**Nunca editar sin aprobación explícita:** `pubspec.yaml`, `codemagic.yaml`, `railway.toml`, `firebase.json`, `.firebaserc`, `database.rules.json`, `firestore.rules`, `storage.rules`, `android/app/build.gradle.kts`, signing en `ios/Runner.xcodeproj/` (agregar RECURSOS como sonidos sí está permitido si el fix lo requiere — verificado 2026-08-07), `backend/models/database.py` (sin plan de migración), `backend/migrations/*.py` ya corridas, `backend/migrate.py`, `backend/config.py`, `backend/utils/security.py` (sin tests de regresión), docs legales en `docs/` (privacy/ToS/agreements), `.github/copilot-instructions.md`, `.github/agents/*.md`, `.github/workflows/*.yml`, `CLAUDE.md`.
 
 **Siempre:** `flutter analyze` tras editar `.dart`; `pytest` tras editar Python; `try/finally` + `.dispose()` en controllers; Pydantic en inputs FastAPI; SQLAlchemy ORM o `text()` con parámetros nombrados; strings user-facing vía `S.of(context).xxx` (bilingüe ES/EN); `maybeOf` fuera de `build()` (CLAUDE.md #26); nunca commitear secretos.
 
@@ -123,7 +123,7 @@
 flutter analyze                                            # tras editar Dart
 cd backend && ./.venv/Scripts/python.exe -m pytest tests/ -q   # tras editar Python
 railway up --detach                                        # deploy backend
-# iOS = Codemagic · Android = Shorebird OTA — NUNCA flutter build apk manual
+# iOS y Android = Codemagic — NUNCA flutter build apk manual (no hay OTA)
 ```
 
 *Última actualización: 2026-08-07 — convertido en cerebro de navegación Kimi tras la sesión de 5 fixes (push ofertas, snaps de mapa, guías licencia, cara).*

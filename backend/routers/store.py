@@ -58,19 +58,22 @@ PRODUCTS = {
     "business_card": {
         "name_es": "Tarjetas de presentación personalizadas (paquete de 50)",
         "name_en": "Personalized business cards (pack of 50)",
-        "price_cents": 1000,
+        "price_cents": 3558,
+        "tax_cents": 1042,
         "customizable": True,
     },
     "car_sign": {
         "name_es": "Letrero Cruise para el carro",
         "name_en": "Cruise car sign",
         "price_cents": 4500,
+        "tax_cents": 0,
         "customizable": False,
     },
     "sticker_pack": {
         "name_es": "Paquete de stickers Cruise (x5)",
         "name_en": "Cruise sticker pack (x5)",
         "price_cents": 1200,
+        "tax_cents": 0,
         "customizable": False,
     },
 }
@@ -139,6 +142,7 @@ async def list_products(user: User = Depends(_get_store_user)):
     return {
         "products": [
             {"id": pid, "price_cents": p["price_cents"],
+             "tax_cents": p.get("tax_cents", 0),
              "name_es": p["name_es"], "name_en": p["name_en"],
              "customizable": p["customizable"]}
             for pid, p in PRODUCTS.items()
@@ -158,8 +162,11 @@ async def store_checkout(
         raise HTTPException(503, "Payments not configured")
 
     # Price EVERYTHING server-side — the client only sends ids and qtys.
+    # Taxes are their own line (shipping is free); the site shows the same
+    # breakdown in the order panel.
     line_items = []
     total_cents = 0
+    tax_total = 0
     items_out = []
     has_card = False
     for it in body.items:
@@ -168,6 +175,7 @@ async def store_checkout(
             raise HTTPException(400, f"Unknown product: {it.product_id}")
         unit = prod["price_cents"]
         total_cents += unit * it.qty
+        tax_total += prod.get("tax_cents", 0) * it.qty
         items_out.append(
             {"product_id": it.product_id, "qty": it.qty, "unit_cents": unit})
         if prod["customizable"]:
@@ -180,6 +188,16 @@ async def store_checkout(
             },
             "quantity": it.qty,
         })
+    if tax_total:
+        line_items.append({
+            "price_data": {
+                "currency": "usd",
+                "unit_amount": tax_total,
+                "product_data": {"name": "Taxes"},
+            },
+            "quantity": 1,
+        })
+    total_cents += tax_total
     if total_cents <= 0 or total_cents > 500_000:
         raise HTTPException(400, "Invalid order total")
     # Personalization is required when the order includes cards.

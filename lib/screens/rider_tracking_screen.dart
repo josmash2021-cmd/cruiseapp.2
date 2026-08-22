@@ -54,6 +54,9 @@ import '../utils/responsive.dart';
 import '../utils/name_helper.dart' as nh;
 import '../services/user_session.dart';
 import '../services/network_service.dart';
+import '../services/resilient_position_stream.dart';
+import '../services/prefs_cache.dart';
+import '../utils/driver_location_settings.dart';
 import '../services/map_controller_cache.dart';
 import '../services/firebase_auth_recovery.dart';
 import '../utils/route_splice.dart';
@@ -472,6 +475,12 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   // ── Rider own location dot (uses Mapbox native location puck — no drift on zoom) ──
   StreamSubscription<Position>? _riderLocSub;
 
+  /// Publishes the rider's own position to the driver during the pre-pickup
+  /// window (see _startRiderLocationSharing in tracking_map_view.dart).
+  ResilientPositionStream? _riderShareStream;
+  DateTime? _lastRiderShareAt;
+  LatLng? _lastRiderSharePos;
+
   // ── Chat: local-notification fallback ──
   // Listens to RTDB chat messages and fires a flutter_local_notification
   // when a driver message arrives while the rider is not viewing the
@@ -536,6 +545,8 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
     // this matches how the file already called _interpolate.
     _interpTicker = createTicker((elapsed) => _onAnimationFrame(elapsed))
       ..start();
+    // Rider's own location: puck config + pre-pickup sharing to the driver.
+    _startRiderLocationTracking();
     // Listen to chat messages so we can fire a local push whenever a
     // driver-sent message arrives while the app is not in the foreground
     // (or the rider is on a different screen). The in-card pill shimmer
@@ -644,6 +655,8 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
     _statusPollTimer?.cancel();
     _rideSaveTimer?.cancel();
     _riderLocSub?.cancel();
+    unawaited(_riderShareStream?.stop());
+    _riderShareStream = null;
     _etaPulse.dispose();
     _arrivedDotPulse.dispose();
     _pickupOverlayCtrl.dispose();

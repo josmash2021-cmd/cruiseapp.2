@@ -18,6 +18,11 @@ class RouteResult {
   /// available). Null when the provider did not return a usable value.
   final int? durationSeconds;
 
+  /// Turn-by-turn maneuvers, parsed from the Mapbox response (the only
+  /// provider whose steps we decode — Google/OSRM paths leave this empty and
+  /// the UI falls back to a generic "follow the route" banner).
+  final List<NavStep> steps;
+
   const RouteResult({
     required this.points,
     required this.distanceText,
@@ -26,8 +31,117 @@ class RouteResult {
     required this.startAddress,
     required this.endAddress,
     this.durationSeconds,
+    this.steps = const [],
   });
 }
+
+/// One turn-by-turn maneuver from a Mapbox Directions step.
+///
+/// The maneuver happens AT [location] and turns onto the street [name];
+/// [distanceMeters]/[durationSeconds] measure the step that begins there.
+/// Type and modifier travel separately (instead of a precomposed string)
+/// so the nav bar can pick an icon without re-parsing text.
+class NavStep {
+  final String maneuverType; // 'turn', 'depart', 'arrive', 'roundabout', ...
+  final String modifier;     // 'left', 'sharp right', 'uturn', '' ...
+  final LatLng location;
+  final String name;
+  final double distanceMeters;
+  final int durationSeconds;
+  final String instruction;
+
+  const NavStep({
+    required this.maneuverType,
+    required this.modifier,
+    required this.location,
+    required this.name,
+    required this.distanceMeters,
+    required this.durationSeconds,
+    required this.instruction,
+  });
+}
+
+/// Which maneuver the driver is heading for, and how far away it is.
+///
+/// Advance rule: the current maneuver is the first one not yet passed. It
+/// counts as passed when the driver gets within 25 m of its location, or
+/// ends up more than 40 m BEYOND it along the direction of travel (a turn
+/// taken from the far lane never enters the 25 m ring, and without the
+/// overshoot rule the bar would keep pointing back at it).
+class NavProgress {
+  NavProgress(List<NavStep> steps) : steps = List.unmodifiable(steps);
+
+  final List<NavStep> steps;
+
+  /// Index of the maneuver the driver is driving TOWARD. Starts at 1:
+  /// step 0 is 'depart' at the origin, which is behind by definition.
+  int _nextIdx = 1;
+
+  static const _arriveRadiusM = 25.0;
+  static const _overshootM = 40.0;
+
+  NavStep? get current =>
+      _nextIdx < steps.length ? steps[_nextIdx] : null;
+
+  NavStep? get then =>
+      _nextIdx + 1 < steps.length ? steps[_nextIdx + 1] : null;
+
+  bool get hasSteps => steps.length > 1;
+
+  double distanceToCurrentMeters(LatLng driverPos) {
+    final step = current;
+    if (step == null) return 0;
+    return _haversineMeters(driverPos, step.location);
+  }
+
+  void update(LatLng driverPos) {
+    while (_nextIdx < steps.length) {
+      final loc = steps[_nextIdx].location;
+      final d = _haversineMeters(driverPos, loc);
+      if (d <= _arriveRadiusM) {
+        _nextIdx++;
+        continue;
+      }
+      if (d > _overshootM && _isBeyond(driverPos, _nextIdx)) {
+        _nextIdx++;
+        continue;
+      }
+      break;
+    }
+  }
+
+  /// True when the driver is past the maneuver point, measured along the
+  /// incoming travel direction (previous maneuver → this one). Equirectangular
+  /// meters — plenty at this scale.
+  bool _isBeyond(LatLng driverPos, int idx) {
+    final loc = steps[idx].location;
+    final prev = steps[idx - 1].location;
+    final cosLat = math.cos(loc.latitude * math.pi / 180.0);
+    final dirX = (loc.longitude - prev.longitude) * 111320.0 * cosLat;
+    final dirY = (loc.latitude - prev.latitude) * 110540.0;
+    final len = math.sqrt(dirX * dirX + dirY * dirY);
+    if (len < 1e-6) return false;
+    final toDriverX =
+        (driverPos.longitude - loc.longitude) * 111320.0 * cosLat;
+    final toDriverY = (driverPos.latitude - loc.latitude) * 110540.0;
+    // Projection of (driver − maneuver) onto the travel direction: positive
+    // and large means the point is already behind the car.
+    return (toDriverX * dirX + toDriverY * dirY) / len > _overshootM;
+  }
+
+  static double _haversineMeters(LatLng a, LatLng b) {
+    const r = 6371000.0;
+    final dLat = (b.latitude - a.latitude) * math.pi / 180;
+    final dLng = (b.longitude - a.longitude) * math.pi / 180;
+    final s = math.sin(dLat / 2) * math.sin(dLat / 2) +
+        math.cos(a.latitude * math.pi / 180) *
+            math.cos(b.latitude * math.pi / 180) *
+            math.sin(dLng / 2) *
+            math.sin(dLng / 2);
+    return r * 2 * math.atan2(math.sqrt(s), math.sqrt(1 - s));
+  }
+}
+
 
 class DistanceEstimate {
   final double miles;
@@ -497,10 +611,38 @@ class DirectionsService {
         startAddress: '',
         endAddress: '',
         durationSeconds: durationSeconds > 0 ? durationSeconds : null,
+        steps: _parseMapboxSteps(route),
       );
     } catch (_) {
       return null;
     }
+  }
+
+  /// steps[] from every leg of a Mapbox route, as [NavStep]s. A step without
+  /// a maneuver location is skipped — the nav bar cannot place it.
+  List<NavStep> _parseMapboxSteps(Map<String, dynamic> route) {
+    final out = <NavStep>[];
+    final legs = route['legs'] as List? ?? [];
+    for (final leg in legs) {
+      final rawSteps = (leg as Map?)?['steps'] as List? ?? [];
+      for (final s in rawSteps) {
+        if (s is! Map<String, dynamic>) continue;
+        final maneuver = s['maneuver'] as Map<String, dynamic>? ?? const {};
+        final loc = maneuver['location'] as List?;
+        if (loc == null || loc.length < 2) continue;
+        out.add(NavStep(
+          maneuverType: (maneuver['type'] as String?) ?? '',
+          modifier: (maneuver['modifier'] as String?) ?? '',
+          location: LatLng(
+              (loc[1] as num).toDouble(), (loc[0] as num).toDouble()),
+          name: (s['name'] as String?) ?? '',
+          distanceMeters: (s['distance'] as num?)?.toDouble() ?? 0,
+          durationSeconds: (s['duration'] as num?)?.toInt() ?? 0,
+          instruction: (maneuver['instruction'] as String?) ?? '',
+        ));
+      }
+    }
+    return out;
   }
 
   /// Filter out points with invalid lat/lng or outliers that jump off-road.

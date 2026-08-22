@@ -3155,5 +3155,75 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
   void _startRiderLocationTracking() {
     // Blue puck disabled — rider is identified by the pickup pin.
     _enableLocationPuck();
+    _startRiderLocationSharing();
+  }
+
+  // ── Rider → driver location sharing (pre-pickup only) ──────────────────
+  //
+  // While the driver is on the way (or waiting at the curb), the rider's
+  // own fixes go to the trip room as `rider_location` so the driver sees
+  // them walking to the car. Background-capable on purpose: the rider's
+  // flow at this point is "confirm and pocket the phone" — minimizing must
+  // keep publishing, killing the app leaves the driver the last fix.
+  //
+  // Privacy: a rider who turned off Location Sharing (privacy_location) does
+  // not publish — same toggle GpsService._riderLocationSharingBlocked reads.
+  Future<void> _startRiderLocationSharing() async {
+    if (kIsWeb) return;
+    final tripId = widget.tripId;
+    if (tripId == null) return;
+    try {
+      final prefs = PrefsCache.instanceSync ?? await PrefsCache.instance;
+      if (!(prefs.getBool('privacy_location') ?? true)) return;
+    } catch (_) {}
+    if (!mounted) return;
+    final s = S.of(context);
+    _riderShareStream = ResilientPositionStream(
+      label: 'RiderLocShare',
+      settings: driverLocationSettings(
+        distanceFilter: 2,
+        notificationTitle: s.driverLocationNotifTitle,
+        notificationText: s.driverLocationNotifOnTrip,
+      ),
+      onPosition: (pos) {
+        if (!mounted) return;
+        // The window closed (rider aboard / trip over): stop publishing and
+        // tear the background stream down — the puck is native and needs
+        // nothing from this.
+        if (_phase != _TrackPhase.arriving && _phase != _TrackPhase.arrived) {
+          _stopRiderLocationSharing();
+          return;
+        }
+        // ~1 s / >2 m throttle — the stream's own filters get close, this
+        // makes it exact so the relay is never spammed.
+        final now = DateTime.now();
+        final lastAt = _lastRiderShareAt;
+        final lastPos = _lastRiderSharePos;
+        if (lastAt != null &&
+            lastPos != null &&
+            now.difference(lastAt).inMilliseconds < 1000 &&
+            Geolocator.distanceBetween(lastPos.latitude, lastPos.longitude,
+                    pos.latitude, pos.longitude) <
+                2) {
+          return;
+        }
+        _lastRiderShareAt = now;
+        _lastRiderSharePos = LatLng(pos.latitude, pos.longitude);
+        SocketService.sendRiderLocation(
+          tripId: tripId,
+          lat: pos.latitude,
+          lng: pos.longitude,
+          heading: pos.heading,
+          speed: pos.speed,
+          capturedAtMs: pos.timestamp.millisecondsSinceEpoch,
+        );
+      },
+    )..start();
+  }
+
+  void _stopRiderLocationSharing() {
+    final stream = _riderShareStream;
+    _riderShareStream = null;
+    if (stream != null) unawaited(stream.stop());
   }
 }

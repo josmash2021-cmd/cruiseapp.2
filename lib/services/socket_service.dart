@@ -49,6 +49,8 @@ class SocketService {
   // ── Event streams ───────────────────────────────────────────────────
   static var _driverLocationController =
       StreamController<Map<String, dynamic>>.broadcast();
+  static var _riderLocationController =
+      StreamController<Map<String, dynamic>>.broadcast();
   static var _tripStatusController =
       StreamController<Map<String, dynamic>>.broadcast();
   static var _driverAssignedController =
@@ -62,6 +64,11 @@ class SocketService {
   /// Payload: {trip_id, lat, lng, heading, speed, timestamp}
   static Stream<Map<String, dynamic>> get driverLocationStream =>
       _driverLocationController.stream;
+
+  /// Stream of rider location updates (relay `rider_location_update`).
+  /// Payload: {trip_id, lat, lng, heading, speed, timestamp, captured_at?}
+  static Stream<Map<String, dynamic>> get riderLocationStream =>
+      _riderLocationController.stream;
 
   /// Stream of trip status updates.
   /// Payload: {trip_id, status, timestamp, ...}
@@ -249,6 +256,12 @@ class SocketService {
       _logLatency(map['timestamp'], 'driver_location');
     });
 
+    _socket!.on('rider_location_update', (data) {
+      final map = _toMap(data);
+      _riderLocationController.add(map);
+      _logLatency(map['timestamp'], 'rider_location');
+    });
+
     _socket!.on('trip_status_update', (data) {
       final map = _toMap(data);
       _tripStatusController.add(map);
@@ -398,9 +411,37 @@ class SocketService {
     });
   }
 
-  /// Send trip status update to the server.
-  static void sendTripStatus({
+  /// Send rider GPS update to the server (mirror of [sendDriverLocation]).
+  ///
+  /// The rider only publishes during the pre-pickup window (driver_en_route /
+  /// arrived) so the driver can see them walking to the car; the backend
+  /// relays it to the trip room as `rider_location_update`.
+  static void sendRiderLocation({
     required int tripId,
+    required double lat,
+    required double lng,
+    double heading = 0,
+    double speed = 0,
+    int? capturedAtMs,
+  }) {
+    if (_socket == null || !_connected) return;
+
+    final timestamp = DateTime.now().millisecondsSinceEpoch;
+    _socket!.emit('rider_location', {
+      'trip_id': tripId,
+      'lat': lat,
+      'lng': lng,
+      'heading': heading,
+      'speed': speed,
+      'timestamp': timestamp,
+      // Capture time of the fix, same contract as the driver feed: the
+      // driver's SmoothMotion paces the glide by this, not by send time.
+      'captured_at': capturedAtMs ?? timestamp,
+    });
+  }
+
+  /// Send trip status update to the server.
+  static void sendTripStatus({    required int tripId,
     required String status,
   }) {
     if (_socket == null || !_connected) return;
@@ -448,6 +489,9 @@ class SocketService {
       // dead controllers after dispose() → reconnect().
       if (_driverLocationController.isClosed) {
         _driverLocationController = StreamController<Map<String, dynamic>>.broadcast();
+      }
+      if (_riderLocationController.isClosed) {
+        _riderLocationController = StreamController<Map<String, dynamic>>.broadcast();
       }
       if (_tripStatusController.isClosed) {
         _tripStatusController = StreamController<Map<String, dynamic>>.broadcast();
@@ -498,6 +542,9 @@ class SocketService {
     // Close stream controllers to prevent memory leaks
     if (!_driverLocationController.isClosed) {
       _driverLocationController.close();
+    }
+    if (!_riderLocationController.isClosed) {
+      _riderLocationController.close();
     }
     if (!_tripStatusController.isClosed) {
       _tripStatusController.close();

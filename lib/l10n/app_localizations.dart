@@ -4592,6 +4592,24 @@ class S {
       : 'Matching you with a premium ride...';
 
   // ── Driver Trip Accept Screen — new localization keys ─────────────────────
+  // ── In-app turn-by-turn navigation (DriverNavView) ──
+  String get navFollowRoute => _es ? 'Sigue la ruta' : 'Follow the route';
+  String get navThen => _es ? 'Luego' : 'Then';
+  String get navSlideToPickUp =>
+      _es ? 'Desliza para recoger' : 'Slide to pick up';
+  String get navSlideToFinish =>
+      _es ? 'Desliza para terminar' : 'Slide to finish ride';
+  String navWaitFor(String time) =>
+      _es ? 'Espera $time' : 'Wait for $time';
+  String get navOverview => _es ? 'Vista general' : 'Overview';
+  String get navRecenter => _es ? 'Recentrar' : 'Recenter';
+  String get navReportProblem =>
+      _es ? 'Reportar un problema' : 'Report a problem';
+  String get navEstimatedEarnings =>
+      _es ? 'Ganancia estimada' : 'Estimated earnings';
+  String navRiderLocationStale(int seconds) =>
+      _es ? 'hace ${seconds}s' : '${seconds}s ago';
+  String get navExit => _es ? 'Salir de navegación' : 'Exit navigation';
   String get fetchingAddress =>
       _es ? 'Obteniendo dirección...' : 'Getting address...';
   String get passengerConfirmedOnboard => _es

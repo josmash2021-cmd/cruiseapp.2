@@ -1,4 +1,5 @@
 import 'dart:typed_data';
+import 'dart:math' as math;
 import 'dart:ui' show PlatformDispatcher;
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
@@ -29,6 +30,7 @@ import 'screens/splash_screen.dart';
 import 'screens/driver/driver_online_screen.dart';
 import 'screens/driver/driver_home_screen.dart';
 import 'screens/driver/driver_pending_review_screen.dart';
+import 'screens/driver/driver_trip_accept_screen.dart';
 import 'services/api_service.dart';
 import 'services/map_controller_cache.dart';
 import 'services/notification_service.dart';
@@ -521,6 +523,13 @@ void _handleNotificationTap(RemoteMessage message) {
     return;
   }
 
+  // Driver: reserved scheduled ride assigned directly by the backend — no
+  // offer to accept, the trip is already theirs.
+  if (type == 'driver_assigned') {
+    _handleDriverAssigned(message);
+    return;
+  }
+
   // Rider: scheduled ride starting → fetch trip and open tracking
   if (type == 'scheduled_trip_starting' || type == 'scheduled_claimed') {
     final tripId = int.tryParse(message.data['trip_id'] ?? '');
@@ -564,6 +573,102 @@ void _handleNotificationTap(RemoteMessage message) {
     _handleAccountRejected(type == 'driver_rejected');
     return;
   }
+}
+
+/// Haversine distance in km — same formula the driver home uses to estimate
+/// distance/ETA to pickup when resuming a trip.
+double _haversineKm(LatLng a, LatLng b) {
+  const r = 6371.0;
+  final dLat = (b.latitude - a.latitude) * math.pi / 180;
+  final dLng = (b.longitude - a.longitude) * math.pi / 180;
+  final h = math.sin(dLat / 2) * math.sin(dLat / 2) +
+      math.cos(a.latitude * math.pi / 180) *
+          math.cos(b.latitude * math.pi / 180) *
+          math.sin(dLng / 2) *
+          math.sin(dLng / 2);
+  return 2 * r * math.asin(math.sqrt(h));
+}
+
+/// Driver tapped a "driver_assigned" push: the backend assigned a reserved
+/// scheduled trip straight to this driver (no offer to accept). Fetch the
+/// trip and hand it to DriverTripAcceptScreen, the same screen a successful
+/// accept lands on. The type is shared with the rider-facing notification of
+/// the same name, so the role gate comes first.
+void _handleDriverAssigned(RemoteMessage message) {
+  final tripId = int.tryParse('${message.data['trip_id'] ?? ''}');
+  if (tripId == null) return;
+  UserSession.getMode().then((mode) {
+    if (mode != 'driver') return;
+    ApiService.getTrip(tripId).then((trip) {
+      final status = (trip['status'] ?? '').toString().toLowerCase();
+      const activeStatuses = {
+        'accepted', 'driver_en_route', 'driver_arriving', 'arrived',
+        'driver_arrived', 'in_trip', 'in_progress',
+      };
+      if (!activeStatuses.contains(status)) return;
+
+      double dbl(dynamic v) {
+        final n = v is num ? v : num.tryParse('${v ?? ''}');
+        final d = n?.toDouble();
+        return (d != null && d.isFinite) ? d : 0.0;
+      }
+
+      String str(dynamic v, String fallback) {
+        final s = v?.toString().trim() ?? '';
+        return s.isEmpty ? fallback : s;
+      }
+
+      final pickupLat = dbl(trip['pickup_lat']);
+      final pickupLng = dbl(trip['pickup_lng']);
+      final dropoffLat = dbl(trip['dropoff_lat']);
+      final dropoffLng = dbl(trip['dropoff_lng']);
+      if (pickupLat == 0 || pickupLng == 0) return;
+      final pickup = LatLng(pickupLat, pickupLng);
+      final dropoff = LatLng(dropoffLat, dropoffLng);
+
+      final driverPos = () {
+        final lat = LocalCache.get<double>('last_driver_lat');
+        final lng = LocalCache.get<double>('last_driver_lng');
+        return (lat != null && lng != null) ? LatLng(lat, lng) : pickup;
+      }();
+
+      final nav = _navigatorKey.currentState;
+      if (nav == null) return;
+      final distKm = _haversineKm(driverPos, pickup);
+      final etaMin = ((distKm * 1000) / 17.88 / 60).ceil().clamp(1, 99);
+      nav.push(MaterialPageRoute(
+        builder: (_) => DriverTripAcceptScreen(
+          tripId: tripId,
+          riderName: str(trip['rider_name'] ?? trip['passenger_name'], 'Rider'),
+          riderPhotoUrl: str(trip['rider_photo_url'], ''),
+          riderRating: dbl(trip['rider_rating']),
+          riderIsNew: trip['rider_is_new'] == true,
+          riderId: int.tryParse(
+              '${trip['rider_id'] ?? ''}'.replaceFirst('sql_', '')),
+          pickupLatLng: pickup,
+          dropoffLatLng: dropoff,
+          pickupAddress: str(trip['pickup_address'], 'Pickup'),
+          dropoffAddress: str(trip['dropoff_address'], 'Drop-off'),
+          fare: dbl(trip['fare']),
+          vehicleType: str(trip['vehicle_type'], 'Ride'),
+          driverPos: driverPos,
+          distToPickupKm: distKm,
+          etaMinutes: etaMin,
+          riderPhone: str(trip['rider_phone'], ''),
+          tripAlreadyStarted: true,
+        ),
+      ));
+    }).catchError((e) {
+      debugPrint('[FCM] Failed to fetch assigned trip $tripId: $e');
+      // Fallback: driver home polls for the active trip and auto-resumes it.
+      final nav = _navigatorKey.currentState;
+      if (nav == null) return;
+      nav.pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => const DriverHomeScreen()),
+        (r) => false,
+      );
+    });
+  });
 }
 
 /// Fetch scheduled trip from backend and navigate to RiderTrackingScreen.

@@ -369,6 +369,15 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   AnimationController? _routePulseCtrl;
   bool _isPollingOffers = false;
 
+  // ── Direct-assignment detection ──
+  // The backend can assign a reserved scheduled trip straight to this
+  // driver (push type "driver_assigned") with no DispatchOffer to accept.
+  // Offers polling alone never surfaces that trip, so _poll also asks the
+  // active-trip endpoint — throttled, and only while searching.
+  int _assignedTripCheckCountdown = 0;
+  bool _assignedTripCheckInFlight = false;
+  final Set<int> _handledAssignedTripIds = {};
+
   // ── Pulse animation on card tap ──
   AnimationController? _pulseCtrl;
   Animation<double>? _pulseAnim;

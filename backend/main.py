@@ -1773,6 +1773,203 @@ async def create_schema(x_api_key: str = Header(default="")):
 #  SCHEDULED RIDE AUTO-DISPATCH (background task)
 # -------------------------------------------------------
 
+async def _dispatch_reserved_scheduled_rides(db, now):
+    """Reserved (claimed) scheduled rides: reminder + direct assignment.
+
+    A claimed reservation sits in `scheduled_accepted` (flipped to
+    `scheduled_active` by the reminder loop at ~30 min) with driver_id set,
+    so the unclaimed dispatch pass below never sees it. This pass owns that
+    lifecycle, once per minute, inside the same dispatcher loop:
+
+      * 28-32 min out  -> one-time "go online" reminder to the reserving
+        driver, persisted in `trip.reminder_sent_at` so a restart cannot
+        re-send it (the reminder loop's in-memory sets can).
+      * <= 30 min out  -> dispatch window. If the reserving driver is online
+        (is_online AND last_active_at < 15 min, the same bar as live
+        dispatch) the trip is assigned DIRECTLY — same landing state as
+        accept_offer for a live trip: canonical "accepted" (driver_assigned
+        aliases to it), driver_assigned_at stamped, Firestore mirrored, and
+        a push to the driver. No DispatchOffer is created: there is nothing
+        to accept, the driver already reserved the ride.
+      * window + reserving driver OFFLINE -> the reservation is released
+        (driver_id=NULL, status back to "scheduled", the claim's accepted
+        DispatchOffer cancelled so a future accept_offer is not blocked by
+        the "already accepted by another driver" guard) and the rider gets
+        the existing scheduled_driver_dropped push. The unclaimed pass picks
+        the trip up on the next tick and runs the normal cascade.
+
+    Holds/charges are NOT touched here — the same re-verification rules as
+    any other scheduled ride apply (claim already required a live hold).
+    """
+    result = await db.execute(
+        select(Trip).where(
+            and_(
+                Trip.status.in_(["scheduled_accepted", "scheduled_active"]),
+                Trip.driver_id.isnot(None),
+                Trip.scheduled_at.isnot(None),
+            )
+        )
+    )
+    reserved = result.scalars().all()
+
+    for trip in reserved:
+        # SQLite returns naive datetimes; Postgres returns aware — same
+        # normalisation the claim endpoint uses.
+        sched_at = trip.scheduled_at
+        if sched_at.tzinfo is None:
+            sched_at = sched_at.replace(tzinfo=timezone.utc)
+        minutes_until = (sched_at - now).total_seconds() / 60
+
+        driver_r = await db.execute(select(User).where(User.id == trip.driver_id))
+        driver = driver_r.scalar_one_or_none()
+        if not driver:
+            logging.warning(
+                "[Reserved] trip=%d driver_id=%s not found — leaving untouched",
+                trip.id, trip.driver_id,
+            )
+            continue
+
+        # --------------------------------------------------
+        # 30-min "go online" reminder — exactly once per trip
+        # --------------------------------------------------
+        if 28 <= minutes_until <= 32 and trip.reminder_sent_at is None:
+            trip.reminder_sent_at = now
+            await db.commit()
+            hora = sched_at.strftime("%I:%M %p")
+            if driver.fcm_token:
+                try:
+                    _send_fcm_push(
+                        token=driver.fcm_token,
+                        title=f"Tienes una reserva a las {hora}",
+                        body="Tu viaje reservado es en 30 minutos — conéctate para tomarlo o lo asignaremos a otro conductor.",
+                        data={
+                            "type": "scheduled_reminder",
+                            "trip_id": str(trip.id),
+                            "reminder": "go_online",
+                        },
+                    )
+                except Exception as _fcm_err:
+                    logging.warning(
+                        "[Reserved] FCM go-online reminder failed trip=%d: %s",
+                        trip.id, _fcm_err,
+                    )
+            logging.info(
+                "[Reserved] 30-min go-online reminder sent to driver %d for trip %d (%.0f min out)",
+                driver.id, trip.id, minutes_until,
+            )
+
+        # --------------------------------------------------
+        # Dispatch window: <= 30 min out. Past -5 the reminder loop's
+        # no-show cancel owns the trip — leave it alone here.
+        # --------------------------------------------------
+        if minutes_until > 30 or minutes_until < -5:
+            continue
+
+        cutoff = now - timedelta(minutes=15)
+        last_active = driver.last_active_at
+        if last_active is not None and last_active.tzinfo is None:
+            last_active = last_active.replace(tzinfo=timezone.utc)
+        driver_online = (
+            bool(driver.is_online)
+            and last_active is not None
+            and last_active >= cutoff
+        )
+
+        if driver_online:
+            # DIRECT ASSIGNMENT — the reserving driver is on shift, so the
+            # trip becomes theirs without an offer to accept.
+            trip.status = "accepted"
+            trip.driver_assigned_at = now
+            trip.updated_at = now
+            await db.commit()
+            logging.info(
+                "[Reserved] trip=%d assigned directly to reserving driver %d "
+                "(%.0f min until pickup, no offer created)",
+                trip.id, driver.id, minutes_until,
+            )
+            if driver.fcm_token:
+                try:
+                    pickup = trip.pickup_address or "punto de recogida"
+                    _send_fcm_push(
+                        token=driver.fcm_token,
+                        title="Tu reserva empieza ahora",
+                        body=f"Tu viaje reservado hacia {pickup} ya está activo. Dirígete al punto de recogida.",
+                        data={
+                            "type": "driver_assigned",
+                            "trip_id": str(trip.id),
+                            "driver_id": str(driver.id),
+                        },
+                    )
+                except Exception as _fcm_err:
+                    logging.warning(
+                        "[Reserved] FCM assignment push failed trip=%d: %s",
+                        trip.id, _fcm_err,
+                    )
+            # Mirror into trips/sql_<id> — the doc both apps actually watch.
+            if _HAS_FIRESTORE:
+                try:
+                    firestore_sync.sync_trip_status(
+                        trip_id=trip.id, status="accepted",
+                        driver_id=driver.id,
+                        driver_name=f"{driver.first_name or ''} {driver.last_name or ''}".strip(),
+                        driver_phone=driver.phone or "",
+                    )
+                except Exception as _fs_err:
+                    logging.warning(
+                        "[Reserved] Firestore mirror failed for trip %d: %s",
+                        trip.id, _fs_err,
+                    )
+        else:
+            # Reserving driver is offline at window — release the reservation
+            # so the normal cascade can give the ride to someone else.
+            released_driver_id = trip.driver_id
+            trip.driver_id = None
+            trip.status = "scheduled"
+            trip.updated_at = now
+            # The claim wrote an ACCEPTED DispatchOffer; leaving it would
+            # trip accept_offer's "already accepted by another driver" guard
+            # for the next driver forever.
+            stale = await db.execute(
+                select(DispatchOffer).where(
+                    DispatchOffer.trip_id == trip.id,
+                    DispatchOffer.status.in_(["pending", "accepted"]),
+                )
+            )
+            for offer in stale.scalars().all():
+                offer.status = "canceled"
+            await db.commit()
+            logging.warning(
+                "[Reserved] trip=%d released: reserving driver %d offline at "
+                "dispatch window (%.0f min until pickup) — back to normal dispatch",
+                trip.id, released_driver_id, minutes_until,
+            )
+            # Rider: the existing "driver dropped" event — no new push type.
+            try:
+                rider_r = await db.execute(select(User).where(User.id == trip.rider_id))
+                rider = rider_r.scalar_one_or_none()
+                if rider and rider.fcm_token:
+                    _send_fcm_push(
+                        token=rider.fcm_token,
+                        title="Buscando otro conductor",
+                        body="Tu viaje reservado volvio al marketplace. Te asignaremos un nuevo conductor en breve.",
+                        data={"type": "scheduled_driver_dropped", "trip_id": str(trip.id)},
+                    )
+            except Exception as _fcm_err:
+                logging.warning(
+                    "[Reserved] FCM rider release push failed trip=%d: %s",
+                    trip.id, _fcm_err,
+                )
+            if _HAS_FIRESTORE:
+                try:
+                    firestore_sync.sync_trip_released(trip.id)
+                    firestore_sync.sync_trip_status(trip.id, "scheduled")
+                except Exception as _fs_err:
+                    logging.warning(
+                        "[Reserved] Firestore release mirror failed for trip %d: %s",
+                        trip.id, _fs_err,
+                    )
+
+
 async def _scheduled_ride_dispatcher():
     """Smart dispatcher for scheduled rides -- sends offers at the right time.
 
@@ -1789,6 +1986,14 @@ async def _scheduled_ride_dispatcher():
         try:
             async with SessionLocal() as db:
                 now = datetime.now(timezone.utc)
+
+                # Reserved (claimed) rides first: direct-assign or release
+                # BEFORE the unclaimed pass runs, so a ride just released
+                # from an offline reservador cascades in this same tick.
+                try:
+                    await _dispatch_reserved_scheduled_rides(db, now)
+                except Exception as _res_err:
+                    logging.error("[Reserved] dispatcher pass failed: %s", _res_err)
 
                 # Find all scheduled rides that need dispatching
                 # (status = "scheduled", no driver assigned yet)

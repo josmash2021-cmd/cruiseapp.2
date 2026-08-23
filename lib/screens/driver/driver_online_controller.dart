@@ -2271,10 +2271,64 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
           ? offers
           : offers.where((o) => o['chained'] == true).toList();
       _applyOffers(visible);
+
+      // A reserved scheduled trip assigned directly by the backend never
+      // appears in `offers` — without this check the driver sits on
+      // "Finding trips" while their reservation is already live. Throttled
+      // to every ~4 polls (~20 s), skipped while an offer card is up.
+      if (_phase == _Phase.searching &&
+          !_isPaused &&
+          _tripId == null &&
+          visible.isEmpty) {
+        if (_assignedTripCheckCountdown > 0) {
+          _assignedTripCheckCountdown--;
+        } else {
+          _assignedTripCheckCountdown = 3;
+          unawaited(_checkDirectlyAssignedTrip());
+        }
+      }
     } catch (e) {
       debugPrint('Poll error: $e');
     } finally {
       _isPollingOffers = false;
+    }
+  }
+
+  /// Detect a trip the backend assigned straight to this driver (reserved
+  /// scheduled rides — push type "driver_assigned") while the screen sits
+  /// on "Finding trips". Uses the same endpoint the driver home auto-resume
+  /// relies on, and hands the trip to the exact accept flow a chained
+  /// handoff takes (`alreadyAcceptedOnBackend` — the backend already put
+  /// the trip in `accepted` with this driver on it).
+  Future<void> _checkDirectlyAssignedTrip() async {
+    if (_assignedTripCheckInFlight) return;
+    _assignedTripCheckInFlight = true;
+    try {
+      final trip = await ApiService.getActiveTrip();
+      if (!mounted || trip == null) return;
+      if (_phase != _Phase.searching || _isPaused || _tripId != null) return;
+      final status = (trip['status'] ?? '').toString().toLowerCase();
+      const liveStatuses = {
+        'accepted', 'driver_en_route', 'driver_arriving', 'arrived',
+        'driver_arrived', 'in_trip', 'in_progress',
+      };
+      if (!liveStatuses.contains(status)) return;
+      final tripId = int.tryParse('${trip['id'] ?? trip['trip_id'] ?? ''}');
+      if (tripId == null || _handledAssignedTripIds.contains(tripId)) return;
+      final tripDriver = int.tryParse('${trip['driver_id'] ?? ''}');
+      if (tripDriver == null || tripDriver != _driverId) return;
+      _handledAssignedTripIds.add(tripId);
+      debugPrint(
+          '[DriverOnline] directly-assigned trip $tripId detected — handing off');
+      // The accept flow routes anything whose `scheduled_at` is still ≥3 min
+      // out to the reservation path, which never opens the trip screen. A
+      // direct assignment means the ride starts NOW, so strip it.
+      final asOffer = Map<String, dynamic>.from(trip)..remove('scheduled_at');
+      unawaited(_acceptOffer(asOffer, alreadyAcceptedOnBackend: true));
+    } catch (e) {
+      debugPrint('[DriverOnline] assigned-trip check failed: $e');
+    } finally {
+      _assignedTripCheckInFlight = false;
     }
   }
 

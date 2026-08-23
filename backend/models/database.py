@@ -338,6 +338,12 @@ class Trip(Base):
     wheelchair_accessible = Column(Boolean, default=False)
     arrived_at = Column(DateTime(timezone=True), nullable=True)  # when driver reached pickup spot (for wait time fee)
     driver_assigned_at = Column(DateTime(timezone=True), nullable=True)
+    # Reserved-ride "go online" reminder (2026-08-23): set once by the
+    # scheduled dispatcher when it pushes the 30-min reminder to the
+    # reserving driver — survives restarts, unlike the in-memory reminder
+    # sets in main.py. Migration: ensure-column lists below ("trips",
+    # "reminder_sent_at").
+    reminder_sent_at = Column(DateTime(timezone=True), nullable=True)
     started_at = Column(DateTime(timezone=True), nullable=True)
     completed_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), index=True)
@@ -935,6 +941,7 @@ async def migrate_add_columns(conn):
         ("users", "registration_photo_url", "TEXT"),
         ("users", "video_url", "TEXT"),
         ("trips", "scheduled_at", "DATETIME"),
+        ("trips", "reminder_sent_at", "DATETIME"),
         ("trips", "cancel_reason", "TEXT"),
         ("trips", "notes", "TEXT"),
         ("trips", "pickup_zone", "TEXT"),
@@ -1111,6 +1118,7 @@ async def migrate_postgres(conn):
         ("users", "apns_la_activity_token", "VARCHAR(128)"),
         ("users", "verification_ocr_text", "VARCHAR(4000)"),
         ("trips", "scheduled_at", "TIMESTAMP WITH TIME ZONE"),
+        ("trips", "reminder_sent_at", "TIMESTAMP WITH TIME ZONE"),
         ("trips", "cancel_reason", "TEXT"),
         ("trips", "notes", "TEXT"),
         ("trips", "pickup_zone", "TEXT"),

@@ -388,7 +388,9 @@ class PlacesService {
       }
 
       if (merged.isEmpty) return [];
-      return _dedupeByDescription(merged).take(15).toList();
+      final deduped = _dedupeByDescription(merged);
+      _rankSuggestions(cleanInput, deduped);
+      return deduped.take(15).toList();
     } catch (_) {
       return [];
     }
@@ -957,5 +959,54 @@ class PlacesService {
       out.add(item);
     }
     return out;
+  }
+
+  // ─── Relevance ranking ─────────────────────────────────────────────
+  //
+  // Sources are merged in fixed order (Mapbox first), so without a sort
+  // fuzzy/remote matches buried the correct nearby address. Rank by:
+  //  1. Street-number match (input "3409 ..." → suggestion starts "3409")
+  //  2. Token coverage (how many query words appear in the suggestion)
+  //  3. Distance to the user (nearest first, unknown distance last)
+  //  4. Original merge order (stable)
+
+  void _rankSuggestions(String input, List<PlaceSuggestion> list) {
+    final normInput = _normalize(input);
+    if (normInput.isEmpty) return;
+    final tokens = normInput.split(' ').where((t) => t.isNotEmpty).toList();
+    final number = RegExp(r'^\d+').firstMatch(normInput)?.group(0);
+
+    double score(PlaceSuggestion s) {
+      final text = _normalize('${s.mainText ?? ''} ${s.description}');
+      if (text.isEmpty) return 0;
+      var pts = 0.0;
+      if (number != null && RegExp('(^| )$number ').hasMatch('$text ')) {
+        pts += 100; // same street number → almost certainly the address
+      }
+      for (final t in tokens) {
+        if (RegExp(r'^\d+$').hasMatch(t)) continue; // number already scored
+        if (text.contains(t)) pts += 10;
+      }
+      return pts;
+    }
+
+    final scored = list.map(score).toList();
+    final order = List<int>.generate(list.length, (i) => i);
+    order.sort((a, b) {
+      final byScore = scored[b].compareTo(scored[a]);
+      if (byScore != 0) return byScore;
+      final da = list[a].distanceMiles;
+      final db = list[b].distanceMiles;
+      if (da != null && db != null && (da - db).abs() > 0.05) {
+        return da.compareTo(db);
+      }
+      if (da != null && db == null) return -1;
+      if (da == null && db != null) return 1;
+      return a.compareTo(b);
+    });
+    final sorted = [for (final i in order) list[i]];
+    list
+      ..clear()
+      ..addAll(sorted);
   }
 }

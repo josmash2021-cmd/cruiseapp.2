@@ -98,13 +98,19 @@ def _driver_position(user: User, lat: float, lng: float) -> tuple[float, float]:
     return float(user.lat or 0), float(user.lng or 0)
 
 
-def _scheduled_trip_card(trip: Trip, driver_lat: float = 0, driver_lng: float = 0) -> dict:
+def _scheduled_trip_card(trip: Trip, driver_lat: float = 0, driver_lng: float = 0,
+                         rider: "User | None" = None) -> dict:
     """Build a marketplace card dict for a scheduled trip."""
     dist_km = 0.0
     if driver_lat and driver_lng and trip.pickup_lat and trip.pickup_lng:
         dist_km = round(_haversine(driver_lat, driver_lng, trip.pickup_lat, trip.pickup_lng), 1)
 
     driver_fare = round(float(trip.fare or 0) * DRIVER_SHARE_RATE, 2)
+    rider_name = ""
+    rider_photo = None
+    if rider is not None:
+        rider_name = (f"{rider.first_name or ''} {rider.last_name or ''}".strip())
+        rider_photo = getattr(rider, "photo_url", None)
     return {
         "id": trip.id,
         "pickup_address": trip.pickup_address or "",
@@ -122,6 +128,8 @@ def _scheduled_trip_card(trip: Trip, driver_lat: float = 0, driver_lng: float = 
         "terminal": getattr(trip, "terminal", None),
         "notes": getattr(trip, "notes", None),
         "distance_km": dist_km,
+        "rider_name": rider_name,
+        "rider_photo": rider_photo,
         "created_at": trip.created_at.isoformat() if trip.created_at else None,
     }
 
@@ -222,6 +230,13 @@ async def get_available_scheduled_trips(
         if driver_vtype.strip().lower() in eligible_tiers(req)
     }
 
+    # Rider display (name + photo) for the cards, one batch query.
+    rider_ids = {t.rider_id for t in trips if t.rider_id}
+    riders: dict = {}
+    if rider_ids:
+        rres = await db.execute(select(User).where(User.id.in_(rider_ids)))
+        riders = {u.id: u for u in rres.scalars().all()}
+
     cards = []
     dropped = 0
     tier_dropped = 0
@@ -238,7 +253,7 @@ async def get_available_scheduled_trips(
             if pickup_state and pickup_state != driver_state:
                 dropped += 1
                 continue
-        cards.append(_scheduled_trip_card(t, lat, lng))
+        cards.append(_scheduled_trip_card(t, lat, lng, rider=riders.get(t.rider_id)))
 
     if dropped or tier_dropped:
         logging.info(

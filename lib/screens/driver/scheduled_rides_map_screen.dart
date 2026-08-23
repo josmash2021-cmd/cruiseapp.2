@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math';
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
@@ -20,16 +21,16 @@ import '../../services/api_service.dart';
 import '../../services/directions_service.dart';
 import '../../services/haptic_service.dart';
 import '../../utils/mapbox_safe.dart';
+import '../../widgets/gold_location_dot.dart';
 import '../../widgets/neu_style.dart';
-import '../../widgets/static_route_preview.dart';
-import '../../widgets/tier_badge.dart';
 import 'scheduled_rides_screen.dart';
 
-/// Full-screen map marketplace for scheduled rides (Uber-style):
-/// dark map, "$N" price bubbles at each pickup, and a draggable sheet with
-/// the available list. Tapping a bubble or a card opens detail mode — the
-/// real route is drawn and framed once, and the Reserve pill floats over
-/// the map OUTSIDE the card.
+/// Full-screen map marketplace for scheduled rides (Lyft structure, Cruise
+/// visual language): navy map, compact "$N" price bubbles at each pickup,
+/// floating filter pills, a draggable sheet with offer-style cards, and a
+/// detail mode where the real route is drawn and framed once. The Reserve
+/// button lives INSIDE the sheet, below the card — never floating over the
+/// map.
 class ScheduledRidesMapScreen extends StatefulWidget {
   const ScheduledRidesMapScreen({super.key});
 
@@ -42,16 +43,17 @@ enum _DateFilter { all, today, tomorrow }
 
 enum _TimeFilter { all, morning, afternoon, night }
 
-class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen> {
+class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
+    with TickerProviderStateMixin {
   static const _gold = Color(0xFFE8C547);
   static const _airport = Color(0xFF4285F4);
   static const _cacheKey = 'sched_avail_cache';
 
-  // Sheet extents: collapsed peek, detail card, full list.
-  static const _sheetMin = 0.12;
-  static const _sheetInitial = 0.22;
-  static const _sheetDetail = 0.42;
-  static const _sheetMax = 0.8;
+  // Sheet extents: collapsed peek, browsing list, detail card, full list.
+  static const _sheetMin = 0.14;
+  static const _sheetInitial = 0.26;
+  static const _sheetDetail = 0.52;
+  static const _sheetMax = 0.85;
 
   // Unique per instance: this screen can sit on top of (or under) other
   // screens that also hold a MapWidget, and a shared static id makes the
@@ -65,8 +67,12 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen> {
 
   mapbox.MapboxMap? _map;
   mapbox.PointAnnotationManager? _bubbleMgr;
+  mapbox.PointAnnotationManager? _dotMgr;
+  mapbox.PointAnnotation? _dotAnnot;
   mapbox.PolylineAnnotationManager? _routeMgr;
   mapbox.PolylineAnnotation? _routeAnnot;
+  mapbox.CircleAnnotationManager? _dotsEndMgr;
+  final List<mapbox.CircleAnnotation> _endDots = [];
   mapbox.Cancelable? _bubbleTap;
 
   /// annotation.id → trip, so a bubble tap resolves to its ride.
@@ -74,6 +80,11 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen> {
 
   /// label → rendered pill bytes; "$12" only gets rasterised once.
   final Map<String, Uint8List> _bubbleByteCache = {};
+
+  /// The driver's own marker — the same gold badge every other driver
+  /// screen paints. Static here: this screen browses, it does not navigate.
+  final GoldLocationDot _driverDot = GoldLocationDot(heading: true);
+  LatLng? _driverPos;
 
   // ── Data state ──
   List<Map<String, dynamic>> _available = [];
@@ -128,6 +139,7 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen> {
     MapSurfaceCoordinator.instance.release(_mapSurfaceOwner);
     _countdownTimer?.cancel();
     _bubbleTap?.cancel();
+    _driverDot.dispose();
     _sheetCtrl.dispose();
     super.dispose();
   }
@@ -146,8 +158,12 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen> {
         // channel, and onMapCreated re-seeds them on remount.
         _map = null;
         _bubbleMgr = null;
+        _dotMgr = null;
+        _dotAnnot = null;
         _routeMgr = null;
         _routeAnnot = null;
+        _dotsEndMgr = null;
+        _endDots.clear();
         _bubbleTap = null;
         _bubbleTrips.clear();
         setState(() => _mapMounted = false);
@@ -170,7 +186,9 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen> {
       if (pos != null && mounted) {
         setState(() {
           _initialCenter = LatLng(pos.latitude, pos.longitude);
+          _driverPos = _initialCenter;
         });
+        _syncDriverDot();
         return;
       }
     } catch (_) {}
@@ -226,6 +244,8 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen> {
           if (pos != null) {
             qlat = pos.latitude;
             qlng = pos.longitude;
+            _driverPos = LatLng(qlat, qlng);
+            _syncDriverDot();
           }
         } catch (_) {}
       }
@@ -387,18 +407,24 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen> {
       } catch (_) {}
     }
     _bubbleMgr = await ctrl.annotations.createPointAnnotationManager();
+    _dotMgr = await ctrl.annotations.createPointAnnotationManager();
     _routeMgr = await ctrl.annotations.createPolylineAnnotationManager();
+    _dotsEndMgr = await ctrl.annotations.createCircleAnnotationManager();
     // Bubbles must stack freely — two pickups on the same block would
     // otherwise hide each other at low zoom.
-    try {
-      final lid = _bubbleMgr!.id;
-      await ctrl.style.setStyleLayerProperty(lid, 'icon-allow-overlap', true);
-      await ctrl.style
-          .setStyleLayerProperty(lid, 'icon-ignore-placement', true);
-    } catch (_) {}
+    for (final mgr in [_bubbleMgr, _dotMgr]) {
+      if (mgr == null) continue;
+      try {
+        final lid = mgr.id;
+        await ctrl.style.setStyleLayerProperty(lid, 'icon-allow-overlap', true);
+        await ctrl.style
+            .setStyleLayerProperty(lid, 'icon-ignore-placement', true);
+      } catch (_) {}
+    }
     _bubbleTap?.cancel();
     _bubbleTap = _bubbleMgr?.tapEvents(onTap: _onBubbleTap);
     await _syncBubbles();
+    _syncDriverDot();
     // A revoke while the detail was open took the drawn route with the old
     // surface — redraw it on the fresh one.
     final sel = _selected;
@@ -424,25 +450,62 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen> {
   }
 
   // ─────────────────────────────────────────────
+  //  Driver marker (gold badge, same artwork as the online screen)
+  // ─────────────────────────────────────────────
+
+  Future<void> _syncDriverDot() async {
+    final mgr = _dotMgr;
+    final pos = _driverPos;
+    if (mgr == null || pos == null || !mounted) return;
+    if (!_driverDot.isReady) {
+      // No tick callback needed — the marker does not move on this screen.
+      await _driverDot.build(this, () {});
+      if (!mounted || !_driverDot.isReady) return;
+    }
+    _driverDot.snapTo(pos.latitude, pos.longitude);
+    final hiRes = _driverDot.currentBytesHiRes;
+    final bytes = hiRes ?? _driverDot.currentBytes;
+    if (bytes == null) return;
+    final point = safePoint(pos.longitude, pos.latitude);
+    if (point == null) return;
+    final iconSize = GoldLocationDot.driverIconSize /
+        (hiRes != null ? GoldLocationDot.rasterScale : 1.0);
+    try {
+      if (_dotAnnot != null) {
+        _dotAnnot!.geometry = point;
+        await mgr.update(_dotAnnot!);
+      } else {
+        _dotAnnot = await mgr.create(mapbox.PointAnnotationOptions(
+          geometry: point,
+          image: bytes,
+          iconSize: iconSize,
+          iconAnchor: mapbox.IconAnchor.CENTER,
+        ));
+      }
+    } catch (_) {}
+  }
+
+  // ─────────────────────────────────────────────
   //  Price bubbles
   // ─────────────────────────────────────────────
 
-  /// Renders the "$N" pill as a bitmap: dark rounded pill, gold text.
-  /// A bare textField cannot draw the pill background (the text halo is
-  /// capped at a quarter of the font size and is not rounded), so the Uber
-  /// look is rasterised here instead.
+  /// Renders the compact "$N" pill as a bitmap: small dark pill with a soft
+  /// drop shadow and gold text. A bare textField cannot draw the pill
+  /// background (the text halo is capped at a quarter of the font size and
+  /// is not rounded), so the look is rasterised here instead.
   Future<Uint8List?> _bubbleBytes(String label) async {
     final cached = _bubbleByteCache[label];
     if (cached != null) return cached;
     const scale = 3.0; // raster density — the pill stays crisp on retina
-    const hPad = 13.0, vPad = 6.0;
-    const borderW = 1.2;
+    const hPad = 10.0, vPad = 4.5;
+    const borderW = 1.0;
+    const shadowPad = 6.0; // room for the blurred shadow to bleed into
     final tp = TextPainter(
       text: TextSpan(
         text: label,
         style: const TextStyle(
           color: _gold,
-          fontSize: 14,
+          fontSize: 12.5,
           fontWeight: FontWeight.w800,
           height: 1.0,
         ),
@@ -454,9 +517,17 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen> {
     final recorder = ui.PictureRecorder();
     final canvas = Canvas(recorder);
     canvas.scale(scale);
+    canvas.translate(shadowPad, shadowPad);
     final rect = RRect.fromRectAndRadius(
       Rect.fromLTWH(0, 0, w, h),
       Radius.circular(h / 2),
+    );
+    // Soft shadow first, then the pill on top of it.
+    canvas.drawRRect(
+      rect.shift(const Offset(0, 1.5)),
+      Paint()
+        ..color = Colors.black.withValues(alpha: 0.5)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3),
     );
     canvas.drawRRect(rect, Paint()..color = neuSurface);
     canvas.drawRRect(
@@ -464,12 +535,12 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen> {
       Paint()
         ..style = PaintingStyle.stroke
         ..strokeWidth = borderW
-        ..color = _gold.withValues(alpha: 0.55),
+        ..color = Colors.white.withValues(alpha: 0.08),
     );
     tp.paint(canvas, Offset(hPad + borderW, vPad + borderW));
-    final img = await recorder
-        .endRecording()
-        .toImage((w * scale).ceil(), (h * scale).ceil());
+    final side = shadowPad * 2;
+    final img = await recorder.endRecording().toImage(
+        ((w + side) * scale).ceil(), ((h + side) * scale).ceil());
     final bytes = await img.toByteData(format: ui.ImageByteFormat.png);
     final raw = bytes?.buffer.asUint8List();
     if (raw != null) _bubbleByteCache[label] = raw;
@@ -564,6 +635,7 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen> {
           ? result.points
           : <LatLng>[pickup, dropoff];
       await _setRouteAnnotation(pts);
+      await _setEndpointDots(pickup, dropoff);
       if (!mounted || _selected != trip) return;
       await _fitRouteOnce(pts);
     } finally {
@@ -586,9 +658,47 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen> {
         _routeAnnot = await mgr.create(mapbox.PolylineAnnotationOptions(
           geometry: geom,
           lineColor: _gold.toARGB32(),
-          lineWidth: 5.0,
+          lineWidth: 3.5,
           lineJoin: mapbox.LineJoin.ROUND,
         ));
+      } catch (_) {}
+    }
+  }
+
+  /// Small dots at both ends of the drawn route — gold at pickup, white at
+  /// dropoff, mirroring the markers on the card's address rail.
+  Future<void> _setEndpointDots(LatLng pickup, LatLng dropoff) async {
+    final mgr = _dotsEndMgr;
+    if (mgr == null) return;
+    await _clearEndpointDots();
+    for (final (pt, color) in [
+      (pickup, _gold),
+      (dropoff, Colors.white),
+    ]) {
+      final point = safePoint(pt.longitude, pt.latitude);
+      if (point == null) continue;
+      try {
+        final annot = await mgr.create(mapbox.CircleAnnotationOptions(
+          geometry: point,
+          circleRadius: 5.0,
+          circleColor: color.toARGB32(),
+          circleStrokeWidth: 2.0,
+          circleStrokeColor: const Color(0xFF0A1128).toARGB32(),
+        ));
+        _endDots.add(annot);
+      } catch (_) {}
+      if (!mounted) return;
+    }
+  }
+
+  Future<void> _clearEndpointDots() async {
+    final mgr = _dotsEndMgr;
+    final dots = List.of(_endDots);
+    _endDots.clear();
+    if (mgr == null) return;
+    for (final d in dots) {
+      try {
+        await mgr.delete(d);
       } catch (_) {}
     }
   }
@@ -597,6 +707,7 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen> {
     final mgr = _routeMgr;
     final annot = _routeAnnot;
     _routeAnnot = null;
+    await _clearEndpointDots();
     if (mgr == null || annot == null) return;
     try {
       await mgr.delete(annot);
@@ -613,9 +724,9 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen> {
             mapbox.Point(coordinates: mapbox.Position(p.longitude, p.latitude)))
         .toList();
     if (coords.isEmpty) return;
-    // The detail sheet plus the floating Reserve pill cover the bottom half;
-    // reserve it so the route frames in the strip that is actually visible.
-    final bottom = media.size.height * (_sheetDetail + 0.08);
+    // The detail sheet covers the bottom half; reserve it so the route
+    // frames in the strip that is actually visible.
+    final bottom = media.size.height * (_sheetDetail + 0.06);
     final top = media.padding.top + 120; // top bar + chips row
     try {
       final cam = await m.cameraForCoordinatesPadding(
@@ -654,6 +765,23 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen> {
     final c = _lastCamCenter;
     // Not forced — the 10 s throttle still applies.
     _loadAvailable(lat: c?.latitude, lng: c?.longitude);
+  }
+
+  /// Back to the driver: the recenter fab flies the camera home.
+  void _recenter() {
+    final p = _driverPos;
+    final m = _map;
+    if (p == null || m == null) return;
+    HapticService.lightImpact();
+    setState(() => _showSearchArea = false);
+    m.flyTo(
+      mapbox.CameraOptions(
+        center:
+            mapbox.Point(coordinates: mapbox.Position(p.longitude, p.latitude)),
+        zoom: 12.5,
+      ),
+      mapbox.MapAnimationOptions(duration: 600),
+    );
   }
 
   String _countdown(DateTime? scheduledAt) {
@@ -708,51 +836,58 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen> {
                 : const NeuDotsBackdrop(),
           ),
 
-          // ── Top bar: X + title, then the filter chips ──
+          // ── Top bar: flat X + title, then the filter pills ──
           Positioned(
-            top: media.padding.top + 8,
+            top: media.padding.top + 4,
             left: 0,
             right: 0,
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Row(
-                  children: [
-                    const SizedBox(width: 14),
-                    _roundButton(
-                      icon: Icons.close_rounded,
-                      onTap: () => Navigator.of(context).pop(),
-                    ),
-                    Expanded(
-                      child: Center(
-                        child: Text(
-                          s.schedMapTitle,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 17,
-                            fontWeight: FontWeight.w800,
-                            letterSpacing: -0.2,
+                SizedBox(
+                  height: 44,
+                  child: Row(
+                    children: [
+                      const SizedBox(width: 8),
+                      // Flat close — no box, no disc. The map is the
+                      // background and the glyph floats on it.
+                      IconButton(
+                        onPressed: () => Navigator.of(context).pop(),
+                        icon: const Icon(Icons.close_rounded,
+                            color: Colors.white, size: 26),
+                        splashRadius: 22,
+                      ),
+                      Expanded(
+                        child: Center(
+                          child: Text(
+                            s.schedMapTitle,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 17,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: -0.2,
+                            ),
                           ),
                         ),
                       ),
-                    ),
-                    const SizedBox(width: 54), // balance the X button
-                  ],
+                      const SizedBox(width: 48), // balance the X button
+                    ],
+                  ),
                 ),
-                const SizedBox(height: 10),
+                const SizedBox(height: 8),
                 SingleChildScrollView(
                   scrollDirection: Axis.horizontal,
                   padding: const EdgeInsets.symmetric(horizontal: 14),
                   child: Row(
                     children: [
-                      _chipFilter(
-                        icon: Icons.event_available_rounded,
+                      _pillFilter(
+                        icon: Icons.check_rounded,
                         label: s.schedMapYourRides(_myRidesCount),
                         active: false,
                         onTap: _openMyRides,
                       ),
                       const SizedBox(width: 8),
-                      _chipFilter(
+                      _pillFilter(
                         icon: Icons.flight_takeoff_rounded,
                         label: s.schedMapAirport,
                         active: _airportOnly,
@@ -762,10 +897,10 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen> {
                         },
                       ),
                       const SizedBox(width: 8),
-                      _chipFilter(
-                        icon: Icons.calendar_today_rounded,
+                      _pillFilter(
                         label: _dateFilterLabel(s),
                         active: _dateFilter != _DateFilter.all,
+                        chevron: true,
                         onTap: () {
                           setState(() {
                             _dateFilter = _DateFilter
@@ -775,7 +910,7 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen> {
                         },
                       ),
                       const SizedBox(width: 8),
-                      _chipFilter(
+                      _pillFilter(
                         icon: Icons.schedule_rounded,
                         label: _timeFilterLabel(s),
                         active: _timeFilter != _TimeFilter.all,
@@ -802,58 +937,42 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen> {
               child: _buildDismissPill(s),
             ),
 
-          // ── "Search this area" (list mode, after a user pan) ──
-          if (_showSearchArea && _selected == null)
-            Positioned(
-              left: 0,
-              right: 0,
-              bottom: media.size.height * _sheetInitial + 16,
-              child: Center(
-                child: GestureDetector(
-                  onTap: _searchThisArea,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 18, vertical: 10),
-                    decoration: BoxDecoration(
-                      color: neuSurface,
-                      borderRadius: BorderRadius.circular(24),
-                      border: Border.all(
-                          color: _gold.withValues(alpha: 0.45), width: 1.2),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.4),
-                          blurRadius: 12,
-                          offset: const Offset(0, 4),
-                        ),
-                      ],
+          // ── Floating controls riding just above the sheet: the
+          // "Search this area" pill (centred) and the recenter fab (right).
+          AnimatedBuilder(
+            animation: _sheetCtrl,
+            builder: (ctx, _) {
+              final extent =
+                  _sheetCtrl.isAttached ? _sheetCtrl.size : _sheetInitial;
+              final bottom = media.size.height * extent + 14;
+              return Stack(
+                children: [
+                  if (_showSearchArea && _selected == null)
+                    Positioned(
+                      left: 0,
+                      right: 0,
+                      bottom: bottom,
+                      child: Center(child: _buildSearchAreaPill(s)),
                     ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(Icons.search_rounded,
-                            color: _gold, size: 16),
-                        const SizedBox(width: 6),
-                        Text(
-                          s.schedMapSearchArea,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 13,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ],
+                  if (_driverPos != null)
+                    Positioned(
+                      right: 14,
+                      bottom: bottom,
+                      child: _buildRecenterFab(),
                     ),
-                  ),
-                ),
-              ),
-            ),
+                ],
+              );
+            },
+          ),
 
-          // ── Draggable bottom sheet ──
+          // ── Draggable bottom sheet (fluid, snaps to its stops) ──
           DraggableScrollableSheet(
             controller: _sheetCtrl,
             initialChildSize: _sheetInitial,
             minChildSize: _sheetMin,
             maxChildSize: _sheetMax,
+            snap: true,
+            snapSizes: const [_sheetInitial, _sheetDetail],
             builder: (ctx, scrollCtrl) => Container(
               decoration: BoxDecoration(
                 color: neuBase,
@@ -869,94 +988,72 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen> {
                   ),
                 ],
               ),
-              child: _selected != null
-                  ? _buildDetailSheet(scrollCtrl)
-                  : _buildListSheet(scrollCtrl),
-            ),
-          ),
-
-          // ── Reserve pill — floating over the map, OUTSIDE the card ──
-          //
-          // Spec: no dark box behind it, full width with horizontal margins,
-          // riding just above the detail sheet. It is a sibling of the sheet
-          // in this Stack, never a child of the card — the card stays a pure
-          // summary and the one action of the screen floats on its own.
-          if (_selected != null)
-            Positioned(
-              left: 0,
-              right: 0,
-              bottom: 0,
-              child: AnimatedBuilder(
-                animation: _sheetCtrl,
-                builder: (ctx, _) {
-                  final extent = _sheetCtrl.isAttached
-                      ? _sheetCtrl.size
-                      : _sheetDetail;
-                  return Padding(
-                    padding: EdgeInsets.only(
-                      left: 16,
-                      right: 16,
-                      bottom: media.size.height * extent + 12,
-                    ),
-                    child: _buildReservePill(s, _selected!),
-                  );
-                },
+              child: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 250),
+                switchInCurve: Curves.easeOutCubic,
+                switchOutCurve: Curves.easeInCubic,
+                transitionBuilder: (child, anim) =>
+                    FadeTransition(opacity: anim, child: child),
+                child: _selected != null
+                    ? _buildDetailSheet(scrollCtrl)
+                    : _buildListSheet(scrollCtrl),
               ),
             ),
+          ),
         ],
       ),
     );
   }
 
-  Widget _roundButton({required IconData icon, required VoidCallback onTap}) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: 40,
-        height: 40,
-        decoration: BoxDecoration(
-          color: neuSurface.withValues(alpha: 0.92),
-          borderRadius: BorderRadius.circular(14),
-          border:
-              Border.all(color: Colors.white.withValues(alpha: 0.08), width: 1),
-        ),
-        child: Icon(icon, color: Colors.white, size: 20),
-      ),
-    );
-  }
-
-  Widget _chipFilter({
-    required IconData icon,
+  /// Floating filter pill — soft shadow, neu surface, gold when active.
+  Widget _pillFilter({
+    IconData? icon,
     required String label,
     required bool active,
     required VoidCallback onTap,
+    bool chevron = false,
   }) {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 9),
         decoration: BoxDecoration(
-          color: active ? _gold : neuSurface.withValues(alpha: 0.92),
-          borderRadius: BorderRadius.circular(20),
+          color: active ? _gold : neuSurface.withValues(alpha: 0.95),
+          borderRadius: BorderRadius.circular(22),
           border: Border.all(
             color: active ? _gold : Colors.white.withValues(alpha: 0.08),
             width: 1,
           ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.4),
+              blurRadius: 12,
+              offset: const Offset(0, 4),
+              spreadRadius: -2,
+            ),
+          ],
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon,
-                size: 14, color: active ? Colors.black : Colors.white70),
-            const SizedBox(width: 5),
+            if (icon != null) ...[
+              Icon(icon,
+                  size: 14, color: active ? Colors.black : Colors.white70),
+              const SizedBox(width: 5),
+            ],
             Text(
               label,
               style: TextStyle(
                 color: active ? Colors.black : Colors.white,
-                fontSize: 12,
+                fontSize: 12.5,
                 fontWeight: FontWeight.w700,
               ),
             ),
+            if (chevron) ...[
+              const SizedBox(width: 3),
+              Icon(Icons.keyboard_arrow_down_rounded,
+                  size: 15, color: active ? Colors.black : Colors.white70),
+            ],
           ],
         ),
       ),
@@ -1017,9 +1114,70 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen> {
     );
   }
 
-  /// The one CTA of detail mode. Gold pill, full width, floating — no card,
-  /// no dark container behind it (see the Stack sibling note above).
-  Widget _buildReservePill(S s, Map<String, dynamic> trip) {
+  Widget _buildSearchAreaPill(S s) {
+    return GestureDetector(
+      onTap: _searchThisArea,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+        decoration: BoxDecoration(
+          color: neuSurface,
+          borderRadius: BorderRadius.circular(24),
+          border:
+              Border.all(color: _gold.withValues(alpha: 0.45), width: 1.2),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.4),
+              blurRadius: 12,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.search_rounded, color: _gold, size: 16),
+            const SizedBox(width: 6),
+            Text(
+              s.schedMapSearchArea,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildRecenterFab() {
+    return GestureDetector(
+      onTap: _recenter,
+      child: Container(
+        width: 44,
+        height: 44,
+        decoration: BoxDecoration(
+          color: neuSurface.withValues(alpha: 0.95),
+          shape: BoxShape.circle,
+          border:
+              Border.all(color: Colors.white.withValues(alpha: 0.1), width: 1),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.4),
+              blurRadius: 12,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: const Icon(Icons.my_location_rounded, color: _gold, size: 20),
+      ),
+    );
+  }
+
+  /// The one CTA of detail mode. Gold, full width — and a child of the
+  /// sheet, right below the card. It never floats over the map.
+  Widget _buildReserveButton(S s, Map<String, dynamic> trip) {
     final tripId = trip['id'] as int? ?? 0;
     final claiming = _claimingId == tripId;
     return SizedBox(
@@ -1074,14 +1232,19 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen> {
   }
 
   Widget _buildDetailSheet(ScrollController scrollCtrl) {
+    final s = S.of(context);
+    final trip = _selected!;
     return ListView(
+      key: const ValueKey('detail'),
       controller: scrollCtrl,
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
       children: [
         _sheetHandle(),
-        // No StaticRoutePreview here: the live map right above is already
-        // drawing this exact route — a thumbnail of it adds nothing.
-        _rideCard(_selected!, showPreview: false),
+        // The card is a pure summary; the one action of the screen rides
+        // below it, inside the sheet flow — never floating over the map.
+        _rideCard(trip),
+        const SizedBox(height: 4),
+        _buildReserveButton(s, trip),
       ],
     );
   }
@@ -1090,17 +1253,20 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen> {
     final s = S.of(context);
     final trips = _filtered;
     return ListView(
+      key: const ValueKey('list'),
       controller: scrollCtrl,
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
       children: [
         _sheetHandle(),
         Padding(
-          padding: const EdgeInsets.fromLTRB(4, 2, 4, 10),
+          padding: const EdgeInsets.fromLTRB(4, 2, 4, 12),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                s.schedMapAvailable,
+                trips.isEmpty
+                    ? s.schedMapAvailable
+                    : s.schedMapRidesAvailable(trips.length),
                 style: const TextStyle(
                   color: Colors.white,
                   fontSize: 17,
@@ -1131,7 +1297,7 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen> {
         else
           ...trips.map((t) => GestureDetector(
                 onTap: () => _selectTrip(t),
-                child: _rideCard(t, showPreview: true),
+                child: _rideCard(t),
               )),
       ],
     );
@@ -1210,323 +1376,412 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen> {
   }
 
   // ─────────────────────────────────────────────
-  //  Ride card (same visual language as ScheduledRidesScreen)
+  //  Ride card — the Cruise offer-card language: big fare + tips, hourly
+  //  rate, minutes + miles, connected-dot addresses, rider row at the
+  //  bottom. Navy, gold, neu radius, soft lift shadow.
   // ─────────────────────────────────────────────
 
-  Widget _rideCard(Map<String, dynamic> trip, {required bool showPreview}) {
+  /// Rough straight-line distance in km between two points — the payload
+  /// carries driver→pickup only, so the trip leg is estimated here exactly
+  /// the way the offer card estimates it before Directions answers.
+  static double _havKm(LatLng a, LatLng b) {
+    const r = 6371.0;
+    const p = pi / 180;
+    final dLat = (b.latitude - a.latitude) * p;
+    final dLng = (b.longitude - a.longitude) * p;
+    final h = pow(sin(dLat / 2), 2) +
+        cos(a.latitude * p) * cos(b.latitude * p) * pow(sin(dLng / 2), 2);
+    return 2 * r * asin(sqrt(h));
+  }
+
+  Widget _rideCard(Map<String, dynamic> trip) {
+    final s = S.of(context);
     final fare = (trip['fare'] as num?)?.toDouble() ?? 0;
     final pickup = trip['pickup_address'] as String? ?? '';
     final dropoff = trip['dropoff_address'] as String? ?? '';
-    final vehicleType = trip['vehicle_type'] as String? ?? 'standard';
-    final distKm = (trip['distance_km'] as num?)?.toDouble() ?? 0;
     final isAirport = trip['is_airport'] == true;
     final airportCode = trip['airport_code'] as String?;
+    final distKm = (trip['distance_km'] as num?)?.toDouble() ?? 0;
+
     final pickupLat = (trip['pickup_lat'] as num?)?.toDouble();
     final pickupLng = (trip['pickup_lng'] as num?)?.toDouble();
     final dropoffLat = (trip['dropoff_lat'] as num?)?.toDouble();
     final dropoffLng = (trip['dropoff_lng'] as num?)?.toDouble();
+
+    // Driver→pickup leg comes from the backend; the trip leg is a
+    // straight-line estimate, same rule the offer card uses pre-Directions.
+    final etaToPickup =
+        (distKm * 1000 / 17.88 / 60).ceil().clamp(1, 99);
+    final distToPickupMi = distKm * 0.621371;
+    var tripKm = 0.0;
+    if (isValidLatLng(pickupLat, pickupLng) &&
+        isValidLatLng(dropoffLat, dropoffLng)) {
+      tripKm = _havKm(LatLng(pickupLat!, pickupLng!),
+          LatLng(dropoffLat!, dropoffLng!));
+      if (!tripKm.isFinite) tripKm = 0;
+    }
+    final tripEta = (tripKm * 1000 / 17.88 / 60).ceil().clamp(1, 99);
+    final tripDistMi = tripKm * 0.621371;
+
+    final totalMin = (etaToPickup + tripEta).clamp(1, 999);
+    final hourly = totalMin > 0 ? fare / (totalMin / 60.0) : 0.0;
 
     final scheduledAt = _parseScheduledAt(trip);
     final dateStr = scheduledAt != null
         ? DateFormat('EEE d MMM, h:mm a').format(scheduledAt.toLocal())
         : '';
     final countdownStr = _countdown(scheduledAt);
-    final hasPickup = pickupLat != null && pickupLng != null;
 
-    return _cardShell(
-      isAirport: isAirport,
-      children: [
-        // 1) Header: clock + date + countdown left, gold fare pill right
-        _cardHeader(
-          dateStr: dateStr,
-          countdown: countdownStr,
-          fare: fare,
-          isAirport: isAirport,
-          airportCode: airportCode,
-        ),
-        // 2) One row: tier badge + chips
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-          child: Wrap(spacing: 8, runSpacing: 6, children: [
-            TierBadge(rideName: vehicleType),
-            if (countdownStr.isNotEmpty)
-              _chip(Icons.timer_rounded, countdownStr, _gold),
-            if (distKm > 0)
-              _chip(Icons.near_me_rounded, '${distKm.toStringAsFixed(1)} km',
-                  Colors.blue),
-          ]),
-        ),
-        // 3) Route preview — a still, not a live map. One of these is
-        // mounted per card, and a native Mapbox surface per card is the
-        // crash that closed the app.
-        if (showPreview && hasPickup)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
-            child: SizedBox(
-              height: 140,
-              width: double.infinity,
-              child: _previewWithFade(
-                StaticRoutePreview(
-                  pickupLat: pickupLat,
-                  pickupLng: pickupLng,
-                  dropoffLat: dropoffLat,
-                  dropoffLng: dropoffLng,
-                  borderRadius: 14,
-                ),
-              ),
-            ),
-          ),
-        // 4) Route row
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
-          child: _routeRow(pickup, dropoff, isAirport: isAirport),
-        ),
-      ],
-    );
-  }
-
-  // ─────────────────────────────────────────────
-  //  Shared card parts (mirrors of the list screen's private builders)
-  // ─────────────────────────────────────────────
-
-  Widget _cardShell({
-    required bool isAirport,
-    required List<Widget> children,
-  }) {
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
-      // Airport trips keep their blue edge; everything else takes the
-      // shared neu border.
-      decoration: neuBox(
-        radius: 20,
-        borderColor: isAirport ? _airport.withValues(alpha: 0.25) : null,
-      ),
-      child: ClipRRect(
+      // Deeper than neuBox: the card floats over a live map / sits inside a
+      // sheet of identical cards, and at neuBox's 4-pt offset the layers
+      // read as one flat plane. Same shadow trio as the live offer card.
+      decoration: BoxDecoration(
+        color: neuSurface,
         borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: isAirport
+              ? _airport.withValues(alpha: 0.25)
+              : Colors.white.withValues(alpha: 0.05),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.55),
+            offset: const Offset(0, 16),
+            blurRadius: 32,
+            spreadRadius: -8,
+          ),
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.35),
+            offset: const Offset(0, 4),
+            blurRadius: 10,
+            spreadRadius: -3,
+          ),
+          BoxShadow(
+            color: Colors.white.withValues(alpha: 0.06),
+            offset: const Offset(0, -1),
+            blurRadius: 2,
+          ),
+        ],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 14),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
-          children: children,
-        ),
-      ),
-    );
-  }
-
-  /// Map thumbnail with its bottom edge fading into the card surface.
-  Widget _previewWithFade(Widget map) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(14),
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
-          map,
-          Positioned(
-            bottom: 0,
-            left: 0,
-            right: 0,
-            child: Container(
-              height: 32,
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [
-                    Colors.transparent,
-                    neuSurface.withValues(alpha: 0.95),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _cardHeader({
-    required String dateStr,
-    required String countdown,
-    double? fare,
-    required bool isAirport,
-    String? airportCode,
-  }) {
-    final accentColor = isAirport ? _airport : _gold;
-    return Container(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 10),
-      decoration: BoxDecoration(
-        color: accentColor.withValues(alpha: 0.05),
-      ),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(7),
-            decoration: BoxDecoration(
-              color: accentColor.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Icon(
-              isAirport ? Icons.flight_takeoff_rounded : Icons.schedule_rounded,
-              color: accentColor,
-              size: 18,
-            ),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // ── Fare + tips + rate + metrics, date block on the right ──
+            Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  dateStr,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.baseline,
+                        textBaseline: TextBaseline.alphabetic,
+                        children: [
+                          Text(
+                            '\$${fare.toStringAsFixed(2)}',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 30,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: -0.5,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            s.plusTips,
+                            style: const TextStyle(
+                              color: _gold,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        s.offerHourlyRate(hourly.toStringAsFixed(2)),
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 12.5,
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      Row(
+                        children: [
+                          _offerMetric(Icons.access_time_rounded,
+                              s.offerDuration(totalMin)),
+                          const SizedBox(width: 8),
+                          _offerMetric(
+                            Icons.straighten_rounded,
+                            '${(distToPickupMi + tripDistMi).toStringAsFixed(1)} mi',
+                          ),
+                        ],
+                      ),
+                    ],
                   ),
                 ),
-                if (countdown.isNotEmpty) ...[
-                  const SizedBox(height: 1),
-                  Text(
-                    countdown,
-                    style: TextStyle(
-                      color: accentColor,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ],
+                const SizedBox(width: 10),
+                // When the ride happens — the one fact a scheduled card has
+                // that a live offer never does.
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (dateStr.isNotEmpty)
+                      Text(
+                        dateStr,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    if (countdownStr.isNotEmpty) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        countdownStr,
+                        style: const TextStyle(
+                          color: _gold,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                    if (isAirport && airportCode != null) ...[
+                      const SizedBox(height: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: _airport.withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.flight_rounded,
+                                size: 13, color: _airport),
+                            const SizedBox(width: 3),
+                            Text(
+                              airportCode,
+                              style: const TextStyle(
+                                color: _airport,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
               ],
             ),
-          ),
-          if (fare != null && fare > 0)
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-              decoration: BoxDecoration(
-                color: _gold,
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: Text(
-                '\$${fare.toStringAsFixed(2)}',
-                style: const TextStyle(
-                  color: Colors.black,
-                  fontWeight: FontWeight.w800,
-                  fontSize: 14,
-                ),
-              ),
+
+            const SizedBox(height: 18),
+
+            // ── Pickup, then dropoff, on one connected rail ──
+            _addressRail(
+              pickupMeta: s.offerAway(
+                  etaToPickup, distToPickupMi.toStringAsFixed(1)),
+              pickupAddr: pickup,
+              dropoffMeta:
+                  s.offerTrip(tripEta, tripDistMi.toStringAsFixed(1)),
+              dropoffAddr: dropoff,
+              isAirport: isAirport,
             ),
-          if (isAirport && airportCode != null) ...[
-            const SizedBox(width: 8),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              decoration: BoxDecoration(
-                color: _airport.withValues(alpha: 0.15),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(Icons.flight_rounded, size: 13, color: _airport),
-                  const SizedBox(width: 3),
-                  Text(
-                    airportCode,
-                    style: const TextStyle(
-                      color: _airport,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                ],
-              ),
-            ),
+
+            const SizedBox(height: 16),
+            Container(height: 1, color: Colors.white.withValues(alpha: 0.06)),
+            const SizedBox(height: 14),
+
+            // ── Who is riding ──
+            _riderRow(trip, s),
           ],
-        ],
+        ),
       ),
     );
   }
 
-  Widget _routeRow(String pickup, String dropoff, {required bool isAirport}) {
-    final dropColor = isAirport ? _airport : Colors.white;
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Column(
-          children: [
-            Container(
-              width: 10,
-              height: 10,
-              decoration: BoxDecoration(
-                color: _gold,
-                shape: BoxShape.circle,
-                border:
-                    Border.all(color: _gold.withValues(alpha: 0.3), width: 2.5),
-              ),
-            ),
-            Container(width: 1.5, height: 26, color: Colors.white12),
-            Container(
-              width: 10,
-              height: 10,
-              decoration: BoxDecoration(
-                color: dropColor,
-                shape: BoxShape.circle,
-                border: Border.all(
-                    color: dropColor.withValues(alpha: 0.3), width: 2.5),
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                pickup.isNotEmpty ? pickup : S.of(context).pickupLabel,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const SizedBox(height: 16),
-              Text(
-                dropoff.isNotEmpty ? dropoff : S.of(context).dropOffLabel,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  color: Colors.white70,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _chip(IconData icon, String label, Color color) {
+  Widget _offerMetric(IconData icon, String label) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.1),
+        color: Colors.white.withValues(alpha: 0.05),
         borderRadius: BorderRadius.circular(20),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 12, color: color),
+          Icon(icon, size: 12, color: _gold),
           const SizedBox(width: 4),
           Text(
             label,
-            style: TextStyle(
-              color: color,
-              fontSize: 11,
+            style: const TextStyle(
+              color: Colors.white70,
+              fontSize: 11.5,
               fontWeight: FontWeight.w600,
             ),
           ),
         ],
       ),
+    );
+  }
+
+  /// The two stops on one rail, joined by a line — same grammar as the
+  /// offer card's `_offerRoute`: gold pickup dot, white dropoff dot (blue
+  /// for airport runs), a hairline between them.
+  Widget _addressRail({
+    required String pickupMeta,
+    required String pickupAddr,
+    required String dropoffMeta,
+    required String dropoffAddr,
+    required bool isAirport,
+  }) {
+    final dropColor = isAirport ? _airport : Colors.white;
+    Widget stop(Color dotColor, String meta, String addr, bool muted) {
+      return Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            margin: const EdgeInsets.only(top: 3),
+            width: 10,
+            height: 10,
+            decoration: BoxDecoration(
+              color: dotColor,
+              shape: BoxShape.circle,
+              border: Border.all(
+                  color: dotColor.withValues(alpha: 0.3), width: 2.5),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  meta,
+                  style: const TextStyle(color: Colors.white38, fontSize: 11),
+                ),
+                const SizedBox(height: 1),
+                Text(
+                  addr.isNotEmpty
+                      ? addr
+                      : (muted
+                          ? S.of(context).dropOffLabel
+                          : S.of(context).pickupLabel),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: muted ? Colors.white70 : Colors.white,
+                    fontSize: 13,
+                    fontWeight: muted ? FontWeight.w500 : FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      );
+    }
+
+    return IntrinsicHeight(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          stop(_gold, pickupMeta, pickupAddr, false),
+          Padding(
+            padding: const EdgeInsets.only(left: 4.25),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child:
+                  Container(width: 1.5, height: 14, color: Colors.white12),
+            ),
+          ),
+          stop(dropColor, dropoffMeta, dropoffAddr, true),
+        ],
+      ),
+    );
+  }
+
+  /// Avatar + rider name. The scheduled payload does not carry rider fields
+  /// today, so the row degrades to the gold-initial avatar with the generic
+  /// rider label — the same fallback the offer card uses without a photo.
+  Widget _riderRow(Map<String, dynamic> trip, S s) {
+    final riderName =
+        (trip['rider_name'] as String?) ?? s.riderFallback;
+    final photoUrl = (trip['rider_photo_url'] as String? ??
+            trip['passenger_photo_url'] as String? ??
+            '')
+        .trim();
+    final initial = riderName.trim().isNotEmpty
+        ? riderName.trim()[0].toUpperCase()
+        : '?';
+    return Row(
+      children: [
+        Container(
+          width: 30,
+          height: 30,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            border: Border.all(
+              color: Colors.white.withValues(alpha: 0.15),
+              width: 1,
+            ),
+          ),
+          child: ClipOval(
+            child: photoUrl.isNotEmpty
+                ? Image.network(
+                    photoUrl,
+                    width: 30,
+                    height: 30,
+                    fit: BoxFit.cover,
+                    errorBuilder: (context, error, stack) => Center(
+                      child: Text(
+                        initial,
+                        style: const TextStyle(
+                          color: _gold,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  )
+                : Center(
+                    child: Text(
+                      initial,
+                      style: const TextStyle(
+                        color: _gold,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Text(
+            riderName,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 15,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

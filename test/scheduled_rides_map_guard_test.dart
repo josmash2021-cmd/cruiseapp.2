@@ -2,7 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-/// Guardian for the Uber-style scheduled-rides map screen.
+/// Guardian for the Lyft-structure / Cruise-visual scheduled-rides map
+/// screen.
 ///
 /// Pure source-grep (same style as driver_scheduled_neu_guard_test.dart):
 /// the screen needs network, GPS and a native map, so what a unit test CAN
@@ -10,9 +11,8 @@ import 'package:flutter_test/flutter_test.dart';
 ///   1. The map-surface owner id is unique per instance — a shared static
 ///      id makes the coordinator skip the revoke, the old surface stays
 ///      alive underneath, and two native MapWidgets crash iOS.
-///   2. The Reserve pill floats over the map as a sibling of the sheet in
-///      the root Stack — never a child of the ride card, with no dark box
-///      behind it.
+///   2. The Reserve button lives INSIDE the sheet flow, below the ride
+///      card — the old floating pill over the map is gone for good.
 ///   3. The claim keeps the 403/409 error mapping (409 = another driver
 ///      took it) so the loser reads a sentence instead of a raw exception.
 void main() {
@@ -33,11 +33,11 @@ void main() {
     });
   });
 
-  group('reserve pill placement', () {
-    // The card builder must not contain the Reserve pill — it lives in the
-    // root Stack, positioned over the map above the detail sheet.
+  group('reserve button placement', () {
+    // The card builder must not contain the Reserve button — it rides below
+    // the card inside the detail sheet, never floating over the map.
     final cardStart = screen.indexOf('Widget _rideCard(');
-    final cardEnd = screen.indexOf('//  Shared card parts');
+    final cardEnd = screen.indexOf('Widget _offerMetric(');
     final cardBlock = cardStart >= 0 && cardEnd > cardStart
         ? screen.substring(cardStart, cardEnd)
         : '';
@@ -45,19 +45,26 @@ void main() {
     test('the ride card does not contain the reserve button', () {
       expect(cardBlock, isNotEmpty,
           reason: '_rideCard builder not found — structure changed?');
-      expect(cardBlock.contains('_buildReservePill'), isFalse);
+      expect(cardBlock.contains('_buildReserveButton'), isFalse);
       expect(cardBlock.contains('schedMapReserve'), isFalse);
     });
 
-    test('the reserve pill is a root-stack sibling, after the sheet', () {
-      final stackIdx = screen.indexOf('body: Stack(');
-      final sheetIdx = screen.indexOf('DraggableScrollableSheet(');
-      final reserveIdx = screen.indexOf('_buildReservePill(s, _selected!)');
-      expect(stackIdx, greaterThan(-1));
-      expect(sheetIdx, greaterThan(stackIdx));
-      expect(reserveIdx, greaterThan(sheetIdx),
+    test('reserve sits below the card inside the detail sheet', () {
+      final sheetStart = screen.indexOf('Widget _buildDetailSheet(');
+      expect(sheetStart, greaterThan(-1));
+      final sheetBlock = screen.substring(sheetStart, sheetStart + 1200);
+      final cardIdx = sheetBlock.indexOf('_rideCard(trip)');
+      final reserveIdx = sheetBlock.indexOf('_buildReserveButton(s, trip)');
+      expect(cardIdx, greaterThan(-1));
+      expect(reserveIdx, greaterThan(cardIdx),
           reason:
-              'Reserve must build after the sheet in the root Stack so it floats over the map, outside the card.');
+              'Reserve must build after the card inside _buildDetailSheet — in the sheet flow, below the card.');
+    });
+
+    test('no floating reserve pill survives in the root Stack', () {
+      expect(screen.contains('_buildReservePill'), isFalse,
+          reason:
+              'The old floating RESERVE pill over the map was removed — do not bring it back.');
     });
   });
 

@@ -28,7 +28,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
     // Never show a blank dark blue screen — always have visible feedback.
     if (_pos == null) {
       return Container(
-        color: const Color(0xFF07080D),
+        color: const Color(0xFF0A1128),
         child: const Center(
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -73,13 +73,19 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
       // live map paints. The handoff reads as the map easing from 16 to
       // 15.5 in place — Lyft's small zoom-out — not as a page change with
       // a spinner in the middle.
-      return Stack(
-        fit: StackFit.expand,
-        children: [
-          Positioned.fill(
-              child: StaticMapSnapshot(center: _pos!, zoom: 16)),
-          Center(child: GoldLocationDotOverlay(bearing: _heading)),
-        ],
+      // Navy of the map theme behind the snapshot, never the bare
+      // near-black of StaticMapSnapshot — a loading state must not read
+      // as a dead screen.
+      return Container(
+        color: const Color(0xFF0A1128),
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            Positioned.fill(
+                child: StaticMapSnapshot(center: _pos!, zoom: 16)),
+            Center(child: GoldLocationDotOverlay(bearing: _heading)),
+          ],
+        ),
       );
     }
     // Read once, and hand it down. _mapSurface used to reach back for `_pos!`
@@ -228,6 +234,29 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
             }
             MapTheme.applyNavyGold(ctrl);
           });
+          // Watchdog: if the style never loads (no network, hung renderer)
+          // the driver stares at a dead grey map forever. Give it 7 s, then
+          // tear the surface down and remount it through the same helpers
+          // the coordinator handoff uses. One retry per mount — a phone
+          // without network must not loop.
+          _mapStyleWatchdogTimer?.cancel();
+          _mapStyleLoaded = false;
+          if (!_mapStyleWatchdogRetried) {
+            final watchGen = _mapGeneration;
+            _mapStyleWatchdogTimer = Timer(const Duration(seconds: 7), () {
+              if (!mounted ||
+                  !_mapMounted ||
+                  _mapStyleLoaded ||
+                  _mapGeneration != watchGen) {
+                return;
+              }
+              _mapStyleWatchdogRetried = true;
+              debugPrint('[DriverOnline] style never loaded — remounting '
+                  'map surface');
+              _releaseMapSurface();
+              unawaited(_remountMapSurface());
+            });
+          }
           // CRITICAL: reset all annotation references before creating new managers.
           // On Android the PlatformView (SurfaceView) is destroyed when the app
           // goes to background and recreated on resume. This triggers onMapCreated
@@ -388,6 +417,8 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
           });
         },
         onStyleLoadedListener: (_) async {
+          _mapStyleLoaded = true;
+          _mapStyleWatchdogTimer?.cancel();
           if (_map != null) {
             await MapTheme.applyNavyGold(_map!);
             // Ensure top-down view on entry (no tilt unless actively navigating)

@@ -842,6 +842,9 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
         null,
         null,
       );
+      // A pickup one or two blocks away would frame at street level (17+),
+      // a zoom the offer card never needs — cap it at the cruise zoom.
+      if ((cam.zoom ?? 15.5) > 15.5) cam.zoom = 15.5;
       if (mounted) {
         await _map?.flyTo(cam, mapbox.MapAnimationOptions(duration: 700));
       }

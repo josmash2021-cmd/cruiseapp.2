@@ -256,6 +256,13 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   // install onStyleLoaded can fire before `_map` is stored (or not reach the
   // listener at all), and the screen stays on the raw grey dark-v11.
   Timer? _navyGoldRetryTimer;
+  // Style-load watchdog: a surface whose style never lands (no network,
+  // hung renderer) is a dead grey map forever. It gets 7 s, then the
+  // surface is torn down and remounted — once per mount, so a phone
+  // without network does not loop.
+  Timer? _mapStyleWatchdogTimer;
+  bool _mapStyleLoaded = false;
+  bool _mapStyleWatchdogRetried = false;
   // Monotonically incremented every time onMapCreated fires. Guards against
   // stale annotation refs surviving a PlatformView recreation.
   int _mapGeneration = 0;
@@ -1271,6 +1278,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     _statusLineTimer?.cancel();
     _navyGoldRetryTimer?.cancel();
     _onlineChimeTimer?.cancel();
+    _mapStyleWatchdogTimer?.cancel();
     _searchPulse.dispose();
     _pollT?.cancel();
     _offerSseSub?.cancel();

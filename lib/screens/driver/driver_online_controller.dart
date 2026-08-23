@@ -2161,6 +2161,15 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
         _fullSegOne = [];
         _fullSegTwo = [];
         unawaited(_clearAllAnnotations().catchError((_) {}));
+        // Same camera restore reject/accept run — without it the driver is
+        // left staring at the expired offer's frame until the next fix.
+        if (_pos != null && mounted) {
+          try {
+            _animateToPosition(_pos!, zoom: 15.5, bearing: 0, tilt: 0);
+          } catch (e) {
+            debugPrint('[DriverOnline] _animateToPosition failed on expire: $e');
+          }
+        }
       }
     }
 

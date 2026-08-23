@@ -1435,10 +1435,18 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                           s.pickup != null &&
                           s.dropoff != null &&
                           !widget.pickerMode &&
-                          s.phase != RiderPhase.pickingLocation &&
-                          !_cinematicDone &&
-                          !_cinematicRunning) {
-                        _drawRoute();
+                          s.phase != RiderPhase.pickingLocation) {
+                        if (s.phase == RiderPhase.requesting ||
+                            s.phase == RiderPhase.searchingDriver) {
+                          // Surface remounted after the pickup pin page was
+                          // popped: the old native view took the pins/route
+                          // with it — redraw directly, no cinematic replay.
+                          unawaited(_updateRouteAnnotation(
+                              List<LatLng>.from(s.route!.points)));
+                          unawaited(_buildRouteMarkers());
+                        } else if (!_cinematicDone && !_cinematicRunning) {
+                          _drawRoute();
+                        }
                       }
                     }
                     try {

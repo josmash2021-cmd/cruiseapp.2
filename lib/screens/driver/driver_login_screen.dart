@@ -9,7 +9,7 @@ import '../../services/user_session.dart';
 import '../../widgets/neu_style.dart';
 import '../forgot_password_screen.dart';
 import '../login_password_screen.dart';
-import 'driver_signup_screen.dart';
+import 'driver_welcome_screen.dart';
 import 'driver_home_screen.dart';
 import 'driver_pending_review_screen.dart';
 
@@ -459,7 +459,7 @@ class _DriverLoginScreenState extends State<DriverLoginScreen>
                         GestureDetector(
                           onTap: () {
                             Navigator.of(context).push(
-                              slideFromRightRoute(const DriverSignupScreen()),
+                              slideFromRightRoute(const DriverWelcomeScreen()),
                             );
                           },
                           child: Container(

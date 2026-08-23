@@ -3073,6 +3073,23 @@ class S {
   String get lookingToRide => _es ? '¿Buscas un viaje? ' : 'Looking to ride? ';
   String get switchToRider => _es ? 'Cambiar a pasajero' : 'Switch to rider';
 
+  // ── Driver phone onboarding (welcome → OTP → name) ──
+  String get welcomeAboard => _es ? 'Bienvenido a bordo' : 'Welcome aboard';
+  String get enterNumberToSignUp => _es
+      ? 'Ingresa tu número para registrarte o iniciar sesión.'
+      : 'Enter your number to sign up or log in.';
+  String get usPhoneHint => '(555) 123-4567';
+  String get tooManyAttempts => _es
+      ? 'Demasiados intentos. Espera un momento e inténtalo de nuevo.'
+      : 'Too many attempts. Please wait and try again.';
+  String get nameAsRidersSeeIt => _es
+      ? 'Así te verán los pasajeros.'
+      : 'This is how riders will see you.';
+  String get emailOptionalLabel =>
+      _es ? 'Correo electrónico (opcional)' : 'Email (optional)';
+  String get enterValidEmail =>
+      _es ? 'Ingresa un correo válido' : 'Enter a valid email';
+
   // ── Driver Signup ──
   String get photoNotClear => _es ? 'Foto no clara' : 'Photo Not Clear';
   String get imageQualityTooLow => _es

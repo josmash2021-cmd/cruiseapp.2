@@ -200,6 +200,8 @@ class User(Base):
     auth_provider = Column(String(20), default="password")
     email_verified = Column(Boolean, default=False)
     email_verified_at = Column(DateTime(timezone=True), nullable=True)
+    phone_verified = Column(Boolean, default=False)
+    phone_verified_at = Column(DateTime(timezone=True), nullable=True)
     checkr_candidate_id = Column(String(100), nullable=True)
     checkr_report_id = Column(String(100), nullable=True)
     background_check_status = Column(String(20), default="none")
@@ -1005,6 +1007,8 @@ async def migrate_add_columns(conn):
         ("users", "apns_la_start_token", "VARCHAR(128)"),
         ("users", "apns_la_activity_token", "VARCHAR(128)"),
         ("users", "verification_ocr_text", "VARCHAR(4000)"),
+        ("users", "phone_verified", "BOOLEAN DEFAULT 0"),
+        ("users", "phone_verified_at", "DATETIME"),
     ]
     for table, col, col_type in new_columns:
         try:
@@ -1105,6 +1109,8 @@ async def migrate_postgres(conn):
         ("users", "auth_provider", "VARCHAR(20) DEFAULT 'password'"),
         ("users", "email_verified", "BOOLEAN DEFAULT FALSE"),
         ("users", "email_verified_at", "TIMESTAMP WITH TIME ZONE"),
+        ("users", "phone_verified", "BOOLEAN DEFAULT FALSE"),
+        ("users", "phone_verified_at", "TIMESTAMP WITH TIME ZONE"),
         ("users", "checkr_candidate_id", "VARCHAR(100)"),
         ("users", "checkr_report_id", "VARCHAR(100)"),
         ("users", "background_check_status", "VARCHAR(20) DEFAULT 'none'"),

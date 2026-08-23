@@ -7,7 +7,7 @@ import '../config/page_transitions.dart';
 import '../widgets/neu_style.dart';
 import 'login_screen.dart';
 import 'login_password_screen.dart';
-import 'driver/driver_signup_screen.dart';
+import 'driver/driver_welcome_screen.dart';
 import 'driver/driver_login_screen.dart';
 
 class WelcomeScreen extends StatefulWidget {
@@ -274,7 +274,7 @@ class _WelcomeScreenState extends State<WelcomeScreen>
                               ),
                               recognizer: TapGestureRecognizer()
                                 ..onTap = () => Navigator.of(context).push(
-                                      slideUpFadeRoute(const DriverSignupScreen()),
+                                      slideUpFadeRoute(const DriverWelcomeScreen()),
                                     ),
                             ),
                             const TextSpan(text: ' or '),

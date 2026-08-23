@@ -96,6 +96,12 @@ class SocialAuthIn(BaseModel):
     login_only: bool = False
 
 
+class PhoneLoginIn(BaseModel):
+    phone: str
+    code: str
+    role: str = "driver"
+
+
 class SendOtpIn(BaseModel):
     phone: Optional[str] = None
     email: Optional[str] = None

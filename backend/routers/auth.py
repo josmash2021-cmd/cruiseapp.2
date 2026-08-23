@@ -10,11 +10,11 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from models.database import (
     get_db, SessionLocal, User, ConsentLog, Vehicle, Document, Trip, Rating,
-    ChatMessage, DispatchOffer, PasswordResetToken, LoginActivity,
+    ChatMessage, DispatchOffer, PasswordResetToken, LoginActivity, OTPCode,
 )
 from models.schemas import (
     RegisterIn, CheckExistsIn, LoginIn, CompleteLoginIn, SocialAuthIn,
-    SendOtpIn, VerifyOtpIn, ApplyReferralIn, VerifyRequestOcrIn,
+    SendOtpIn, VerifyOtpIn, PhoneLoginIn, ApplyReferralIn, VerifyRequestOcrIn,
 )
 from utils.security import (
     pwd, _create_token, _create_refresh_token, _create_login_token,
@@ -471,7 +471,7 @@ async def login(body: LoginIn, request: Request, db: AsyncSession = Depends(get_
     }
 
 @router.post("/auth/send-otp", dependencies=[Depends(_verify_api_key)])
-async def send_otp(body: SendOtpIn, request: Request):
+async def send_otp(body: SendOtpIn, request: Request, db: AsyncSession = Depends(get_db)):
     """Send a verification code via Twilio SMS or Email. Generates code server-side.
     Uses Twilio Verify API if SERVICE_SID is configured, otherwise falls back
     to direct Twilio Messages API (requires only ACCOUNT_SID + AUTH_TOKEN + PHONE_NUMBER).
@@ -487,19 +487,17 @@ async def send_otp(body: SendOtpIn, request: Request):
     if not phone and not email:
         raise HTTPException(400, "Phone or email required")
 
+    # Normalize phone to E.164 so send/verify/phone-login all key the store
+    # on the SAME identifier regardless of the format the client typed.
+    if phone:
+        phone = _normalize_phone_e164(phone)
+
     # Use phone as key for OTP store (or email if no phone)
     otp_key = phone if phone else email
 
-    # Generate code immediately
+    # Generate code immediately and persist it (DB is the primary store)
     code = "".join([str(secrets.randbelow(10)) for _ in range(6)])
-    _otp_store[otp_key] = {"code": code, "expires": time.time() + _OTP_TTL, "email": email, "phone": phone}
-    
-    # Clean expired entries
-    now = time.time()
-    expired = [k for k, v in _otp_store.items() if v["expires"] < now]
-    for k in expired:
-        del _otp_store[k]
-    
+    await _store_otp_db(db, otp_key, "sms" if phone else "email", code)
     # â"€â"€ ALWAYS log code for development/troubleshooting â"€â"€
     import hashlib as _hl
     _code_hint = _hl.sha256(code.encode()).hexdigest()[:8]
@@ -645,6 +643,73 @@ async def send_otp(body: SendOtpIn, request: Request):
         "warning": "SMS/Email service temporarily unavailable. Please contact support or try again later.",
     }
 
+async def _store_otp_db(db: AsyncSession, identifier: str, channel: str, code: str):
+    """Persist a freshly generated OTP — one live code per identifier.
+    The otp_codes row is the primary store (the in-memory dict died on every
+    restart, silently invalidating codes that were still within their TTL)."""
+    await db.execute(
+        OTPCode.__table__.delete().where(OTPCode.identifier == identifier)
+    )
+    db.add(OTPCode(
+        identifier=identifier,
+        channel=channel,
+        code_hash=hashlib.sha256(code.encode()).hexdigest(),
+        expires_at=time.time() + _OTP_TTL,
+    ))
+    await db.commit()
+
+
+async def _check_otp_db(db: AsyncSession, identifier: str, code: str) -> bool:
+    """Verify a code against the otp_codes table. Consumes the row on success;
+    counts a strike on mismatch (row dies at the limit, same as web login)."""
+    r = await db.execute(
+        select(OTPCode).where(
+            OTPCode.identifier == identifier,
+            OTPCode.code_hash.isnot(None),
+            OTPCode.expires_at > time.time(),
+        ).order_by(OTPCode.created_at.desc())
+    )
+    row = r.scalars().first()
+    if not row or row.attempts >= _MAX_OTP_ATTEMPTS:
+        return False
+    if row.code_hash != hashlib.sha256(code.encode()).hexdigest():
+        row.attempts += 1
+        await db.commit()
+        return False
+    await db.delete(row)
+    await db.commit()
+    return True
+
+
+async def _twilio_verify_check(phone: str, code: str) -> bool:
+    """Twilio Verify VerificationCheck — True when the code is approved."""
+    import urllib.request, urllib.parse
+    if not (TWILIO_ACCOUNT_SID and TWILIO_ACCOUNT_SID.startswith("AC") and
+            TWILIO_SERVICE_SID and TWILIO_SERVICE_SID.startswith("VA")):
+        return False
+    creds = base64.b64encode(f"{TWILIO_ACCOUNT_SID}:{TWILIO_AUTH_TOKEN}".encode()).decode()
+    url = f"https://verify.twilio.com/v2/Services/{TWILIO_SERVICE_SID}/VerificationCheck"
+    data = urllib.parse.urlencode({"To": phone, "Code": code}).encode()
+    req = urllib.request.Request(url, data=data, headers={
+        "Authorization": f"Basic {creds}",
+        "Content-Type": "application/x-www-form-urlencoded",
+    }, method="POST")
+    try:
+        loop = asyncio.get_event_loop()
+        def _do_verify():
+            try:
+                with urllib.request.urlopen(req, timeout=15) as resp:
+                    return resp.status, resp.read().decode()
+            except urllib.error.HTTPError as e:
+                return e.code, e.read().decode()
+        status, resp_body = await loop.run_in_executor(None, _do_verify)
+        if status == 200:
+            return json.loads(resp_body).get("status") == "approved"
+    except Exception as e:
+        logging.warning("[OTP] Twilio Verify check error: %s", e)
+    return False
+
+
 def _check_otp_rate_limit(otp_key: str) -> bool:
     """Return True if the key is allowed to attempt OTP verification."""
     now = time.time()
@@ -666,13 +731,15 @@ def _record_otp_attempt(otp_key: str):
 
 
 @router.post("/auth/verify-otp", dependencies=[Depends(_verify_api_key)])
-async def verify_otp(body: VerifyOtpIn):
-    """Check a verification code. Tries Twilio Verify API first, then local store.
-    Rate-limited: max 5 failed attempts per 15 minutes per phone/email."""
-    import urllib.request, urllib.parse
+async def verify_otp(body: VerifyOtpIn, db: AsyncSession = Depends(get_db)):
+    """Check a verification code. Checks the otp_codes table first, then the
+    Twilio Verify API. Rate-limited: max 5 failed attempts per 15 minutes
+    per phone/email."""
     phone = (body.phone or "").strip()
     email = (body.email or "").strip().lower()
     code  = body.code.strip()
+    if phone:
+        phone = _normalize_phone_e164(phone)
     otp_key = phone if phone else email
     if not otp_key or not code:
         raise HTTPException(400, "Phone or email, and code required")
@@ -682,42 +749,17 @@ async def verify_otp(body: VerifyOtpIn):
         logging.warning("[OTP] Rate limit exceeded for %s", otp_key)
         raise HTTPException(429, "Too many attempts. Please request a new code.")
 
-    # -- 1. Local OTP store (always checked first -- backend-generated codes) --
-    entry = _otp_store.get(otp_key)
-    if entry and entry["code"] == code and entry["expires"] > time.time():
-        _otp_store.pop(otp_key, None)
+    # -- 1. DB OTP store (always checked first -- backend-generated codes) --
+    if await _check_otp_db(db, otp_key, code):
         _otp_attempt_tracker.pop(otp_key, None)  # Clear attempts on success
-        logging.info("[OTP] Verified via local store for %s", otp_key)
+        logging.info("[OTP] Verified via DB store for %s", otp_key)
         return {"valid": True}
 
     # -- 2. Twilio Verify API (for phone SMS sent via Twilio Verify) --
-    twilio_verify_ok = (TWILIO_ACCOUNT_SID and TWILIO_ACCOUNT_SID.startswith("AC") and
-                        TWILIO_SERVICE_SID and TWILIO_SERVICE_SID.startswith("VA"))
-    if twilio_verify_ok and phone:
-        creds = base64.b64encode(f"{TWILIO_ACCOUNT_SID}:{TWILIO_AUTH_TOKEN}".encode()).decode()
-        url = f"https://verify.twilio.com/v2/Services/{TWILIO_SERVICE_SID}/VerificationCheck"
-        data = urllib.parse.urlencode({"To": phone, "Code": code}).encode()
-        req = urllib.request.Request(url, data=data, headers={
-            "Authorization": f"Basic {creds}",
-            "Content-Type": "application/x-www-form-urlencoded",
-        }, method="POST")
-        try:
-            loop = asyncio.get_event_loop()
-            def _do_verify():
-                try:
-                    with urllib.request.urlopen(req, timeout=15) as resp:
-                        return resp.status, resp.read().decode()
-                except urllib.error.HTTPError as e:
-                    return e.code, e.read().decode()
-            status, resp_body = await loop.run_in_executor(None, _do_verify)
-            if status == 200:
-                if json.loads(resp_body).get("status") == "approved":
-                    _otp_store.pop(otp_key, None)
-                    _otp_attempt_tracker.pop(otp_key, None)  # Clear attempts on success
-                    logging.info("[OTP] Verified via Twilio Verify for %s", phone)
-                    return {"valid": True}
-        except Exception as e:
-            logging.warning("[OTP] Twilio Verify check error: %s", e)
+    if phone and await _twilio_verify_check(phone, code):
+        _otp_attempt_tracker.pop(otp_key, None)  # Clear attempts on success
+        logging.info("[OTP] Verified via Twilio Verify for %s", phone)
+        return {"valid": True}
 
     # Record failed attempt
     _record_otp_attempt(otp_key)
@@ -750,9 +792,9 @@ async def resend_email_verification(
     timestamps.append(now)
     _email_verify_resend_tracker[uid] = timestamps
 
-    # Generate and store OTP
+    # Generate and store OTP (DB is the primary store)
     code = f"{secrets.randbelow(900000) + 100000}"
-    _otp_store[user.email.lower()] = {"code": code, "expires": now + _OTP_TTL}
+    await _store_otp_db(db, user.email.lower(), "email", code)
 
     # Try to send via configured email service
     email_sent = False
@@ -799,9 +841,7 @@ async def verify_email(
         raise HTTPException(400, "No email on account")
 
     otp_key = user.email.lower()
-    entry = _otp_store.get(otp_key)
-    if entry and entry["code"] == code and entry["expires"] > time.time():
-        _otp_store.pop(otp_key, None)
+    if await _check_otp_db(db, otp_key, code):
         user.email_verified = True
         user.email_verified_at = datetime.now(timezone.utc)
         await db.commit()
@@ -875,6 +915,146 @@ async def complete_login(body: CompleteLoginIn, request: Request, db: AsyncSessi
     )
     refresh = _create_refresh_token(_user_id)
     return {"access_token": token, "refresh_token": refresh, "token_type": "bearer", "user": _user_payload}
+
+
+# -- Phone Login (SMS OTP, Lyft-style) -------------------------
+@router.post("/auth/phone-login", dependencies=[Depends(_verify_api_key)])
+async def phone_login(body: PhoneLoginIn, request: Request, db: AsyncSession = Depends(get_db)):
+    """Log in (or sign up) with a phone number + SMS code.
+
+    The code must already be verified-shaped: issued by /auth/send-otp and
+    stored in otp_codes (primary) or deliverable via Twilio Verify. A valid
+    code IS the credential — the phone is considered verified from this
+    point on. Unknown numbers get a fresh account (the app collects the
+    name right after); known numbers get tokens like a normal login.
+    """
+    role = body.role if body.role in ("rider", "driver") else "driver"
+    code = (body.code or "").strip()
+    digits = re.sub(r"\D", "", body.phone or "")
+    if digits.startswith("1") and len(digits) == 11:
+        digits = digits[1:]
+    if len(digits) != 10:
+        raise HTTPException(400, "A valid 10-digit US phone number is required")
+    if not code or not code.isdigit() or len(code) != 6:
+        raise HTTPException(400, "A 6-digit code is required")
+    phone = f"+1{digits}"
+
+    # Same rule as /auth/verify-otp: 5 attempts per 15 minutes per phone.
+    if not _check_otp_rate_limit(phone):
+        logging.warning("[PhoneLogin] Rate limit exceeded for %s", phone)
+        raise HTTPException(429, "Too many attempts. Please request a new code.")
+
+    verified = await _check_otp_db(db, phone, code)
+    if not verified:
+        verified = await _twilio_verify_check(phone, code)
+    if not verified:
+        _record_otp_attempt(phone)
+        logging.warning("[PhoneLogin] Invalid code for %s (attempt %d/%d)", phone,
+                        len(_otp_attempt_tracker.get(phone, [])), _MAX_OTP_ATTEMPTS)
+        raise HTTPException(401, "Invalid or expired code")
+    _otp_attempt_tracker.pop(phone, None)
+
+    result = await db.execute(
+        select(User).where(
+            User.phone.in_(_phone_lookup_variants(phone)),
+            User.role == role,
+        )
+    )
+    user = result.scalars().first()
+    is_new_user = user is None
+    now = datetime.now(timezone.utc)
+
+    if user:
+        if user.status in ("deleted", "pending_deletion"):
+            user.status = "active"
+            user.deletion_requested_at = None
+        if user.status == "blocked":
+            raise HTTPException(403, "Account blocked")
+        user.phone_verified = True
+        user.phone_verified_at = now
+        await db.commit()
+        await db.refresh(user)
+    else:
+        import secrets as _secrets
+        placeholder_hash = pwd.hash(_secrets.token_hex(32))
+        user = User(
+            first_name="",
+            last_name="",
+            email=None,
+            phone=phone,
+            password_hash=placeholder_hash,
+            role=role,
+            auth_provider="phone",
+            phone_verified=True,
+            phone_verified_at=now,
+        )
+        db.add(user)
+        await db.commit()
+        await db.refresh(user)
+
+        # Referral codes from minute zero (same as /auth/register).
+        try:
+            from routers.referrals import _ensure_referral_code  # lazy: import cycle
+            await _ensure_referral_code(user, db)
+            if role == "driver":
+                from routers.driver_referrals import _ensure_driver_code  # lazy: import cycle
+                await _ensure_driver_code(user, db)
+        except Exception as e:
+            logging.warning("[PhoneLogin] referral code mint failed for %s: %s", user.id, e)
+        # _ensure_driver_code commits without refreshing, which expires every
+        # ORM attribute — reload so the reads below don't lazy-load (async).
+        try:
+            await db.refresh(user)
+        except Exception:
+            pass
+
+        # Firestore mirror (same as register) so dispatch sees the account.
+        # n8n welcome/onboarding triggers are email-based — skipped here
+        # (no email on phone-created accounts yet).
+        if _HAS_FIRESTORE:
+            try:
+                if role == "driver":
+                    firestore_sync.sync_driver(
+                        user_id=user.id, first_name=user.first_name,
+                        last_name=user.last_name, phone=user.phone or "",
+                        email=user.email, photo_url=user.photo_url,
+                        is_online=False, created_at=user.created_at,
+                        is_verified=False,
+                    )
+                else:
+                    firestore_sync.sync_client(
+                        user_id=user.id, first_name=user.first_name,
+                        last_name=user.last_name, phone=user.phone or "",
+                        email=user.email, photo_url=user.photo_url,
+                        role=user.role, created_at=user.created_at,
+                        is_verified=False,
+                        is_online=False,
+                    )
+            except Exception as e:
+                logging.error("[PhoneLogin] Firestore sync failed: %s", e)
+
+        try:
+            await link_guest_trips_to_user(db, user)
+        except Exception as e:
+            logging.warning("guest trip link on phone_login failed: %s", e)
+        # link_guest_trips_to_user rolls back internally on failure, which
+        # expires every ORM attribute — reload before the reads below.
+        try:
+            await db.refresh(user)
+        except Exception:
+            pass
+
+    await _record_login_activity(db, request, user.id)
+
+    token = await _create_driver_aware_token_from_user(user, db)
+    refresh = _create_refresh_token(user.id)
+    return {
+        "access_token": token,
+        "refresh_token": refresh,
+        "token_type": "bearer",
+        "user": _user_dict(user),
+        "is_new_user": is_new_user,
+    }
 
 # -- Social Auth (Google / Apple) -------------------------
 @router.post("/auth/social", dependencies=[Depends(_verify_api_key)])

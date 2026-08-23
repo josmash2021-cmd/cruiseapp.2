@@ -1107,6 +1107,46 @@ class ApiService {
     }
   }
 
+  /// Phone + SMS-code login/signup (driver onboarding, Lyft-style).
+  ///
+  /// The backend verifies the OTP and either logs the user in or creates
+  /// the account, returning `{ access_token, refresh_token, user, is_new_user }`.
+  /// Sets [_loginInProgress] for the same reason as [socialAuth]: a 401 here
+  /// means a wrong code, NOT an expired session, and must not fire the
+  /// global logout handler. Throws [ApiException] with 401 (bad code) or
+  /// 429 (rate limited) for the caller to render.
+  static Future<Map<String, dynamic>> phoneLogin({
+    required String phone,
+    required String code,
+    String role = 'driver',
+  }) async {
+    _loginInProgress = true;
+    try {
+      final res = await _client
+          .post(
+            Uri.parse('$_baseUrl/auth/phone-login'),
+            headers: _jsonHeaders(),
+            body: jsonEncode({'phone': phone, 'code': code, 'role': role}),
+          )
+          .timeout(const Duration(seconds: 15));
+
+      final data = _parse(res);
+      final token = data['access_token'] as String?;
+      if (token == null) {
+        throw ApiException(500, 'phone-login response missing access_token');
+      }
+      await _saveToken(token);
+      if (data['refresh_token'] != null) {
+        await _saveRefreshToken(data['refresh_token'] as String);
+      }
+      _cachedUser = data['user'] as Map<String, dynamic>?;
+      debugPrint('✅ phone-login ok — user ${data['user']?['id']} (new: ${data['is_new_user']})');
+      return data;
+    } finally {
+      _loginInProgress = false;
+    }
+  }
+
   /// Get the current user's profile (requires valid JWT).
   /// Returns user map or `null` if the token is invalid/expired.
   /// 

@@ -19,6 +19,16 @@ class VerifyCodeScreen extends StatefulWidget {
   /// CreatePasswordScreen — used by the social registration flow.
   final void Function(bool verified)? onVerified;
 
+  /// Custom verification hook (e.g. driver phone-login, where "verify" also
+  /// creates the session). Receives the entered code; return `null` on
+  /// success or an error message to render inline (wrong code, rate limit).
+  /// Takes precedence over the built-in verify paths. On success the screen
+  /// does NOT navigate — [onCustomVerified] decides what comes next.
+  final Future<String?> Function(String code)? customVerify;
+
+  /// Called after [customVerify] succeeds.
+  final void Function()? onCustomVerified;
+
   /// Rider data collected on the create-account page — forwarded through the
   /// onboarding chain (password → name → contacts) so nothing is re-asked.
   final String? firstName;
@@ -33,6 +43,8 @@ class VerifyCodeScreen extends StatefulWidget {
     this.useVerifyApi = false,
     this.useBackendVerify = false,
     this.onVerified,
+    this.customVerify,
+    this.onCustomVerified,
     this.firstName,
     this.lastName,
     this.contactEmail,
@@ -107,8 +119,14 @@ class _VerifyCodeScreenState extends State<VerifyCodeScreen>
     setState(() => _verifying = true);
 
     bool isValid;
+    String? customError;
 
-    if (widget.useVerifyApi) {
+    if (widget.customVerify != null) {
+      // Custom flow (e.g. driver phone-login) — the callback verifies AND
+      // authenticates; it returns the error message to show on failure.
+      customError = await widget.customVerify!(code);
+      isValid = customError == null;
+    } else if (widget.useVerifyApi) {
       // Phone — verify via Twilio Verify API
       isValid = await SmsService.checkVerificationCode(
         toPhone: widget.email,
@@ -125,7 +143,10 @@ class _VerifyCodeScreenState extends State<VerifyCodeScreen>
     if (!mounted) return;
 
     if (isValid) {
-      if (widget.onVerified != null) {
+      if (widget.customVerify != null) {
+        // Custom flow — the caller navigates (signup vs home routing).
+        widget.onCustomVerified?.call();
+      } else if (widget.onVerified != null) {
         // Social registration flow — pop back with verified=true
         widget.onVerified?.call(true);
         Navigator.of(context).pop(true);
@@ -147,7 +168,7 @@ class _VerifyCodeScreenState extends State<VerifyCodeScreen>
     } else {
       // Wrong code — show error + shake
       setState(() {
-        _errorText = S.of(context).invalidCode;
+        _errorText = customError ?? S.of(context).invalidCode;
         _verifying = false;
       });
       _shakeCtrl.forward(from: 0);

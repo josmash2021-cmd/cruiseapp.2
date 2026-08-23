@@ -307,6 +307,13 @@ class _SetPickupLocationScreenState extends State<SetPickupLocationScreen>
       for (final p in pts) {
         if (picked.length >= 6) break;
         if (picked.any((q) => _meters(p, q) < 30)) continue;
+        // Never draw a circle under the anchored pin — the Recommended
+        // pill already marks the spot and the navy fill read as a black
+        // hole under the pin during the snap morph.
+        if (_snappedToSuggestion &&
+            _meters(p, LatLngSafe(_pin.lat, _pin.lng)) <= 30) {
+          continue;
+        }
         picked.add(p);
       }
       if (!mounted) return;
@@ -318,8 +325,8 @@ class _SetPickupLocationScreenState extends State<SetPickupLocationScreen>
             geometry:
                 mapbox.Point(coordinates: mapbox.Position(p.lng, p.lat)),
             circleRadius: 5.0,
-            circleColor: _navy.toARGB32(),
-            circleStrokeColor: _gold.toARGB32(),
+            circleColor: _gold.toARGB32(),
+            circleStrokeColor: _navy.toARGB32(),
             circleStrokeWidth: 1.5,
           ));
         } catch (_) {}

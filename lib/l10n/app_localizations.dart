@@ -2168,6 +2168,18 @@ class S {
   // Matches the Shopify widget's step 3 heading
   // (vipRide__pricesTitle in 005_09-28-46_260627b.liquid).
   String get chooseARide => _es ? 'Elige un vehículo' : 'Choose a vehicle';
+  // Choose-a-vehicle sheet redesign (2026-08-22): compact tier rows show
+  // the wait as "in 5 min", and the expanded card falls back to these when
+  // a tier carries no description of its own.
+  String inMinEta(int min) => _es ? 'en $min min' : 'in $min min';
+  String get tierDescCompact =>
+      _es ? 'El viaje accesible de todos los días' : 'The affordable everyday ride';
+  String get tierDescStandard =>
+      _es ? 'Más espacio, mismo buen precio' : 'Extra room, same fair price';
+  String get tierDescPremium =>
+      _es ? 'Un mejor viaje, garantizado' : 'A nicer ride, guaranteed';
+  String get tierDescBlack =>
+      _es ? 'Lujo total, chofer profesional' : 'Full luxury, professional driver';
   String get bestBadge => _es ? 'MEJOR' : 'BEST';
   String get premiumBadge => 'PREMIUM';
   String get economyBadge => _es ? 'CONFORT' : 'COMFORT';

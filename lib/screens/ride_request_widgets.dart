@@ -291,7 +291,29 @@ extension _RideRequestWidgets on _RideRequestScreenState {
         // bar anchor to this, not to a fraction-of-screen estimate.
         child: _SheetSizeReporter(
           onChanged: _onSheetHeightChanged,
-          child: AnimatedContainer(
+          // One reporter around BOTH the sheet and the floating action
+          // panel under it, so the route fit clears the pair. SafeArea
+          // moves out here too: in flush mode it is the action panel —
+          // not the sheet — that meets the system nav bar.
+          child: SafeArea(
+            top: false,
+            // viewPadding, not padding: padding can arrive already consumed
+            // by an ancestor, and on Android that left the Request Ride
+            // button under the system nav/gesture bar (user report
+            // 2026-08-04). viewPadding always carries the real bar height;
+            // minimum guarantees it even when SafeArea's own padding
+            // lookup reads 0. Flush mode only — floating already hovers
+            // 24px above the edge.
+            minimum: EdgeInsets.only(
+              bottom: floating
+                  ? 0
+                  : MediaQuery.viewPaddingOf(context).bottom,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+          AnimatedContainer(
             duration: const Duration(milliseconds: 380),
             curve: Curves.easeInOutCubicEmphasized,
             // Rounded all round while it floats, top-only once it meets the
@@ -325,38 +347,24 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                 ),
               ],
             ),
-            child: SafeArea(
-              top: false,
-              // viewPadding, not padding: padding can arrive already consumed
-              // by an ancestor, and on Android that left the Request Ride
-              // button under the system nav/gesture bar (user report
-              // 2026-08-04). viewPadding always carries the real bar height;
-              // minimum guarantees it even when SafeArea's own padding
-              // lookup reads 0. Flush mode only — floating already hovers
-              // 24px above the edge.
-              minimum: EdgeInsets.only(
-                bottom: floating
-                    ? 0
-                    : MediaQuery.viewPaddingOf(context).bottom,
-              ),
-              // The sheet is as tall as what is in it. No ceiling, no scroll.
-              //
-              // It used to be capped at 40% of the screen with a scroll view
-              // underneath, which fit the four cards and nothing else: pick a
-              // tier and the panel grows by the detail row, the payment row
-              // and the button, and Request Ride ended up past the bottom
-              // edge — the one control this screen exists for, reachable only
-              // by scrolling a panel that does not look scrollable.
-              //
-              // The cap was there because the height used to drift: three
-              // layout faults in two builds came from adding a row and not
-              // recomputing what it displaced. That risk is real and it comes
-              // back with this. It is the right trade anyway — a sheet that
-              // is sometimes taller than intended is a smaller problem than a
-              // button nobody can reach — but anything added below must be
-              // checked against a short handset, because there is no longer a
-              // scroll view to absorb it.
-              child: Padding(
+            // The sheet is as tall as what is in it. No ceiling, no scroll.
+            //
+            // It used to be capped at 40% of the screen with a scroll view
+            // underneath, which fit the four cards and nothing else: pick a
+            // tier and the panel grows by the detail row, the payment row
+            // and the button, and Request Ride ended up past the bottom
+            // edge — the one control this screen exists for, reachable only
+            // by scrolling a panel that does not look scrollable.
+            //
+            // The cap was there because the height used to drift: three
+            // layout faults in two builds came from adding a row and not
+            // recomputing what it displaced. That risk is real and it comes
+            // back with this. It is the right trade anyway — a sheet that
+            // is sometimes taller than intended is a smaller problem than
+            // a button nobody can reach — but anything added below must be
+            // checked against a short handset, because there is no longer a
+            // scroll view to absorb it.
+            child: Padding(
                 // Bottom is tighter than the other 3 sides so the panel
                 // hugs the last visible row (badges when no tier is
                 // picked yet, or the Request Ride button after one is).
@@ -404,95 +412,88 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                     const SizedBox(height: 10),
                   ],
 
-                  // Grabber bar — same affordance as the home sheet
-                  // (user spec 2026-08-04).
-                  Center(
-                    child: Container(
-                      width: 44,
-                      height: 4,
-                      margin: const EdgeInsets.only(bottom: 10),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.18),
-                        borderRadius: BorderRadius.circular(2),
-                      ),
-                    ),
-                  ),
-
-                  // .vipRide__pricesHeader — centered title row with
-                  // optional Airport / 10% OFF pills to the side.
-                  // Title is Flexible + ellipsis so it truncates instead
-                  // of overflowing when both pills are active on narrow
-                  // screens (iPhone SE with airport + promo).
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      // Back to the full picker.
-                      //
-                      // Takes no room when there is nothing to go back to:
-                      // an arrow that is always there but only sometimes
-                      // does anything is worse than one that appears when it
-                      // means something. Sized rather than removed so the
-                      // title does not shift sideways as it comes and goes.
-                      SizedBox(
-                        width: 32,
-                        child: AnimatedOpacity(
-                          duration: const Duration(milliseconds: 420),
-                          curve: Curves.easeInOutCubic,
-                          opacity: (option != null && !_gridExpanded) ? 1 : 0,
-                          child: IgnorePointer(
-                            ignoring: option == null || _gridExpanded,
-                            child: GestureDetector(
-                              behavior: HitTestBehavior.opaque,
-                              onTap: () {
-                                HapticService.selectionClick();
-                                _setState(() => _gridExpanded = true);
-                              },
-                              child: const Icon(
-                                Icons.arrow_back_rounded,
-                                color: Colors.white,
-                                size: 20,
-                              ),
+                  // Grabber + title — also the sheet's drag handle
+                  // (2026-08-22 redesign). The sheet has two snapped states:
+                  // expanded (every tier listed) and collapsed (only the
+                  // picked tier's card plus the action panel, so the map
+                  // and the route stay in view). Pull down to collapse,
+                  // pull up — or tap — to bring the list back. Snaps on
+                  // release; the height change animates inside the list,
+                  // and the camera refits off _sheetHeightPx as always.
+                  GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: () {
+                      if (option == null) return;
+                      HapticService.selectionClick();
+                      _setState(() => _sheetCollapsed = !_sheetCollapsed);
+                    },
+                    onVerticalDragEnd: (d) {
+                      if (option == null) return;
+                      final v = d.primaryVelocity ?? 0;
+                      if (v > 120 && !_sheetCollapsed) {
+                        HapticService.selectionClick();
+                        _setState(() => _sheetCollapsed = true);
+                      } else if (v < -120 && _sheetCollapsed) {
+                        HapticService.selectionClick();
+                        _setState(() => _sheetCollapsed = false);
+                      }
+                    },
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Center(
+                          child: Container(
+                            width: 44,
+                            height: 4,
+                            margin: const EdgeInsets.only(bottom: 10),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.18),
+                              borderRadius: BorderRadius.circular(2),
                             ),
                           ),
                         ),
-                      ),
-                      Flexible(
-                        child: Text(
-                          widget.fastRide
-                              ? S.of(context).fastRideLabel
-                              : S.of(context).chooseARide,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            fontFamily: 'Poppins',
-                            fontSize: 20,
-                            fontWeight: FontWeight.w800,
-                            color: Colors.white,
-                            letterSpacing: -0.6, // -.03em × 20px
-                          ),
-                        ),
-                      ),
-                      if (_ctrl.state.isAirportTrip) ...[
-                        const SizedBox(width: 8),
-                        _headerPill(
-                          icon: Icons.flight_rounded,
-                          text: S.of(context).airportLabel,
-                          color: const Color(0xFF4285F4),
+                        // Centered title with optional Airport / 10% OFF
+                        // pills to the side. Flexible + ellipsis so it
+                        // truncates instead of overflowing when both pills
+                        // are active on narrow screens.
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Flexible(
+                              child: Text(
+                                widget.fastRide
+                                    ? S.of(context).fastRideLabel
+                                    : S.of(context).chooseARide,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontFamily: 'Poppins',
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.w800,
+                                  color: Colors.white,
+                                  letterSpacing: -0.6, // -.03em × 20px
+                                ),
+                              ),
+                            ),
+                            if (_ctrl.state.isAirportTrip) ...[
+                              const SizedBox(width: 8),
+                              _headerPill(
+                                icon: Icons.flight_rounded,
+                                text: S.of(context).airportLabel,
+                                color: const Color(0xFF4285F4),
+                              ),
+                            ],
+                            if (widget.applyPromo) ...[
+                              const SizedBox(width: 8),
+                              _headerPill(
+                                text: '10% OFF',
+                                color: const Color(0xFFE8C547),
+                              ),
+                            ],
+                          ],
                         ),
                       ],
-                      if (widget.applyPromo) ...[
-                        const SizedBox(width: 8),
-                        _headerPill(
-                          text: '10% OFF',
-                          color: const Color(0xFFE8C547),
-                        ),
-                      ],
-                      // Mirrors the back arrow's width so the title stays
-                      // optically centred whether the arrow is showing or
-                      // not — otherwise it slides sideways on every
-                      // selection.
-                      const SizedBox(width: 32),
-                    ],
+                    ),
                   ),
                   const SizedBox(height: 10),
                   // Hairline divider under the title (rule-18 idiom).
@@ -501,247 +502,41 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                       color: Colors.white.withValues(alpha: 0.05)),
                   const SizedBox(height: 10),
 
-                  // Grid of ride cards - 1:1 with web design.
-                  // Behavior: when no tier is picked OR the rider tapped the
-                  // selected card to expand again, show all 3 cards. After a
-                  // pick, collapse to ONLY the chosen card so the bottom
-                  // sheet feels lighter and the focus stays on the choice.
-                  // The cards are always drawn. Nothing replaces them.
+                  // Vertical tier list (2026-08-22 redesign, Lyft-style).
                   //
-                  // A failed route, a missing endpoint and a fare call still
-                  // in flight used to each swap the row for something else,
-                  // and all three read to the rider as the app being broken.
-                  // The tiers are known without any of it, so they stay, the
-                  // money shows as a dash, and Request Ride carries the fact
-                  // that nothing can be booked yet.
+                  // Every tier is a row. The picked one grows open in
+                  // place — gold border, big car, capacity, price, the
+                  // "in X min · H:MM" line and its description in a sunken
+                  // sub-box — while the rest stay compact. Nothing swaps:
+                  // each row animates its own size, so picking another
+                  // tier reads as one card closing while the next opens.
                   //
-                  // A missing endpoint is still worth a word, since waiting
-                  // will not fix it — it goes under the cards now instead of
-                  // in place of them.
-                    // One row that reshapes, not two views that swap.
-                    //
-                    // It used to crossfade between "three cards" and "one
-                    // card" — which reads as a replacement, not as a choice
-                    // being made. Here the cards never leave the row: the
-                    // ones not chosen shrink their width to nothing while
-                    // fading, and because they are laid out left to right,
-                    // the chosen card is carried leftward by their collapse.
-                    // The movement is the layout, so it cannot desync from
-                    // the fade the way two separate animations would.
-                    TweenAnimationBuilder<double>(
-                      tween: Tween<double>(
-                        begin: (option != null && !_gridExpanded) ? 1 : 0,
-                        end: (option != null && !_gridExpanded) ? 1 : 0,
-                      ),
-                      // Slow enough to be watched, eased at both ends.
-                      //
-                      // 460 ms on a curve that starts at full speed made the
-                      // row snap and then coast — the movement was over
-                      // before the eye had followed it, which is what reads
-                      // as abrupt no matter how smooth the interpolation is.
-                      // Material's emphasized easing accelerates gently and
-                      // settles gently, so the cards look like they have
-                      // weight rather than being teleported and decelerated.
-                      duration: const Duration(milliseconds: 680),
-                      curve: Curves.easeInOutCubicEmphasized,
-                      builder: (context, t, _) {
-                        return LayoutBuilder(
-                          builder: (context, box) {
-                            final n = displayOptions.length;
-                            const gap = 8.0;
-                            // An unbounded width poisons every number below
-                            // it. `full` feeds each card's width through
-                            // lerpDouble, and lerping to infinity gives NaN,
-                            // which a RenderBox rejects — the row then throws
-                            // during layout and Flutter leaves that subtree
-                            // blank while the title above it draws normally.
-                            // Which is a booking sheet with a heading and
-                            // nothing under it.
-                            //
-                            // A Row inside a horizontally unbounded parent is
-                            // not exotic, and the fallback only has to be
-                            // finite to keep the cards on screen.
-                            final raw = box.maxWidth;
-                            final full = (raw.isFinite && raw > 0) ? raw : 360.0;
-                            // Width of one card when all of them are shown.
-                            final each = n > 0
-                                ? (full - gap * (n - 1)) / n
-                                : full;
-                            // Height follows width, so the card keeps its
-                            // shape as tiers are added. Held at a fixed 120
-                            // it went from nearly square at three tiers to
-                            // tall and narrow at four — the card looked
-                            // stretched, which is the one thing it must not
-                            // look. Capped so three tiers keep today's size.
-                            final cardH = (each * 1.10).clamp(84.0, 120.0);
-                            final selIdx = option == null
-                                ? -1
-                                : displayOptions
-                                    .indexWhere((o) => o.id == option.id);
+                  // The cards are always drawn. A failed route, a missing
+                  // endpoint and a fare call still in flight used to each
+                  // swap the row for something else, and all three read to
+                  // the rider as the app being broken. The tiers are known
+                  // without any of it, so they stay, the money shows as a
+                  // dash, and Select carries the fact that nothing can be
+                  // booked yet.
+                  Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      for (final o in displayOptions)
+                        _buildTierRow(
+                          c,
+                          o,
+                          option != null && o.id == option.id,
+                          // Collapsed sheet: only the picked card stays;
+                          // the rest fold away with the same animation.
+                          hidden: _sheetCollapsed &&
+                              option != null &&
+                              o.id != option.id,
+                        ),
+                    ],
+                  ),
 
-                            // An empty sheet, and this is how it happened.
-                            //
-                            // At t=1 exactly one card is meant to grow to the
-                            // full width while the rest shrink to nothing. The
-                            // one that grows is picked by `i == selIdx` — so if
-                            // selIdx is -1, nothing matches, every card takes
-                            // the shrinking branch, and all of them animate to
-                            // zero. The rider gets "Choose a vehicle" over a
-                            // blank panel with no way out.
-                            //
-                            // selIdx is -1 whenever the selected option is not
-                            // in the list being drawn, which is not exotic:
-                            // fastRide swaps displayOptions for a single
-                            // comfort_express card while selectedOption still
-                            // holds whatever was picked before, and a selection
-                            // made against one route survives into the next.
-                            //
-                            // No match means nothing is selected, so draw the
-                            // full row. Losing the collapse animation for one
-                            // frame is not a bug the rider can see; an empty
-                            // booking sheet is the whole screen.
-                            final tt = selIdx < 0 ? 0.0 : t;
-
-                            // Bounded height, or nothing here gets painted.
-                            //
-                            // This builder is handed maxHeight: Infinity, and
-                            // each card sits in an OverflowBox, which takes
-                            // the largest size its constraints allow — so it
-                            // asked to be infinitely tall. A RenderBox cannot
-                            // have an infinite size, layout threw, and Flutter
-                            // left the whole row blank while the heading above
-                            // it drew normally.
-                            //
-                            // The cards were built the entire time. Their
-                            // build-time logs fired with the right names and
-                            // the right 95.7 px height; it was the layout pass
-                            // after that died, which is why the sheet looked
-                            // like it had no data when it had all of it.
-                            //
-                            // cardH is what the cards are already sized to, so
-                            // giving the row that height changes nothing about
-                            // how it looks — it only stops the constraint from
-                            // being unbounded.
-                            return SizedBox(
-                              height: cardH,
-                              child: Row(
-                              children: [
-                                for (int i = 0; i < n; i++) ...[
-                                  if (i == selIdx)
-                                    // Grows into the space the others leave.
-                                    SizedBox(
-                                      width: ui.lerpDouble(each, full, tt),
-                                      child: _PressableScale(
-                                        onTap: () {
-                                          HapticService.selectionClick();
-                                          _setState(() => _gridExpanded = !_gridExpanded);
-                                        },
-                                        // The two layouts cross-fade, and the
-                                        // height eases between them.
-                                        //
-                                        // This used to be a bare ternary on
-                                        // t > 0.5, so halfway through an
-                                        // otherwise smooth 680 ms slide the
-                                        // card's contents were replaced in a
-                                        // single frame — and its height
-                                        // jumped with them. Going back it was
-                                        // worse: the big "5 - 20 min" on the
-                                        // right vanished mid-travel. The
-                                        // width was always animating; it was
-                                        // everything else that snapped.
-                                        child: AnimatedSize(
-                                          duration:
-                                              const Duration(milliseconds: 680),
-                                          curve:
-                                              Curves.easeInOutCubicEmphasized,
-                                          alignment: Alignment.topCenter,
-                                          child: AnimatedSwitcher(
-                                            duration: const Duration(
-                                                milliseconds: 300),
-                                            switchInCurve: Curves.easeOut,
-                                            switchOutCurve: Curves.easeIn,
-                                            // Stacked, so the outgoing layout
-                                            // keeps its place while it fades
-                                            // instead of collapsing and
-                                            // shoving the incoming one.
-                                            layoutBuilder: (current, previous) =>
-                                                Stack(
-                                              alignment: Alignment.topLeft,
-                                              children: [
-                                                ...previous,
-                                                if (current != null) current,
-                                              ],
-                                            ),
-                                            child: t > 0.5
-                                                ? KeyedSubtree(
-                                                    key: const ValueKey('wide'),
-                                                    child:
-                                                        _buildRideHorizontalCard(
-                                                            c,
-                                                            displayOptions[i]),
-                                                  )
-                                                : KeyedSubtree(
-                                                    key: const ValueKey('tile'),
-                                                    child:
-                                                        _buildRideOptionCardGrid(
-                                                            c,
-                                                            displayOptions[i],
-                                                            height: cardH),
-                                                  ),
-                                          ),
-                                        ),
-                                      ),
-                                    )
-                                  else
-                                    // Folds away. Clipped so its contents do
-                                    // not spill while the width closes.
-                                    SizedBox(
-                                      width: ui.lerpDouble(each, 0, tt),
-                                      child: ClipRect(
-                                        child: Opacity(
-                                          // Gone by two-thirds of the way,
-                                          // so the last third is pure
-                                          // movement with nothing dissolving
-                                          // over it. Fading and travelling
-                                          // at once for the whole duration
-                                          // is what makes a transition look
-                                          // busy instead of calm.
-                                          opacity: (1 - t * 1.55).clamp(0.0, 1.0),
-                                          child: OverflowBox(
-                                            maxWidth: each,
-                                            minWidth: each,
-                                            alignment: Alignment.centerLeft,
-                                            child: _PressableScale(
-                                              onTap: () {
-                                                HapticService.selectionClick();
-                                                _ctrl.selectRideOption(
-                                                    displayOptions[i]);
-                                                _setState(() =>
-                                                    _gridExpanded = false);
-                                                _refitRouteAfterPick();
-                                              },
-                                              child: _buildRideOptionCardGrid(
-                                                c,
-                                                displayOptions[i],
-                                                height: cardH,
-                                              ),
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                  if (i < n - 1)
-                                    SizedBox(width: ui.lerpDouble(gap, 0, tt)!),
-                                ],
-                              ],
-                              ),
-                            );
-                          },
-                        );
-                      },
-                    ),
-
-                  // Under the cards, not instead of them.
+                  // Under the list, not instead of it.
                   //
                   // Only when an endpoint is missing, because that is the one
                   // state waiting cannot resolve: the fares are computed from
@@ -751,99 +546,471 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                   if (!faresReady &&
                       (_ctrl.state.pickup == null ||
                           _ctrl.state.dropoff == null)) ...[
-                    const SizedBox(height: 10),
+                    const SizedBox(height: 4),
                     _buildMissingEndpointNotice(),
                   ],
-
-                  // .vipRide__rideDetail — appears only when the rider
-                  // re-expanded the grid (so they can compare detail
-                  // while picking). In collapsed mode the horizontal
-                  // card already shows stats and price.
-                  // Shown in both states now. It used to appear only while
-                  // the picker was open, because the collapsed card had
-                  // swallowed those figures into itself — and the collapsed
-                  // card is now the tier and its wait, nothing else. The
-                  // rider should not have to reopen the picker to see the
-                  // price they are about to pay.
-                  if (option != null) ...[
-                    const SizedBox(height: 10),
-                    _buildRideDetailPanel(c, option),
                   ],
-
-                  // .vipRide__actionBtns — payment selector + Request Ride.
-                  // Web: margin-top:12px flex-direction:column gap:8px,
-                  // with a 250ms / 400ms staggered vipFB fade-in.
-                  if (option != null) ...[
-                    const SizedBox(height: 12),
-                    _StaggeredFade(
-                      key: ValueKey('pay_${option.id}'),
-                      delayMs: 250,
-                      child: _PaymentMethodButton(
-                        onTap: () => _showPaymentMethodPicker(c, option),
-                        selectedMethod: _selectedPaymentMethod,
-                        logoBuilder: _paymentLogoWidget,
-                        labelBuilder: _paymentLabel,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    // Hairline divider between the payment row and the
-                    // Request button (user spec 2026-08-04).
-                    Container(
-                        height: 1,
-                        color: Colors.white.withValues(alpha: 0.05)),
-                    const SizedBox(height: 8),
-                    _StaggeredFade(
-                      key: ValueKey('req_${option.id}'),
-                      delayMs: 400,
-                      child: _WebRequestButton(
-                        // Nobody within fifteen miles means there is nothing
-                        // to request. Better to show it disabled than to
-                        // take the request and leave the rider watching a
-                        // search that was never going to find anyone.
-                        //
-                        // Only a confirmed zero disables it — an unknown
-                        // count (the server did not answer) leaves the
-                        // button live, because a network hiccup is not the
-                        // same as an empty city.
-                        // And not before the fares are real. The cards are
-                        // drawn from placeholders when the route has not
-                        // produced any, so without this the rider could send
-                        // a request against a tier priced at nothing.
-                        // Cruise Cash as the method: requestable only
-                        // while the balance covers the FULL fare (user
-                        // spec 2026-08-04 — "no tiene dinero, botón
-                        // desactivado").
-                        enabled: !_isProcessingPayment &&
-                            _hasAnyPaymentMethod &&
-                            // Only an IMMEDIATE request is gated on drivers
-                            // being around right now — a reservation goes to
-                            // the scheduled marketplace and drivers claim it
-                            // ahead of time, so an empty city must not block
-                            // the Reserve button (2026-08-17).
-                            (_isScheduledMode || !_noDriversNearby) &&
-                            faresReady &&
-                            !_cruiseCashShort(option),
-                        isLoading: _isProcessingPayment,
-                        // "Select {tier}" (2026-08-22): the button no longer
-                        // pays inline — it opens the pickup-pin page first,
-                        // and the SAME payment pipeline runs from there.
-                        label: S.of(context).selectTierLabel(
-                            TierInfo.displayTitle(option.name)),
-                        onTap: () {
-                          HapticService.mediumImpact();
-                          _openPickupConfirm(c, option);
-                        },
-                      ),
-                    ),
-                  ],
-                ],
+                  ),
                 ),
               ),
-            ),
+
+              // ── Floating action panel ── a card of its own under the
+              // tier list (2026-08-22 redesign): payment method at the
+              // left, Schedule at the right, and the big gold
+              // "Select {tier}" button beneath. Only once a tier is
+              // picked — before that the sheet is just the list.
+              if (option != null)
+                _buildActionPanel(c, option, faresReady),
+              ],
             ),
           ),
         ),
+      ),
       );
+  }
+
+  /// One tier row in the choose-a-vehicle list (2026-08-22 redesign).
+  ///
+  /// Compact when not picked: small car on the left, name over its
+  /// "in X min", price at the right edge. Picked, it grows open — rounded
+  /// gold border, big car, capacity, the "in X min · H:MM AM/PM" line and
+  /// the tier's description in a sunken sub-box. All of it through
+  /// AnimatedSize / AnimatedContainer (~280 ms easeInOutCubic), so picking
+  /// another tier reads as one card closing while the next opens, never a
+  /// snap. [hidden] folds the row to nothing — the collapsed sheet keeps
+  /// only the picked card — with the same animation instead of a
+  /// disappearance.
+  Widget _buildTierRow(AppColors c, RideOption opt, bool selected,
+      {bool hidden = false}) {
+    final promo = _promoPrice(opt);
+    // Same display-name mapping the sheet has always used.
+    final isSuv = opt.id == 'suburban';
+    final isFusion = opt.id == 'fusion';
+    final isSuvXl = opt.id == 'suv_xl';
+    final isPremium = !isSuv && !isSuvXl && !isFusion;
+    final String displayName = isSuv
+        ? 'BLACK'
+        : isSuvXl
+            ? 'PREMIUM'
+            : (isPremium ? 'COMPACT' : 'STANDARD');
+
+    // Compact line under the name: "in 5 min". Placeholder tiers carry no
+    // ETA (0), so they fall back to the cached per-tier wait range.
+    final String waitText = opt.etaMinutes > 0
+        ? S.of(context).inMinEta(opt.etaMinutes)
+        : _gridWaitRangeText(_tierKeyForOption(opt));
+
+    final priceStyle = TextStyle(
+      fontFamily: 'Poppins',
+      color: Colors.white,
+      fontSize: selected ? 20 : 15,
+      fontWeight: FontWeight.w800,
+      letterSpacing: -0.3,
+    );
+
+    return AnimatedSize(
+      duration: const Duration(milliseconds: 280),
+      curve: Curves.easeInOutCubic,
+      alignment: Alignment.topCenter,
+      child: AnimatedOpacity(
+        duration: const Duration(milliseconds: 220),
+        opacity: hidden ? 0.0 : 1.0,
+        child: hidden
+            // Zero-height but full-width, so AnimatedSize folds the row
+            // away vertically without the list jumping sideways.
+            ? const SizedBox(width: double.infinity)
+            : Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: _PressableScale(
+                  onTap: () {
+                    HapticService.selectionClick();
+                    if (selected) {
+                      // Collapsed sheet: tapping the lone card pulls the
+                      // full list back up.
+                      if (_sheetCollapsed) {
+                        _setState(() => _sheetCollapsed = false);
+                      }
+                      return;
+                    }
+                    _ctrl.selectRideOption(opt);
+                    _refitRouteAfterPick();
+                  },
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 280),
+                    curve: Curves.easeInOutCubic,
+                    padding: EdgeInsets.symmetric(
+                        horizontal: 12, vertical: selected ? 14 : 10),
+                    decoration: BoxDecoration(
+                      color: selected ? neuSurface : Colors.transparent,
+                      borderRadius: BorderRadius.circular(18),
+                      border: Border.all(
+                        color: selected
+                            ? const Color(0xFFE8C547).withValues(alpha: 0.7)
+                            : Colors.white.withValues(alpha: 0.08),
+                        width: selected ? 1.6 : 1.0,
+                      ),
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Row(
+                          children: [
+                            // The car grows with the card — AnimatedContainer
+                            // eases the box, the render just fills it.
+                            AnimatedContainer(
+                              duration: const Duration(milliseconds: 280),
+                              curve: Curves.easeInOutCubic,
+                              width: selected ? 108 : 60,
+                              height: selected ? 72 : 42,
+                              child: CarImage3D(
+                                assetPath: _carAssetForOption(opt.name),
+                                cacheWidth: 640,
+                                alignment: Alignment.center,
+                                fallback: Icon(
+                                  Icons.directions_car_rounded,
+                                  color: const Color(0xFFE8C547)
+                                      .withValues(alpha: 0.5),
+                                  size: 30,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Flexible(
+                                        child: Text(
+                                          displayName,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: TextStyle(
+                                            fontFamily: 'Poppins',
+                                            color: Colors.white,
+                                            fontSize: selected ? 16 : 14,
+                                            fontWeight: FontWeight.w800,
+                                            letterSpacing: 0.4,
+                                          ),
+                                        ),
+                                      ),
+                                      if (selected) ...[
+                                        const SizedBox(width: 8),
+                                        Icon(
+                                          Icons.person_rounded,
+                                          size: 14,
+                                          color: Colors.white
+                                              .withValues(alpha: 0.65),
+                                        ),
+                                        const SizedBox(width: 2),
+                                        Text(
+                                          '${opt.capacity}',
+                                          style: TextStyle(
+                                            fontFamily: 'Poppins',
+                                            color: Colors.white
+                                                .withValues(alpha: 0.65),
+                                            fontSize: 12.5,
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                        ),
+                                      ],
+                                    ],
+                                  ),
+                                  if (waitText.isNotEmpty) ...[
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      waitText,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        fontFamily: 'Poppins',
+                                        color: Colors.white
+                                            .withValues(alpha: 0.55),
+                                        fontSize: 11.5,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            // Price crossfades dash → real fare instead of
+                            // popping.
+                            AnimatedSwitcher(
+                              duration: const Duration(milliseconds: 250),
+                              child: Text(
+                                promo.priceText,
+                                key: ValueKey(
+                                    'tierPrice_${opt.id}_${promo.priceText}'),
+                                style: priceStyle,
+                              ),
+                            ),
+                          ],
+                        ),
+                        // Expanded-only section: arrival clock + description
+                        // sub-box. AnimatedSize grows it open; the opacity
+                        // keeps the texts from popping in mid-travel.
+                        AnimatedSize(
+                          duration: const Duration(milliseconds: 280),
+                          curve: Curves.easeInOutCubic,
+                          alignment: Alignment.topCenter,
+                          child: selected
+                              ? _buildTierExpandedDetail(c, opt)
+                              : const SizedBox(width: double.infinity),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+      ),
+    );
+  }
+
+  /// The part of a picked tier's card that only exists while it is open:
+  /// the "in X min · H:MM AM/PM" line (the scheduled pickup clock in
+  /// scheduled mode) and the tier's description in a sunken sub-box.
+  Widget _buildTierExpandedDetail(AppColors c, RideOption opt) {
+    final etaLine = _tierEtaLine(opt);
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (etaLine.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.access_time_filled_rounded,
+                size: 12,
+                color: const Color(0xFFE8C547).withValues(alpha: 0.8),
+              ),
+              const SizedBox(width: 5),
+              Flexible(
+                child: Text(
+                  etaLine,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontFamily: 'Poppins',
+                    color: Colors.white.withValues(alpha: 0.7),
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.2,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+        const SizedBox(height: 10),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+          decoration: neuBox(radius: 12, pressed: true),
+          child: Text(
+            _tierDescription(opt),
+            style: TextStyle(
+              fontFamily: 'Poppins',
+              color: Colors.white.withValues(alpha: 0.7),
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// "in 5 min · 3:42 PM" for the expanded card. In scheduled mode the
+  /// wait is meaningless — the reservation has its own clock, and that is
+  /// what the line shows. Empty when there is nothing honest to say
+  /// (placeholder tier, no schedule).
+  String _tierEtaLine(RideOption opt) {
+    final sched = _ctrl.state.scheduledAt ?? widget.scheduledAt;
+    if (sched != null) return _fmtClock(sched);
+    if (opt.etaMinutes <= 0) return '';
+    final eta = DateTime.now().add(Duration(minutes: opt.etaMinutes));
+    return '${S.of(context).inMinEta(opt.etaMinutes)} · ${_fmtClock(eta)}';
+  }
+
+  /// "3:42 PM" — no intl DateFormat: the project never calls
+  /// initializeDateFormatting, and 12h AM/PM is what both languages show.
+  String _fmtClock(DateTime t) {
+    final h12 = t.hour % 12 == 0 ? 12 : t.hour % 12;
+    final mm = t.minute.toString().padLeft(2, '0');
+    final ampm = t.hour < 12 ? 'AM' : 'PM';
+    return '$h12:$mm $ampm';
+  }
+
+  /// The tier's own description when it carries one (the real options
+  /// from the controller do); short bilingual fallbacks otherwise.
+  String _tierDescription(RideOption opt) {
+    if (opt.description.trim().isNotEmpty) return opt.description;
+    final s = S.of(context);
+    switch (opt.id) {
+      case 'suburban':
+        return s.tierDescBlack;
+      case 'suv_xl':
+        return s.tierDescPremium;
+      case 'camry':
+        return s.tierDescCompact;
+      default:
+        return s.tierDescStandard;
+    }
+  }
+
+  /// Floating action panel (2026-08-22 redesign): a card of its own under
+  /// the tier list — payment method at the left (same picker, same logos,
+  /// same navigation), Schedule at the right, and the big gold
+  /// "Select {tier}" button beneath. Grows in with AnimatedSize the first
+  /// time a tier is picked.
+  Widget _buildActionPanel(AppColors c, RideOption option, bool faresReady) {
+    return AnimatedSize(
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeInOutCubic,
+      alignment: Alignment.topCenter,
+      child: Container(
+        margin: const EdgeInsets.only(top: 10),
+        padding: const EdgeInsets.fromLTRB(12, 4, 12, 12),
+        decoration: BoxDecoration(
+          color: neuSurface,
+          borderRadius: BorderRadius.circular(22),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.45),
+              blurRadius: 20,
+              offset: const Offset(0, -4),
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: _PaymentMethodButton(
+                    onTap: () => _showPaymentMethodPicker(c, option),
+                    selectedMethod: _selectedPaymentMethod,
+                    logoBuilder: _paymentLogoWidget,
+                    labelBuilder: _paymentLabel,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                _buildScheduleButton(),
+              ],
+            ),
+            // Hairline divider between the payment row and the button
+            // (rule-18 idiom).
+            Container(height: 1, color: Colors.white.withValues(alpha: 0.05)),
+            const SizedBox(height: 10),
+            _WebRequestButton(
+              // Nobody within fifteen miles means there is nothing to
+              // request. Better to show it disabled than to take the
+              // request and leave the rider watching a search that was
+              // never going to find anyone. Only a confirmed zero disables
+              // it — an unknown count leaves the button live. Only an
+              // IMMEDIATE request is gated on drivers being around: a
+              // reservation goes to the scheduled marketplace (2026-08-17).
+              // And not before the fares are real, or Cruise Cash comes up
+              // short of the FULL fare (user spec 2026-08-04).
+              enabled: !_isProcessingPayment &&
+                  _hasAnyPaymentMethod &&
+                  (_isScheduledMode || !_noDriversNearby) &&
+                  faresReady &&
+                  !_cruiseCashShort(option),
+              isLoading: _isProcessingPayment,
+              // "Select {tier}" (2026-08-22): the button no longer pays
+              // inline — it opens the pickup-pin page first, and the SAME
+              // payment pipeline runs from there. The label crossfades on
+              // every tier change inside the button itself.
+              label:
+                  S.of(context).selectTierLabel(TierInfo.displayTitle(option.name)),
+              onTap: () {
+                HapticService.mediumImpact();
+                _openPickupConfirm(c, option);
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Calendar pill on the right of the payment row — opens the schedule
+  /// wheels without leaving the booking.
+  Widget _buildScheduleButton() {
+    return GestureDetector(
+      onTap: _openScheduleFromSheet,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: neuBox(radius: 12),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.calendar_month_rounded,
+              size: 16,
+              color: const Color(0xFFE8C547).withValues(alpha: 0.9),
+            ),
+            const SizedBox(width: 6),
+            Text(
+              S.of(context).scheduleLabel,
+              style: const TextStyle(
+                fontFamily: 'Poppins',
+                color: Colors.white,
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Schedule button: the SAME Depart/Arrive wheels page the hub chain
+  /// uses, pushed on top of this sheet with the endpoints prefilled — so
+  /// the booking underneath is never rebuilt. The page pops back with the
+  /// picked time and the sheet updates in place: _isScheduledMode reads
+  /// _ctrl.state.scheduledAt, the expanded card swaps its ETA line for the
+  /// scheduled clock, and the no-drivers gate lifts, all on the next
+  //  frame. No flicker, no second RideRequestScreen.
+  Future<void> _openScheduleFromSheet() async {
+    HapticService.selectionClick();
+    final st = _ctrl.state;
+    final dropoff = st.dropoff;
+    if (dropoff == null) return;
+    final pickup = st.pickup;
+    final secs = st.route?.durationSeconds;
+    final record =
+        await Navigator.of(context).push<(DateTime, Map<String, dynamic>)?>(
+      slideUpFadeRoute(ScheduleDateTimeScreen(
+        initialPickupLat: pickup?.lat,
+        initialPickupLng: pickup?.lng,
+        initialDateTime: st.scheduledAt ?? widget.scheduledAt,
+        // The wheels show the real drop-off/pickup clock times when they
+        // have the trip's minutes; without a route they omit those lines
+        // rather than guessing.
+        estimatedMinutes: (secs != null && secs > 0) ? (secs / 60).ceil() : null,
+        prefilledPickup: pickup,
+        prefilledDropoff: dropoff,
+        prefilledPickupLabel: st.pickupLabel,
+        prefilledDropoffLabel:
+            st.dropoffLabel.isNotEmpty ? st.dropoffLabel : dropoff.address,
+      )),
+    );
+    if (record == null || !mounted) return;
+    final (scheduledAt, _) = record;
+    _ctrl.setSchedule(scheduledAt);
+    _setState(() {});
   }
 
   /// True when Cruise Cash is the selected method but the balance does
@@ -926,516 +1093,6 @@ extension _RideRequestWidgets on _RideRequestScreenState {
     return 'assets/images/cruisert3.png';
   }
 
-  // Horizontal ride card - 1:1 with web design
-  // Badge top-left, 3D car image with shadow, description right side
-  Widget _buildRideOptionCard(AppColors c, RideOption opt, bool selected) {
-    final isSuv = opt.id == 'suburban';
-    final isFusion = opt.id == 'fusion';
-    final isSuvXl = opt.id == 'suv_xl';
-
-    // SUV XL is priced above PREMIUM, so it carries the same black-and-gold
-    // badge as BLACK rather than the silver one every non-matching id used
-    // to fall into.
-    final bool isVIP = isSuv || isSuvXl;
-    final bool isPremium = !isVIP && !isFusion;
-    final String tierLabel =
-        isSuv ? 'VIP' : isSuvXl ? 'PREMIUM' : (isPremium ? 'COMPACT' : 'COMFORT');
-    final String displayName =
-        isSuv ? 'BLACK' : isSuvXl ? 'PREMIUM' : (isPremium ? 'COMPACT' : 'STANDARD');
-
-    // Badge styles 1:1 with shopify-live-pull/sections/ride-request.liquid:142,764-770:
-    //   VIP     → BLACK gradient (#1a1a1a→#000) + gold border, white text, diamond glyph
-    //   PREMIUM → GOLD gradient  (#F5DC7A→#E8C547→#B08800), black text, star glyph
-    //   COMFORT → SILVER gradient(#E8E8E8→#B0B0B0), near-black text, sparkle glyph
-    final badgeGradient = isVIP
-        ? const [Color(0xFF1A1A1A), Color(0xFF000000)]
-        : isPremium
-            ? const [Color(0xFFF5DC7A), Color(0xFFE8C547), Color(0xFFB08800)]
-            : const [Color(0xFFE8E8E8), Color(0xFFB0B0B0)];
-    final badgeTextColor = isVIP
-        ? Colors.white
-        : isPremium
-            ? Colors.black
-            : const Color(0xFF1A1A1A);
-    // Badge glyphs 1:1 with web (live-pull line 142):
-    //   VIP=💎(diamond)  PREMIUM=★  COMFORT=✦
-    final IconData? badgeIcon = isVIP ? Icons.diamond : null;
-    final String badgeGlyph = isPremium ? '★' : '✦';
-
-    return AnimatedBuilder(
-      animation: selected ? _activeCardGlowCtrl : kAlwaysDismissedAnimation,
-      builder: (_, __) {
-        final t = selected ? _activeCardGlowCtrl.value : 0.0;
-        final glowAlpha = 0.15 + 0.15 * t;
-        
-        return Container(
-          height: 110,
-          margin: const EdgeInsets.only(bottom: 12),
-          decoration: BoxDecoration(
-            color: const Color(0xFF1A1A1F), // Dark background
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(
-              color: selected
-                  ? const Color(0xB3E8C547)
-                  : const Color(0xFFE8C547).withValues(alpha: 0.2),
-              width: selected ? 2 : 1.5,
-            ),
-            boxShadow: [
-              // Gold ambient glow
-              BoxShadow(
-                color: const Color(0xFFE8C547).withValues(alpha: glowAlpha * 0.5),
-                blurRadius: 30,
-                spreadRadius: -5,
-              ),
-              // Inner glow when selected (using non-inset shadow as fallback)
-              if (selected)
-                BoxShadow(
-                  color: const Color(0xFFE8C547).withValues(alpha: 0.15),
-                  blurRadius: 8,
-                  spreadRadius: 2,
-                ),
-            ],
-          ),
-          child: Stack(
-            children: [
-              // Content row
-              Padding(
-                padding: const EdgeInsets.all(16),
-                child: Row(
-                  children: [
-                    // Left side - Car image with 3D shadow
-                    SizedBox(
-                      width: 100,
-                      height: 80,
-                      child: Stack(
-                        alignment: Alignment.center,
-                        children: [
-                          // No plate behind the car: the black rounded box
-                          // + gold blur used to read as a square overlay.
-                          // The render carries its own look now.
-                          // Car image
-                          Image.asset(
-                            _carAssetForOption(opt.name),
-                            width: 90,
-                            height: 70,
-                            fit: BoxFit.contain,
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: 16),
-                    // Right side - Text content
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          // Badge in top — 1:1 with web (live-pull line 142,764-770)
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                            decoration: BoxDecoration(
-                              gradient: LinearGradient(
-                                begin: Alignment.topLeft,
-                                end: Alignment.bottomRight,
-                                colors: badgeGradient,
-                              ),
-                              borderRadius: BorderRadius.circular(6),
-                              // VIP gets a thin gold border (web: 1px solid rgba(232,197,71,.3))
-                              border: isVIP
-                                  ? Border.all(
-                                      color: const Color(0xFFE8C547).withValues(alpha: 0.3),
-                                      width: 1,
-                                    )
-                                  : null,
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                if (badgeIcon != null)
-                                  Icon(badgeIcon, size: 10, color: badgeTextColor)
-                                else
-                                  Text(
-                                    badgeGlyph,
-                                    style: TextStyle(
-                                      color: badgeTextColor,
-                                      fontSize: 10,
-                                      height: 1,
-                                    ),
-                                  ),
-                                const SizedBox(width: 4),
-                                Text(
-                                  tierLabel,
-                                  style: TextStyle(
-                                    color: badgeTextColor,
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.w800,
-                                    letterSpacing: 0.5,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          // Vehicle name
-                          Text(
-                            displayName,
-                            style: const TextStyle(
-                              fontFamily: 'Poppins',
-                              color: Colors.white,
-                              fontSize: 18,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          // Description in gold
-                          Text(
-                            opt.description,
-                            style: const TextStyle(
-                              fontFamily: 'Poppins',
-                              color: Color(0xFFE8C547),
-                              fontSize: 11,
-                              fontWeight: FontWeight.w500,
-                            ),
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
-  // Floating gold-border labels ("RECOGIDA" / "DESTINO") that sit
-  // beside each pin tip, matching the Shopify widget's .vipRide__mapLabel.
-  // Positions are driven by _pickupScreenOffset / _dropoffScreenOffset
-  // which are recomputed on every camera change via _syncLabelOffsets().
-  List<Widget> _buildFloatingLabels() {
-    final s = _ctrl.state;
-    final widgets = <Widget>[];
-    final loc = S.of(context);
-    final pickupText = loc.pickupUpperLabel; // "RECOGIDA" / "PICKUP"
-    final dropoffText = loc.dropoffUpperLabel; // "DESTINO" / "DROPOFF"
-
-    // Label geometry — the pill sits beside the pin's head, with clear
-    // air between them, vertically centred on the head.
-    //
-    // The pin bitmap is 80×73.6 (GoldenPinPainter: _width = size,
-    // _height = size * 0.92, size = radius*2+16 with radius 32) drawn at
-    // iconSize 0.85 with iconAnchor BOTTOM — so the screen offset we get
-    // from pixelForCoordinate is the pin's TIP, not its head. The head
-    // centre sits at w * 0.34 from the bitmap top (GoldenPinPainter's
-    // cupCY), i.e. ~63% of the pin height above the tip. These two
-    // numbers are the ones to nudge if the pill reads high or low.
-    const double pinOnScreenHalfWidth = 28.0;
-    const double pinHeadLift = 34.0; // head centre above the tip
-    // Air between pin and pill — practically touching (user spec
-    // 2026-08-04, third iteration: "al lado de los pines, no separado").
-    const double sideGap = 6.0;
-    // Pill height is deterministic: 5px padding top/bottom + the taller
-    // of the 19px icon chip and the kind+address stack (~22px), + border.
-    const double pillHeight = 34.0;
-    const double pillHalfHeight = pillHeight / 2;
-    const double pillEstimatedWidth = 170.0; // icon+gap+maxWidth(130)+padding
-
-    // Trip minutes pickup→dropoff for the gold box glued to the dropoff
-    // label. Traffic-aware seconds first; the formatted "11 min" /
-    // "1 h 5 min" text as fallback.
-    String? etaMinutes;
-    final route = s.route;
-    if (route != null) {
-      final secs = route.durationSeconds;
-      int? mins = (secs != null && secs > 0)
-          ? (secs / 60).round().clamp(1, 24 * 60)
-          : null;
-      if (mins == null) {
-        final h = RegExp(r'(\d+)\s*h').firstMatch(route.durationText);
-        final m = RegExp(r'(\d+)\s*min').firstMatch(route.durationText);
-        if (h != null || m != null) {
-          mins = (int.tryParse(h?.group(1) ?? '') ?? 0) * 60 +
-              (int.tryParse(m?.group(1) ?? '') ?? 0);
-        }
-      }
-      if (mins != null && mins > 0) etaMinutes = '$mins';
-    }
-    // The ETA box adds ~38px to the dropoff pill.
-    final double dropoffPillWidth =
-        pillEstimatedWidth + (etaMinutes != null ? 38.0 : 0.0);
-
-    // Map viewport bounds so we can clamp the label inside the visible area.
-    final mq = MediaQuery.of(context);
-    final screenW = mq.size.width;
-    final screenH = mq.size.height;
-    // Reserve space for top notch + estimated bottom sheet so the
-    // label never paints on top of UI chrome.
-    final topSafe = mq.padding.top + 12;
-    final bottomSafe = screenH * 0.55; // sheet covers bottom ~45%
-
-    final pickupPos = _pickupScreenOffset;
-    if (pickupPos != null && s.pickupLabel.isNotEmpty) {
-      double left = pickupPos.dx + pinOnScreenHalfWidth + sideGap;
-      final bool flipLeft = left + pillEstimatedWidth > screenW - 8;
-      if (flipLeft) {
-        left =
-            pickupPos.dx - pinOnScreenHalfWidth - sideGap - pillEstimatedWidth;
-      }
-      // Clamp inside the viewport (left/right + top/bottom).
-      left = left.clamp(8.0, screenW - pillEstimatedWidth - 8.0);
-      // Centre on the pin HEAD: lift off the tip, then half the pill.
-      double top = pickupPos.dy - pinHeadLift - pillHalfHeight;
-      top = top.clamp(topSafe, bottomSafe - pillHeight);
-      widgets.add(
-        Positioned(
-          left: left,
-          top: top,
-          child: AnimatedMapLabel(
-            kind: MapLabelKind.pickup,
-            address: s.pickupLabel,
-            pickupText: pickupText,
-            dropoffText: dropoffText,
-            visible: _pickupLabelRevealed,
-            alignEnd: flipLeft,
-          ),
-        ),
-      );
-    }
-
-    final dropoffPos = _dropoffScreenOffset;
-    if (dropoffPos != null && s.dropoffLabel.isNotEmpty) {
-      double left =
-          dropoffPos.dx - pinOnScreenHalfWidth - sideGap - dropoffPillWidth;
-      final bool flipRight = left < 8;
-      if (flipRight) {
-        left = dropoffPos.dx + pinOnScreenHalfWidth + sideGap;
-      }
-      // Clamp inside the viewport.
-      left = left.clamp(8.0, screenW - dropoffPillWidth - 8.0);
-      double top = dropoffPos.dy - pinHeadLift - pillHalfHeight;
-      top = top.clamp(topSafe, bottomSafe - pillHeight);
-      widgets.add(
-        Positioned(
-          left: left,
-          top: top,
-          child: AnimatedMapLabel(
-            kind: MapLabelKind.dropoff,
-            address: s.dropoffLabel,
-            pickupText: pickupText,
-            dropoffText: dropoffText,
-            visible: _dropoffLabelRevealed,
-            alignEnd: !flipRight,
-            etaMinutes: etaMinutes,
-          ),
-        ),
-      );
-    }
-    return widgets;
-  }
-
-  // Single card shown when a tier has been picked and the grid is
-  // collapsed. One horizontal row: the small car render on the left, the
-  // tier name plus the three sunken stat chips (ETA minutes, trip miles,
-  // passenger capacity) in the middle, price pinned right.
-  //
-  // No tier badge and no description line — the chips carry the facts and
-  // the card stays one compact row instead of the tall stacked block.
-  Widget _buildRideHorizontalCard(AppColors c, RideOption opt) {
-    final bool isSuv = opt.id == 'suburban';
-    final bool isFusion = opt.id == 'fusion';
-    final bool isSuvXl = opt.id == 'suv_xl';
-    final bool isVIP = isSuv || isSuvXl;
-    final bool isPremium = !isVIP && !isFusion;
-    final String displayName =
-        isSuv ? 'BLACK' : isSuvXl ? 'PREMIUM' : (isPremium ? 'COMPACT' : 'STANDARD');
-
-    // Trip distance comes from the pickup→dropoff route (already
-    // formatted in miles, e.g. "12.34 mi"). Em dash while the route is
-    // still loading.
-    final String distanceText = _ctrl.state.route?.distanceText ?? '— mi';
-
-    // One source for this math — see _promoPrice. The expanded card and
-    // the detail panel must show the same numbers the backend charges.
-    final promo = _promoPrice(opt);
-    final double basePrice = promo.basePrice;
-    final double finalPrice = promo.finalPrice;
-    final bool priceKnown = promo.priceKnown;
-    final String priceText = promo.priceText;
-    final String oldPriceText = promo.oldPriceText;
-
-    return Container(
-      key: ValueKey('horizontal_${opt.id}'),
-      // Raised neumorphic card on the sheet, thin gold edge marking it
-      // as the selected tier.
-      decoration: neuBox(
-        radius: 24,
-        borderColor: const Color(0xFFE8C547).withValues(alpha: 0.45),
-      ),
-      // Clipped, and explicitly.
-      //
-      // CarImage3D paints silhouette drop shadows and, when selected, a
-      // blurred gold glow that reaches past the render's own box on
-      // purpose — and on Android's Impeller those ImageFiltered layers are
-      // not held by a Container's decoration clip, so unclipped they ran
-      // out under the card's rounded corner.
-      //
-      // The clip sits OUTSIDE the padding, on the card's true edge. It
-      // used to wrap only the padded content, which truncated the car's
-      // shadow (and the Faster badge) at an invisible rectangle 14 px
-      // inside the card — the "something is cutting it" the user pointed
-      // at. Same clip radius as the decoration, so nothing else moves.
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(24),
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
-          child: Stack(
-          clipBehavior: Clip.none,
-          children: [
-            // "Faster" — right edge, vertically ON the "2-4 min away" line
-            // (user spec 2026-08-04: level with the minutes text, not up in
-            // the corner). Only when the nearest FREE driver is ≤5 min out.
-            // Its own FutureBuilder over the same per-pickup cached fetch
-            // the wait line uses, so the two always agree. The -11 nudge
-            // lands it on the first line of the two-line wait column
-            // (range 23px + gap + clock 12.5px, centered as a block).
-            Positioned(
-              right: -6,
-              top: 0,
-              bottom: 0,
-              child: Builder(builder: (context) {
-                final pickup = _ctrl.state.pickup;
-                if (pickup == null) return const SizedBox.shrink();
-                // Same per-tier estimate as the wait line — the badge only
-                // fires when a driver of THIS category is ≤5 min out.
-                final tierKey = _tierKeyForOption(opt);
-                return FutureBuilder<WaitEstimate>(
-                  initialData: DriverWaitEstimate.cached(pickup.lat, pickup.lng,
-                      tier: tierKey),
-                  future: DriverWaitEstimate.fetch(
-                      lat: pickup.lat, lng: pickup.lng, tier: tierKey),
-                  builder: (context, snap) {
-                    final est = snap.data;
-                    final show = est != null &&
-                        est.hasDrivers &&
-                        est.minMinutes <= 5;
-                    // AnimatedSwitcher so it leaves as silkily as it lands
-                    // when the pickup moves out of fast range.
-                    return Center(
-                      child: Transform.translate(
-                        // Up from dead-center onto the "2-4 min" line.
-                        offset: const Offset(0, -11),
-                        child: AnimatedSwitcher(
-                          duration: const Duration(milliseconds: 300),
-                          switchOutCurve: Curves.easeInCubic,
-                          child: show
-                              ? const FasterBadge(key: ValueKey('faster'))
-                              : const SizedBox.shrink(
-                                  key: ValueKey('no-faster')),
-                        ),
-                      ),
-                    );
-                  },
-                );
-              }),
-            ),
-            Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          // ── Left: tier name sitting directly above its car, the two
-          // read as one unit. bottomCenter keeps the wheels planted no
-          // matter how tall the source asset is.
-          SizedBox(
-            // 108 rather than 84, and the render 76 tall rather than 60.
-            //
-            // The car is the only picture on a card otherwise made of type,
-            // and at 84 wide it was smaller than the words beside it — the
-            // thing the rider actually recognises, losing to a label.
-            width: 108,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  displayName,
-                  textAlign: TextAlign.center,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontFamily: 'Poppins',
-                    color: Colors.white,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: 0.5,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                // Flexible, not fixed: the picker sheet caps the card row
-                // (SizedBox(height: cardH), max 120) and the card's 28 px
-                // of vertical padding leave ~92 px for this column — 12
-                // short of the name + gap + 76 the car asks for, which is
-                // the "BOTTOM OVERFLOWED BY 12 PIXELS" under the render.
-                // Letting the image give those pixels back keeps the full
-                // 76 wherever the row is unconstrained and only shrinks
-                // the picture, never the words.
-                Flexible(
-                  child: SizedBox(
-                  height: 76,
-                  child: CarImage3D(
-                    assetPath: _carAssetForOption(opt.name),
-                    cacheWidth: 640,
-                    // Centred in its box, not sitting on the floor of it.
-                    //
-                    // These renders are far wider than they are tall, so at
-                    // 108 wide the car only fills about a third of a 76 px
-                    // box. Anchored to the bottom it left all that space in
-                    // one band under the tier name, which read as a gap in
-                    // the card rather than as air around the car.
-                    alignment: Alignment.center,
-                    fallback: Icon(
-                      Icons.directions_car_rounded,
-                      color: const Color(0xFFE8C547).withValues(alpha: 0.5),
-                      size: 32,
-                    ),
-                  ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 12),
-
-          // ── Right: the wait, pushed to the far edge.
-          //
-          // The price used to sit out here, beside the same figure the panel
-          // directly below already spells out — the same number twice on one
-          // screen, in two type sizes. It stays in the panel with the miles,
-          // the minutes and the seats. This side carries the one thing the
-          // rider cannot work out for themselves: whether anyone is coming,
-          // and roughly how soon.
-          Expanded(
-            child: Align(
-              // Centred in the room to the right of the car, not shoved
-              // against the card's edge.
-              //
-              // Hard right put "5 - 20 min" at 19 px flush with the padding,
-              // where it read as clipped and had nowhere to go if the range
-              // ever ran wider. Centring gives it air on both sides and
-              // keeps it clear of the tier name on the left.
-              child: _buildWaitEstimate(opt),
-            ),
-          ),
-        ],
-            ),
-          ],
-          ),
-        ),
-      ),
-    );
-  }
-
   /// Promo / Cruise Cash price math for an option — ONE source for the
   /// expanded card and the detail panel.
   ///
@@ -1468,223 +1125,6 @@ extension _RideRequestWidgets on _RideRequestScreenState {
       priceKnown: priceKnown,
       priceText: priceKnown ? '\$${finalPrice.toStringAsFixed(2)}' : '—',
       oldPriceText: priceKnown ? '\$${basePrice.toStringAsFixed(2)}' : '—',
-    );
-  }
-
-  // Detail panel shown below the 3-card grid once the user has picked a
-  // tier. Sunken neumorphic well with the same three stat chips as the
-  // collapsed card (ETA, trip miles, capacity) plus the big price — no
-  // description line.
-  Widget _buildRideDetailPanel(AppColors c, RideOption opt) {
-    final promo = _promoPrice(opt);
-
-    // 650ms cubic-bezier(.4,0,.2,1) slide-down 6px — matches the web's
-    // .vipRide__rideDetail animation keyframe vipRideDetailIn.
-    return AnimatedSwitcher(
-      duration: const Duration(milliseconds: 650),
-      switchInCurve: const Cubic(0.4, 0, 0.2, 1),
-      transitionBuilder: (child, anim) {
-        return FadeTransition(
-          opacity: anim,
-          child: SlideTransition(
-            position: Tween<Offset>(
-              // -6px in CSS translates to approximately -0.04 of the
-              // container height on average — close enough visually.
-              begin: const Offset(0, -0.04),
-              end: Offset.zero,
-            ).animate(anim),
-            child: child,
-          ),
-        );
-      },
-      child: Container(
-        key: ValueKey('detail_${opt.id}'),
-        padding: const EdgeInsets.all(14),
-        decoration: neuBox(radius: 14, pressed: true),
-        child: Row(
-          children: [
-            _neuStatChip(Icons.schedule_rounded, durationLabel(opt.etaMinutes)),
-            const SizedBox(width: 6),
-            _neuStatChip(Icons.route_rounded,
-                _ctrl.state.route?.distanceText ?? '— mi'),
-            const SizedBox(width: 6),
-            _neuStatChip(Icons.person_rounded, '${opt.capacity}'),
-            const Spacer(),
-            if (_ctrl.state.route == null)
-              _buildPriceShimmer(width: 68, height: 22)
-            else
-              // .vipRide__rideDetail__price: clamp(18,5vw,22)
-              // weight 800 color #fff.
-              //
-              // Same numbers the expanded card shows (one helper, both
-              // surfaces): discounted price big, original struck through.
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.baseline,
-                textBaseline: TextBaseline.alphabetic,
-                children: [
-                  if (promo.priceKnown &&
-                      promo.finalPrice < promo.basePrice) ...[
-                    Text(
-                      promo.oldPriceText,
-                      style: TextStyle(
-                        fontFamily: 'Poppins',
-                        color: Colors.white.withValues(alpha: 0.45),
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                        decoration: TextDecoration.lineThrough,
-                        decorationColor: Colors.white.withValues(alpha: 0.45),
-                      ),
-                    ),
-                    const SizedBox(width: 6),
-                  ],
-                  Text(
-                    promo.priceText,
-                    style: const TextStyle(
-                      fontFamily: 'Poppins',
-                      color: Colors.white,
-                      fontSize: 22,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: -0.3,
-                    ),
-                  ),
-                ],
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  // Grid card - 1:1 match with web design (3 columns)
-  // Web CSS: .vipRide__rideCard grid version
-  /// One tile in the four-up grid.
-  ///
-  /// Every tile looks the same, including the one currently chosen: no gold
-  /// border, no sunken well. Picking a tier is answered by the row itself —
-  /// the chosen card opens to full width and the others close — so marking
-  /// it as well said the same thing twice and made one card look like it
-  /// belonged to a different set.
-  Widget _buildRideOptionCardGrid(AppColors c, RideOption opt,
-      {double height = 120}) {
-    final isSuv = opt.id == 'suburban';
-    final isFusion = opt.id == 'fusion';
-    final isSuvXl = opt.id == 'suv_xl';
-
-    final bool isVIP = isSuv || isSuvXl;
-    final bool isPremium = !isVIP && !isFusion;
-    final String displayName =
-        isSuv ? 'BLACK' : isSuvXl ? 'PREMIUM' : (isPremium ? 'COMPACT' : 'STANDARD');
-    final String carAsset = _carAssetForOption(opt.name);
-
-    // Same visual rhythm as the home fleet cards: name on top, car right
-    // below it with a fixed height, comfortable padding all around — no
-    // Expanded/Spacer, so there's no empty band in the middle.
-    // Everything inside shrinks with the card, so four tiers read as four
-    // smaller cards rather than four squeezed ones. Text has a floor —
-    // scaling a 13 px label by 0.75 gives 9 px, which is not a smaller
-    // label, it is an unreadable one.
-    final s = (height / 120).clamp(0.70, 1.0);
-    final pad = 10 * s;
-    final carH = 46 * s;
-    final nameSize = math.max(10.0, Responsive.vehicleNameSize * s);
-    final waitSize = math.max(10.0, 11 * s);
-
-    return Container(
-      // Height comes from the caller, which derives it from how wide the
-      // card ended up — see the cardH above. Every value here is spent
-      // twice: the sheet is capped at 40% of the screen, so what the card
-      // takes, the map does not get.
-      height: height,
-      clipBehavior: Clip.antiAlias,
-      decoration: neuBox(radius: 24),
-      child: Padding(
-        padding: EdgeInsets.fromLTRB(8 * s, pad, 8 * s, pad),
-        child: Stack(
-          clipBehavior: Clip.none,
-          children: [
-            // No Faster badge on a closed tile (user spec 2026-08-06). A
-            // tile this size has room for the tier, its car and its wait,
-            // and nothing else: under the minutes the badge landed on top
-            // of them, and the corner treatment it replaced was the one
-            // that started this. It lives on the open card, on the
-            // "2-4 min away" line.
-            Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            // Vehicle name on top — home screen style.
-            //
-            // Shrinks to fit rather than truncating. Four tiers share the
-            // row now, so a card is about 80 px wide and "STANDARD" no
-            // longer fits at full size — ellipsis would leave "STANDAR…",
-            // which reads as a bug.
-            FittedBox(
-              fit: BoxFit.scaleDown,
-              child: Text(
-                displayName,
-                textAlign: TextAlign.center,
-                maxLines: 1,
-                style: TextStyle(
-                  fontFamily: 'Poppins',
-                  color: Colors.white,
-                  fontSize: nameSize,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: 0.5,
-                ),
-              ),
-            ),
-            SizedBox(height: 8 * s),
-            // Car render, centered. Shorter than the home fleet cards on
-            // purpose: this sheet competes with the map for the screen.
-            // Inset a little, so the car does not run edge to edge.
-            //
-            // Trimming the box height would do nothing: the render is 2.7
-            // times wider than it is tall, so inside a card this narrow it
-            // is the width that decides how big the car comes out, and
-            // there is already spare height above and below it.
-            SizedBox(
-              height: carH,
-              width: double.infinity,
-              child: FractionallySizedBox(
-                // Full card width (was 0.88) — bigger car, same box.
-                widthFactor: 1.0,
-                child: CarImage3D(
-                  assetPath: carAsset,
-                  cacheWidth: 640,
-                  alignment: Alignment.center,
-                  fallback: Icon(
-                    Icons.directions_car_rounded,
-                    color: const Color(0xFFE8C547).withValues(alpha: 0.5),
-                    size: 40,
-                  ),
-                ),
-              ),
-            ),
-            // The wait, under the car. Just the range — per tier now,
-            // because different tiers really have different drivers, and
-            // one shared "2-4 min" for everyone was a number nobody
-            // could trust.
-            SizedBox(height: 5 * s),
-            Text(
-              _gridWaitRangeText(
-                isSuv ? 'black' : isSuvXl ? 'premium' : (isPremium ? 'compact' : 'standard'),
-              ),
-              textAlign: TextAlign.center,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontFamily: 'Poppins',
-                color: Colors.white.withValues(alpha: 0.55),
-                fontSize: waitSize,
-                fontWeight: FontWeight.w700,
-                letterSpacing: 0.2,
-              ),
-            ),
-          ],
-            ),
-          ],
-        ),
-      ),
     );
   }
 
@@ -1731,40 +1171,6 @@ extension _RideRequestWidgets on _RideRequestScreenState {
     // card, where there is room for it to be an answer.
     if (est.driverCount == 0) return '';
     return est.rangeLabel;
-  }
-
-  // Shimmer card for grid loading state - web style
-  Widget _buildShimmerCardGrid({double height = 120}) {
-    return Container(
-      // Matches the real card, or the sheet visibly jumps the moment the
-      // fares land and the skeletons are replaced.
-      height: height,
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            Color(0x0AFFFFFF),
-            Color(0x05FFFFFF),
-          ],
-        ),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: const Color(0x12FFFFFF),
-          width: 1,
-        ),
-      ),
-      child: const Center(
-        child: SizedBox(
-          width: 24,
-          height: 24,
-          child: CircularProgressIndicator(
-            color: Color(0xFFE8C547),
-            strokeWidth: 2,
-          ),
-        ),
-      ),
-    );
   }
 
   // ── OLD card kept for reference during migration — now unused ──
@@ -2169,185 +1575,6 @@ extension _RideRequestWidgets on _RideRequestScreenState {
     );
   }
 
-  /// Small sunken neumorphic stat chip (icon + value) used on the
-  /// collapsed tier card — inset well via the shared neu style.
-  /// "5-20 min de espera", or the reason there is none.
-  ///
-  /// Reads the cached answer first so the card paints complete on the very
-  /// frame the rider taps a tier — the count is per pickup point, not per
-  /// vehicle, so switching between tiers can never need a new request. Only
-  /// the first tap on a new pickup waits, and only for as long as one cached
-  /// call takes.
-  Widget _buildWaitEstimate(RideOption opt) {
-    final pickup = _ctrl.state.pickup;
-    if (pickup == null) return const SizedBox.shrink();
-
-    // Scheduled/airport mode: the ride is in the future, so "a driver can
-    // be here in 5-20 min" — and worse, "No drivers near your area" —
-    // answers a question nobody asked. The reservation goes to the
-    // scheduled marketplace; say so instead (2026-08-17).
-    if (_isScheduledMode) {
-      return SizedBox(
-        height: 34,
-        child: Align(
-          alignment: Alignment.centerLeft,
-          child: Text(
-            S.of(context).availableToReserve,
-            style: TextStyle(
-              fontFamily: 'Poppins',
-              fontSize: 11.5,
-              fontWeight: FontWeight.w600,
-              color: Colors.white.withValues(alpha: 0.80),
-            ),
-          ),
-        ),
-      );
-    }
-
-    // Per tier: the range answers "when can a driver of THIS category be
-    // here", from the drivers actually eligible to take it — not one
-    // shared number stamped on every card.
-    final tier = _tierKeyForOption(opt);
-    final cached =
-        DriverWaitEstimate.cached(pickup.lat, pickup.lng, tier: tier);
-    return FutureBuilder<WaitEstimate>(
-      initialData: cached,
-      future: DriverWaitEstimate.fetch(
-          lat: pickup.lat, lng: pickup.lng, tier: tier),
-      builder: (context, snap) {
-        final est = snap.data;
-        // Still asking. Deliberately blank rather than "0 min" or a spinner:
-        // an empty space for a beat reads as loading, a number that then
-        // changes reads as the app having lied.
-        if (est == null) return const SizedBox(height: 34);
-
-        final none = est.driverCount == 0;
-        // "near your area", not "available right now" — user spec
-        // 2026-08-04, this sentence lives only on the selected card.
-        final text = none
-            ? S.of(context).noDriversNearArea
-            : est.rangeLabel;
-
-        return AnimatedSwitcher(
-          // Longer than the card's own move and eased the same way, so the
-          // wait does not land while the card is still travelling — it
-          // arrives into a card that has come to rest.
-          duration: const Duration(milliseconds: 420),
-          switchInCurve: Curves.easeOutCubic,
-          transitionBuilder: (child, anim) => FadeTransition(
-            opacity: anim,
-            child: SlideTransition(
-              position: Tween<Offset>(
-                begin: const Offset(0.12, 0),
-                end: Offset.zero,
-              ).animate(anim),
-              child: child,
-            ),
-          ),
-          // One line: the range, then "of wait" beside it.
-          //
-          // It was stacked, which made a two-line block out of what is really
-          // one phrase — and the second line, at 11 px under a 19 px figure,
-          // read as a footnote to the number rather than part of it. Side by
-          // side and closer in size, it reads as a sentence.
-          //
-          // Baseline-aligned, so the small word sits on the same line as the
-          // digits instead of floating at their vertical centre.
-          // Two lines now: "2-4 min away" and, under it, the clock time
-          // that range lands at ("3:42 PM") — the answer and what it means
-          // for the rider's watch. Arrival is computed from the range's
-          // midpoint: the min oversells, the max undersells.
-          child: Builder(
-            key: ValueKey('wait_${none}_$text'),
-            builder: (context) {
-              String arrivalStr = '';
-              if (!none && est.hasDrivers) {
-                final mid = ((est.minMinutes + est.maxMinutes) / 2).round();
-                final arrival = DateTime.now().add(Duration(minutes: mid));
-                final h = arrival.hour;
-                final ampm = h >= 12 ? 'PM' : 'AM';
-                final h12 = h == 0 ? 12 : (h > 12 ? h - 12 : h);
-                arrivalStr =
-                    '$h12:${arrival.minute.toString().padLeft(2, '0')} $ampm';
-              }
-              return Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  FittedBox(
-                    fit: BoxFit.scaleDown,
-                    // Shrinks rather than ellipsing. "No drivers available"
-                    // is a sentence, not a number — cut to "No drivers av…"
-                    // it stops being an answer at all.
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      textBaseline: TextBaseline.alphabetic,
-                      crossAxisAlignment: CrossAxisAlignment.baseline,
-                      children: [
-                        Text(
-                          text,
-                          maxLines: 1,
-                          style: TextStyle(
-                            fontFamily: 'Poppins',
-                            color:
-                                none ? const Color(0xFFEF9A9A) : Colors.white,
-                            fontSize: none ? 15 : 23,
-                            fontWeight: FontWeight.w800,
-                            letterSpacing: -0.4,
-                            height: 1.1,
-                          ),
-                        ),
-                        if (!none) ...[
-                          const SizedBox(width: 6),
-                          Text(
-                            S.of(context).away,
-                            maxLines: 1,
-                            style: TextStyle(
-                              fontFamily: 'Poppins',
-                              color: Colors.white.withValues(alpha: 0.55),
-                              fontSize: 14,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
-                  ),
-                  if (arrivalStr.isNotEmpty) ...[
-                    const SizedBox(height: 3),
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          Icons.access_time_filled_rounded,
-                          size: 11,
-                          color:
-                              const Color(0xFFE8C547).withValues(alpha: 0.75),
-                        ),
-                        const SizedBox(width: 4),
-                        Text(
-                          arrivalStr,
-                          maxLines: 1,
-                          style: TextStyle(
-                            fontFamily: 'Poppins',
-                            color: Colors.white.withValues(alpha: 0.65),
-                            fontSize: 12.5,
-                            fontWeight: FontWeight.w700,
-                            letterSpacing: 0.2,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ],
-              );
-            },
-          ),
-        );
-      },
-    );
-  }
-
   /// True only when the server has confirmed there is nobody in range.
   ///
   /// Reads the cache rather than fetching: the wait widget above has
@@ -2395,30 +1622,6 @@ extension _RideRequestWidgets on _RideRequestScreenState {
         _fitRoute(pts, preserveCamera: true);
       }
     });
-  }
-
-  Widget _neuStatChip(IconData icon, String label) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: neuBox(radius: 10, pressed: true),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon,
-              size: 13, color: const Color(0xFFE8C547).withValues(alpha: 0.85)),
-          const SizedBox(width: 5),
-          Text(
-            label,
-            style: TextStyle(
-              fontFamily: 'Poppins',
-              fontSize: 11.5,
-              fontWeight: FontWeight.w600,
-              color: Colors.white.withValues(alpha: 0.80),
-            ),
-          ),
-        ],
-      ),
-    );
   }
 
   /// Animated shimmer placeholder for price while loading.
@@ -3860,15 +3063,34 @@ class _WebRequestButtonState extends State<_WebRequestButton> {
                       color: Color(0xFF0A0E1A),
                     ),
                   )
-                : Text(
-                    widget.label,
-                    style: const TextStyle(
-                      // font-size: 16px; font-weight: 800; color: #0a0e1a;
-                      fontFamily: 'Poppins',
-                      fontSize: 16,
-                      fontWeight: FontWeight.w800,
-                      color: Color(0xFF0A0E1A),
-                      letterSpacing: -0.2,
+                // The label changes with the tier ("Select Standard" →
+                // "Select Black") — fade+slide between them instead of a
+                // snap (user spec 2026-08-22).
+                : AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 250),
+                    switchInCurve: Curves.easeOut,
+                    switchOutCurve: Curves.easeIn,
+                    transitionBuilder: (child, anim) => FadeTransition(
+                      opacity: anim,
+                      child: SlideTransition(
+                        position: Tween<Offset>(
+                          begin: const Offset(0, 0.25),
+                          end: Offset.zero,
+                        ).animate(anim),
+                        child: child,
+                      ),
+                    ),
+                    child: Text(
+                      widget.label,
+                      key: ValueKey(widget.label),
+                      style: const TextStyle(
+                        // font-size: 16px; font-weight: 800; color: #0a0e1a;
+                        fontFamily: 'Poppins',
+                        fontSize: 16,
+                        fontWeight: FontWeight.w800,
+                        color: Color(0xFF0A0E1A),
+                        letterSpacing: -0.2,
+                      ),
                     ),
                   ),
           ),
@@ -3908,47 +3130,6 @@ class _PressableScaleState extends State<_PressableScale> {
         curve: const Cubic(0, 0, 0.2, 1),
         child: widget.child,
       ),
-    );
-  }
-}
-
-// Fade-in after a delay — matches the web's staggered reveal
-// (payment button @ 250ms, request button @ 400ms).
-class _StaggeredFade extends StatefulWidget {
-  final Widget child;
-  final int delayMs;
-  const _StaggeredFade({super.key, required this.child, required this.delayMs});
-  @override
-  State<_StaggeredFade> createState() => _StaggeredFadeState();
-}
-
-class _StaggeredFadeState extends State<_StaggeredFade>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _ctl;
-
-  @override
-  void initState() {
-    super.initState();
-    _ctl = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 300),
-    );
-    Future.delayed(Duration(milliseconds: widget.delayMs), () {
-      if (mounted) _ctl.forward();
-    });
-  }
-
-  @override
-  void dispose() {
-    _ctl.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return FadeTransition(
-      opacity: CurvedAnimation(parent: _ctl, curve: Curves.easeOutCubic),
-      child: widget.child,
     );
   }
 }

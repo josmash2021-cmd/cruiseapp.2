@@ -1490,7 +1490,9 @@ extension _RideRequestMap on _RideRequestScreenState {
       // (#D4AF37 → #FFD700 → #E8C547). Solid #F0CA3E reads close to
       // the middle-weighted visual of the CSS gradient on a dark map.
       lineColor: const Color(_routeGoldColor).toARGB32(),
-      lineWidth: 5.0,
+      // 2.5 (was 5.0): the 2026-08-22 choose-a-vehicle sheet redesign
+      // (Lyft-style) thins the preview route to half its old weight.
+      lineWidth: 2.5,
       lineJoin: mapbox.LineJoin.ROUND,
     ));
 
@@ -1644,7 +1646,9 @@ extension _RideRequestMap on _RideRequestScreenState {
     _routeAnnot = await mgr.create(mapbox.PolylineAnnotationOptions(
       geometry: routeGeo,
       lineColor: const Color(_routeGoldColor).toARGB32(),
-      lineWidth: 5.0,
+      // 2.5 (was 5.0) — same half-weight preview route as the create path
+      // above (2026-08-22 sheet redesign).
+      lineWidth: 2.5,
     ));
   }
 

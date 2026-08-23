@@ -646,15 +646,6 @@ extension _RideRequestController on _RideRequestScreenState {
             orElse: () => null,
           );
           if (match != null) {
-            // Collapsed *before* the option is set, so the first frame that
-            // has a tier already has it open.
-            //
-            // This used to collapse in a post-frame callback, which meant
-            // one frame of the four-up grid and then a 680 ms open — the
-            // rider watching the app re-stage a choice they had already
-            // made on the home screen. They picked the tier there; the
-            // picker should not ask again on the way past.
-            _gridExpanded = false;
             _ctrl.selectRideOption(match);
           }
         }

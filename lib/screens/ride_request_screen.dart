@@ -48,7 +48,6 @@ import 'airport_terminal_sheet.dart';
 import '../l10n/app_localizations.dart';
 import '../widgets/car_image_3d.dart';
 import '../widgets/neu_style.dart';
-import '../utils/responsive.dart';
 import '../widgets/gold_location_dot.dart';
 import '../widgets/gold_pin_renderer.dart';
 import '../widgets/map/animated_map_label.dart';
@@ -56,6 +55,7 @@ import '../widgets/map/animated_map_label.dart';
 import '../widgets/map/circular_pin_renderer.dart';
 import '../widgets/tier_badge.dart';
 import '../widgets/verified_avatar.dart';
+import 'schedule_datetime_screen.dart';
 import 'set_pickup_location_screen.dart';
 import '../utils/mapbox_safe.dart';
 import 'ride_booking_confirmed_screen.dart';
@@ -444,10 +444,13 @@ class _RideRequestScreenState extends State<RideRequestScreen>
   bool _hasAppliedSelectionTilt = false;
   bool _labelsRevealed = false;
   bool _placingMarkers = false; // guard against concurrent pin duplication
-  // When a vehicle is selected, the 3-card grid collapses to show ONLY the
-  // chosen card. Tapping the chosen card re-expands the grid so the rider
-  // can switch tier. Defaults true (no selection yet → grid visible).
-  bool _gridExpanded = true;
+  // Choose-a-vehicle sheet (2026-08-22 redesign, Lyft-style vertical tier
+  // list): two snapped states — expanded (every tier listed, the selected
+  // one grown open) and collapsed (only the selected tier's card plus the
+  // action panel, so the map and the route stay in view). Driven by the
+  // drag handle's vertical gesture; the height change animates through
+  // AnimatedSize and the map refits off _sheetHeightPx as always.
+  bool _sheetCollapsed = false;
   AnimationController? _labelPopCtrl;
   Animation<double>? _labelPopAnim;
   LatLng? _center;

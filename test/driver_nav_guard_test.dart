@@ -2,27 +2,26 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-/// Guardian for the in-app turn-by-turn navigation (DriverNavView) and its
-/// integration into the trip-accept screen.
+/// Guardian for the trip-accept screen's navigation behaviour.
 ///
 /// Pure source-grep (same style as driver_scheduled_neu_guard_test.dart):
 /// the feature needs GPS, a live trip and a native map, so what a unit test
 /// CAN pin is that the load-bearing pieces are wired where they belong:
 ///   1. Web-booking bookkeeping lines never reach the driver as
 ///      "passenger instructions".
-///   2. The expansion into navigation animates a StaticMapSnapshot and never
-///      resizes the live MapWidget (a PlatformView cannot be relaid out —
-///      that resize is the crash path).
-///   3. The rider figure is a pickup-leg-only element: the slide to pick up
-///      flips the leg and the figure goes with it.
+///   2. Start Trip (and the pickup-confirmed leg to the dropoff) opens an
+///      EXTERNAL maps app — the in-app DriverNavView experiment is archived
+///      (lib/screens/driver/driver_nav_view.dart is kept but unwired), and
+///      nothing on this screen may import or mount it again.
+///   3. The external launch respects the driver's Settings → Navigation
+///      preference (MapLauncherService) before falling back to the
+///      Apple/Google/Waze chain.
 ///   4. A rider with Location Sharing off (privacy_location == false)
 ///      publishes nothing.
 void main() {
   final accept =
       File('lib/screens/driver/driver_trip_accept_screen.dart')
           .readAsStringSync();
-  final nav = File('lib/screens/driver/driver_nav_view.dart')
-      .readAsStringSync();
   final riderMap =
       File('lib/widgets/tracking/tracking_map_view.dart').readAsStringSync();
 
@@ -46,58 +45,44 @@ void main() {
     });
   });
 
-  group('nav expansion', () {
-    test('animates a StaticMapSnapshot from the mini map rect', () {
-      final start = accept.indexOf('Future<void> _enterNavMode');
+  group('external maps navigation', () {
+    test('the in-app nav mode is gone from the trip-accept screen', () {
+      expect(accept, isNot(contains('_enterNavMode')),
+          reason: 'Start Trip must open external maps, not the in-app nav');
+      expect(accept, isNot(contains('DriverNavView')));
+      expect(accept, isNot(contains("import 'driver_nav_view.dart'")));
+    });
+
+    test('Start Trip opens external maps to the pickup', () {
+      final start = accept.indexOf('Widget _buildSlideStartTrip()');
       final block =
-          start >= 0 ? accept.substring(start, start + 1600) : '';
-      expect(block, isNotEmpty, reason: '_enterNavMode not found');
-      expect(block, contains('_miniMapKey'));
-      expect(accept, contains('StaticMapSnapshot('));
+          start >= 0 ? accept.substring(start, start + 1200) : '';
+      expect(block, isNotEmpty, reason: '_buildSlideStartTrip not found');
+      expect(block, contains('_openNativeMaps(widget.pickupLatLng)'));
     });
 
-    test('the live MapWidget is never resized by the expansion', () {
-      // The overlay animates a Rect over an IMAGE: the expansion block must
-      // carry the snapshot and no MapWidget (a PlatformView cannot be
-      // relaid out mid-flight — that resize is the crash path).
-      final start = accept.indexOf('// ── Expansion snapshot');
+    test('the pickup-confirmed leg opens external maps to the dropoff', () {
+      final start = accept.indexOf('void _startRideConfirmed()');
       final block =
-          start >= 0 ? accept.substring(start, start + 1800) : '';
-      expect(block, isNotEmpty, reason: 'expansion overlay not found');
-      expect(block, contains('StaticMapSnapshot('));
-      expect(block, contains('Positioned.fromRect'));
-      expect(block, isNot(contains('MapWidget')));
-      // Nav mounts its own full-screen map under its own coordinator owner.
-      expect(nav, contains("'DriverTripNav-"));
-      expect(nav, contains('MapSurfaceCoordinator.instance.acquire('));
+          start >= 0 ? accept.substring(start, start + 900) : '';
+      expect(block, isNotEmpty, reason: '_startRideConfirmed not found');
+      expect(block, contains('_openNativeMaps(_dropoffLL)'));
     });
 
-    test('the preview releases the surface before nav mounts', () {
-      final start = accept.indexOf('Future<void> _enterNavMode');
+    test('the Settings → Navigation preference is consulted first', () {
+      final start = accept.indexOf('Future<void> _openNativeMaps');
       final block =
-          start >= 0 ? accept.substring(start, start + 1600) : '';
-      final release = block.indexOf('release(_mapSurfaceOwner)');
-      final navOn = block.indexOf('_navMode = true');
-      expect(release, greaterThan(-1));
-      expect(navOn, greaterThan(release),
-          reason:
-              'The preview must let go of the surface before the nav view mounts — two live MapWidgets crash iOS.');
-    });
-  });
-
-  group('rider figure', () {
-    test('is gated on the pickup leg', () {
-      final start = nav.indexOf('Future<void> _updateRiderAnnotation');
-      final block = start >= 0 ? nav.substring(start, start + 700) : '';
-      expect(block, isNotEmpty);
-      expect(block, contains('if (!widget.toPickup) return;'));
+          start >= 0 ? accept.substring(start, start + 1400) : '';
+      expect(block, isNotEmpty, reason: '_openNativeMaps not found');
+      expect(block, contains('MapLauncherService.navigate('));
     });
 
-    test('the leg flip (slide to pick up) deletes the annotation', () {
-      final start = nav.indexOf('void didUpdateWidget');
-      final block = start >= 0 ? nav.substring(start, start + 900) : '';
-      expect(block, contains('oldWidget.toPickup != widget.toPickup'));
-      expect(block, contains('mgr.delete(annot)'));
+    test('iOS one-tap Apple Maps / Android chooser stay on the address cards',
+        () {
+      expect(accept, contains('_openAppleMaps(widget.pickupLatLng)'));
+      expect(accept, contains('_showNavigationSheet(isPickup: true)'));
+      expect(accept, contains('_openAppleMaps(_dropoffLL)'));
+      expect(accept, contains('_showNavigationSheet(isPickup: false)'));
     });
   });
 

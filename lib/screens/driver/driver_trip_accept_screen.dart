@@ -58,8 +58,6 @@ import '../../utils/responsive.dart';
 import '../../utils/name_helper.dart' as nh;
 import '../../widgets/offer_countdown_ring.dart';
 import '../../services/firebase_auth_recovery.dart';
-import '../../widgets/static_map_snapshot.dart';
-import 'driver_nav_view.dart';
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  DRIVER TRIP ACCEPT SCREEN  — DoorDash-style trip details sheet
@@ -333,21 +331,6 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
 
   /// Web only: GL JS controller for the preview (no surface limit there).
   WebMapController? _webMapCtrl;
-
-  // ── In-app navigation mode (DriverNavView) ─────────────────────────────
-  //
-  // Start Trip no longer leaves the app: the mini map fades, a still frame
-  // of the map expands from the card's rect to full screen, and the nav
-  // view mounts the native surface the preview just released. The expansion
-  // moves a StaticMapSnapshot — NEVER resizes the live MapWidget, whose
-  // PlatformView cannot be relaid out without tearing it down.
-  bool _navMode = false;
-  bool _navEntering = false;
-  bool _miniMapFading = false;
-  final GlobalKey _miniMapKey = GlobalKey();
-  Rect? _navSnapshotRect;
-  bool _navSnapshotVisible = false;
-  bool _navSnapshotFadingOut = false;
 
   // ── Chained (next-ride) offer over this trip ─────────────────────────────
   //
@@ -755,93 +738,6 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     setState(() => _previewMapMounted = true);
   }
 
-  // ── In-app navigation mode ─────────────────────────────────────────────
-
-  /// The backend appends `Wait started: <iso>` to the trip notes when the
-  /// pickup wait timer opens; the nav view's wait divider drains from it so
-  /// a reopened screen shows the real remaining time, not a fresh 5:00.
-  DateTime? get _waitStartedAt {
-    for (final line in widget.pickupInstructions.split('\n')) {
-      final t = line.trim();
-      if (t.startsWith('Wait started:')) {
-        return DateTime.tryParse(
-            t.substring('Wait started:'.length).trim());
-      }
-    }
-    return null;
-  }
-
-  /// Start Trip → in-app navigation. Sequence:
-  ///   1. the mini map's route/pins fade out (~250 ms),
-  ///   2. a StaticMapSnapshot expands from the card's GLOBAL rect to full
-  ///      screen (~450 ms) — from where the map actually is, not the centre,
-  ///   3. the preview releases the surface and the nav view claims it,
-  ///   4. the snapshot cross-fades out once the live nav map reports ready.
-  Future<void> _enterNavMode() async {
-    if (_navMode || _navEntering) return;
-    _navEntering = true;
-    HapticService.mediumImpact();
-    setState(() => _miniMapFading = true);
-    await Future.delayed(const Duration(milliseconds: 250));
-    if (!mounted) {
-      _navEntering = false;
-      return;
-    }
-    final box =
-        _miniMapKey.currentContext?.findRenderObject() as RenderBox?;
-    final rect =
-        box != null ? box.localToGlobal(Offset.zero) & box.size : null;
-    setState(() {
-      _navSnapshotRect = rect;
-      _navSnapshotVisible = true;
-    });
-    await Future.delayed(const Duration(milliseconds: 470));
-    if (!mounted) {
-      _navEntering = false;
-      return;
-    }
-    // Hand the surface over BEFORE the nav view mounts: two live MapWidgets
-    // are the iOS crash, and the coordinator only revokes politely — the
-    // preview lets go voluntarily here.
-    if (_previewMapMounted) {
-      setState(() => _previewMapMounted = false);
-      await surfaceRemoved();
-      MapSurfaceCoordinator.instance.release(_mapSurfaceOwner);
-    }
-    if (!mounted) {
-      _navEntering = false;
-      return;
-    }
-    setState(() => _navMode = true);
-    _navEntering = false;
-  }
-
-  /// The nav map is up — fade the expansion snapshot out over it.
-  void _onNavMapReady() {
-    if (!mounted || !_navSnapshotVisible || _navSnapshotFadingOut) return;
-    setState(() => _navSnapshotFadingOut = true);
-    Future.delayed(const Duration(milliseconds: 350), () {
-      if (!mounted) return;
-      setState(() {
-        _navSnapshotVisible = false;
-        _navSnapshotFadingOut = false;
-      });
-    });
-  }
-
-  /// Back out of navigation: the nav view's dispose releases its surface
-  /// claim, and the preview card claims it back through the coordinator.
-  void _exitNavMode() {
-    if (!_navMode) return;
-    setState(() {
-      _navMode = false;
-      _miniMapFading = false;
-      _navSnapshotVisible = false;
-      _navSnapshotFadingOut = false;
-    });
-    _acquireMapSurface();
-  }
-
   /// Fetch the driving route for the preview card.
   ///
   /// Cheap to be wrong about — the card shows the two pins either way, and
@@ -1178,7 +1074,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   // ── Navigate to dropoff (ride started) ─────────────────────────────────
   void _goNavigateDropoff({bool overview = false}) {
     HapticService.mediumImpact();
-    _enterNavMode();
+    _openNativeMaps(_dropoffLL);
   }
 
   // ── GPS proximity detection for DROPOFF ─────────────────────────────────
@@ -1693,7 +1589,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   // ── Navigation ────────────────────────────────────────────────────────────
   void _goNavigate({bool overview = false}) {
     HapticService.mediumImpact();
-    _enterNavMode();
+    _openNativeMaps(widget.pickupLatLng);
   }
 
   Future<void> _openNativeMaps(LatLng dest) async {
@@ -4277,11 +4173,6 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
       canPop: false,
       onPopInvokedWithResult: (didPop, _) {
         if (didPop) return;
-        // Inside navigation, back leaves NAVIGATION — not the trip.
-        if (_navMode) {
-          _exitNavMode();
-          return;
-        }
         _returnToDriverHome();
       },
       child: Scaffold(
@@ -4414,15 +4305,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
 
             // ── Map preview (tilt animation on enter) ─────────────────
             Padding(
-              // Measured on nav entry: the expansion snapshot flies from
-              // THIS rect, wherever the card is on screen.
-              key: _miniMapKey,
               padding: EdgeInsets.fromLTRB(Responsive.w(16), 0, Responsive.w(16), Responsive.h(12)),
-              child: AnimatedOpacity(
-                // Start Trip fades the preview's route and pins out before
-                // the snapshot expands from this rect.
-                opacity: _miniMapFading ? 0.0 : 1.0,
-                duration: const Duration(milliseconds: 250),
               child: Container(
                 // Same raised block as every other card on the screen. The
                 // hand-rolled gold glow + heavy black drop was a third
@@ -4557,7 +4440,6 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
                     ),
                   ),
                 ),
-              ),
               ),
             ),
 
@@ -4739,78 +4621,6 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
         ),
       ),
       ),
-
-      // ── In-app turn-by-turn navigation (Start Trip) ──────────────────
-      // Full-screen; owns the one native map surface while it is up. The
-      // chained-offer card and the finish overlay sit ABOVE it in this
-      // Stack, so they keep working over navigation untouched.
-      if (_navMode)
-        Positioned.fill(
-          child: DriverNavView(
-            tripId: widget.tripId,
-            riderName: widget.riderName,
-            riderPhotoUrl: _riderPhotoUrl ?? widget.riderPhotoUrl,
-            riderId: widget.riderId,
-            pickupLatLng: widget.pickupLatLng,
-            dropoffLatLng: _dropoffLL,
-            pickupAddress: _pickupAddr.isEmpty
-                ? widget.pickupAddress
-                : _pickupAddr,
-            dropoffAddress: _dropoffAddr.isEmpty
-                ? widget.dropoffAddress
-                : _dropoffAddr,
-            fare: widget.fare,
-            initialDriverPos: _lastDriverPos ?? widget.driverPos,
-            toPickup: !_rideStarted,
-            stage: _actionStageKey(),
-            passengerInstructions: _passengerInstructions,
-            dropoffInstructions: widget.dropoffInstructions,
-            waitStartedAt: _waitStartedAt,
-            onExit: _exitNavMode,
-            onArrived: _confirmArrival,
-            onSlidePickUp: _startRideConfirmed,
-            onSlideFinish: _finishTrip,
-            onOpenChat: _openChat,
-            onCall: _call,
-            onSupport: _openSupportChat,
-            onMapReady: _onNavMapReady,
-          ),
-        ),
-
-      // ── Expansion snapshot: a still of the dark map flying from the
-      //    preview card's global rect to full screen while the surfaces
-      //    swap underneath. It moves an IMAGE — the live map surface is
-      //    never resized (a PlatformView cannot be relaid out mid-flight).─
-      if (_navSnapshotVisible && _navSnapshotRect != null)
-        TweenAnimationBuilder<double>(
-          tween: Tween(begin: 0.0, end: 1.0),
-          duration: const Duration(milliseconds: 450),
-          curve: Curves.easeInOutCubicEmphasized,
-          builder: (ctx, t, _) {
-            final screen = MediaQuery.of(ctx).size;
-            final r =
-                Rect.lerp(_navSnapshotRect!, Offset.zero & screen, t)!;
-            return Stack(
-              children: [
-                Positioned.fromRect(
-                  rect: r,
-                  child: AnimatedOpacity(
-                    // Crossfade out once the live nav map reports ready.
-                    opacity: _navSnapshotFadingOut ? 0.0 : 1.0,
-                    duration: const Duration(milliseconds: 300),
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(18 * (1 - t)),
-                      child: StaticMapSnapshot(
-                        center: _lastDriverPos ?? widget.driverPos,
-                        zoom: 14,
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            );
-          },
-        ),
 
       // ── Chained (next-ride) offer over the live trip ─────────────────
       // Floating card, hidden once the completion overlay owns the screen.
@@ -5029,8 +4839,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
           Future.delayed(const Duration(milliseconds: 400), () {
             if (!mounted) return;
             setState(() => _tripStarted = true);
-            // In-app turn-by-turn replaces the jump to Apple/Google Maps.
-            _enterNavMode();
+            _openNativeMaps(widget.pickupLatLng);
           });
         },
         style: ElevatedButton.styleFrom(
@@ -5223,8 +5032,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
 
   // ── Tap "Start Ride" button (pickup confirmed → go to dropoff) ─────────
   //
-  /// The pickup-confirmation flow, shared by the on-sheet Start Ride button
-  /// and the nav view's "Slide to pick up" — one path, one status write.
+  /// The pickup-confirmation flow behind the on-sheet Start Ride button.
   void _startRideConfirmed() {
     Future.delayed(const Duration(milliseconds: 300), () {
       if (!mounted) return;
@@ -5232,10 +5040,8 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
       _onRideStartedMiniMap();
       _startDropoffProximityDetection();
       _updateTripInTrip();
-      // In nav mode the nav view re-aims itself at the dropoff (its
-      // toPickup param flips with _rideStarted). The external maps app is
-      // only the fallback for a trip that never entered navigation.
-      if (!_navMode) _openNativeMaps(_dropoffLL);
+      // Navigate immediately — route fetch runs in background
+      _openNativeMaps(_dropoffLL);
     });
   }
 

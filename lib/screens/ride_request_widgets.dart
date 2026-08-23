@@ -590,6 +590,127 @@ extension _RideRequestWidgets on _RideRequestScreenState {
       );
   }
 
+  List<Widget> _buildFloatingLabels() {
+    final s = _ctrl.state;
+    final widgets = <Widget>[];
+    final loc = S.of(context);
+    final pickupText = loc.pickupUpperLabel; // "RECOGIDA" / "PICKUP"
+    final dropoffText = loc.dropoffUpperLabel; // "DESTINO" / "DROPOFF"
+
+    // Label geometry — the pill sits beside the pin's head, with clear
+    // air between them, vertically centred on the head.
+    //
+    // The pin bitmap is 80×73.6 (GoldenPinPainter: _width = size,
+    // _height = size * 0.92, size = radius*2+16 with radius 32) drawn at
+    // iconSize 0.85 with iconAnchor BOTTOM — so the screen offset we get
+    // from pixelForCoordinate is the pin's TIP, not its head. The head
+    // centre sits at w * 0.34 from the bitmap top (GoldenPinPainter's
+    // cupCY), i.e. ~63% of the pin height above the tip. These two
+    // numbers are the ones to nudge if the pill reads high or low.
+    const double pinOnScreenHalfWidth = 28.0;
+    const double pinHeadLift = 34.0; // head centre above the tip
+    // Air between pin and pill — practically touching (user spec
+    // 2026-08-04, third iteration: "al lado de los pines, no separado").
+    const double sideGap = 6.0;
+    // Pill height is deterministic: 5px padding top/bottom + the taller
+    // of the 19px icon chip and the kind+address stack (~22px), + border.
+    const double pillHeight = 34.0;
+    const double pillHalfHeight = pillHeight / 2;
+    const double pillEstimatedWidth = 170.0; // icon+gap+maxWidth(130)+padding
+
+    // Trip minutes pickup→dropoff for the gold box glued to the dropoff
+    // label. Traffic-aware seconds first; the formatted "11 min" /
+    // "1 h 5 min" text as fallback.
+    String? etaMinutes;
+    final route = s.route;
+    if (route != null) {
+      final secs = route.durationSeconds;
+      int? mins = (secs != null && secs > 0)
+          ? (secs / 60).round().clamp(1, 24 * 60)
+          : null;
+      if (mins == null) {
+        final h = RegExp(r'(\d+)\s*h').firstMatch(route.durationText);
+        final m = RegExp(r'(\d+)\s*min').firstMatch(route.durationText);
+        if (h != null || m != null) {
+          mins = (int.tryParse(h?.group(1) ?? '') ?? 0) * 60 +
+              (int.tryParse(m?.group(1) ?? '') ?? 0);
+        }
+      }
+      if (mins != null && mins > 0) etaMinutes = '$mins';
+    }
+    // The ETA box adds ~38px to the dropoff pill.
+    final double dropoffPillWidth =
+        pillEstimatedWidth + (etaMinutes != null ? 38.0 : 0.0);
+
+    // Map viewport bounds so we can clamp the label inside the visible area.
+    final mq = MediaQuery.of(context);
+    final screenW = mq.size.width;
+    final screenH = mq.size.height;
+    // Reserve space for top notch + estimated bottom sheet so the
+    // label never paints on top of UI chrome.
+    final topSafe = mq.padding.top + 12;
+    final bottomSafe = screenH * 0.55; // sheet covers bottom ~45%
+
+    final pickupPos = _pickupScreenOffset;
+    if (pickupPos != null && s.pickupLabel.isNotEmpty) {
+      double left = pickupPos.dx + pinOnScreenHalfWidth + sideGap;
+      final bool flipLeft = left + pillEstimatedWidth > screenW - 8;
+      if (flipLeft) {
+        left =
+            pickupPos.dx - pinOnScreenHalfWidth - sideGap - pillEstimatedWidth;
+      }
+      // Clamp inside the viewport (left/right + top/bottom).
+      left = left.clamp(8.0, screenW - pillEstimatedWidth - 8.0);
+      // Centre on the pin HEAD: lift off the tip, then half the pill.
+      double top = pickupPos.dy - pinHeadLift - pillHalfHeight;
+      top = top.clamp(topSafe, bottomSafe - pillHeight);
+      widgets.add(
+        Positioned(
+          left: left,
+          top: top,
+          child: AnimatedMapLabel(
+            kind: MapLabelKind.pickup,
+            address: s.pickupLabel,
+            pickupText: pickupText,
+            dropoffText: dropoffText,
+            visible: _pickupLabelRevealed,
+            alignEnd: flipLeft,
+          ),
+        ),
+      );
+    }
+
+    final dropoffPos = _dropoffScreenOffset;
+    if (dropoffPos != null && s.dropoffLabel.isNotEmpty) {
+      double left =
+          dropoffPos.dx - pinOnScreenHalfWidth - sideGap - dropoffPillWidth;
+      final bool flipRight = left < 8;
+      if (flipRight) {
+        left = dropoffPos.dx + pinOnScreenHalfWidth + sideGap;
+      }
+      // Clamp inside the viewport.
+      left = left.clamp(8.0, screenW - dropoffPillWidth - 8.0);
+      double top = dropoffPos.dy - pinHeadLift - pillHalfHeight;
+      top = top.clamp(topSafe, bottomSafe - pillHeight);
+      widgets.add(
+        Positioned(
+          left: left,
+          top: top,
+          child: AnimatedMapLabel(
+            kind: MapLabelKind.dropoff,
+            address: s.dropoffLabel,
+            pickupText: pickupText,
+            dropoffText: dropoffText,
+            visible: _dropoffLabelRevealed,
+            alignEnd: !flipRight,
+            etaMinutes: etaMinutes,
+          ),
+        ),
+      );
+    }
+    return widgets;
+  }
+
   /// One tier row in the choose-a-vehicle list (2026-08-22 redesign).
   ///
   /// Compact when not picked: small car on the left, name over its

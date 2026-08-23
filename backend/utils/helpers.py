@@ -280,6 +280,9 @@ def _user_dict(u) -> dict:
         "background_check_status": u.background_check_status or "none",
         "background_check_completed_at": u.background_check_completed_at.isoformat() if u.background_check_completed_at else None,
         "created_at": u.created_at.isoformat() if u.created_at else None,
+        "drive_city": getattr(u, 'drive_city', None),
+        "drive_state": getattr(u, 'drive_state', None),
+        "onboarding_survey": getattr(u, 'onboarding_survey', None),
     }
 
 

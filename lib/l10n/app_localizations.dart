@@ -136,6 +136,74 @@ class S {
   String get verifyingTerms =>
       _es ? 'Verificando términos…' : 'Verifying terms…';
 
+  // ── Driver Onboarding Phase 2 (drive city + about you) ───────────────────
+  String get whereDoYouPlanToDrive =>
+      _es ? '¿Dónde planeas conducir?' : 'Where do you plan to drive?';
+  String get onboardingBasedOnCity => _es
+      ? 'Tu proceso de registro se basará en los requisitos del lugar donde planeas conducir.'
+      : 'Your onboarding will be based on the requirements of where you plan to drive.';
+  String get yourCity => _es ? 'Tu ciudad' : 'Your city';
+  String get selectYourCity => _es ? 'Elige tu ciudad' : 'Select your city';
+  String get tellUsAboutYourself =>
+      _es ? 'Cuéntanos sobre ti' : 'Tell us about yourself';
+  String get whyDriveWithCruise => _es
+      ? '¿Por qué quieres conducir con Cruise? (marca todas las que apliquen)'
+      : 'Why do you want to drive with Cruise? (check all that apply)';
+  String get reasonSupplementIncome =>
+      _es ? 'Complementar mis ingresos' : 'To supplement my income';
+  String get reasonSavingMoney => _es
+      ? 'Ahorrar dinero para algo específico'
+      : 'Saving money for something specific';
+  String get reasonGetOutMeetPeople => _es
+      ? 'Salir de casa y conocer gente nueva'
+      : 'To get out of the house and meet new people';
+  String get reasonTempUnemployed =>
+      _es ? 'Estoy temporalmente desempleado' : 'I am temporarily unemployed';
+  String get reasonWorksForMyLife => _es
+      ? 'Conducir funciona para mi vida en este momento'
+      : 'Driving works for my life right now';
+  String get reasonCantPhysicalWork => _es
+      ? 'No puedo hacer físicamente la mayoría de los otros trabajos'
+      : "I can't physically do most other work";
+  String get reasonNoOtherJob => _es
+      ? 'No he encontrado otro trabajo'
+      : 'I have not found another job';
+  String get hoursPerWeekQuestion => _es
+      ? '¿Cuántas horas a la semana quieres conducir?'
+      : 'How many hours are you looking to drive each week?';
+  String get hoursFewerThan5 => _es ? 'Menos de 5' : 'Fewer than 5';
+  String get priorExperienceQuestion => _es
+      ? '¿Tienes experiencia previa conduciendo? (marca todas las que apliquen)'
+      : 'Have you had prior experience driving before? (check all that apply)';
+  String get expNoPrior =>
+      _es ? 'Sin experiencia previa' : 'No prior experience';
+  String get expCurrentRideshare => _es
+      ? 'Actualmente conduzco con otras apps de rideshare'
+      : 'I am currently driving with other rideshare apps';
+  String get expPastRideshare => _es
+      ? 'He conducido con apps de rideshare antes'
+      : 'I have driven with rideshare apps before';
+  String get expDelivery => _es
+      ? 'He conducido con apps de entrega antes'
+      : 'I have driven with delivery apps before';
+  String get expProfessional => _es
+      ? 'He conducido profesionalmente (limo, livery, taxi, camiones)'
+      : 'I have driven professionally (limo, livery, taxi, trucking)';
+  String get incomeRoleQuestion => _es
+      ? '¿Cómo describirías el dinero que ganarás conduciendo rideshare?'
+      : 'How would you describe the money that you will earn from driving rideshare?';
+  String get incomeOnlySource =>
+      _es ? 'Es mi única fuente de ingresos' : 'It is my only source of income';
+  String get incomePrimarySource => _es
+      ? 'Es mi fuente principal de ingresos'
+      : 'It is my primary source of income';
+  String get incomeSupplements => _es
+      ? 'Complementa mis ingresos principales'
+      : 'It supplements my primary income';
+  String get incomeDontNeed => _es
+      ? 'No necesito realmente el dinero, tengo otras razones'
+      : "I don't really need the money, I have other reasons";
+
   // ── Email Collect Screen ──────────────────────────────────────────────────
   String greetSharePhone(String name) => _es
       ? 'Encantado de conocerte, $name.\n¿Nos compartirías tu número de teléfono?'

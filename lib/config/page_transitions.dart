@@ -225,6 +225,51 @@ Route<T> tripHandoffRoute<T>(Widget page, {int durationMs = kTripHandoffMs}) {
   );
 }
 
+/// Onboarding fade-slide — the single transition for the whole driver
+/// onboarding flow (welcome → code → name → drive city → about you → signup).
+///
+/// The incoming screen fades in while rising a touch; the outgoing screen
+/// fades out at the same time, so the handoff reads as one continuous melt —
+/// never a hard cut. ~300 ms easeInOut both ways.
+Route<T> onboardingFadeSlideRoute<T>(Widget page, {int durationMs = 300}) {
+  final dur = Duration(milliseconds: durationMs);
+
+  return PageRouteBuilder<T>(
+    pageBuilder: (context, animation, secondaryAnimation) => page,
+    transitionDuration: dur,
+    reverseTransitionDuration: dur,
+    opaque: true,
+    transitionsBuilder: (context, animation, secondaryAnimation, child) {
+      final inCurve = CurvedAnimation(
+        parent: animation,
+        curve: Curves.easeInOut,
+      );
+      final outCurve = CurvedAnimation(
+        parent: secondaryAnimation,
+        curve: Curves.easeInOut,
+      );
+
+      final inFade = Tween<double>(begin: 0.0, end: 1.0).animate(inCurve);
+      final inSlide = Tween<Offset>(
+        begin: const Offset(0, 0.04), // rises 4% as it appears
+        end: Offset.zero,
+      ).animate(inCurve);
+      final outFade = Tween<double>(begin: 1.0, end: 0.0).animate(outCurve);
+
+      return FadeTransition(
+        opacity: outFade,
+        child: SlideTransition(
+          position: inSlide,
+          child: FadeTransition(
+            opacity: inFade,
+            child: child,
+          ),
+        ),
+      );
+    },
+  );
+}
+
 /// Shared axis Z — for sibling screens (settings sub-pages)
 Route<T> sharedAxisZRoute<T>(Widget page, {int durationMs = 280}) =>
     slideFromRightRoute<T>(page, durationMs: durationMs);

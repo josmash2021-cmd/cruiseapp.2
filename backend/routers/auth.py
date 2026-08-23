@@ -1580,6 +1580,8 @@ async def update_me(request: Request, user: User = Depends(_get_current_user), d
     _DEVICE_FIELDS = ("app_version", "device_model", "os_version")
     # Privacy preference fields (always allowed)
     _PRIVACY_FIELDS = ("privacy_location", "privacy_analytics", "privacy_ads")
+    # Driver onboarding fields (drive city/state + survey JSON, always allowed)
+    _ONBOARDING_FIELDS = ("drive_city", "drive_state", "onboarding_survey")
     # Enforce email/phone change limits (max 3 each)
     if "email" in updates and updates["email"] != db_user.email:
         if (db_user.email_changes_count or 0) >= 3:
@@ -1608,6 +1610,22 @@ async def update_me(request: Request, user: User = Depends(_get_current_user), d
     for key in _PRIVACY_FIELDS:
         if key in updates:
             setattr(db_user, key, updates[key])
+    # Update driver onboarding fields (only when present — omitted keys
+    # never clobber previously stored values)
+    for key in _ONBOARDING_FIELDS:
+        if key in updates:
+            val = updates[key]
+            if key == "drive_city" and val is not None:
+                if not isinstance(val, str) or len(val) > 120:
+                    raise HTTPException(400, "drive_city must be a string of max 120 chars")
+                val = val.strip() or None
+            if key == "drive_state" and val is not None:
+                if not isinstance(val, str) or len(val.strip()) != 2:
+                    raise HTTPException(400, "drive_state must be a 2-letter US state code")
+                val = val.strip().upper()
+            if key == "onboarding_survey" and val is not None and not isinstance(val, str):
+                raise HTTPException(400, "onboarding_survey must be a JSON string")
+            setattr(db_user, key, val)
     # Update last active timestamp
     db_user.last_active_at = datetime.now(timezone.utc)
     await db.commit()

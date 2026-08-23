@@ -4,12 +4,12 @@ import '../../config/page_transitions.dart';
 import '../../l10n/app_localizations.dart';
 import '../../services/api_service.dart';
 import '../../services/user_session.dart';
-import 'driver_signup_screen.dart';
+import 'driver_drive_city_screen.dart';
 
 /// Driver phone onboarding — step 3, only for brand-new accounts
 /// (`is_new_user` from /auth/phone-login). Collects first/last name (and an
 /// optional email, soft-validated), persists them via `PATCH /auth/me`,
-/// then hands off to the existing 3-step [DriverSignupScreen].
+/// then continues to Phase 2: [DriverDriveCityScreen].
 class DriverNameScreen extends StatefulWidget {
   /// The user map returned by phone-login (id, phone, …) — used to refresh
   /// the local session after the profile update.
@@ -97,10 +97,10 @@ class _DriverNameScreenState extends State<DriverNameScreen> {
         role: 'driver',
       );
       if (!mounted) return;
-      Navigator.of(context).pushAndRemoveUntil(
-        slideFromRightRoute(const DriverSignupScreen()),
-        (_) => false,
+      Navigator.of(context).push(
+        onboardingFadeSlideRoute(const DriverDriveCityScreen()),
       );
+      setState(() => _saving = false);
     } on ApiException catch (e) {
       if (!mounted) return;
       setState(() {

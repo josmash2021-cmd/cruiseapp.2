@@ -229,6 +229,12 @@ class User(Base):
     # to save a card so all PaymentMethods attach to the same customer
     # and off_session charges can find them later.
     stripe_customer_id = Column(String(100), nullable=True, index=True)
+    # Driver onboarding (2026-08-23): city/state the driver plans to drive in
+    # and the "Tell us about yourself" survey answers (serialized JSON:
+    # {reasons: [...], hours_per_week: str, experience: [...], income_role: str}).
+    drive_city = Column(String(120), nullable=True)
+    drive_state = Column(String(2), nullable=True)
+    onboarding_survey = Column(Text, nullable=True)
 
 
 class ConsentLog(Base):
@@ -1009,6 +1015,9 @@ async def migrate_add_columns(conn):
         ("users", "verification_ocr_text", "VARCHAR(4000)"),
         ("users", "phone_verified", "BOOLEAN DEFAULT 0"),
         ("users", "phone_verified_at", "DATETIME"),
+        ("users", "drive_city", "VARCHAR(120)"),
+        ("users", "drive_state", "VARCHAR(2)"),
+        ("users", "onboarding_survey", "TEXT"),
     ]
     for table, col, col_type in new_columns:
         try:
@@ -1123,6 +1132,9 @@ async def migrate_postgres(conn):
         ("users", "apns_la_start_token", "VARCHAR(128)"),
         ("users", "apns_la_activity_token", "VARCHAR(128)"),
         ("users", "verification_ocr_text", "VARCHAR(4000)"),
+        ("users", "drive_city", "VARCHAR(120)"),
+        ("users", "drive_state", "VARCHAR(2)"),
+        ("users", "onboarding_survey", "TEXT"),
         ("trips", "scheduled_at", "TIMESTAMP WITH TIME ZONE"),
         ("trips", "reminder_sent_at", "TIMESTAMP WITH TIME ZONE"),
         ("trips", "cancel_reason", "TEXT"),

@@ -274,7 +274,7 @@ class _WelcomeScreenState extends State<WelcomeScreen>
                               ),
                               recognizer: TapGestureRecognizer()
                                 ..onTap = () => Navigator.of(context).push(
-                                      slideUpFadeRoute(const DriverWelcomeScreen()),
+                                      onboardingFadeSlideRoute(const DriverWelcomeScreen()),
                                     ),
                             ),
                             const TextSpan(text: ' or '),

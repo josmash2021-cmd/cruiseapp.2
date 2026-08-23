@@ -86,7 +86,7 @@ class _DriverWelcomeScreenState extends State<DriverWelcomeScreen> {
     }
 
     Navigator.of(context).push(
-      slideFromRightRoute(
+      onboardingFadeSlideRoute(
         VerifyCodeScreen(
           email: formatUsPhone(e164),
           expectedCode: '',
@@ -140,7 +140,7 @@ class _DriverWelcomeScreenState extends State<DriverWelcomeScreen> {
 
     if (isNewUser) {
       Navigator.of(context).push(
-        slideFromRightRoute(DriverNameScreen(user: user)),
+        onboardingFadeSlideRoute(DriverNameScreen(user: user)),
       );
       return;
     }

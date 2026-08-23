@@ -23,6 +23,8 @@ class PlaceSuggestion {
   final double? distanceMiles;
   final String? etaText;
   final List<String> types;
+  final String? mainText;
+  final String? secondaryText;
   PlaceSuggestion({
     required this.description,
     required this.placeId,
@@ -31,6 +33,8 @@ class PlaceSuggestion {
     this.distanceMiles,
     this.etaText,
     this.types = const [],
+    this.mainText,
+    this.secondaryText,
   });
 
   PlaceSuggestion copyWith({
@@ -41,6 +45,8 @@ class PlaceSuggestion {
     double? distanceMiles,
     String? etaText,
     List<String>? types,
+    String? mainText,
+    String? secondaryText,
   }) {
     return PlaceSuggestion(
       description: description ?? this.description,
@@ -50,6 +56,8 @@ class PlaceSuggestion {
       distanceMiles: distanceMiles ?? this.distanceMiles,
       etaText: etaText ?? this.etaText,
       types: types ?? this.types,
+      mainText: mainText ?? this.mainText,
+      secondaryText: secondaryText ?? this.secondaryText,
     );
   }
 
@@ -425,10 +433,14 @@ class PlacesService {
     debugPrint('\u2705 Backend proxy: ${predictions.length} results for "$input"');
 
     return predictions.map<PlaceSuggestion>((p) {
+      final mainText = p['main_text']?.toString() ?? '';
+      final secondaryText = p['secondary_text']?.toString() ?? '';
       return PlaceSuggestion(
         description: p['description']?.toString() ?? '',
         placeId: p['place_id']?.toString() ?? '',
         types: const [],
+        mainText: mainText.isNotEmpty ? mainText : null,
+        secondaryText: secondaryText.isNotEmpty ? secondaryText : null,
       );
     }).where((s) => s.description.isNotEmpty).toList();
   }

@@ -89,6 +89,33 @@ async def _get_or_create_stripe_customer(user: User, db: AsyncSession) -> Option
         logging.error("[stripe] Customer.create failed for user %s: %s", user.id, e)
         return None
 
+def _is_missing_customer_error(e: Exception) -> bool:
+    """True when Stripe rejected the request because the cached
+    users.stripe_customer_id doesn't exist on the CURRENT Stripe account
+    (e.g. production switched to a new account and every stored customer
+    id is a 'cus_' from the old one)."""
+    if "No such customer" in str(e):
+        return True
+    return (getattr(e, "code", None) == "resource_missing"
+            and getattr(e, "param", None) == "customer")
+
+
+async def _recover_missing_stripe_customer(user: User, db: AsyncSession) -> Optional[str]:
+    """Drop the dead cached customer id and mint a fresh customer on the
+    current account via the shared helper (which persists it). Returns the
+    new id, or None if creation failed."""
+    user.stripe_customer_id = None
+    try:
+        rs = await db.execute(select(User).where(User.id == user.id))
+        attached = rs.scalar_one_or_none()
+        if attached is not None:
+            attached.stripe_customer_id = None
+            await db.commit()
+    except Exception as e:
+        logging.warning("[stripe] could not clear dead customer id for user %s: %s", user.id, e)
+    return await _get_or_create_stripe_customer(user, db)
+
+
 @router.post("/payments/setup-intent", dependencies=[Depends(_verify_api_key)])
 async def create_setup_intent(
     user: User = Depends(_get_current_user),
@@ -107,12 +134,27 @@ async def create_setup_intent(
     if not customer_id:
         raise HTTPException(500, "Could not initialise payment customer")
     try:
-        intent = _stripe_mod.SetupIntent.create(
-            customer=customer_id,
-            usage="off_session",
-            payment_method_types=["card"],
-            metadata={"user_id": str(user.id)},
-        )
+        try:
+            intent = _stripe_mod.SetupIntent.create(
+                customer=customer_id,
+                usage="off_session",
+                payment_method_types=["card"],
+                metadata={"user_id": str(user.id)},
+            )
+        except _stripe_mod.error.InvalidRequestError as e:
+            # Cached customer belongs to a previous Stripe account — recover once.
+            if not _is_missing_customer_error(e):
+                raise
+            fresh_id = await _recover_missing_stripe_customer(user, db)
+            if not fresh_id:
+                raise
+            customer_id = fresh_id
+            intent = _stripe_mod.SetupIntent.create(
+                customer=customer_id,
+                usage="off_session",
+                payment_method_types=["card"],
+                metadata={"user_id": str(user.id)},
+            )
         return {
             "client_secret": intent.client_secret,
             "customer_id": customer_id,
@@ -207,7 +249,19 @@ async def create_payment_intent(body: PaymentIntentIn, user: User = Depends(_get
         if body.trip_id:
             intent_params["metadata"]["trip_id"] = str(body.trip_id)
 
-        intent = _stripe_mod.PaymentIntent.create(**intent_params)
+        try:
+            intent = _stripe_mod.PaymentIntent.create(**intent_params)
+        except _stripe_mod.error.InvalidRequestError as e:
+            # Cached customer belongs to a previous Stripe account — drop it,
+            # mint a fresh one on the current account and retry ONCE. Any
+            # failure of the retry falls through to the generic catch below.
+            if not _is_missing_customer_error(e) or "customer" not in intent_params:
+                raise
+            fresh_id = await _recover_missing_stripe_customer(user, db)
+            if not fresh_id:
+                raise
+            intent_params["customer"] = fresh_id
+            intent = _stripe_mod.PaymentIntent.create(**intent_params)
         return {
             "client_secret": intent.client_secret,
             "payment_intent_id": intent.id,

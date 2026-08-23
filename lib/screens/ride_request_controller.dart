@@ -1335,14 +1335,20 @@ extension _RideRequestController on _RideRequestScreenState {
           // booking notes (compose happens in the create/dispatch calls).
           _ctrl.setPickup(picked, picked.address);
           _ctrl.setPickupNote(note);
-          await _startRideDirectly(c, option);
+          // true = booking/pago completó (la pin page se cierra); false =
+          // falló o el rider canceló (la pin page se queda para reintentar).
+          return await _startRideDirectly(c, option);
         },
       )),
     );
     // Back from the pin page without paying — nothing to do.
   }
 
-  Future<void> _startRideDirectly(AppColors c, RideOption? option) async {    if (option == null) return;
+  /// Returns true once the booking pipeline owns what happens next
+  /// (searching/tracking/scheduled confirmation); false when the payment
+  /// failed or was cancelled BEFORE dispatch so the pickup-confirm page
+  /// (onConfirm) knows to stay open instead of popping into a dead screen.
+  Future<bool> _startRideDirectly(AppColors c, RideOption? option) async {    if (option == null) return false;
 
     // Resolved once, and before the re-entrancy guard below — never between
     // that guard and _rideFlowLocked. An await in that gap spans event-loop
@@ -1350,14 +1356,14 @@ extension _RideRequestController on _RideRequestScreenState {
     // into the charge. Every branch further down that skips the charge reads
     // this same answer instead of re-testing the selected id.
     final bool isTestMode = await _isTestModeActive();
-    if (!mounted) return;
+    if (!mounted) return false;
 
-    if (_rideFlowLocked || _isProcessingPayment) return;
+    if (_rideFlowLocked || _isProcessingPayment) return false;
 
     // Validate payment method exists before proceeding
     if (!_hasAnyPaymentMethod && !isTestMode) {
       _showAddPaymentMethodDialog();
-      return;
+      return false;
     }
 
     _rideFlowLocked = true;
@@ -1380,7 +1386,7 @@ extension _RideRequestController on _RideRequestScreenState {
 
     try {
       final nav = _nav;
-      if (nav == null) return;
+      if (nav == null) return false;
 
       // Native pay (Apple/Google Pay/PayPal): OS sheet must appear first.
       // Card / sandbox: payment runs inside the searching screen animation.
@@ -1410,14 +1416,14 @@ extension _RideRequestController on _RideRequestScreenState {
           debugPrint('Tap to Pay error: $e');
           ok = false;
         }
-        if (!mounted) return;
+        if (!mounted) return false;
         if (!ok) {
           // User cancelled the NFC sheet or the charge failed —
           // release the lock and stay on the ride request screen.
           _stuckPaymentFuse?.cancel();
           _setState(() => _isProcessingPayment = false);
           _rideFlowLocked = false;
-          return;
+          return false;
         }
       }
 
@@ -1428,13 +1434,13 @@ extension _RideRequestController on _RideRequestScreenState {
         _setState(() => _isProcessingPayment = true);
         try {
           final ok = await _confirmNativePayment(option);
-          if (!mounted) return;
+          if (!mounted) return false;
           if (!ok) {
             _setState(() => _isProcessingPayment = false);
-            return; // user dismissed OS sheet — stay on screen
+            return false; // user dismissed OS sheet — stay on screen
           }
         } catch (e) {
-          if (!mounted) return;
+          if (!mounted) return false;
           debugPrint('Payment error: $e');
           
           // Try smart retry with fallback options
@@ -1451,7 +1457,7 @@ extension _RideRequestController on _RideRequestScreenState {
           );
           if (!retryOk || !mounted) {
             _rideFlowLocked = false;
-            return; // User cancelled or retry failed
+            return false; // User cancelled or retry failed
           }
           // Retry succeeded, continue with ride request
           _setState(() => _isProcessingPayment = true);
@@ -1459,13 +1465,13 @@ extension _RideRequestController on _RideRequestScreenState {
         _setState(() => _isProcessingPayment = false);
       }
 
-      if (!mounted) return;
+      if (!mounted) return false;
       if (widget.applyPromo) await LocalDataService.setPromoUsed();
       AnalyticsService.instance.logRideRequested(option.name, option.priceEstimate);
 
       if (_ctrl.state.scheduledAt != null) {
         await _createScheduledTrip();
-        return;
+        return true;
       }
 
       bool paymentDeclinedFlag = false;
@@ -1496,7 +1502,7 @@ extension _RideRequestController on _RideRequestScreenState {
 
       // If the trip was cancelled by the backend during the animation,
       // _onStateChange was blocked (flag was true). Handle navigation now.
-      if (!mounted) return;
+      if (!mounted) return true;
 
       // Handle all states that may have arrived while SearchingDriverScreen was visible.
       final phase = _ctrl.state.phase;
@@ -1530,7 +1536,7 @@ extension _RideRequestController on _RideRequestScreenState {
             (_) => false,
           );
         }
-        return;
+        return true;
       }
 
       // Driver assigned/arriving → show "Driver Found" overlay first, THEN tracking.
@@ -1571,7 +1577,7 @@ extension _RideRequestController on _RideRequestScreenState {
           _driverFoundVisible = false; // reset so _onStateChange shows it fresh
           _onStateChange();
         });
-        return;
+        return true;
       }
 
       // Payment successful, driver not yet assigned.
@@ -1582,7 +1588,7 @@ extension _RideRequestController on _RideRequestScreenState {
       // We just bail; _onStateChange will run again when phase moves to
       // driverAssigned/driverArriving and route to the tracking screen.
       if (phase == RiderPhase.searchingDriver && !_navigatingToTracking) {
-        return;
+        return true;
       }
 
       // Driver already started the trip (extreme case: very fast driver) → go directly to tracking.
@@ -1590,7 +1596,7 @@ extension _RideRequestController on _RideRequestScreenState {
           !_navigatingToTracking) {
         _navigatingToTracking = true;
         _goToTracking();
-        return;
+        return true;
       }
 
       if (_ctrl.state.phase == RiderPhase.cancelled && !_cancelDialogShown) {
@@ -1601,7 +1607,7 @@ extension _RideRequestController on _RideRequestScreenState {
         // Navigator.pop(true) fires after we've already replaced the stack
         // with HomeScreen, popping HomeScreen and leaving a black screen.
         if (_searchingScreenShowing) {
-          return;
+          return true;
         }
         _cancelDialogShown = true;
         final rawReason = _ctrl.state.cancelReason;
@@ -1658,7 +1664,9 @@ extension _RideRequestController on _RideRequestScreenState {
               ),
             ),
           );
-          return;
+          // Trip was NEVER created (client pre-flight error / decline) —
+          // stay on the pickup-confirm page so the rider can retry the pay.
+          return false;
         }
         _ctrl.reset();
         // For the smooth auto-cancel flow we show a gold SnackBar on the
@@ -1704,7 +1712,7 @@ extension _RideRequestController on _RideRequestScreenState {
             smoothFadeRoute(const HomeScreen()),
             (_) => false,
           );
-          return;
+          return true;
         }
         _nav?.pushAndRemoveUntil(
           smoothFadeRoute(const HomeScreen()),
@@ -1736,11 +1744,11 @@ extension _RideRequestController on _RideRequestScreenState {
             ),
           );
         });
-        return;
+        return true;
       }
 
       if (cancelled == true) {
-        if (!mounted) return;
+        if (!mounted) return true;
         // Determine cancel reason for the dialog
         final rawReason = _ctrl.state.cancelReason;
         final isNoDrivers = rawReason != null &&
@@ -1785,16 +1793,19 @@ extension _RideRequestController on _RideRequestScreenState {
             ),
           );
         });
-        return;
+        return true;
       }
       if (nativePayFailed || paymentDeclinedFlag) {
         // Payment failed after the ride request was already dispatched — cancel it.
+        // The decline banner lives on the ride-request screen below, so the
+        // pickup-confirm page pops (true) to reveal it.
         _ctrl.cancelRide();
         _ctrl.reset();
         if (mounted) _setState(() => _showPaymentDeclinedBanner = true);
-        return;
+        return true;
       }
       // requestRide() already started above — nothing more to do here
+      return true;
     } finally {
       _stuckPaymentFuse?.cancel();
       _stuckPaymentFuse = null;

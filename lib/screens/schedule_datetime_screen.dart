@@ -109,13 +109,12 @@ class _ScheduleDateTimeScreenState extends State<ScheduleDateTimeScreen> {
   }
 
   int _hour12Index(DateTime d) {
-    final h = d.hour % 12;
-    return h == 0 ? 11 : h - 1; // wheel order: 12,1,2,...,11
+    return d.hour % 12; // wheel order: 12,1,2,...,11
   }
 
   DateTime _compose(int dayIdx, int hourIdx, int minIdx, int ampmIdx) {
     final day = _day0.add(Duration(days: dayIdx));
-    var hour = hourIdx == 0 ? 12 : hourIdx + 1; // wheel 0 shows "12"
+    var hour = hourIdx == 0 ? 12 : hourIdx; // wheel 0 shows "12"
     if (ampmIdx == 1 && hour != 12) hour += 12;
     if (ampmIdx == 0 && hour == 12) hour = 0;
     return DateTime(day.year, day.month, day.day, hour, minIdx * 5);

@@ -51,9 +51,11 @@ class SetPickupLocationScreen extends StatefulWidget {
   final bool isApplePay;
 
   /// Runs the existing payment + booking pipeline with the confirmed pin
-  /// and note. Returns when the pipeline has been handed off (its own UI
-  /// takes over from the caller's screen).
-  final Future<void> Function(PlaceDetails pickup, String note) onConfirm;
+  /// and note. Returns `true` once the pipeline has been handed off (its
+  /// own UI takes over from the caller's screen), `false` when the payment
+  /// failed or was cancelled — in that case this page stays open so the
+  /// rider can retry instead of popping into a black screen.
+  final Future<bool> Function(PlaceDetails pickup, String note) onConfirm;
 
   @override
   State<SetPickupLocationScreen> createState() =>
@@ -377,8 +379,11 @@ class _SetPickupLocationScreenState extends State<SetPickupLocationScreen>
     setState(() => _paying = true);
     try {
       HapticService.mediumImpact();
-      await widget.onConfirm(_pin, _note);
+      final booked = await widget.onConfirm(_pin, _note);
       if (!mounted) return;
+      // Payment/booking failed or was cancelled — stay on this page so the
+      // rider can retry; popping would dump them into a dead screen.
+      if (!booked) return;
       // The caller's pipeline owns what happens next (searching/tracking).
       Navigator.of(context).pop(true);
     } finally {

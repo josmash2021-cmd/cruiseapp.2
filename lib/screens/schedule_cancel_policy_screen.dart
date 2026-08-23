@@ -89,18 +89,8 @@ class ScheduleCancelPolicyScreen extends StatelessWidget {
                             decoration: neuBox(radius: 16),
                             child: Row(
                               children: [
-                                Container(
-                                  width: 40,
-                                  height: 40,
-                                  decoration: BoxDecoration(
-                                    color: _gold.withValues(alpha: 0.12),
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                  child: const Icon(
-                                      Icons.directions_car_rounded,
-                                      color: _gold,
-                                      size: 20),
-                                ),
+                                const Icon(Icons.directions_car_rounded,
+                                    color: _gold, size: 20),
                                 const SizedBox(width: 14),
                                 Expanded(
                                   child: Column(

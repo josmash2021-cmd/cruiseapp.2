@@ -1610,8 +1610,14 @@ class _SuggestionRowState extends State<_SuggestionRow>
   Widget build(BuildContext context) {
     final desc = widget.suggestion.description;
     final comma = desc.indexOf(',');
-    final primary = comma > 0 ? desc.substring(0, comma) : desc;
-    final secondary = comma > 0 ? desc.substring(comma + 1).trim() : '';
+    final fallbackPrimary = comma > 0 ? desc.substring(0, comma) : desc;
+    final fallbackSecondary = comma > 0 ? desc.substring(comma + 1).trim() : '';
+    final mainText = widget.suggestion.mainText;
+    final primary =
+        (mainText != null && mainText.isNotEmpty) ? mainText : fallbackPrimary;
+    final secondary = (mainText != null && mainText.isNotEmpty)
+        ? (widget.suggestion.secondaryText ?? '')
+        : fallbackSecondary;
 
     return AnimatedBuilder(
       animation: _entryCtl,

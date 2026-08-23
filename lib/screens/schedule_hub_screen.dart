@@ -22,7 +22,6 @@ class ScheduleHubScreen extends StatefulWidget {
 
 class _ScheduleHubScreenState extends State<ScheduleHubScreen> {
   static const _gold = Color(0xFFE8C547);
-  static const _navy = Color(0xFF0A1128);
 
   bool _calendarConnected = false;
   bool _calendarDenied = false;
@@ -165,40 +164,15 @@ class _ScheduleHubScreenState extends State<ScheduleHubScreen> {
                 ),
                 const SizedBox(height: 22),
 
-                // ── Hero: gradient + calendar glyph (no generated art) ──
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.symmetric(vertical: 34),
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(24),
-                    gradient: const LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [_navy, Color(0xFF16244D)],
-                    ),
-                    border: Border.all(
-                        color: _gold.withValues(alpha: 0.22), width: 1),
-                  ),
-                  child: Stack(
-                    alignment: Alignment.center,
-                    children: [
-                      // Soft gold bloom behind the glyph.
-                      Container(
-                        width: 120,
-                        height: 120,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          gradient: RadialGradient(
-                            colors: [
-                              _gold.withValues(alpha: 0.30),
-                              _gold.withValues(alpha: 0.0),
-                            ],
-                          ),
-                        ),
-                      ),
-                      const Icon(Icons.calendar_month_rounded,
-                          color: _gold, size: 84),
-                    ],
+                // ── Hero: full-bleed photo (edge-to-edge, breaks the
+                // ListView's 24px padding), title sits BELOW the photo.
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: -24),
+                  child: Image.asset(
+                    'assets/images/schedule_hero.jpg',
+                    width: double.infinity,
+                    height: 190,
+                    fit: BoxFit.cover,
                   ),
                 ),
                 const SizedBox(height: 22),
@@ -207,9 +181,10 @@ class _ScheduleHubScreenState extends State<ScheduleHubScreen> {
                   textAlign: TextAlign.center,
                   style: const TextStyle(
                     color: Colors.white,
-                    fontSize: 24,
+                    fontSize: 28,
                     fontWeight: FontWeight.w800,
                     letterSpacing: -0.4,
+                    height: 1.15,
                   ),
                 ),
                 const SizedBox(height: 8),

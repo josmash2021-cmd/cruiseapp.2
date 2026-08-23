@@ -451,6 +451,10 @@ class _RideRequestScreenState extends State<RideRequestScreen>
   // drag handle's vertical gesture; the height change animates through
   // AnimatedSize and the map refits off _sheetHeightPx as always.
   bool _sheetCollapsed = false;
+  // How many tier rows the sheet is showing right now — the synced camera
+  // fit needs it to compute the collapsed/expanded height delta (see
+  // _syncCameraWithSheetToggle). Set on every _buildRoutePreviewSheet.
+  int _displayTierCount = 0;
   AnimationController? _labelPopCtrl;
   Animation<double>? _labelPopAnim;
   LatLng? _center;
@@ -739,6 +743,16 @@ class _RideRequestScreenState extends State<RideRequestScreen>
   /// reports a new size every frame; fitting on each report made the
   /// camera bounce nonstop and tore the rider's own zoom apart.
   Timer? _sheetFitDebounce;
+
+  /// One-shot suppression for the measured refit above. A collapse/expand
+  /// of the choose-a-vehicle sheet fires a SYNCHRONIZED fit (same instant
+  /// as the gesture, final height computed up front, 300 ms like the
+  /// sheet's own AnimatedSize) — the debounced "fit after re-measure" that
+  /// follows would be a second flight to the same place, so the next one
+  /// after a synced fit is skipped. It stays as the backup for every
+  /// height change that did NOT come from the toggle (tier pick, panel
+  /// appearing, banner).
+  bool _skipNextSheetRefit = false;
 
   /// Periodic refresh of the driver-availability answers on the sheet.
   /// "No drivers available" cached an hour ago was still on screen until

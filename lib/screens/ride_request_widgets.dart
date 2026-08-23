@@ -240,6 +240,20 @@ extension _RideRequestWidgets on _RideRequestScreenState {
     final bool faresReady = displayOptions.isNotEmpty;
     if (!faresReady) displayOptions = _placeholderTiers();
 
+    // Fixed top→bottom tier order (user spec 2026-08-22): Black, Premium,
+    // Compact, Standard. The controller already builds them in this order;
+    // the sort pins it IN THE SHEET (prices and every other consumer of
+    // rideOptions keep their own order untouched), so nothing upstream can
+    // reshuffle the rider's list. Unknown ids sink to the bottom, stable.
+    const tierOrder = ['suburban', 'suv_xl', 'camry', 'fusion'];
+    displayOptions = [...displayOptions]..sort((a, b) {
+      final ia = tierOrder.indexOf(a.id);
+      final ib = tierOrder.indexOf(b.id);
+      return (ia < 0 ? tierOrder.length : ia)
+          .compareTo(ib < 0 ? tierOrder.length : ib);
+    });
+    _displayTierCount = displayOptions.length;
+
     final option = widget.fastRide
         ? (displayOptions.isNotEmpty ? displayOptions.first : s.selectedOption)
         : s.selectedOption;
@@ -425,6 +439,9 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                     onTap: () {
                       if (option == null) return;
                       HapticService.selectionClick();
+                      _syncCameraWithSheetToggle(
+                          collapsing: !_sheetCollapsed,
+                          tierCount: _displayTierCount);
                       _setState(() => _sheetCollapsed = !_sheetCollapsed);
                     },
                     onVerticalDragEnd: (d) {
@@ -432,9 +449,13 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                       final v = d.primaryVelocity ?? 0;
                       if (v > 120 && !_sheetCollapsed) {
                         HapticService.selectionClick();
+                        _syncCameraWithSheetToggle(
+                            collapsing: true, tierCount: _displayTierCount);
                         _setState(() => _sheetCollapsed = true);
                       } else if (v < -120 && _sheetCollapsed) {
                         HapticService.selectionClick();
+                        _syncCameraWithSheetToggle(
+                            collapsing: false, tierCount: _displayTierCount);
                         _setState(() => _sheetCollapsed = false);
                       }
                     },
@@ -628,6 +649,8 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                       // Collapsed sheet: tapping the lone card pulls the
                       // full list back up.
                       if (_sheetCollapsed) {
+                        _syncCameraWithSheetToggle(
+                            collapsing: false, tierCount: _displayTierCount);
                         _setState(() => _sheetCollapsed = false);
                       }
                       return;

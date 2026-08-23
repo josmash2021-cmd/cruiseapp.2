@@ -1812,6 +1812,56 @@ extension _RideRequestMap on _RideRequestScreenState {
     return _sheetHeightPx + _sheetScreenGap + 70;
   }
 
+  /// Collapse/expand of the choose-a-vehicle sheet: fly the camera to the
+  /// FINAL frame in the same instant the gesture starts, with the sheet's
+  /// own ~300 ms length — instead of waiting 450 ms for a re-measure and
+  /// then flying 1400 ms, which is what made the map trail a step behind
+  /// the sheet (2026-08-22).
+  ///
+  /// The target height is computed, not measured: collapsing hides
+  /// [tierCount] − 1 compact rows and expanding brings them back, and a
+  /// compact row's height is deterministic — 42 px car box + 2×10
+  /// vertical padding + 8 bottom margin = 70 (see _buildTierRow). The
+  /// measured debounce refit that would follow is suppressed once
+  /// (_skipNextSheetRefit), so the two never fight; it stays the backup
+  /// for every height change that is not this toggle.
+  void _syncCameraWithSheetToggle(
+      {required bool collapsing, required int tierCount}) {
+    const rowH = 70.0;
+    final s = _ctrl.state;
+    if (s.route == null || tierCount < 2) return;
+    if (s.phase != RiderPhase.previewRoute &&
+        s.phase != RiderPhase.selectingRide) {
+      return;
+    }
+    // Same refusal as the measured refit: never steal a frame the rider
+    // panned to themselves.
+    if (_userTookCamera) return;
+    // No measured height yet (first frame): there is nothing reliable to
+    // compute the target from — leave this one to the measured refit.
+    if (_sheetHeightPx <= 0) return;
+    final delta = rowH * (tierCount - 1);
+    final target = (collapsing ? _sheetHeightPx - delta : _sheetHeightPx + delta)
+        .clamp(0.0, double.infinity);
+    // _cameraBottomInset's own recipe — sheet + gap + the 70 px of pin
+    // label breathing room — evaluated at the FINAL height, not today's.
+    final inset = target + _sheetScreenGap + 70;
+    if (kIsWeb) {
+      if (DateTime.now().isBefore(_webAutoCameraUntil)) return;
+      _skipNextSheetRefit = true;
+      _fitWebRoute(List<LatLng>.from(s.route!.points),
+          durationMs: 300,
+          pitch: _kCinematicPitch,
+          bearing: _kCinematicBearing,
+          bottomInsetPx: inset);
+      return;
+    }
+    if (_cinematicRunning || !_cinematicDone || _mapCtrl == null) return;
+    _skipNextSheetRefit = true;
+    _fitRoute(List<LatLng>.from(s.route!.points),
+        preserveCamera: true, bottomInsetOverride: inset, durationMs: 300);
+  }
+
   /// The sheet reported a new height. Store it, then reframe ONCE after
   /// the panel settles — the 380 ms open/grow animation reports a size
   /// every frame, and fitting on each report made the camera bounce
@@ -1822,6 +1872,14 @@ extension _RideRequestMap on _RideRequestScreenState {
     _sheetFitDebounce?.cancel();
     _sheetFitDebounce = Timer(const Duration(milliseconds: 450), () {
       if (!mounted) return;
+      // A collapse/expand toggle already flew the camera to the FINAL
+      // frame, in sync with the sheet's own animation — this measured
+      // refit would be the same flight a second time. Skip it once; the
+      // mechanism stays as the backup for every other height change.
+      if (_skipNextSheetRefit) {
+        _skipNextSheetRefit = false;
+        return;
+      }
       final s = _ctrl.state;
       if (s.route == null) return;
       // The rider dragged or zoomed — the frame is theirs now; only the
@@ -1870,7 +1928,8 @@ extension _RideRequestMap on _RideRequestScreenState {
       {int durationMs = 1000,
       double? pitch,
       double? bearing,
-      double paddingTop = 70}) {
+      double paddingTop = 70,
+      double? bottomInsetPx}) {
     final web = _webMapCtrl;
     if (web == null || pts.isEmpty) return;
     final botSafe = (MediaQuery.maybeOf(context)?.padding.bottom ?? 0.0);
@@ -1881,7 +1940,7 @@ extension _RideRequestMap on _RideRequestScreenState {
       [for (final p in pts) (lng: p.longitude, lat: p.latitude)],
       paddingTop: paddingTop,
       paddingLeft: 50,
-      paddingBottom: _cameraBottomInset(botSafe),
+      paddingBottom: bottomInsetPx ?? _cameraBottomInset(botSafe),
       paddingRight: 50,
       durationMs: durationMs,
       pitch: pitch,
@@ -2045,7 +2104,10 @@ extension _RideRequestMap on _RideRequestScreenState {
     });
   }
 
-  void _fitRoute(List<LatLng> pts, {bool preserveCamera = false}) {
+  void _fitRoute(List<LatLng> pts,
+      {bool preserveCamera = false,
+      double? bottomInsetOverride,
+      int durationMs = 1400}) {
     if (pts.isEmpty || _mapCtrl == null) return;
     double minLat = 90, maxLat = -90, minLng = 180, maxLng = -180;
     for (final p in pts) {
@@ -2059,7 +2121,12 @@ extension _RideRequestMap on _RideRequestScreenState {
     // Keep the route framed in the visible map area above the sheet —
     // measured once the panel has laid out, estimated before that.
     final double bottomPad;
-    if (phase == RiderPhase.requesting || phase == RiderPhase.searchingDriver) {
+    if (bottomInsetOverride != null) {
+      // Synced collapse/expand fit: the caller knows the sheet's FINAL
+      // height and passes the inset straight in, so the camera starts
+      // with the gesture instead of waiting for a re-measure.
+      bottomPad = bottomInsetOverride;
+    } else if (phase == RiderPhase.requesting || phase == RiderPhase.searchingDriver) {
       // Searching card: measured height + its 24px float off the edge.
       bottomPad = (_sheetHeightPx > 0 ? _sheetHeightPx + 24 : 160.0) + botPad + 16;
     } else {
@@ -2077,8 +2144,9 @@ extension _RideRequestMap on _RideRequestScreenState {
     ).then((cam) {
       // Longer cinematic fit so the reveal of pickup → dropoff feels
       // gentle instead of a quick flick (user asked for smooth, not
-      // rapid camera motion).
-      _safeFlyTo(cam, mapbox.MapAnimationOptions(duration: 1400));
+      // rapid camera motion). The synced sheet-toggle fit passes 300 —
+      // the sheet's own animation length, so both land together.
+      _safeFlyTo(cam, mapbox.MapAnimationOptions(duration: durationMs));
     }).catchError((Object _) {});
   }
 

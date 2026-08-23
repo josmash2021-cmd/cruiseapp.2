@@ -11,7 +11,7 @@ import '../verify_code_screen.dart';
 import 'driver_home_screen.dart';
 import 'driver_name_screen.dart';
 import 'driver_pending_review_screen.dart';
-import 'driver_signup_screen.dart';
+import 'onboarding/driver_todo_screen.dart';
 
 /// Driver phone onboarding — step 1 ("Welcome aboard", Lyft-style).
 ///
@@ -149,7 +149,8 @@ class _DriverWelcomeScreenState extends State<DriverWelcomeScreen> {
 
   /// Routing by driver account state — mirrors the post-login decision in
   /// `driver_login_screen.dart`: approved → home; pending/rejected →
-  /// pending review; never-registered (`none`/anything else) → signup.
+  /// pending review; never-registered (`none`/anything else) → the Phase 2
+  /// to-do hub (the legacy DriverSignupScreen stays for legacy users).
   static Future<void> routeExistingDriver(
     BuildContext context,
     Map<String, dynamic> user,
@@ -182,7 +183,7 @@ class _DriverWelcomeScreenState extends State<DriverWelcomeScreen> {
       );
     } else {
       Navigator.of(context).pushAndRemoveUntil(
-        slideFromRightRoute(const DriverSignupScreen()),
+        onboardingFadeSlideRoute(const DriverTodoScreen()),
         (_) => false,
       );
     }

@@ -5446,6 +5446,194 @@ class S {
         return _es ? 'Tu viaje fue cancelado.' : 'Your trip was cancelled.';
     }
   }
+
+  // ── Driver onboarding — Fase 2 (to-do hub estilo Lyft) ───────────
+  String get obTodoTitle => _es ? 'Pendientes' : 'To-do';
+  String obTodoCount(int n) => _es ? '$n pendientes' : '$n items';
+  String get obItemPlateTitle =>
+      _es ? 'Número de placa' : 'License plate number';
+  String get obItemPlateSub => _es
+      ? 'Esto ayudará a los pasajeros a confirmar el viaje correcto'
+      : 'This will help passengers confirm the right ride';
+  String get obItemSsnTitle =>
+      _es ? 'Número de Seguro Social' : 'Social Security number';
+  String get obItemSsnSub => _es
+      ? 'Lo necesitamos para tu verificación de antecedentes'
+      : 'We need it to run your background check';
+  String get obItemLicenseTitle =>
+      _es ? 'Licencia de conducir' : "Driver's License";
+  String get obItemLicenseSub =>
+      _es ? 'Confirma tu identidad' : 'Confirm your identity';
+  String get obItemPhotoTitle =>
+      _es ? 'Foto de perfil' : 'Profile photo';
+  String get obItemPhotoSub => _es
+      ? 'Facilita que los pasajeros te encuentren'
+      : 'Make it easy for riders to find you';
+  String get obItemBackgroundTitle => _es
+      ? 'Consentimiento de verificación de antecedentes'
+      : 'Background check consent';
+  String get obItemBackgroundSub =>
+      _es ? 'Necesitamos tu autorización' : 'Your authorization is needed';
+  String get obItemVehicleTitle => _es ? 'Vehículo' : 'Vehicle';
+  String get obItemVehicleSub => _es
+      ? 'Tengo un vehículo — 2012 o más nuevo, 4 puertas, 5 cinturones'
+      : 'I have a vehicle — 2012 or newer, 4 doors, 5 seatbelts';
+  String get obInReview => _es ? 'En revisión' : 'In review';
+  String get obApprovedStatus => _es ? 'Aprobado' : 'Approved';
+  String get obRejectedStatus => _es ? 'Rechazado' : 'Rejected';
+  String obCompletedSection(int n) =>
+      _es ? 'Completados ($n)' : 'Completed ($n)';
+  String get obHereForYou => _es
+      ? 'Sea lo que sea, estamos aquí para ti'
+      : "Whatever it is, we're here for you";
+  String get obContactUs => _es ? 'Contáctanos' : 'Contact us';
+  String get obHelpCenter => _es ? 'Centro de ayuda' : 'Help Center';
+  String get obResubmit => _es ? 'Reenviar' : 'Resubmit';
+  String get obSkipForNow => _es ? 'Omitir por ahora' : 'Skip for now';
+  String get obSubmittedReadOnly => _es
+      ? 'Tu información fue enviada y está en revisión.'
+      : 'Your information was submitted and is under review.';
+
+  // ── Onboarding intros (textos exactos estilo Lyft) ───────────────
+  String get obIntroVehicleTitle =>
+      _es ? 'Tengo un vehículo' : 'I have a vehicle';
+  String get obIntroVehicleSub => _es
+      ? 'Importante: tu vehículo debe ser 2012 o más nuevo y tener un mínimo de 4 puertas y 5 cinturones de seguridad.'
+      : 'Heads up: Your vehicle must be 2012 or newer and have a minimum of 4 doors and 5 seatbelts.';
+  String get obIntroVehicleButton =>
+      _es ? 'Agrega tu vehículo' : 'Add your vehicle';
+  String get obIntroPlateTitle =>
+      _es ? 'Agrega el número de placa' : 'Add license plate number';
+  String get obIntroPlateSub => _es
+      ? 'Esto ayudará a los pasajeros a confirmar el viaje correcto'
+      : 'This will help passengers confirm the right ride';
+  String get obIntroSsnTitle => _es
+      ? 'Agrega tu número de Seguro Social'
+      : 'Add Social Security number';
+  String get obIntroSsnSub => _es
+      ? 'Lo necesitamos para tu verificación de antecedentes'
+      : 'We need it to run your background check';
+  String get obIntroLicenseTitle => _es
+      ? 'Toma una foto de tu licencia de conducir'
+      : "Take a photo of your driver's license";
+  String get obIntroLicenseSub => _es
+      ? 'La usaremos para confirmar tu identidad'
+      : "We'll use this to confirm your identity";
+  String get obIntroPhotoTitle =>
+      _es ? 'Tómate una foto de perfil' : 'Take a profile photo';
+  String get obIntroPhotoSub => _es
+      ? 'Tómate una foto de perfil para que los pasajeros te encuentren.'
+      : 'Take a profile photo to help passengers find you.';
+  String get obIntroBackgroundTitle => _es
+      ? 'Consentimiento de verificación de antecedentes'
+      : 'Background check consent';
+  String get obIntroBackgroundSub => _es
+      ? 'Necesitamos tu autorización para verificar tus antecedentes'
+      : "We'll need your authorization to run a background check";
+
+  // ── Captura: placa ───────────────────────────────────────────────
+  String get obPlateScreenTitle =>
+      _es ? 'Número de placa' : 'License Plate Number';
+  String get obPlateFieldLabel =>
+      _es ? 'Número de placa*' : 'License plate number*';
+  String get obPlateConfirmLabel =>
+      _es ? 'Confirma el número de placa*' : 'Confirm license plate number*';
+  String get obPlatesDontMatch => _es
+      ? 'Los números de placa no coinciden'
+      : 'License plate numbers do not match';
+  String get obStateLabel => _es ? 'Estado' : 'State';
+
+  // ── Captura: SSN ─────────────────────────────────────────────────
+  String get obSsnScreenTitle =>
+      _es ? 'Número de Seguro Social' : 'Social Security Number';
+  String get obSsnFieldLabel =>
+      _es ? 'Número de Seguro Social*' : 'Social Security number*';
+  String get obSsnSecurityNote => _es
+      ? 'Tu SSN está cifrado y solo se usa para tu verificación de antecedentes. Nunca lo compartimos.'
+      : 'Your SSN is encrypted and only used to run your background check. We never share it.';
+  String get obSsnInvalid => _es
+      ? 'Ingresa los 9 dígitos de tu SSN'
+      : 'Enter the 9 digits of your SSN';
+
+  // ── Captura: vehículo ────────────────────────────────────────────
+  String get obVehicleScreenTitle =>
+      _es ? 'Agrega tu vehículo' : 'Add your vehicle';
+  String get obVehicleYear => _es ? 'Año' : 'Year';
+  String get obVehicleMake => _es ? 'Marca' : 'Make';
+  String get obVehicleModel => _es ? 'Modelo' : 'Model';
+  String get obVehicleColor => _es ? 'Color' : 'Color';
+
+  // ── Captura: licencia (cámara in-app) ────────────────────────────
+  String get obLicenseFrontTitle =>
+      _es ? 'Frente de la licencia' : "Front of driver's license";
+  String get obLicenseFrontText =>
+      _es ? 'Toma una foto del frente de tu licencia de conducir'
+      : "Take photo of driver's license front";
+  String get obLicenseFrontHint => _es
+      ? 'Asegúrate de que sea clara y legible, sobre una superficie plana y bien iluminada.'
+      : "Make sure it's clear and easy to read on a flat, well-lit surface.";
+  String get obLicenseBackTitle =>
+      _es ? 'Reverso de la licencia' : "Backside of driver's license";
+  String get obLicenseBackText =>
+      _es ? 'Toma una foto del reverso de tu licencia de conducir'
+      : "Take photo of driver's license back";
+  String get obCameraDeniedTitle =>
+      _es ? 'Se necesita la cámara' : 'Camera access needed';
+  String get obCameraDeniedMsg => _es
+      ? 'Para fotografiar tu licencia, permite el acceso a la cámara en Configuración.'
+      : 'To photograph your license, allow camera access in Settings.';
+  String get obSubmitButton => _es ? 'Enviar' : 'Submit';
+
+  // ── Captura: foto de perfil ──────────────────────────────────────
+  String get obPhotoGuide => _es
+      ? 'Centra tu rostro con buena luz'
+      : 'Center your face in good light';
+  String get obUseThisPhoto =>
+      _es ? 'Usar esta foto' : 'Use this photo';
+
+  // ── Consentimiento background check (FCRA) ───────────────────────
+  String get obBackgroundTitle =>
+      _es ? 'Verificación de antecedentes' : 'Background Check';
+  String get obIAuthorize => _es ? 'Autorizo' : 'I authorize';
+  String get obBackgroundLegal => _es
+      ? 'Divulgación y Autorización de Verificación de Antecedentes\n\n'
+          '1. Divulgación\n\n'
+          'Cruise in Ride LLC, una sociedad de responsabilidad limitada de Florida (la "Compañía"), puede obtener informes de consumo sobre ti en relación con tu solicitud para conducir, y tu participación continua como Conductor contratista independiente, en la plataforma Cruiseinride operada por la Compañía.\n\n'
+          'La Compañía obtiene estos informes de la siguiente agencia de informes del consumidor:\n\n'
+          '• Proveedor: Checkr, Inc.\n'
+          '• Agencia de informes del consumidor: Checkr, Inc.\n'
+          '• Dirección: 1 Montgomery Street, Suite 2400, San Francisco, CA 94104\n'
+          '• Teléfono (gratuito): (844) 824-3257\n\n'
+          'Los informes de consumo obtenidos pueden incluir las siguientes categorías, según lo permita la ley:\n\n'
+          '• una búsqueda localizadora de antecedentes penales multiestatal/multijurisdiccional (o similar), con validación en la fuente primaria de cualquier registro en el tribunal o agencia de origen antes de ser reportado;\n'
+          '• una búsqueda en el registro de delincuentes sexuales, incluido el National Sex Offender Public Website;\n'
+          '• un informe de historial de conducción (registros de vehículos motorizados);\n'
+          '• un rastreo de SSN y verificación de identidad; y\n'
+          '• verificación de licencias, documentos e información de elegibilidad que proporciones.\n\n'
+          'Los informes pueden obtenerse antes de que se te autorice a conducir en la plataforma, y al menos una vez cada tres años después mientras la cuenta permanezca activa, o con mayor frecuencia si la ley lo requiere.\n\n'
+          '2. Autorización\n\n'
+          'Al aceptar este documento electrónicamente, autorizas a la Compañía a obtener informes de consumo sobre ti, ahora y de forma continua mientras tu cuenta permanezca activa, para los fines descritos en la Sección 1, en la máxima medida permitida por la ley.\n\n'
+          'Esta autorización es continua y permanece vigente mientras tu cuenta permanezca activa, conforme a la frecuencia descrita en la Sección 1.\n\n'
+          'Firma electrónica y aceptación. La Compañía registra cada aceptación con: el ID del documento, la versión del documento, un hash del contenido aceptado, la marca de tiempo UTC de la aceptación, la dirección IP, el user agent, la información del dispositivo y el ID de la cuenta.'
+      : 'Background Check Disclosure and Authorization\n\n'
+          '1. Disclosure\n\n'
+          'Cruise in Ride LLC, a Florida limited liability company (the "Company"), may obtain consumer reports about you in connection with your application to drive, and your continued engagement as an independent contractor Driver, on the Cruiseinride platform operated by the Company.\n\n'
+          'The Company obtains these reports from the following consumer reporting agency:\n\n'
+          '• Vendor: Checkr, Inc.\n'
+          '• Consumer reporting agency: Checkr, Inc.\n'
+          '• Address: 1 Montgomery Street, Suite 2400, San Francisco, CA 94104\n'
+          '• Telephone (toll-free): (844) 824-3257\n\n'
+          'The consumer reports obtained may include the following categories, as permitted by law:\n\n'
+          '• a multi-state/multi-jurisdiction criminal records locator search (or similar), with primary source validation of any record at the originating court or agency before it is reported;\n'
+          '• a sex offender registry search, including the National Sex Offender Public Website;\n'
+          '• a driving history (motor vehicle records) report;\n'
+          '• an SSN trace and identity verification; and\n'
+          '• verification of licenses, documents, and eligibility information you provide.\n\n'
+          'Reports may be obtained before you are authorized to drive on the platform, and at least once every three years thereafter while the account remains active, or more frequently if required by law.\n\n'
+          '2. Authorization\n\n'
+          'By accepting this document electronically, you authorize the Company to obtain consumer reports about you, now and on an ongoing basis while your account remains active, for the purposes described in Section 1, to the fullest extent permitted by law.\n\n'
+          'This authorization is ongoing and remains in effect while your account remains active, consistent with the cadence described in Section 1.\n\n'
+          'Electronic signature and acceptance. The Company records each acceptance with: the document ID, the document version, a content hash of the document accepted, the UTC timestamp of acceptance, the IP address, the user agent, the device information, and the account ID.';
 }
 
 class _SDelegate extends LocalizationsDelegate<S> {

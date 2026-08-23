@@ -6,14 +6,14 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../config/page_transitions.dart';
 import '../../l10n/app_localizations.dart';
 import '../../services/api_service.dart';
-import 'driver_signup_screen.dart';
+import 'onboarding/driver_todo_screen.dart';
 
 /// Driver onboarding — Phase 2, step 2 ("Tell us about yourself").
 ///
 /// Lyft-style survey: 4 blocks (2 checkbox groups + 2 radio groups), all
 /// optional — `Save` is always enabled and persists the answers as a single
 /// JSON string in `onboarding_survey` via `PATCH /auth/me`, then hands off
-/// to the existing [DriverSignupScreen] document steps.
+/// to the Phase 2 to-do hub ([DriverTodoScreen]).
 class DriverAboutYouScreen extends StatefulWidget {
   const DriverAboutYouScreen({super.key});
 
@@ -99,7 +99,7 @@ class _DriverAboutYouScreenState extends State<DriverAboutYouScreen> {
       });
       if (!mounted) return;
       Navigator.of(context).pushAndRemoveUntil(
-        onboardingFadeSlideRoute(const DriverSignupScreen()),
+        onboardingFadeSlideRoute(const DriverTodoScreen()),
         (_) => false,
       );
     } on ApiException catch (e) {

@@ -1687,6 +1687,75 @@ class ApiService {
     return _parse(res);
   }
 
+  // ═══════════════════════════════════════════════════════
+  //  DRIVER  ONBOARDING  ITEMS  (Lyft-style to-do flow)
+  // ═══════════════════════════════════════════════════════
+
+  /// Get the status of every onboarding item for the current driver.
+  /// Shape: `{"items": {"plate"|"ssn"|"license"|"photo"|"background"|"vehicle":
+  ///   {"status": "pending"|"submitted"|"approved"|"rejected", "reason": str|null}}}`
+  static Future<Map<String, dynamic>> getOnboardingItems() async {
+    final h = await _authHeaders();
+    final res = await _client
+        .get(Uri.parse('$_baseUrl/auth/onboarding-items'), headers: h)
+        .timeout(const Duration(seconds: 10));
+    return _parse(res);
+  }
+
+  static Future<Map<String, dynamic>> _postOnboardingItem(
+    String item,
+    Map<String, dynamic> body,
+  ) async {
+    final h = await _authHeaders();
+    final res = await _client
+        .post(
+          Uri.parse('$_baseUrl/auth/onboarding-items/$item'),
+          headers: h,
+          body: jsonEncode(body),
+        )
+        .timeout(const Duration(seconds: 15));
+    return _parse(res);
+  }
+
+  static Future<Map<String, dynamic>> submitOnboardingPlate({
+    required String plate,
+    required String state,
+  }) => _postOnboardingItem('plate', {'plate': plate, 'state': state});
+
+  static Future<Map<String, dynamic>> submitOnboardingSsn({
+    required String ssn,
+  }) => _postOnboardingItem('ssn', {'ssn': ssn});
+
+  static Future<Map<String, dynamic>> submitOnboardingVehicle({
+    required int year,
+    required String make,
+    required String model,
+    required String color,
+  }) => _postOnboardingItem('vehicle', {
+    'year': year,
+    'make': make,
+    'model': model,
+    'color': color,
+  });
+
+  static Future<Map<String, dynamic>> submitOnboardingBackground() =>
+      _postOnboardingItem('background', {'accepted': true});
+
+  /// Mark an onboarding item for resubmission (rejected/stale data) —
+  /// returns the item to `pending` so the capture flow can replace it.
+  static Future<Map<String, dynamic>> resubmitOnboardingItem(
+    String item,
+  ) async {
+    final h = await _authHeaders();
+    final res = await _client
+        .post(
+          Uri.parse('$_baseUrl/auth/onboarding-items/$item/resubmit'),
+          headers: h,
+        )
+        .timeout(const Duration(seconds: 10));
+    return _parse(res);
+  }
+
   /// Check account status (dispatch may have blocked/deleted).
   /// NEVER cached — this is critical security data.
   static Future<String> getAccountStatus() async {

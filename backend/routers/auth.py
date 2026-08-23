@@ -2,7 +2,7 @@ import os, time, math, secrets, logging, json, re, base64, asyncio, collections,
 from datetime import datetime, timedelta, timezone
 from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException, Header, Request, Query, Body
-from pydantic import ValidationError
+from pydantic import ValidationError, BaseModel, Field
 import jwt
 from fastapi.responses import JSONResponse, FileResponse, Response
 from sqlalchemy import select, func, and_, text, update
@@ -2107,6 +2107,8 @@ async def upload_photo(request: Request, user: User = Depends(_get_current_user)
     db_user = result.scalar_one_or_none()
     if db_user:
         db_user.photo_url = full_photo_url
+        # A fresh profile photo clears a previous per-item rejection.
+        _set_onboarding_override(db_user, "photo", "submitted")
         await db.commit()
         await db.refresh(db_user)
         # Sync to Firestore
@@ -2151,6 +2153,7 @@ async def save_photo_url(request: Request, user: User = Depends(_get_current_use
     if not db_user:
         raise HTTPException(404, "User not found")
     db_user.photo_url = photo_url
+    _set_onboarding_override(db_user, "photo", "submitted")
     await db.commit()
     await db.refresh(db_user)
     if _HAS_FIRESTORE:
@@ -2609,6 +2612,10 @@ async def submit_verification(request: Request, user: User = Depends(_get_curren
             db_user.registration_photo_url = saved_urls["registration"]
         if video_url:
             db_user.video_url = video_url
+        # Re-uploading a document clears a previous per-item rejection —
+        # the item goes back to "submitted" awaiting a fresh review.
+        if saved_urls.get("license_front") or saved_urls.get("license_back"):
+            _set_onboarding_override(db_user, "license", "submitted")
         await db.commit()
         await db.refresh(db_user)
     except Exception as e:
@@ -2955,13 +2962,22 @@ async def dispatch_reject_driver(user_id: int, request: Request, db: AsyncSessio
         body = await request.json()
         reason = body.get("reason", "Application not approved") if body else "Application not approved"
     except Exception:
+        body = {}
         reason = "Application not approved"
+    # Optional per-item rejection (onboarding To-do list): when dispatch
+    # rejects ONE document, the item flips to "rejected" with the reason so
+    # the app can show exactly what to fix.
+    item = (body.get("item") or "").strip() if isinstance(body, dict) else ""
+    if item and item not in ONBOARDING_ITEMS:
+        item = ""
     result = await db.execute(select(User).where(User.id == user_id, User.role == "driver"))
     db_user = result.scalar_one_or_none()
     if not db_user:
         raise HTTPException(404, "Driver not found")
     db_user.verification_status = "rejected"
     db_user.verification_reason = reason
+    if item:
+        _set_onboarding_override(db_user, item, "rejected", reason=reason)
     await db.commit()
     # Atomic batch write to ALL 3 Firestore collections
     if _HAS_FIRESTORE:
@@ -2988,12 +3004,20 @@ async def dispatch_reject_driver(user_id: int, request: Request, db: AsyncSessio
 
     try:
         if db_user.fcm_token:
-            await _send_fcm_push_async(
-                db_user.fcm_token,
-                "Verification Update",
-                reason or "Your driver application was not approved. Please try again.",
-                {"type": "driver_rejected", "user_id": str(user_id), "reason": reason},
-            )
+            if item:
+                await _send_fcm_push_async(
+                    db_user.fcm_token,
+                    "Documento rechazado",
+                    f"Documento rechazado: {reason}",
+                    {"type": "onboarding_item_rejected", "user_id": str(user_id), "item": item, "reason": reason},
+                )
+            else:
+                await _send_fcm_push_async(
+                    db_user.fcm_token,
+                    "Verification Update",
+                    reason or "Your driver application was not approved. Please try again.",
+                    {"type": "driver_rejected", "user_id": str(user_id), "reason": reason},
+                )
             logging.info("[DISPATCH-REJECT] FCM push sent to user %d", user_id)
     except Exception as e:
         logging.warning("[DISPATCH-REJECT] FCM push failed: %s", e)
@@ -3859,3 +3883,210 @@ async def reset_password(request: Request, db: AsyncSession = Depends(get_db)):
     await db.commit()
     return {"status": "password_reset"}
 
+
+
+# ═══════════════════════════════════════════════════════
+#  Driver onboarding items (Lyft-style To-do list, 2026-08-23)
+# ═══════════════════════════════════════════════════════
+# Per-item status for the driver onboarding checklist. The base status is
+# DERIVED from the fields that already exist (license urls, ssn, photo_url,
+# Vehicle row, background check/consent), so legacy drivers with docs on
+# file come out submitted/approved with no data migration. Manual states
+# (dispatch reject with reason, resubmit) live as JSON overrides in
+# users.onboarding_items and are layered on top of the derivation.
+
+ONBOARDING_ITEMS = ("plate", "ssn", "license", "photo", "background", "vehicle")
+
+_ONBOARDING_STATUSES = ("pending", "submitted", "approved", "rejected")
+
+
+def _load_onboarding_overrides(db_user: User) -> dict:
+    try:
+        data = json.loads(db_user.onboarding_items or "{}")
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def _set_onboarding_override(db_user: User, item: str, status: str, reason: Optional[str] = None):
+    """Write one item override; keeps the other items untouched."""
+    overrides = _load_onboarding_overrides(db_user)
+    overrides[item] = {
+        "status": status,
+        "reason": reason,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    db_user.onboarding_items = json.dumps(overrides)
+
+
+async def _derive_onboarding_items(db: AsyncSession, db_user: User) -> dict:
+    veh_result = await db.execute(select(Vehicle).where(Vehicle.user_id == db_user.id))
+    veh = veh_result.scalars().first()
+    bg = db_user.background_check_status or "none"
+    has = {
+        "plate": bool((veh and veh.plate) or db_user.plate_number),
+        "ssn": bool(db_user.ssn),
+        "license": bool(db_user.license_front_url and db_user.license_back_url),
+        "photo": bool(db_user.photo_url),
+        "background": bool(db_user.background_consent_at) or bg in ("pending", "processing", "clear"),
+        "vehicle": bool(veh and veh.make and veh.model and veh.year),
+    }
+    globally_approved = bool(db_user.is_verified) and db_user.verification_status == "approved"
+    items = {}
+    for key in ONBOARDING_ITEMS:
+        status = "submitted" if has[key] else "pending"
+        if key == "background" and bg == "clear":
+            status = "approved"
+        elif globally_approved and has[key]:
+            # No per-item approval signal exists; the global dispatch
+            # approval implies every item with data on file was reviewed.
+            status = "approved"
+        items[key] = {"status": status, "reason": None}
+    for key, ov in _load_onboarding_overrides(db_user).items():
+        if key in items and isinstance(ov, dict):
+            if ov.get("status") in _ONBOARDING_STATUSES:
+                items[key]["status"] = ov["status"]
+            items[key]["reason"] = ov.get("reason")
+    return items
+
+
+@router.get("/auth/onboarding-items", dependencies=[Depends(_verify_api_key)])
+async def get_onboarding_items(user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
+    """Per-item onboarding status for the driver's To-do list."""
+    result = await db.execute(select(User).where(User.id == user.id))
+    db_user = result.scalar_one_or_none()
+    if not db_user:
+        raise HTTPException(404, "User not found")
+    return {"items": await _derive_onboarding_items(db, db_user)}
+
+
+class _OnboardingPlateIn(BaseModel):
+    plate: str = Field(..., min_length=1, max_length=30)
+    state: str = Field(..., min_length=2, max_length=2)
+
+
+class _OnboardingSsnIn(BaseModel):
+    ssn: str = Field(..., min_length=1, max_length=20)
+
+
+class _OnboardingVehicleIn(BaseModel):
+    year: int
+    make: str = Field(..., min_length=1, max_length=100)
+    model: str = Field(..., min_length=1, max_length=100)
+    color: str = Field(..., min_length=1, max_length=50)
+
+
+class _OnboardingBackgroundIn(BaseModel):
+    accepted: bool
+
+
+@router.post("/auth/onboarding-items/plate", dependencies=[Depends(_verify_api_key)])
+async def submit_onboarding_plate(body: _OnboardingPlateIn, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(User).where(User.id == user.id))
+    db_user = result.scalar_one_or_none()
+    if not db_user:
+        raise HTTPException(404, "User not found")
+    plate = body.plate.strip().upper()
+    state = body.state.strip().upper()
+    # If the driver already has a Vehicle row, that row is the source of
+    # truth for the plate; otherwise stash it on the user until the
+    # vehicle step creates the row.
+    veh_result = await db.execute(select(Vehicle).where(Vehicle.user_id == db_user.id))
+    veh = veh_result.scalars().first()
+    if veh:
+        veh.plate = plate
+        veh.plate_state = state
+    else:
+        db_user.plate_number = plate
+        db_user.plate_state = state
+    _set_onboarding_override(db_user, "plate", "submitted")
+    await db.commit()
+    return {"ok": True, "item": "plate", "status": "submitted"}
+
+
+@router.post("/auth/onboarding-items/ssn", dependencies=[Depends(_verify_api_key)])
+async def submit_onboarding_ssn(body: _OnboardingSsnIn, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(User).where(User.id == user.id))
+    db_user = result.scalar_one_or_none()
+    if not db_user:
+        raise HTTPException(404, "User not found")
+    digits = re.sub(r'\D', '', body.ssn)
+    if len(digits) != 9:
+        raise HTTPException(400, "SSN must have 9 digits")
+    db_user.ssn = encrypt_ssn(digits)
+    _set_onboarding_override(db_user, "ssn", "submitted")
+    await db.commit()
+    return {"ok": True, "item": "ssn", "status": "submitted"}
+
+
+@router.post("/auth/onboarding-items/vehicle", dependencies=[Depends(_verify_api_key)])
+async def submit_onboarding_vehicle(body: _OnboardingVehicleIn, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
+    if body.year < 2012:
+        raise HTTPException(400, "Vehicle year must be 2012 or newer")
+    result = await db.execute(select(User).where(User.id == user.id))
+    db_user = result.scalar_one_or_none()
+    if not db_user:
+        raise HTTPException(404, "User not found")
+    veh_result = await db.execute(select(Vehicle).where(Vehicle.user_id == db_user.id))
+    veh = veh_result.scalars().first()
+    if veh:
+        veh.year = body.year
+        veh.make = body.make.strip()
+        veh.model = body.model.strip()
+        veh.color = body.color.strip()
+    else:
+        db.add(Vehicle(
+            user_id=db_user.id,
+            year=body.year,
+            make=body.make.strip(),
+            model=body.model.strip(),
+            color=body.color.strip(),
+            plate=db_user.plate_number or "",
+            plate_state=db_user.plate_state,
+        ))
+    _set_onboarding_override(db_user, "vehicle", "submitted")
+    # A vehicle row now holds the plate captured in the plate step.
+    await db.commit()
+    return {"ok": True, "item": "vehicle", "status": "submitted"}
+
+
+@router.post("/auth/onboarding-items/background", dependencies=[Depends(_verify_api_key)])
+async def submit_onboarding_background(body: _OnboardingBackgroundIn, request: Request, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
+    """Record the driver's acceptance of the FCRA background-check disclosure.
+
+    The document itself is shown in the app; here only the consent timestamp
+    is stored (plus a ConsentLog row so the acceptance is provable).
+    """
+    if not body.accepted:
+        raise HTTPException(400, "Consent must be accepted")
+    result = await db.execute(select(User).where(User.id == user.id))
+    db_user = result.scalar_one_or_none()
+    if not db_user:
+        raise HTTPException(404, "User not found")
+    now = datetime.now(timezone.utc)
+    db_user.background_consent_at = now
+    db.add(ConsentLog(
+        user_id=db_user.id,
+        consent_type="background_check_disclosure",
+        action="accepted",
+        document_id="background_check_disclosure_authorization",
+        ip_address=request.client.host if request.client else None,
+        user_agent=(request.headers.get("User-Agent", "") or "")[:500],
+    ))
+    _set_onboarding_override(db_user, "background", "submitted")
+    await db.commit()
+    return {"ok": True, "item": "background", "status": "submitted", "consent_at": now.isoformat()}
+
+
+@router.post("/auth/onboarding-items/{item}/resubmit", dependencies=[Depends(_verify_api_key)])
+async def resubmit_onboarding_item(item: str, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
+    """Move an item back to "pending" so the driver can submit it again."""
+    if item not in ONBOARDING_ITEMS:
+        raise HTTPException(404, "Unknown onboarding item")
+    result = await db.execute(select(User).where(User.id == user.id))
+    db_user = result.scalar_one_or_none()
+    if not db_user:
+        raise HTTPException(404, "User not found")
+    _set_onboarding_override(db_user, item, "pending", reason=None)
+    await db.commit()
+    return {"ok": True, "item": item, "status": "pending"}

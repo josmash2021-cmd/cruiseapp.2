@@ -235,6 +235,17 @@ class User(Base):
     drive_city = Column(String(120), nullable=True)
     drive_state = Column(String(2), nullable=True)
     onboarding_survey = Column(Text, nullable=True)
+    # Per-item onboarding tracking (2026-08-23, Lyft-style To-do list).
+    # Plate captured before a Vehicle row exists lives here; once the driver
+    # submits vehicle details the Vehicle row becomes the source of truth.
+    plate_number = Column(String(30), nullable=True)
+    plate_state = Column(String(2), nullable=True)
+    # Timestamp of the FCRA background-check disclosure acceptance.
+    background_consent_at = Column(DateTime(timezone=True), nullable=True)
+    # JSON overrides per onboarding item ({item: {status, reason, updated_at}}).
+    # The GET derives the base status from existing fields and layers these
+    # on top, so legacy users need no data migration.
+    onboarding_items = Column(Text, nullable=True)
 
 
 class ConsentLog(Base):
@@ -1018,6 +1029,10 @@ async def migrate_add_columns(conn):
         ("users", "drive_city", "VARCHAR(120)"),
         ("users", "drive_state", "VARCHAR(2)"),
         ("users", "onboarding_survey", "TEXT"),
+        ("users", "plate_number", "VARCHAR(30)"),
+        ("users", "plate_state", "VARCHAR(2)"),
+        ("users", "background_consent_at", "DATETIME"),
+        ("users", "onboarding_items", "TEXT"),
     ]
     for table, col, col_type in new_columns:
         try:
@@ -1215,6 +1230,12 @@ async def migrate_postgres(conn):
         # Driver referral milestones (2026-08-16): referee welcome bonus
         # paid flag. In THIS boot list or prod never gets it (trampa #0).
         ("driver_referrals", "referee_bonus_paid_at", "TIMESTAMP WITH TIME ZONE"),
+        # Per-item driver onboarding tracking (2026-08-23) — boot list or
+        # prod never gets them (trampa #0).
+        ("users", "plate_number", "VARCHAR(30)"),
+        ("users", "plate_state", "VARCHAR(2)"),
+        ("users", "background_consent_at", "TIMESTAMP WITH TIME ZONE"),
+        ("users", "onboarding_items", "TEXT"),
     ]
     for table, col, col_type in migrations:
         try:

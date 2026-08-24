@@ -299,6 +299,20 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
       return;
     }
     if (!mounted || !_mapMounted) return;
+    // Entry zoom ease in progress (driver spec 2026-08-24): while the 16→
+    // 15.5 glide runs, the ticker in _onSmoothTick already writes centre and
+    // zoom for every frame — any flyTo fired now is redundant and cancels
+    // the ease mid-glide, the visible zoom "cut". The gate mirrors the
+    // ticker's own branch conditions so it only holds while the ease is
+    // actually the thing moving the camera.
+    if (_phase == _Phase.searching &&
+        !_zoomEaseDone &&
+        _zoomEaseStartMs != null &&
+        _previewingOffer == null &&
+        !_isCardAnimating &&
+        _cameraFollowing) {
+      return;
+    }
     final map = _map;
     if (map == null) return;
     try {

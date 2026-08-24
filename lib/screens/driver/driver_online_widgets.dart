@@ -82,7 +82,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
           fit: StackFit.expand,
           children: [
             Positioned.fill(
-                child: StaticMapSnapshot(center: _pos!, zoom: 16)),
+                child: StaticMapSnapshot(center: _pos!, zoom: 16, veilAlpha: 0.85)),
             Center(child: GoldLocationDotOverlay(bearing: _heading)),
           ],
         ),
@@ -103,6 +103,24 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
           return Stack(
             children: [
               Positioned.fill(child: _mapSurface(isDark, here)),
+              // The same still that filled the gap while the surface was
+              // down stays ON TOP of the live map until the navy style has
+              // actually landed (driver spec 2026-08-24): the raw grey
+              // dark-v11 and the PlatformView's first black frames are
+              // painted underneath it, so neither is ever visible. Once
+              // onStyleLoaded fires it fades out over 200 ms — the live
+              // map underneath is already navy by then.
+              if (!kIsWeb)
+                Positioned.fill(
+                  child: IgnorePointer(
+                    child: AnimatedOpacity(
+                      opacity: _mapStyleLoaded ? 0.0 : 1.0,
+                      duration: const Duration(milliseconds: 200),
+                      child: StaticMapSnapshot(
+                          center: here, zoom: 16, veilAlpha: 0.85),
+                    ),
+                  ),
+                ),
               // The marker, painted by Flutter: centred while the camera
               // follows, at its own projected pixel once the driver has
               // panned or zoomed away. The Mapbox annotation takes back over
@@ -391,10 +409,10 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
               // from another app to the offer card with the route gone.
               final restorePreview = _previewingOffer != null &&
                   (_fullSegOne.length >= 2 || _fullSegTwo.length >= 2);
-              if (here != null && !restorePreview) {
-                _animateToPosition(here,
-                    zoom: 16.0, bearing: _heading, tilt: 0);
-              }
+              // No flyTo here (driver spec 2026-08-24): cameraOptions
+              // already opens centred at zoom 16, and the entry ease in
+              // _onSmoothTick glides 16→15.5. A flyTo fired now cancels
+              // that ease mid-glide — the visible zoom "cut".
               _updateDriverAnnotation();
               // Re-draw route if map initialised after _drawRoute already ran
               if (_routePts.length > 1) {
@@ -417,7 +435,9 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
           });
         },
         onStyleLoadedListener: (_) async {
-          _mapStyleLoaded = true;
+          // setState, not a bare write: the snapshot overlay over the live
+          // surface only fades out when the flag's change triggers a rebuild.
+          _setState(() => _mapStyleLoaded = true);
           _mapStyleWatchdogTimer?.cancel();
           if (_map != null) {
             await MapTheme.applyNavyGold(_map!);

@@ -539,7 +539,9 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       if (!mounted) return;
       final ll = LatLng(pos.latitude, pos.longitude);
       _setState(() => _pos = ll);
-      _moveToLatLng(ll);
+      // While the entry ease owns the camera the ticker centres on _pos
+      // every frame — a flyTo now would cut the glide. Just seed the fix.
+      if (_phase != _Phase.searching || _zoomEaseDone) _moveToLatLng(ll);
     } catch (_) {}
   }
 
@@ -3332,8 +3334,19 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     _previewDropoffAnnot = null;
     _dotPopDone = false;
     _dotPopScale = 0.0;
+    // Entry zoom ease state belongs to the surface being torn down: a
+    // remount re-opens at zoom 16 and re-runs the 16→15.5 glide, and a
+    // stale clock here would start it mid-curve (or skip it entirely).
+    _zoomEaseStartMs = null;
+    _zoomEaseDone = false;
     _map = null;
-    _setState(() => _mapMounted = false);
+    // _mapStyleLoaded resets with the surface too: on remount the overlay
+    // still has to cover the fresh PlatformView's first frames until the
+    // new style lands.
+    _setState(() {
+      _mapMounted = false;
+      _mapStyleLoaded = false;
+    });
   }
 
   /// Bring the canvas back after the screen above us is gone.

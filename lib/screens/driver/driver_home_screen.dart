@@ -1963,6 +1963,15 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     // Nothing is awaited, so the push is not delayed. The cost is that the
     // map behind the transition is a solid card for those 420 ms, which
     // costs nothing the driver can act on; the crash costs the shift.
+    //
+    // Warm the still the online screen stands in for its map while the
+    // native surface comes up (same URL StaticMapSnapshot will request at
+    // full screen), so the handoff never paints the bare #07080D
+    // placeholder for a frame.
+    final snapCenter = _currentLatLng;
+    if (!kIsWeb && snapCenter != null && mounted) {
+      StaticMapSnapshot.precacheFullScreen(context, snapCenter);
+    }
     _suspendMap();
 
     final pushFuture = Navigator.of(context).push<Map<String, dynamic>>(
@@ -2344,7 +2353,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     if (_mapSuspended) {
       final c = _currentLatLng;
       if (kIsWeb || c == null) return Container(color: neuBase);
-      return StaticMapSnapshot(center: c, zoom: 16);
+      return StaticMapSnapshot(center: c, zoom: 16, veilAlpha: 0.85);
     }
     // Use Google Maps on both iOS and Android
     // Mapbox Maps Flutter has no web implementation — its MapWidget crashes

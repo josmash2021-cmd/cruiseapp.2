@@ -13,10 +13,40 @@ import '../models/lat_lng.dart';
 /// up, this image stands in. The driver sees the same map the whole way
 /// across — a brief still, not a black loading screen.
 class StaticMapSnapshot extends StatelessWidget {
-  const StaticMapSnapshot({super.key, required this.center, this.zoom = 16});
+  const StaticMapSnapshot(
+      {super.key,
+      required this.center,
+      this.zoom = 16,
+      this.veilAlpha = 0.30});
 
   final LatLng center;
   final double zoom;
+
+  /// Opacity of the navy veil over the factory-grey dark-v11 render. The
+  /// default matches StaticRoutePreview's thumbnails; the driver
+  /// offline→online handoff passes ~0.85 so the still reads as the navy
+  /// live map it stands in for, not as a grey map.
+  final double veilAlpha;
+
+  /// The Static Images API URL for [center]/[zoom] at [w]×[h] logical px.
+  static String imageUrl(LatLng center, double zoom, int w, int h) {
+    String f(double v) => v.toStringAsFixed(6);
+    return 'https://api.mapbox.com/styles/v1/mapbox/dark-v11/static/'
+        '${f(center.longitude)},${f(center.latitude)},$zoom,0/${w}x$h@2x'
+        '?logo=false&attribution=false&access_token=${MapboxConfig.accessToken}';
+  }
+
+  /// Warm the image cache with the full-screen still before navigating to a
+  /// screen that will show it (driver spec 2026-08-22: the offline→online
+  /// handoff must never paint the bare #07080D placeholder for a frame).
+  static void precacheFullScreen(BuildContext context, LatLng center,
+      {double zoom = 16}) {
+    if (MapboxConfig.accessToken.isEmpty) return;
+    final size = MediaQuery.sizeOf(context);
+    final w = size.width.round().clamp(64, 1280);
+    final h = size.height.round().clamp(64, 1280);
+    precacheImage(NetworkImage(imageUrl(center, zoom, w, h)), context);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -32,11 +62,7 @@ class StaticMapSnapshot extends StatelessWidget {
         const dark = ColoredBox(color: Color(0xFF07080D));
         final token = MapboxConfig.accessToken;
         if (token.isEmpty) return dark;
-        String f(double v) => v.toStringAsFixed(6);
-        final url =
-            'https://api.mapbox.com/styles/v1/mapbox/dark-v11/static/'
-            '${f(center.longitude)},${f(center.latitude)},$zoom,0/${w}x$h@2x'
-            '?logo=false&attribution=false&access_token=$token';
+        final url = imageUrl(center, zoom, w, h);
         return Stack(
           fit: StackFit.expand,
           children: [
@@ -53,7 +79,7 @@ class StaticMapSnapshot extends StatelessWidget {
             // navy. Same veil StaticRoutePreview paints, same reason.
             IgnorePointer(
               child: ColoredBox(
-                color: const Color(0xFF0A1128).withValues(alpha: 0.30),
+                color: const Color(0xFF0A1128).withValues(alpha: veilAlpha),
               ),
             ),
           ],

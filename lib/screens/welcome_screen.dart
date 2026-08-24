@@ -5,8 +5,7 @@ import '../l10n/app_localizations.dart';
 import 'package:video_player/video_player.dart';
 import '../config/page_transitions.dart';
 import '../widgets/neu_style.dart';
-import 'login_screen.dart';
-import 'login_password_screen.dart';
+import 'rider_welcome_screen.dart';
 import 'driver/driver_welcome_screen.dart';
 
 class WelcomeScreen extends StatefulWidget {
@@ -230,7 +229,7 @@ class _WelcomeScreenState extends State<WelcomeScreen>
                         gold: true,
                         onTap: () {
                           Navigator.of(context)
-                              .push(slideUpFadeRoute(const LoginScreen()));
+                              .push(slideUpFadeRoute(const RiderWelcomeScreen()));
                         },
                       ),
                     ),
@@ -248,7 +247,7 @@ class _WelcomeScreenState extends State<WelcomeScreen>
                         gold: false,
                         onTap: () {
                           Navigator.of(context).push(
-                              slideUpFadeRoute(const LoginPasswordScreen()));
+                              slideUpFadeRoute(const RiderWelcomeScreen()));
                         },
                       ),
                     ),

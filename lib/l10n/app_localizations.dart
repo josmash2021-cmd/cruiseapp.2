@@ -136,6 +136,19 @@ class S {
   String get verifyingTerms =>
       _es ? 'Verificando términos…' : 'Verifying terms…';
 
+  // ── Driver Email Screen (onboarding) ─────────────────────────────────────
+  String greatToMeetYou(String firstName) => _es
+      ? 'Un gusto conocerte, $firstName. ¿Nos compartes tu correo?'
+      : 'Great to meet you, $firstName. Mind sharing your email?';
+  String get emailReceiptsSubtitle => _es
+      ? 'Los recibos de viaje y las actualizaciones de la cuenta necesitan llegar a algún lado.'
+      : 'Ride receipts and account updates need to get sent somewhere.';
+  String get enterValidEmailAddress => _es
+      ? 'Ingresa un correo electrónico válido'
+      : 'Enter a valid email address';
+  String get emailAlreadyInUse =>
+      _es ? 'Ese correo ya está en uso' : 'That email is already in use';
+
   // ── Driver Onboarding Phase 2 (drive city + about you) ───────────────────
   String get whereDoYouPlanToDrive =>
       _es ? '¿Dónde planeas conducir?' : 'Where do you plan to drive?';
@@ -3201,6 +3214,9 @@ class S {
   String get nameAsRidersSeeIt => _es
       ? 'Así te verán los pasajeros.'
       : 'This is how riders will see you.';
+  String get nameAsDriversSeeIt => _es
+      ? 'Así te verán los conductores.'
+      : 'This is how drivers will see you.';
   String get emailOptionalLabel =>
       _es ? 'Correo electrónico (opcional)' : 'Email (optional)';
   String get enterValidEmail =>

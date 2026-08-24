@@ -1594,6 +1594,20 @@ async def update_me(request: Request, user: User = Depends(_get_current_user), d
     _ONBOARDING_FIELDS = ("drive_city", "drive_state", "onboarding_survey")
     # Enforce email/phone change limits (max 3 each)
     if "email" in updates and updates["email"] != db_user.email:
+        # Duplicate check up front: the (email, role) unique constraint would
+        # otherwise 500 on commit (the phone-first rider onboarding collects
+        # the email here and must be able to render "already in use" inline).
+        if updates["email"]:
+            dup = await db.execute(
+                select(User.id).where(
+                    func.lower(User.email) == updates["email"].lower(),
+                    User.role == db_user.role,
+                    User.id != db_user.id,
+                )
+            )
+            if dup.first():
+                raise HTTPException(400, "Email already in use")
+            updates["email"] = updates["email"].lower()
         if (db_user.email_changes_count or 0) >= 3:
             raise HTTPException(400, "Maximum email changes reached (3)")
         db_user.email_changes_count = (db_user.email_changes_count or 0) + 1

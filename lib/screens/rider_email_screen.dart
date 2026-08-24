@@ -1,103 +1,111 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import '../../config/page_transitions.dart';
-import '../../l10n/app_localizations.dart';
-import '../../services/api_service.dart';
-import '../../services/user_session.dart';
-import 'driver_email_screen.dart';
+import '../config/page_transitions.dart';
+import '../l10n/app_localizations.dart';
+import '../services/api_service.dart';
+import '../services/user_session.dart';
+import 'home_screen.dart';
 
-/// Driver phone onboarding — step 3, only for brand-new accounts
-/// (`is_new_user` from /auth/phone-login). Collects first/last name,
-/// persists them via `PATCH /auth/me`, then continues to the dedicated
-/// email step: [DriverEmailScreen].
-class DriverNameScreen extends StatefulWidget {
-  /// The user map returned by phone-login (id, phone, …) — used to refresh
-  /// the local session after the profile update.
+/// Rider phone onboarding — step 3, email collection (Lyft-style):
+/// "Great to meet you, {name}. Mind sharing your email?"
+///
+/// The email is REQUIRED (receipts + account updates), inline-validated and
+/// checked against the backend via `PATCH /auth/me`, which answers
+/// `400 "Email already in use"` on a duplicate — rendered inline. On
+/// success the session is refreshed and the rider lands on [HomeScreen]
+/// (the home boot handles the once-per-process permissions page).
+class RiderEmailScreen extends StatefulWidget {
+  /// The user map from phone-login, with the name fields already updated by
+  /// [RiderNameScreen] — used to greet and to refresh the local session.
   final Map<String, dynamic> user;
 
-  const DriverNameScreen({super.key, required this.user});
+  const RiderEmailScreen({super.key, required this.user});
 
   @override
-  State<DriverNameScreen> createState() => _DriverNameScreenState();
+  State<RiderEmailScreen> createState() => _RiderEmailScreenState();
 }
 
-class _DriverNameScreenState extends State<DriverNameScreen> {
+class _RiderEmailScreenState extends State<RiderEmailScreen> {
   static const _navy = Color(0xFF0A1128);
   static const _gold = Color(0xFFE8C547);
+  static final _emailRe = RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]{2,}$');
 
-  final _firstCtrl = TextEditingController();
-  final _lastCtrl = TextEditingController();
-  bool _canContinue = false;
+  final _emailCtrl = TextEditingController();
+  final _emailFocus = FocusNode();
+  bool _touched = false;
   bool _saving = false;
+
+  /// null = no error; otherwise an already-localized inline message.
   String? _errorText;
+
+  bool get _emailValid => _emailRe.hasMatch(_emailCtrl.text.trim());
 
   @override
   void initState() {
     super.initState();
-    _firstCtrl.addListener(_validate);
-    _lastCtrl.addListener(_validate);
+    _emailCtrl.addListener(_validate);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _emailFocus.requestFocus();
+    });
   }
 
   @override
   void dispose() {
-    _firstCtrl.dispose();
-    _lastCtrl.dispose();
+    _emailCtrl.dispose();
+    _emailFocus.dispose();
     super.dispose();
   }
 
   void _validate() {
-    final ok = _firstCtrl.text.trim().isNotEmpty &&
-        _lastCtrl.text.trim().isNotEmpty;
-    if (ok != _canContinue || _errorText != null) {
-      setState(() {
-        _canContinue = ok;
-        _errorText = null;
-      });
-    }
+    if (_emailCtrl.text.trim().isNotEmpty) _touched = true;
+    // Clear a stale error as soon as the input changes; the format error is
+    // derived in build() so it always reflects the current text.
+    if (_errorText != null) setState(() => _errorText = null);
+    setState(() {});
   }
 
   Future<void> _continue() async {
-    if (!_canContinue || _saving) return;
+    if (!_emailValid || _saving) return;
     setState(() {
       _saving = true;
       _errorText = null;
     });
 
-    final first = _firstCtrl.text.trim();
-    final last = _lastCtrl.text.trim();
+    final email = _emailCtrl.text.trim();
+    final s = S.of(context);
 
     try {
-      await ApiService.updateMe({
-        'first_name': first,
-        'last_name': last,
-      });
+      await ApiService.updateMe({'email': email});
       await UserSession.saveUser(
-        firstName: first,
-        lastName: last,
-        email: widget.user['email'] ?? '',
+        firstName: widget.user['first_name'] ?? '',
+        lastName: widget.user['last_name'] ?? '',
+        email: email,
         phone: widget.user['phone'] ?? '',
         photoUrl: widget.user['photo_url'] as String?,
         userId: (widget.user['id'] is num)
             ? (widget.user['id'] as num).toInt()
             : int.tryParse(widget.user['id']?.toString() ?? ''),
-        role: 'driver',
+        role: 'rider',
       );
       if (!mounted) return;
-      Navigator.of(context).push(
-        onboardingFadeSlideRoute(DriverEmailScreen(firstName: first)),
+      Navigator.of(context).pushAndRemoveUntil(
+        smoothFadeRoute(const HomeScreen(), durationMs: 600),
+        (_) => false,
       );
-      setState(() => _saving = false);
     } on ApiException catch (e) {
       if (!mounted) return;
       setState(() {
         _saving = false;
-        _errorText = e.message;
+        _errorText = e.statusCode == 400 &&
+                e.message.toLowerCase().contains('already in use')
+            ? s.emailAlreadyInUse
+            : e.message;
       });
     } catch (_) {
       if (!mounted) return;
       setState(() {
         _saving = false;
-        _errorText = S.of(context).connectionError;
+        _errorText = s.connectionError;
       });
     }
   }
@@ -105,12 +113,13 @@ class _DriverNameScreenState extends State<DriverNameScreen> {
   @override
   Widget build(BuildContext context) {
     final pad = MediaQuery.of(context).padding;
+    final firstName =
+        (widget.user['first_name'] as String? ?? '').trim().split(' ').first;
+    final showFormatError =
+        _touched && _emailCtrl.text.trim().isNotEmpty && !_emailValid;
 
     return Scaffold(
       backgroundColor: _navy,
-      // Keep the fields pinned in place: only the CTA floats above the
-      // keyboard (viewInsets padding below), instead of the body resizing
-      // and scrolling the fields off the top.
       resizeToAvoidBottomInset: false,
       body: GestureDetector(
         onTap: () => FocusScope.of(context).unfocus(),
@@ -143,9 +152,9 @@ class _DriverNameScreenState extends State<DriverNameScreen> {
                   children: [
                     const SizedBox(height: 32),
                     Text(
-                      S.of(context).whatsYourName,
+                      S.of(context).greatToMeetYou(firstName),
                       style: GoogleFonts.poppins(
-                        fontSize: 32,
+                        fontSize: 28,
                         fontWeight: FontWeight.w700,
                         letterSpacing: -0.5,
                         color: Colors.white,
@@ -154,18 +163,57 @@ class _DriverNameScreenState extends State<DriverNameScreen> {
                     ),
                     const SizedBox(height: 10),
                     Text(
-                      S.of(context).nameAsRidersSeeIt,
+                      S.of(context).emailReceiptsSubtitle,
                       style: GoogleFonts.inter(
                         fontSize: 15,
                         color: Colors.white.withValues(alpha: 0.65),
                       ),
                     ),
                     const SizedBox(height: 40),
-                    _field(_firstCtrl, S.of(context).firstNameLabel,
-                        textCapitalization: TextCapitalization.words),
-                    const SizedBox(height: 16),
-                    _field(_lastCtrl, S.of(context).lastNameLabel,
-                        textCapitalization: TextCapitalization.words),
+                    Container(
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.07),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(
+                          color: _emailValid
+                              ? _gold
+                              : Colors.white.withValues(alpha: 0.14),
+                          width: _emailValid ? 1.6 : 1,
+                        ),
+                      ),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 4,
+                      ),
+                      child: TextField(
+                        controller: _emailCtrl,
+                        focusNode: _emailFocus,
+                        keyboardType: TextInputType.emailAddress,
+                        autofillHints: const [AutofillHints.email],
+                        style:
+                            const TextStyle(color: Colors.white, fontSize: 17),
+                        cursorColor: _gold,
+                        decoration: InputDecoration(
+                          border: InputBorder.none,
+                          hintText: S.of(context).emailAddressLabel,
+                          hintStyle: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.3),
+                            fontSize: 17,
+                          ),
+                        ),
+                      ),
+                    ),
+                    if (showFormatError)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8, left: 4),
+                        child: Text(
+                          S.of(context).enterValidEmailAddress,
+                          style: const TextStyle(
+                            color: Color(0xFFE57373),
+                            fontSize: 13,
+                          ),
+                        ),
+                      ),
                     if (_errorText != null)
                       Padding(
                         padding: const EdgeInsets.only(top: 12, left: 4),
@@ -189,13 +237,13 @@ class _DriverNameScreenState extends State<DriverNameScreen> {
                 pad.bottom + MediaQuery.of(context).viewInsets.bottom + 16,
               ),
               child: GestureDetector(
-                onTap: _canContinue && !_saving ? _continue : null,
+                onTap: _emailValid && !_saving ? _continue : null,
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 200),
                   width: double.infinity,
                   height: 58,
                   decoration: BoxDecoration(
-                    color: _canContinue
+                    color: _emailValid
                         ? _gold
                         : _gold.withValues(alpha: 0.25),
                     borderRadius: BorderRadius.circular(18),
@@ -215,7 +263,7 @@ class _DriverNameScreenState extends State<DriverNameScreen> {
                           style: TextStyle(
                             fontSize: 18,
                             fontWeight: FontWeight.w700,
-                            color: _canContinue
+                            color: _emailValid
                                 ? Colors.black
                                 : Colors.black.withValues(alpha: 0.45),
                           ),
@@ -224,37 +272,6 @@ class _DriverNameScreenState extends State<DriverNameScreen> {
               ),
             ),
           ],
-        ),
-      ),
-    );
-  }
-
-  Widget _field(
-    TextEditingController controller,
-    String hint, {
-    TextInputType keyboardType = TextInputType.text,
-    TextCapitalization textCapitalization = TextCapitalization.none,
-  }) {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.07),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.14)),
-      ),
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-      child: TextField(
-        controller: controller,
-        keyboardType: keyboardType,
-        textCapitalization: textCapitalization,
-        style: const TextStyle(color: Colors.white, fontSize: 17),
-        cursorColor: _gold,
-        decoration: InputDecoration(
-          border: InputBorder.none,
-          hintText: hint,
-          hintStyle: TextStyle(
-            color: Colors.white.withValues(alpha: 0.3),
-            fontSize: 17,
-          ),
         ),
       ),
     );

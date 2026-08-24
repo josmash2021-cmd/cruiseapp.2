@@ -1,27 +1,27 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import '../../config/page_transitions.dart';
-import '../../l10n/app_localizations.dart';
-import '../../services/api_service.dart';
-import '../../services/user_session.dart';
-import 'driver_email_screen.dart';
+import '../config/page_transitions.dart';
+import '../l10n/app_localizations.dart';
+import '../services/api_service.dart';
+import '../services/user_session.dart';
+import 'rider_email_screen.dart';
 
-/// Driver phone onboarding — step 3, only for brand-new accounts
-/// (`is_new_user` from /auth/phone-login). Collects first/last name,
-/// persists them via `PATCH /auth/me`, then continues to the dedicated
-/// email step: [DriverEmailScreen].
-class DriverNameScreen extends StatefulWidget {
+/// Rider phone onboarding — step 2, only for brand-new accounts
+/// (`is_new_user` from /auth/phone-login with `role: 'rider'`). Collects
+/// first/last name, persists via `PATCH /auth/me`, then continues to the
+/// dedicated email step: [RiderEmailScreen].
+class RiderNameScreen extends StatefulWidget {
   /// The user map returned by phone-login (id, phone, …) — used to refresh
   /// the local session after the profile update.
   final Map<String, dynamic> user;
 
-  const DriverNameScreen({super.key, required this.user});
+  const RiderNameScreen({super.key, required this.user});
 
   @override
-  State<DriverNameScreen> createState() => _DriverNameScreenState();
+  State<RiderNameScreen> createState() => _RiderNameScreenState();
 }
 
-class _DriverNameScreenState extends State<DriverNameScreen> {
+class _RiderNameScreenState extends State<RiderNameScreen> {
   static const _navy = Color(0xFF0A1128);
   static const _gold = Color(0xFFE8C547);
 
@@ -67,10 +67,7 @@ class _DriverNameScreenState extends State<DriverNameScreen> {
     final last = _lastCtrl.text.trim();
 
     try {
-      await ApiService.updateMe({
-        'first_name': first,
-        'last_name': last,
-      });
+      await ApiService.updateMe({'first_name': first, 'last_name': last});
       await UserSession.saveUser(
         firstName: first,
         lastName: last,
@@ -80,11 +77,13 @@ class _DriverNameScreenState extends State<DriverNameScreen> {
         userId: (widget.user['id'] is num)
             ? (widget.user['id'] as num).toInt()
             : int.tryParse(widget.user['id']?.toString() ?? ''),
-        role: 'driver',
+        role: 'rider',
       );
       if (!mounted) return;
       Navigator.of(context).push(
-        onboardingFadeSlideRoute(DriverEmailScreen(firstName: first)),
+        onboardingFadeSlideRoute(
+          RiderEmailScreen(user: {...widget.user, 'first_name': first, 'last_name': last}),
+        ),
       );
       setState(() => _saving = false);
     } on ApiException catch (e) {
@@ -154,7 +153,7 @@ class _DriverNameScreenState extends State<DriverNameScreen> {
                     ),
                     const SizedBox(height: 10),
                     Text(
-                      S.of(context).nameAsRidersSeeIt,
+                      S.of(context).nameAsDriversSeeIt,
                       style: GoogleFonts.inter(
                         fontSize: 15,
                         color: Colors.white.withValues(alpha: 0.65),

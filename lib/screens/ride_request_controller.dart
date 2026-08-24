@@ -594,6 +594,13 @@ extension _RideRequestController on _RideRequestScreenState {
     switch (s.phase) {
       case RiderPhase.previewRoute:
       case RiderPhase.selectingRide:
+        // Rollback from a failed requestRide() (402/500/timeout): the phase
+        // drops back here from searching — clear the searching-map flag so
+        // the sheet doesn't stay in a stale searching state.
+        if (_searchingShowMap) {
+          _searchingShowMap = false;
+          _searchingSplash = false;
+        }
         // The sheet visibility is driven by the phase itself (Positioned
         // widget mounted in the Stack) and an AnimatedOpacity inside
         // _buildRoutePreviewSheet — no AnimationController coordination
@@ -1590,7 +1597,19 @@ extension _RideRequestController on _RideRequestScreenState {
         return true;
       }
 
-      if (_ctrl.state.phase == RiderPhase.cancelled && !_cancelDialogShown) {
+      // requestRide() rollback (402/500/timeout): the trip was never created
+      // and the phase rolls back to selectingRide carrying a client-error
+      // cancelCode. Route it through the same client-error path below so the
+      // rider gets the SnackBar and the pin page stays open for a retry.
+      final rollbackCode = _ctrl.state.cancelCode;
+      final isClientRollback = _ctrl.state.phase == RiderPhase.selectingRide &&
+          (rollbackCode == RiderTripCancelCodes.clientNoInternet ||
+              rollbackCode == RiderTripCancelCodes.clientNoSession ||
+              rollbackCode == RiderTripCancelCodes.clientCreateFailed ||
+              rollbackCode == RiderTripCancelCodes.clientConnectionError ||
+              rollbackCode == RiderTripCancelCodes.clientPaymentDeclined);
+      if ((_ctrl.state.phase == RiderPhase.cancelled && !_cancelDialogShown) ||
+          isClientRollback) {
         // Guard: if SearchingDriverScreen is still on the stack, defer the
         // navigation. The post-await block (_riderInitiatedCancel branch)
         // will handle pushAndRemoveUntil(HomeScreen) AFTER the searching

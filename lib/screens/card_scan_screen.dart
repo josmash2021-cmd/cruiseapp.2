@@ -77,6 +77,13 @@ class _CardScanScreenState extends State<CardScanScreen> {
   Timer? _scanTimer;
   bool _scanning = false;
   bool _handingOff = false; // a card was found; navigation in flight
+  // Lyft-grade accuracy: the same card (number + expiry) must be read on
+  // two consecutive passes before the hand-off — kills one-frame OCR
+  // misreads.
+  ScannedCard? _pendingCard;
+  // Auto-torch: after ~4 s without a confirmed read the card is probably in
+  // low light — the torch turns on by itself (the toggle stays in sync).
+  int _missedTicks = 0;
 
   @override
   void initState() {
@@ -145,14 +152,42 @@ class _CardScanScreenState extends State<CardScanScreen> {
         File(xFile.path).deleteSync();
       } catch (_) {}
       final card = _parseCard(result.text);
-      if (card != null && mounted && !_handingOff) {
-        _handingOff = true;
-        _scanTimer?.cancel();
-        HapticService.lightImpact();
-        if (widget.returnResult) {
-          Navigator.of(context).pop(card);
+      if (card != null && !_handingOff) {
+        _missedTicks = 0;
+        // Second consecutive identical read → confirmed, hand off.
+        if (_pendingCard != null &&
+            _pendingCard!.number == card.number &&
+            _pendingCard!.expMonth == card.expMonth &&
+            _pendingCard!.expYear == card.expYear) {
+          _handingOff = true;
+          _scanTimer?.cancel();
+          HapticService.lightImpact();
+          if (!mounted) {
+            _scanning = false;
+            return;
+          }
+          if (widget.returnResult) {
+            Navigator.of(context).pop(card);
+          } else {
+            await _openForm(prefill: card);
+          }
         } else {
-          await _openForm(prefill: card);
+          // First hit — hold it; the next frame must repeat it.
+          _pendingCard = card;
+        }
+      } else {
+        _pendingCard = null;
+        _missedTicks++;
+        if (_missedTicks >= 8 &&
+            _flashMode == FlashMode.off &&
+            _ctrl != null &&
+            _ctrl!.value.isInitialized) {
+          // ~4 s without a read — low light, torch on automatically.
+          _flashMode = FlashMode.torch;
+          try {
+            await _ctrl!.setFlashMode(_flashMode);
+            if (mounted) setState(() {});
+          } catch (_) {}
         }
       }
     } catch (_) {

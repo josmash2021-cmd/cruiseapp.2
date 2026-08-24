@@ -2592,6 +2592,19 @@ class S {
   String get securedByStripe => _es
       ? 'Tu información está encriptada y segura — nunca la compartimos.'
       : 'Your information is encrypted and secure — never shared.';
+  // Card scan screen (Lyft-style scan-first add card, 2026-08-24)
+  String get scanCardTitle => _es ? 'Escanear tarjeta' : 'Scan Card';
+  String get holdCardToScan => _es
+      ? 'Sostén tu tarjeta dentro del marco para escanearla'
+      : 'Hold your card to scan';
+  String get paymentInfoStoredSecurely => _es
+      ? 'Tu información de pago se guardará de forma segura.'
+      : 'Your payment info will be stored securely.';
+  String get typeDetailsInstead =>
+      _es ? 'Escribir datos manualmente' : 'Type details instead';
+  String get cameraPermissionRequiredForCard => _es
+      ? 'Se requiere permiso de cámara para escanear tu tarjeta'
+      : 'Camera permission is required to scan your card';
   String get billingAddressHint =>
       _es ? 'Dirección de facturación' : 'Billing address';
   String get aptSuiteOptional =>

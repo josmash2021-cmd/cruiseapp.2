@@ -10,6 +10,7 @@ import '../services/haptic_service.dart';
 import '../services/local_data_service.dart';
 import '../utils/app_platform.dart';
 import '../widgets/neu_style.dart';
+import 'card_scan_screen.dart';
 import 'ride_payment_method_screen.dart' show PaymentMethodId;
 
 // ═══════════════════════════════════════════════════════════════════
@@ -100,6 +101,11 @@ class _CruisePaymentSheetState extends State<_CruisePaymentSheet> {
   bool _cardComplete = false;
   bool _addingCard = false;
 
+  /// Set when the rider came through the card scanner — the in-sheet
+  /// CardField is seeded with the OCR'd number + expiry so only CVV and
+  /// ZIP are left to type (scan-first add card, 2026-08-24).
+  CardEditController? _cardCtl;
+
   @override
   void initState() {
     super.initState();
@@ -115,6 +121,7 @@ class _CruisePaymentSheetState extends State<_CruisePaymentSheet> {
   void dispose() {
     _nameCtrl.dispose();
     _zipCtrl.dispose();
+    _cardCtl?.dispose();
     super.dispose();
   }
 
@@ -267,6 +274,51 @@ class _CruisePaymentSheetState extends State<_CruisePaymentSheet> {
     }
   }
 
+  /// Page 1 → page 0, dropping any scanned-card seed so the next add
+  /// starts from an empty field unless the scanner runs again.
+  void _backToList() {
+    HapticService.selectionClick();
+    setState(() {
+      _cardCtl?.dispose();
+      _cardCtl = null;
+      _page = 0;
+    });
+  }
+
+  /// Scan-first add card (2026-08-24): the camera scanner opens FIRST.
+  /// A successful read comes back as a ScannedCard and the in-sheet form
+  /// opens pre-seeded (CVV/ZIP still typed); 'manual' opens it empty.
+  Future<void> _openAddCard() async {
+    HapticService.selectionClick();
+    // No OCR on web (ML Kit is native-only) — straight to the form.
+    if (kIsWeb) {
+      setState(() => _page = 1);
+      return;
+    }
+    final res = await Navigator.of(context).push<Object?>(
+      MaterialPageRoute(
+          builder: (_) => const CardScanScreen(returnResult: true)),
+    );
+    if (!mounted) return;
+    if (res is ScannedCard) {
+      setState(() {
+        _cardCtl?.dispose();
+        _cardCtl = CardEditController(
+          initialDetails: CardFieldInputDetails(
+            complete: false,
+            number: res.number,
+            expiryMonth: res.expMonth,
+            expiryYear: res.expYear,
+          ),
+        );
+        _page = 1;
+      });
+    } else if (res == 'manual') {
+      setState(() => _page = 1);
+    }
+    // null = closed without choosing — stay on the method list.
+  }
+
   // ── In-sheet add card (multiple cards supported) ──
 
   bool get _canAddCard =>
@@ -325,6 +377,8 @@ class _CruisePaymentSheetState extends State<_CruisePaymentSheet> {
         _selected = PaymentMethodId.card;
         _cardDetails = null;
         _cardComplete = false;
+        _cardCtl?.dispose();
+        _cardCtl = null;
         _nameCtrl.clear();
         _zipCtrl.clear();
         _page = 0;
@@ -616,7 +670,7 @@ class _CruisePaymentSheetState extends State<_CruisePaymentSheet> {
           : _linkBank,
     ));
 
-    // Add card row — same in-sheet form as "+ Add".
+    // Add card row — scan-first (camera), then this in-sheet form.
     rows.add(_methodRow(
       selected: false,
       leading: _logoTile(
@@ -625,10 +679,7 @@ class _CruisePaymentSheetState extends State<_CruisePaymentSheet> {
       ),
       label: s.addDebitCreditCard,
       trailingChevron: true,
-      onTap: () {
-        HapticService.selectionClick();
-        setState(() => _page = 1);
-      },
+      onTap: _openAddCard,
     ));
 
     if (widget.showTestMode) {
@@ -805,10 +856,7 @@ class _CruisePaymentSheetState extends State<_CruisePaymentSheet> {
         const SizedBox(height: 10),
         Row(
           children: [
-            _roundButton(Icons.arrow_back_rounded, () {
-              HapticService.selectionClick();
-              setState(() => _page = 0);
-            }),
+            _roundButton(Icons.arrow_back_rounded, _backToList),
             const SizedBox(width: 14),
             Expanded(
               child: Text(
@@ -865,6 +913,7 @@ class _CruisePaymentSheetState extends State<_CruisePaymentSheet> {
                   ),
                 )
               : CardField(
+                  controller: _cardCtl,
                   enablePostalCode: false,
                   style:
                       const TextStyle(color: Colors.white, fontSize: 16),
@@ -927,7 +976,7 @@ class _CruisePaymentSheetState extends State<_CruisePaymentSheet> {
         const SizedBox(height: 8),
         Center(
           child: TextButton(
-            onPressed: () => setState(() => _page = 0),
+            onPressed: _backToList,
             child: Text(
               s.cancel,
               style: TextStyle(

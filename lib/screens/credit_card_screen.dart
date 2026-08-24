@@ -17,11 +17,21 @@ class CreditCardScreen extends StatefulWidget {
   final String? lastName;
   final String? email;
 
+  /// Card details read by CardScanScreen (OCR — number + expiry only).
+  /// When present the Stripe field is pre-filled and the rider only
+  /// types CVV and billing address.
+  final String? scannedNumber;
+  final int? scannedExpMonth;
+  final int? scannedExpYear;
+
   const CreditCardScreen({
     super.key,
     this.firstName,
     this.lastName,
     this.email,
+    this.scannedNumber,
+    this.scannedExpMonth,
+    this.scannedExpYear,
   });
 
   @override
@@ -47,9 +57,47 @@ class _CreditCardScreenState extends State<CreditCardScreen> {
   bool _isLoading = false;
   CardFieldInputDetails? _cardDetails;
 
+  /// Controller that seeds the native card field with the scanned number
+  /// + expiry. `initialDetails` is forwarded to the platform view on
+  /// creation (`cardDetails` creation param), so the rider lands on the
+  /// form with everything but the CVV already typed.
+  CardFormEditController? _cardFormCtl;
+
+  String _scannedBrand() {
+    final n = widget.scannedNumber ?? '';
+    if (n.startsWith('4')) return 'visa';
+    if (n.startsWith('5')) return 'mastercard';
+    if (n.startsWith('3')) return 'amex';
+    if (n.startsWith('6')) return 'discover';
+    return 'card';
+  }
+
   @override
   void initState() {
     super.initState();
+    if (widget.scannedNumber != null && !kIsWeb) {
+      _cardFormCtl = CardFormEditController(
+        initialDetails: CardFieldInputDetails(
+          complete: false,
+          number: widget.scannedNumber,
+          expiryMonth: widget.scannedExpMonth,
+          expiryYear: widget.scannedExpYear,
+        ),
+      );
+      // onCardChanged may not fire for the seeded values — seed the local
+      // copy too so brand/last4 are right if the rider only types CVV.
+      _cardDetails = CardFieldInputDetails(
+        complete: false,
+        number: widget.scannedNumber,
+        expiryMonth: widget.scannedExpMonth,
+        expiryYear: widget.scannedExpYear,
+        brand: _scannedBrand(),
+        last4: widget.scannedNumber!.length >= 4
+            ? widget.scannedNumber!
+                .substring(widget.scannedNumber!.length - 4)
+            : null,
+      );
+    }
     _nameCtrl.addListener(_refresh);
     _addrCtrl.addListener(_refresh);
     _aptCtrl.addListener(_refresh);
@@ -62,6 +110,7 @@ class _CreditCardScreenState extends State<CreditCardScreen> {
   @override
   void dispose() {
     _addrDebounce?.cancel();
+    _cardFormCtl?.dispose();
     _nameCtrl.dispose();
     _addrCtrl.dispose();
     _aptCtrl.dispose();
@@ -398,6 +447,7 @@ class _CreditCardScreenState extends State<CreditCardScreen> {
                                       ),
                                     )
                                   : CardFormField(
+                                      controller: _cardFormCtl,
                                       enablePostalCode: false,
                                       dangerouslyGetFullCardDetails: true,
                                       style: CardFormStyle(

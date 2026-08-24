@@ -9,19 +9,16 @@ import '../services/local_data_service.dart';
 
 import '../l10n/app_localizations.dart';
 import '../widgets/neu_style.dart';
-import 'credit_card_screen.dart';
+import 'card_scan_screen.dart';
 import 'ride_payment_sheet.dart';
 
 // ═══════════════════════════════════════════════════════════════════
-//  Payment Method — Grid 2×2 de tarjetas cuadradas como en la web de Shopify
+//  Payment Method — Lyft-style list (reskin 2026-08-24, antes grid 2×2)
 //
-//  Layout: Cuadrícula 2×2 con:
-//    - Apple Pay (fondo negro, icono blanco)
-//    - Google Pay (fondo blanco, icono de colores)
-//    - Tarjeta Débito/Crédito (fondo gris oscuro, icono blanco)
-//    - Tap to Pay (fondo azul oscuro, icono NFC azul)
-//    - Bank Account (coming soon)
-//    - Modo de Prueba (fondo oscuro dorado, icono dorado)
+//  Lista vertical: Apple/Google Pay (según plataforma), tarjeta
+//  guardada, "Add Debit/Credit Card" (abre el ESCÁNER primero —
+//  card_scan_screen.dart), Tap to Pay (Android), Bank Account, y en QA
+//  el tile de Test Mode. Ícono + nombre + chevron/check + divisores.
 // ═══════════════════════════════════════════════════════════════════
 
 const _gold = Color(0xFFE8C547);
@@ -48,7 +45,7 @@ class PaymentMethodId {
 /// (ride_payment_sheet.dart), not the old full-screen 2×2 grid. The
 /// contract is unchanged: resolves with a PaymentMethodId.* string, or
 /// null when dismissed. RidePaymentMethodScreen below is kept as the
-/// grid fallback but has no callers on this path anymore.
+/// full-screen fallback but has no callers on this path anymore.
 Future<String?> showRidePaymentMethodPicker(
   BuildContext context, {
   required String currentMethod,
@@ -77,9 +74,8 @@ class RidePaymentMethodScreen extends StatefulWidget {
 }
 
 class _RidePaymentMethodScreenState extends State<RidePaymentMethodScreen>
-    with TickerProviderStateMixin, WidgetsBindingObserver {
+    with WidgetsBindingObserver {
   late String _selected;
-  late final AnimationController _entryCtl;
 
   // Saved debit/credit card — when present the card tile shows the brand
   // logo + last 4 digits instead of the "Add card" prompt.
@@ -96,10 +92,6 @@ class _RidePaymentMethodScreenState extends State<RidePaymentMethodScreen>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _selected = widget.currentMethod;
-    _entryCtl = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 500),
-    )..forward();
     _loadCardInfo();
     _loadBankInfo();
   }
@@ -173,12 +165,14 @@ class _RidePaymentMethodScreenState extends State<RidePaymentMethodScreen>
     }
   }
 
-  /// Opens the add-card flow; on success ("brand:last4") the tile updates
-  /// to the brand logo + last 4 digits.
+  /// Opens the add-card flow scan-first (Lyft-style, 2026-08-24): the
+  /// camera scanner opens FIRST; on a successful read the manual form
+  /// appears pre-filled, and "Type details instead" skips straight to it.
+  /// On success ("brand:last4") the row updates to brand + last 4.
   Future<void> _addCard() async {
     HapticService.selectionClick();
     final result = await Navigator.of(context).push<String>(
-      MaterialPageRoute(builder: (_) => const CreditCardScreen()),
+      MaterialPageRoute(builder: (_) => const CardScanScreen()),
     );
     if (result == null || !mounted) return;
     final parts = result.split(':');
@@ -197,7 +191,6 @@ class _RidePaymentMethodScreenState extends State<RidePaymentMethodScreen>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    _entryCtl.dispose();
     super.dispose();
   }
 
@@ -210,6 +203,111 @@ class _RidePaymentMethodScreenState extends State<RidePaymentMethodScreen>
     // gone. Choosing and keeping are two different decisions, and the
     // second one needs the screen to still be there to make it on.
     setState(() => _selected = id);
+  }
+
+  /// Lyft-style rows: icon tile + name + chevron (navigation rows) or a
+  /// gold check (selectable rows), separated by hairline dividers. Same
+  /// methods and selection logic as the old 2×2 grid.
+  List<Widget> _buildMethodRows(S s) {
+    final rows = <Widget>[];
+
+    if (AppPlatform.isIOS) {
+      rows.add(_MethodRow(
+        selected: _selected == PaymentMethodId.apple,
+        iconBg: Colors.black,
+        icon: const Icon(Icons.apple, color: Colors.white, size: 20),
+        label: 'Apple Pay',
+        onTap: () => _pick(PaymentMethodId.apple),
+      ));
+    }
+    if (AppPlatform.isAndroid) {
+      rows.add(_MethodRow(
+        selected: _selected == PaymentMethodId.google,
+        iconBg: Colors.white,
+        icon: _GoogleGLogo(size: 18),
+        label: 'Google Pay',
+        onTap: () => _pick(PaymentMethodId.google),
+      ));
+    }
+
+    // Saved card: brand logo + last 4 digits. Tapping selects it.
+    if (_cardLast4 != null) {
+      rows.add(_MethodRow(
+        selected: _selected == PaymentMethodId.card,
+        iconBg: const Color(0xFF2A2A2A),
+        icon: _CardBrandBadge(brand: _cardBrand),
+        label: '•••• $_cardLast4',
+        onTap: () => _pick(PaymentMethodId.card),
+      ));
+    }
+
+    // Add card — ALWAYS on screen, never selectable. Opens the camera
+    // scanner first (Lyft-style), the manual form is its fallback.
+    rows.add(_MethodRow(
+      selected: false,
+      iconBg: Colors.white.withValues(alpha: 0.07),
+      icon: const Icon(Icons.credit_card_rounded,
+          color: Colors.white, size: 18),
+      label: s.addDebitCreditCard,
+      chevron: true,
+      onTap: _addCard,
+    ));
+
+    // Tap to Pay - NFC Contactless Payment. Android only — iOS requires
+    // Apple's proximity-reader entitlement (per-app, pending approval).
+    if (AppPlatform.isAndroid) {
+      rows.add(_MethodRow(
+        selected: _selected == PaymentMethodId.tapToPay,
+        iconBg: const Color(0xFF1A237E),
+        icon: const Icon(Icons.contactless,
+            color: Color(0xFF4A90D9), size: 20),
+        label: 'Tap to Pay',
+        secondary: 'Hold card to phone',
+        onTap: () => _pick(PaymentMethodId.tapToPay),
+      ));
+    }
+
+    rows.add(_MethodRow(
+      selected: _selected == PaymentMethodId.bank,
+      iconBg: const Color(0xFF0F1A12),
+      icon: const Icon(Icons.account_balance_rounded,
+          color: Color(0xFF22C55E), size: 18),
+      label: _bankLast4 != null
+          ? (_bankName != null
+              ? '$_bankName •••• $_bankLast4'
+              : 'Bank •••• $_bankLast4')
+          : 'Bank Account',
+      // Unlinked bank = navigation row (starts the linking flow).
+      chevron: _bankLast4 == null,
+      onTap: _bankLast4 != null
+          ? () => _pick(PaymentMethodId.bank)
+          : () => _openBankConnection(context),
+    ));
+
+    if (widget.showTestMode) {
+      rows.add(_MethodRow(
+        selected: _selected == PaymentMethodId.test,
+        iconBg: const Color(0xFF1A1A1A),
+        icon: const Icon(Icons.tune_rounded, color: _gold, size: 18),
+        label: s.testModeLabel,
+        secondary: s.simulatePayment,
+        onTap: () => _pick(PaymentMethodId.test),
+      ));
+    }
+
+    // Hairline dividers between rows, indented past the icon tile.
+    final out = <Widget>[];
+    for (var i = 0; i < rows.length; i++) {
+      out.add(rows[i]);
+      if (i != rows.length - 1) {
+        out.add(Padding(
+          padding: const EdgeInsets.only(left: 58),
+          child:
+              Container(height: 1, color: Colors.white.withValues(alpha: 0.06)),
+        ));
+      }
+    }
+    return out;
   }
 
   bool _linkingBank = false;
@@ -345,129 +443,12 @@ class _RidePaymentMethodScreenState extends State<RidePaymentMethodScreen>
             Expanded(
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
-                child: GridView.count(
-                  crossAxisCount: 2,
-                  mainAxisSpacing: 12,
-                  crossAxisSpacing: 12,
-                  childAspectRatio: 1.0,
+                // Lyft-style list (2026-08-24): icon tile + name +
+                // chevron/check, hairline dividers — same methods, same
+                // selection logic as the old 2×2 grid.
+                child: ListView(
                   physics: const BouncingScrollPhysics(),
-                  // iOS shows Apple Pay; Android shows Google Pay. Both
-                  // platforms also see Card + Bank Account (coming soon)
-                  // and — when enabled — the Test Mode tile for QA.
-                  children: [
-                    if (AppPlatform.isIOS)
-                      _PayCard(
-                        entryCtl: _entryCtl,
-                        staggerDelay: 0.00,
-                        id: PaymentMethodId.apple,
-                        selected: _selected == PaymentMethodId.apple,
-                        iconBg: Colors.black,
-                        label: 'Apple Pay',
-                        icon: const Icon(Icons.apple,
-                            color: Colors.white, size: 32),
-                        onTap: () => _pick(PaymentMethodId.apple),
-                      ),
-                    if (AppPlatform.isAndroid)
-                      _PayCard(
-                        entryCtl: _entryCtl,
-                        staggerDelay: 0.00,
-                        id: PaymentMethodId.google,
-                        selected: _selected == PaymentMethodId.google,
-                        iconBg: Colors.white,
-                        label: 'Google Pay',
-                        icon: _GoogleGLogo(size: 32),
-                        onTap: () => _pick(PaymentMethodId.google),
-                      ),
-                    // Saved card: brand logo + last 4 digits. Tapping it
-                    // selects it as the payment method.
-                    if (_cardLast4 != null)
-                      _PayCard(
-                        entryCtl: _entryCtl,
-                        staggerDelay: 0.08,
-                        id: PaymentMethodId.card,
-                        selected: _selected == PaymentMethodId.card,
-                        iconBg: const Color(0xFF2A2A2A),
-                        label: '•••• $_cardLast4',
-                        icon: _CardBrandBadge(brand: _cardBrand),
-                        onTap: () => _pick(PaymentMethodId.card),
-                      ),
-                    // Add card — ALWAYS on screen, never selectable.
-                    //
-                    // This used to be an either/or with the tile above: the
-                    // moment a card was on file the add tile vanished, so a
-                    // rider had no way to add or change a card from here at
-                    // all. The only escape was having no card.
-                    _PayCard(
-                      entryCtl: _entryCtl,
-                      staggerDelay: _cardLast4 != null ? 0.12 : 0.08,
-                      id: PaymentMethodId.card,
-                      selected: false,
-                      iconBg: const Color(0xFF2A2A2A),
-                      label: s.addDebitCreditCard,
-                      icon: const Icon(
-                        Icons.add_card_rounded,
-                        color: Colors.white,
-                        size: 28,
-                      ),
-                      onTap: _addCard,
-                    ),
-                    // Tap to Pay - NFC Contactless Payment
-                    // Only visible on Android. iOS requires Apple's
-                    // proximity-reader entitlement which is per-app and
-                    // pending approval — the SDK throws at runtime
-                    // without it, so we hide the option entirely.
-                    if (AppPlatform.isAndroid)
-                      _PayCard(
-                        entryCtl: _entryCtl,
-                        staggerDelay: 0.12,
-                        id: PaymentMethodId.tapToPay,
-                        selected: _selected == PaymentMethodId.tapToPay,
-                        iconBg: const Color(0xFF1A237E), // Deep blue
-                        iconBorder:
-                            const Color(0xFF4A90D9).withValues(alpha: 0.5),
-                        label: 'Tap to Pay',
-                        secondary: 'Hold card to phone',
-                        icon: const Icon(
-                          Icons.contactless,
-                          color: Color(0xFF4A90D9),
-                          size: 32,
-                        ),
-                        onTap: () => _pick(PaymentMethodId.tapToPay),
-                      ),
-                    _PayCard(
-                      entryCtl: _entryCtl,
-                      staggerDelay: 0.16,
-                      id: PaymentMethodId.bank,
-                      selected: _selected == PaymentMethodId.bank,
-                      iconBg: const Color(0xFF0F1A12),
-                      iconBorder:
-                          const Color(0xFF22C55E).withValues(alpha: 0.45),
-                      label: _bankLast4 != null
-                          ? (_bankName != null
-                              ? '$_bankName •••• $_bankLast4'
-                              : 'Bank •••• $_bankLast4')
-                          : 'Bank Account',
-                      icon: const Icon(Icons.account_balance_rounded,
-                          color: Color(0xFF22C55E), size: 28),
-                      onTap: _bankLast4 != null
-                          ? () => _pick(PaymentMethodId.bank)
-                          : () => _openBankConnection(context),
-                    ),
-                    if (widget.showTestMode)
-                      _PayCard(
-                        entryCtl: _entryCtl,
-                        staggerDelay: 0.24,
-                        id: PaymentMethodId.test,
-                        selected: _selected == PaymentMethodId.test,
-                        iconBg: const Color(0xFF1A1A1A),
-                        iconBorder: _gold.withValues(alpha: 0.50),
-                        label: s.testModeLabel,
-                        secondary: s.simulatePayment,
-                        icon: const Icon(Icons.tune_rounded,
-                            color: _gold, size: 28),
-                        onTap: () => _pick(PaymentMethodId.test),
-                      ),
-                  ],
+                  children: _buildMethodRows(s),
                 ),
               ),
             ),
@@ -593,209 +574,110 @@ class _Header extends StatelessWidget {
 }
 
 // ═══════════════════════════════════════════════════════════════════
-//  Card — Tarjeta cuadrada para método de pago (Grid 2×2)
-//  Layout: Icono grande arriba, label abajo, check esquina superior derecha
+//  Method row — Lyft-style list tile (2026-08-24).
+//  Icon tile (40×28, card-logo proportions) + name + trailing: gold
+//  check bubble for selectable rows, chevron for navigation rows
+//  (Add card / link bank). Dividers are added by _buildMethodRows.
 // ═══════════════════════════════════════════════════════════════════
 
-class _PayCard extends StatefulWidget {
-  final AnimationController entryCtl;
-  final double staggerDelay;
-  final String id;
+class _MethodRow extends StatelessWidget {
   final bool selected;
   final Color iconBg;
-  final Color? iconBorder;
+  final Widget icon;
   final String label;
   final String? secondary;
-  final Widget icon;
+  final bool chevron;
   final VoidCallback onTap;
-  /// When true the card is dimmed (45% opacity) and a gold "Coming Soon"
-  /// diagonal ribbon is overlaid in the upper-right corner. Tap is
-  /// effectively swallowed.
-  final bool comingSoon;
 
-  const _PayCard({
-    required this.entryCtl,
-    required this.staggerDelay,
-    required this.id,
+  const _MethodRow({
     required this.selected,
     required this.iconBg,
-    this.iconBorder,
+    required this.icon,
     required this.label,
     this.secondary,
-    required this.icon,
+    this.chevron = false,
     required this.onTap,
-    // ignore: unused_element_parameter
-    this.comingSoon = false,
   });
 
   @override
-  State<_PayCard> createState() => _PayCardState();
-}
-
-class _PayCardState extends State<_PayCard> {
-  bool _pressed = false;
-
-  @override
   Widget build(BuildContext context) {
-    final anim = CurvedAnimation(
-      parent: widget.entryCtl,
-      curve: Interval(
-        widget.staggerDelay,
-        (widget.staggerDelay + 0.55).clamp(0.0, 1.0),
-        curve: Curves.easeOutCubic,
-      ),
-    );
-
-    return AnimatedBuilder(
-      animation: anim,
-      builder: (_, child) {
-        final t = anim.value;
-        return Opacity(
-          opacity: t,
-          child: Transform.translate(
-            offset: Offset(0, 12 * (1 - t)),
-            child: child,
-          ),
-        );
-      },
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(16),
-        child: Stack(
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: SizedBox(
+        height: 58,
+        child: Row(
           children: [
-            Opacity(
-              opacity: widget.comingSoon ? 0.55 : 1.0,
-              child: _buildCardBody(),
+            Container(
+              width: 44,
+              height: 30,
+              decoration: BoxDecoration(
+                color: iconBg,
+                borderRadius: BorderRadius.circular(7),
+                border:
+                    Border.all(color: Colors.white.withValues(alpha: 0.08)),
+              ),
+              alignment: Alignment.center,
+              child: icon,
             ),
-            if (widget.comingSoon)
-              Positioned(
-                top: 14,
-                right: -28,
-                child: Transform.rotate(
-                  angle: 0.45,
-                  child: Container(
-                    width: 110,
-                    padding: const EdgeInsets.symmetric(vertical: 4),
-                    color: const Color(0xFFE8C547),
-                    child: const Text(
-                      'COMING SOON',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontFamily: 'Poppins',
-                        color: Colors.black,
-                        fontSize: 9,
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: 0.6,
-                      ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontFamily: 'Poppins',
+                      color: Colors.white,
+                      fontSize: 14.5,
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
+                  if (secondary != null)
+                    Text(
+                      secondary!,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontFamily: 'Poppins',
+                        color: _gold.withValues(alpha: 0.70),
+                        fontSize: 11,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            if (chevron)
+              Icon(Icons.chevron_right_rounded,
+                  color: Colors.white.withValues(alpha: 0.4), size: 22)
+            else
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                width: 24,
+                height: 24,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: selected ? _gold : Colors.transparent,
+                  border: Border.all(
+                    color: selected
+                        ? _gold
+                        : Colors.white.withValues(alpha: 0.25),
+                    width: 1.5,
+                  ),
                 ),
+                child: selected
+                    ? const Icon(Icons.check_rounded,
+                        color: Colors.black, size: 15)
+                    : null,
               ),
           ],
         ),
       ),
-    );
-  }
-
-  Widget _buildCardBody() {
-    return GestureDetector(
-        onTap: widget.comingSoon ? null : widget.onTap,
-        onTapDown: (_) => setState(() => _pressed = true),
-        onTapCancel: () => setState(() => _pressed = false),
-        onTapUp: (_) => setState(() => _pressed = false),
-        behavior: HitTestBehavior.opaque,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 140),
-          // Neumorphic tile; selected gets the thin gold border (same
-          // treatment as the fleet cards), press sinks the surface.
-          decoration: widget.selected
-              ? neuBox(radius: 20).copyWith(
-                  border: Border.all(
-                    color: _gold.withValues(alpha: 0.45),
-                    width: 1,
-                  ),
-                )
-              : neuBox(radius: 20, pressed: _pressed),
-          child: Stack(
-            children: [
-              // Check en esquina superior derecha
-              Positioned(
-                top: 12,
-                right: 12,
-                child: _Check(selected: widget.selected),
-              ),
-              // Contenido centrado
-              Center(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    // Icon inside a pressed neumorphic well
-                    Container(
-                      width: 56,
-                      height: 56,
-                      decoration: neuBox(radius: 12, pressed: true),
-                      alignment: Alignment.center,
-                      child: widget.icon,
-                    ),
-                    const SizedBox(height: 16),
-                    // Label
-                    Text(
-                      widget.label,
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(
-                        fontFamily: 'Poppins',
-                        color: Colors.white,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    // Sub-label (opcional)
-                    if (widget.secondary != null) ...[
-                      const SizedBox(height: 4),
-                      Text(
-                        widget.secondary!,
-                        style: TextStyle(
-                          fontFamily: 'Poppins',
-                          color: _gold.withValues(alpha: 0.70),
-                          fontSize: 11,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-    );
-  }
-}
-
-class _Check extends StatelessWidget {
-  final bool selected;
-  const _Check({required this.selected});
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 200),
-      width: 22,
-      height: 22,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        color: selected ? _gold : Colors.transparent,
-        border: Border.all(
-          color: selected
-              ? _gold
-              // rgba(255,255,255,.15)
-              : Colors.white.withValues(alpha: 0.15),
-          width: 1.5,
-        ),
-      ),
-      alignment: Alignment.center,
-      child: selected
-          ? const Icon(Icons.check_rounded, color: Colors.black, size: 14)
-          : const SizedBox.shrink(),
     );
   }
 }

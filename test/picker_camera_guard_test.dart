@@ -246,8 +246,8 @@ void main() {
 
     test('the phase flip keeps pickingLocation', () {
       expect(
-        state.contains('phase: _state.phase == RiderPhase.pickingLocation\n'
-            '          ? RiderPhase.pickingLocation'),
+        state.contains('phase: switch (_state.phase) {\n'
+            '        RiderPhase.pickingLocation => RiderPhase.pickingLocation,'),
         isTrue,
         reason: '_tryFetchRoute flipping out of pickingLocation mid-drag '
             'was the original snap-back — the picker exits ONLY via '

@@ -532,9 +532,18 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
       // unmounted the picker overlays and fired the route-fit flight
       // behind the rider's finger (the picker "snap back"). The picker's
       // Confirm exits via finishPickingLocation() instead.
-      phase: _state.phase == RiderPhase.pickingLocation
-          ? RiderPhase.pickingLocation
-          : RiderPhase.previewRoute,
+      phase: switch (_state.phase) {
+        RiderPhase.pickingLocation => RiderPhase.pickingLocation,
+        // Post-request phases must survive a late route refetch — flipping
+        // back to previewRoute here resurrected the vehicle sheet while the
+        // trip was already dispatched (build 587 bug).
+        RiderPhase.requesting ||
+        RiderPhase.searchingDriver ||
+        RiderPhase.driverAssigned ||
+        RiderPhase.driverArriving ||
+        RiderPhase.onTrip => _state.phase,
+        _ => RiderPhase.previewRoute,
+      },
       route: estimatedRoute,
       rideOptions: estimatedOptions,
       selectedOption: null,
@@ -558,10 +567,17 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
       if (routeResult != null) {
         final options = _generateRideOptions(routeResult);
         _state = _state.copyWith(
-          // Same picker guard as the estimated route above.
-          phase: _state.phase == RiderPhase.pickingLocation
-              ? RiderPhase.pickingLocation
-              : RiderPhase.previewRoute,
+          // Same picker guard as the estimated route above, plus the
+          // post-request guard: never leave searchingDriver/assigned/onTrip.
+          phase: switch (_state.phase) {
+            RiderPhase.pickingLocation => RiderPhase.pickingLocation,
+            RiderPhase.requesting ||
+            RiderPhase.searchingDriver ||
+            RiderPhase.driverAssigned ||
+            RiderPhase.driverArriving ||
+            RiderPhase.onTrip => _state.phase,
+            _ => RiderPhase.previewRoute,
+          },
           route: routeResult,
           rideOptions: options,
           selectedOption: null,

@@ -159,6 +159,12 @@ class _DriverTodoScreenState extends State<DriverTodoScreen> {
                       physics: const AlwaysScrollableScrollPhysics(),
                       padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
                       children: [
+                        // ── Featured next item (Lyft style) ──
+                        if (open.isNotEmpty) ...[
+                          _featuredCard(open.first),
+                          const SizedBox(height: 4),
+                        ],
+
                         for (final entry in open) _card(entry),
 
                         // ── Completed (N) — collapsible ──
@@ -292,6 +298,89 @@ class _DriverTodoScreenState extends State<DriverTodoScreen> {
     );
   }
 
+  /// Featured "up next" card — hero image + title + subtitle + gold
+  /// Continue button that opens the same item intro as the list card.
+  Widget _featuredCard(OnboardingItemEntry entry) {
+    final s = S.of(context);
+    final (title, subtitle) = onboardingCardCopy(s, entry.item);
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      decoration: BoxDecoration(
+        color: const Color(0xFF101736),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: kOnboardingGold.withValues(alpha: 0.55)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.25),
+            blurRadius: 14,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Image.asset(
+            entry.item.asset,
+            width: double.infinity,
+            height: 150,
+            fit: BoxFit.cover,
+          ),
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: GoogleFonts.inter(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.white,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  subtitle,
+                  style: GoogleFonts.inter(
+                    fontSize: 13,
+                    height: 1.35,
+                    color: Colors.white.withValues(alpha: 0.6),
+                  ),
+                ),
+                const SizedBox(height: 14),
+                SizedBox(
+                  width: double.infinity,
+                  height: 48,
+                  child: ElevatedButton(
+                    onPressed: () => _openItem(entry),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: kOnboardingGold,
+                      foregroundColor: const Color(0xFF1A1400),
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
+                    child: Text(
+                      s.continueButton,
+                      style: const TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _card(OnboardingItemEntry entry) {
     final s = S.of(context);
     final (title, subtitle) = onboardingCardCopy(s, entry.item);
@@ -328,13 +417,8 @@ class _DriverTodoScreenState extends State<DriverTodoScreen> {
               Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Container(
-                    width: 44,
-                    height: 44,
-                    decoration: BoxDecoration(
-                      color: kOnboardingGold.withValues(alpha: 0.14),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
+                  Padding(
+                    padding: const EdgeInsets.only(top: 2),
                     child: Icon(
                       onboardingItemIcon(entry.item),
                       color: kOnboardingGold,

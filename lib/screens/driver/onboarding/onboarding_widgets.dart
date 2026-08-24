@@ -176,6 +176,10 @@ class OnboardingDropdown<T> extends StatelessWidget {
   Widget build(BuildContext context) {
     return DropdownButtonFormField<T>(
       initialValue: value,
+      // Cap the menu so long lists (50 states, ~30 makes) open as a
+      // floating card, not an ugly full-height top-to-bottom wall.
+      menuMaxHeight: 340,
+      borderRadius: BorderRadius.circular(16),
       items: [
         for (final item in items)
           DropdownMenuItem<T>(

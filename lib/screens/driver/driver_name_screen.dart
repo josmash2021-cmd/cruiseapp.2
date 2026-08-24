@@ -122,6 +122,10 @@ class _DriverNameScreenState extends State<DriverNameScreen> {
 
     return Scaffold(
       backgroundColor: _navy,
+      // Keep the fields pinned in place: only the CTA floats above the
+      // keyboard (viewInsets padding below), instead of the body resizing
+      // and scrolling the fields off the top.
+      resizeToAvoidBottomInset: false,
       body: GestureDetector(
         onTap: () => FocusScope.of(context).unfocus(),
         child: Column(

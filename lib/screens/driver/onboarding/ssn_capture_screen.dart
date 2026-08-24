@@ -75,6 +75,9 @@ class _SsnCaptureScreenState extends State<SsnCaptureScreen> {
 
     return Scaffold(
       backgroundColor: kOnboardingNavy,
+      // Field stays put; only the Save button floats above the keyboard
+      // via the viewInsets padding below.
+      resizeToAvoidBottomInset: false,
       appBar: AppBar(
         backgroundColor: kOnboardingNavy,
         elevation: 0,
@@ -146,7 +149,12 @@ class _SsnCaptureScreenState extends State<SsnCaptureScreen> {
             ),
           ),
           Padding(
-            padding: EdgeInsets.fromLTRB(24, 8, 24, pad.bottom + 16),
+            padding: EdgeInsets.fromLTRB(
+              24,
+              8,
+              24,
+              pad.bottom + MediaQuery.of(context).viewInsets.bottom + 16,
+            ),
             child: OnboardingGoldButton(
               label: s.save,
               loading: _saving,

@@ -1340,35 +1340,19 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
   }
 
   Widget _emptyState(S s) {
+    // Lyft-style: no giant empty block — the header already says "0 rides
+    // available / Move map to search for rides". Just a quiet hint line.
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 28),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
+      padding: const EdgeInsets.symmetric(vertical: 14),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Container(
-            width: 68,
-            height: 68,
-            decoration: BoxDecoration(
-              color: _gold.withValues(alpha: 0.08),
-              borderRadius: BorderRadius.circular(22),
-            ),
-            child: const Icon(Icons.event_busy_rounded,
-                color: _gold, size: 30),
-          ),
-          const SizedBox(height: 16),
+          const Icon(Icons.event_busy_rounded, color: Colors.white24,
+              size: 15),
+          const SizedBox(width: 8),
           Text(
             s.noScheduledTrips,
-            style: const TextStyle(
-                color: Colors.white,
-                fontSize: 16,
-                fontWeight: FontWeight.w700),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            s.scheduledTripsHint,
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-                color: Colors.white38, fontSize: 13, height: 1.5),
+            style: const TextStyle(color: Colors.white38, fontSize: 12.5),
           ),
         ],
       ),

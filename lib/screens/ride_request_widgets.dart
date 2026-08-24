@@ -517,22 +517,35 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                   // without any of it, so they stay, the money shows as a
                   // dash, and Select carries the fact that nothing can be
                   // booked yet.
-                  Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      for (final o in displayOptions)
-                        _buildTierRow(
-                          c,
-                          o,
-                          option != null && o.id == option.id,
-                          // Collapsed sheet: only the picked card stays;
-                          // the rest fold away with the same animation.
-                          hidden: _sheetCollapsed &&
-                              option != null &&
-                              o.id != option.id,
-                        ),
-                    ],
+                  // While the fares load the sheet shows Lyft-style
+                  // skeleton cards (grey placeholder rows) — the real tiers
+                  // crossfade in when the prices are ready (user spec
+                  // 2026-08-24: the entry state must read as "loading",
+                  // never as the old list popping in).
+                  AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 300),
+                    child: !faresReady &&
+                            _ctrl.state.pickup != null &&
+                            _ctrl.state.dropoff != null
+                        ? _buildSkeletonTierRows()
+                        : Column(
+                            key: const ValueKey('tierRows'),
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              for (final o in displayOptions)
+                                _buildTierRow(
+                                  c,
+                                  o,
+                                  option != null && o.id == option.id,
+                                  // Collapsed sheet: only the picked card stays;
+                                  // the rest fold away with the same animation.
+                                  hidden: _sheetCollapsed &&
+                                      option != null &&
+                                      o.id != option.id,
+                                ),
+                            ],
+                          ),
                   ),
 
                   // Under the list, not instead of it.
@@ -700,6 +713,57 @@ extension _RideRequestWidgets on _RideRequestScreenState {
   /// snap. [hidden] folds the row to nothing — the collapsed sheet keeps
   /// only the picked card — with the same animation instead of a
   /// disappearance.
+  /// Lyft-style loading state: four grey skeleton rows standing in for the
+  /// tiers while the fares are being computed (circle + two bars each).
+  Widget _buildSkeletonTierRows() {
+    Widget bar(double w, {double h = 12, double opacity = 0.10}) =>
+        Container(
+          width: w,
+          height: h,
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: opacity),
+            borderRadius: BorderRadius.circular(h / 2),
+          ),
+        );
+    Widget row() => Container(
+          margin: const EdgeInsets.only(bottom: 10),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.045),
+            borderRadius: BorderRadius.circular(16),
+            border:
+                Border.all(color: Colors.white.withValues(alpha: 0.07)),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 46,
+                height: 32,
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [bar(74), const SizedBox(height: 7), bar(48)],
+              ),
+              const Spacer(),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [bar(56, h: 14), const SizedBox(height: 7), bar(40)],
+              ),
+            ],
+          ),
+        );
+    return Column(
+      key: const ValueKey('tierSkeletons'),
+      mainAxisSize: MainAxisSize.min,
+      children: [row(), row(), row(), row()],
+    );
+  }
+
   /// Single source of truth for the tier display name used by the sheet
   /// (rows AND the "Select {tier}" button — before 2026-08-24 the button
   /// read TierInfo.displayTitle, the legacy VIP/Premium/Comfort naming).

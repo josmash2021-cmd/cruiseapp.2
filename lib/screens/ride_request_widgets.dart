@@ -426,7 +426,7 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                     const SizedBox(height: 10),
                   ],
 
-                  // Grabber + title — also the sheet's drag handle
+                  // Grabber — also the sheet's drag handle
                   // (2026-08-22 redesign). The sheet has two snapped states:
                   // expanded (every tier listed) and collapsed (only the
                   // picked tier's card plus the action panel, so the map
@@ -473,55 +473,33 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                             ),
                           ),
                         ),
-                        // Centered title with optional Airport / 10% OFF
-                        // pills to the side. Flexible + ellipsis so it
-                        // truncates instead of overflowing when both pills
-                        // are active on narrow screens.
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Flexible(
-                              child: Text(
-                                widget.fastRide
-                                    ? S.of(context).fastRideLabel
-                                    : S.of(context).chooseARide,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  fontFamily: 'Poppins',
-                                  fontSize: 20,
-                                  fontWeight: FontWeight.w800,
-                                  color: Colors.white,
-                                  letterSpacing: -0.6, // -.03em × 20px
+                        // No title (2026-08-24, Lyft-style): the list starts
+                        // right under the handle. Only the Airport / 10% OFF
+                        // pills keep this row when they apply.
+                        if (_ctrl.state.isAirportTrip || widget.applyPromo)
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              if (_ctrl.state.isAirportTrip)
+                                _headerPill(
+                                  icon: Icons.flight_rounded,
+                                  text: S.of(context).airportLabel,
+                                  color: const Color(0xFF4285F4),
                                 ),
-                              ),
-                            ),
-                            if (_ctrl.state.isAirportTrip) ...[
-                              const SizedBox(width: 8),
-                              _headerPill(
-                                icon: Icons.flight_rounded,
-                                text: S.of(context).airportLabel,
-                                color: const Color(0xFF4285F4),
-                              ),
+                              if (widget.applyPromo) ...[
+                                if (_ctrl.state.isAirportTrip)
+                                  const SizedBox(width: 8),
+                                _headerPill(
+                                  text: '10% OFF',
+                                  color: const Color(0xFFE8C547),
+                                ),
+                              ],
                             ],
-                            if (widget.applyPromo) ...[
-                              const SizedBox(width: 8),
-                              _headerPill(
-                                text: '10% OFF',
-                                color: const Color(0xFFE8C547),
-                              ),
-                            ],
-                          ],
-                        ),
+                          ),
                       ],
                     ),
                   ),
-                  const SizedBox(height: 10),
-                  // Hairline divider under the title (rule-18 idiom).
-                  Container(
-                      height: 1,
-                      color: Colors.white.withValues(alpha: 0.05)),
-                  const SizedBox(height: 10),
+                  const SizedBox(height: 6),
 
                   // Vertical tier list (2026-08-22 redesign, Lyft-style).
                   //
@@ -570,18 +548,18 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                     const SizedBox(height: 4),
                     _buildMissingEndpointNotice(),
                   ],
+
+                  // ── Action panel ── FLAT on the sheet's own background
+                  // (2026-08-24, Lyft-style): payment method at the left,
+                  // Schedule at the right, and the big gold
+                  // "Select {tier}" button beneath. Only once a tier is
+                  // picked — before that the sheet is just the list.
+                  if (option != null)
+                    _buildActionPanel(c, option, faresReady),
                   ],
                   ),
                 ),
               ),
-
-              // ── Floating action panel ── a card of its own under the
-              // tier list (2026-08-22 redesign): payment method at the
-              // left, Schedule at the right, and the big gold
-              // "Select {tier}" button beneath. Only once a tier is
-              // picked — before that the sheet is just the list.
-              if (option != null)
-                _buildActionPanel(c, option, faresReady),
               ],
             ),
           ),
@@ -768,7 +746,7 @@ extension _RideRequestWidgets on _RideRequestScreenState {
             // away vertically without the list jumping sideways.
             ? const SizedBox(width: double.infinity)
             : Padding(
-                padding: const EdgeInsets.only(bottom: 8),
+                padding: const EdgeInsets.only(bottom: 10),
                 child: _PressableScale(
                   onTap: () {
                     HapticService.selectionClick();
@@ -789,7 +767,7 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                     duration: const Duration(milliseconds: 280),
                     curve: Curves.easeInOutCubic,
                     padding: EdgeInsets.symmetric(
-                        horizontal: 12, vertical: selected ? 14 : 10),
+                        horizontal: 12, vertical: selected ? 16 : 12),
                     decoration: BoxDecoration(
                       color: selected ? neuSurface : Colors.transparent,
                       borderRadius: BorderRadius.circular(18),
@@ -869,7 +847,11 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                                       ],
                                     ],
                                   ),
-                                  if (waitText.isNotEmpty) ...[
+                                  // Compact rows carry the wait under the
+                                  // name; once the card opens, the clock
+                                  // line moves under the price, right-aligned
+                                  // (2026-08-24, Lyft layout).
+                                  if (!selected && waitText.isNotEmpty) ...[
                                     const SizedBox(height: 2),
                                     Text(
                                       waitText,
@@ -888,16 +870,41 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                               ),
                             ),
                             const SizedBox(width: 8),
-                            // Price crossfades dash → real fare instead of
-                            // popping.
-                            AnimatedSwitcher(
-                              duration: const Duration(milliseconds: 250),
-                              child: Text(
-                                promo.priceText,
-                                key: ValueKey(
-                                    'tierPrice_${opt.id}_${promo.priceText}'),
-                                style: priceStyle,
-                              ),
+                            Column(
+                              mainAxisSize: MainAxisSize.min,
+                              crossAxisAlignment: CrossAxisAlignment.end,
+                              children: [
+                                // Price crossfades dash → real fare instead
+                                // of popping.
+                                AnimatedSwitcher(
+                                  duration: const Duration(milliseconds: 250),
+                                  child: Text(
+                                    promo.priceText,
+                                    key: ValueKey(
+                                        'tierPrice_${opt.id}_${promo.priceText}'),
+                                    style: priceStyle,
+                                  ),
+                                ),
+                                // Lyft layout: the "in X min · H:MM" line
+                                // sits right under the price, plain grey —
+                                // no icon chip (2026-08-24).
+                                if (selected && _tierEtaLine(opt).isNotEmpty) ...[
+                                  const SizedBox(height: 3),
+                                  Text(
+                                    _tierEtaLine(opt),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    textAlign: TextAlign.right,
+                                    style: TextStyle(
+                                      fontFamily: 'Poppins',
+                                      color:
+                                          Colors.white.withValues(alpha: 0.55),
+                                      fontSize: 11.5,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ],
+                              ],
                             ),
                           ],
                         ),
@@ -922,42 +929,14 @@ extension _RideRequestWidgets on _RideRequestScreenState {
   }
 
   /// The part of a picked tier's card that only exists while it is open:
-  /// the "in X min · H:MM AM/PM" line (the scheduled pickup clock in
-  /// scheduled mode) and the tier's description in a sunken sub-box.
+  /// the tier's description as a full-width bar at the bottom of the card
+  /// (Lyft's "A nicer ride, guaranteed" slot). The clock line lives up in
+  /// the header, under the price.
   Widget _buildTierExpandedDetail(AppColors c, RideOption opt) {
-    final etaLine = _tierEtaLine(opt);
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (etaLine.isNotEmpty) ...[
-          const SizedBox(height: 8),
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                Icons.access_time_filled_rounded,
-                size: 12,
-                color: const Color(0xFFE8C547).withValues(alpha: 0.8),
-              ),
-              const SizedBox(width: 5),
-              Flexible(
-                child: Text(
-                  etaLine,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontFamily: 'Poppins',
-                    color: Colors.white.withValues(alpha: 0.7),
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 0.2,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ],
         const SizedBox(height: 10),
         Container(
           width: double.infinity,
@@ -1015,81 +994,72 @@ extension _RideRequestWidgets on _RideRequestScreenState {
     }
   }
 
-  /// Floating action panel (2026-08-22 redesign): a card of its own under
-  /// the tier list — payment method at the left (same picker, same logos,
-  /// same navigation), Schedule at the right, and the big gold
-  /// "Select {tier}" button beneath. Grows in with AnimatedSize the first
-  /// time a tier is picked.
+  /// Action panel (2026-08-24, Lyft-style): FLAT on the sheet's own
+  /// background — no separate floating card, no shadow. Payment method at
+  /// the left (same picker, same logos, same navigation), Schedule at the
+  /// right, and the big gold "Select {tier}" button beneath, separated
+  /// from the list by a hairline. Lives INSIDE the sheet container, so
+  /// _SheetSizeReporter keeps measuring sheet+panel exactly as before.
+  /// Grows in with AnimatedSize the first time a tier is picked.
   Widget _buildActionPanel(AppColors c, RideOption option, bool faresReady) {
     return AnimatedSize(
       duration: const Duration(milliseconds: 300),
       curve: Curves.easeInOutCubic,
       alignment: Alignment.topCenter,
-      child: Container(
-        margin: const EdgeInsets.only(top: 10),
-        padding: const EdgeInsets.fromLTRB(12, 4, 12, 12),
-        decoration: BoxDecoration(
-          color: neuSurface,
-          borderRadius: BorderRadius.circular(22),
-          border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.45),
-              blurRadius: 20,
-              offset: const Offset(0, -4),
-            ),
-          ],
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: _PaymentMethodButton(
-                    onTap: () => _showPaymentMethodPicker(c, option),
-                    selectedMethod: _selectedPaymentMethod,
-                    logoBuilder: _paymentLogoWidget,
-                    labelBuilder: _paymentLabel,
-                  ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const SizedBox(height: 4),
+          // Hairline between the tier list and the action block.
+          Container(height: 1, color: Colors.white.withValues(alpha: 0.05)),
+          const SizedBox(height: 4),
+          Row(
+            children: [
+              Expanded(
+                child: _PaymentMethodButton(
+                  onTap: () => _showPaymentMethodPicker(c, option),
+                  selectedMethod: _selectedPaymentMethod,
+                  logoBuilder: _paymentLogoWidget,
+                  labelBuilder: _paymentLabel,
                 ),
-                const SizedBox(width: 8),
-                _buildScheduleButton(),
-              ],
-            ),
-            // Hairline divider between the payment row and the button
-            // (rule-18 idiom).
-            Container(height: 1, color: Colors.white.withValues(alpha: 0.05)),
-            const SizedBox(height: 10),
-            _WebRequestButton(
-              // Nobody within fifteen miles means there is nothing to
-              // request. Better to show it disabled than to take the
-              // request and leave the rider watching a search that was
-              // never going to find anyone. Only a confirmed zero disables
-              // it — an unknown count leaves the button live. Only an
-              // IMMEDIATE request is gated on drivers being around: a
-              // reservation goes to the scheduled marketplace (2026-08-17).
-              // And not before the fares are real, or Cruise Cash comes up
-              // short of the FULL fare (user spec 2026-08-04).
-              enabled: !_isProcessingPayment &&
-                  _hasAnyPaymentMethod &&
-                  (_isScheduledMode || !_noDriversNearby) &&
-                  faresReady &&
-                  !_cruiseCashShort(option),
-              isLoading: _isProcessingPayment,
-              // "Select {tier}" (2026-08-22): the button no longer pays
-              // inline — it opens the pickup-pin page first, and the SAME
-              // payment pipeline runs from there. The label crossfades on
-              // every tier change inside the button itself.
-              label:
-                  S.of(context).selectTierLabel(_tierDisplayName(option)),
-              onTap: () {
-                HapticService.mediumImpact();
-                _openPickupConfirm(c, option);
-              },
-            ),
-          ],
-        ),
+              ),
+              const SizedBox(width: 8),
+              _buildScheduleButton(),
+            ],
+          ),
+          // Hairline divider between the payment row and the button
+          // (rule-18 idiom).
+          Container(height: 1, color: Colors.white.withValues(alpha: 0.05)),
+          const SizedBox(height: 10),
+          _WebRequestButton(
+            // Nobody within fifteen miles means there is nothing to
+            // request. Better to show it disabled than to take the
+            // request and leave the rider watching a search that was
+            // never going to find anyone. Only a confirmed zero disables
+            // it — an unknown count leaves the button live. Only an
+            // IMMEDIATE request is gated on drivers being around: a
+            // reservation goes to the scheduled marketplace (2026-08-17).
+            // And not before the fares are real, or Cruise Cash comes up
+            // short of the FULL fare (user spec 2026-08-04).
+            enabled: !_isProcessingPayment &&
+                _hasAnyPaymentMethod &&
+                (_isScheduledMode || !_noDriversNearby) &&
+                faresReady &&
+                !_cruiseCashShort(option),
+            isLoading: _isProcessingPayment,
+            // "Select {tier}" (2026-08-22): the button no longer pays
+            // inline — it opens the pickup-pin page first, and the SAME
+            // payment pipeline runs from there. The label crossfades on
+            // every tier change inside the button itself.
+            label:
+                S.of(context).selectTierLabel(_tierDisplayName(option)),
+            onTap: () {
+              HapticService.mediumImpact();
+              _openPickupConfirm(c, option);
+            },
+          ),
+          const SizedBox(height: 6),
+        ],
       ),
     );
   }

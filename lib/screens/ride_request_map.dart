@@ -1820,14 +1820,14 @@ extension _RideRequestMap on _RideRequestScreenState {
   ///
   /// The target height is computed, not measured: collapsing hides
   /// [tierCount] − 1 compact rows and expanding brings them back, and a
-  /// compact row's height is deterministic — 42 px car box + 2×10
-  /// vertical padding + 8 bottom margin = 70 (see _buildTierRow). The
+  /// compact row's height is deterministic — 42 px car box + 2×12
+  /// vertical padding + 10 bottom margin = 76 (see _buildTierRow). The
   /// measured debounce refit that would follow is suppressed once
   /// (_skipNextSheetRefit), so the two never fight; it stays the backup
   /// for every height change that is not this toggle.
   void _syncCameraWithSheetToggle(
       {required bool collapsing, required int tierCount}) {
-    const rowH = 70.0;
+    const rowH = 76.0;
     final s = _ctrl.state;
     if (s.route == null || tierCount < 2) return;
     if (s.phase != RiderPhase.previewRoute &&

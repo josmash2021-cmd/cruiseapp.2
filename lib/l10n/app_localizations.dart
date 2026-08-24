@@ -3229,6 +3229,22 @@ class S {
       ? 'Ingresa tu número para registrarte o iniciar sesión.'
       : 'Enter your number to sign up or log in.';
   String get usPhoneHint => '(555) 123-4567';
+  String get welcomeToCruiseTitle =>
+      _es ? 'Bienvenido a Cruise' : 'Welcome to Cruise';
+  String get newNumberFindAccount => _es
+      ? '¿Nuevo número? Encuentra tu cuenta.'
+      : 'New number? Find your account.';
+  String get findYourAccountTitle =>
+      _es ? 'Encuentra tu cuenta' : 'Find your account';
+  String get findYourAccountSubtitle => _es
+      ? 'Ingresa el email de tu cuenta y te enviaremos un código para entrar.'
+      : "Enter the email on your account and we'll send you a code to sign in.";
+  String get noAccountFoundWithEmail => _es
+      ? 'No se encontró ninguna cuenta con ese email.'
+      : 'No account found with that email.';
+  String get updatePhoneInProfile => _es
+      ? 'Entraste con email. Actualiza tu número en tu perfil para mantener tu cuenta al día.'
+      : "You're in! Update your phone number in your profile to keep your account current.";
   String get tooManyAttempts => _es
       ? 'Demasiados intentos. Espera un momento e inténtalo de nuevo.'
       : 'Too many attempts. Please wait and try again.';

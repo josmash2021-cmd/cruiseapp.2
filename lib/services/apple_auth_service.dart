@@ -65,7 +65,17 @@ class AppleAuthService {
 
   /// Returns true on success, false on cancel/failure.
   /// When [loginOnly] is true, rejects if no account exists (login screen).
-  Future<bool> signIn({String role = 'rider', bool loginOnly = false}) async {
+  Future<bool> signIn({String role = 'rider', bool loginOnly = false}) async =>
+      await signInWithResult(role: role, loginOnly: loginOnly) != null;
+
+  /// Same flow as [signIn] but returns the backend payload
+  /// `{ access_token, refresh_token, user }` so the caller can route by
+  /// account state (e.g. the rider welcome screen sends brand-new Apple
+  /// accounts through the name flow). Returns null on cancel/failure.
+  Future<Map<String, dynamic>?> signInWithResult({
+    String role = 'rider',
+    bool loginOnly = false,
+  }) async {
     try {
       final credential = await SignInWithApple.getAppleIDCredential(
         scopes: [
@@ -77,7 +87,7 @@ class AppleAuthService {
       final idToken = credential.identityToken;
       if (idToken == null) {
         debugPrint('[AppleAuth] No identity token received');
-        return false;
+        return null;
       }
 
       final result = await ApiService.socialAuth(
@@ -109,13 +119,13 @@ class AppleAuthService {
         // Store Review: user tapped Sign in with Apple, appeared to succeed,
         // but was immediately returned to the sign-in screen.
         debugPrint('[AppleAuth] socialAuth succeeded but user object is missing — treating as failure');
-        return false;
+        return null;
       }
 
       AnalyticsService.instance.logLogin('apple');
-      return true;
+      return result;
     } on SignInWithAppleAuthorizationException catch (e) {
-      if (e.code == AuthorizationErrorCode.canceled) return false;
+      if (e.code == AuthorizationErrorCode.canceled) return null;
       debugPrint('[AppleAuth] Auth error: $e');
       rethrow;
     } catch (e) {

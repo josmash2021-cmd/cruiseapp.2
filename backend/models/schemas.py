@@ -102,6 +102,12 @@ class PhoneLoginIn(BaseModel):
     role: str = "driver"
 
 
+class EmailLoginIn(BaseModel):
+    email: str
+    code: str
+    role: str = "rider"
+
+
 class SendOtpIn(BaseModel):
     phone: Optional[str] = None
     email: Optional[str] = None

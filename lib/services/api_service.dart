@@ -1181,6 +1181,44 @@ class ApiService {
     }
   }
 
+  /// Email + OTP-code login — the "Find your account" recovery path.
+  ///
+  /// The backend verifies the code against the email-channel OTP store and
+  /// logs the user in, returning `{ access_token, refresh_token, user }`.
+  /// It NEVER creates an account — unknown email throws 404. Same
+  /// [_loginInProgress] contract as [phoneLogin]: 401 = wrong code.
+  static Future<Map<String, dynamic>> emailLogin({
+    required String email,
+    required String code,
+    String role = 'rider',
+  }) async {
+    _loginInProgress = true;
+    try {
+      final res = await _client
+          .post(
+            Uri.parse('$_baseUrl/auth/email-login'),
+            headers: _jsonHeaders(),
+            body: jsonEncode({'email': email, 'code': code, 'role': role}),
+          )
+          .timeout(const Duration(seconds: 15));
+
+      final data = _parse(res);
+      final token = data['access_token'] as String?;
+      if (token == null) {
+        throw ApiException(500, 'email-login response missing access_token');
+      }
+      await _saveToken(token);
+      if (data['refresh_token'] != null) {
+        await _saveRefreshToken(data['refresh_token'] as String);
+      }
+      _cachedUser = data['user'] as Map<String, dynamic>?;
+      debugPrint('✅ email-login ok — user ${data['user']?['id']}');
+      return data;
+    } finally {
+      _loginInProgress = false;
+    }
+  }
+
   /// Get the current user's profile (requires valid JWT).
   /// Returns user map or `null` if the token is invalid/expired.
   /// 

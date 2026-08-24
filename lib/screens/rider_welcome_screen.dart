@@ -3,27 +3,33 @@ import 'package:google_fonts/google_fonts.dart';
 import '../config/page_transitions.dart';
 import '../l10n/app_localizations.dart';
 import '../services/api_service.dart';
+import '../services/apple_auth_service.dart';
 import '../services/sms_service.dart';
 import '../services/user_session.dart';
 import '../utils/phone_format.dart';
+import 'find_account_screen.dart';
 import 'home_screen.dart';
 import 'login_password_screen.dart';
 import 'rider_name_screen.dart';
 import 'verify_code_screen.dart';
 
-/// Rider phone onboarding/login — step 1 ("Welcome aboard", Lyft-style).
+/// Rider phone onboarding/login — step 1 ("Welcome to Cruise", Lyft-style).
 ///
-/// US-only phone entry (+1 fixed prefix, live mask). `Next` sends the OTP
-/// via the backend and pushes the shared [VerifyCodeScreen]; verification
-/// there goes through `POST /auth/phone-login` with `role: 'rider'`
-/// (see [_verifyAndLogin]), which both validates the code and creates/logs
-/// the session in one call.
+/// US-only phone entry (+1 fixed prefix, live mask). `Continue with Phone`
+/// sends the OTP via the backend and pushes the shared [VerifyCodeScreen];
+/// verification there goes through `POST /auth/phone-login` with
+/// `role: 'rider'` (see [_verifyAndLogin]), which both validates the code
+/// and creates/logs the session in one call.
 ///
 /// Routing: existing account → [HomeScreen] (the home boot already handles
 /// the once-per-process permissions page, so nothing extra here); brand-new
-/// account (`is_new_user`) → [RiderNameScreen] → email → home. The legacy
-/// email+password login stays reachable through the "Sign in with email"
-/// link at the bottom; the KYC gate at trip request is untouched.
+/// account (`is_new_user`) → [RiderNameScreen] → email → home. Below the
+/// divider, "Continue with Apple" reuses the existing social auth
+/// (`AppleAuthService` → `POST /auth/social`) and routes the same way by
+/// account state; "New number? Find your account." opens the email-based
+/// recovery flow ([FindAccountScreen]); the legacy email+password login
+/// stays reachable through the "Sign in with email" link at the bottom;
+/// the KYC gate at trip request is untouched.
 class RiderWelcomeScreen extends StatefulWidget {
   const RiderWelcomeScreen({super.key});
 
@@ -39,6 +45,7 @@ class _RiderWelcomeScreenState extends State<RiderWelcomeScreen> {
   final _phoneFocus = FocusNode();
   bool _canNext = false;
   bool _sending = false;
+  bool _appleLoading = false;
 
   /// Result of the successful phone-login, captured by the customVerify
   /// closure so the success callback can route by `is_new_user`.
@@ -48,6 +55,7 @@ class _RiderWelcomeScreenState extends State<RiderWelcomeScreen> {
   void initState() {
     super.initState();
     _phoneCtrl.addListener(_validate);
+    _phoneFocus.addListener(() => setState(() {}));
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _phoneFocus.requestFocus();
     });
@@ -157,6 +165,53 @@ class _RiderWelcomeScreenState extends State<RiderWelcomeScreen> {
     );
   }
 
+  /// "Continue with Apple" — reuses the existing social auth mechanism
+  /// (`SignInWithApple` → idToken → `POST /auth/social`). Brand-new Apple
+  /// accounts (no phone yet) collect their name first; everyone else goes
+  /// straight home. The session itself is persisted by [AppleAuthService].
+  Future<void> _appleSignIn() async {
+    if (_appleLoading) return;
+    setState(() => _appleLoading = true);
+    try {
+      final data =
+          await AppleAuthService.instance.signInWithResult(role: 'rider');
+      if (!mounted) return;
+      setState(() => _appleLoading = false);
+      if (data == null) return; // cancelled
+
+      final user = data['user'] as Map<String, dynamic>? ?? const {};
+      await UserSession.saveMode('rider');
+      if (!mounted) return;
+
+      final hasPhone = (user['phone'] ?? '').toString().isNotEmpty;
+      if (!hasPhone) {
+        Navigator.of(context).push(
+          onboardingFadeSlideRoute(RiderNameScreen(user: user)),
+        );
+        return;
+      }
+      Navigator.of(context).pushAndRemoveUntil(
+        smoothFadeRoute(const HomeScreen(), durationMs: 600),
+        (_) => false,
+      );
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _appleLoading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: const Color(0xFFB3261E),
+          behavior: SnackBarBehavior.floating,
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          content: Text(
+            S.of(context).appleSignInFailed,
+            style: const TextStyle(fontWeight: FontWeight.w600),
+          ),
+        ),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final pad = MediaQuery.of(context).padding;
@@ -196,7 +251,7 @@ class _RiderWelcomeScreenState extends State<RiderWelcomeScreen> {
                   children: [
                     const SizedBox(height: 32),
                     Text(
-                      S.of(context).welcomeAboard,
+                      S.of(context).welcomeToCruiseTitle,
                       style: GoogleFonts.poppins(
                         fontSize: 32,
                         fontWeight: FontWeight.w700,
@@ -221,10 +276,10 @@ class _RiderWelcomeScreenState extends State<RiderWelcomeScreen> {
                         color: Colors.white.withValues(alpha: 0.07),
                         borderRadius: BorderRadius.circular(18),
                         border: Border.all(
-                          color: _canNext
+                          color: _phoneFocus.hasFocus
                               ? _gold
                               : Colors.white.withValues(alpha: 0.14),
-                          width: _canNext ? 1.6 : 1,
+                          width: _phoneFocus.hasFocus ? 1.6 : 1,
                         ),
                       ),
                       padding: const EdgeInsets.symmetric(
@@ -288,12 +343,113 @@ class _RiderWelcomeScreenState extends State<RiderWelcomeScreen> {
                         ],
                       ),
                     ),
+
+                    // ── OR divider + Apple + account recovery ──
+                    if (AppleAuthService.instance.isAvailable) ...[
+                      const SizedBox(height: 28),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Container(
+                              height: 1,
+                              color: Colors.white.withValues(alpha: 0.16),
+                            ),
+                          ),
+                          Padding(
+                            padding:
+                                const EdgeInsets.symmetric(horizontal: 16),
+                            child: Text(
+                              S.of(context).orDivider,
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: 1.5,
+                                color: Colors.white.withValues(alpha: 0.45),
+                              ),
+                            ),
+                          ),
+                          Expanded(
+                            child: Container(
+                              height: 1,
+                              color: Colors.white.withValues(alpha: 0.16),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 28),
+                      GestureDetector(
+                        onTap: _appleLoading ? null : _appleSignIn,
+                        child: Container(
+                          width: double.infinity,
+                          height: 58,
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(18),
+                            border: Border.all(
+                              color: Colors.white.withValues(alpha: 0.35),
+                              width: 1.4,
+                            ),
+                          ),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              if (_appleLoading)
+                                const SizedBox(
+                                  width: 22,
+                                  height: 22,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2.5,
+                                    color: Colors.white,
+                                  ),
+                                )
+                              else ...[
+                                const Icon(
+                                  Icons.apple,
+                                  size: 24,
+                                  color: Colors.white,
+                                ),
+                                const SizedBox(width: 10),
+                                Text(
+                                  S.of(context).continueWithApple,
+                                  style: const TextStyle(
+                                    fontSize: 17,
+                                    fontWeight: FontWeight.w700,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 28),
+                    Center(
+                      child: GestureDetector(
+                        onTap: () => Navigator.of(context).push(
+                          onboardingFadeSlideRoute(
+                            const FindAccountScreen(),
+                          ),
+                        ),
+                        behavior: HitTestBehavior.opaque,
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 8),
+                          child: Text(
+                            S.of(context).newNumberFindAccount,
+                            style: const TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w700,
+                              color: _gold,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
                   ],
                 ),
               ),
             ),
 
-            // ── Next — big gold, above the keyboard, safe area ──
+            // ── Continue with Phone — big gold, above keyboard, safe area ──
             Padding(
               padding: EdgeInsets.fromLTRB(
                 28,
@@ -324,7 +480,7 @@ class _RiderWelcomeScreenState extends State<RiderWelcomeScreen> {
                           ),
                         )
                       : Text(
-                          S.of(context).next,
+                          S.of(context).continueWithPhone,
                           style: TextStyle(
                             fontSize: 18,
                             fontWeight: FontWeight.w700,

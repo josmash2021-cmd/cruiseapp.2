@@ -14,7 +14,7 @@ from models.database import (
 )
 from models.schemas import (
     RegisterIn, CheckExistsIn, LoginIn, CompleteLoginIn, SocialAuthIn,
-    SendOtpIn, VerifyOtpIn, PhoneLoginIn, ApplyReferralIn, VerifyRequestOcrIn,
+    SendOtpIn, VerifyOtpIn, PhoneLoginIn, EmailLoginIn, ApplyReferralIn, VerifyRequestOcrIn,
 )
 from utils.security import (
     pwd, _create_token, _create_refresh_token, _create_login_token,
@@ -1069,6 +1069,62 @@ async def phone_login(body: PhoneLoginIn, request: Request, db: AsyncSession = D
         "token_type": "bearer",
         "user": _user_dict(user),
         "is_new_user": is_new_user,
+    }
+
+# -- Email Login (account recovery, Lyft-style "Find your account") ---------
+@router.post("/auth/email-login", dependencies=[Depends(_verify_api_key)])
+async def email_login(body: EmailLoginIn, request: Request, db: AsyncSession = Depends(get_db)):
+    """Log in with an email + OTP code — the "Find your account" recovery
+    path for riders whose number changed. Mirrors /auth/phone-login, with one
+    key difference: it NEVER creates an account. Unknown email → 404 (the
+    signup flow owns account creation)."""
+    role = body.role if body.role in ("rider", "driver") else "rider"
+    email = (body.email or "").strip().lower()
+    code = (body.code or "").strip()
+    if not email or "@" not in email:
+        raise HTTPException(400, "A valid email is required")
+    if not code or not code.isdigit() or len(code) != 6:
+        raise HTTPException(400, "A 6-digit code is required")
+
+    # Same rule as /auth/verify-otp: 5 attempts per 15 minutes per email.
+    if not _check_otp_rate_limit(email):
+        logging.warning("[EmailLogin] Rate limit exceeded for %s", email)
+        raise HTTPException(429, "Too many attempts. Please request a new code.")
+
+    # Email OTPs only ever live in the DB store (no Twilio Verify for email).
+    verified = await _check_otp_db(db, email, code)
+    if not verified:
+        _record_otp_attempt(email)
+        logging.warning("[EmailLogin] Invalid code for %s (attempt %d/%d)", email,
+                        len(_otp_attempt_tracker.get(email, [])), _MAX_OTP_ATTEMPTS)
+        raise HTTPException(401, "Invalid or expired code")
+    _otp_attempt_tracker.pop(email, None)
+
+    result = await db.execute(
+        select(User).where(User.email == email, User.role == role)
+    )
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(404, "No account found with that email")
+    if user.status in ("deleted", "pending_deletion"):
+        user.status = "active"
+        user.deletion_requested_at = None
+    if user.status == "blocked":
+        raise HTTPException(403, "Account blocked")
+    user.email_verified = True
+    await db.commit()
+    await db.refresh(user)
+
+    await _record_login_activity(db, request, user.id)
+
+    token = await _create_driver_aware_token_from_user(user, db)
+    refresh = _create_refresh_token(user.id)
+    return {
+        "access_token": token,
+        "refresh_token": refresh,
+        "token_type": "bearer",
+        "user": _user_dict(user),
+        "is_new_user": False,
     }
 
 # -- Social Auth (Google / Apple) -------------------------

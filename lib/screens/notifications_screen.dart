@@ -7,9 +7,14 @@ import '../config/page_transitions.dart';
 import '../l10n/app_localizations.dart';
 import 'payment_method_screen.dart';
 
-class NotificationsScreen extends StatelessWidget {
+class NotificationsScreen extends StatefulWidget {
   static const _gold = Color(0xFFE8C547);
   static const _goldLight = Color(0xFFF5D990);
+
+  /// SharedPreferences flag — the native prompt is fired automatically the
+  /// first time this page is shown, never again (iOS only prompts once and
+  /// repeated permission_handler asks are no-ops, but we still gate it).
+  static const _autoAskedKey = 'notif_perm_auto_asked_v1';
 
   final String firstName;
   final String lastName;
@@ -25,20 +30,56 @@ class NotificationsScreen extends StatelessWidget {
   });
 
   @override
+  State<NotificationsScreen> createState() => _NotificationsScreenState();
+}
+
+class _NotificationsScreenState extends State<NotificationsScreen> {
+  @override
+  void initState() {
+    super.initState();
+    _autoRequestPermissionOnce();
+  }
+
+  /// Fire the native notification prompt as soon as the page appears (once
+  /// ever). The "Allow" button stays as the manual fallback.
+  Future<void> _autoRequestPermissionOnce() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (prefs.getBool(NotificationsScreen._autoAskedKey) == true) return;
+      await prefs.setBool(NotificationsScreen._autoAskedKey, true);
+    } catch (_) {}
+    await _requestNativePermission();
+  }
+
+  /// Request the real notification permission from the OS. Android 13+
+  /// goes through permission_handler; iOS needs the FirebaseMessaging
+  /// prompt (alert + badge + sound) — asking both is harmless on either.
+  Future<void> _requestNativePermission() async {
+    await Permission.notification.request();
+    try {
+      await FirebaseMessaging.instance.requestPermission(
+        alert: true,
+        badge: true,
+        sound: true,
+      );
+    } catch (_) {}
+  }
+
+  @override
   Widget build(BuildContext context) {
     final c = AppColors.of(context);
 
     return Scaffold(
       backgroundColor: c.bg,
       body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 24),
-          child: Column(
-            children: [
-              const SizedBox(height: 8),
+        child: Column(
+          children: [
+            const SizedBox(height: 8),
 
-              // ── Close button ──
-              Align(
+            // ── Close button ──
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: Align(
                 alignment: Alignment.topLeft,
                 child: GestureDetector(
                   onTap: () {
@@ -60,54 +101,28 @@ class NotificationsScreen extends StatelessWidget {
                   ),
                 ),
               ),
-              const SizedBox(height: 24),
+            ),
+            const SizedBox(height: 24),
 
-              // ── Illustration ──
-              Container(
-                width: 200,
-                height: 200,
-                decoration: BoxDecoration(
-                  color: const Color(0xFFE8C547).withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(30),
-                ),
-                child: Stack(
-                  alignment: Alignment.center,
-                  children: [
-                    // Background shape
-                    Positioned(
-                      top: 20,
-                      child: Container(
-                        width: 120,
-                        height: 100,
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFE8C547).withValues(alpha: 0.3),
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                      ),
-                    ),
-                    // Bell icon
-                    Icon(
-                      Icons.notifications_active_rounded,
-                      size: 80,
-                      color: _gold,
-                    ),
-                    // Small car
-                    Positioned(
-                      bottom: 30,
-                      left: 40,
-                      child: Icon(
-                        Icons.directions_car_rounded,
-                        size: 28,
-                        color: c.textSecondary,
-                      ),
-                    ),
-                  ],
-                ),
+            // ── Illustration: full-width image ──
+            ClipRRect(
+              borderRadius: const BorderRadius.only(
+                bottomLeft: Radius.circular(28),
+                bottomRight: Radius.circular(28),
               ),
-              const SizedBox(height: 36),
+              child: Image.asset(
+                'assets/images/onboarding/notifications.jpg',
+                width: double.infinity,
+                height: 240,
+                fit: BoxFit.cover,
+              ),
+            ),
+            const SizedBox(height: 36),
 
-              // ── Title ──
-              Text(
+            // ── Title ──
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: Text(
                 S.of(context).helpUsKeepInformed,
                 textAlign: TextAlign.center,
                 style: TextStyle(
@@ -118,10 +133,13 @@ class NotificationsScreen extends StatelessWidget {
                   letterSpacing: -0.5,
                 ),
               ),
-              const SizedBox(height: 14),
+            ),
+            const SizedBox(height: 14),
 
-              // ── Subtitle ──
-              Text(
+            // ── Subtitle ──
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: Text(
                 S.of(context).allowNotifsDescription,
                 textAlign: TextAlign.center,
                 style: TextStyle(
@@ -130,62 +148,55 @@ class NotificationsScreen extends StatelessWidget {
                   height: 1.5,
                 ),
               ),
+            ),
 
-              const Spacer(),
+            const Spacer(),
 
-              // ── Allow button ──
-              Padding(
-                padding: const EdgeInsets.only(bottom: 24),
-                child: SizedBox(
-                  width: double.infinity,
-                  height: 56,
-                  child: Container(
-                    decoration: BoxDecoration(
-                      gradient: const LinearGradient(
-                        colors: [_gold, _goldLight],
-                      ),
-                      borderRadius: BorderRadius.circular(28),
+            // ── Allow button ──
+            Padding(
+              padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+              child: SizedBox(
+                width: double.infinity,
+                height: 56,
+                child: Container(
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [
+                        NotificationsScreen._gold,
+                        NotificationsScreen._goldLight,
+                      ],
                     ),
-                    child: ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.transparent,
-                        shadowColor: Colors.transparent,
-                        foregroundColor: const Color(0xFF1A1400),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(28),
-                        ),
+                    borderRadius: BorderRadius.circular(28),
+                  ),
+                  child: ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.transparent,
+                      shadowColor: Colors.transparent,
+                      foregroundColor: const Color(0xFF1A1400),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(28),
                       ),
-                      onPressed: () => _requestAndGoNext(context),
-                      child: Text(
-                        S.of(context).allowBtn,
-                        style: const TextStyle(
-                          fontSize: 17,
-                          fontWeight: FontWeight.w700,
-                        ),
+                    ),
+                    onPressed: () => _requestAndGoNext(context),
+                    child: Text(
+                      S.of(context).allowBtn,
+                      style: const TextStyle(
+                        fontSize: 17,
+                        fontWeight: FontWeight.w700,
                       ),
                     ),
                   ),
                 ),
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
   }
 
   void _requestAndGoNext(BuildContext context) async {
-    // Request the real notification permission from the OS. Android 13+
-    // goes through permission_handler; iOS needs the FirebaseMessaging
-    // prompt (alert + badge + sound) — asking both is harmless on either.
-    await Permission.notification.request();
-    try {
-      await FirebaseMessaging.instance.requestPermission(
-        alert: true,
-        badge: true,
-        sound: true,
-      );
-    } catch (_) {}
+    await _requestNativePermission();
 
     // "Allow" must mean ALL of them. The in-app toggles default to on, but
     // a rider who ever turned one off would tap Allow here and still get
@@ -215,10 +226,10 @@ class NotificationsScreen extends StatelessWidget {
     Navigator.of(context).push(
       slideFromRightRoute(
         PaymentMethodScreen(
-          firstName: firstName,
-          lastName: lastName,
-          email: email,
-          phone: phone,
+          firstName: widget.firstName,
+          lastName: widget.lastName,
+          email: widget.email,
+          phone: widget.phone,
         ),
       ),
     );

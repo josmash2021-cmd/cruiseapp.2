@@ -54,6 +54,7 @@ class _IdentityVerificationScreenState extends State<IdentityVerificationScreen>
   String? _docBackPath;
   String? _selfiePath;
   String _docType = ''; // 'license', 'government_id', 'passport'
+  String _idState = 'AL'; // state for the guidelines license photo
   bool _scanningBack = false; // true when capturing back side of license
   bool _processing = false;
   bool _verified = false;
@@ -103,6 +104,17 @@ class _IdentityVerificationScreenState extends State<IdentityVerificationScreen>
   Future<void> _preloadUser() async {
     final u = await UserSession.getUser();
     if (mounted) setState(() => _cachedUser = u);
+    // Guidelines show a photo of the rider's own state license when the
+    // profile carries one (`drive_state`); otherwise the AL default.
+    try {
+      final me = await ApiService.getCurrentUser();
+      final st = me?['drive_state']?.toString();
+      if (st != null && st.isNotEmpty && mounted) {
+        setState(() => _idState = st.toUpperCase());
+      }
+    } catch (_) {
+      // Non-blocking — the AL illustration is the fallback.
+    }
   }
 
   @override
@@ -455,6 +467,10 @@ class _IdentityVerificationScreenState extends State<IdentityVerificationScreen>
         return DocGuidelinesView(
           key: const ValueKey(7),
           docType: _docType,
+          // License guidelines carry a photo of the real document for the
+          // rider's state (AL default); other doc types keep the vectors.
+          stateCode: _docType == 'license' ? _idState : null,
+          side: _docType == 'license' ? 'front' : null,
           onNext: () => setState(() => _step = 1), // now open the camera
           onClose: () => setState(() => _step = 0),
         );

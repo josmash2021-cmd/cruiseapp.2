@@ -9,13 +9,16 @@ import '../../../l10n/app_localizations.dart';
 import '../../../services/api_service.dart';
 import '../../../services/haptic_service.dart';
 import '../../../utils/app_platform.dart';
+import '../../../widgets/doc_guidelines_view.dart';
+import '../../../widgets/neu_style.dart';
 import 'onboarding_widgets.dart';
 
 /// Driver's license capture for the onboarding to-do flow (Lyft style).
 ///
-/// In-app camera (never the native camera app): front side first, then a
-/// smooth ~300 ms crossfade to the back side, then the camera closes and
-/// the screen shows both thumbnails with a gold Submit button. Submit
+/// In-app camera (never the native camera app): a guidelines page (real
+/// photo of the driver's state license) comes before EACH side —
+/// guide → front camera → guide → back camera — then the camera closes
+/// and the screen shows both thumbnails with a gold Submit button. Submit
 /// uploads both photos through the SAME mechanism the legacy signup uses
 /// (`ApiService.submitVerification` with base64 `license_front` /
 /// `license_back`) and pops `true`.
@@ -31,7 +34,7 @@ class LicenseCaptureScreen extends StatefulWidget {
   State<LicenseCaptureScreen> createState() => _LicenseCaptureScreenState();
 }
 
-enum _LicensePhase { front, back, review }
+enum _LicensePhase { guideFront, camFront, guideBack, camBack, review }
 
 class _LicenseCaptureScreenState extends State<LicenseCaptureScreen> {
   /// See class doc — pinned by test/camera_kyc_guard_test.dart semantics.
@@ -41,7 +44,8 @@ class _LicenseCaptureScreenState extends State<LicenseCaptureScreen> {
   CameraController? _ctrl;
   bool _initialized = false;
   bool _permissionDenied = false;
-  _LicensePhase _phase = _LicensePhase.front;
+  _LicensePhase _phase = _LicensePhase.guideFront;
+  String _stateCode = 'AL';
   String? _frontPath;
   String? _backPath;
   bool _capturing = false;
@@ -51,7 +55,21 @@ class _LicenseCaptureScreenState extends State<LicenseCaptureScreen> {
   @override
   void initState() {
     super.initState();
-    _initCamera();
+    _loadStateCode();
+  }
+
+  /// The guidelines page shows a photo of the driver's own state license;
+  /// `drive_state` comes from the profile picked at the drive-city step.
+  Future<void> _loadStateCode() async {
+    try {
+      final me = await ApiService.getCurrentUser();
+      final st = me?['drive_state']?.toString();
+      if (st != null && st.isNotEmpty && mounted) {
+        setState(() => _stateCode = st.toUpperCase());
+      }
+    } catch (_) {
+      // Keep the AL default — a missing profile never blocks capture.
+    }
   }
 
   @override
@@ -104,6 +122,19 @@ class _LicenseCaptureScreenState extends State<LicenseCaptureScreen> {
     if (mounted) setState(() => _flashMode = next);
   }
 
+  /// Guidelines "Next" — open the camera for the side being guided.
+  /// The permission request fires HERE, not at screen open, so the guide
+  /// page is never gated behind a system dialog.
+  void _startCamera() {
+    final front = _phase == _LicensePhase.guideFront;
+    setState(
+      () => _phase = front ? _LicensePhase.camFront : _LicensePhase.camBack,
+    );
+    // Front → back keeps the same controller alive; only boot the camera
+    // when there isn't one (first entry, or after a review retake).
+    if (!_initialized) _initCamera();
+  }
+
   Future<void> _capture() async {
     final c = _ctrl;
     if (c == null || !c.value.isInitialized || _capturing) return;
@@ -113,9 +144,9 @@ class _LicenseCaptureScreenState extends State<LicenseCaptureScreen> {
       final xFile = await c.takePicture();
       if (!mounted) return;
       setState(() {
-        if (_phase == _LicensePhase.front) {
+        if (_phase == _LicensePhase.camFront) {
           _frontPath = xFile.path;
-          _phase = _LicensePhase.back;
+          _phase = _LicensePhase.guideBack;
         } else {
           _backPath = xFile.path;
           _phase = _LicensePhase.review;
@@ -137,7 +168,7 @@ class _LicenseCaptureScreenState extends State<LicenseCaptureScreen> {
   Future<void> _retakeSide(_LicensePhase side) async {
     setState(() {
       _phase = side;
-      if (side == _LicensePhase.front) {
+      if (side == _LicensePhase.camFront) {
         _frontPath = null;
         _backPath = null;
       } else {
@@ -177,14 +208,38 @@ class _LicenseCaptureScreenState extends State<LicenseCaptureScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: neuBase,
       body: AnimatedSwitcher(
         duration: const Duration(milliseconds: 300),
         child: _permissionDenied
             ? _buildDenied()
-            : _phase == _LicensePhase.review
-            ? _buildReview()
-            : _buildCamera(),
+            : switch (_phase) {
+                _LicensePhase.guideFront => _buildGuide(front: true),
+                _LicensePhase.guideBack => _buildGuide(front: false),
+                _LicensePhase.review => _buildReview(),
+                _ => _buildCamera(),
+              },
+      ),
+    );
+  }
+
+  // ── Guidelines page before EACH side (front, then back) ──
+  Widget _buildGuide({required bool front}) {
+    return Container(
+      key: ValueKey(_phase),
+      color: neuBase,
+      child: SafeArea(
+        child: DocGuidelinesView(
+          docType: 'license',
+          stateCode: _stateCode,
+          side: front ? 'front' : 'back',
+          onNext: _startCamera,
+          // Front guide's X leaves the flow; the back guide steps back to
+          // the front guide instead of dropping the whole capture.
+          onClose: front
+              ? null
+              : () => setState(() => _phase = _LicensePhase.guideFront),
+        ),
       ),
     );
   }
@@ -235,171 +290,182 @@ class _LicenseCaptureScreenState extends State<LicenseCaptureScreen> {
     );
   }
 
-  // ── Live camera (front / back) ──
+  // ── Live camera (front / back) — Lyft layout: rounded preview card on
+  // top, copy + shutter on the app's standard grey below. ──
   Widget _buildCamera() {
     final s = S.of(context);
-    final isFront = _phase == _LicensePhase.front;
+    final isFront = _phase == _LicensePhase.camFront;
+    final size = MediaQuery.of(context).size;
     final pad = MediaQuery.of(context).padding;
 
-    return Stack(
-      key: ValueKey(_phase),
-      fit: StackFit.expand,
-      children: [
-        if (_initialized && _ctrl != null)
-          SizedBox.expand(
-            child: FittedBox(
-              fit: BoxFit.cover,
-              child: SizedBox(
-                width: _ctrl!.value.previewSize!.height,
-                height: _ctrl!.value.previewSize!.width,
-                child: CameraPreview(_ctrl!),
-              ),
+    final preview = _initialized && _ctrl != null
+        ? FittedBox(
+            fit: BoxFit.cover,
+            child: SizedBox(
+              width: _ctrl!.value.previewSize!.height,
+              height: _ctrl!.value.previewSize!.width,
+              child: CameraPreview(_ctrl!),
             ),
           )
-        else
-          const Center(
-            child: CircularProgressIndicator(
-              color: kOnboardingGold,
-              strokeWidth: 2.5,
-            ),
-          ),
-
-        // X top-left
-        Positioned(
-          top: pad.top + 12,
-          left: 16,
-          child: GestureDetector(
-            onTap: () => Navigator.of(context).pop(),
-            child: Container(
-              width: 40,
-              height: 40,
-              decoration: BoxDecoration(
-                color: Colors.black.withValues(alpha: 0.6),
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(
-                Icons.close_rounded,
-                color: Colors.white,
-                size: 24,
+        : const ColoredBox(
+            color: Colors.black,
+            child: Center(
+              child: CircularProgressIndicator(
+                color: kOnboardingGold,
+                strokeWidth: 2.5,
               ),
             ),
-          ),
-        ),
+          );
 
-        // Title + instructions
-        Positioned(
-          top: pad.top + 24,
-          left: 72,
-          right: 72,
-          child: Column(
-            children: [
-              Text(
-                isFront ? s.obLicenseFrontTitle : s.obLicenseBackTitle,
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 17,
-                  fontWeight: FontWeight.w700,
-                  shadows: [Shadow(color: Colors.black54, blurRadius: 6)],
-                ),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                isFront ? s.obLicenseFrontText : s.obLicenseBackText,
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.85),
-                  fontSize: 13.5,
-                  shadows: const [Shadow(color: Colors.black54, blurRadius: 6)],
-                ),
-              ),
-            ],
-          ),
-        ),
-
-        // Hint above the shutter
-        Positioned(
-          bottom: 150,
-          left: 28,
-          right: 28,
-          child: Text(
-            s.obLicenseFrontHint,
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.8),
-              fontSize: 13,
-              height: 1.4,
-              shadows: const [Shadow(color: Colors.black87, blurRadius: 8)],
-            ),
-          ),
-        ),
-
-        // Gold circular capture button
-        Positioned(
-          bottom: 48,
-          left: 0,
-          right: 0,
-          child: Center(
-            child: GestureDetector(
-              onTap: _initialized ? _capture : null,
-              child: Container(
-                width: 74,
-                height: 74,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: kOnboardingGold,
-                  boxShadow: [
-                    BoxShadow(
-                      color: kOnboardingGold.withValues(alpha: 0.45),
-                      blurRadius: 20,
-                      spreadRadius: 2,
+    return Container(
+      key: ValueKey(_phase),
+      color: neuBase,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          SizedBox(height: pad.top + 12),
+          // ── Rounded preview card (~57% of the screen) ──
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: SizedBox(
+              height: size.height * 0.57,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(20),
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    preview,
+                    // X top-left, over the preview
+                    Positioned(
+                      top: 12,
+                      left: 12,
+                      child: GestureDetector(
+                        onTap: () => Navigator.of(context).pop(),
+                        child: Container(
+                          width: 40,
+                          height: 40,
+                          decoration: BoxDecoration(
+                            color: Colors.black.withValues(alpha: 0.6),
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(
+                            Icons.close_rounded,
+                            color: Colors.white,
+                            size: 24,
+                          ),
+                        ),
+                      ),
                     ),
                   ],
                 ),
-                child: _capturing
-                    ? const Padding(
-                        padding: EdgeInsets.all(20),
-                        child: CircularProgressIndicator(
-                          color: Colors.black,
-                          strokeWidth: 2.5,
-                        ),
-                      )
-                    : const Icon(
-                        Icons.camera_alt_rounded,
-                        color: Colors.black,
-                        size: 32,
+              ),
+            ),
+          ),
+          // ── Copy on the grey base ──
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(28, 26, 28, 0),
+              child: Column(
+                children: [
+                  AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 300),
+                    child: Text(
+                      isFront ? s.obLicenseFrontText : s.obLicenseBackText,
+                      key: ValueKey(isFront),
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 23,
+                        height: 1.25,
+                        fontWeight: FontWeight.w800,
                       ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    s.obLicenseFrontHint,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.65),
+                      fontSize: 14.5,
+                      height: 1.45,
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
-        ),
-
-        // Flash toggle — bottom-right
-        Positioned(
-          bottom: 60,
-          right: 28,
-          child: GestureDetector(
-            onTap: _toggleFlash,
-            child: Container(
-              width: 44,
-              height: 44,
-              decoration: BoxDecoration(
-                color: Colors.black.withValues(alpha: 0.6),
-                shape: BoxShape.circle,
-              ),
-              child: Icon(
-                _flashMode == FlashMode.off
-                    ? Icons.flash_off_rounded
-                    : Icons.flash_on_rounded,
-                color: _flashMode == FlashMode.off
-                    ? Colors.white
-                    : kOnboardingGold,
-                size: 22,
+          // ── Gold shutter + flash toggle ──
+          Padding(
+            padding: EdgeInsets.only(bottom: pad.bottom + 28, top: 8),
+            child: SizedBox(
+              height: 74,
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  GestureDetector(
+                    onTap: _initialized ? _capture : null,
+                    child: Container(
+                      width: 74,
+                      height: 74,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: kOnboardingGold,
+                        boxShadow: [
+                          BoxShadow(
+                            color: kOnboardingGold.withValues(alpha: 0.45),
+                            blurRadius: 20,
+                            spreadRadius: 2,
+                          ),
+                        ],
+                      ),
+                      child: _capturing
+                          ? const Padding(
+                              padding: EdgeInsets.all(20),
+                              child: CircularProgressIndicator(
+                                color: Colors.black,
+                                strokeWidth: 2.5,
+                              ),
+                            )
+                          : const Icon(
+                              Icons.camera_alt_rounded,
+                              color: Colors.black,
+                              size: 32,
+                            ),
+                    ),
+                  ),
+                  Positioned(
+                    right: 36,
+                    child: GestureDetector(
+                      onTap: _toggleFlash,
+                      child: Container(
+                        width: 44,
+                        height: 44,
+                        decoration: BoxDecoration(
+                          color: neuSurface,
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: Colors.white.withValues(alpha: 0.08),
+                          ),
+                        ),
+                        child: Icon(
+                          _flashMode == FlashMode.off
+                              ? Icons.flash_off_rounded
+                              : Icons.flash_on_rounded,
+                          color: _flashMode == FlashMode.off
+                              ? Colors.white
+                              : kOnboardingGold,
+                          size: 22,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
@@ -410,7 +476,7 @@ class _LicenseCaptureScreenState extends State<LicenseCaptureScreen> {
 
     return Container(
       key: const ValueKey('review'),
-      color: kOnboardingNavy,
+      color: neuBase,
       child: Column(
         children: [
           Padding(
@@ -440,16 +506,16 @@ class _LicenseCaptureScreenState extends State<LicenseCaptureScreen> {
                     ),
                   ),
                   const SizedBox(height: 24),
-                  _thumb(
+                  _AspectThumb(
                     path: _frontPath!,
                     label: s.obLicenseFrontTitle,
-                    onRetake: () => _retakeSide(_LicensePhase.front),
+                    onRetake: () => _retakeSide(_LicensePhase.camFront),
                   ),
                   const SizedBox(height: 16),
-                  _thumb(
+                  _AspectThumb(
                     path: _backPath!,
                     label: s.obLicenseBackTitle,
-                    onRetake: () => _retakeSide(_LicensePhase.back),
+                    onRetake: () => _retakeSide(_LicensePhase.camBack),
                   ),
                 ],
               ),
@@ -467,18 +533,76 @@ class _LicenseCaptureScreenState extends State<LicenseCaptureScreen> {
       ),
     );
   }
+}
 
-  Widget _thumb({
-    required String path,
-    required String label,
-    required VoidCallback onRetake,
-  }) {
+/// Review thumbnail sized to the REAL aspect ratio of the captured file —
+/// the frame follows the photo, so the image fills it completely with no
+/// cropping and no side bands.
+class _AspectThumb extends StatefulWidget {
+  const _AspectThumb({
+    required this.path,
+    required this.label,
+    required this.onRetake,
+  });
+
+  final String path;
+  final String label;
+  final VoidCallback onRetake;
+
+  @override
+  State<_AspectThumb> createState() => _AspectThumbState();
+}
+
+class _AspectThumbState extends State<_AspectThumb> {
+  double? _aspect; // width / height of the captured photo
+  ImageStreamListener? _listener;
+  ImageStream? _stream;
+
+  @override
+  void initState() {
+    super.initState();
+    _resolveAspect();
+  }
+
+  void _resolveAspect() {
+    final stream = FileImage(
+      File(widget.path),
+    ).resolve(const ImageConfiguration());
+    _stream = stream;
+    late final ImageStreamListener listener;
+    listener = ImageStreamListener(
+      (info, _) {
+        stream.removeListener(listener);
+        if (!mounted) return;
+        setState(
+          () => _aspect = info.image.width / info.image.height,
+        );
+      },
+      onError: (_, __) {
+        stream.removeListener(listener);
+        // Leave _aspect null — the fixed-height fallback below shows.
+      },
+    );
+    _listener = listener;
+    stream.addListener(listener);
+  }
+
+  @override
+  void dispose() {
+    final listener = _listener;
+    if (listener != null) _stream?.removeListener(listener);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final s = S.of(context);
+    final aspect = _aspect;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          label,
+          widget.label,
           style: TextStyle(
             color: Colors.white.withValues(alpha: 0.75),
             fontSize: 13.5,
@@ -490,18 +614,32 @@ class _LicenseCaptureScreenState extends State<LicenseCaptureScreen> {
           children: [
             ClipRRect(
               borderRadius: BorderRadius.circular(16),
-              child: Image.file(
-                File(path),
-                width: double.infinity,
-                height: 190,
-                fit: BoxFit.cover,
-              ),
+              child: aspect == null
+                  ? Container(
+                      width: double.infinity,
+                      height: 190,
+                      color: neuSurface,
+                      child: const Center(
+                        child: CircularProgressIndicator(
+                          color: kOnboardingGold,
+                          strokeWidth: 2,
+                        ),
+                      ),
+                    )
+                  : AspectRatio(
+                      aspectRatio: aspect,
+                      child: Image.file(
+                        File(widget.path),
+                        width: double.infinity,
+                        fit: BoxFit.cover,
+                      ),
+                    ),
             ),
             Positioned(
               right: 10,
               bottom: 10,
               child: GestureDetector(
-                onTap: onRetake,
+                onTap: widget.onRetake,
                 child: Container(
                   padding: const EdgeInsets.symmetric(
                     horizontal: 14,

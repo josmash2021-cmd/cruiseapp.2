@@ -5,6 +5,7 @@ import '../../../config/page_transitions.dart';
 import '../../../l10n/app_localizations.dart';
 import '../../../services/api_service.dart';
 import 'background_consent_screen.dart';
+import 'doc_capture_screen.dart';
 import 'license_capture_screen.dart';
 import 'onboarding_items.dart';
 import 'onboarding_widgets.dart';
@@ -40,6 +41,10 @@ class OnboardingIntroScreen extends StatelessWidget {
         return const ProfilePhotoCaptureScreen();
       case OnboardingItem.background:
         return const BackgroundConsentScreen();
+      case OnboardingItem.registration:
+      case OnboardingItem.insurance:
+      case OnboardingItem.inspection:
+        return DocCaptureScreen(entry: entry);
     }
   }
 

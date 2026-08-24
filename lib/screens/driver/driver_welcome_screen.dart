@@ -9,6 +9,7 @@ import '../../services/user_session.dart';
 import '../../utils/phone_format.dart';
 import '../verify_code_screen.dart';
 import 'driver_home_screen.dart';
+import 'driver_login_screen.dart';
 import 'driver_name_screen.dart';
 import 'driver_pending_review_screen.dart';
 import 'onboarding/driver_todo_screen.dart';
@@ -21,6 +22,55 @@ import 'onboarding/driver_todo_screen.dart';
 /// which both validates the code and creates/logs the session in one call.
 class DriverWelcomeScreen extends StatefulWidget {
   const DriverWelcomeScreen({super.key});
+
+  /// Routing by driver account state — shared by every driver sign-in path:
+  /// approved → home; pending → the to-do hub (which already shows
+  /// "In review" — no more pending-review prison); rejected → pending
+  /// review (navigable legacy status screen); never-registered
+  /// (`none`/anything else) → the Phase 2 to-do hub (the legacy
+  /// DriverSignupScreen stays for legacy users).
+  static Future<void> routeExistingDriver(
+    BuildContext context,
+    Map<String, dynamic> user,
+  ) async {
+    final vStatus = user['verification_status'] as String? ?? 'none';
+    final isVerified = user['is_verified'] == true || user['isVerified'] == true;
+    final accountStatus = (user['status'] as String? ?? '').toLowerCase().trim();
+    final s = vStatus.toLowerCase().trim();
+    final approved = isVerified ||
+        {'approved', 'active', 'online', 'clear', 'verified'}.contains(s) ||
+        {'approved', 'active', 'online', 'clear', 'verified'}
+            .contains(accountStatus);
+
+    if (approved) {
+      await LocalDataService.setDriverApprovalStatus('approved');
+    } else if (s == 'pending' || s == 'rejected') {
+      await LocalDataService.setDriverApprovalStatus(s);
+    }
+    if (!context.mounted) return;
+
+    if (approved) {
+      Navigator.of(context).pushAndRemoveUntil(
+        slideFromRightRoute(const DriverHomeScreen()),
+        (_) => false,
+      );
+    } else if (s == 'pending') {
+      Navigator.of(context).pushAndRemoveUntil(
+        onboardingFadeSlideRoute(const DriverTodoScreen()),
+        (_) => false,
+      );
+    } else if (s == 'rejected') {
+      Navigator.of(context).pushAndRemoveUntil(
+        slideFromRightRoute(const DriverPendingReviewScreen()),
+        (_) => false,
+      );
+    } else {
+      Navigator.of(context).pushAndRemoveUntil(
+        onboardingFadeSlideRoute(const DriverTodoScreen()),
+        (_) => false,
+      );
+    }
+  }
 
   @override
   State<DriverWelcomeScreen> createState() => _DriverWelcomeScreenState();
@@ -144,56 +194,7 @@ class _DriverWelcomeScreenState extends State<DriverWelcomeScreen> {
       );
       return;
     }
-    await routeExistingDriver(context, user);
-  }
-
-  /// Routing by driver account state — mirrors the post-login decision in
-  /// `driver_login_screen.dart`: approved → home; pending → the to-do hub
-  /// (which already shows "In review" — no more pending-review prison);
-  /// rejected → pending review (navigable legacy status screen);
-  /// never-registered (`none`/anything else) → the Phase 2 to-do hub (the
-  /// legacy DriverSignupScreen stays for legacy users).
-  static Future<void> routeExistingDriver(
-    BuildContext context,
-    Map<String, dynamic> user,
-  ) async {
-    final vStatus = user['verification_status'] as String? ?? 'none';
-    final isVerified = user['is_verified'] == true || user['isVerified'] == true;
-    final accountStatus = (user['status'] as String? ?? '').toLowerCase().trim();
-    final s = vStatus.toLowerCase().trim();
-    final approved = isVerified ||
-        {'approved', 'active', 'online', 'clear', 'verified'}.contains(s) ||
-        {'approved', 'active', 'online', 'clear', 'verified'}
-            .contains(accountStatus);
-
-    if (approved) {
-      await LocalDataService.setDriverApprovalStatus('approved');
-    } else if (s == 'pending' || s == 'rejected') {
-      await LocalDataService.setDriverApprovalStatus(s);
-    }
-    if (!context.mounted) return;
-
-    if (approved) {
-      Navigator.of(context).pushAndRemoveUntil(
-        slideFromRightRoute(const DriverHomeScreen()),
-        (_) => false,
-      );
-    } else if (s == 'pending') {
-      Navigator.of(context).pushAndRemoveUntil(
-        onboardingFadeSlideRoute(const DriverTodoScreen()),
-        (_) => false,
-      );
-    } else if (s == 'rejected') {
-      Navigator.of(context).pushAndRemoveUntil(
-        slideFromRightRoute(const DriverPendingReviewScreen()),
-        (_) => false,
-      );
-    } else {
-      Navigator.of(context).pushAndRemoveUntil(
-        onboardingFadeSlideRoute(const DriverTodoScreen()),
-        (_) => false,
-      );
-    }
+    await DriverWelcomeScreen.routeExistingDriver(context, user);
   }
 
   @override
@@ -372,6 +373,29 @@ class _DriverWelcomeScreenState extends State<DriverWelcomeScreen> {
                                 : Colors.black.withValues(alpha: 0.45),
                           ),
                         ),
+                ),
+              ),
+            ),
+
+            // ── Legacy email/password sign-in (secondary) ──
+            Center(
+              child: GestureDetector(
+                onTap: () => Navigator.of(
+                  context,
+                ).push(slideFromRightRoute(const DriverLoginScreen())),
+                behavior: HitTestBehavior.opaque,
+                child: Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: Text(
+                    S.of(context).obSignInWithEmail,
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.white.withValues(alpha: 0.55),
+                      decoration: TextDecoration.underline,
+                      decorationColor: Colors.white.withValues(alpha: 0.55),
+                    ),
+                  ),
                 ),
               ),
             ),

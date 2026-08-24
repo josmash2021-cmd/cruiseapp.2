@@ -6,14 +6,15 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../config/page_transitions.dart';
 import '../../l10n/app_localizations.dart';
 import '../../services/api_service.dart';
-import 'onboarding/driver_todo_screen.dart';
+import 'onboarding/onboarding_intro_flow_screen.dart';
 
 /// Driver onboarding — Phase 2, step 2 ("Tell us about yourself").
 ///
 /// Lyft-style survey: 4 blocks (2 checkbox groups + 2 radio groups), all
 /// optional — `Save` is always enabled and persists the answers as a single
 /// JSON string in `onboarding_survey` via `PATCH /auth/me`, then hands off
-/// to the Phase 2 to-do hub ([DriverTodoScreen]).
+/// to the one-time intro sequence ([OnboardingIntroFlowScreen]), which ends
+/// at the Phase 2 to-do hub.
 class DriverAboutYouScreen extends StatefulWidget {
   const DriverAboutYouScreen({super.key});
 
@@ -98,8 +99,10 @@ class _DriverAboutYouScreenState extends State<DriverAboutYouScreen> {
         }),
       });
       if (!mounted) return;
+      // First time: the per-item intro sequence runs before the hub; the
+      // flow screen self-redirects to the hub when already seen.
       Navigator.of(context).pushAndRemoveUntil(
-        onboardingFadeSlideRoute(const DriverTodoScreen()),
+        onboardingFadeSlideRoute(const OnboardingIntroFlowScreen()),
         (_) => false,
       );
     } on ApiException catch (e) {

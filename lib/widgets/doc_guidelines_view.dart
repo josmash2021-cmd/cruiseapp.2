@@ -18,11 +18,21 @@ class DocGuidelinesView extends StatelessWidget {
     required this.docType,
     required this.onNext,
     this.onClose,
+    this.stateCode,
+    this.side,
   });
 
   /// `'license'` | `'government_id'` | `'passport'` — picks the illustration,
   /// title and bullets. Anything else falls back to the license copy.
   final String docType;
+
+  /// License state ('AL', 'FL', …). Together with [side] it swaps the
+  /// vector illustration for a photo of the real document. Anything that
+  /// has no dedicated asset falls back to the Alabama front photo.
+  final String? stateCode;
+
+  /// `'front'` | `'back'` — which side of the license is about to be shot.
+  final String? side;
 
   /// Gold Next button. The light haptic fires here before this is called.
   final VoidCallback onNext;
@@ -33,6 +43,38 @@ class DocGuidelinesView extends StatelessWidget {
 
   static const _gold = Color(0xFFE8C547);
   static const _goldDark = Color(0xFFB8972E);
+
+  /// Photo of the real document for this state/side, or null to keep the
+  /// vector illustration. Rule: back side is shared by every state; front
+  /// has per-state art for AL and FL; any other state gets the AL front.
+  String? get _stateAsset {
+    if (side == null) return null;
+    const base = 'assets/images/onboarding';
+    if (side == 'back') return '$base/guide_license_back.jpg';
+    final st = (stateCode ?? 'AL').toUpperCase();
+    if (st == 'FL') return '$base/guide_license_fl.jpg';
+    return '$base/guide_license_al.jpg';
+  }
+
+  Widget _buildHero() {
+    final asset = _stateAsset;
+    if (asset == null) {
+      return Center(child: DocScanIllustration(docType: docType, height: 190));
+    }
+    // Full-width photo of the real license; the vector illustration stays
+    // as the fallback if the asset ever fails to load.
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(18),
+      child: Image.asset(
+        asset,
+        width: double.infinity,
+        height: 190,
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) =>
+            Center(child: DocScanIllustration(docType: docType, height: 190)),
+      ),
+    );
+  }
 
   String _title(S s) {
     switch (docType) {
@@ -102,9 +144,7 @@ class DocGuidelinesView extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const SizedBox(height: 28),
-                  Center(
-                    child: DocScanIllustration(docType: docType, height: 190),
-                  ),
+                  _buildHero(),
                   const SizedBox(height: 30),
                   Text(
                     _title(s),

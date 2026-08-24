@@ -12,7 +12,10 @@ enum OnboardingItem {
   license('license', 'assets/images/onboarding/license.jpg'),
   photo('photo', 'assets/images/onboarding/profile_photo.jpg'),
   background('background', 'assets/images/onboarding/background.jpg'),
-  vehicle('vehicle', 'assets/images/onboarding/vehicle.jpg');
+  vehicle('vehicle', 'assets/images/onboarding/vehicle.jpg'),
+  registration('registration', 'assets/images/onboarding/documents.jpg'),
+  insurance('insurance', 'assets/images/onboarding/documents.jpg'),
+  inspection('inspection', 'assets/images/onboarding/documents.jpg');
 
   const OnboardingItem(this.key, this.asset);
 
@@ -116,6 +119,26 @@ class OnboardingIntroCopy {
           subtitle: s.obIntroBackgroundSub,
           button: s.next,
         );
+      // The document items have no intro step — the hub card opens the
+      // capture page directly. These copies only satisfy the switch.
+      case OnboardingItem.registration:
+        return OnboardingIntroCopy(
+          title: s.obItemRegistrationTitle,
+          subtitle: s.obItemRegistrationSub,
+          button: s.next,
+        );
+      case OnboardingItem.insurance:
+        return OnboardingIntroCopy(
+          title: s.obItemInsuranceTitle,
+          subtitle: s.obItemInsuranceSub,
+          button: s.next,
+        );
+      case OnboardingItem.inspection:
+        return OnboardingIntroCopy(
+          title: s.obItemInspectionTitle,
+          subtitle: s.obItemInspectionSub,
+          button: s.next,
+        );
     }
   }
 }
@@ -138,6 +161,12 @@ class OnboardingIntroCopy {
       return (s.obItemBackgroundTitle, s.obItemBackgroundSub);
     case OnboardingItem.vehicle:
       return (s.obItemVehicleTitle, s.obItemVehicleSub);
+    case OnboardingItem.registration:
+      return (s.obItemRegistrationTitle, s.obItemRegistrationSub);
+    case OnboardingItem.insurance:
+      return (s.obItemInsuranceTitle, s.obItemInsuranceSub);
+    case OnboardingItem.inspection:
+      return (s.obItemInspectionTitle, s.obItemInspectionSub);
   }
 }
 
@@ -156,5 +185,11 @@ IconData onboardingItemIcon(OnboardingItem item) {
       return Icons.verified_user_outlined;
     case OnboardingItem.vehicle:
       return Icons.directions_car_filled_outlined;
+    case OnboardingItem.registration:
+      return Icons.article_outlined;
+    case OnboardingItem.insurance:
+      return Icons.shield_outlined;
+    case OnboardingItem.inspection:
+      return Icons.fact_check_outlined;
   }
 }

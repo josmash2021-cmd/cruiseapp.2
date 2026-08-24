@@ -6,12 +6,10 @@ import '../config/page_transitions.dart';
 import '../services/user_session.dart';
 import 'home_screen.dart';
 
-/// Luxury full-screen "You're set to ride" onboarding completion screen.
-/// Matches the driver onboarding pages style with full-bleed background,
-/// glassmorphism cards, and staggered entrance animations.
+/// Lyft-style "You're set to ride" onboarding completion screen.
+/// Full-bleed photo on top, big two-line title, clean safety rows with
+/// hairline dividers, and a single gold CTA into home.
 class ReadyToRideScreen extends StatefulWidget {
-  static const _gold = Color(0xFFD4AF37);
-
   final String firstName;
 
   const ReadyToRideScreen({super.key, required this.firstName});
@@ -20,22 +18,15 @@ class ReadyToRideScreen extends StatefulWidget {
   State<ReadyToRideScreen> createState() => _ReadyToRideScreenState();
 }
 
-class _ReadyToRideScreenState extends State<ReadyToRideScreen>
-    with TickerProviderStateMixin {
+class _ReadyToRideScreenState extends State<ReadyToRideScreen> {
   static const _gold = Color(0xFFD4AF37);
 
-  late AnimationController _animCtrl;
   bool _locationGranted = false;
   bool _showLocationPrompt = false;
 
   @override
   void initState() {
     super.initState();
-    _animCtrl = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1400),
-    );
-    _animCtrl.forward();
     _checkLocationStatus();
   }
 
@@ -45,12 +36,6 @@ class _ReadyToRideScreenState extends State<ReadyToRideScreen>
         perm == LocationPermission.whileInUse) {
       if (mounted) setState(() => _locationGranted = true);
     }
-  }
-
-  @override
-  void dispose() {
-    _animCtrl.dispose();
-    super.dispose();
   }
 
   Future<void> _requestLocation() async {
@@ -84,258 +69,120 @@ class _ReadyToRideScreenState extends State<ReadyToRideScreen>
     );
   }
 
-  /// Staggered fade + slide animation for a child widget.
-  Widget _staggered({
-    required double begin,
-    required double end,
-    required Widget child,
-    Offset slideBegin = const Offset(0, 0.08),
-  }) {
-    return AnimatedBuilder(
-      animation: _animCtrl,
-      builder: (_, __) {
-        final t = _animCtrl.value;
-        final interval = Interval(begin, end, curve: Curves.easeOutCubic);
-        final progress = interval.transform(t.clamp(0.0, 1.0));
-        return Opacity(
-          opacity: progress,
-          child: Transform.translate(
-            offset: Offset(
-              slideBegin.dx * (1 - progress),
-              slideBegin.dy * (1 - progress) * 60,
-            ),
-            child: child,
-          ),
-        );
-      },
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final s = S.of(context);
+    final c = AppColors.of(context);
 
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: c.bg,
       body: Stack(
-        fit: StackFit.expand,
         children: [
-          // ── Full-screen background ──
-          Image.asset(
-            'assets/images/safety_rules_suburban.png',
-            fit: BoxFit.cover,
-            alignment: Alignment.topCenter,
-          ),
-
-          // ── Dark gradient overlay ──
-          Container(
-            decoration: const BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [
-                  Color(0x4D000000), // 30% black
-                  Color(0xD9000000), // 85% black
-                ],
-                stops: [0.0, 0.75],
+          Column(
+            children: [
+              // ── Full-bleed photo (edge to edge, under the status bar) ──
+              Image.asset(
+                'assets/images/onboarding/ready_to_ride.jpg',
+                width: double.infinity,
+                height: 240 + MediaQuery.of(context).padding.top,
+                fit: BoxFit.cover,
               ),
-            ),
-          ),
 
-          // ── Content ──
-          SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24),
-              child: Column(
-                children: [
-                  const SizedBox(height: 20),
+              Expanded(
+                child: SafeArea(
+                  top: false,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 24),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const SizedBox(height: 28),
 
-                  // ── Header: icon + title + subtitle in pill ──
-                  _staggered(
-                    begin: 0.0,
-                    end: 0.25,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 24,
-                        vertical: 14,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.black.withValues(alpha: 0.55),
-                        borderRadius: BorderRadius.circular(30),
-                        border: Border.all(
-                          color: _gold.withValues(alpha: 0.35),
-                          width: 1,
+                        // ── Big two-line title ──
+                        Text(
+                          s.readyToRide,
+                          style: TextStyle(
+                            fontSize: 30,
+                            fontWeight: FontWeight.w800,
+                            color: c.textPrimary,
+                            height: 1.25,
+                            letterSpacing: -0.5,
+                          ),
                         ),
-                      ),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          // Shield icon
-                          Container(
-                            width: 56,
-                            height: 56,
+                        const SizedBox(height: 28),
+
+                        // ── Safety rows (clean, hairline dividers) ──
+                        _safetyRow(
+                          c: c,
+                          icon: Icons.verified_user_outlined,
+                          text: s.safetyPoint1,
+                        ),
+                        _divider(c),
+                        _safetyRow(
+                          c: c,
+                          icon: Icons.route_outlined,
+                          text: s.safetyPoint2,
+                        ),
+                        _divider(c),
+                        _safetyRow(
+                          c: c,
+                          icon: Icons.support_agent_outlined,
+                          text: s.safetyPoint3,
+                        ),
+
+                        const Spacer(),
+
+                        // ── Take your first ride button ──
+                        SizedBox(
+                          width: double.infinity,
+                          height: 56,
+                          child: Container(
                             decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              color: const Color(0xFF1A1A1A),
-                              border: Border.all(
-                                color: _gold.withValues(alpha: 0.5),
-                                width: 2,
+                              gradient: const LinearGradient(
+                                colors: [
+                                  Color(0xFFD4AF37),
+                                  Color(0xFFB8960C),
+                                ],
+                              ),
+                              borderRadius: BorderRadius.circular(28),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: const Color(
+                                    0xFFD4AF37,
+                                  ).withValues(alpha: 0.4),
+                                  blurRadius: 12,
+                                  offset: const Offset(0, 4),
+                                ),
+                              ],
+                            ),
+                            child: ElevatedButton(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.transparent,
+                                shadowColor: Colors.transparent,
+                                foregroundColor: const Color(0xFF0A0A0A),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(28),
+                                ),
+                              ),
+                              onPressed: _goToHome,
+                              child: Text(
+                                s.takeFirstRide,
+                                style: const TextStyle(
+                                  fontSize: 17,
+                                  fontWeight: FontWeight.w700,
+                                ),
                               ),
                             ),
-                            child: const Icon(
-                              Icons.shield_rounded,
-                              color: _gold,
-                              size: 28,
-                            ),
                           ),
-                          const SizedBox(height: 10),
-                          // Title
-                          Text(
-                            "YOU'RE SET TO RIDE.",
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              fontSize: 20,
-                              fontWeight: FontWeight.w800,
-                              color: _gold,
-                              letterSpacing: 2.0,
-                            ),
-                          ),
-                          const SizedBox(height: 6),
-                          // Subtitle
-                          Text(
-                            "WE'RE HERE WHEN YOU NEED US.",
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w500,
-                              color: Colors.white.withValues(alpha: 0.75),
-                              letterSpacing: 3.0,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
+                        ),
 
-                  const SizedBox(height: 24),
-
-                  // ── Safety cards ──
-                  Expanded(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        _staggered(
-                          begin: 0.20,
-                          end: 0.50,
-                          child: _safetyCard(
-                            icon: Icons.verified_user_rounded,
-                            title: 'ALL DRIVERS MUST PASS REGULAR BACKGROUND CHECKS',
-                            desc: s.safetyPoint1,
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        _staggered(
-                          begin: 0.35,
-                          end: 0.65,
-                          child: _safetyCard(
-                            icon: Icons.route_rounded,
-                            title: 'WE MONITOR RIDES FOR UNUSUAL ACTIVITY',
-                            desc: s.safetyPoint2,
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        _staggered(
-                          begin: 0.50,
-                          end: 0.80,
-                          child: _safetyCard(
-                            icon: Icons.support_agent_rounded,
-                            title: 'FEEL UNSAFE? CONNECT WITH SAFETY SPECIALISTS',
-                            desc: s.safetyPoint3,
-                          ),
-                        ),
+                        const SizedBox(height: 24),
                       ],
                     ),
                   ),
-
-                  const SizedBox(height: 16),
-
-                  // ── Location toggle hint ──
-                  _staggered(
-                    begin: 0.75,
-                    end: 0.90,
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          Icons.check_circle_rounded,
-                          color: _gold,
-                          size: 16,
-                        ),
-                        const SizedBox(width: 6),
-                        Text(
-                          s.locationAlwaysOn,
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.white.withValues(alpha: 0.7),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-
-                  const SizedBox(height: 12),
-
-                  // ── Take your first ride button ──
-                  _staggered(
-                    begin: 0.80,
-                    end: 1.0,
-                    child: SizedBox(
-                      width: double.infinity,
-                      height: 56,
-                      child: Container(
-                        decoration: BoxDecoration(
-                          gradient: const LinearGradient(
-                            colors: [
-                              Color(0xFFD4AF37),
-                              Color(0xFFB8960C),
-                            ],
-                          ),
-                          borderRadius: BorderRadius.circular(28),
-                          boxShadow: [
-                            BoxShadow(
-                              color: const Color(0xFFD4AF37).withValues(alpha: 0.4),
-                              blurRadius: 12,
-                              offset: const Offset(0, 4),
-                            ),
-                          ],
-                        ),
-                        child: ElevatedButton(
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.transparent,
-                            shadowColor: Colors.transparent,
-                            foregroundColor: const Color(0xFF0A0A0A),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(28),
-                            ),
-                          ),
-                          onPressed: _goToHome,
-                          child: Text(
-                            s.takeFirstRide.toUpperCase(),
-                            style: const TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w800,
-                              letterSpacing: 1.0,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-
-                  const SizedBox(height: 32),
-                ],
+                ),
               ),
-            ),
+            ],
           ),
 
           // ── Location permission prompt overlay ──
@@ -346,72 +193,40 @@ class _ReadyToRideScreenState extends State<ReadyToRideScreen>
     );
   }
 
-  /// Glassmorphism safety card.
-  Widget _safetyCard({
+  /// One safety row: gold line icon + text. No enclosing card.
+  Widget _safetyRow({
+    required AppColors c,
     required IconData icon,
-    required String title,
-    required String desc,
+    required String text,
   }) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(16),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-        decoration: BoxDecoration(
-          color: Colors.black.withValues(alpha: 0.55),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: _gold.withValues(alpha: 0.25),
-            width: 1,
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 16),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, color: _gold, size: 24),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Text(
+              text,
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+                color: c.textPrimary,
+                height: 1.45,
+              ),
+            ),
           ),
-        ),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            // Icon container
-            Container(
-              width: 44,
-              height: 44,
-              decoration: BoxDecoration(
-                color: const Color(0xFF1A1A1A),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Icon(icon, color: _gold, size: 24),
-            ),
-            const SizedBox(width: 14),
-            // Text
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
-                      color: _gold,
-                      letterSpacing: 1.2,
-                    ),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    desc,
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w400,
-                      color: Colors.white.withValues(alpha: 0.75),
-                      height: 1.35,
-                    ),
-                    maxLines: 3,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
+        ],
       ),
+    );
+  }
+
+  Widget _divider(AppColors c) {
+    return Divider(
+      height: 1,
+      thickness: 1,
+      color: c.textTertiary.withValues(alpha: 0.15),
     );
   }
 

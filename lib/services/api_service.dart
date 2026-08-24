@@ -1770,6 +1770,13 @@ class ApiService {
   static Future<Map<String, dynamic>> submitOnboardingBackground() =>
       _postOnboardingItem('background', {'accepted': true});
 
+  /// Mirror an uploaded document URL (registration / insurance / inspection)
+  /// onto the user column the GET derives from and mark the item submitted.
+  static Future<Map<String, dynamic>> submitOnboardingDoc({
+    required String item,
+    required String url,
+  }) => _postOnboardingItem('$item/doc', {'url': url});
+
   /// Mark an onboarding item for resubmission (rejected/stale data) —
   /// returns the item to `pending` so the capture flow can replace it.
   static Future<Map<String, dynamic>> resubmitOnboardingItem(

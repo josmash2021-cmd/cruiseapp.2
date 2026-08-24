@@ -367,11 +367,15 @@ class _SplashScreenState extends State<SplashScreen>
 
       if (cachedStatus == 'pending' || cachedStatus == 'rejected') {
         // ALWAYS hit the backend API — the cache may be stale if dispatch
-        // approved the driver while the app was closed.
+        // approved the driver while the app was closed. Total budget for
+        // the live re-check is ~4 s: a slow network must never leave the
+        // unapproved driver staring at the splash; on timeout the cached
+        // status decides (pending → to-do hub, rejected → pending review).
+        final budget = Stopwatch()..start();
         await initFuture;
         try {
           final approvalResult = await ApiService.getDriverApprovalStatus()
-              .timeout(const Duration(seconds: 5));
+              .timeout(const Duration(seconds: 4));
           final liveStatus =
               approvalResult['approval_status'] as String? ??
               approvalResult['status'] as String? ??
@@ -388,9 +392,12 @@ class _SplashScreenState extends State<SplashScreen>
           debugPrint('[SplashScreen] Live approval check failed, using cache: $e');
         }
         // Fallback: also try Firestore (covers edge case where API is down
-        // but Firestore has the approval).
-        if (cachedStatus == 'pending') {
-          final fsStatus = await _quickFirestoreDriverCheck();
+        // but Firestore has the approval) — only inside the ~4 s budget.
+        if (cachedStatus == 'pending' && budget.elapsedMilliseconds < 4000) {
+          final fsStatus = await _quickFirestoreDriverCheck().timeout(
+            const Duration(seconds: 3),
+            onTimeout: () => 'pending',
+          );
           if (fsStatus == 'approved') {
             await LocalDataService.setDriverApprovalStatus('approved');
             unawaited(_backgroundProfileSync());
@@ -409,7 +416,11 @@ class _SplashScreenState extends State<SplashScreen>
       await initFuture;
 
       // 1) Try Firestore first (fast, works offline, survives app updates)
-      final fsStatus = await _quickFirestoreDriverCheck();
+      // — capped so a dead network can't hold the splash hostage.
+      final fsStatus = await _quickFirestoreDriverCheck().timeout(
+        const Duration(seconds: 4),
+        onTimeout: () => 'pending',
+      );
       if (fsStatus == 'approved') {
         await LocalDataService.setDriverApprovalStatus('approved');
         unawaited(_backgroundProfileSync());

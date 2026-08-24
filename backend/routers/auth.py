@@ -3905,7 +3905,8 @@ async def reset_password(request: Request, db: AsyncSession = Depends(get_db)):
 # (dispatch reject with reason, resubmit) live as JSON overrides in
 # users.onboarding_items and are layered on top of the derivation.
 
-ONBOARDING_ITEMS = ("plate", "ssn", "license", "photo", "background", "vehicle")
+ONBOARDING_ITEMS = ("plate", "ssn", "license", "photo", "background", "vehicle",
+                    "registration", "insurance", "inspection")
 
 _ONBOARDING_STATUSES = ("pending", "submitted", "approved", "rejected")
 
@@ -3932,6 +3933,16 @@ def _set_onboarding_override(db_user: User, item: str, status: str, reason: Opti
 async def _derive_onboarding_items(db: AsyncSession, db_user: User) -> dict:
     veh_result = await db.execute(select(Vehicle).where(Vehicle.user_id == db_user.id))
     veh = veh_result.scalars().first()
+    # Document rows (registration / insurance / vehicle_inspection uploads via
+    # /drivers/documents[/upload]) back the same items — a non-rejected row
+    # counts as on file even when the user URL column was never mirrored.
+    doc_result = await db.execute(
+        select(Document.doc_type).where(
+            Document.user_id == db_user.id,
+            Document.status != "rejected",
+        )
+    )
+    doc_types = {row[0] for row in doc_result.all()}
     bg = db_user.background_check_status or "none"
     has = {
         "plate": bool((veh and veh.plate) or db_user.plate_number),
@@ -3940,10 +3951,18 @@ async def _derive_onboarding_items(db: AsyncSession, db_user: User) -> dict:
         "photo": bool(db_user.photo_url),
         "background": bool(db_user.background_consent_at) or bg in ("pending", "processing", "clear"),
         "vehicle": bool(veh and veh.make and veh.model and veh.year),
+        "registration": bool(db_user.vehicle_registration_url) or "registration" in doc_types,
+        "insurance": bool(db_user.insurance_url) or "insurance" in doc_types,
+        "inspection": bool(db_user.inspection_url) or "vehicle_inspection" in doc_types,
     }
+    # Vehicle inspection is only required in Alabama — other states never
+    # see the item at all.
+    requires_inspection = (db_user.drive_state or "").strip().upper() == "AL"
     globally_approved = bool(db_user.is_verified) and db_user.verification_status == "approved"
     items = {}
     for key in ONBOARDING_ITEMS:
+        if key == "inspection" and not requires_inspection:
+            continue
         status = "submitted" if has[key] else "pending"
         if key == "background" and bg == "clear":
             status = "approved"
@@ -4086,6 +4105,38 @@ async def submit_onboarding_background(body: _OnboardingBackgroundIn, request: R
     _set_onboarding_override(db_user, "background", "submitted")
     await db.commit()
     return {"ok": True, "item": "background", "status": "submitted", "consent_at": now.isoformat()}
+
+
+# Document items (registration / insurance / inspection): the image itself
+# goes through /drivers/documents/upload (Document rows, same storage as the
+# legacy signup docs); this endpoint mirrors the resulting URL onto the user
+# column the GET derives from and marks the item submitted.
+_ONBOARDING_DOC_URL_FIELDS = {
+    "registration": "vehicle_registration_url",
+    "insurance": "insurance_url",
+    "inspection": "inspection_url",
+}
+
+
+class _OnboardingDocIn(BaseModel):
+    url: str = Field(..., min_length=1, max_length=2000)
+
+
+@router.post("/auth/onboarding-items/{item}/doc", dependencies=[Depends(_verify_api_key)])
+async def submit_onboarding_doc(item: str, body: _OnboardingDocIn, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
+    field = _ONBOARDING_DOC_URL_FIELDS.get(item)
+    if field is None:
+        raise HTTPException(404, "Unknown onboarding document item")
+    if item == "inspection" and (user.drive_state or "").strip().upper() != "AL":
+        raise HTTPException(400, "Vehicle inspection is only required for Alabama drivers")
+    result = await db.execute(select(User).where(User.id == user.id))
+    db_user = result.scalar_one_or_none()
+    if not db_user:
+        raise HTTPException(404, "User not found")
+    setattr(db_user, field, body.url.strip())
+    _set_onboarding_override(db_user, item, "submitted")
+    await db.commit()
+    return {"ok": True, "item": item, "status": "submitted"}
 
 
 @router.post("/auth/onboarding-items/{item}/resubmit", dependencies=[Depends(_verify_api_key)])

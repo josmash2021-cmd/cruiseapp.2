@@ -5542,6 +5542,46 @@ class S {
       ? 'Tu información fue enviada y está en revisión.'
       : 'Your information was submitted and is under review.';
 
+  // ── Document items (registration / insurance / inspection) ───────
+  String get obItemRegistrationTitle =>
+      _es ? 'Registro del vehículo' : 'Vehicle registration';
+  String get obItemRegistrationSub => _es
+      ? 'Mantenlo vigente y a nombre de tu vehículo'
+      : 'Keep it current and matching your vehicle';
+  String get obItemInsuranceTitle => _es ? 'Seguro del auto' : 'Car insurance';
+  String get obItemInsuranceSub => _es
+      ? 'Tu nombre debe aparecer en la póliza'
+      : 'Your name must be listed on the policy';
+  String get obItemInspectionTitle =>
+      _es ? 'Inspección del vehículo' : 'Vehicle inspection';
+  String get obItemInspectionSub => _es
+      ? 'Requerida para conductores de Alabama'
+      : 'Required for Alabama drivers';
+  String obDocSavedMsg(String doc) => _es
+      ? '¡Tu $doc se guardó con éxito! Actualízalo subiendo una nueva imagen.'
+      : 'Your $doc was successfully saved! Update it by uploading a new image.';
+  String obDocLearnMore(String doc) =>
+      _es ? 'Conoce más sobre tu $doc' : 'Learn more about your $doc';
+  String get obUploadPhoto => _es ? 'Subir foto' : 'Upload photo';
+  String get obDocBulletValid => _es
+      ? 'El documento debe ser válido y estar vigente'
+      : 'The document must be valid and current';
+  String get obDocBulletMatch => _es
+      ? 'Debe coincidir con tu vehículo'
+      : 'It must match your vehicle';
+  String get obDocBulletNameOnPolicy => _es
+      ? 'Tu nombre debe aparecer en la póliza'
+      : 'Your name must be listed on the policy';
+  String get obDocBulletNotBlurry => _es
+      ? 'La foto no debe estar borrosa'
+      : 'The photo must not be blurry';
+  String get obDocBulletCorners => _es
+      ? 'Las 4 esquinas del documento deben ser visibles'
+      : 'All 4 corners of the document must be visible';
+  String get obSignInWithEmail => _es
+      ? 'Inicia sesión con correo'
+      : 'Sign in with email';
+
   // ── Onboarding intros (textos exactos estilo Lyft) ───────────────
   String get obIntroVehicleTitle =>
       _es ? 'Tengo un vehículo' : 'I have a vehicle';

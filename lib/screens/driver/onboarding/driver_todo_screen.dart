@@ -4,7 +4,10 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../../config/page_transitions.dart';
 import '../../../l10n/app_localizations.dart';
 import '../../../services/api_service.dart';
+import '../../../services/user_session.dart';
 import '../../help_screen.dart';
+import '../../splash_screen.dart';
+import 'doc_capture_screen.dart';
 import 'onboarding_intro_screen.dart';
 import 'onboarding_items.dart';
 import 'onboarding_widgets.dart';
@@ -24,7 +27,8 @@ class DriverTodoScreen extends StatefulWidget {
 }
 
 class _DriverTodoScreenState extends State<DriverTodoScreen> {
-  /// Canonical display order for the hub.
+  /// Canonical display order for the hub. `inspection` is only listed when
+  /// the GET includes it (Alabama drivers).
   static const _order = [
     OnboardingItem.plate,
     OnboardingItem.ssn,
@@ -32,11 +36,22 @@ class _DriverTodoScreenState extends State<DriverTodoScreen> {
     OnboardingItem.photo,
     OnboardingItem.background,
     OnboardingItem.vehicle,
+    OnboardingItem.registration,
+    OnboardingItem.insurance,
+    OnboardingItem.inspection,
   ];
+
+  /// Items whose card opens the capture page directly (no intro step).
+  static const _docItems = {
+    OnboardingItem.registration,
+    OnboardingItem.insurance,
+    OnboardingItem.inspection,
+  };
 
   List<OnboardingItemEntry> _entries = [
     for (final item in _order)
-      OnboardingItemEntry(item: item, status: OnboardingItemStatus.pending),
+      if (item != OnboardingItem.inspection)
+        OnboardingItemEntry(item: item, status: OnboardingItemStatus.pending),
   ];
   bool _loading = true;
   bool _completedExpanded = false;
@@ -56,10 +71,12 @@ class _DriverTodoScreenState extends State<DriverTodoScreen> {
         setState(() {
           _entries = [
             for (final item in _order)
-              OnboardingItemEntry.parse(
-                item.key,
-                (raw[item.key] as Map?)?.cast<String, dynamic>(),
-              ),
+              // The GET omits inspection for non-AL drivers entirely.
+              if (raw.containsKey(item.key))
+                OnboardingItemEntry.parse(
+                  item.key,
+                  (raw[item.key] as Map?)?.cast<String, dynamic>(),
+                ),
           ];
           _loading = false;
         });
@@ -74,11 +91,65 @@ class _DriverTodoScreenState extends State<DriverTodoScreen> {
   }
 
   Future<void> _openItem(OnboardingItemEntry entry) async {
+    // Document items have no intro — the card opens the capture page
+    // directly; everything else goes through the generic intro.
+    if (_docItems.contains(entry.item)) {
+      await Navigator.of(
+        context,
+      ).push(onboardingFadeSlideRoute(DocCaptureScreen(entry: entry)));
+      _load();
+      return;
+    }
     // Every push returns here → refresh progress from the backend.
     await Navigator.of(context).push(
       onboardingFadeSlideRoute(OnboardingIntroScreen(entry: entry)),
     );
     _load();
+  }
+
+  Future<void> _confirmLogout() async {
+    final s = S.of(context);
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF101736),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        title: Text(
+          s.signOutTitle,
+          style: const TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        content: Text(
+          s.signOutConfirmation,
+          style: TextStyle(color: Colors.white.withValues(alpha: 0.65)),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text(s.cancel, style: const TextStyle(color: Colors.white70)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text(
+              s.signOutButton,
+              style: const TextStyle(
+                color: kOnboardingGold,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true || !mounted) return;
+    await UserSession.logout();
+    if (!mounted) return;
+    Navigator.of(context).pushAndRemoveUntil(
+      smoothFadeRoute(const SplashScreen(), durationMs: 600),
+      (_) => false,
+    );
   }
 
   @override
@@ -93,19 +164,12 @@ class _DriverTodoScreenState extends State<DriverTodoScreen> {
       backgroundColor: kOnboardingNavy,
       body: Column(
         children: [
-          // ── Header: X + "To-do" + count pill ──
+          // ── Header: "To-do" + count pill centered, logout top-right ──
           Padding(
-            padding: EdgeInsets.only(top: pad.top + 8, left: 8, right: 20),
+            padding: EdgeInsets.only(top: pad.top + 8, left: 8, right: 8),
             child: Row(
               children: [
-                IconButton(
-                  onPressed: () => Navigator.of(context).pop(),
-                  icon: const Icon(
-                    Icons.close_rounded,
-                    color: Colors.white,
-                    size: 26,
-                  ),
-                ),
+                const SizedBox(width: 48),
                 const Spacer(),
                 Text(
                   s.obTodoTitle,
@@ -138,7 +202,15 @@ class _DriverTodoScreenState extends State<DriverTodoScreen> {
                   ),
                 ),
                 const Spacer(),
-                const SizedBox(width: 40),
+                IconButton(
+                  onPressed: _confirmLogout,
+                  tooltip: s.logOut,
+                  icon: const Icon(
+                    Icons.logout_rounded,
+                    color: Colors.white,
+                    size: 24,
+                  ),
+                ),
               ],
             ),
           ),

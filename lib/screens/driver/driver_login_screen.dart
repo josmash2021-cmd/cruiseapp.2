@@ -4,14 +4,11 @@ import '../../config/app_theme.dart';
 import '../../config/page_transitions.dart';
 import '../../l10n/app_localizations.dart';
 import '../../services/api_service.dart';
-import '../../services/local_data_service.dart';
 import '../../services/user_session.dart';
 import '../../widgets/neu_style.dart';
 import '../forgot_password_screen.dart';
 import '../login_password_screen.dart';
 import 'driver_welcome_screen.dart';
-import 'driver_home_screen.dart';
-import 'driver_pending_review_screen.dart';
 
 /// Driver login screen — email + password for existing drivers.
 class DriverLoginScreen extends StatefulWidget {
@@ -127,36 +124,11 @@ class _DriverLoginScreenState extends State<DriverLoginScreen>
       await UserSession.saveMode('driver');
       await UserSession.initPhotoNotifier();
 
-      // Check driver approval status
-      final vStatus = user['verification_status'] as String? ?? 'none';
-      final isVerified = user['is_verified'] == true || user['isVerified'] == true;
-      final accountStatus = (user['status'] as String? ?? '').toLowerCase().trim();
-      final bool driverIsApproved = _isApprovedStatus(vStatus) ||
-          _isApprovedStatus(accountStatus) ||
-          isVerified;
-
-      // Cache it locally so splash screen routes correctly on next restart
-      if (driverIsApproved) {
-        await LocalDataService.setDriverApprovalStatus('approved');
-      } else if (vStatus == 'pending' || vStatus == 'rejected') {
-        await LocalDataService.setDriverApprovalStatus(vStatus);
-      }
       if (!mounted) return;
       setState(() => _loading = false);
-
-      if (driverIsApproved) {
-        Navigator.of(context).pushAndRemoveUntil(
-          slideFromRightRoute(const DriverHomeScreen()),
-          (_) => false,
-        );
-        return;
-      }
-      // pending, rejected, none, or any other status → pending review screen
-      // (DriverPendingReviewScreen fetches live status and handles all states)
-      Navigator.of(context).pushAndRemoveUntil(
-        slideFromRightRoute(const DriverPendingReviewScreen()),
-        (_) => false,
-      );
+      // Same routing as the SMS flow: approved → home, pending/none → the
+      // to-do hub, rejected → pending review (navigable).
+      await DriverWelcomeScreen.routeExistingDriver(context, user);
       return;
     } on ApiException catch (e) {
       if (!mounted) return;
@@ -207,25 +179,9 @@ class _DriverLoginScreenState extends State<DriverLoginScreen>
           );
           await UserSession.saveMode('driver');
           await UserSession.initPhotoNotifier();
-          final vStatus = user['verification_status'] as String? ?? 'none';
-          final isVerified = user['is_verified'] == true || user['isVerified'] == true;
-          final accountStatus = (user['status'] as String? ?? '').toLowerCase().trim();
-          final bool driverIsApproved = _isApprovedStatus(vStatus) ||
-              _isApprovedStatus(accountStatus) ||
-              isVerified;
           if (!mounted) return;
           setState(() => _loading = false);
-          if (driverIsApproved) {
-            Navigator.of(context).pushAndRemoveUntil(
-              slideFromRightRoute(const DriverHomeScreen()),
-              (_) => false,
-            );
-          } else {
-            Navigator.of(context).pushAndRemoveUntil(
-              slideFromRightRoute(const DriverPendingReviewScreen()),
-              (_) => false,
-            );
-          }
+          await DriverWelcomeScreen.routeExistingDriver(context, user);
           return;
         } catch (_) {
           // Retry also failed
@@ -238,17 +194,6 @@ class _DriverLoginScreenState extends State<DriverLoginScreen>
       });
       return;
     }
-  }
-
-  /// Returns true for any status string that indicates an approved driver.
-  bool _isApprovedStatus(String? status) {
-    if (status == null) return false;
-    final s = status.toLowerCase().trim();
-    return s == 'approved' ||
-        s == 'active' ||
-        s == 'online' ||
-        s == 'clear' ||
-        s == 'verified';
   }
 
   @override

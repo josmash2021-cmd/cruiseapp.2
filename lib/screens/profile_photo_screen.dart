@@ -108,14 +108,14 @@ class _ProfilePhotoScreenState extends State<ProfilePhotoScreen> {
     return Scaffold(
       backgroundColor: c.bg,
       body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 24),
-          child: Column(
-            children: [
-              const SizedBox(height: 8),
+        child: Column(
+          children: [
+            const SizedBox(height: 8),
 
-              // ── Back button ──
-              Align(
+            // ── Back button ──
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: Align(
                 alignment: Alignment.topLeft,
                 child: GestureDetector(
                   onTap: () => Navigator.of(context).pop(),
@@ -134,68 +134,79 @@ class _ProfilePhotoScreenState extends State<ProfilePhotoScreen> {
                   ),
                 ),
               ),
-              const SizedBox(height: 24),
+            ),
+            const SizedBox(height: 24),
 
-              // ── Avatar illustration ──
-              Container(
-                width: 140,
-                height: 140,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [
-                      _gold.withValues(alpha: 0.3),
-                      _gold.withValues(alpha: 0.1),
-                    ],
+              // ── Illustration: full-width image (circle preview once picked) ──
+              if (_photoPath != null)
+                Container(
+                  width: 140,
+                  height: 140,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [
+                        _gold.withValues(alpha: 0.3),
+                        _gold.withValues(alpha: 0.1),
+                      ],
+                    ),
+                  ),
+                  child: ClipOval(
+                    child: kIsWeb
+                        ? CachedNetworkImage(
+                            imageUrl: _photoPath!,
+                            fit: BoxFit.cover,
+                            width: 140,
+                            height: 140,
+                            fadeInDuration: const Duration(milliseconds: 200),
+                          )
+                        : Image.file(
+                            File(_photoPath!),
+                            fit: BoxFit.cover,
+                            width: 140,
+                            height: 140,
+                            gaplessPlayback: true,
+                            frameBuilder:
+                                (
+                                  context,
+                                  child,
+                                  frame,
+                                  wasSynchronouslyLoaded,
+                                ) {
+                                  if (wasSynchronouslyLoaded) return child;
+                                  return AnimatedOpacity(
+                                    opacity: frame == null ? 0.0 : 1.0,
+                                    duration: const Duration(
+                                      milliseconds: 350,
+                                    ),
+                                    curve: Curves.easeOutCubic,
+                                    child: child,
+                                  );
+                                },
+                          ),
+                  ),
+                )
+              else
+                ClipRRect(
+                  borderRadius: const BorderRadius.only(
+                    bottomLeft: Radius.circular(28),
+                    bottomRight: Radius.circular(28),
+                  ),
+                  child: Image.asset(
+                    'assets/images/onboarding/profile_photo.jpg',
+                    width: double.infinity,
+                    height: 240,
+                    fit: BoxFit.cover,
                   ),
                 ),
-                child: _photoPath != null
-                    ? ClipOval(
-                        child: kIsWeb
-                            ? CachedNetworkImage(
-                                imageUrl: _photoPath!,
-                                fit: BoxFit.cover,
-                                width: 140,
-                                height: 140,
-                                fadeInDuration: const Duration(milliseconds: 200),
-                              )
-                            : Image.file(
-                                File(_photoPath!),
-                                fit: BoxFit.cover,
-                                width: 140,
-                                height: 140,
-                                gaplessPlayback: true,
-                                frameBuilder:
-                                    (
-                                      context,
-                                      child,
-                                      frame,
-                                      wasSynchronouslyLoaded,
-                                    ) {
-                                      if (wasSynchronouslyLoaded) return child;
-                                      return AnimatedOpacity(
-                                        opacity: frame == null ? 0.0 : 1.0,
-                                        duration: const Duration(
-                                          milliseconds: 350,
-                                        ),
-                                        curve: Curves.easeOutCubic,
-                                        child: child,
-                                      );
-                                    },
-                              ),
-                      )
-                    : Icon(
-                        Icons.person_rounded,
-                        size: 70,
-                        color: _gold.withValues(alpha: 0.6),
-                      ),
-              ),
-              const SizedBox(height: 32),
+            const SizedBox(height: 32),
 
-              // ── Title ──
-              Text(
+            // ── Title ──
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: Text(
                 S.of(context).readyCloseUp,
                 textAlign: TextAlign.center,
                 style: TextStyle(
@@ -206,16 +217,22 @@ class _ProfilePhotoScreenState extends State<ProfilePhotoScreen> {
                   letterSpacing: -0.5,
                 ),
               ),
-              const SizedBox(height: 12),
+            ),
+            const SizedBox(height: 12),
 
-              // ── Subtitle ──
-              Text(
+            // ── Subtitle ──
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: Text(
                 S.of(context).addPhotoSubtitle,
                 textAlign: TextAlign.center,
                 style: TextStyle(fontSize: 15, color: c.textSecondary),
               ),
-              const SizedBox(height: 8),
-              Text(
+            ),
+            const SizedBox(height: 8),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: Text(
                 "Drivers can see your photo during rides, but\nnot after you're dropped off",
                 textAlign: TextAlign.center,
                 style: TextStyle(
@@ -224,11 +241,14 @@ class _ProfilePhotoScreenState extends State<ProfilePhotoScreen> {
                   height: 1.5,
                 ),
               ),
+            ),
 
-              const Spacer(),
+            const Spacer(),
 
-              // ── Choose photo button ──
-              SizedBox(
+            // ── Choose photo button ──
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: SizedBox(
                 width: double.infinity,
                 height: 56,
                 child: Container(
@@ -256,10 +276,13 @@ class _ProfilePhotoScreenState extends State<ProfilePhotoScreen> {
                   ),
                 ),
               ),
-              const SizedBox(height: 14),
+            ),
+            const SizedBox(height: 14),
 
-              // ── Take photo ──
-              SizedBox(
+            // ── Take photo ──
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: SizedBox(
                 width: double.infinity,
                 height: 50,
                 child: TextButton(
@@ -274,11 +297,14 @@ class _ProfilePhotoScreenState extends State<ProfilePhotoScreen> {
                   ),
                 ),
               ),
+            ),
 
-              const SizedBox(height: 4),
+            const SizedBox(height: 4),
 
-              // ── Skip ──
-              SizedBox(
+            // ── Skip ──
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: SizedBox(
                 width: double.infinity,
                 height: 44,
                 child: TextButton(
@@ -309,10 +335,10 @@ class _ProfilePhotoScreenState extends State<ProfilePhotoScreen> {
                   ),
                 ),
               ),
+            ),
 
-              const SizedBox(height: 16),
-            ],
-          ),
+            const SizedBox(height: 16),
+          ],
         ),
       ),
     );

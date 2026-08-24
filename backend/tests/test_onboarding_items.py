@@ -46,6 +46,8 @@ async def test_get_derives_statuses_from_existing_fields(client, db, test_driver
     driver.license_back_url = "https://example.com/back.jpg"
     driver.photo_url = "https://example.com/photo.jpg"
     driver.ssn = "encrypted"
+    driver.vehicle_registration_url = "https://example.com/reg.jpg"
+    driver.insurance_url = "https://example.com/ins.jpg"
     driver.background_check_status = "clear"
     driver.is_verified = True
     driver.verification_status = "approved"
@@ -54,7 +56,9 @@ async def test_get_derives_statuses_from_existing_fields(client, db, test_driver
     await db.commit()
 
     items = await _get_items(client, token)
-    assert set(items.keys()) == {"plate", "ssn", "license", "photo", "background", "vehicle"}
+    # No AL drive_state → inspection is not part of the contract at all.
+    assert set(items.keys()) == {"plate", "ssn", "license", "photo", "background",
+                                 "vehicle", "registration", "insurance"}
     for key in items:
         assert items[key]["status"] == "approved", key
         assert items[key]["reason"] is None
@@ -62,8 +66,74 @@ async def test_get_derives_statuses_from_existing_fields(client, db, test_driver
 
 async def test_get_empty_driver_is_all_pending(client, db, test_driver):
     items = await _get_items(client, token=test_driver[1])
-    for key in ("plate", "ssn", "license", "photo", "background", "vehicle"):
+    for key in ("plate", "ssn", "license", "photo", "background", "vehicle",
+                "registration", "insurance"):
         assert items[key]["status"] == "pending", key
+    # No AL drive_state → no inspection item.
+    assert "inspection" not in items
+
+
+async def test_registration_and_insurance_derive_from_user_urls(client, db, test_driver):
+    driver, token = test_driver
+    driver.vehicle_registration_url = "https://example.com/reg.jpg"
+    driver.insurance_url = "https://example.com/ins.jpg"
+    await db.commit()
+    items = await _get_items(client, token)
+    assert items["registration"]["status"] == "submitted"
+    assert items["insurance"]["status"] == "submitted"
+
+
+async def test_inspection_only_for_alabama_drivers(client, db, test_driver):
+    driver, token = test_driver
+    # FL driver: the item never appears in the GET.
+    driver.drive_state = "FL"
+    driver.inspection_url = "https://example.com/insp.jpg"
+    await db.commit()
+    assert "inspection" not in await _get_items(client, token)
+
+    # AL driver: appears, pending without a URL, submitted with one.
+    driver.drive_state = "AL"
+    driver.inspection_url = None
+    await db.commit()
+    items = await _get_items(client, token)
+    assert items["inspection"]["status"] == "pending"
+    driver.inspection_url = "https://example.com/insp.jpg"
+    await db.commit()
+    assert (await _get_items(client, token))["inspection"]["status"] == "submitted"
+
+
+async def test_post_doc_mirrors_url_and_marks_submitted(client, db, test_driver):
+    driver, token = test_driver
+    resp = await client.post(
+        "/auth/onboarding-items/registration/doc",
+        headers=_hdrs(token),
+        json={"url": "https://example.com/new-reg.jpg"},
+    )
+    assert resp.status_code == 200, resp.text
+    await db.refresh(driver)
+    assert driver.vehicle_registration_url == "https://example.com/new-reg.jpg"
+    assert (await _get_items(client, token))["registration"]["status"] == "submitted"
+
+
+async def test_post_doc_inspection_rejected_for_non_al(client, db, test_driver):
+    driver, token = test_driver
+    driver.drive_state = "TX"
+    await db.commit()
+    resp = await client.post(
+        "/auth/onboarding-items/inspection/doc",
+        headers=_hdrs(token),
+        json={"url": "https://example.com/insp.jpg"},
+    )
+    assert resp.status_code == 400, resp.text
+
+
+async def test_post_doc_unknown_item_is_404(client, db, test_driver):
+    resp = await client.post(
+        "/auth/onboarding-items/nope/doc",
+        headers=_hdrs(test_driver[1]),
+        json={"url": "https://example.com/x.jpg"},
+    )
+    assert resp.status_code == 404, resp.text
 
 
 async def test_post_plate_persists_and_marks_submitted(client, db, test_driver):

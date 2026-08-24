@@ -28,13 +28,7 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
   bool _uploading = false;
   List<Map<String, dynamic>> _documents = [];
   String _vehicleLabel = '';
-  // Both open on arrival.
-  //
-  // Collapsing the done list looked tidy until a driver with nothing
-  // outstanding opened the screen: the only section was closed, and the
-  // page was a heading, a chip and half a screen of nothing. The
-  // documents are the content — they are not hidden by default.
-  bool _actionOpen = true;
+  // The completed list is the whole page — it opens expanded.
   bool _submittedOpen = true;
   final _picker = ImagePicker();
 
@@ -89,12 +83,17 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
         ApiService.getDocuments(),
         ApiService.getMe(),
         ApiService.getVehicle(),
+        ApiService.getOnboardingItems(),
       ]);
       if (!mounted) return;
 
       final docs = results[0] as List<Map<String, dynamic>>;
       final me = results[1] as Map<String, dynamic>?;
       final vehicle = results[2] as Map<String, dynamic>?;
+      final onboarding =
+          (results[3] as Map<String, dynamic>?)?['items']
+              as Map<String, dynamic>? ??
+          <String, dynamic>{};
 
       // Check if user is verified
       final verificationStatus = me?['verification_status'] ?? 'none';
@@ -200,6 +199,55 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
           });
         }
       }
+      // Onboarding items carry states the documents table cannot:
+      // SSN lives encrypted on the user, and a license/photo that only
+      // exists on the profile has no document row. They backstop any
+      // item the merge above could only mark "not_uploaded".
+      const obKeyByDocType = {
+        'license_plate': 'plate',
+        'drivers_license': 'license',
+        'profile_photo': 'photo',
+        'background_check': 'background',
+      };
+      for (final m in merged) {
+        final obKey = obKeyByDocType[m['doc_type']];
+        if (obKey == null) continue;
+        if (m['status'] != 'not_uploaded') continue;
+        final obStatus =
+            (onboarding[obKey] as Map<String, dynamic>?)?['status']
+                as String?;
+        if (obStatus == 'approved' || obStatus == 'rejected') {
+          m['status'] = obStatus;
+        } else if (obStatus == 'submitted') {
+          m['status'] = 'pending';
+        }
+      }
+
+      // SSN — never a document, never shown. Presence is all the driver
+      // gets to see.
+      final ssnStatus =
+          (onboarding['ssn'] as Map<String, dynamic>?)?['status'] as String?;
+      if (ssnStatus != null && ssnStatus != 'pending') {
+        merged.add({
+          'doc_type': 'ssn',
+          'status': ssnStatus == 'submitted' ? 'approved' : ssnStatus,
+        });
+      }
+
+      // Inspection only applies where the state requires one; the row
+      // appears when dispatch actually has one on file.
+      final inspection = docs.firstWhere(
+        (d) => d['doc_type'] == 'vehicle_inspection',
+        orElse: () => <String, dynamic>{},
+      );
+      if (inspection.isNotEmpty) {
+        merged.add({
+          ...inspection,
+          'doc_type': 'vehicle_inspection',
+          'status': inspection['status'] ?? 'pending',
+        });
+      }
+
       setState(() {
         _documents = merged;
         _vehicleLabel = _describeVehicle(vehicle);
@@ -336,16 +384,22 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
 
   String _localizedDocTitle(String? docType, S s) {
     switch (docType) {
+      case 'license_plate':
+        return s.licensePlateNumber;
       case 'drivers_license':
         return s.driversLicenseTitle;
       case 'background_check':
         return s.backgroundCheckTitle;
       case 'profile_photo':
-        return 'Face Biometrics';
+        return s.docsFaceBiometrics;
       case 'insurance':
-        return 'Car Insurance';
+        return s.docsCarInsurance;
       case 'registration':
-        return 'Car Registration';
+        return s.docsCarRegistration;
+      case 'vehicle_inspection':
+        return s.docsVehicleInspectionTitle;
+      case 'ssn':
+        return s.obItemSsnTitle;
       default:
         return docType ?? 'Document';
     }
@@ -432,12 +486,15 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
   Widget build(BuildContext context) {
     final s = S.of(context);
 
-    final action = _documents.where(_needsAction).toList();
-    final submitted = _documents.where((d) => !_needsAction(d)).toList();
-    final pendingCount =
-        submitted.where((d) => d['status'] == 'pending').length;
+    // Action items first; everything else keeps its canonical order.
+    final docs = [..._documents]
+      ..sort((a, b) {
+        final na = _needsAction(a) ? 0 : 1;
+        final nb = _needsAction(b) ? 0 : 1;
+        return na.compareTo(nb);
+      });
     final approvedCount =
-        submitted.where((d) => d['status'] == 'approved').length;
+        docs.where((d) => d['status'] == 'approved').length;
 
     return Scaffold(
       backgroundColor: neuBase,
@@ -458,40 +515,19 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
                     children: [
                       _closeRow(s),
                       const SizedBox(height: 18),
+                      _hero(s),
+                      const SizedBox(height: 22),
                       if (_vehicleLabel.isNotEmpty) ...[
                         _vehicleCard(s),
                         const SizedBox(height: 22),
                       ],
-                      if (action.isNotEmpty) ...[
-                        _section(
-                          title: s.docsActionNeeded,
-                          open: _actionOpen,
-                          onToggle: () =>
-                              setState(() => _actionOpen = !_actionOpen),
-                          chips: [
-                            _countChip(
-                              Icons.error_outline_rounded,
-                              action.length,
-                              const Color(0xFFE8A33D),
-                            ),
-                          ],
-                          children: action.map(_documentCard).toList(),
-                        ),
-                        const SizedBox(height: 18),
-                      ],
-                      if (submitted.isNotEmpty)
+                      if (docs.isNotEmpty)
                         _section(
                           title: s.docsSubmitted,
                           open: _submittedOpen,
                           onToggle: () =>
                               setState(() => _submittedOpen = !_submittedOpen),
                           chips: [
-                            if (pendingCount > 0)
-                              _countChip(
-                                Icons.schedule_rounded,
-                                pendingCount,
-                                Colors.white.withValues(alpha: 0.55),
-                              ),
                             if (approvedCount > 0)
                               _countChip(
                                 Icons.check_circle_rounded,
@@ -499,7 +535,7 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
                                 const Color(0xFF4CAF50),
                               ),
                           ],
-                          children: submitted.map(_documentCard).toList(),
+                          children: docs.map(_documentCard).toList(),
                         ),
                       const SizedBox(height: 20),
                       _lockedNote(s),
@@ -535,8 +571,48 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
     );
   }
 
+  /// Illustration + greeting, Lyft-style. This page is read for pleasure
+  /// ("you're done") far more often than for work, so it opens with the
+  /// good news instead of a form label.
+  Widget _hero(S s) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        ClipRRect(
+          borderRadius: BorderRadius.circular(20),
+          child: Image.asset(
+            'assets/images/onboarding/documents.jpg',
+            width: double.infinity,
+            height: 200,
+            fit: BoxFit.cover,
+          ),
+        ),
+        const SizedBox(height: 18),
+        Text(
+          s.docsAllSetTitle,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 22,
+            fontWeight: FontWeight.w800,
+            letterSpacing: -0.4,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          s.docsAllSetSubtitle,
+          style: TextStyle(
+            color: Colors.white.withValues(alpha: 0.5),
+            fontSize: 14,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+      ],
+    );
+  }
+
   /// An X, not a back arrow. This screen is a stack the driver steps out
-  /// of, and the reference reads it that way.
+  /// of, and the reference reads it that way. The hero below carries the
+  /// title, so the row stays bare.
   Widget _closeRow(S s) {
     return Row(
       children: [
@@ -551,18 +627,6 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
             decoration: neuBox(radius: 14),
             child:
                 const Icon(Icons.close_rounded, color: Colors.white, size: 21),
-          ),
-        ),
-        const SizedBox(width: 14),
-        Expanded(
-          child: Text(
-            s.documentsTitle,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 22,
-              fontWeight: FontWeight.w800,
-              letterSpacing: -0.4,
-            ),
           ),
         ),
       ],
@@ -787,15 +851,19 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
 
     final docType = doc['doc_type'] as String?;
     final canUpload = _canReupload(doc);
-    // Locked cards are dimmed and dead to the touch. The four editable
-    // types stay live so their details can be opened even when there is
-    // nothing to upload yet.
-    final locked = !_isEditable(doc) || isComingSoon || isDisabled;
+    // Only genuinely unavailable rows dim and go dead. Everything else —
+    // including the read-only background check and the SSN receipt —
+    // stays full-strength, because a completed document is the content
+    // of this page, not a disabled control.
+    final inert = isComingSoon || isDisabled;
 
     String subtitle;
     Color subtitleColor = Colors.white.withValues(alpha: 0.45);
-    // The plate says what it is, not when it was uploaded.
-    if (docType == 'license_plate') {
+    // The plate says what it is, not when it was uploaded. The SSN says
+    // nothing at all — presence is the only thing on display.
+    if (docType == 'ssn') {
+      subtitle = s.docsOnFile;
+    } else if (docType == 'license_plate') {
       final plate = (doc['plate'] ?? '').toString();
       final st = (doc['plate_state'] ?? '').toString();
       if (isPending) {
@@ -834,16 +902,18 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: GestureDetector(
-        // `_showDocDetails` was written, complete, and unreachable — no
-        // caller anywhere. Tapping a document to see it is the whole
-        // point of a screen called "view documents", so the tap goes
-        // there unless the card is asking for a re-upload instead.
-        onTap: locked
+        // Tapping a document to see it is the whole point of a screen
+        // called "view documents", so the tap goes there unless the card
+        // is asking for a re-upload instead.
+        onTap: inert
             ? null
             : () {
                 HapticService.selectionClick();
-                // The plate is a form, not a photo.
-                if (docType == 'license_plate') {
+                // The plate is a form, not a photo; the SSN has no
+                // readable payload at all.
+                if (docType == 'ssn') {
+                  return;
+                } else if (docType == 'license_plate') {
                   _editPlate(doc);
                 } else if (canUpload) {
                   _uploadDocument(docType!, title);
@@ -852,7 +922,7 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
                 }
               },
         child: Opacity(
-          opacity: locked ? 0.45 : 1.0,
+          opacity: inert ? 0.45 : 1.0,
           child: Container(
             padding: const EdgeInsets.all(16),
             decoration: neuBox(radius: 18),

@@ -546,10 +546,15 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
     final origin = _pickupDetails;
     if (origin != null) {
       try {
-        final route = await DirectionsService(ApiKeys.webServices).getRoute(
-          origin: LatLng(origin.lat, origin.lng),
-          destination: LatLng(dropoff.lat, dropoff.lng),
-        );
+        // Capped: the estimate is optional — the wheels page must never hang
+        // behind an uncapped route fetch (build 587: "wheels never show").
+        final route = await DirectionsService(ApiKeys.webServices)
+            .getRoute(
+              origin: LatLng(origin.lat, origin.lng),
+              destination: LatLng(dropoff.lat, dropoff.lng),
+            )
+            .timeout(const Duration(milliseconds: 800),
+                onTimeout: () => null);
         final secs = route?.durationSeconds;
         if (secs != null && secs > 0) {
           estimatedMinutes = (secs / 60).ceil();

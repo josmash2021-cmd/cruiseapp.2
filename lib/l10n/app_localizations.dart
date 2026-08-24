@@ -2026,6 +2026,17 @@ class S {
       _es ? 'Necesita actualización' : 'Needs update';
   String get documentExpiringSoon => _es ? 'Se vence pronto' : 'Expiring soon';
   String get documentExpired => _es ? 'Documento vencido' : 'Document expired';
+  String get docsAllSetTitle =>
+      _es ? 'Listo para manejar' : "You're all set to drive";
+  String get docsAllSetSubtitle =>
+      _es ? 'Bien. A rodar.' : "Nice. Let's hit the road.";
+  String get docsOnFile => _es ? 'En archivo' : 'On file';
+  String get docsFaceBiometrics => _es ? 'Biometría facial' : 'Face Biometrics';
+  String get docsCarInsurance => _es ? 'Seguro del auto' : 'Car Insurance';
+  String get docsCarRegistration =>
+      _es ? 'Registro del auto' : 'Car Registration';
+  String get docsVehicleInspectionTitle =>
+      _es ? 'Inspección del vehículo' : 'Vehicle Inspection';
 
   // ── Driver Vehicle Screen ──────────────────────────────────────────────────
   String get vehicleTitle => _es ? 'Vehículo' : 'Vehicle';

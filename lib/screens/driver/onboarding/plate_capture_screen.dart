@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../../data/us_cities.dart' show kUsStateNameToCode;
 import '../../../data/us_states.dart';
 import '../../../l10n/app_localizations.dart';
 import '../../../services/api_service.dart';
@@ -56,7 +57,8 @@ class _PlateCaptureScreenState extends State<PlateCaptureScreen> {
     try {
       await ApiService.submitOnboardingPlate(
         plate: _plateCtrl.text.trim().toUpperCase(),
-        state: _state!,
+        // The backend wants the 2-letter USPS code, not the full name.
+        state: kUsStateNameToCode[_state!] ?? _state!,
       );
       if (!mounted) return;
       Navigator.of(context).pop(true);

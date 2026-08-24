@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../../../l10n/app_localizations.dart';
+
 /// Shared visual language for the driver onboarding Phase 2 flow
 /// (navy #0A1128 + gold #E8C547). Keep every screen on these.
 const kOnboardingNavy = Color(0xFF0A1128);
@@ -221,12 +223,16 @@ class OnboardingDropdown<T> extends StatelessWidget {
 }
 
 /// Shared error snackbar for onboarding submits.
+/// Raw backend dumps (pydantic "[{type: ..., loc: ...}]") never reach the
+/// user — they get a clean localized fallback instead.
 void showOnboardingError(BuildContext context, String message) {
+  final looksRaw = message.startsWith('[{') || message.contains("'loc'");
+  final text = looksRaw ? S.of(context).connectionError : message;
   ScaffoldMessenger.of(context).showSnackBar(
     SnackBar(
       backgroundColor: Colors.redAccent,
       content: Text(
-        message,
+        text,
         style: const TextStyle(fontWeight: FontWeight.w600),
       ),
       behavior: SnackBarBehavior.floating,

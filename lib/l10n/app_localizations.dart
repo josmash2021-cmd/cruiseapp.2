@@ -5585,6 +5585,10 @@ class S {
       _es ? 'Número de Seguro Social' : 'Social Security Number';
   String get obSsnFieldLabel =>
       _es ? 'Número de Seguro Social*' : 'Social Security number*';
+  String get obSsnConfirmLabel =>
+      _es ? 'Confirma tu Seguro Social*' : 'Confirm Social Security number*';
+  String get obSsnsDontMatch =>
+      _es ? 'Los números no coinciden' : 'Social Security numbers do not match';
   String get obSsnSecurityNote => _es
       ? 'Tu SSN está cifrado y solo se usa para tu verificación de antecedentes. Nunca lo compartimos.'
       : 'Your SSN is encrypted and only used to run your background check. We never share it.';

@@ -38,16 +38,30 @@ class SsnCaptureScreen extends StatefulWidget {
 
 class _SsnCaptureScreenState extends State<SsnCaptureScreen> {
   final _ssnCtrl = TextEditingController();
+  final _confirmCtrl = TextEditingController();
   bool _saving = false;
+  String? _matchError;
 
   @override
   void dispose() {
     _ssnCtrl.dispose();
+    _confirmCtrl.dispose();
     super.dispose();
   }
 
   String get _digits => _ssnCtrl.text.replaceAll(RegExp(r'\D'), '');
-  bool get _valid => _digits.length == 9;
+  String get _confirmDigits => _confirmCtrl.text.replaceAll(RegExp(r'\D'), '');
+  bool get _valid =>
+      _digits.length == 9 && _digits == _confirmDigits && _matchError == null;
+
+  void _revalidate() {
+    final s = S.of(context);
+    String? err;
+    if (_confirmDigits.isNotEmpty && _confirmDigits != _digits) {
+      err = s.obSsnsDontMatch;
+    }
+    if (err != _matchError) setState(() => _matchError = err);
+  }
 
   Future<void> _save() async {
     if (!_valid || _saving) return;
@@ -112,7 +126,26 @@ class _SsnCaptureScreenState extends State<SsnCaptureScreen> {
                       SsnInputFormatter(),
                     ],
                     maxLength: 11,
-                    onChanged: (_) => setState(() {}),
+                    onChanged: (_) {
+                      _revalidate();
+                      setState(() {});
+                    },
+                  ),
+                  const SizedBox(height: 14),
+                  OnboardingField(
+                    controller: _confirmCtrl,
+                    label: s.obSsnConfirmLabel,
+                    keyboardType: TextInputType.number,
+                    inputFormatters: [
+                      FilteringTextInputFormatter.digitsOnly,
+                      SsnInputFormatter(),
+                    ],
+                    maxLength: 11,
+                    errorText: _matchError,
+                    onChanged: (_) {
+                      _revalidate();
+                      setState(() {});
+                    },
                   ),
                   const SizedBox(height: 16),
                   Container(

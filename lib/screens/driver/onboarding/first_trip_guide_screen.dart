@@ -73,19 +73,22 @@ class _FirstTripGuideScreenState extends State<FirstTripGuideScreen> {
         number: 2,
         title: s.guideNavigateTitle,
         body: s.guideNavigateBody,
-        art: const _GuideIconArt(number: 2, icon: Icons.explore_outlined),
+        art: const _GuideImageArt(
+            number: 2, asset: 'assets/images/onboarding/guide_nav.jpg'),
       ),
       _GuidePageData(
         number: 3,
         title: s.guideArriveTitle,
         body: s.guideArriveBody,
-        art: const _GuideIconArt(number: 3, icon: Icons.hail_rounded),
+        art: const _GuideImageArt(
+            number: 3, asset: 'assets/images/onboarding/guide_pickup.jpg'),
       ),
       _GuidePageData(
         number: 4,
         title: s.guideFinishTitle,
         body: s.guideFinishBody,
-        art: const _GuideIconArt(number: 4, icon: Icons.payments_outlined),
+        art: const _GuideImageArt(
+            number: 4, asset: 'assets/images/onboarding/guide_paid.jpg'),
       ),
     ];
 
@@ -115,7 +118,8 @@ class _FirstTripGuideScreenState extends State<FirstTripGuideScreen> {
                 controller: _pageCtrl,
                 itemCount: pages.length,
                 onPageChanged: (i) => setState(() => _page = i),
-                itemBuilder: (_, i) => _GuidePage(data: pages[i]),
+                itemBuilder: (_, i) =>
+                    _GuidePage(data: pages[i], active: i == _page),
               ),
             ),
 
@@ -192,52 +196,65 @@ class _GuidePageData {
 
 class _GuidePage extends StatelessWidget {
   final _GuidePageData data;
-  const _GuidePage({required this.data});
+  final bool active;
+  const _GuidePage({required this.data, required this.active});
 
   @override
   Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.symmetric(horizontal: 24),
-      child: Column(
-        children: [
-          const SizedBox(height: 8),
-          data.art,
-          const SizedBox(height: 28),
-          Text(
-            data.title,
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 24,
-              fontWeight: FontWeight.w800,
-              letterSpacing: -0.4,
-            ),
+    // Content fades/rises in softly when the page becomes current — never
+    // an abrupt swap (user spec: fluid continuous fade, ~450 ms).
+    return AnimatedOpacity(
+      duration: const Duration(milliseconds: 450),
+      curve: Curves.easeOut,
+      opacity: active ? 1.0 : 0.0,
+      child: AnimatedSlide(
+        duration: const Duration(milliseconds: 450),
+        curve: Curves.easeOut,
+        offset: active ? Offset.zero : const Offset(0, 0.04),
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.symmetric(horizontal: 24),
+          child: Column(
+            children: [
+              const SizedBox(height: 8),
+              data.art,
+              const SizedBox(height: 28),
+              Text(
+                data.title,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 24,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: -0.4,
+                ),
+              ),
+              const SizedBox(height: 14),
+              Text(
+                data.body,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.6),
+                  fontSize: 15,
+                  height: 1.55,
+                ),
+              ),
+              const SizedBox(height: 16),
+            ],
           ),
-          const SizedBox(height: 14),
-          Text(
-            data.body,
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.6),
-              fontSize: 15,
-              height: 1.55,
-            ),
-          ),
-          const SizedBox(height: 16),
-        ],
+        ),
       ),
     );
   }
 }
 
-/// Art card for pages 2–4: a gold line icon (~64 px) on a glowing card,
-/// with the page number in gold at the top corner.
-class _GuideIconArt extends StatelessWidget {
+/// Art card for pages 2–4: the provided illustration, edge-to-edge in the
+/// same glowing card frame, with the page number in gold at the top corner.
+class _GuideImageArt extends StatelessWidget {
   static const _gold = Color(0xFFE8C547);
 
   final int number;
-  final IconData icon;
-  const _GuideIconArt({required this.number, required this.icon});
+  final String asset;
+  const _GuideImageArt({required this.number, required this.asset});
 
   @override
   Widget build(BuildContext context) {
@@ -249,11 +266,7 @@ class _GuideIconArt extends StatelessWidget {
           Positioned.fill(
             child: Container(
               decoration: BoxDecoration(
-                color: neuSurface,
                 borderRadius: BorderRadius.circular(24),
-                border: Border.all(
-                  color: Colors.white.withValues(alpha: 0.05),
-                ),
                 boxShadow: [
                   BoxShadow(
                     color: _gold.withValues(alpha: 0.12),
@@ -268,39 +281,31 @@ class _GuideIconArt extends StatelessWidget {
                   ),
                 ],
               ),
-              child: Center(
-                child: Container(
-                  width: 132,
-                  height: 132,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: _gold.withValues(alpha: 0.08),
-                    border: Border.all(
-                      color: _gold.withValues(alpha: 0.35),
-                      width: 1.5,
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: _gold.withValues(alpha: 0.18),
-                        blurRadius: 34,
-                        spreadRadius: 1,
-                      ),
-                    ],
-                  ),
-                  child: Icon(icon, color: _gold, size: 64),
-                ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(24),
+                child: Image.asset(asset, fit: BoxFit.cover),
               ),
             ),
           ),
           Positioned(
-            top: 14,
-            left: 18,
-            child: Text(
-              '$number',
-              style: TextStyle(
-                color: _gold.withValues(alpha: 0.85),
-                fontSize: 16,
-                fontWeight: FontWeight.w800,
+            top: 12,
+            left: 12,
+            child: Container(
+              width: 30,
+              height: 30,
+              decoration: const BoxDecoration(
+                shape: BoxShape.circle,
+                color: _gold,
+              ),
+              child: Center(
+                child: Text(
+                  '$number',
+                  style: const TextStyle(
+                    color: Color(0xFF0A1128),
+                    fontWeight: FontWeight.w800,
+                    fontSize: 14,
+                  ),
+                ),
               ),
             ),
           ),

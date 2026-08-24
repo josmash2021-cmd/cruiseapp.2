@@ -4145,7 +4145,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                   Navigator.push(
                     context,
                     slideFromRightRoute(
-                        const ScheduledRidesScreen(initialTab: 0)),
+                        const ScheduledRidesMapScreen()),
                   ).then((_) => _fetchScheduledCount());
                 },
                 behavior: HitTestBehavior.opaque,

@@ -69,7 +69,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../services/prefs_cache.dart';
 import 'driver_trip_accept_screen.dart';
 import 'trip_accepted_overlay.dart';
-import 'scheduled_rides_screen.dart';
+import 'scheduled_rides_map_screen.dart';
 import '../../services/live_activity_service.dart';
 import '../../services/network_service.dart';
 import '../../services/notification_service.dart';
@@ -1898,7 +1898,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                       Navigator.push(
                         context,
                         slideFromRightRoute(
-                            const ScheduledRidesScreen(initialTab: 0)),
+                            const ScheduledRidesMapScreen()),
                       ).then((_) => _fetchScheduledCount());
                     },
                     child: Container(
@@ -1972,7 +1972,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                       () => Navigator.push(
                         context,
                         slideFromRightRoute(
-                          const ScheduledRidesScreen(initialTab: 0),
+                          const ScheduledRidesMapScreen(),
                         ),
                       ).then((_) => _fetchScheduledCount()),
                       stagger: 0,

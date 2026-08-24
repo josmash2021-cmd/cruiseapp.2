@@ -9,6 +9,7 @@ import 'welcome_screen.dart';
 import 'home_screen.dart';
 import 'driver/driver_home_screen.dart';
 import 'driver/driver_pending_review_screen.dart';
+import 'driver/onboarding/driver_todo_screen.dart';
 import '../services/api_service.dart';
 import '../services/local_data_service.dart';
 import '../services/user_session.dart';
@@ -396,9 +397,10 @@ class _SplashScreenState extends State<SplashScreen>
             return const DriverHomeScreen();
           }
         }
-        // If API failed and we have no evidence of approval, show pending.
+        // If API failed and we have no evidence of approval, the to-do hub
+        // shows the "In review" state (no more pending-review prison).
         // But ONLY if cache actually says pending — never default unknown to pending.
-        return const DriverPendingReviewScreen();
+        return const DriverTodoScreen();
       }
 
       // ── No cached status ('none') → check Firestore FIRST, then backend ──
@@ -434,7 +436,7 @@ class _SplashScreenState extends State<SplashScreen>
           unawaited(_backgroundProfileSync());
           return const DriverHomeScreen();
         } else {
-          return const DriverPendingReviewScreen();
+          return const DriverTodoScreen();
         }
       } catch (e) {
         debugPrint('[SplashScreen] Driver approval check failed: $e');
@@ -450,10 +452,11 @@ class _SplashScreenState extends State<SplashScreen>
             return const DriverHomeScreen();
           }
         } catch (_) {}
-        // If we truly cannot determine status, show pending BUT log it.
+        // If we truly cannot determine status, show the to-do hub (it
+        // renders "In review") BUT log it.
         // This should only happen for genuinely new/unapproved drivers.
-        debugPrint('[SplashScreen] WARNING: defaulting to pending review — all checks failed');
-        return const DriverPendingReviewScreen();
+        debugPrint('[SplashScreen] WARNING: defaulting to to-do hub — all checks failed');
+        return const DriverTodoScreen();
       }
     } else {
       await UserSession.initPhotoNotifier();

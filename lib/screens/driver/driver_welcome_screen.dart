@@ -148,9 +148,11 @@ class _DriverWelcomeScreenState extends State<DriverWelcomeScreen> {
   }
 
   /// Routing by driver account state — mirrors the post-login decision in
-  /// `driver_login_screen.dart`: approved → home; pending/rejected →
-  /// pending review; never-registered (`none`/anything else) → the Phase 2
-  /// to-do hub (the legacy DriverSignupScreen stays for legacy users).
+  /// `driver_login_screen.dart`: approved → home; pending → the to-do hub
+  /// (which already shows "In review" — no more pending-review prison);
+  /// rejected → pending review (navigable legacy status screen);
+  /// never-registered (`none`/anything else) → the Phase 2 to-do hub (the
+  /// legacy DriverSignupScreen stays for legacy users).
   static Future<void> routeExistingDriver(
     BuildContext context,
     Map<String, dynamic> user,
@@ -176,7 +178,12 @@ class _DriverWelcomeScreenState extends State<DriverWelcomeScreen> {
         slideFromRightRoute(const DriverHomeScreen()),
         (_) => false,
       );
-    } else if (s == 'pending' || s == 'rejected') {
+    } else if (s == 'pending') {
+      Navigator.of(context).pushAndRemoveUntil(
+        onboardingFadeSlideRoute(const DriverTodoScreen()),
+        (_) => false,
+      );
+    } else if (s == 'rejected') {
       Navigator.of(context).pushAndRemoveUntil(
         slideFromRightRoute(const DriverPendingReviewScreen()),
         (_) => false,

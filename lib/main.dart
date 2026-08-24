@@ -30,6 +30,7 @@ import 'screens/splash_screen.dart';
 import 'screens/driver/driver_online_screen.dart';
 import 'screens/driver/driver_home_screen.dart';
 import 'screens/driver/driver_pending_review_screen.dart';
+import 'screens/driver/onboarding/driver_approved_celebration_screen.dart';
 import 'screens/driver/driver_trip_accept_screen.dart';
 import 'services/api_service.dart';
 import 'services/map_controller_cache.dart';
@@ -745,18 +746,20 @@ void _navigateToChat(int tripId) {
   });
 }
 
-/// Navigate to the correct home screen after account approval.
+/// Navigate to the correct screen after account approval.
+/// Drivers land on the new celebration flow (payout gate → first-trip guide →
+/// home); riders go straight home.
 void _handleAccountApproved(bool isDriver) {
   final nav = _navigatorKey.currentState;
   if (nav == null) return;
 
-  // Remove any pending-review screen from the stack and push the home screen
+  // Remove any pending-review screen from the stack and push the new flow
   final route = isDriver
-      ? MaterialPageRoute(builder: (_) => const DriverHomeScreen())
+      ? onboardingFadeSlideRoute(const DriverApprovedCelebrationScreen())
       : MaterialPageRoute(builder: (_) => const HomeScreen());
 
   nav.pushAndRemoveUntil(route, (r) => false);
-  debugPrint('[FCM] Navigated to ${isDriver ? "DriverHomeScreen" : "HomeScreen"} after approval');
+  debugPrint('[FCM] Navigated to ${isDriver ? "DriverApprovedCelebrationScreen" : "HomeScreen"} after approval');
 }
 
 /// Navigate to pending-review screen after account rejection.

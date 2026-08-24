@@ -1774,6 +1774,33 @@ class S {
       ? 'Bienvenido al equipo de conductores de Cruise. Ya puedes conectarte y empezar a aceptar viajes.'
       : 'Welcome to the Cruise driver team. You can now go online and start accepting rides.';
 
+  // ── Driver post-approval (celebration + first-trip guide) ─────────────────
+  String approvedWelcomeBody(String firstName) => _es
+      ? 'Bienvenido a Cruise, $firstName. Tus documentos están verificados y tu verificación de antecedentes está limpia. Ya puedes empezar a ganar.'
+      : "Welcome to Cruise, $firstName. Your documents are verified and your background check is clear. You're ready to start earning.";
+  String get startDriving => _es ? 'Empezar a conducir' : 'Start driving';
+  String get driverFallback => _es ? 'Conductor' : 'Driver';
+  String get addPayoutLaterSnack => _es
+      ? 'Puedes agregar tu método de pago más tarde desde el menú'
+      : 'You can add your payout method later from the menu';
+  String get guideGoOnlineTitle =>
+      _es ? 'Conéctate y recibe ofertas' : 'Go online, get trip offers';
+  String get guideGoOnlineBody => _es
+      ? 'Toca Conectarse en el mapa de tu inicio. Cuando un rider pida un viaje, esta tarjeta aparece con la tarifa, la distancia y el destino — el anillo te da 20 segundos para aceptarla.'
+      : 'Tap Go Online on your home map. When a rider requests a trip, this card pops up with the fare, distance and destination — the ring gives you 20 seconds to accept it.';
+  String get guideNavigateTitle => _es ? 'Navega a tu manera' : 'Navigate your way';
+  String get guideNavigateBody => _es
+      ? 'Al tocar Start Trip se abre tu app de mapas preferida con la navegación turno a turno. El mini mapa del viaje sigue tu progreso mientras tanto.'
+      : 'Tapping Start Trip opens your preferred maps app with turn-by-turn navigation. The trip mini map keeps tracking your progress in the meantime.';
+  String get guideArriveTitle => _es ? 'Llega y recoge' : 'Arrive & pick up';
+  String get guideArriveBody => _es
+      ? 'Marca Arrived al llegar por el rider y desliza para iniciar el viaje cuando esté en el auto.'
+      : "Tap Arrived when you reach the rider, then slide to start the trip once they're in the car.";
+  String get guideFinishTitle => _es ? 'Termina y cobra' : 'Finish & get paid';
+  String get guideFinishBody => _es
+      ? 'Desliza para terminar el viaje al llegar al destino. Tus ganancias se depositan cada lunes, o al instante a tu tarjeta de débito.'
+      : 'Slide to finish the trip at the destination. Your earnings pay out every Monday, or instantly to your debit card.';
+
   // ── Notifications Screen ───────────────────────────────────────────────────
   String get helpUsKeepInformed =>
       _es ? 'Ayúdanos a mantenerte informado' : 'Help us keep you\ninformed';

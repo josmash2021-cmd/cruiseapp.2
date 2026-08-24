@@ -958,17 +958,17 @@ async def create_stripe_connect_link(
     try:
         import stripe as _stripe
         _stripe.api_key = STRIPE_SECRET
-        if not user.stripe_connect_id:
-            account = _create_driver_connect_account(_stripe, user.email)
-            user.stripe_connect_id = account["id"]
-            await db.commit()
+        # Healed id, never the raw stored one: a legacy/old-platform account
+        # makes AccountLink.create fail or produces a link to an account
+        # Stripe won't let this platform manage.
+        cid = await _usable_connect_id(_stripe, user, db)
         link = _stripe.AccountLink.create(
-            account=user.stripe_connect_id,
+            account=cid,
             refresh_url=f"{PUBLIC_URL}/stripe-refresh",
             return_url=f"{PUBLIC_URL}/stripe-return",
             type="account_onboarding",
         )
-        return {"url": link["url"], "stripe_account_id": user.stripe_connect_id}
+        return {"url": link["url"], "stripe_account_id": cid}
     except Exception as e:
         logging.error("[StripeConnect] %s", e)
         raise HTTPException(500, f"Stripe error: {str(e)[:400]}")
@@ -1267,6 +1267,32 @@ async def request_cashout(body: CashoutIn, user: User = Depends(_get_current_use
     if method not in ("instant", "standard"):
         raise HTTPException(400, "method must be 'instant'")
     legacy_standard = method == "standard"
+
+    # Heal a stale Connect id BEFORE the FOR UPDATE below. A stored id
+    # minted on the OLD platform Stripe account is unreachable with this
+    # key, and the funding Transfer would bounce off it (or, worse, land
+    # on an account nobody here can pay out from). `_usable_connect_id`
+    # re-links the driver to a fresh account and COMMITS internally when
+    # it does — and a commit ends the transaction and releases the lock,
+    # so calling it after the lock is taken would reopen the double-claim
+    # window the lock exists to close. On success it writes the new id
+    # onto `user.stripe_connect_id`, so every use below (Transfer
+    # destination, Payout stripe_account, logs) gets the healed value.
+    if user.stripe_connect_id and STRIPE_SECRET:
+        try:
+            import stripe as _stripe
+            _stripe.api_key = STRIPE_SECRET
+            await _usable_connect_id(_stripe, user, db)
+        except HTTPException:
+            raise
+        except Exception as e:
+            logging.error(
+                "[Cashout] Connect heal failed for driver %s: %s", user.id, e)
+            raise HTTPException(
+                502,
+                "Could not verify your payout account with Stripe — "
+                "please try again in a moment.",
+            ) from None
 
     # Lock the driver row for the duration of the transaction so two
     # concurrent cashout requests from the same driver can't both pass
@@ -1884,7 +1910,10 @@ async def delete_payout_method(payout_id: int, user: User = Depends(_get_current
         try:
             import stripe as _stripe
             _stripe.api_key = STRIPE_SECRET
-            cid = user.stripe_connect_id
+            # Healed id: if the stored account is unreachable, this re-links
+            # to a fresh one and the detach below simply finds nothing there
+            # (the old code died on the retrieve the same way — warning path).
+            cid = await _usable_connect_id(_stripe, user, db)
             # Stripe refuses to delete the DEFAULT external account. If this
             # one is it, hand the default to another destination first.
             accts = _stripe.Account.list_external_accounts(
@@ -3449,14 +3478,9 @@ async def stripe_connect_onboard(user: User = Depends(_get_current_user), db: As
     if not _HAS_STRIPE:
         return {"account_link": "https://connect.stripe.com/mock", "mock": True}
     
-    if user.stripe_connect_id:
-        account_id = user.stripe_connect_id
-    else:
-        account = _create_driver_connect_account(
-            _stripe_mod, user.email, country="US", business_type="individual")
-        account_id = account.id
-        user.stripe_connect_id = account_id
-        await db.commit()
+    # Healed id — a stored id from the old platform account must not reach
+    # AccountLink.create raw.
+    account_id = await _usable_connect_id(_stripe_mod, user, db)
     
     account_link = _stripe_mod.AccountLink.create(
         account=account_id,
@@ -3475,16 +3499,18 @@ async def driver_payout_transfer(user: User = Depends(_get_current_user), db: As
         raise HTTPException(400, "Driver must complete Stripe Connect onboarding first")
     if user.pending_balance <= 0:
         raise HTTPException(400, "No pending balance to transfer")
-    
+
     if not _HAS_STRIPE:
         amount = user.pending_balance
         user.pending_balance = 0.0
         await db.commit()
         return {"amount": amount, "status": "paid", "mock": True}
-    
+
+    # Heal stale connect ids (old Stripe account) before transferring.
+    cid = await _usable_connect_id(_stripe_mod, user, db)
     amount_cents = int(user.pending_balance * 100)
     transfer = _stripe_mod.Transfer.create(
-        amount=amount_cents, currency="usd", destination=user.stripe_connect_id,
+        amount=amount_cents, currency="usd", destination=cid,
         description=f"Weekly payout for driver {user.id}",
     )
     payout_amount = user.pending_balance

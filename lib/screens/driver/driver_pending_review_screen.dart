@@ -10,16 +10,19 @@ import '../../services/api_service.dart';
 import '../../services/local_data_service.dart';
 import '../../services/user_session.dart';
 import '../welcome_screen.dart';
-import 'driver_approved_screen.dart';
-import 'driver_home_screen.dart';
-import 'driver_profile_photo_screen.dart';
-import 'driver_signup_screen.dart';
+import 'onboarding/driver_approved_celebration_screen.dart';
+import 'onboarding/driver_todo_screen.dart';
 import '../../l10n/app_localizations.dart';
 import '../../services/firebase_auth_recovery.dart';
 
 /// Shown after a driver submits their application.
-/// Polls the backend every 5 seconds for dispatch approval.
-/// The driver CANNOT navigate away — this is the gate.
+/// Polls the backend every 2 seconds for dispatch approval.
+///
+/// NOT a prison (2026-08-24): the driver can leave with back, and the
+/// app-open route for a pending driver now lands on the to-do hub
+/// ([DriverTodoScreen], which already shows "In review"). This screen stays
+/// as the live status/transitional view; approval detected here goes to the
+/// new celebration flow.
 class DriverPendingReviewScreen extends StatefulWidget {
   const DriverPendingReviewScreen({super.key});
 
@@ -360,24 +363,14 @@ class _DriverPendingReviewScreenState extends State<DriverPendingReviewScreen>
 
   Future<void> _enterApp() async {
     if (!mounted) return;
-    // Go through the full approved flow: cinematic screen → instructions → photo
+    // New post-approval flow: celebration → payout gate → first-trip guide.
     Navigator.of(context).pushAndRemoveUntil(
-      PageRouteBuilder<void>(
-        transitionDuration: const Duration(milliseconds: 280),
-        reverseTransitionDuration: const Duration(milliseconds: 220),
-        pageBuilder: (_, __, ___) => const DriverApprovedScreen(),
-        transitionsBuilder: (_, anim, __, child) {
-          return FadeTransition(
-            opacity: CurvedAnimation(parent: anim, curve: Curves.easeInOut),
-            child: child,
-          );
-        },
-      ),
+      onboardingFadeSlideRoute(const DriverApprovedCelebrationScreen()),
       (_) => false,
     );
   }
 
-  /// Navigate to the premium cinematic approved screen.
+  /// Navigate to the new approved celebration screen.
   void _goApproved() async {
     if (!mounted) return;
     // _navigating is already true (set by _handleApproved) — do NOT re-check it here.
@@ -390,28 +383,18 @@ class _DriverPendingReviewScreenState extends State<DriverPendingReviewScreen>
     await Future<void>.delayed(const Duration(milliseconds: 1200));
     if (!mounted) return;
     Navigator.of(context).pushAndRemoveUntil(
-      PageRouteBuilder<void>(
-        transitionDuration: const Duration(milliseconds: 280),
-        reverseTransitionDuration: const Duration(milliseconds: 220),
-        pageBuilder: (_, __, ___) => const DriverApprovedScreen(),
-        transitionsBuilder: (_, anim, __, child) {
-          return FadeTransition(
-            opacity: CurvedAnimation(parent: anim, curve: Curves.easeInOut),
-            child: child,
-          );
-        },
-      ),
+      onboardingFadeSlideRoute(const DriverApprovedCelebrationScreen()),
       (_) => false,
     );
   }
 
-  /// Rejected: reset local status and let them resubmit verification
-  /// (keeps the same account — no logout/re-register)
+  /// Rejected: reset local status and send them to the to-do hub to fix
+  /// the failed items (keeps the same account — no logout/re-register).
   Future<void> _tryAgain() async {
     await LocalDataService.setDriverApprovalStatus('none');
     if (!mounted) return;
     Navigator.of(context).pushAndRemoveUntil(
-      smoothFadeRoute(const DriverSignupScreen()),
+      onboardingFadeSlideRoute(const DriverTodoScreen()),
       (_) => false,
     );
   }
@@ -428,9 +411,9 @@ class _DriverPendingReviewScreenState extends State<DriverPendingReviewScreen>
 
   @override
   Widget build(BuildContext context) {
-    return PopScope(
-      canPop: false,
-      child: Scaffold(
+    // No PopScope prison (2026-08-24): the driver can leave with back —
+    // dispose() already stops the poll and the Firestore listeners.
+    return Scaffold(
         backgroundColor: Colors.black,
         body: SafeArea(
           child: _status == 'approved'
@@ -439,8 +422,7 @@ class _DriverPendingReviewScreenState extends State<DriverPendingReviewScreen>
               ? _buildRejected()
               : _buildPending(),
         ),
-      ),
-    );
+      );
   }
 
   // ── Pending ─────────────────────────────────────────────────────────────
@@ -924,7 +906,3 @@ class _DriverPendingReviewScreenState extends State<DriverPendingReviewScreen>
     );
   }
 }
-
-/// Shown after a driver submits their application.
-/// Polls the backend every 5 seconds for dispatch approval.
-/// The driver CANNOT navigate away — this is the gate.

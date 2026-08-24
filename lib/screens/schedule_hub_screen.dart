@@ -5,14 +5,18 @@ import 'package:permission_handler/permission_handler.dart'
 
 import '../config/page_transitions.dart';
 import '../l10n/app_localizations.dart';
+import '../services/api_service.dart';
 import '../services/calendar_service.dart';
 import '../widgets/neu_style.dart';
 import 'pickup_dropoff_search_screen.dart';
+import 'schedule_cancel_policy_screen.dart';
 
 /// Schedule hub — the rider's "Trips" page (2026-08-22, Lyft-style clone in
-/// navy/gold): hero + "Schedule a ride" into the datetime page, then Smart
-/// planning tools with the calendars card. There is intentionally no
-/// price-lock card — pricing promises need a product decision first.
+/// navy/gold): hero + "Schedule a ride" into the datetime page, the rider's
+/// active reservations ("Your rides", hidden when empty, with detail sheet +
+/// fee-aware cancel), then Smart planning tools with the calendars card.
+/// There is intentionally no price-lock card — pricing promises need a
+/// product decision first.
 class ScheduleHubScreen extends StatefulWidget {
   const ScheduleHubScreen({super.key});
 
@@ -28,10 +32,69 @@ class _ScheduleHubScreenState extends State<ScheduleHubScreen> {
   bool _calendarBusy = false;
   List<dynamic> _events = const []; // device_calendar_plus Event
 
+  // "Your rides": the rider's active reservations, from the same endpoint
+  // home uses for its next-scheduled-ride card.
+  List<Map<String, dynamic>> _rides = const [];
+  bool _ridesBusy = false;
+
   @override
   void initState() {
     super.initState();
     _restoreCalendarState();
+    _loadRides();
+  }
+
+  /// Active reservations = not terminal and still in the future (same
+  /// filter HomeScreen._loadNextScheduledRide applies to this endpoint).
+  Future<void> _loadRides() async {
+    try {
+      final userId = await ApiService.getCurrentUserId();
+      if (userId == null) return;
+      final trips = await ApiService.getScheduledTrips(userId);
+      const dismissed = {'completed', 'canceled', 'cancelled'};
+      final rides = trips.where((t) {
+        final status = (t['status'] as String? ?? '').toLowerCase();
+        if (dismissed.contains(status)) return false;
+        final sa = _parseSchedAt(t);
+        return sa != null && sa.isAfter(DateTime.now());
+      }).toList();
+      if (mounted) setState(() => _rides = rides);
+    } catch (_) {}
+  }
+
+  /// Backend stores UTC; SQLite rows serialize tz-naive, so a naive
+  /// timestamp must be read as UTC, not as local time.
+  static DateTime? _parseSchedAt(Map<String, dynamic> t) {
+    final raw = t['scheduled_at']?.toString();
+    if (raw == null || raw.isEmpty) return null;
+    final dt = DateTime.tryParse(raw);
+    if (dt == null) return null;
+    return dt.isUtc
+        ? dt
+        : DateTime.utc(
+            dt.year, dt.month, dt.day, dt.hour, dt.minute, dt.second);
+  }
+
+  static String _tierLabel(dynamic vehicleType) {
+    final raw = (vehicleType as String? ?? '').trim();
+    if (raw.isEmpty) return 'Standard';
+    return raw[0].toUpperCase() + raw.substring(1).toLowerCase();
+  }
+
+  /// App-side mirror of `_scheduled_cancel_fee` in backend/routers/trips.py:
+  /// free with no driver or more than 60 min out, otherwise the tier fee
+  /// (kScheduledCancelFeesUsd, the same table the policy page shows) capped
+  /// by the upfront fare. The dialog is an estimate — the backend's number
+  /// is the one actually captured.
+  static double _estimatedCancelFee(Map<String, dynamic> t) {
+    if (t['driver_id'] == null) return 0;
+    final sa = _parseSchedAt(t);
+    if (sa != null && sa.difference(DateTime.now()).inMinutes > 60) return 0;
+    final fee =
+        (kScheduledCancelFeesUsd[_tierLabel(t['vehicle_type'])] ?? 15)
+            .toDouble();
+    final fare = (t['fare'] as num?)?.toDouble() ?? 0;
+    return fare > 0 && fare < fee ? fare : fee;
   }
 
   /// The card reads "connected" from our flag AND the live OS grant — a
@@ -125,8 +188,13 @@ class _ScheduleHubScreenState extends State<ScheduleHubScreen> {
         children: [
           const Positioned.fill(child: NeuDotsBackdrop()),
           SafeArea(
-            child: ListView(
-              padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+            child: RefreshIndicator(
+              color: _gold,
+              backgroundColor: neuSurface,
+              onRefresh: _onRefresh,
+              child: ListView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
               children: [
                 // ── Centered title + close ──
                 Padding(
@@ -222,6 +290,21 @@ class _ScheduleHubScreenState extends State<ScheduleHubScreen> {
                 ),
                 const SizedBox(height: 30),
 
+                // ── Your rides (active reservations; hidden when none) ──
+                if (_rides.isNotEmpty) ...[
+                  Text(
+                    s.yourRidesTitle,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 17,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  ..._rides.map(_rideCard),
+                  const SizedBox(height: 18),
+                ],
+
                 // ── Smart planning tools ──
                 Text(
                   s.scheduleHubToolsTitle,
@@ -235,10 +318,257 @@ class _ScheduleHubScreenState extends State<ScheduleHubScreen> {
                 _calendarCard(s),
               ],
             ),
+            ),
           ),
         ],
       ),
     );
+  }
+
+  Future<void> _onRefresh() async {
+    await _loadRides();
+    if (_calendarConnected) await _loadEvents();
+  }
+
+  Widget _rideCard(Map<String, dynamic> t) {
+    final s = S.of(context);
+    final sa = _parseSchedAt(t)?.toLocal();
+    final pickup = (t['pickup_address'] as String? ?? '').trim();
+    final dropoff = (t['dropoff_address'] as String? ?? '').trim();
+    final hasDriver = t['driver_id'] != null;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: GestureDetector(
+        onTap: () => _showRideDetail(t),
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          decoration: neuBox(radius: 18),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      sa != null ? _eventWhen(sa, s.isSpanish) : '',
+                      style: const TextStyle(
+                        color: _gold,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 10, vertical: 5),
+                    decoration: BoxDecoration(
+                      color: hasDriver
+                          ? _gold
+                          : Colors.white.withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(9),
+                    ),
+                    child: Text(
+                      hasDriver ? s.driverAssignedLabel : s.findingDriverLabel,
+                      style: TextStyle(
+                        color: hasDriver ? Colors.black : Colors.white70,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              _addressRow(Icons.trip_origin_rounded, pickup),
+              const SizedBox(height: 4),
+              _addressRow(Icons.location_on_rounded, dropoff),
+              const SizedBox(height: 6),
+              Text(
+                _tierLabel(t['vehicle_type']),
+                style:
+                    const TextStyle(color: Colors.white38, fontSize: 12),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _addressRow(IconData icon, String address) {
+    return Row(
+      children: [
+        Icon(icon, color: _gold, size: 15),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            address,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(color: Colors.white70, fontSize: 13),
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// Reservation detail sheet: full data + policy link + Cancel ride.
+  Future<void> _showRideDetail(Map<String, dynamic> t) async {
+    final s = S.of(context);
+    final sa = _parseSchedAt(t)?.toLocal();
+    final fare = (t['fare'] as num?)?.toDouble();
+    final hasDriver = t['driver_id'] != null;
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: neuSurface,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (sheetCtx) => Padding(
+        padding: EdgeInsets.fromLTRB(
+            24, 18, 24, 24 + MediaQuery.of(sheetCtx).padding.bottom),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.white24,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              sa != null ? _eventWhen(sa, s.isSpanish) : '',
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 18,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              '${_tierLabel(t['vehicle_type'])} · '
+              '${hasDriver ? s.driverAssignedLabel : s.findingDriverLabel}'
+              '${fare != null && fare > 0 ? ' · \$${fare.toStringAsFixed(2)}' : ''}',
+              style: const TextStyle(color: _gold, fontSize: 13.5),
+            ),
+            const SizedBox(height: 16),
+            _addressRow(Icons.trip_origin_rounded,
+                (t['pickup_address'] as String? ?? '').trim()),
+            const SizedBox(height: 6),
+            _addressRow(Icons.location_on_rounded,
+                (t['dropoff_address'] as String? ?? '').trim()),
+            const SizedBox(height: 18),
+            GestureDetector(
+              onTap: () => Navigator.of(sheetCtx).push(slideUpFadeRoute(
+                  const ScheduleCancelPolicyScreen())),
+              child: Text(
+                s.schedCancelEditFree,
+                style: const TextStyle(
+                  color: _gold,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  decoration: TextDecoration.underline,
+                  decorationColor: _gold,
+                ),
+              ),
+            ),
+            const SizedBox(height: 18),
+            SizedBox(
+              width: double.infinity,
+              height: 50,
+              child: ElevatedButton(
+                onPressed: _ridesBusy
+                    ? null
+                    : () {
+                        Navigator.of(sheetCtx).pop();
+                        _confirmCancelRide(t);
+                      },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF3A1C22),
+                  foregroundColor: const Color(0xFFFF6B6B),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    side: BorderSide(
+                        color: const Color(0xFFFF6B6B)
+                            .withValues(alpha: 0.45)),
+                  ),
+                  elevation: 0,
+                ),
+                child: Text(
+                  s.cancelRide,
+                  style: const TextStyle(
+                      fontSize: 15, fontWeight: FontWeight.w800),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Confirmation shows the fee for THIS reservation's window/tier (the
+  /// backend applies the same rule and returns the captured fee).
+  Future<void> _confirmCancelRide(Map<String, dynamic> t) async {
+    final s = S.of(context);
+    final fee = _estimatedCancelFee(t);
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (dlgCtx) => AlertDialog(
+        backgroundColor: neuSurface,
+        title: Text(s.cancelRideQuestion,
+            style: const TextStyle(
+                color: Colors.white, fontWeight: FontWeight.w800)),
+        content: Text(
+          '${s.cancelRideConfirm}\n\n'
+          '${fee <= 0 ? s.rideCancelFreeNote : s.rideCancelFeeNote(fee.toStringAsFixed(0))}',
+          style: const TextStyle(color: Colors.white70, height: 1.45),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dlgCtx).pop(false),
+            child: Text(s.keep,
+                style: const TextStyle(color: Colors.white70)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(dlgCtx).pop(true),
+            child: Text(s.cancelRide,
+                style: const TextStyle(
+                    color: Color(0xFFFF6B6B),
+                    fontWeight: FontWeight.w800)),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    setState(() => _ridesBusy = true);
+    try {
+      final id = t['id'] as int;
+      final res = await ApiService.cancelTrip(id);
+      final charged = (res['cancellation_fee'] as num?)?.toDouble() ?? 0;
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(charged > 0
+              ? s.rideCancelledFee(charged.toStringAsFixed(2))
+              : s.rideCancelled),
+        ));
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(s.somethingWentWrong)));
+      }
+    } finally {
+      if (mounted) setState(() => _ridesBusy = false);
+      _loadRides();
+    }
   }
 
   Widget _calendarCard(S s) {

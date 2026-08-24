@@ -4771,6 +4771,19 @@ class S {
   String get calendarScheduleRide =>
       _es ? 'Programar viaje' : 'Schedule ride';
 
+  // ── "Your rides" — the rider's active reservations in the hub ──
+  String get yourRidesTitle => _es ? 'Tus viajes' : 'Your rides';
+  String get findingDriverLabel =>
+      _es ? 'Buscando conductor' : 'Finding driver';
+  String get rideCancelFreeNote => _es
+      ? 'Esta cancelación es gratis.'
+      : 'This cancellation is free.';
+  String rideCancelFeeNote(String fee) => _es
+      ? 'Se cobrará una tarifa de cancelación de \$$fee.'
+      : "You'll be charged a \$$fee cancellation fee.";
+  String rideCancelledFee(String fee) =>
+      _es ? 'Viaje cancelado · tarifa de \$$fee' : 'Ride canceled · \$$fee fee';
+
   String get schedDateTimeTitle =>
       _es ? 'Programar un viaje' : 'Schedule a ride';
   String get schedDepart => _es ? 'Salida' : 'Depart';

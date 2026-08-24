@@ -3915,48 +3915,13 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
             ? S.of(context).findingTrips
             : S.of(context).youreOnlineStatus;
 
-        // The width eases too.
-        //
-        // "You're online" is narrower than "Finding trips", so without this
-        // the block snapped to its new width the instant the switch
-        // finished — a jump at the end of an otherwise smooth fade, and the
-        // sweep rail underneath jumped with it.
-        return AnimatedSize(
-          duration: const Duration(milliseconds: 520),
-          curve: Curves.easeInOutCubicEmphasized,
-          alignment: Alignment.centerLeft,
-          child: AnimatedSwitcher(
-            duration: const Duration(milliseconds: 520),
-            // Material's emphasized easing, the same one the rider's vehicle
-            // row uses: leaves slowly, arrives slowly. No slide any more —
-            // on two short sentences a slide read as the new line climbing
-            // over the old one.
-            switchInCurve: Curves.easeInOutCubicEmphasized,
-            switchOutCurve: Curves.easeInOutCubicEmphasized,
-            // Stacked and centred, so the outgoing line holds its place while
-            // it fades instead of collapsing and shoving the incoming one.
-            layoutBuilder: (current, previous) => Stack(
-              alignment: Alignment.centerLeft,
-              children: [
-                ...previous,
-                if (current != null) current,
-              ],
-            ),
-            transitionBuilder: (child, anim) => FadeTransition(
-              // Fully sequential (driver spec 2026-08-22): the incoming
-              // line stays invisible until the outgoing one is GONE. The
-              // old 0.4 interval let the incoming line start fading in at
-              // 40% while the outgoing one still had a third of its ink —
-              // ten frames of two sentences printed on top of each other,
-              // which read as one garbled word.
-              opacity: CurvedAnimation(
-                parent: anim,
-                curve: const Interval(0.55, 1.0, curve: Curves.easeOut),
-              ),
-              child: child,
-            ),
-            child: IntrinsicWidth(
-              key: ValueKey<int>(_statusLine),
+        // Fully sequential swap (no AnimatedSwitcher stack): the old line
+        // fades out completely, THEN the new one fades in — two sentences can
+        // never print on top of each other (the garbled-word bug).
+        return _SequentialSwapLabel(
+          textKey: _statusLine,
+          builder: () {
+            return IntrinsicWidth(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -3985,8 +3950,8 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                   // instead of a second one three pixels under the text.
                 ],
               ),
-            ),
-          ),
+            );
+          },
         );
       },
     );
@@ -4785,6 +4750,60 @@ class _SizeReporterState extends State<_SizeReporter> {
         return true;
       },
       child: SizeChangedLayoutNotifier(child: widget.child),
+    );
+  }
+}
+
+
+/// Sequential label swap: the current line fades out completely, the child
+/// is rebuilt with the new text, then it fades back in. Unlike
+/// AnimatedSwitcher (which stacks outgoing+incoming children), two lines can
+/// never overlap — rapid flips just restart the cycle.
+class _SequentialSwapLabel extends StatefulWidget {
+  const _SequentialSwapLabel({required this.textKey, required this.builder});
+
+  final int textKey;
+  final Widget Function() builder;
+
+  @override
+  State<_SequentialSwapLabel> createState() => _SequentialSwapLabelState();
+}
+
+class _SequentialSwapLabelState extends State<_SequentialSwapLabel> {
+  double _opacity = 1.0;
+  late Widget _child = widget.builder();
+
+  @override
+  void didUpdateWidget(covariant _SequentialSwapLabel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.textKey != widget.textKey) {
+      _swap();
+    }
+  }
+
+  Future<void> _swap() async {
+    if (!mounted) return;
+    setState(() => _opacity = 0.0);
+    await Future<void>.delayed(const Duration(milliseconds: 180));
+    if (!mounted) return;
+    setState(() {
+      _child = widget.builder();
+      _opacity = 1.0;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedSize(
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeInOut,
+      alignment: Alignment.centerLeft,
+      child: AnimatedOpacity(
+        duration: const Duration(milliseconds: 180),
+        curve: Curves.easeOut,
+        opacity: _opacity,
+        child: _child,
+      ),
     );
   }
 }

@@ -815,10 +815,15 @@ class ApiService {
   static Future<Map<String, dynamic>> sendOtp({
     String? email,
     String? phone,
+    /// Delivery channel for phone OTPs — 'sms' (default) or 'call'.
+    String channel = 'sms',
   }) async {
     final body = <String, dynamic>{};
     if (email != null && email.isNotEmpty) body['email'] = email;
-    if (phone != null && phone.isNotEmpty) body['phone'] = phone;
+    if (phone != null && phone.isNotEmpty) {
+      body['phone'] = phone;
+      body['channel'] = channel;
+    }
     try {
       final res = await _client
           .post(

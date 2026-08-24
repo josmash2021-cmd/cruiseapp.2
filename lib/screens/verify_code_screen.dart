@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -216,6 +217,65 @@ class _VerifyCodeScreenState extends State<VerifyCodeScreen>
     });
   }
 
+  /// Phone flow only: re-send the code via [channel] ('sms' or 'call'),
+  /// from the "Problems receiving the code?" sheet. Respects the same
+  /// resend cooldown as the plain resend button.
+  Future<void> _sendViaChannel(String channel) async {
+    if (_resending || _resendSeconds > 0) return;
+    Navigator.of(context).pop(); // close the sheet first
+    setState(() => _resending = true);
+
+    final result = await SmsService.sendVerificationCode(
+      toPhone: widget.email, // phone flow: `email` carries the phone number
+      channel: channel,
+    );
+    if (!mounted) return;
+    if (result.ok) {
+      _showSnack(
+        channel == 'call'
+            ? S.of(context).wellCallYouWithCode
+            : S.of(context).codeSentByText,
+        const Color(0xFFE8C547),
+      );
+    } else {
+      _showSnack(
+        S.of(context).failedToResendCode,
+        Colors.white.withValues(alpha: 0.6),
+      );
+    }
+
+    setState(() {
+      _resending = false;
+      _resendSeconds = 60;
+    });
+    _startResendTimer();
+  }
+
+  /// "+1 (555) 123-4567" → "+1 ••• ••• 4567".
+  String _maskTarget(String raw) {
+    final digits = raw.replaceAll(RegExp(r'\D'), '');
+    if (digits.length <= 4) return raw;
+    final last4 = digits.substring(digits.length - 4);
+    final cc = digits.length > 10
+        ? '+${digits.substring(0, digits.length - 10)} '
+        : '';
+    return '$cc••• ••• $last4';
+  }
+
+  void _showProblemsSheet() {
+    HapticService.lightImpact();
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) => _ResendOptionsSheet(
+        maskedTarget: _maskTarget(widget.email),
+        cooldownSeconds: () => _resendSeconds,
+        onTextMe: () => _sendViaChannel('sms'),
+        onCallMe: () => _sendViaChannel('call'),
+      ),
+    );
+  }
+
   void _showSnack(String msg, Color color) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -369,6 +429,27 @@ class _VerifyCodeScreenState extends State<VerifyCodeScreen>
                     : const SizedBox.shrink(),
               ),
 
+              // ── Problems receiving the code? (phone flow only — a voice
+              // call makes no sense for email OTPs, so the link is hidden
+              // when this screen verifies an email) ──
+              if (widget.useVerifyApi)
+                Padding(
+                  padding: const EdgeInsets.only(top: 18),
+                  child: Center(
+                    child: GestureDetector(
+                      onTap: _showProblemsSheet,
+                      child: Text(
+                        S.of(context).problemsReceivingCode,
+                        style: const TextStyle(
+                          color: _gold,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+
               const Spacer(),
 
               // ── Resend code button ──
@@ -451,6 +532,192 @@ class _VerifyCodeScreenState extends State<VerifyCodeScreen>
               const SizedBox(height: 24),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Lyft-style "Problems receiving the code?" bottom sheet (phone OTP flow).
+/// Refreshes itself once a second so the resend cooldown stays live on the
+/// buttons while the sheet is open.
+class _ResendOptionsSheet extends StatefulWidget {
+  final String maskedTarget;
+  final int Function() cooldownSeconds;
+  final VoidCallback onTextMe;
+  final VoidCallback onCallMe;
+
+  const _ResendOptionsSheet({
+    required this.maskedTarget,
+    required this.cooldownSeconds,
+    required this.onTextMe,
+    required this.onCallMe,
+  });
+
+  @override
+  State<_ResendOptionsSheet> createState() => _ResendOptionsSheetState();
+}
+
+class _ResendOptionsSheetState extends State<_ResendOptionsSheet> {
+  static const _gold = Color(0xFFE8C547);
+  static const _goldLight = Color(0xFFF5D990);
+
+  Timer? _ticker;
+
+  @override
+  void initState() {
+    super.initState();
+    _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted) return;
+      if (widget.cooldownSeconds() > 0) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _ticker?.cancel();
+    super.dispose();
+  }
+
+  Widget _bullet(String text, Color color) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Padding(
+            padding: EdgeInsets.only(top: 6),
+            child: Icon(Icons.circle, size: 6, color: _gold),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              text,
+              style: TextStyle(fontSize: 14, color: color, height: 1.35),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = AppColors.of(context);
+    final s = S.of(context);
+    final cooldown = widget.cooldownSeconds();
+    final onCooldown = cooldown > 0;
+
+    return Container(
+      decoration: BoxDecoration(
+        color: c.surface,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      padding: EdgeInsets.only(
+        left: 24,
+        right: 24,
+        top: 14,
+        bottom: 24 + MediaQuery.of(context).viewInsets.bottom,
+      ),
+      child: SafeArea(
+        top: false,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: c.border,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            const SizedBox(height: 20),
+            Text(
+              s.resendVerificationCode,
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.w800,
+                color: c.textPrimary,
+                letterSpacing: -0.3,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              s.resendCodeTo(widget.maskedTarget),
+              style: TextStyle(fontSize: 14, color: c.textSecondary),
+            ),
+            const SizedBox(height: 20),
+            _bullet(s.bulletPhoneCorrect, c.textSecondary),
+            _bullet(s.bulletCheckInternet, c.textSecondary),
+            _bullet(s.bulletRecentCode, c.textSecondary),
+            const SizedBox(height: 12),
+
+            // ── Text me (primary, gold) ──
+            SizedBox(
+              width: double.infinity,
+              height: 52,
+              child: Container(
+                decoration: BoxDecoration(
+                  gradient: onCooldown
+                      ? null
+                      : const LinearGradient(colors: [_gold, _goldLight]),
+                  color: onCooldown ? c.bg : null,
+                  borderRadius: BorderRadius.circular(26),
+                ),
+                child: ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.transparent,
+                    shadowColor: Colors.transparent,
+                    disabledBackgroundColor: Colors.transparent,
+                    foregroundColor: const Color(0xFF1A1400),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(26),
+                    ),
+                  ),
+                  onPressed: onCooldown ? null : widget.onTextMe,
+                  child: Text(
+                    onCooldown ? '${s.textMe} (${cooldown}s)' : s.textMe,
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                      color: onCooldown ? c.textTertiary : const Color(0xFF1A1400),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+
+            // ── Call me (secondary, outlined) ──
+            SizedBox(
+              width: double.infinity,
+              height: 52,
+              child: OutlinedButton(
+                style: OutlinedButton.styleFrom(
+                  side: BorderSide(
+                    color: onCooldown ? c.border : _gold,
+                    width: 1.4,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(26),
+                  ),
+                ),
+                onPressed: onCooldown ? null : widget.onCallMe,
+                child: Text(
+                  onCooldown ? '${s.callMe} (${cooldown}s)' : s.callMe,
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                    color: onCooldown ? c.textTertiary : _gold,
+                  ),
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );

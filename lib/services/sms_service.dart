@@ -10,14 +10,16 @@ class SmsService {
   /// Always true — the backend handles configuration checks.
   static bool get isConfigured => true;
 
-  /// Sends a verification code via SMS to [toPhone] through the backend.
+  /// Sends a verification code to [toPhone] through the backend.
+  /// [channel] is 'sms' (default) or 'call' (voice call via Twilio Verify).
   /// Returns a result record: `(ok: bool, trialBlocked: bool, code: String?)`.
   /// If [code] is not null, it means SMS failed but backend provided code directly.
   static Future<({bool ok, bool trialBlocked, String? code})> sendVerificationCode({
     required String toPhone,
+    String channel = 'sms',
   }) async {
     try {
-      final result = await ApiService.sendOtp(phone: toPhone);
+      final result = await ApiService.sendOtp(phone: toPhone, channel: channel);
       final ok = result['ok'] == true;
       if (!ok) return (ok: false, trialBlocked: false, code: null);
       final returnedCode = result['code'] as String?;

@@ -492,6 +492,12 @@ async def send_otp(body: SendOtpIn, request: Request, db: AsyncSession = Depends
     if phone:
         phone = _normalize_phone_e164(phone)
 
+    # Delivery channel for phone OTPs: "sms" (default) or "call" (voice call
+    # via Twilio Verify). Anything else is a client bug — reject loudly.
+    channel = (body.channel or "sms").strip().lower()
+    if channel not in ("sms", "call"):
+        raise HTTPException(400, "Invalid channel — must be 'sms' or 'call'")
+
     # Use phone as key for OTP store (or email if no phone)
     otp_key = phone if phone else email
 
@@ -580,11 +586,19 @@ async def send_otp(body: SendOtpIn, request: Request, db: AsyncSession = Depends
         
         if twilio_configured:
             creds = base64.b64encode(f"{TWILIO_ACCOUNT_SID}:{TWILIO_AUTH_TOKEN}".encode()).decode()
-            
+
+            # Voice calls only exist in the Verify API — the Messages API is
+            # SMS-only. If Verify isn't configured and the client asked for a
+            # call, fall back to SMS (log it — never fail the request).
+            verify_channel = channel
+            if channel == "call" and not (TWILIO_SERVICE_SID and TWILIO_SERVICE_SID.startswith("VA")):
+                logging.warning("[OTP] channel=call requested but Twilio Verify is not configured; falling back to SMS for %s", phone)
+                verify_channel = "sms"
+
             # Try Verify API first (if SERVICE_SID is configured)
             if TWILIO_SERVICE_SID and TWILIO_SERVICE_SID.startswith("VA"):
                 url = f"https://verify.twilio.com/v2/Services/{TWILIO_SERVICE_SID}/Verifications"
-                data = urllib.parse.urlencode({"To": phone, "Channel": "sms"}).encode()
+                data = urllib.parse.urlencode({"To": phone, "Channel": verify_channel}).encode()
                 req = urllib.request.Request(url, data=data, headers={
                     "Authorization": f"Basic {creds}",
                     "Content-Type": "application/x-www-form-urlencoded",
@@ -599,14 +613,15 @@ async def send_otp(body: SendOtpIn, request: Request, db: AsyncSession = Depends
                             return e.code, e.read().decode()
                     status, resp_body = await loop.run_in_executor(None, _do_verify)
                     if status in (200, 201):
-                        logging.info("[OTP] SMS sent via Twilio Verify API to %s", phone)
-                        return {"ok": True, "method": "sms_twilio_verify"}
+                        logging.info("[OTP] %s sent via Twilio Verify API to %s", verify_channel.upper(), phone)
+                        return {"ok": True, "method": f"{verify_channel}_twilio_verify"}
                     else:
                         logging.warning("[OTP] Twilio Verify API failed %s, trying Messages API", status)
                 except Exception as e:
                     logging.warning("[OTP] Twilio Verify API error: %s", e)
             
-            # Fallback to Direct Twilio Messages API
+            # Fallback to Direct Twilio Messages API (SMS only — a requested
+            # voice call degrades to a text here rather than failing).
             if TWILIO_PHONE_NUMBER:
                 sms_body = f"Your Cruise verification code is: {code}"
                 url = f"https://api.twilio.com/2010-04-01/Accounts/{TWILIO_ACCOUNT_SID}/Messages.json"

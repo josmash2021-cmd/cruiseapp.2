@@ -82,6 +82,27 @@ class S {
   String get sixDigitCode => _es ? 'Código de 6 dígitos' : '6-digit code';
   String get verify => _es ? 'Verificar' : 'Verify';
   String get invalidCode => _es ? 'Código inválido' : 'Invalid code';
+  // ── "Problems receiving the code?" sheet (verify code screen) ──
+  String get problemsReceivingCode =>
+      _es ? '¿Problemas para recibir el código?' : 'Problems receiving the code?';
+  String get resendVerificationCode =>
+      _es ? 'Reenviar código de verificación' : 'Resend verification code';
+  String resendCodeTo(String target) => _es ? 'al $target' : 'to $target';
+  String get bulletPhoneCorrect => _es
+      ? 'Asegúrate de que tu número de teléfono sea correcto'
+      : 'Make sure your phone number is correct';
+  String get bulletCheckInternet => _es
+      ? 'Revisa tu conexión a internet'
+      : 'Check your internet connection';
+  String get bulletRecentCode => _es
+      ? 'Ingresa el código más reciente'
+      : 'Enter the most recent code';
+  String get textMe => _es ? 'Envíame un texto' : 'Text me';
+  String get callMe => _es ? 'Llámame' : 'Call me';
+  String get codeSentByText =>
+      _es ? 'Código enviado por texto' : 'Code sent by text';
+  String get wellCallYouWithCode =>
+      _es ? 'Te llamaremos con el código' : "We'll call you with the code";
   String get driverAccountError => _es
       ? 'Esta cuenta está registrada como conductor. Por favor usa la opción de conductor.'
       : 'This account is registered as a driver. Please use Driver login.';

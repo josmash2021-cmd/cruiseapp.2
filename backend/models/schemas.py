@@ -105,6 +105,9 @@ class PhoneLoginIn(BaseModel):
 class SendOtpIn(BaseModel):
     phone: Optional[str] = None
     email: Optional[str] = None
+    # Delivery channel for phone OTPs — "sms" (default) or "call" (voice call
+    # via Twilio Verify). Ignored for email OTPs.
+    channel: str = "sms"
 
     @model_validator(mode='after')
     def validate_contact(self):

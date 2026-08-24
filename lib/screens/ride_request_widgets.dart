@@ -722,19 +722,25 @@ extension _RideRequestWidgets on _RideRequestScreenState {
   /// snap. [hidden] folds the row to nothing — the collapsed sheet keeps
   /// only the picked card — with the same animation instead of a
   /// disappearance.
-  Widget _buildTierRow(AppColors c, RideOption opt, bool selected,
-      {bool hidden = false}) {
-    final promo = _promoPrice(opt);
-    // Same display-name mapping the sheet has always used.
+  /// Single source of truth for the tier display name used by the sheet
+  /// (rows AND the "Select {tier}" button — before 2026-08-24 the button
+  /// read TierInfo.displayTitle, the legacy VIP/Premium/Comfort naming).
+  static String _tierDisplayName(RideOption opt) {
     final isSuv = opt.id == 'suburban';
     final isFusion = opt.id == 'fusion';
     final isSuvXl = opt.id == 'suv_xl';
     final isPremium = !isSuv && !isSuvXl && !isFusion;
-    final String displayName = isSuv
+    return isSuv
         ? 'BLACK'
         : isSuvXl
             ? 'PREMIUM'
             : (isPremium ? 'COMPACT' : 'STANDARD');
+  }
+
+  Widget _buildTierRow(AppColors c, RideOption opt, bool selected,
+      {bool hidden = false}) {
+    final promo = _promoPrice(opt);
+    final String displayName = _tierDisplayName(opt);
 
     // Compact line under the name: "in 5 min". Placeholder tiers carry no
     // ETA (0), so they fall back to the cached per-tier wait range.
@@ -1076,7 +1082,7 @@ extension _RideRequestWidgets on _RideRequestScreenState {
               // payment pipeline runs from there. The label crossfades on
               // every tier change inside the button itself.
               label:
-                  S.of(context).selectTierLabel(TierInfo.displayTitle(option.name)),
+                  S.of(context).selectTierLabel(_tierDisplayName(option)),
               onTap: () {
                 HapticService.mediumImpact();
                 _openPickupConfirm(c, option);

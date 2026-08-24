@@ -2080,11 +2080,20 @@ class ApiService {
     double lat = 0,
     double lng = 0,
     double radiusKm = 50,
+    double? minLat,
+    double? minLng,
+    double? maxLat,
+    double? maxLng,
   }) async {
     final h = await _authHeaders();
+    var qs = 'lat=$lat&lng=$lng&radius_km=$radiusKm';
+    // "Search this area": all four or none — a partial bbox is a client bug.
+    if (minLat != null && minLng != null && maxLat != null && maxLng != null) {
+      qs += '&min_lat=$minLat&min_lng=$minLng&max_lat=$maxLat&max_lng=$maxLng';
+    }
     final res = await _client
         .get(
-          Uri.parse('$_baseUrl/scheduled-trips/available?lat=$lat&lng=$lng&radius_km=$radiusKm'),
+          Uri.parse('$_baseUrl/scheduled-trips/available?$qs'),
           headers: h,
         )
         .timeout(const Duration(seconds: 10));

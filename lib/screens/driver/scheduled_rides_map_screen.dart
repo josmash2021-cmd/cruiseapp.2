@@ -104,6 +104,10 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
   // ── Selection / detail mode ──
   Map<String, dynamic>? _selected;
 
+  /// Lyft-style Dismiss: hides the ride for THIS driver, session only.
+  /// In-memory on purpose — a fresh open of the screen shows them again.
+  final Set<int> _hiddenIds = {};
+
   // ── "Search this area" ──
   // Latched by the gesture callbacks, NOT onCameraChangeListener — that one
   // also fires for our own flyTo, and it would show the button on the very
@@ -213,7 +217,11 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
   //  Data loaders (throttle + cache, same contract as the list screen)
   // ─────────────────────────────────────────────
 
-  Future<void> _loadAvailable({bool force = false, double? lat, double? lng}) async {
+  Future<void> _loadAvailable(
+      {bool force = false,
+      double? lat,
+      double? lng,
+      mapbox.CoordinateBounds? bbox}) async {
     if (_fetchingAvail) return;
     if (!force &&
         _lastAvailFetch != null &&
@@ -253,6 +261,10 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
         lat: qlat,
         lng: qlng,
         radiusKm: 50,
+        minLat: bbox?.southwest.coordinates.lat.toDouble(),
+        minLng: bbox?.southwest.coordinates.lng.toDouble(),
+        maxLat: bbox?.northeast.coordinates.lat.toDouble(),
+        maxLng: bbox?.northeast.coordinates.lng.toDouble(),
       );
       if (!mounted) return;
       // Save to cache for next open.
@@ -358,6 +370,7 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
 
   List<Map<String, dynamic>> get _filtered {
     return _available.where((t) {
+      if (_hiddenIds.contains(t['id'])) return false;
       if (_airportOnly && t['is_airport'] != true) return false;
       if (_dateFilter != _DateFilter.all || _timeFilter != _TimeFilter.all) {
         final st = _parseScheduledAt(t);
@@ -489,22 +502,27 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
   //  Price bubbles
   // ─────────────────────────────────────────────
 
-  /// Renders the compact "$N" pill as a bitmap: small dark pill with a soft
-  /// drop shadow and gold text. A bare textField cannot draw the pill
-  /// background (the text halo is capped at a quarter of the font size and
-  /// is not rounded), so the look is rasterised here instead.
-  Future<Uint8List?> _bubbleBytes(String label) async {
-    final cached = _bubbleByteCache[label];
+  /// Renders the marker as ONE bitmap: the compact "$N" pill floating above
+  /// a small hailing-person figure (silhouette with a raised arm, gold,
+  /// no circle/frame around it, soft shadow). A bare textField cannot draw
+  /// the pill background, and a PointAnnotation takes a single image — so
+  /// pill + figure are rasterised together here. The feet sit at the
+  /// bottom edge so IconAnchor.BOTTOM plants the figure on the pickup.
+  Future<Uint8List?> _bubbleBytes(String label, {bool selected = false}) async {
+    final key = '$label|${selected ? 's' : 'n'}';
+    final cached = _bubbleByteCache[key];
     if (cached != null) return cached;
-    const scale = 3.0; // raster density — the pill stays crisp on retina
+    const scale = 3.0; // raster density — stays crisp on retina
     const hPad = 10.0, vPad = 4.5;
     const borderW = 1.0;
     const shadowPad = 6.0; // room for the blurred shadow to bleed into
+    const gap = 2.0; // air between the pill and the figure's raised hand
+    const personW = 16.0, personH = 22.0;
     final tp = TextPainter(
       text: TextSpan(
         text: label,
-        style: const TextStyle(
-          color: _gold,
+        style: TextStyle(
+          color: selected ? Colors.black : _gold,
           fontSize: 12.5,
           fontWeight: FontWeight.w800,
           height: 1.0,
@@ -514,12 +532,14 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
     )..layout();
     final w = tp.width + hPad * 2 + borderW * 2;
     final h = tp.height + vPad * 2 + borderW * 2;
+    final totalW = max(w, personW);
+    final totalH = h + gap + personH;
     final recorder = ui.PictureRecorder();
     final canvas = Canvas(recorder);
     canvas.scale(scale);
     canvas.translate(shadowPad, shadowPad);
     final rect = RRect.fromRectAndRadius(
-      Rect.fromLTWH(0, 0, w, h),
+      Rect.fromLTWH((totalW - w) / 2, 0, w, h),
       Radius.circular(h / 2),
     );
     // Soft shadow first, then the pill on top of it.
@@ -529,21 +549,60 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
         ..color = Colors.black.withValues(alpha: 0.5)
         ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3),
     );
-    canvas.drawRRect(rect, Paint()..color = neuSurface);
+    canvas.drawRRect(rect, Paint()..color = selected ? _gold : neuSurface);
     canvas.drawRRect(
       rect,
       Paint()
         ..style = PaintingStyle.stroke
         ..strokeWidth = borderW
-        ..color = Colors.white.withValues(alpha: 0.08),
+        ..color = Colors.white.withValues(alpha: selected ? 0.25 : 0.08),
     );
-    tp.paint(canvas, Offset(hPad + borderW, vPad + borderW));
+    tp.paint(
+        canvas, Offset(rect.left + hPad + borderW, rect.top + vPad + borderW));
+
+    // ── Hailing person: head + torso + one raised arm, round-cap strokes.
+    // No circle or frame around it — the silhouette IS the marker.
+    final px = (totalW - personW) / 2;
+    final py = h + gap;
+    final figure = Paint()
+      ..color = selected ? _gold : const Color(0xFFF2DFA0) // white-gold
+      ..strokeWidth = 3.0
+      ..strokeCap = StrokeCap.round
+      ..style = PaintingStyle.stroke;
+    final figureShadow = Paint()
+      ..color = Colors.black.withValues(alpha: 0.45)
+      ..strokeWidth = 3.0
+      ..strokeCap = StrokeCap.round
+      ..style = PaintingStyle.stroke
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2.2);
+    Offset P(double x, double y) => Offset(px + x, py + y);
+    final cx = personW / 2;
+    void drawFigure(Paint p) {
+      canvas.drawLine(P(cx, 6.6), P(cx, 13.6), p); // torso
+      canvas.drawLine(P(cx, 7.6), P(cx + 4.6, 3.2), p); // raised (hailing) arm
+      canvas.drawLine(P(cx, 7.6), P(cx - 3.6, 10.8), p); // other arm, down
+      canvas.drawLine(P(cx, 13.6), P(cx - 2.8, 20.8), p); // legs
+      canvas.drawLine(P(cx, 13.6), P(cx + 2.8, 20.8), p);
+    }
+
+    canvas.save();
+    canvas.translate(0.6, 1.0);
+    drawFigure(figureShadow);
+    canvas.restore();
+    drawFigure(figure);
+    canvas.drawCircle(
+        P(cx, 3.0), 2.7,
+        Paint()
+          ..color = Colors.black.withValues(alpha: 0.45)
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2.2));
+    canvas.drawCircle(P(cx, 3.0), 2.7, Paint()..color = figure.color);
+
     final side = shadowPad * 2;
     final img = await recorder.endRecording().toImage(
-        ((w + side) * scale).ceil(), ((h + side) * scale).ceil());
+        ((totalW + side) * scale).ceil(), ((totalH + side) * scale).ceil());
     final bytes = await img.toByteData(format: ui.ImageByteFormat.png);
     final raw = bytes?.buffer.asUint8List();
-    if (raw != null) _bubbleByteCache[label] = raw;
+    if (raw != null) _bubbleByteCache[key] = raw;
     return raw;
   }
 
@@ -561,16 +620,20 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
       final point = safePoint(lng!, lat!);
       if (point == null) continue;
       final fare = (trip['fare'] as num?)?.toDouble() ?? 0;
-      final bytes = await _bubbleBytes('\$${fare.round()}');
+      final isSelected = _selected != null && _selected!['id'] == trip['id'];
+      final bytes = await _bubbleBytes('\$${fare.round()}', selected: isSelected);
       if (!mounted) return;
       if (bytes == null) continue;
       try {
         final annot = await mgr.create(mapbox.PointAnnotationOptions(
           geometry: point,
           image: bytes,
-          // The bitmap is rendered at 3× density — 1/3 lands it at logical size.
-          iconSize: 1 / 3.0,
-          iconAnchor: mapbox.IconAnchor.CENTER,
+          // The bitmap is rendered at 3× density — 1/3 lands it at logical
+          // size; the selected marker gets the Lyft-style ~1.1 pop.
+          iconSize: (isSelected ? 1.1 : 1.0) / 3.0,
+          // The figure's feet are the bottom edge — they plant on the
+          // pickup point while the pill floats above.
+          iconAnchor: mapbox.IconAnchor.BOTTOM,
         ));
         _bubbleTrips[annot.id] = trip;
       } catch (_) {}
@@ -588,6 +651,7 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
       _selected = trip;
       _showSearchArea = false;
     });
+    _syncBubbles(); // selected marker turns gold + scales up
     if (_sheetCtrl.isAttached) {
       _sheetCtrl.animateTo(
         _sheetDetail,
@@ -600,6 +664,7 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
 
   void _dismissSelection() {
     setState(() => _selected = null);
+    _syncBubbles(); // the gold selected marker returns to normal
     _clearRouteAnnotation();
     if (_sheetCtrl.isAttached) {
       _sheetCtrl.animateTo(
@@ -608,6 +673,17 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
         curve: Curves.easeOutCubic,
       );
     }
+  }
+
+  /// Dismiss pill: closes the detail AND hides the ride for this driver
+  /// (Lyft behaviour). Session-only — nothing goes to the backend and the
+  /// ride reappears on the next open of the screen.
+  void _hideSelectedTrip() {
+    final trip = _selected;
+    if (trip == null) return;
+    final id = trip['id'];
+    if (id is int) _hiddenIds.add(id);
+    _dismissSelection();
   }
 
   /// Real pickup→dropoff route behind the detail card. Framed ONCE — the
@@ -760,11 +836,24 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
     });
   }
 
-  void _searchThisArea() {
+  /// Lyft-style: the search covers exactly what is on screen — the visible
+  /// coordinate bounds go to the backend as a bbox (replacing the radius
+  /// filter server-side). Falls back to the old centre query if the map is
+  /// not there to answer.
+  Future<void> _searchThisArea() async {
     setState(() => _showSearchArea = false);
+    final m = _map;
+    mapbox.CoordinateBounds? bbox;
+    if (m != null) {
+      try {
+        final cam = await m.getCameraState();
+        bbox = await m.coordinateBoundsForCamera(cam.toCameraOptions());
+      } catch (_) {}
+    }
+    if (!mounted) return;
     final c = _lastCamCenter;
     // Not forced — the 10 s throttle still applies.
-    _loadAvailable(lat: c?.latitude, lng: c?.longitude);
+    _loadAvailable(lat: c?.latitude, lng: c?.longitude, bbox: bbox);
   }
 
   /// Back to the driver: the recenter fab flies the camera home.
@@ -1079,7 +1168,7 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
 
   Widget _buildDismissPill(S s) {
     return GestureDetector(
-      onTap: _dismissSelection,
+      onTap: _hideSelectedTrip,
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
         decoration: BoxDecoration(

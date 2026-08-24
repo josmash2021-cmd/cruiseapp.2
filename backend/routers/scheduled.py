@@ -170,10 +170,18 @@ async def get_available_scheduled_trips(
     lat: float = Query(0),
     lng: float = Query(0),
     radius_km: float = Query(50.0),
+    min_lat: float | None = Query(None),
+    min_lng: float | None = Query(None),
+    max_lat: float | None = Query(None),
+    max_lng: float | None = Query(None),
     user: User = Depends(_get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """List unclaimed scheduled rides a driver can accept."""
+    """List unclaimed scheduled rides a driver can accept.
+
+    The optional bbox (min_lat/min_lng/max_lat/max_lng, all four or none)
+    is the Lyft-style "search this area": when present it REPLACES the
+    radius filter — the driver asked for exactly what is on screen."""
     if user.role != "driver":
         raise HTTPException(403, "Only drivers can browse scheduled rides")
     _require_approved_driver(user)
@@ -237,6 +245,12 @@ async def get_available_scheduled_trips(
         rres = await db.execute(select(User).where(User.id.in_(rider_ids)))
         riders = {u.id: u for u in rres.scalars().all()}
 
+    # All four or nothing — a partial bbox is a client bug, not a hint.
+    bbox = None
+    if None not in (min_lat, min_lng, max_lat, max_lng):
+        bbox = (min(min_lat, max_lat), min(min_lng, max_lng),
+                max(min_lat, max_lat), max(min_lng, max_lng))
+
     cards = []
     dropped = 0
     tier_dropped = 0
@@ -244,7 +258,13 @@ async def get_available_scheduled_trips(
         if normalize_tier(t.vehicle_type) not in eligible_request_tiers:
             tier_dropped += 1
             continue
-        if lat and lng and t.pickup_lat and t.pickup_lng:
+        if bbox is not None:
+            if not (t.pickup_lat and t.pickup_lng):
+                continue
+            if not (bbox[0] <= t.pickup_lat <= bbox[2]
+                    and bbox[1] <= t.pickup_lng <= bbox[3]):
+                continue
+        elif lat and lng and t.pickup_lat and t.pickup_lng:
             dist = _haversine(lat, lng, t.pickup_lat, t.pickup_lng)
             if dist > radius_km:
                 continue

@@ -1882,6 +1882,240 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     _fetchScheduledCount();
     _scheduledPollTimer = Timer.periodic(const Duration(seconds: 90), (_) {
       if (mounted) _fetchScheduledCount();
+      // Destination TTL/auto-clear lives server-side: when the profile
+      // stops carrying it, the chip disappears on this refresh.
+      if (mounted) _loadDestination();
+    });
+  }
+
+  // ── Destination filter ("heading to") ─────────────────────────────
+  // The filter itself is enforced server-side (dispatch only sends trips
+  // on the way there); here it is just loaded, set and cleared.
+
+  /// Mirror the destination from the dashboard payload. When the backend
+  /// stops sending it (TTL lapsed / arrival auto-clear), the chip goes away
+  /// on the next refresh.
+  Future<void> _loadDestination() async {
+    try {
+      final dashboard = await ApiService.getDashboard();
+      if (!mounted || dashboard == null) return;
+      final profile = dashboard['profile'] as Map<String, dynamic>?;
+      final dest = profile?['destination'] as Map<String, dynamic>?;
+      final address = (dest?['address'] ?? '').toString();
+      _setState(() => _destAddress = address.isEmpty ? null : address);
+    } catch (_) {}
+  }
+
+  Future<void> _clearDestination() async {
+    HapticService.selectionClick();
+    _setState(() => _destAddress = null);
+    try {
+      await ApiService.clearDriverDestination();
+    } catch (e) {
+      debugPrint('[DriverOnline] clear destination failed: $e');
+      // Roll the chip back if the server never got the delete.
+      _loadDestination();
+    }
+  }
+
+  /// Bottom sheet: search a destination with the shared PlacesService
+  /// autocomplete, POST it on pick, close.
+  void _showDestinationSheet() {
+    HapticService.selectionClick();
+    final places = PlacesService(ApiKeys.webServices);
+    final ctrl = TextEditingController();
+    Timer? debounce;
+    var results = <PlaceSuggestion>[];
+    var searching = false;
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setSheet) {
+            Future<void> search(String q) async {
+              final here = _pos;
+              final r = await places.autocomplete(
+                q,
+                latitude: here?.latitude,
+                longitude: here?.longitude,
+              );
+              setSheet(() {
+                results = r;
+                searching = false;
+              });
+            }
+
+            Future<void> pick(PlaceSuggestion s) async {
+              double? lat = s.lat;
+              double? lng = s.lng;
+              if (lat == null || lng == null) {
+                final det = await places.details(s.placeId);
+                lat = det?.lat;
+                lng = det?.lng;
+              }
+              if (lat == null || lng == null) return;
+              final address = s.mainText ?? s.description.split(',').first;
+              try {
+                await ApiService.setDriverDestination(
+                  lat: lat,
+                  lng: lng,
+                  address: address,
+                );
+              } catch (e) {
+                debugPrint('[DriverOnline] set destination failed: $e');
+                return;
+              }
+              if (!mounted) return;
+              _setState(() => _destAddress = address);
+              if (ctx.mounted) Navigator.of(ctx).pop();
+            }
+
+            return Padding(
+              padding: EdgeInsets.only(
+                bottom: MediaQuery.of(ctx).viewInsets.bottom,
+              ),
+              child: Container(
+                decoration: BoxDecoration(
+                  color: neuBase,
+                  borderRadius: const BorderRadius.vertical(
+                    top: Radius.circular(26),
+                  ),
+                ),
+                padding: EdgeInsets.fromLTRB(
+                  20,
+                  14,
+                  20,
+                  20 + MediaQuery.of(ctx).padding.bottom,
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Center(
+                      child: Container(
+                        width: 36,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.18),
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      S.of(ctx).destinationFilterTitle,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 17,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Container(
+                      decoration: neuBox(radius: 14, pressed: true),
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.search_rounded,
+                              color: _gold, size: 20),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: TextField(
+                              controller: ctrl,
+                              autofocus: true,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 15,
+                              ),
+                              cursorColor: _gold,
+                              decoration: InputDecoration(
+                                hintText: S.of(ctx).destinationSearchHint,
+                                hintStyle: TextStyle(
+                                  color: Colors.white.withValues(alpha: 0.35),
+                                ),
+                                border: InputBorder.none,
+                              ),
+                              onChanged: (t) {
+                                debounce?.cancel();
+                                if (t.trim().length < 2) {
+                                  setSheet(() => results = []);
+                                  return;
+                                }
+                                setSheet(() => searching = true);
+                                debounce = Timer(
+                                  const Duration(milliseconds: 250),
+                                  () => search(t.trim()),
+                                );
+                              },
+                            ),
+                          ),
+                          if (searching)
+                            const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: _gold,
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxHeight: 300),
+                      child: ListView.builder(
+                        shrinkWrap: true,
+                        itemCount: results.length,
+                        itemBuilder: (_, i) {
+                          final s = results[i];
+                          return ListTile(
+                            dense: true,
+                            contentPadding: EdgeInsets.zero,
+                            leading: Icon(
+                              Icons.place_outlined,
+                              color: Colors.white.withValues(alpha: 0.5),
+                              size: 20,
+                            ),
+                            title: Text(
+                              s.mainText ?? s.description,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 14.5,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            subtitle: s.secondaryText != null
+                                ? Text(
+                                    s.secondaryText!,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      color: Colors.white
+                                          .withValues(alpha: 0.4),
+                                      fontSize: 12.5,
+                                    ),
+                                  )
+                                : null,
+                            onTap: () => pick(s),
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    ).whenComplete(() {
+      debounce?.cancel();
+      ctrl.dispose();
     });
   }
 

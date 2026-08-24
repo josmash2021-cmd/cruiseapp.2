@@ -1166,6 +1166,11 @@ class DispatchTimeoutAgent:
                     continue
                 offer.status = "expired"
                 self._timed_out += 1
+                try:
+                    from routers.dispatch import _bump_offer_counter
+                    await _bump_offer_counter(db, offer.driver_id, "expired")
+                except Exception:
+                    pass
                 logger.info(
                     "[DispatchTimeoutAgent] Offer %d expired (trip %d) -- no driver accepted in %ds",
                     offer.id, offer.trip_id, self.TIMEOUT_SECS

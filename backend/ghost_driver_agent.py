@@ -440,6 +440,8 @@ class GhostDriverAgent:
                 # than the one that found the ghost.
                 radius_km=MAX_DISPATCH_RADIUS_KM,
                 limit=1,
+                dropoff_lat=trip.dropoff_lat,
+                dropoff_lng=trip.dropoff_lng,
             )
             return drivers[0] if drivers else None
         except Exception as e:

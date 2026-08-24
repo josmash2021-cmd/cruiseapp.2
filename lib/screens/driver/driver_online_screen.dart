@@ -50,6 +50,7 @@ import '../../l10n/app_localizations.dart';
 import '../../map/flat_map_projection.dart';
 import '../../map/map_surface_coordinator.dart';
 import '../../services/resilient_position_stream.dart';
+import '../../services/places_service.dart';
 import '../../utils/driver_location_settings.dart';
 import '../chat_screen.dart';
 import '../safety_screen.dart';
@@ -268,6 +269,12 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   int _mapGeneration = 0;
   // Cache: offerId → Future<String> static map URL (with real routed polyline)
   final Map<String, Future<String>> _offerMapUrlCache = {};
+
+  // ── Destination filter ("heading to", Lyft-style) ──
+  // Short address of the active destination filter, mirrored from the
+  // profile/dashboard payload. Null = no filter. While set, the backend
+  // already filters the offers this driver gets — the app only displays it.
+  String? _destAddress;
 
   void _animateToPosition(
     LatLng pos, {
@@ -862,6 +869,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     // listener on every return from the background.
     EarningsPrivacy.load();
     EarningsPrivacy.hidden.addListener(_onEarningsPrivacyChanged);
+    _loadDestination();
     // Apply initial position from home screen (avoids white flash)
     if (widget.initialPos != null) {
       _pos = widget.initialPos!;
@@ -1968,6 +1976,18 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                         ),
                       ).then((_) => _fetchScheduledCount()),
                       stagger: 0,
+                    ),
+                    const SizedBox(height: 10),
+                    // Destination filter ("heading to"). Gold while a filter
+                    // is live so the state reads at a glance.
+                    _fab(
+                      Icons.navigation_rounded,
+                      44,
+                      fabBg,
+                      fabBorder,
+                      _destAddress != null ? _gold : fabIcon,
+                      _showDestinationSheet,
+                      stagger: 3,
                     ),
                   ],
                 ),

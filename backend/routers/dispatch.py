@@ -17,7 +17,7 @@ from utils.security import (
     _dispatch_sessions, _security_audit_log,
     JWT_SECRET, JWT_ALGORITHM,
 )
-from utils.helpers import _safe_create_task, utc_now, _haversine, _trip_dict, _user_dict, _abs_photo_url, _resolve_rider_display, MAX_DISPATCH_RADIUS_KM, ACTIVE_ACCOUNT_STATUSES
+from utils.helpers import _safe_create_task, utc_now, _haversine, _trip_dict, _user_dict, _abs_photo_url, _resolve_rider_display, MAX_DISPATCH_RADIUS_KM, ACTIVE_ACCOUNT_STATUSES, _active_destination
 from services.fcm_service import _send_fcm_push, _send_fcm_push_async
 from services.sms_service import notify_guest_driver_assigned
 from services.email_service import email_guest_driver_assigned
@@ -70,6 +70,164 @@ _ACTIVE_TRIP_STATUSES = [
 # for the next offer — the ride is stacked behind the one they are about
 # to finish, the way Uber chains back-to-back trips.
 _CHAIN_MAX_REMAINING_KM = 1.6  # 1 mile
+
+# Acceptance rate (Lyft-style, 2026-08-24). Lifetime counters on the User
+# row (offers_accepted / offers_rejected / offers_expired) bumped wherever
+# a DispatchOffer reaches its final state; the rate is
+# accepted / max(1, accepted+rejected+expired) * 100 over those totals.
+# Chosen over a sliding 50-event window: no extra table, no decay math,
+# and robust to a driver with three lifetime offers (a window would read
+# the same three). Dispatch uses it as a TIE-BREAK inside 1 km distance
+# buckets — distance remains the primary sort.
+_ACCEPTANCE_BUCKET_KM = 1.0
+
+# Chained offers ordered by detour (Lyft "on the way to the dropoff"):
+# a busy driver only jumps the queue for a pickup that lies on the way to
+# the dropoff they are already driving to. Detour ratio =
+# (driver->pickup + pickup->current_dropoff) / driver->current_dropoff.
+_CHAIN_MAX_DETOUR_RATIO = 1.40  # 40% extra over the direct leg
+
+# Destination filter ("heading to"): a driver with a live destination only
+# sees offers whose dropoff ends within this radius of the destination OR
+# closer to it than the driver currently stands.
+_DEST_MAX_DROP_KM = 15.0
+
+
+def _acceptance_rate(driver) -> float:
+    """0-100 acceptance rate from the lifetime counters (see above)."""
+    a = int(getattr(driver, "offers_accepted", None) or 0)
+    r = int(getattr(driver, "offers_rejected", None) or 0)
+    e = int(getattr(driver, "offers_expired", None) or 0)
+    return a / max(1, a + r + e) * 100.0
+
+
+async def _bump_offer_counter(db: AsyncSession, driver_id: int, kind: str) -> None:
+    """+1 on offers_accepted / offers_rejected / offers_expired. The caller
+    owns the commit. Never raises — the metric must never break dispatch."""
+    try:
+        col = {
+            "accepted": User.offers_accepted,
+            "rejected": User.offers_rejected,
+            "expired": User.offers_expired,
+        }[kind]
+        await db.execute(
+            User.__table__.update()
+            .where(User.id == driver_id)
+            .values(**{f"offers_{kind}": func.coalesce(col, 0) + 1})
+        )
+    except Exception as exc:
+        logging.warning("[Dispatch] offer counter bump (%s) failed: %s", kind, exc)
+
+
+def _prioritize_by_acceptance(drivers: list, pickup_lat: float, pickup_lng: float) -> list:
+    """Acceptance rate as a tie-break AFTER distance/ETA, never before it:
+    the incoming order (haversine, possibly ETA-refined) is preserved except
+    that runs of CONSECUTIVE drivers falling in the same 1 km distance
+    bucket are re-sorted by acceptance rate, best first. Sorting the whole
+    list by (bucket, rate) would silently undo the ETA ordering — a driver
+    2 km out who arrives sooner must stay ahead of a closer, slower one."""
+    out: list = []
+    i = 0
+    while i < len(drivers):
+        bucket = int(
+            _haversine(pickup_lat, pickup_lng,
+                       drivers[i].lat or 0, drivers[i].lng or 0)
+            / _ACCEPTANCE_BUCKET_KM
+        )
+        j = i + 1
+        while j < len(drivers) and int(
+            _haversine(pickup_lat, pickup_lng,
+                       drivers[j].lat or 0, drivers[j].lng or 0)
+            / _ACCEPTANCE_BUCKET_KM
+        ) == bucket:
+            j += 1
+        group = sorted(drivers[i:j], key=_acceptance_rate, reverse=True)
+        out.extend(group)
+        i = j
+    return out
+
+
+def _filter_by_destination(drivers: list, dropoff_lat, dropoff_lng) -> list:
+    """Destination filter ("heading to"): a driver with a live destination
+    only keeps offers whose dropoff lies on the way there. Without a
+    requested-trip dropoff there is nothing to compare — fail open."""
+    if dropoff_lat is None or dropoff_lng is None or not drivers:
+        return drivers
+    kept = []
+    for d in drivers:
+        dest = _active_destination(d)
+        if dest is None:
+            kept.append(d)
+            continue
+        drop_to_dest = _haversine(dropoff_lat, dropoff_lng, dest["lat"], dest["lng"])
+        driver_to_dest = _haversine(d.lat or 0, d.lng or 0, dest["lat"], dest["lng"])
+        if drop_to_dest <= _DEST_MAX_DROP_KM or drop_to_dest < driver_to_dest:
+            kept.append(d)
+        else:
+            logging.info(
+                "[Destination] driver %s filtered out: dropoff %.1f km from "
+                "their destination (driver %.1f km away)",
+                d.id, drop_to_dest, driver_to_dest,
+            )
+    return kept
+
+
+async def _order_chained_by_detour(db: AsyncSession, drivers: list,
+                                   pickup_lat: float, pickup_lng: float) -> list:
+    """Order chained candidates (busy drivers finishing a trip nearby) by
+    how little the new pickup detours their current leg, and drop the ones
+    past _CHAIN_MAX_DETOUR_RATIO — unless that would empty the list (a
+    suboptimal offer beats no offer). Free drivers keep their order and
+    their precedence: they can start now, a chained driver cannot."""
+    if not drivers:
+        return drivers
+    try:
+        res = await db.execute(
+            select(Trip).where(
+                and_(
+                    Trip.driver_id.in_([d.id for d in drivers]),
+                    Trip.status.in_(_ACTIVE_TRIP_STATUSES),
+                    Trip.dropoff_lat.isnot(None),
+                    Trip.dropoff_lng.isnot(None),
+                )
+            )
+        )
+        active = {t.driver_id: t for t in res.scalars().all()}
+    except Exception as exc:
+        logging.warning("[Dispatch] chained detour lookup failed: %s", exc)
+        return drivers
+
+    free: list = []
+    chained: list = []  # (detour_ratio, driver)
+    for d in drivers:
+        t = active.get(d.id)
+        if t is None:
+            free.append(d)
+            continue
+        direct = max(_haversine(d.lat or 0, d.lng or 0, t.dropoff_lat, t.dropoff_lng), 0.1)
+        via = (
+            _haversine(d.lat or 0, d.lng or 0, pickup_lat, pickup_lng)
+            + _haversine(pickup_lat, pickup_lng, t.dropoff_lat, t.dropoff_lng)
+        )
+        chained.append((via / direct, d))
+    if not chained:
+        return drivers
+
+    chained.sort(key=lambda x: x[0])
+    fits = [d for ratio, d in chained if ratio <= _CHAIN_MAX_DETOUR_RATIO]
+    dropped = [d for ratio, d in chained if ratio > _CHAIN_MAX_DETOUR_RATIO]
+    if fits or free:
+        for d in dropped:
+            logging.info(
+                "[Dispatch] chained candidate %s dropped: pickup detours "
+                "their current leg past %.0f%%",
+                d.id, (_CHAIN_MAX_DETOUR_RATIO - 1.0) * 100,
+            )
+    else:
+        # Nobody fits and there is no free driver — offer anyway, least
+        # detour first.
+        fits = [d for _, d in chained]
+    return free + fits
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -193,6 +351,8 @@ async def _find_nearest_drivers(
     vehicle_type: str = "comfort",
     radius_km: float = MAX_DISPATCH_RADIUS_KM,
     limit: int = 10,
+    dropoff_lat: float | None = None,
+    dropoff_lng: float | None = None,
 ) -> list:
     """Find the nearest online drivers using a bounding-box pre-filter and
     SQL-side haversine ORDER BY so the database does the heavy lifting.
@@ -414,6 +574,15 @@ async def _find_nearest_drivers(
     if len(drivers) > 1:
         drivers = await _order_by_driver_eta(drivers, pickup_lat, pickup_lng)
 
+    # Lyft-style refinements over the finalists (2026-08-24), in order:
+    # acceptance rate breaks distance ties, the destination filter removes
+    # drivers heading the other way, and chained candidates are re-ordered
+    # by how little the pickup detours their current leg.
+    if len(drivers) > 1:
+        drivers = _prioritize_by_acceptance(drivers, pickup_lat, pickup_lng)
+    drivers = _filter_by_destination(drivers, dropoff_lat, dropoff_lng)
+    drivers = await _order_chained_by_detour(db, drivers, pickup_lat, pickup_lng)
+
     return drivers
 
 
@@ -630,6 +799,7 @@ async def _send_offer_to_driver(
     ).scalars().all()
     for other in stale:
         other.status = "expired"
+        await _bump_offer_counter(db, other.driver_id, "expired")
         _pending_cache.pop(other.driver_id, None)
         _safe_create_task(_clear_live_activity_offer(other.driver_id))
         logging.info(
@@ -888,6 +1058,7 @@ async def expire_pending_offers_for_driver(db: AsyncSession, driver_id: int,
     ).scalars().all()
     for offer in offers:
         offer.status = "expired"
+        await _bump_offer_counter(db, driver_id, "expired")
         logging.info("[Dispatch] expiring offer %s for driver %s — %s",
                      offer.id, driver_id, reason)
     if offers:
@@ -986,6 +1157,7 @@ async def _auto_cascade(trip_id: int, first_offer_id: int, first_driver_id: int)
 
                 # Expire the current offer
                 offer.status = "expired"
+                await _bump_offer_counter(db, offer.driver_id, "expired")
                 await db.commit()
                 # Take the fare off this driver's Live Activity — the island
                 # must not keep selling a ride that can no longer be taken.
@@ -1007,6 +1179,8 @@ async def _auto_cascade(trip_id: int, first_offer_id: int, first_driver_id: int)
                     vehicle_type=trip.vehicle_type or "comfort",
                     radius_km=_LIVE_DISPATCH_RADIUS_KM,
                     limit=5,
+                    dropoff_lat=trip.dropoff_lat,
+                    dropoff_lng=trip.dropoff_lng,
                 )
                 if not next_drivers:
                     logging.warning(
@@ -1062,6 +1236,7 @@ async def _auto_cascade(trip_id: int, first_offer_id: int, first_driver_id: int)
                 # newly available drivers.  The DataGuardian stuck-trip timeout
                 # (30 min) will eventually cancel if nobody picks it up.
                 offer.status = "expired"
+                await _bump_offer_counter(db, offer.driver_id, "expired")
                 await db.commit()
 
                 logging.warning(
@@ -1626,6 +1801,8 @@ async def dispatch_request(body: DispatchRequestIn, user: User = Depends(_get_cu
         vehicle_type=trip.vehicle_type or "comfort",
         radius_km=_LIVE_DISPATCH_RADIUS_KM,
         limit=10,
+        dropoff_lat=trip.dropoff_lat,
+        dropoff_lng=trip.dropoff_lng,
     )
 
     # -- Debug logging: always log dispatch result for Railway visibility --
@@ -1737,6 +1914,7 @@ async def get_driver_pending(driver_id: int = Query(...), user: User = Depends(_
         stale_rows = stale_result.all()
         for stale_offer, stale_trip in stale_rows:
             stale_offer.status = "expired"
+            await _bump_offer_counter(db, stale_offer.driver_id, "expired")
             _safe_create_task(_clear_live_activity_offer(stale_offer.driver_id))
             logging.warning(
                 "[Dispatch] Offer %d (trip %d) for driver %d expired after >5 min -- marking expired and cascading",
@@ -2004,6 +2182,7 @@ async def accept_offer(offer_id: int = Query(...), driver_id: int = Query(...), 
         raise HTTPException(409, "Trip already accepted by another driver")
 
     offer.status = "accepted"
+    await _bump_offer_counter(db, driver_id, "accepted")
     _pending_cache.pop(driver_id, None)  # L3: invalidate cache so next poll is fresh
     _dispatch_status_cache.pop(offer.trip_id, None)  # invalidate status cache on accept
     # An island started by push-to-start with the app killed is still showing
@@ -2212,6 +2391,8 @@ async def _requeue_trip_to_next_driver(db: AsyncSession, trip: Trip):
         vehicle_type=trip.vehicle_type or "comfort",
         radius_km=_LIVE_DISPATCH_RADIUS_KM,
         limit=5,
+        dropoff_lat=trip.dropoff_lat,
+        dropoff_lng=trip.dropoff_lng,
     )
     if not drivers_sorted:
         # Nobody new to try. If there is also nobody else online within
@@ -2281,6 +2462,8 @@ async def _dispatch_first_offer_after_delay(trip_id: int) -> None:
                 vehicle_type=trip.vehicle_type or "comfort",
                 radius_km=_LIVE_DISPATCH_RADIUS_KM,
                 limit=10,
+                dropoff_lat=trip.dropoff_lat,
+                dropoff_lng=trip.dropoff_lng,
             )
             if not drivers:
                 logging.info(
@@ -2466,6 +2649,8 @@ async def _reoffer_after_delay(trip_id: int) -> None:
                 vehicle_type=trip.vehicle_type or "comfort",
                 radius_km=_REOFFER_RADIUS_KM,
                 limit=5,
+                dropoff_lat=trip.dropoff_lat,
+                dropoff_lng=trip.dropoff_lng,
             )
             if not candidates:
                 logging.info(
@@ -2583,6 +2768,7 @@ async def release_trip(
     for offer in offers_result.scalars().all():
         if offer.status in ("pending", "accepted"):
             offer.status = "rejected"
+            await _bump_offer_counter(db, driver_id, "rejected")
 
     trip.driver_id = None
     trip.driver_assigned_at = None
@@ -2644,6 +2830,7 @@ async def reject_offer(
     if not offer:
         raise HTTPException(404, "Offer not found")
     offer.status = "rejected"
+    await _bump_offer_counter(db, driver_id, "rejected")
     _safe_create_task(_clear_live_activity_offer(driver_id))
 
     # Store rejection reason if provided

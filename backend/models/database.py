@@ -246,6 +246,20 @@ class User(Base):
     # The GET derives the base status from existing fields and layers these
     # on top, so legacy users need no data migration.
     onboarding_items = Column(Text, nullable=True)
+    # Offer acceptance bookkeeping (Lyft-style acceptance rate, 2026-08-24).
+    # Plain lifetime counters bumped wherever a DispatchOffer flips to its
+    # final state; the rate itself is accepted / (accepted+rejected+expired)
+    # over these totals — see routers/dispatch.py _acceptance_rate.
+    offers_accepted = Column(Integer, default=0)
+    offers_rejected = Column(Integer, default=0)
+    offers_expired = Column(Integer, default=0)
+    # Destination filter ("heading to", 2026-08-24): while set and unexpired
+    # the driver only receives offers whose dropoff lies on the way here.
+    # Expiry is dest_set_at + DESTINATION_TTL_HOURS (utils/helpers.py).
+    dest_lat = Column(Float, nullable=True)
+    dest_lng = Column(Float, nullable=True)
+    dest_address = Column(String(255), nullable=True)
+    dest_set_at = Column(DateTime(timezone=True), nullable=True)
 
 
 class ConsentLog(Base):
@@ -1033,6 +1047,13 @@ async def migrate_add_columns(conn):
         ("users", "plate_state", "VARCHAR(2)"),
         ("users", "background_consent_at", "DATETIME"),
         ("users", "onboarding_items", "TEXT"),
+        ("users", "offers_accepted", "INTEGER DEFAULT 0"),
+        ("users", "offers_rejected", "INTEGER DEFAULT 0"),
+        ("users", "offers_expired", "INTEGER DEFAULT 0"),
+        ("users", "dest_lat", "FLOAT"),
+        ("users", "dest_lng", "FLOAT"),
+        ("users", "dest_address", "VARCHAR(255)"),
+        ("users", "dest_set_at", "DATETIME"),
     ]
     for table, col, col_type in new_columns:
         try:
@@ -1236,6 +1257,15 @@ async def migrate_postgres(conn):
         ("users", "plate_state", "VARCHAR(2)"),
         ("users", "background_consent_at", "TIMESTAMP WITH TIME ZONE"),
         ("users", "onboarding_items", "TEXT"),
+        # Acceptance-rate counters + destination filter (2026-08-24) — boot
+        # list or prod never gets them (trampa #0).
+        ("users", "offers_accepted", "INTEGER DEFAULT 0"),
+        ("users", "offers_rejected", "INTEGER DEFAULT 0"),
+        ("users", "offers_expired", "INTEGER DEFAULT 0"),
+        ("users", "dest_lat", "DOUBLE PRECISION"),
+        ("users", "dest_lng", "DOUBLE PRECISION"),
+        ("users", "dest_address", "VARCHAR(255)"),
+        ("users", "dest_set_at", "TIMESTAMP WITH TIME ZONE"),
     ]
     for table, col, col_type in migrations:
         try:

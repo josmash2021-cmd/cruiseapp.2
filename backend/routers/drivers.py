@@ -11,7 +11,7 @@ from models.database import (
     Rating, Referral, DriverIncentive, SurgeZone,
 )
 from models.schemas import (
-    DriverLocationIn, CashoutIn, PayoutMethodIn,
+    DriverLocationIn, DriverDestinationIn, CashoutIn, PayoutMethodIn,
     RiderPaymentMethodIn, WalletTopUpIn, WalletWithdrawIn,
     VehicleIn,
 )
@@ -23,7 +23,7 @@ from utils.helpers import (
     utc_now, utc_today_start, utc_days_ago, utc_month_start, utc_year_start,
     _haversine, _user_dict, _vehicle_dict, _doc_dict, _trip_dict, _safe_create_task,
     _compute_user_rating, validate_driver_minimum_age,
-    ACTIVE_ACCOUNT_STATUSES,
+    ACTIVE_ACCOUNT_STATUSES, _active_destination,
 )
 # Both of these were used below without ever being imported: every
 # driver photo upload and every surge lookup raised NameError, which
@@ -399,6 +399,41 @@ async def update_driver_location(driver_id: int, body: DriverLocationIn, user: U
         asyncio.get_event_loop().run_in_executor(None, _sync_fs)
 
     return {"status": "ok", "lat": body.lat, "lng": body.lng, "is_online": body.is_online}
+
+
+# ── Destination filter ("heading to", Lyft-style, 2026-08-24) ──────────
+# While a destination is set and unexpired, dispatch only offers this
+# driver trips whose dropoff lies on the way there (see
+# routers/dispatch.py _filter_by_destination). It FILTERS this driver's
+# offers — it never blocks or re-routes anyone else's. The filter clears
+# itself when the TTL lapses or the driver arrives (utils/helpers.py
+# _active_destination), so nothing here has to run on a timer.
+
+@router.post("/drivers/destination", dependencies=[Depends(_verify_api_key)])
+async def set_driver_destination(body: DriverDestinationIn, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
+    if user.role != "driver":
+        raise HTTPException(403, "Only drivers can set a destination filter")
+    if not (-90.0 <= body.lat <= 90.0 and -180.0 <= body.lng <= 180.0):
+        raise HTTPException(422, "Invalid coordinates")
+    user.dest_lat = body.lat
+    user.dest_lng = body.lng
+    user.dest_address = (body.address or "")[:255] or None
+    user.dest_set_at = utc_now()
+    await db.commit()
+    dest = _active_destination(user)
+    return {"status": "ok", "destination": dest}
+
+
+@router.delete("/drivers/destination", dependencies=[Depends(_verify_api_key)])
+async def clear_driver_destination(user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
+    if user.role != "driver":
+        raise HTTPException(403, "Only drivers can clear a destination filter")
+    user.dest_lat = None
+    user.dest_lng = None
+    user.dest_address = None
+    user.dest_set_at = None
+    await db.commit()
+    return {"status": "ok", "destination": None}
 
 @router.get("/drivers/nearby", dependencies=[Depends(_verify_api_key)])
 async def get_nearby_drivers(

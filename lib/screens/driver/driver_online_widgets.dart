@@ -1039,7 +1039,58 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
             ),
           // â”€â”€ Scrollable card list (hidden when collapsed) â”€â”€
 
-          // â”€â”€ "Finding trips" bar at the bottom â”€â”€
+          // ── Destination filter chip ("heading to …") ──
+          // Sits right above the Finding trips bar while a destination
+          // filter is live; the ✕ clears it with one tap.
+          if (_destAddress != null &&
+              _phase == _Phase.searching &&
+              _pendingOffers.isEmpty)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Container(
+                  padding: const EdgeInsets.fromLTRB(12, 8, 6, 8),
+                  decoration: BoxDecoration(
+                    color: neuBase,
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: _gold.withValues(alpha: 0.55)),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.navigation_rounded,
+                          color: _gold, size: 15),
+                      const SizedBox(width: 7),
+                      Flexible(
+                        child: Text(
+                          S.of(context).headingTo(_destAddress!),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: _gold,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                      GestureDetector(
+                        onTap: _clearDestination,
+                        child: Padding(
+                          padding: const EdgeInsets.all(4),
+                          child: Icon(
+                            Icons.close_rounded,
+                            color: Colors.white.withValues(alpha: 0.6),
+                            size: 16,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          // ── "Finding trips" bar at the bottom ──
           ClipRect(
             // Hidden while an offer is up — and now collapsed, not just slid
             // away. AnimatedSlide moved the bar off its box but left the box

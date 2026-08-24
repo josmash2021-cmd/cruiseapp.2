@@ -2238,7 +2238,7 @@ async def driver_cancel_trip(
     rematch_driver_id = None
     try:
         from routers.dispatch import (
-            _find_nearest_drivers, _send_offer_to_driver,
+            _find_nearest_drivers, _send_offer_to_driver, _bump_offer_counter,
             _auto_cascade, _cascade_tasks,
         )
         prev_offers = await db.execute(
@@ -2249,6 +2249,7 @@ async def driver_cancel_trip(
         tried_ids = set()
         for stale in prev_offers.scalars().all():
             stale.status = "expired"
+            await _bump_offer_counter(db, stale.driver_id, "expired")
             tried_ids.add(stale.driver_id)
         tried_ids.add(user.id)
         await db.commit()
@@ -2260,6 +2261,8 @@ async def driver_cancel_trip(
             exclude_driver_ids=tried_ids,
             vehicle_type=trip.vehicle_type or "comfort",
             limit=5,
+            dropoff_lat=trip.dropoff_lat,
+            dropoff_lng=trip.dropoff_lng,
         )
         if drivers_sorted:
             next_driver = drivers_sorted[0]

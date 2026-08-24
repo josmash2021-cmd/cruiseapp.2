@@ -43,6 +43,11 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
   /// Offers turned down in the period. Counted from
   /// dispatch_offers, because a rejection never becomes a trip.
   int _ridesRejected = 0;
+
+  /// Lifetime acceptance rate, straight from the dashboard payload
+  /// (`driver_data.stats.acceptance_rate`). Null until it loads — the card
+  /// shows a dash instead of a fake 100%.
+  int? _acceptanceRate;
   List<double> _dailyEarnings = [0, 0, 0, 0, 0, 0, 0];
   List<String> _dayLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
@@ -185,6 +190,20 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
     _fetchEarnings();
     _fetchPayoutData();
     _fetchPayoutMethods();
+    _fetchAcceptanceRate();
+  }
+
+  /// Acceptance rate lives on /auth/dashboard, not on the earnings endpoint
+  /// — it is a lifetime offer ratio, not a per-period figure.
+  Future<void> _fetchAcceptanceRate() async {
+    try {
+      final dashboard = await ApiService.getDashboard();
+      if (!mounted || dashboard == null) return;
+      final driverData = dashboard['driver_data'] as Map<String, dynamic>?;
+      final stats = driverData?['stats'] as Map<String, dynamic>?;
+      final rate = (stats?['acceptance_rate'] as num?)?.round();
+      if (rate != null) setState(() => _acceptanceRate = rate);
+    } catch (_) {}
   }
 
   Future<void> _fetchEarnings() async {
@@ -743,6 +762,21 @@ class _DriverEarningsScreenState extends State<DriverEarningsScreen>
                 _statBig('\$${_tipsTotal.toStringAsFixed(2)}'),
                 const SizedBox(height: 3),
                 _statNote(s.earningsFromTrips(_tripsCount)),
+              ],
+            ),
+          ),
+          const SizedBox(width: 10),
+          _statCard(
+            icon: Icons.check_circle_outline_rounded,
+            title: s.acceptanceRate,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _statBig(
+                  _acceptanceRate != null ? '$_acceptanceRate%' : '—',
+                ),
+                const SizedBox(height: 3),
+                _statNote(s.offersLifetime),
               ],
             ),
           ),

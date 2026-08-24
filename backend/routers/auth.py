@@ -1490,8 +1490,18 @@ async def get_dashboard(user: User = Depends(_get_current_user), db: AsyncSessio
             total_offers = offer_row.total or 0
             accepted = int(offer_row.accepted or 0)
             rejected = int(offer_row.rejected or 0)
-            # Same 1-point-per-event rule as /drivers/{id}/stats.
-            acceptance_rate = max(0.0, 100.0 - rejected)
+            # Lyft-style ratio over the lifetime offer counters
+            # (offers_accepted / offers_rejected / offers_expired on the
+            # User row, bumped at every DispatchOffer final state). Falls
+            # back to the legacy 1-point-per-event rule for drivers whose
+            # counters predate the metric (all zero with offer history).
+            _a = int(getattr(user, "offers_accepted", None) or 0)
+            _r = int(getattr(user, "offers_rejected", None) or 0)
+            _e = int(getattr(user, "offers_expired", None) or 0)
+            if _a + _r + _e > 0:
+                acceptance_rate = _a / (_a + _r + _e) * 100.0
+            else:
+                acceptance_rate = max(0.0, 100.0 - rejected)
 
             trip_r = await db.execute(
                 select(

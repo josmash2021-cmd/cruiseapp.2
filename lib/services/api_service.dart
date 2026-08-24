@@ -956,6 +956,35 @@ class ApiService {
     return _parse(res);
   }
 
+  // ── Driver destination filter ("heading to") ──
+
+  /// Set the driver's destination filter. While it is active the backend
+  /// only offers trips whose dropoff lies on the way there.
+  static Future<Map<String, dynamic>> setDriverDestination({
+    required double lat,
+    required double lng,
+    required String address,
+  }) async {
+    final h = await _authHeaders();
+    final res = await _client
+        .post(
+          Uri.parse('$_baseUrl/drivers/destination'),
+          headers: h,
+          body: jsonEncode({'lat': lat, 'lng': lng, 'address': address}),
+        )
+        .timeout(const Duration(seconds: 10));
+    return _parse(res);
+  }
+
+  /// Clear the driver's destination filter.
+  static Future<Map<String, dynamic>> clearDriverDestination() async {
+    final h = await _authHeaders();
+    final res = await _client
+        .delete(Uri.parse('$_baseUrl/drivers/destination'), headers: h)
+        .timeout(const Duration(seconds: 10));
+    return _parse(res);
+  }
+
   // ── Wait Time for Drivers ──
 
   /// Start wait timer when driver arrives at pickup.

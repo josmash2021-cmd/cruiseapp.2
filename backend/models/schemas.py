@@ -176,6 +176,16 @@ class DriverLocationIn(BaseModel):
     is_online: bool = True
 
 
+class DriverDestinationIn(BaseModel):
+    """Lyft-style destination filter ("heading to"). ttl_hours is accepted
+    for forward compatibility; the effective expiry is the shared
+    DESTINATION_TTL_HOURS (4 h) — see utils/helpers.py."""
+    lat: float
+    lng: float
+    address: str | None = None
+    ttl_hours: float = 4.0
+
+
 class CashoutIn(BaseModel):
     amount: float
     # "instant" is the only method: 1.5% fee, debit card, $50 minimum.

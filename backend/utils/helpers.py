@@ -237,6 +237,40 @@ def normalise_account_status(value: str | None) -> str | None:
 
 from utils.ssn_encryption import get_ssn_last4, get_ssn_masked, is_ssn_provided
 
+# Destination filter ("heading to"): a set destination lives this long
+# unless the driver clears it or arrives first. Shared by the dispatch
+# filter (routers/dispatch.py), the endpoints (routers/drivers.py) and
+# _user_dict below, so every consumer agrees on the same expiry.
+DESTINATION_TTL_HOURS = 4
+
+
+def _active_destination(u) -> dict | None:
+    """The driver's live destination filter as a payload dict, or None.
+
+    None when none is set, when it is older than DESTINATION_TTL_HOURS, or
+    when the driver is already standing next to it (auto-clear on arrival).
+    """
+    lat = getattr(u, "dest_lat", None)
+    lng = getattr(u, "dest_lng", None)
+    set_at = getattr(u, "dest_set_at", None)
+    if lat is None or lng is None or set_at is None:
+        return None
+    if set_at.tzinfo is None:
+        set_at = set_at.replace(tzinfo=timezone.utc)
+    if utc_now() - set_at > timedelta(hours=DESTINATION_TTL_HOURS):
+        return None
+    if u.lat is not None and u.lng is not None and \
+            _haversine(u.lat, u.lng, lat, lng) <= 1.0:  # arrived — auto-clear
+        return None
+    return {
+        "lat": lat,
+        "lng": lng,
+        "address": getattr(u, "dest_address", None),
+        "set_at": set_at.isoformat(),
+        "expires_at": (set_at + timedelta(hours=DESTINATION_TTL_HOURS)).isoformat(),
+    }
+
+
 def _user_dict(u) -> dict:
     ssn_masked = None
     ssn_last4 = None
@@ -283,6 +317,7 @@ def _user_dict(u) -> dict:
         "drive_city": getattr(u, 'drive_city', None),
         "drive_state": getattr(u, 'drive_state', None),
         "onboarding_survey": getattr(u, 'onboarding_survey', None),
+        "destination": _active_destination(u),
     }
 
 

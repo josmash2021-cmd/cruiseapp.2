@@ -1027,6 +1027,16 @@ class S {
   String get satisfactionRate =>
       _es ? 'Tasa de Satisfacción' : 'Satisfaction Rate';
   String get acceptanceRate => _es ? 'Tasa de Aceptación' : 'Acceptance Rate';
+  String headingTo(String address) =>
+      _es ? 'Hacia $address' : 'Heading to $address';
+  String get destinationFilterTitle =>
+      _es ? '¿Hacia dónde vas?' : 'Where are you heading?';
+  String get destinationSearchHint =>
+      _es ? 'Buscar destino' : 'Search destination';
+  String get clearDestination =>
+      _es ? 'Quitar destino' : 'Clear destination';
+  String get offersLifetime =>
+      _es ? 'Ofertas (histórico)' : 'Offers (lifetime)';
   String get cancellationRate =>
       _es ? 'Tasa de Cancelación' : 'Cancellation Rate';
   String get onTimeRate => _es ? 'Tasa de Puntualidad' : 'On-Time Rate';

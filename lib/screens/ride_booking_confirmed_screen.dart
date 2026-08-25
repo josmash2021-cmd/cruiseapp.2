@@ -8,6 +8,7 @@ import '../config/map_theme.dart';
 import '../map/web_map_view.dart';
 import '../models/lat_lng.dart';
 import '../widgets/map/circular_pin_renderer.dart';
+import '../widgets/neu_style.dart';
 import '../utils/mapbox_safe.dart';
 import '../services/map_controller_cache.dart';
 import 'home_screen.dart';
@@ -163,7 +164,7 @@ class _RideBookingConfirmedScreenState extends State<RideBookingConfirmedScreen>
         child: child,
       ),
       child: Scaffold(
-        backgroundColor: Colors.black,
+        backgroundColor: neuBase,
         body: Stack(
           fit: StackFit.expand,
           children: [

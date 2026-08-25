@@ -7,6 +7,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../config/app_theme.dart';
 import '../../l10n/app_localizations.dart';
 import '../../services/api_service.dart';
+import '../../widgets/neu_style.dart';
 import '../../services/notification_service.dart';
 
 /// Premium Scheduled Trips screen for drivers.
@@ -114,7 +115,7 @@ class _DriverScheduledTripsScreenState extends State<DriverScheduledTripsScreen>
     final c = AppColors.of(context);
     final s = S.of(context);
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: neuBase,
       body: CustomScrollView(
         physics: const BouncingScrollPhysics(),
         slivers: [
@@ -122,7 +123,7 @@ class _DriverScheduledTripsScreenState extends State<DriverScheduledTripsScreen>
           SliverAppBar(
             expandedHeight: 140,
             pinned: true,
-            backgroundColor: Colors.black,
+            backgroundColor: neuBase,
             surfaceTintColor: Colors.transparent,
             leading: GestureDetector(
               onTap: () => Navigator.pop(context),

@@ -9,6 +9,7 @@ import '../l10n/app_localizations.dart';
 import '../services/api_service.dart';
 import '../services/local_data_service.dart';
 import '../services/user_session.dart';
+import '../widgets/neu_style.dart';
 import '../widgets/verified_avatar.dart';
 import 'help_screen.dart';
 
@@ -43,7 +44,7 @@ class _InboxScreenState extends State<InboxScreen>
     return Scaffold(
       // Flat Lyft-style ground (2026-08-25 redesign) — same look as the
       // driver inbox.
-      backgroundColor: Colors.black,
+      backgroundColor: neuBase,
       body: SafeArea(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -800,7 +801,7 @@ class _ConversationDetailScreen extends StatelessWidget {
         ((a['timestamp'] as int?) ?? 0).compareTo((b['timestamp'] as int?) ?? 0));
 
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: neuBase,
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,

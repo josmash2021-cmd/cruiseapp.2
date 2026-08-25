@@ -7,6 +7,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 
 import '../../l10n/app_localizations.dart';
 import '../../services/api_service.dart';
+import '../../widgets/neu_style.dart';
 import '../../utils/share_helper.dart';
 
 /// Refer Friends — DRIVER program.
@@ -166,7 +167,7 @@ class _DriverReferralScreenState extends State<DriverReferralScreen> {
   Widget build(BuildContext context) {
     final s = S.of(context);
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: neuBase,
       body: SafeArea(
         child: _loading
             ? const Center(

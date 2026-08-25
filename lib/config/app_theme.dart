@@ -30,8 +30,10 @@ class AppColors {
   Color get success => goldLight;
   Color get error => const Color(0xFFEF4444);
 
-  // ── Backgrounds (dark cards in both themes) ──
-  Color get bg => isDark ? const Color(0xFF08090C) : const Color(0xFF0F1014);
+  // ── Backgrounds ──
+  // Unified 2026-08-25: every page background is the shared grey
+  // (0xFF14141A, `neuBase`) — no more near-black variants.
+  Color get bg => const Color(0xFF14141A);
   Color get panel => isDark ? const Color(0xFF101114) : const Color(0xFF161820);
   Color get surface =>
       isDark ? const Color(0xFF161719) : const Color(0xFF1C1E24);

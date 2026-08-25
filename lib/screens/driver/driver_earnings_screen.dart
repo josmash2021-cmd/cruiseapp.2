@@ -2182,7 +2182,7 @@ class _CashOutScreenState extends State<_CashOutScreen> {
         !_loadingHistory && _initiated.isEmpty && _landed.isEmpty;
 
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: neuBase,
       body: SafeArea(
         child: Stack(
           children: [
@@ -2521,7 +2521,7 @@ class _CashoutSuccessScreenState extends State<_CashoutSuccessScreen>
         : 'Funds typically arrive in 1–2 business days.';
 
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: neuBase,
       body: SafeArea(
         child: Stack(
           children: [

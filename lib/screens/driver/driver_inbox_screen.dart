@@ -3,6 +3,7 @@ import '../../services/haptic_service.dart';
 import '../../services/api_service.dart';
 import '../../services/user_session.dart';
 import '../../config/page_transitions.dart';
+import '../../widgets/neu_style.dart';
 import '../../l10n/app_localizations.dart';
 import '../home_screen.dart';
 
@@ -168,7 +169,7 @@ class _DriverInboxScreenState extends State<DriverInboxScreen>
     return Scaffold(
       // Lyft-style flat black ground (2026-08-25 redesign): no neu shadows
       // on this page — the cards are the only surface.
-      backgroundColor: Colors.black,
+      backgroundColor: neuBase,
       body: SafeArea(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,

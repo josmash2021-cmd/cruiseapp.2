@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../config/page_transitions.dart';
+import '../../widgets/neu_style.dart';
 import '../../l10n/app_localizations.dart';
 import '../../services/api_service.dart';
 import '../../services/firebase_storage_service.dart';
@@ -129,7 +130,7 @@ class _DriverProfilePhotoScreenState extends State<DriverProfilePhotoScreen> {
     return PopScope(
       canPop: widget.returnOnly,
       child: Scaffold(
-        backgroundColor: Colors.black,
+        backgroundColor: neuBase,
         body: SafeArea(
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 28),

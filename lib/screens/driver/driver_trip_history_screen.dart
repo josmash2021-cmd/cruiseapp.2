@@ -3,6 +3,7 @@ import '../../services/haptic_service.dart';
 import '../../services/api_service.dart';
 import '../../services/user_session.dart';
 import '../../l10n/app_localizations.dart';
+import '../../widgets/neu_style.dart';
 
 /// Trip history screen with filterable past rides list.
 class DriverTripHistoryScreen extends StatefulWidget {
@@ -77,7 +78,7 @@ class _DriverTripHistoryScreenState extends State<DriverTripHistoryScreen> {
     final s = S.of(context);
     final filters = [s.allFilter, s.completedFilter, s.cancelledFilter];
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: neuBase,
       body: CustomScrollView(
         physics: const BouncingScrollPhysics(),
         slivers: [

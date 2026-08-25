@@ -1319,7 +1319,7 @@ class _ServerUrlScreenState extends State<_ServerUrlScreen> {
     final c = AppColors.of(context);
 
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: neuBase,
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 24),

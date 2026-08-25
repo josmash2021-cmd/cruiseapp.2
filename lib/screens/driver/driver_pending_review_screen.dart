@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../config/page_transitions.dart';
+import '../../widgets/neu_style.dart';
 import '../../services/api_service.dart';
 import '../../services/local_data_service.dart';
 import '../../services/user_session.dart';
@@ -414,7 +415,7 @@ class _DriverPendingReviewScreenState extends State<DriverPendingReviewScreen>
     // No PopScope prison (2026-08-24): the driver can leave with back —
     // dispose() already stops the poll and the Firestore listeners.
     return Scaffold(
-        backgroundColor: Colors.black,
+        backgroundColor: neuBase,
         body: SafeArea(
           child: _status == 'approved'
               ? _buildApproved()

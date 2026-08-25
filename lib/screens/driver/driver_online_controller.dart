@@ -2292,6 +2292,21 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     final isNewFirstOffer = nextFirstId != null && nextFirstId != prevFirstId;
 
     if (isNewFirstOffer) {
+      // A new offer pulls the driver back to this screen (2026-08-25):
+      // before, an offer arriving while the scheduled-rides page (or any
+      // other) sat on top played the sound but drew the card UNDERNEATH —
+      // the ring never ran and the offer could expire unseen. Pop whatever
+      // is covering us so the card is the thing on screen.
+      final myRoute = ModalRoute.of(context);
+      if (_phase == _Phase.searching &&
+          myRoute != null &&
+          myRoute.isCurrent != true) {
+        try {
+          Navigator.of(context).popUntil((r) => r == myRoute || r.isFirst);
+        } catch (e) {
+          debugPrint('[DriverOnline] popUntil on new offer failed: $e');
+        }
+      }
       // Escalating haptic burst — 3 heavy pulses spaced 160ms so the driver
       // can't miss the offer even with the phone flat on a table.
       HapticService.heavyImpact();

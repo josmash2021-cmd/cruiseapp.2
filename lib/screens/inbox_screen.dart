@@ -9,7 +9,6 @@ import '../l10n/app_localizations.dart';
 import '../services/api_service.dart';
 import '../services/local_data_service.dart';
 import '../services/user_session.dart';
-import '../widgets/neu_style.dart';
 import '../widgets/verified_avatar.dart';
 import 'help_screen.dart';
 
@@ -42,7 +41,9 @@ class _InboxScreenState extends State<InboxScreen>
     final s = S.of(context);
 
     return Scaffold(
-      backgroundColor: neuBase,
+      // Flat Lyft-style ground (2026-08-25 redesign) — same look as the
+      // driver inbox.
+      backgroundColor: Colors.black,
       body: SafeArea(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -57,7 +58,10 @@ class _InboxScreenState extends State<InboxScreen>
                 child: Container(
                   width: 40,
                   height: 40,
-                  decoration: neuBox(radius: 14, pressed: true),
+                  decoration: const BoxDecoration(
+                    color: Color(0xFF1C1C1E),
+                    shape: BoxShape.circle,
+                  ),
                   child: Icon(
                     Icons.arrow_back_rounded,
                     color: c.textPrimary,
@@ -87,11 +91,14 @@ class _InboxScreenState extends State<InboxScreen>
               padding: const EdgeInsets.symmetric(horizontal: 24),
               child: Container(
                 height: 44,
-                decoration: neuBox(radius: 14, pressed: true),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF1C1C1E),
+                  borderRadius: BorderRadius.circular(14),
+                ),
                 child: TabBar(
                   controller: _tabCtrl,
                   indicator: BoxDecoration(
-                    color: neuSurface,
+                    color: const Color(0xFF2C2C2E),
                     borderRadius: BorderRadius.circular(11),
                   ),
                   indicatorSize: TabBarIndicatorSize.tab,
@@ -209,13 +216,15 @@ class _NotificationsTabState extends State<_NotificationsTab> {
     }
   }
 
-  String _timeAgo(DateTime dt) {
+  String _timeAgo(BuildContext context, DateTime dt) {
+    final s = S.of(context);
     final diff = DateTime.now().difference(dt);
-    if (diff.inMinutes < 1) return 'Just now';
-    if (diff.inMinutes < 60) return '${diff.inMinutes} min ago';
-    if (diff.inHours < 24) return '${diff.inHours}h ago';
-    if (diff.inDays < 7) return '${diff.inDays}d ago';
-    return '${dt.month}/${dt.day}/${dt.year}';
+    if (diff.isNegative || diff.inMinutes < 1) return s.agoJustNow;
+    if (diff.inMinutes < 60) return s.agoMinutes(diff.inMinutes);
+    if (diff.inHours < 24) return s.agoHours(diff.inHours);
+    if (diff.inDays == 1) return s.agoYesterday;
+    if (diff.inDays < 7) return s.agoDays(diff.inDays);
+    return s.agoWeeks((diff.inDays / 7).floor());
   }
 
   @override
@@ -235,7 +244,10 @@ class _NotificationsTabState extends State<_NotificationsTab> {
             Container(
               width: 88,
               height: 88,
-              decoration: neuBox(radius: 24, pressed: true),
+              decoration: BoxDecoration(
+                color: const Color(0xFF1C1C1E),
+                borderRadius: BorderRadius.circular(24),
+              ),
               child: Icon(
                 Icons.notifications_off_outlined,
                 color: c.textTertiary,
@@ -298,7 +310,10 @@ class _NotificationsTabState extends State<_NotificationsTab> {
                   alignment: Alignment.centerRight,
                   padding: const EdgeInsets.only(right: 20),
                   margin: const EdgeInsets.only(bottom: 10),
-                  decoration: neuBox(radius: 18),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF1C1C1E),
+                    borderRadius: BorderRadius.circular(18),
+                  ),
                   child: const Icon(
                     Icons.delete_outline_rounded,
                     color: Color(0xFFFF5252),
@@ -309,14 +324,22 @@ class _NotificationsTabState extends State<_NotificationsTab> {
                   padding: const EdgeInsets.only(bottom: 10),
                   child: Container(
                     padding: const EdgeInsets.all(16),
-                    decoration: neuBox(radius: 18),
+                    decoration: BoxDecoration(
+                      color: !item.read
+                          ? const Color(0xFF242426)
+                          : const Color(0xFF1C1C1E),
+                      borderRadius: BorderRadius.circular(18),
+                    ),
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Container(
                           width: 40,
                           height: 40,
-                          decoration: neuBox(radius: 14, pressed: true),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF2C2C2E),
+                            borderRadius: BorderRadius.circular(14),
+                          ),
                           child: Icon(
                             _iconForType(item.type),
                             color: !item.read ? _gold : c.textTertiary,
@@ -366,7 +389,7 @@ class _NotificationsTabState extends State<_NotificationsTab> {
                               ),
                               const SizedBox(height: 6),
                               Text(
-                                _timeAgo(item.createdAt),
+                                _timeAgo(context, item.createdAt),
                                 style: TextStyle(
                                   fontSize: 12,
                                   color: c.textTertiary,
@@ -546,13 +569,19 @@ class _MessagesTabState extends State<_MessagesTab> {
       child: Container(
         margin: const EdgeInsets.only(bottom: 10),
         padding: const EdgeInsets.all(14),
-        decoration: neuBox(radius: 18),
+        decoration: BoxDecoration(
+          color: const Color(0xFF1C1C1E),
+          borderRadius: BorderRadius.circular(18),
+        ),
         child: Row(
           children: [
             Container(
               width: 44,
               height: 44,
-              decoration: neuBox(radius: 14, pressed: true),
+              decoration: BoxDecoration(
+                color: const Color(0xFF2C2C2E),
+                borderRadius: BorderRadius.circular(14),
+              ),
               child: const Icon(
                 Icons.support_agent_rounded,
                 color: _gold,
@@ -609,7 +638,10 @@ class _MessagesTabState extends State<_MessagesTab> {
               Container(
                 width: 88,
                 height: 88,
-                decoration: neuBox(radius: 24, pressed: true),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF1C1C1E),
+                  borderRadius: BorderRadius.circular(24),
+                ),
                 child: const Icon(
                   Icons.chat_bubble_outline,
                   size: 36,
@@ -659,7 +691,10 @@ class _MessagesTabState extends State<_MessagesTab> {
           child: Container(
             margin: const EdgeInsets.only(bottom: 10),
             padding: const EdgeInsets.all(14),
-            decoration: neuBox(radius: 18),
+            decoration: BoxDecoration(
+              color: const Color(0xFF1C1C1E),
+              borderRadius: BorderRadius.circular(18),
+            ),
             child: Row(
               children: [
                 // Driver avatar
@@ -765,7 +800,7 @@ class _ConversationDetailScreen extends StatelessWidget {
         ((a['timestamp'] as int?) ?? 0).compareTo((b['timestamp'] as int?) ?? 0));
 
     return Scaffold(
-      backgroundColor: neuBase,
+      backgroundColor: Colors.black,
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
@@ -812,7 +847,7 @@ class _ConversationDetailScreen extends StatelessWidget {
                     padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                     decoration: BoxDecoration(
                       color: isDriver
-                          ? neuSurface
+                          ? const Color(0xFF1C1C1E)
                           : _gold.withValues(alpha: 0.15),
                       borderRadius: BorderRadius.only(
                         topLeft: const Radius.circular(14),

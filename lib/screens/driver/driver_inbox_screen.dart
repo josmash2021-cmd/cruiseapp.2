@@ -4,7 +4,6 @@ import '../../services/api_service.dart';
 import '../../services/user_session.dart';
 import '../../config/page_transitions.dart';
 import '../../l10n/app_localizations.dart';
-import '../../widgets/neu_style.dart';
 import '../home_screen.dart';
 
 /// Driver Inbox – tabs: All, Messages, Alerts.
@@ -50,15 +49,20 @@ class _DriverInboxScreenState extends State<DriverInboxScreen>
       if (!mounted) return;
       setState(() {
         _items = notifs.map((n) {
-          final type = _typeFromString((n['notif_type'] ?? 'alert') as String);
+          // The backend sends the type as `type` (misc.py) — the app used
+          // to read `notif_type`, so EVERY card fell into the alert bucket
+          // with the generic icon (2026-08-25 fix).
+          final rawType =
+              (n['type'] ?? n['notif_type'] ?? 'alert') as String;
+          final type = _typeFromString(rawType);
           return _InboxItem(
             id: (n['id'] as num?)?.toInt() ?? 0,
             type: type,
             title: (n['title'] ?? '') as String,
             body: (n['body'] ?? '') as String,
             time: _formatTime((n['created_at'] ?? '') as String),
-            icon: _iconForType(type),
-            iconColor: _colorForType(type),
+            icon: _iconForRawType(rawType, type),
+            iconColor: _colorForRawType(rawType, type),
             unread: n['is_read'] != true,
           );
         }).toList();
@@ -69,16 +73,30 @@ class _DriverInboxScreenState extends State<DriverInboxScreen>
     }
   }
 
+  /// Tab classification. The backend's real types (2026-08-25): `trip`,
+  /// `trip_cancelled`, `rating_warning|danger|suspended|restored|followup`,
+  /// `refund_request`, `driver_report`, `level_up|down`. Only genuine
+  /// conversations count as Messages; everything operational is an Alert.
   InboxType _typeFromString(String s) {
     switch (s) {
       case 'message':
+      case 'support_message':
+      case 'chat':
         return InboxType.message;
       default:
         return InboxType.alert;
     }
   }
 
-  IconData _iconForType(InboxType t) {
+  /// Per-type icon, Lyft-style: ratings and trips carry the green trend
+  /// mark, cancellations a red X, rating-band notices a warning.
+  IconData _iconForRawType(String raw, InboxType t) {
+    if (raw == 'trip_cancelled') return Icons.cancel_outlined;
+    if (raw.startsWith('rating_')) {
+      return raw == 'rating_restored' || raw == 'rating_followup'
+          ? Icons.trending_up_rounded
+          : Icons.warning_amber_rounded;
+    }
     switch (t) {
       case InboxType.message:
         return Icons.support_agent_rounded;
@@ -87,7 +105,13 @@ class _DriverInboxScreenState extends State<DriverInboxScreen>
     }
   }
 
-  Color _colorForType(InboxType t) {
+  Color _colorForRawType(String raw, InboxType t) {
+    if (raw == 'trip_cancelled') return const Color(0xFFE57373);
+    if (raw.startsWith('rating_')) {
+      return raw == 'rating_restored' || raw == 'rating_followup'
+          ? const Color(0xFF4CAF50)
+          : const Color(0xFFE8A33D);
+    }
     switch (t) {
       case InboxType.message:
         return const Color(0xFF2196F3);
@@ -142,10 +166,9 @@ class _DriverInboxScreenState extends State<DriverInboxScreen>
   Widget build(BuildContext context) {
     final s = S.of(context);
     return Scaffold(
-      // neuBase, not pure black: neumorphic shadows are two lights, one dark
-      // and one pale, and over #000000 the dark one has nowhere to go — every
-      // raised surface flattens into the background.
-      backgroundColor: neuBase,
+      // Lyft-style flat black ground (2026-08-25 redesign): no neu shadows
+      // on this page — the cards are the only surface.
+      backgroundColor: Colors.black,
       body: SafeArea(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -160,7 +183,10 @@ class _DriverInboxScreenState extends State<DriverInboxScreen>
                     child: Container(
                       width: 40,
                       height: 40,
-                      decoration: neuBox(radius: 20),
+                      decoration: const BoxDecoration(
+                        color: Color(0xFF1C1C1E),
+                        shape: BoxShape.circle,
+                      ),
                       child: const Icon(
                         Icons.arrow_back_rounded,
                         color: Colors.white,
@@ -192,15 +218,18 @@ class _DriverInboxScreenState extends State<DriverInboxScreen>
                     },
                     child: Container(
                       padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 6,
+                        horizontal: 14,
+                        vertical: 8,
                       ),
-                      decoration: neuBox(radius: 12),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF1C1C1E),
+                        borderRadius: BorderRadius.circular(18),
+                      ),
                       child: Text(
                         s.markAllRead,
                         style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.5),
-                          fontSize: 12,
+                          color: Colors.white.withValues(alpha: 0.6),
+                          fontSize: 12.5,
                           fontWeight: FontWeight.w600,
                         ),
                       ),
@@ -229,12 +258,11 @@ class _DriverInboxScreenState extends State<DriverInboxScreen>
                   fontSize: 13,
                   fontWeight: FontWeight.w500,
                 ),
-                // The selected filter is a raised neu plate with a gold rim,
-                // not a white slab. A solid white pill was the brightest
-                // thing on a screen whose content is the point.
-                indicator: neuBox(
-                  radius: 20,
-                  borderColor: _gold.withValues(alpha: 0.30),
+                // The selected filter is a flat gold-tinted pill (Lyft
+                // style) — no raised neu plate.
+                indicator: BoxDecoration(
+                  color: _gold.withValues(alpha: 0.16),
+                  borderRadius: BorderRadius.circular(20),
                 ),
                 indicatorSize: TabBarIndicatorSize.tab,
                 dividerColor: Colors.transparent,
@@ -339,7 +367,7 @@ class _DriverInboxScreenState extends State<DriverInboxScreen>
               width: 18,
               height: 18,
               decoration: const BoxDecoration(
-                color: Color(0xFF2196F3),
+                color: _gold,
                 shape: BoxShape.circle,
               ),
               child: Center(
@@ -374,22 +402,24 @@ class _DriverInboxScreenState extends State<DriverInboxScreen>
       child: Container(
         margin: const EdgeInsets.only(bottom: 8),
         padding: const EdgeInsets.all(16),
-        // Unread is raised with a gold rim; read is the same plate pressed
-        // into the page. Depth carries the state, so the row still reads as
-        // unread at a glance without a second colour doing the work.
-        decoration: item.unread
-            ? neuBox(radius: 16, borderColor: _gold.withValues(alpha: 0.28))
-            : neuBox(radius: 16, pressed: true),
+        // Flat Lyft card: unread is a shade brighter with a gold dot; read
+        // sits one step darker. No neu depth on this page.
+        decoration: BoxDecoration(
+          color: item.unread
+              ? const Color(0xFF242426)
+              : const Color(0xFF1C1C1E),
+          borderRadius: BorderRadius.circular(16),
+        ),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Container(
               width: 44,
               height: 44,
-              // A sunken well, the established place for an icon in this
-              // system — the tinted square it replaces was the only flat
-              // colour left on the row.
-              decoration: neuBox(radius: 13, pressed: true),
+              decoration: BoxDecoration(
+                color: const Color(0xFF2C2C2E),
+                borderRadius: BorderRadius.circular(12),
+              ),
               child: Icon(item.icon, color: item.iconColor, size: 22),
             ),
             const SizedBox(width: 14),
@@ -417,7 +447,7 @@ class _DriverInboxScreenState extends State<DriverInboxScreen>
                           width: 8,
                           height: 8,
                           decoration: const BoxDecoration(
-                            color: Color(0xFF2196F3),
+                            color: _gold,
                             shape: BoxShape.circle,
                           ),
                         ),
@@ -525,9 +555,9 @@ class _DriverInboxScreenState extends State<DriverInboxScreen>
                     borderRadius: BorderRadius.circular(14),
                   ),
                 ),
-                child: const Text(
-                  'Got it',
-                  style: TextStyle(fontWeight: FontWeight.w700),
+                child: Text(
+                  S.of(context).gotIt,
+                  style: const TextStyle(fontWeight: FontWeight.w700),
                 ),
               ),
             ),

@@ -315,19 +315,48 @@ class _GuideImageArt extends StatelessWidget {
   }
 }
 
-/// Static replica of the live offer card — demo data, no countdown, no
-/// gestures. Mirrored from `_buildNormalCardContent` in
-/// `driver_online_widgets.dart`; if the real card changes layout, update
-/// this to match.
-class _StaticOfferCard extends StatelessWidget {
+/// Static replica of the live offer card — coherent demo data, a simulated
+/// 20 s countdown ring that restarts on every visit, no gestures. Mirrored
+/// from `_buildNormalCardContent` in `driver_online_widgets.dart` (plus the
+/// gold Accept stadium that floats under the real card); if the real card
+/// changes layout, update this to match.
+class _StaticOfferCard extends StatefulWidget {
   const _StaticOfferCard();
 
+  @override
+  State<_StaticOfferCard> createState() => _StaticOfferCardState();
+}
+
+class _StaticOfferCardState extends State<_StaticOfferCard>
+    with SingleTickerProviderStateMixin {
   static const _gold = Color(0xFFE8C547);
+
+  /// The live card gives 20 s to accept — the replica sweeps the ring over
+  /// the same window so the page teaches the real mechanic.
+  late final AnimationController _countdown;
+
+  @override
+  void initState() {
+    super.initState();
+    _countdown = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 20),
+    )..forward();
+  }
+
+  @override
+  void dispose() {
+    _countdown.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     final s = S.of(context);
-    return Container(
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
         color: neuSurface,
@@ -396,7 +425,7 @@ class _StaticOfferCard extends StatelessWidget {
                           ),
                           const SizedBox(height: 4),
                           Text(
-                            s.offerHourlyRate('38.64'),
+                            s.offerHourlyRate('29.72'),
                             style: const TextStyle(
                               color: Colors.white,
                               fontSize: 12.5,
@@ -406,17 +435,17 @@ class _StaticOfferCard extends StatelessWidget {
                           Row(
                             children: [
                               _metric(Icons.access_time_rounded,
-                                  s.offerDuration(10)),
+                                  s.offerDuration(13)),
                               const SizedBox(width: 8),
-                              _metric(Icons.straighten_rounded, '4.3 mi'),
+                              _metric(Icons.straighten_rounded, '6.1 mi'),
                             ],
                           ),
                         ],
                       ),
                     ),
                     const SizedBox(width: 10),
-                    // The car in the gold countdown ring — frozen at a
-                    // partial sweep; the live card runs a 20 s timer.
+                    // The car in the gold countdown ring — simulated 20 s
+                    // sweep, restarted every time this page is built.
                     Container(
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
@@ -444,12 +473,16 @@ class _StaticOfferCard extends StatelessWidget {
                             SizedBox(
                               width: 64,
                               height: 64,
-                              child: CircularProgressIndicator(
-                                value: 0.72,
-                                strokeWidth: 3.5,
-                                color: _gold,
-                                backgroundColor:
-                                    Colors.white.withValues(alpha: 0.10),
+                              child: AnimatedBuilder(
+                                animation: _countdown,
+                                builder: (ctx, _) =>
+                                    CircularProgressIndicator(
+                                  value: 1.0 - _countdown.value,
+                                  strokeWidth: 3.5,
+                                  color: _gold,
+                                  backgroundColor:
+                                      Colors.white.withValues(alpha: 0.10),
+                                ),
                               ),
                             ),
                             Padding(
@@ -540,7 +573,7 @@ class _StaticOfferCard extends StatelessWidget {
                             mainAxisSize: MainAxisSize.min,
                             children: [
                               _stopText(
-                                s.offerAway(1, '0.0'),
+                                s.offerAway(4, '1.8'),
                                 '3412 Canopy Drive, Pelham, Alabama',
                               ),
                               const SizedBox(height: 22),
@@ -612,21 +645,56 @@ class _StaticOfferCard extends StatelessWidget {
               ],
             ),
           ),
-          // Gold page number in the corner of the art card.
+          // Gold page number badge — top-LEFT in the same gold circle the
+          // other three guide pages use (it used to float as bare text at
+          // the top-right, next to the countdown ring).
           Positioned(
-            top: 8,
-            right: 12,
-            child: Text(
-              '1',
-              style: TextStyle(
-                color: _gold.withValues(alpha: 0.85),
-                fontSize: 16,
-                fontWeight: FontWeight.w800,
+            top: 10,
+            left: 12,
+            child: Container(
+              width: 26,
+              height: 26,
+              decoration: const BoxDecoration(
+                shape: BoxShape.circle,
+                color: _gold,
+              ),
+              child: const Center(
+                child: Text(
+                  '1',
+                  style: TextStyle(
+                    color: Color(0xFF14141A),
+                    fontWeight: FontWeight.w800,
+                    fontSize: 13,
+                  ),
+                ),
               ),
             ),
           ),
         ],
       ),
+        ),
+        const SizedBox(height: 12),
+        // Gold Accept stadium — static replica of the pill that floats
+        // under the real offer card (no gestures on a guide page).
+        Container(
+          width: double.infinity,
+          height: 54,
+          decoration: BoxDecoration(
+            color: _gold,
+            borderRadius: BorderRadius.circular(27),
+          ),
+          child: Center(
+            child: Text(
+              s.accept,
+              style: const TextStyle(
+                color: Colors.black,
+                fontSize: 16,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 

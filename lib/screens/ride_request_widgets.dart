@@ -282,7 +282,10 @@ extension _RideRequestWidgets on _RideRequestScreenState {
     // spare, so it floats. Picked it grows by the detail row, the payment row
     // and the button, and every pixel of that goes to the content instead of
     // to margins.
-    final bool floating = option == null;
+    // Always flush to the screen edges (user spec 2026-08-25): the sheet
+    // enters flush with the skeletons from the first frame, Lyft-style —
+    // the floating-with-margins look for the unpicked state is gone.
+    const bool floating = false;
 
     return AnimatedPositioned(
       // Moves with the card row rather than after it, so the panel settling

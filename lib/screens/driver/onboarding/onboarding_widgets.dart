@@ -4,8 +4,8 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../../l10n/app_localizations.dart';
 
 /// Shared visual language for the driver onboarding Phase 2 flow
-/// (navy #0A1128 + gold #E8C547). Keep every screen on these.
-const kOnboardingNavy = Color(0xFF0A1128);
+/// (app-standard grey #14141A + gold #E8C547). Keep every screen on these.
+const kOnboardingNavy = Color(0xFF14141A);
 const kOnboardingGold = Color(0xFFE8C547);
 
 /// Big gold primary button (58 h, radius 18) — the same one the earlier

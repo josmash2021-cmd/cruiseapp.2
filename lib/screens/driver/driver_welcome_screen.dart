@@ -77,7 +77,7 @@ class DriverWelcomeScreen extends StatefulWidget {
 }
 
 class _DriverWelcomeScreenState extends State<DriverWelcomeScreen> {
-  static const _navy = Color(0xFF0A1128);
+  static const _navy = Color(0xFF14141A);
   static const _gold = Color(0xFFE8C547);
 
   final _phoneCtrl = TextEditingController();

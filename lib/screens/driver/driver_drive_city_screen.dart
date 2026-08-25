@@ -24,7 +24,7 @@ class DriverDriveCityScreen extends StatefulWidget {
 }
 
 class _DriverDriveCityScreenState extends State<DriverDriveCityScreen> {
-  static const _navy = Color(0xFF0A1128);
+  static const _navy = Color(0xFF14141A);
   static const _gold = Color(0xFFE8C547);
 
   UsCity? _city;

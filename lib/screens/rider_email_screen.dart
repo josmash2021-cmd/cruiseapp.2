@@ -26,7 +26,7 @@ class RiderEmailScreen extends StatefulWidget {
 }
 
 class _RiderEmailScreenState extends State<RiderEmailScreen> {
-  static const _navy = Color(0xFF0A1128);
+  static const _navy = Color(0xFF14141A);
   static const _gold = Color(0xFFE8C547);
   static final _emailRe = RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]{2,}$');
 

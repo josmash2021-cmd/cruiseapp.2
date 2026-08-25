@@ -23,7 +23,7 @@ class DriverEmailScreen extends StatefulWidget {
 }
 
 class _DriverEmailScreenState extends State<DriverEmailScreen> {
-  static const _navy = Color(0xFF0A1128);
+  static const _navy = Color(0xFF14141A);
   static const _gold = Color(0xFFE8C547);
   static final _emailRe = RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]{2,}$');
 

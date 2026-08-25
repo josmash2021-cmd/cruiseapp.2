@@ -22,7 +22,7 @@ class DriverNameScreen extends StatefulWidget {
 }
 
 class _DriverNameScreenState extends State<DriverNameScreen> {
-  static const _navy = Color(0xFF0A1128);
+  static const _navy = Color(0xFF14141A);
   static const _gold = Color(0xFFE8C547);
 
   final _firstCtrl = TextEditingController();

@@ -60,7 +60,7 @@ class CardScanScreen extends StatefulWidget {
 
 class _CardScanScreenState extends State<CardScanScreen> {
   static const _gold = Color(0xFFE8C547);
-  static const _navy = Color(0xFF0A1128);
+  static const _navy = Color(0xFF14141A);
 
   /// Same preset policy as the KYC / license scanners: max on Android so
   /// the OCR frame is legible, ultraHigh on iOS because the plugin's

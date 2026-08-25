@@ -22,7 +22,7 @@ class FindAccountScreen extends StatefulWidget {
 }
 
 class _FindAccountScreenState extends State<FindAccountScreen> {
-  static const _navy = Color(0xFF0A1128);
+  static const _navy = Color(0xFF14141A);
   static const _gold = Color(0xFFE8C547);
 
   final _emailCtrl = TextEditingController();

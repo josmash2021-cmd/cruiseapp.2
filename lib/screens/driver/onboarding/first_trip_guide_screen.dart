@@ -23,7 +23,7 @@ class FirstTripGuideScreen extends StatefulWidget {
 }
 
 class _FirstTripGuideScreenState extends State<FirstTripGuideScreen> {
-  static const _navy = Color(0xFF0A1128);
+  static const _navy = Color(0xFF14141A);
   static const _gold = Color(0xFFE8C547);
 
   final _pageCtrl = PageController();
@@ -301,7 +301,7 @@ class _GuideImageArt extends StatelessWidget {
                 child: Text(
                   '$number',
                   style: const TextStyle(
-                    color: Color(0xFF0A1128),
+                    color: Color(0xFF14141A),
                     fontWeight: FontWeight.w800,
                     fontSize: 14,
                   ),

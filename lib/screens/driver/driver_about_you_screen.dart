@@ -23,7 +23,7 @@ class DriverAboutYouScreen extends StatefulWidget {
 }
 
 class _DriverAboutYouScreenState extends State<DriverAboutYouScreen> {
-  static const _navy = Color(0xFF0A1128);
+  static const _navy = Color(0xFF14141A);
   static const _gold = Color(0xFFE8C547);
 
   // ── Survey state (values are stable English keys for the payload) ──

@@ -1033,7 +1033,7 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
     final pad = MediaQuery.of(context).padding;
     final c = AppColors.of(context);
     return Scaffold(
-      backgroundColor: const Color(0xFF0A1128),
+      backgroundColor: const Color(0xFF14141A),
       resizeToAvoidBottomInset: true,
       body: GestureDetector(
         onTap: () => FocusScope.of(context).unfocus(),

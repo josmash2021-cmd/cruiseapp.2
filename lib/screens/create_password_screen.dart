@@ -147,6 +147,7 @@ class _CreatePasswordScreenState extends State<CreatePasswordScreen> with Secure
       body: DismissKeyboard(
         child: SafeArea(
           child: SingleChildScrollView(
+            physics: const ClampingScrollPhysics(),
             padding: const EdgeInsets.symmetric(horizontal: 24),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,

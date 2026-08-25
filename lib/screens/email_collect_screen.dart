@@ -162,6 +162,7 @@ class _EmailCollectScreenState extends State<EmailCollectScreen> {
       body: DismissKeyboard(
         child: SafeArea(
           child: SingleChildScrollView(
+            physics: const ClampingScrollPhysics(),
             padding: const EdgeInsets.symmetric(horizontal: 24),
             child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,

@@ -247,6 +247,7 @@ class _RiderWelcomeScreenState extends State<RiderWelcomeScreen> {
 
             Expanded(
               child: SingleChildScrollView(
+                physics: const ClampingScrollPhysics(),
                 padding: const EdgeInsets.symmetric(horizontal: 28),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,

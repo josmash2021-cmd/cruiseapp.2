@@ -2331,6 +2331,51 @@ class S {
       _es ? 'Un mejor viaje, garantizado' : 'A nicer ride, guaranteed';
   String get tierDescBlack =>
       _es ? 'Lujo total, chofer profesional' : 'Full luxury, professional driver';
+
+  // "Meet {tier}" detail sheet (2026-08-25, Lyft-style): tagline + three
+  // benefit bullets per tier. The tier NAME itself is a brand word and
+  // stays as-is in both languages.
+  String tierMeetTitle(String tier) =>
+      _es ? 'Conoce $tier' : 'Meet $tier';
+  String get tierTaglineCompact =>
+      _es ? 'El viaje accesible de todos los días' : 'The affordable everyday ride';
+  String get tierTaglineStandard =>
+      _es ? 'Más espacio, mismo buen precio' : 'Extra room, same fair price';
+  String get tierTaglinePremium =>
+      _es ? 'Un viaje más nuevo y espacioso' : 'A newer, roomier ride';
+  String get tierTaglineBlack =>
+      _es ? 'Lujo total, chofer profesional' : 'Full luxury, professional driver';
+  String get tierBulletCompact1 => _es
+      ? 'Carros de todos los días como Toyota Camry o Honda Accord'
+      : 'Everyday cars like Toyota Camry or Honda Accord';
+  String get tierBulletCompact2 =>
+      _es ? 'Nuestra tarifa más accesible' : 'Our most affordable fare';
+  String get tierBulletCompact3 =>
+      _es ? 'Hasta 4 pasajeros' : 'Up to 4 riders';
+  String get tierBulletStandard1 => _es
+      ? 'Carros medianos con más espacio como Ford Fusion'
+      : 'Midsize cars with extra room like Ford Fusion';
+  String get tierBulletStandard2 =>
+      _es ? 'Más espacio para estirar las piernas' : 'More legroom to stretch out';
+  String get tierBulletStandard3 =>
+      _es ? 'Conductores mejor calificados' : 'Top-rated drivers';
+  String get tierBulletPremium1 => _es
+      ? 'SUVs nuevos como Toyota RAV4 o Tesla Model Y'
+      : 'Newer SUVs like Toyota RAV4 or Tesla Model Y';
+  String get tierBulletPremium2 => _es
+      ? 'Más espacio para pasajeros y equipaje'
+      : 'More room for riders and bags';
+  String get tierBulletPremium3 => _es
+      ? 'Conductores experimentados y mejor calificados'
+      : 'Experienced, top-rated drivers';
+  String get tierBulletBlack1 => _es
+      ? 'SUVs de lujo como Chevy Suburban o Cadillac Escalade'
+      : 'Luxury SUVs like Chevy Suburban or Cadillac Escalade';
+  String get tierBulletBlack2 =>
+      _es ? 'Experiencia premium de principio a fin' : 'A premium experience end to end';
+  String get tierBulletBlack3 => _es
+      ? 'Choferes profesionales mejor calificados'
+      : 'Professional, top-rated drivers';
   String get bestBadge => _es ? 'MEJOR' : 'BEST';
   String get premiumBadge => 'PREMIUM';
   String get economyBadge => _es ? 'CONFORT' : 'COMFORT';

@@ -826,19 +826,11 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                         _syncCameraWithSheetToggle(
                             collapsing: false, tierCount: _displayTierCount);
                         _setState(() => _sheetCollapsed = false);
-                        return;
                       }
-                      // Expanded card: re-tapping opens the tier's
-                      // "Meet {tier}" detail sheet (2026-08-25).
-                      _openTierDetailSheet(opt);
                       return;
                     }
                     _ctrl.selectRideOption(opt);
                     _refitRouteAfterPick();
-                    // Every card opens its own detail sheet — picking the
-                    // tier happens here too, so closing with the X still
-                    // leaves the tier selected with its action panel.
-                    _openTierDetailSheet(opt);
                   },
                   child: AnimatedContainer(
                     duration: const Duration(milliseconds: 280),
@@ -1351,31 +1343,6 @@ extension _RideRequestWidgets on _RideRequestScreenState {
       default:
         return 'compact';
     }
-  }
-
-  /// Lyft-style "Meet {tier}" detail sheet (2026-08-25): opens when a tier
-  /// card is tapped. The "Select {tier}" button inside runs the EXACT same
-  /// flow as the action panel's Select (`_openPickupConfirm`), gated by the
-  /// same conditions — a placeholder fare, no payment method, Cruise Cash
-  /// shortfall, or an immediate request with nobody around shows the
-  /// button disabled instead of starting a doomed request.
-  void _openTierDetailSheet(RideOption opt) {
-    final bool canSelect = opt.priceEstimate > 0 &&
-        !_isProcessingPayment &&
-        _hasAnyPaymentMethod &&
-        (_isScheduledMode || !_noDriversNearby) &&
-        !_cruiseCashShort(opt);
-    TierDetailSheet.show(
-      context,
-      tierName: _tierDisplayName(opt),
-      tierKey: _tierKeyForOption(opt),
-      carAssetPath: _carAssetForOption(opt.name),
-      canSelect: canSelect,
-      onSelect: () {
-        HapticService.mediumImpact();
-        _openPickupConfirm(AppColors.of(context), opt);
-      },
-    );
   }
 
   /// Wait range for the small tier cards. Cache-only: these build on every

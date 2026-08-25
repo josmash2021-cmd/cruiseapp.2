@@ -40,7 +40,6 @@ import '../services/map_controller_cache.dart';
 import '../state/rider_trip_controller.dart';
 import 'credit_card_screen.dart';
 import 'payment_accounts_screen.dart';
-import '../widgets/tier_detail_sheet.dart';
 import 'paypal_checkout_screen.dart';
 import 'pickup_dropoff_search_screen.dart';
 import 'ride_options_sheet.dart';

@@ -1395,8 +1395,25 @@ extension _HomeScreenWidgets on _HomeScreenState {
             child: Opacity(
               opacity: active ? 0.45 : 1.0,
               child: GestureDetector(
-                onTap: () =>
-                    _openSearchThenRide(rideId: v['rideId'] as String),
+                onTap: () {
+                  // "Meet {tier}" detail sheet (2026-08-25): the home cards
+                  // open the tier's detail first; its Select button runs
+                  // the same search-then-ride the card used to fire.
+                  final rideId = v['rideId'] as String;
+                  final (tierName, tierKey) = switch (rideId) {
+                    'suburban' => ('Black', 'black'),
+                    'suv_xl' => ('Premium', 'premium'),
+                    'fusion' => ('Standard', 'standard'),
+                    _ => ('Compact', 'compact'),
+                  };
+                  TierDetailSheet.show(
+                    context,
+                    tierName: tierName,
+                    tierKey: tierKey,
+                    carAssetPath: 'assets/images/${v['image']}',
+                    onSelect: () => _openSearchThenRide(rideId: rideId),
+                  );
+                },
                 child: Container(
                   width: cardW,
                   clipBehavior: Clip.antiAlias,

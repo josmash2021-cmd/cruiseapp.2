@@ -119,8 +119,9 @@ void main() {
   group('fleet carousel ("More ways to ride")', () {
     final start = widgets.indexOf('Widget _buildFleetStack(');
     // Wide enough to reach the Continue label past the AspectRatio band
-    // (the window was 5600 and the shared-frame box pushed it out).
-    final block = widgets.substring(start, start + 6600);
+    // (the window was 5600 and the shared-frame box pushed it out; the
+    // Meet-{tier} sheet wiring pushed it further — 7600 now).
+    final block = widgets.substring(start, start + 7600);
 
     test('is a horizontal carousel with peek, not the quarter-width row', () {
       expect(block, contains('ListView.separated('));
@@ -155,9 +156,12 @@ void main() {
       expect(l10n, contains('Everyday sedan rides at our lowest price'));
     });
 
-    test('tap reuses the existing tier handler', () {
+    test('tap opens the Meet-tier sheet, whose Select runs the tier handler',
+        () {
+      expect(block, contains('TierDetailSheet.show('),
+          reason: 'the carousel cards open the "Meet {tier}" detail sheet');
       expect(block, contains('_openSearchThenRide(rideId:'),
-          reason: 'the carousel must enter the flow through the same '
+          reason: 'the sheet\'s Select must enter the flow through the same '
               'handler the row used');
       expect(block, contains('continueArrow'));
     });

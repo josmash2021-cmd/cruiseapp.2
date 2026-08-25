@@ -9,7 +9,6 @@ import '../../services/user_session.dart';
 import '../../utils/phone_format.dart';
 import '../verify_code_screen.dart';
 import 'driver_home_screen.dart';
-import 'driver_login_screen.dart';
 import 'driver_name_screen.dart';
 import 'driver_pending_review_screen.dart';
 import 'onboarding/driver_todo_screen.dart';
@@ -375,29 +374,6 @@ class _DriverWelcomeScreenState extends State<DriverWelcomeScreen> {
                                 : Colors.black.withValues(alpha: 0.45),
                           ),
                         ),
-                ),
-              ),
-            ),
-
-            // ── Legacy email/password sign-in (secondary) ──
-            Center(
-              child: GestureDetector(
-                onTap: () => Navigator.of(
-                  context,
-                ).push(slideFromRightRoute(const DriverLoginScreen())),
-                behavior: HitTestBehavior.opaque,
-                child: Padding(
-                  padding: const EdgeInsets.only(bottom: 12),
-                  child: Text(
-                    S.of(context).obSignInWithEmail,
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.white.withValues(alpha: 0.55),
-                      decoration: TextDecoration.underline,
-                      decorationColor: Colors.white.withValues(alpha: 0.55),
-                    ),
-                  ),
                 ),
               ),
             ),

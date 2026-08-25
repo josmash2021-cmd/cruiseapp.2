@@ -4149,7 +4149,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                     context,
                     slideFromRightRoute(
                         const ScheduledRidesMapScreen()),
-                  ).then((_) => _fetchScheduledCount());
+                  ).then((_) {                    _fetchScheduledCount();                    _remountMapSurface();                  });
                 },
                 behavior: HitTestBehavior.opaque,
                 child: Container(

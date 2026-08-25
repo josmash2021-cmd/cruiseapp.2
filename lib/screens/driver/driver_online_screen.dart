@@ -1899,7 +1899,12 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                         context,
                         slideFromRightRoute(
                             const ScheduledRidesMapScreen()),
-                      ).then((_) => _fetchScheduledCount());
+                      ).then((_) {
+                        _fetchScheduledCount();
+                        // The scheduled map took the one native surface —
+                        // claim it back or the driver returns to a black map.
+                        _remountMapSurface();
+                      });
                     },
                     child: Container(
                       padding: const EdgeInsets.symmetric(
@@ -1974,7 +1979,10 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                         slideFromRightRoute(
                           const ScheduledRidesMapScreen(),
                         ),
-                      ).then((_) => _fetchScheduledCount()),
+                      ).then((_) {
+                        _fetchScheduledCount();
+                        _remountMapSurface();
+                      }),
                       stagger: 0,
                     ),
                     const SizedBox(height: 10),

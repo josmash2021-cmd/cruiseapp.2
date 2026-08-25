@@ -1034,7 +1034,10 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
           // known, not inside any one card.
           if (_pendingOffers.isNotEmpty)
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 10, 16, 6),
+              // Same horizontal inset as the offer card (16 parent + 4 wrapper)
+              // — the pill aligns exactly with the card's edges, never
+              // wider than it (user spec 2026-08-24).
+              padding: const EdgeInsets.fromLTRB(20, 10, 20, 6),
               child: _buildAcceptButton(_pendingOffers[safeIdx], currentOid),
             ),
           // â”€â”€ Scrollable card list (hidden when collapsed) â”€â”€

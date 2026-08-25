@@ -292,6 +292,8 @@ class _VerifyCodeScreenState extends State<VerifyCodeScreen>
     final c = AppColors.of(context);
 
     return Scaffold(
+      // Fields stay put; only the CTA floats above the keyboard.
+      resizeToAvoidBottomInset: false,
       backgroundColor: c.bg,
       body: SafeArea(
         child: SingleChildScrollView(

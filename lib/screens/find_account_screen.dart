@@ -200,6 +200,8 @@ class _FindAccountScreenState extends State<FindAccountScreen> {
     final hasError = _errorText != null;
 
     return Scaffold(
+      // Fields stay put; only the CTA floats above the keyboard.
+      resizeToAvoidBottomInset: false,
       backgroundColor: _navy,
       body: GestureDetector(
         onTap: () => FocusScope.of(context).unfocus(),

@@ -14,7 +14,7 @@ from models.database import (
     PasswordResetToken, Referral, CruiseCashBalance, CruiseCashTransaction,
     DriverReferral, FavoriteLocation, RevokedToken, DriverLocationHistory,
     SmsLog, EmailLog, ZeroToleranceComplaint, ConsentLog,
-    SummaryOfRightsDelivery,
+    SummaryOfRightsDelivery, WalletTransaction, ZeroToleranceAudit,
 )
 
 # Process uptime anchor — set once at module import
@@ -569,6 +569,11 @@ async def _purge_trips_cascade(db: AsyncSession, trip_ids: list) -> None:
         .where(CruiseCashTransaction.ref_trip_id.in_(trip_ids))
         .values(ref_trip_id=None)
     )
+    # Zero-tolerance audit rows hang off the complaints about these trips.
+    complaint_ids = select(ZeroToleranceComplaint.id).where(
+        ZeroToleranceComplaint.trip_id.in_(trip_ids)).scalar_subquery()
+    await db.execute(delete(ZeroToleranceAudit).where(
+        ZeroToleranceAudit.complaint_id.in_(complaint_ids)))
     for model in (FareSplit, DispatchOffer, Rating, ChatMessage,
                   SmsLog, EmailLog, ZeroToleranceComplaint):
         await db.execute(delete(model).where(model.trip_id.in_(trip_ids)))
@@ -604,6 +609,16 @@ async def _purge_user_cascade(db: AsyncSession, user_id: int) -> None:
         or_(Rating.from_user_id == user_id, Rating.to_user_id == user_id)))
     await db.execute(delete(ChatMessage).where(
         or_(ChatMessage.sender_id == user_id, ChatMessage.receiver_id == user_id)))
+    # Other users' cruise-cash entries may point at this user's referrals —
+    # unlink them before the Referral rows go.
+    referral_ids = select(Referral.id).where(
+        or_(Referral.referrer_id == user_id,
+            Referral.referee_id == user_id)).scalar_subquery()
+    await db.execute(
+        update(CruiseCashTransaction)
+        .where(CruiseCashTransaction.ref_referral_id.in_(referral_ids))
+        .values(ref_referral_id=None)
+    )
     await db.execute(delete(Referral).where(
         or_(Referral.referrer_id == user_id, Referral.referee_id == user_id)))
     await db.execute(delete(DriverReferral).where(
@@ -612,6 +627,12 @@ async def _purge_user_cascade(db: AsyncSession, user_id: int) -> None:
     await db.execute(delete(CruiseCashTransaction).where(
         or_(CruiseCashTransaction.user_id == user_id,
             CruiseCashTransaction.counterparty_user_id == user_id)))
+    # Audit rows hang off the complaints filed by/against this user.
+    user_complaint_ids = select(ZeroToleranceComplaint.id).where(
+        or_(ZeroToleranceComplaint.driver_id == user_id,
+            ZeroToleranceComplaint.rider_id == user_id)).scalar_subquery()
+    await db.execute(delete(ZeroToleranceAudit).where(
+        ZeroToleranceAudit.complaint_id.in_(user_complaint_ids)))
     await db.execute(delete(ZeroToleranceComplaint).where(
         or_(ZeroToleranceComplaint.driver_id == user_id,
             ZeroToleranceComplaint.rider_id == user_id)))
@@ -619,6 +640,11 @@ async def _purge_user_cascade(db: AsyncSession, user_id: int) -> None:
         DriverIncentive.driver_id == user_id))
     await db.execute(delete(DriverLocationHistory).where(
         DriverLocationHistory.driver_id == user_id))
+    # Wallet history references the wallet, not the user directly.
+    wallet_ids = select(Wallet.id).where(
+        Wallet.user_id == user_id).scalar_subquery()
+    await db.execute(delete(WalletTransaction).where(
+        WalletTransaction.wallet_id.in_(wallet_ids)))
     # Plain user_id children.
     for model in (ConsentLog, SummaryOfRightsDelivery, PayoutMethod,
                   RiderPaymentMethod, Wallet, Cashout, Vehicle, Document,

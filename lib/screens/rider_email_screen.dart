@@ -4,7 +4,7 @@ import '../config/page_transitions.dart';
 import '../l10n/app_localizations.dart';
 import '../services/api_service.dart';
 import '../services/user_session.dart';
-import 'home_screen.dart';
+import 'rider_add_payment_screen.dart';
 
 /// Rider phone onboarding — step 3, email collection (Lyft-style):
 /// "Great to meet you, {name}. Mind sharing your email?"
@@ -12,7 +12,9 @@ import 'home_screen.dart';
 /// The email is REQUIRED (receipts + account updates), inline-validated and
 /// checked against the backend via `PATCH /auth/me`, which answers
 /// `400 "Email already in use"` on a duplicate — rendered inline. On
-/// success the session is refreshed and the rider lands on [HomeScreen]
+/// success the session is refreshed and the rider continues to the
+/// Add-payment step ([RiderAddPaymentScreen]), which skips itself when the
+/// rider already has a method and lands on ReadyToRideScreen → home
 /// (the home boot handles the once-per-process permissions page).
 class RiderEmailScreen extends StatefulWidget {
   /// The user map from phone-login, with the name fields already updated by
@@ -88,9 +90,13 @@ class _RiderEmailScreenState extends State<RiderEmailScreen> {
         role: 'rider',
       );
       if (!mounted) return;
-      Navigator.of(context).pushAndRemoveUntil(
-        smoothFadeRoute(const HomeScreen(), durationMs: 600),
-        (_) => false,
+      // Next onboarding step: Add payment method (Lyft-style). That page
+      // skips itself for riders who already have a method on file and lands
+      // on ReadyToRideScreen → home.
+      Navigator.of(context).push(
+        smoothFadeRoute(
+          RiderAddPaymentScreen(user: {...widget.user, 'email': email}),
+        ),
       );
     } on ApiException catch (e) {
       if (!mounted) return;

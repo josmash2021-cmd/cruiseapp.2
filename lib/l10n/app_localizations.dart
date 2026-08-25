@@ -1919,6 +1919,7 @@ class S {
       ? 'Si hay algún problema con tu pago, reintentaremos con otros métodos de respaldo en tu cuenta.'
       : "If there's ever a problem with your payment, we'll retry with other backup payment methods in your account so you can continue using Cruise.";
   String get setUpLater => _es ? 'Configurar después' : 'Set up later';
+  String get notNow => _es ? 'Ahora no' : 'Not now';
   String get confirmGooglePay =>
       _es ? 'Confirmar Google Pay' : 'Confirm Google Pay';
   String get googlePayPrompt => _es

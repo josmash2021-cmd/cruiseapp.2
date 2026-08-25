@@ -37,6 +37,10 @@ class _ScheduleHubScreenState extends State<ScheduleHubScreen> {
   List<Map<String, dynamic>> _rides = const [];
   bool _ridesBusy = false;
 
+  /// Ids currently fading out after a confirmed cancel (2026-08-25): the
+  /// card collapses and dissolves in place instead of vanishing on reload.
+  final Set<int> _cancellingIds = {};
+
   @override
   void initState() {
     super.initState();
@@ -301,7 +305,10 @@ class _ScheduleHubScreenState extends State<ScheduleHubScreen> {
                     ),
                   ),
                   const SizedBox(height: 14),
-                  ..._rides.map(_rideCard),
+                  // Cards animate in (staggered fade+rise) and a cancelled
+                  // one fades/collapses out (2026-08-25).
+                  ..._rides.asMap().entries.map(
+                      (e) => _animatedRideCard(e.key, e.value)),
                   const SizedBox(height: 18),
                 ],
 
@@ -328,6 +335,39 @@ class _ScheduleHubScreenState extends State<ScheduleHubScreen> {
   Future<void> _onRefresh() async {
     await _loadRides();
     if (_calendarConnected) await _loadEvents();
+  }
+
+  /// One reservation card with its two lifecycle animations: a staggered
+  /// fade+rise when the list appears (a fresh booking lands with motion,
+  /// not a pop), and a fade+collapse when the rider cancels it.
+  Widget _animatedRideCard(int index, Map<String, dynamic> t) {
+    final id = (t['id'] as num?)?.toInt() ?? -index - 1;
+    final cancelling = _cancellingIds.contains(id);
+    return TweenAnimationBuilder<double>(
+      key: ValueKey('ride_card_$id'),
+      tween: Tween(begin: 0, end: 1),
+      duration: Duration(milliseconds: 320 + (index * 70).clamp(0, 350)),
+      curve: Curves.easeOutCubic,
+      builder: (context, v, child) => Opacity(
+        opacity: v,
+        child: Transform.translate(
+          offset: Offset(0, 14 * (1 - v)),
+          child: child,
+        ),
+      ),
+      child: AnimatedSize(
+        duration: const Duration(milliseconds: 280),
+        curve: Curves.easeInOutCubic,
+        alignment: Alignment.topCenter,
+        child: AnimatedOpacity(
+          duration: const Duration(milliseconds: 220),
+          opacity: cancelling ? 0.0 : 1.0,
+          child: cancelling
+              ? const SizedBox(width: double.infinity)
+              : _rideCard(t),
+        ),
+      ),
+    );
   }
 
   Widget _rideCard(Map<String, dynamic> t) {
@@ -549,19 +589,31 @@ class _ScheduleHubScreenState extends State<ScheduleHubScreen> {
     );
     if (ok != true || !mounted) return;
     setState(() => _ridesBusy = true);
+    final id = t['id'] as int;
+    // Fade+collapse the card right away; the API call runs under the
+    // animation. On failure the card comes back.
+    setState(() => _cancellingIds.add(id));
     try {
-      final id = t['id'] as int;
-      final res = await ApiService.cancelTrip(id);
+      final resFuture = ApiService.cancelTrip(id);
+      // Let the exit animation play before the row leaves the list.
+      final res = await resFuture.timeout(const Duration(seconds: 15));
+      await Future.delayed(const Duration(milliseconds: 300));
+      if (!mounted) return;
+      setState(() {
+        _cancellingIds.remove(id);
+        _rides = _rides
+            .where((r) => (r['id'] as num?)?.toInt() != id)
+            .toList();
+      });
       final charged = (res['cancellation_fee'] as num?)?.toDouble() ?? 0;
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text(charged > 0
-              ? s.rideCancelledFee(charged.toStringAsFixed(2))
-              : s.rideCancelled),
-        ));
-      }
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(charged > 0
+            ? s.rideCancelledFee(charged.toStringAsFixed(2))
+            : s.rideCancelled),
+      ));
     } catch (_) {
       if (mounted) {
+        setState(() => _cancellingIds.remove(id)); // restore the card
         ScaffoldMessenger.of(context)
             .showSnackBar(SnackBar(content: Text(s.somethingWentWrong)));
       }

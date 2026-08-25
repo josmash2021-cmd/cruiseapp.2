@@ -729,10 +729,11 @@ extension _RideRequestWidgets on _RideRequestScreenState {
           margin: const EdgeInsets.only(bottom: 10),
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
           decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.045),
+            // Lyft skeleton: near-flat dark fill with a thin visible outline.
+            color: Colors.white.withValues(alpha: 0.02),
             borderRadius: BorderRadius.circular(16),
             border:
-                Border.all(color: Colors.white.withValues(alpha: 0.07)),
+                Border.all(color: Colors.white.withValues(alpha: 0.14)),
           ),
           child: Row(
             children: [

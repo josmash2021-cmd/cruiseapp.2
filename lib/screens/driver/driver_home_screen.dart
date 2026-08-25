@@ -49,6 +49,7 @@ import 'driver_analytics_screen.dart';
 import 'driver_vehicle_screen.dart';
 import 'driver_documents_screen.dart';
 import 'driver_agreement_screen.dart';
+import 'onboarding/driver_notifications_screen.dart';
 import 'scheduled_rides_screen.dart';
 import 'scheduled_ride_details_screen.dart';
 import '../../l10n/app_localizations.dart';
@@ -473,6 +474,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       if (!mounted) return;
       _checkAccountStatus();
       _checkDriverAgreementConsent();
+      _runDriverPermissionFlow();
     });
     _accountStatusTimer = Timer.periodic(
       const Duration(seconds: 300),
@@ -534,6 +536,35 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
             : UserSession.photoNotifier.value;
       });
     }
+  }
+
+  // ── Driver permission flow (cold start) ─────────────────────────────
+  //
+  /// True once the page was shown this process — it reappears on the next
+  /// cold start while a permission is still missing, never twice in one.
+  static bool _permsScreenShownThisProcess = false;
+
+  /// Every cold start with a signed-in driver (user spec 2026-08-25): if
+  /// notifications or location are still missing, push the "Help us keep
+  /// you informed" page over the home — its appear auto-fires the native
+  /// asks (the OS decides whether a dialog can re-show), Allow asks again,
+  /// X dismisses for the session. Both granted → nothing is shown, ever.
+  Future<void> _runDriverPermissionFlow() async {
+    if (kIsWeb || _permsScreenShownThisProcess) return;
+    try {
+      final locPerm = await Geolocator.checkPermission();
+      final locOk = locPerm == LocationPermission.always ||
+          locPerm == LocationPermission.whileInUse;
+      final notifOk = await NotificationService.isPermissionGranted();
+      if (!mounted || (locOk && notifOk)) return;
+      _permsScreenShownThisProcess = true;
+      await Navigator.of(context).push(slideUpFadeRoute(
+        const DriverNotificationsScreen(
+          popOnDone: true,
+          requestLocation: true,
+        ),
+      ));
+    } catch (_) {}
   }
 
   /// Register this device for push, retrying until it lands.

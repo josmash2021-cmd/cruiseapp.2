@@ -1,5 +1,6 @@
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:permission_handler/permission_handler.dart';
 
@@ -16,12 +17,30 @@ import 'onboarding_widgets.dart';
 /// same device or not (user spec: no once-per-device latch). The OS itself
 /// decides whether the dialog can re-show; we always ask.
 /// [nextScreen] decides where it lands next.
+///
+/// Cold-start mode (user spec 2026-08-25): a signed-in driver gets this
+/// page pushed over the home whenever notifications or location are still
+/// missing. [popOnDone] makes Allow/X simply close the page instead of
+/// continuing an onboarding chain, and [requestLocation] adds the GPS ask
+/// to the auto-prompt (the home already requests location on its own, so
+/// the ask is wrapped against a request already in flight).
 class DriverNotificationsScreen extends StatefulWidget {
-  const DriverNotificationsScreen({super.key, this.nextScreen});
+  const DriverNotificationsScreen({
+    super.key,
+    this.nextScreen,
+    this.popOnDone = false,
+    this.requestLocation = false,
+  });
 
   /// Where to continue after Allow / skip. Defaults to the driver to-do
   /// hub (the intro-flow entry keeps working unchanged).
   final Widget? nextScreen;
+
+  /// Cold-start mode: Allow/X pop this page back to whatever is under it.
+  final bool popOnDone;
+
+  /// Also ask for location (GPS) alongside notifications.
+  final bool requestLocation;
 
   @override
   State<DriverNotificationsScreen> createState() =>
@@ -49,10 +68,25 @@ class _DriverNotificationsScreenState extends State<DriverNotificationsScreen> {
         sound: true,
       );
     } catch (_) {}
+    if (widget.requestLocation) {
+      // Only when still simply denied — a deniedForever has no dialog left
+      // and a grant needs nothing. Geolocator throws if the home's own
+      // startup request is still in flight; that one already asked.
+      try {
+        final p = await Geolocator.checkPermission();
+        if (p == LocationPermission.denied) {
+          await Geolocator.requestPermission();
+        }
+      } catch (_) {}
+    }
   }
 
   void _goHub() {
     if (!mounted) return;
+    if (widget.popOnDone) {
+      Navigator.of(context).maybePop();
+      return;
+    }
     Navigator.of(context).pushReplacement(
       onboardingFadeSlideRoute(widget.nextScreen ?? const DriverTodoScreen()),
     );

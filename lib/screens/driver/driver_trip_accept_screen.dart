@@ -190,6 +190,12 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   Ticker? _carTicker;
   Duration _carLastTick = Duration.zero;
   bool _carUpdateInFlight = false;
+  // Last values actually sent to the native map (2026-08-25 heat fix): the
+  // annotation IPC is skipped entirely while the car hasn't moved — a
+  // parked car used to pay 60 native updates/second for zero visual change.
+  double? _lastSentCarLat;
+  double? _lastSentCarLng;
+  double? _lastSentCarBearing;
   DateTime _lastEraseAt = DateTime.fromMillisecondsSinceEpoch(0);
   int _eraseHintIdx = 0;
   bool _pickupPopped = false;
@@ -3651,10 +3657,21 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     if (lat == null || lng == null || annot == null || mgr == null) return;
     if (!_carUpdateInFlight) {
       final p = safePoint(lng, lat);
-      if (p != null) {
+      final bearing = _carMotion.bearing;
+      // Skip the native update when nothing changed: ~1 mm of position and
+      // half a degree of rotation are below anything the eye can register,
+      // and each skipped call is a full native re-render saved.
+      final moved = _lastSentCarLat == null ||
+          (lat - _lastSentCarLat!).abs() > 1e-7 ||
+          (lng - _lastSentCarLng!).abs() > 1e-7 ||
+          ((bearing - (_lastSentCarBearing ?? bearing)).abs() > 0.5);
+      if (p != null && moved) {
         _carUpdateInFlight = true;
+        _lastSentCarLat = lat;
+        _lastSentCarLng = lng;
+        _lastSentCarBearing = bearing;
         annot.geometry = p;
-        annot.iconRotate = _carMotion.bearing;
+        annot.iconRotate = bearing;
         mgr
             .update(annot)
             .catchError((_) {})

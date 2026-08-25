@@ -61,6 +61,8 @@ class GpsService {
   DateTime? _lastSocketIOAt;
   DateTime? _lastRTDBAt;
   LatLng? _lastSocketIOPos;
+  LatLng? _lastRTDBPos;
+  double _lastRTDBHeading = 0;
   bool _isFastInterval = false;
   StreamSubscription? _presenceSub;
   StreamSubscription<bool>? _socketReconnectSub;
@@ -196,6 +198,7 @@ class GpsService {
     _lastSocketIOAt = null;
     _lastRTDBAt = null;
     _lastSocketIOPos = null;
+    _lastRTDBPos = null;
     _pendingSocketIOPos = null;
   }
 
@@ -218,6 +221,7 @@ class GpsService {
       _lastSocketIOAt = null;
       _lastRTDBAt = null;
       _lastSocketIOPos = null;
+      _lastRTDBPos = null;
     }
   }
 
@@ -306,6 +310,29 @@ class GpsService {
         now.difference(_lastRTDBAt!).inMilliseconds < 2000) {
       return;
     }
+
+    // Parked-driver gate (2026-08-25 heat fix): a driver standing still used
+    // to push the same two RTDB writes every 5 s for the whole shift. Under
+    // ~5 m of drift and <10° of heading change the payload is identical for
+    // every practical purpose, so we only re-send once a minute as a
+    // presence keepalive. A moving driver is unaffected — he keeps the
+    // normal 5 s cadence.
+    final lastPos = _lastRTDBPos;
+    if (lastPos != null && _lastRTDBAt != null) {
+      final sinceLast = now.difference(_lastRTDBAt!);
+      if (sinceLast < const Duration(minutes: 1)) {
+        final dist = _haversineMeters(
+          _currentPos!.latitude,
+          _currentPos!.longitude,
+          lastPos.latitude,
+          lastPos.longitude,
+        );
+        final headingDelta = (_currentHeading - _lastRTDBHeading).abs();
+        if (dist < 5 && headingDelta < 10) return;
+      }
+    }
+    _lastRTDBPos = _currentPos;
+    _lastRTDBHeading = _currentHeading;
 
     final payload = {
       'lat': _currentPos!.latitude,

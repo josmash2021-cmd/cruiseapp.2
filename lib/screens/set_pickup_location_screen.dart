@@ -391,8 +391,13 @@ class _SetPickupLocationScreenState extends State<SetPickupLocationScreen>
       // Payment/booking failed or was cancelled — stay on this page so the
       // rider can retry; popping would dump them into a dead screen.
       if (!booked) return;
-      // The caller's pipeline owns what happens next (searching/tracking).
-      Navigator.of(context).pop(true);
+      // The scheduled pipeline already replaced the WHOLE stack with the
+      // booking-confirmation screen (pushAndRemoveUntil) — popping here
+      // would pop THAT screen and leave the navigator empty (black screen
+      // of death). Only pop if this page is still the current route.
+      if (ModalRoute.of(context)?.isCurrent ?? false) {
+        Navigator.of(context).pop(true);
+      }
     } finally {
       if (mounted) setState(() => _paying = false);
     }

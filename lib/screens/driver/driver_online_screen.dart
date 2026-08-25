@@ -264,6 +264,11 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   Timer? _mapStyleWatchdogTimer;
   bool _mapStyleLoaded = false;
   bool _mapStyleWatchdogRetried = false;
+  // First full render (tiles on screen, camera idle). The snapshot overlay
+  // only fades when BOTH this and _mapStyleLoaded are true — style-loaded
+  // alone fires before the street tiles draw, and that gap read as an
+  // empty dark map on Go (2026-08-25).
+  bool _firstRenderDone = false;
   // Monotonically incremented every time onMapCreated fires. Guards against
   // stale annotation refs surviving a PlatformView recreation.
   int _mapGeneration = 0;

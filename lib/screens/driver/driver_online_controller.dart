@@ -3595,6 +3595,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     _setState(() {
       _mapMounted = false;
       _mapStyleLoaded = false;
+      _firstRenderDone = false;
     });
   }
 

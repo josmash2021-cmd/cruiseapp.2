@@ -114,7 +114,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                 Positioned.fill(
                   child: IgnorePointer(
                     child: AnimatedOpacity(
-                      opacity: _mapStyleLoaded ? 0.0 : 1.0,
+                      opacity: (_mapStyleLoaded && _firstRenderDone) ? 0.0 : 1.0,
                       duration: const Duration(milliseconds: 200),
                       child: StaticMapSnapshot(
                           center: here, zoom: 16, veilAlpha: 0.85),
@@ -217,6 +217,13 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
       child: mapbox.MapWidget(
         key: _mapKey,
         textureView: true,
+        // First full render (tiles drawn, camera idle) lifts the snapshot
+        // overlay — style-loaded alone was too early (2026-08-25).
+        onMapIdleListener: (_) {
+          if (!_firstRenderDone && mounted) {
+            _setState(() => _firstRenderDone = true);
+          }
+        },
         styleUri: MapboxConfig.styleDark,
         cameraOptions: mapbox.CameraOptions(
           center: mapbox.Point(
@@ -259,6 +266,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
           // without network must not loop.
           _mapStyleWatchdogTimer?.cancel();
           _mapStyleLoaded = false;
+          _firstRenderDone = false;
           if (!_mapStyleWatchdogRetried) {
             final watchGen = _mapGeneration;
             _mapStyleWatchdogTimer = Timer(const Duration(seconds: 7), () {

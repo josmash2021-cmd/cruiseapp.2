@@ -31,7 +31,8 @@ from services.fcm_service import _send_fcm_push_async
 from services.email_sms_service import _send_email
 from services.guest_link_service import link_guest_trips_to_user
 from services.socketio_service import notify_user
-from utils.n8n_trigger import trigger_welcome_email, trigger_driver_onboarding
+# n8n welcome/driver onboarding email triggers removed from register
+# (2026-08-25) — no emails at signup.
 from config import (
     _otp_store, _OTP_TTL, PHOTOS_DIR, UPLOADS_DIR, PUBLIC_URL,
     _otp_attempt_tracker, _MAX_OTP_ATTEMPTS, _OTP_ATTEMPT_WINDOW,
@@ -297,29 +298,10 @@ async def register(body: RegisterIn, db: AsyncSession = Depends(get_db)):
         except Exception as e:
             logging.error("Firestore sync on register failed: %s", e)
 
-    # Trigger n8n workflows for new user/driver (fire-and-forget, non-blocking)
-    try:
-        verification_link = f"{PUBLIC_URL}/verify-email/{user.id}"  # Adjust to your actual verification flow
-        if role == "driver":
-            # Trigger driver onboarding workflow
-            _safe_create_task(
-                trigger_driver_onboarding(
-                    name=f"{user.first_name} {user.last_name}",
-                    email=user.email or "",
-                    driver_id=str(user.id)
-                )
-            )
-        else:
-            # Trigger welcome email workflow for riders
-            _safe_create_task(
-                trigger_welcome_email(
-                    name=user.first_name,
-                    email=user.email or "",
-                    verification_link=verification_link
-                )
-            )
-    except Exception as e:
-        logging.error("n8n trigger on register failed: %s", e)
+    # n8n welcome/onboarding email triggers REMOVED (2026-08-25, user spec):
+    # registration must not email anything — the address is collected only
+    # for receipts, trip updates and promos. The only registration code is
+    # the phone SMS OTP. The workflows stay in n8n, simply never triggered.
 
     try:
         await link_guest_trips_to_user(db, user)

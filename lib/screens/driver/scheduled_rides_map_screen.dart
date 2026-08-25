@@ -106,7 +106,6 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
 
   /// Lyft-style Dismiss: hides the ride for THIS driver, session only.
   /// In-memory on purpose — a fresh open of the screen shows them again.
-  final Set<int> _hiddenIds = {};
 
   // ── "Search this area" ──
   // Latched by the gesture callbacks, NOT onCameraChangeListener — that one
@@ -370,7 +369,6 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
 
   List<Map<String, dynamic>> get _filtered {
     return _available.where((t) {
-      if (_hiddenIds.contains(t['id'])) return false;
       if (_airportOnly && t['is_airport'] != true) return false;
       if (_dateFilter != _DateFilter.all || _timeFilter != _TimeFilter.all) {
         final st = _parseScheduledAt(t);
@@ -628,9 +626,10 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
         final annot = await mgr.create(mapbox.PointAnnotationOptions(
           geometry: point,
           image: bytes,
-          // The bitmap is rendered at 3× density — 1/3 lands it at logical
-          // size; the selected marker gets the Lyft-style ~1.1 pop.
-          iconSize: (isSelected ? 1.1 : 1.0) / 3.0,
+          // The bitmap is rendered at 3× density — ~1.5× logical size so
+          // the pill + figure stay legible at city zoom (was too small).
+          // The selected marker gets the Lyft-style pop on top.
+          iconSize: (isSelected ? 1.65 : 1.5) / 3.0,
           // The figure's feet are the bottom edge — they plant on the
           // pickup point while the pill floats above.
           iconAnchor: mapbox.IconAnchor.BOTTOM,
@@ -675,14 +674,11 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
     }
   }
 
-  /// Dismiss pill: closes the detail AND hides the ride for this driver
-  /// (Lyft behaviour). Session-only — nothing goes to the backend and the
-  /// ride reappears on the next open of the screen.
+  /// Dismiss pill: closes the detail and clears the route — the ride STAYS
+  /// on the map and in the list (user spec 2026-08-24: it only goes away
+  /// when a driver reserves it, never by dismissing).
   void _hideSelectedTrip() {
-    final trip = _selected;
-    if (trip == null) return;
-    final id = trip['id'];
-    if (id is int) _hiddenIds.add(id);
+    if (_selected == null) return;
     _dismissSelection();
   }
 

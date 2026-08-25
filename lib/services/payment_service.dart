@@ -39,8 +39,12 @@ class PaymentService {
       configs[PayProvider.google_pay] = await _loadGooglePayConfig();
     }
     if (AppPlatform.isIOS) {
+      // The default fromAsset loader resolves 'assets/<name>' and expects
+      // JSON — 'apple_pay.yaml' (wrong dir, wrong format) always threw,
+      // which surfaced as "Apple Pay not set up" on configured devices
+      // (2026-08-25). The real config is the JSON under assets/pay/.
       configs[PayProvider.apple_pay] = await PaymentConfiguration.fromAsset(
-        'apple_pay.yaml',
+        'pay/default_apple_pay_config.json',
       );
     }
     return _client = Pay(configs);
@@ -74,7 +78,7 @@ class PaymentService {
 
   /// Loads the Apple Pay PaymentConfiguration from assets.
   static Future<PaymentConfiguration> applePayConfig() =>
-      PaymentConfiguration.fromAsset('apple_pay.yaml');
+      PaymentConfiguration.fromAsset('pay/default_apple_pay_config.json');
 
   /// Builds a PaymentItem list for a fare.
   static List<PaymentItem> fareItems(String label, double amountUsd) => [

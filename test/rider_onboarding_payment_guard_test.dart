@@ -24,9 +24,13 @@ void main() {
       File('lib/screens/ready_to_ride_screen.dart').readAsStringSync();
 
   group('email → payment step', () {
-    test('email success pushes RiderAddPaymentScreen, not home', () {
+    test('email success reaches RiderAddPaymentScreen via the notifications '
+        'page, not home', () {
       expect(email, contains("import 'rider_add_payment_screen.dart';"));
-      expect(email, contains('RiderAddPaymentScreen(user:'));
+      // 2026-08-25: the notification-permission page sits between email and
+      // payment — the payment screen now arrives as its nextScreen.
+      expect(email, contains('DriverNotificationsScreen('));
+      expect(email, contains('nextScreen: RiderAddPaymentScreen('));
       expect(email, isNot(contains('pushAndRemoveUntil')));
       expect(email, isNot(contains('HomeScreen()')));
     });
@@ -40,8 +44,10 @@ void main() {
       expect(pay, contains('Google Pay'));
       expect(pay, contains('PaymentService.isApplePayAvailable'));
       expect(pay, contains('PaymentService.isGooglePayAvailable'));
-      expect(pay, contains("linkPaymentMethod('apple_pay')"));
-      expect(pay, contains("linkPaymentMethod('google_pay')"));
+      // Wallets link through the shared sheet's methodId param.
+      expect(pay, contains("methodId: 'apple_pay'"));
+      expect(pay, contains("methodId: 'google_pay'"));
+      expect(pay, contains('linkPaymentMethod(methodId)'));
     });
 
     test('card row opens the scanner first', () {

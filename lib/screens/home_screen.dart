@@ -36,7 +36,6 @@ import '../config/api_keys.dart';
 import '../config/app_theme.dart';
 import '../config/page_transitions.dart';
 import '../services/api_service.dart';
-import '../services/screen_security_service.dart';
 import '../services/directions_service.dart';
 import '../services/local_data_service.dart';
 import '../services/notification_service.dart';
@@ -90,7 +89,7 @@ class _HomeScreenState extends State<HomeScreen>
     with
         TickerProviderStateMixin,
         WidgetsBindingObserver,
-        SecureScreenMixin,
+
         RouteAware {
   void _setState(VoidCallback fn) { if (mounted) setState(fn); }
   // Brand colors — premium shiny gold

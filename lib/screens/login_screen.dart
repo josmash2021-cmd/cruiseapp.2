@@ -7,14 +7,12 @@ import '../config/app_theme.dart';
 import '../l10n/app_localizations.dart';
 import '../config/page_transitions.dart';
 import '../services/api_service.dart';
-import '../services/screen_security_service.dart';
 import '../widgets/dismiss_keyboard.dart';
 import '../widgets/neu_style.dart';
 import '../services/sms_service.dart';
 import '../services/google_auth_service.dart';
 import '../services/apple_auth_service.dart';
 import '../services/user_session.dart';
-import 'login_password_screen.dart';
 import 'verify_code_screen.dart';
 import 'terms_conditions_screen.dart';
 import 'privacy_policy_screen.dart';
@@ -27,7 +25,7 @@ class LoginScreen extends StatefulWidget {
   State<LoginScreen> createState() => _LoginScreenState();
 }
 
-class _LoginScreenState extends State<LoginScreen> with SecureScreenMixin {
+class _LoginScreenState extends State<LoginScreen> {
   static const _gold = Color(0xFFE8C547);
   static const _goldLight = Color(0xFFF5D990);
 
@@ -452,26 +450,6 @@ class _LoginScreenState extends State<LoginScreen> with SecureScreenMixin {
                 color: c.textTertiary,
                 fontWeight: FontWeight.w600,
               ),
-            ),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFFE8C547),
-              foregroundColor: const Color(0xFF1A1400),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-            ),
-            onPressed: () {
-              Navigator.of(ctx).pop();
-              Navigator.of(context).pushReplacement(
-                slideFromRightRoute(const LoginPasswordScreen()),
-              );
-            },
-            child: Text(
-              S.of(context).logInBtn,
-              style: const TextStyle(fontWeight: FontWeight.w700),
             ),
           ),
         ],

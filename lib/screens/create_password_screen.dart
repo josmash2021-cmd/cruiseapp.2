@@ -4,7 +4,6 @@ import '../l10n/app_localizations.dart';
 import '../config/page_transitions.dart';
 import '../services/user_session.dart';
 import '../services/analytics_service.dart';
-import '../services/screen_security_service.dart';
 import '../widgets/dismiss_keyboard.dart';
 import 'name_screen.dart';
 
@@ -35,7 +34,7 @@ class CreatePasswordScreen extends StatefulWidget {
   State<CreatePasswordScreen> createState() => _CreatePasswordScreenState();
 }
 
-class _CreatePasswordScreenState extends State<CreatePasswordScreen> with SecureScreenMixin {
+class _CreatePasswordScreenState extends State<CreatePasswordScreen> {
   static const _gold = Color(0xFFE8C547);
   static const _goldLight = Color(0xFFF5D990);
 

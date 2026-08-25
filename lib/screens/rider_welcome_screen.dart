@@ -9,7 +9,6 @@ import '../services/user_session.dart';
 import '../utils/phone_format.dart';
 import 'find_account_screen.dart';
 import 'home_screen.dart';
-import 'login_password_screen.dart';
 import 'rider_name_screen.dart';
 import 'verify_code_screen.dart';
 
@@ -492,29 +491,6 @@ class _RiderWelcomeScreenState extends State<RiderWelcomeScreen> {
                                 : Colors.black.withValues(alpha: 0.45),
                           ),
                         ),
-                ),
-              ),
-            ),
-
-            // ── Legacy email/password sign-in (secondary) ──
-            Center(
-              child: GestureDetector(
-                onTap: () => Navigator.of(
-                  context,
-                ).push(slideFromRightRoute(const LoginPasswordScreen())),
-                behavior: HitTestBehavior.opaque,
-                child: Padding(
-                  padding: const EdgeInsets.only(bottom: 12),
-                  child: Text(
-                    S.of(context).obSignInWithEmail,
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.white.withValues(alpha: 0.55),
-                      decoration: TextDecoration.underline,
-                      decorationColor: Colors.white.withValues(alpha: 0.55),
-                    ),
-                  ),
                 ),
               ),
             ),

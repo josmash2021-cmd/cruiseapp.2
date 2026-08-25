@@ -13,7 +13,6 @@ import '../widgets/user_profile_photo.dart';
 import '../widgets/verified_avatar.dart';
 import '../config/page_transitions.dart';
 import '../services/api_service.dart';
-import '../services/screen_security_service.dart';
 import '../services/local_data_service.dart';
 import '../services/user_session.dart';
 import 'splash_screen.dart';
@@ -40,7 +39,7 @@ class AccountScreen extends StatefulWidget {
   State<AccountScreen> createState() => _AccountScreenState();
 }
 
-class _AccountScreenState extends State<AccountScreen> with SecureScreenMixin {
+class _AccountScreenState extends State<AccountScreen> {
   static const _gold = Color(0xFFE8C547);
 
   Map<String, String>? _user;

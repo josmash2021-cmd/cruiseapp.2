@@ -5,7 +5,6 @@ import '../config/app_theme.dart';
 import '../config/page_transitions.dart';
 import '../l10n/app_localizations.dart';
 import '../services/api_service.dart';
-import '../services/screen_security_service.dart';
 import '../widgets/neu_style.dart';
 import '../widgets/shimmer_placeholders.dart';
 import 'payment_accounts_screen.dart';
@@ -19,7 +18,7 @@ class WalletScreen extends StatefulWidget {
   State<WalletScreen> createState() => _WalletScreenState();
 }
 
-class _WalletScreenState extends State<WalletScreen> with SecureScreenMixin {
+class _WalletScreenState extends State<WalletScreen> {
   static const _gold = Color(0xFFE8C547);
 
   bool _loading = true;

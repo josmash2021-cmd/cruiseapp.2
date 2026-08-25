@@ -44,10 +44,14 @@ void main() {
       expect(pay, contains('Google Pay'));
       expect(pay, contains('PaymentService.isApplePayAvailable'));
       expect(pay, contains('PaymentService.isGooglePayAvailable'));
-      // Wallets link through the shared sheet's methodId param.
-      expect(pay, contains("methodId: 'apple_pay'"));
-      expect(pay, contains("methodId: 'google_pay'"));
-      expect(pay, contains('linkPaymentMethod(methodId)'));
+      // 2026-08-25: tapping a wallet row links it directly and makes it the
+      // preselected default — NO native sheet / $0.00 verification.
+      expect(pay, contains("linkPaymentMethod('apple_pay')"));
+      expect(pay, contains("linkPaymentMethod('google_pay')"));
+      expect(pay, contains("setDefaultPaymentMethod('apple_pay')"));
+      expect(pay, contains("setDefaultPaymentMethod('google_pay')"));
+      expect(pay, isNot(contains('_showWalletSheet')),
+          reason: 'the native wallet verification sheet is gone');
     });
 
     test('card row opens the scanner first', () {

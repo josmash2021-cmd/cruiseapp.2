@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:pay/pay.dart';
 
 import '../l10n/app_localizations.dart';
 import '../services/api_service.dart';
@@ -105,7 +104,9 @@ class _RiderAddPaymentScreenState extends State<RiderAddPaymentScreen> {
     _goNext();
   }
 
-  // ── Wallets: $0.00 verification sheet, then mark linked + default ──
+  // ── Wallets: select only (2026-08-25, user spec) — NO native sheet, no
+  // $0.00 verification charge. Tapping the row links the wallet and makes
+  // it the preselected default; the rider can change it at ride time.
   Future<void> _linkApplePay() async {
     final s = S.of(context);
     final available = await PaymentService.isApplePayAvailable();
@@ -114,31 +115,11 @@ class _RiderAddPaymentScreenState extends State<RiderAddPaymentScreen> {
       _snack(s.applePayNotSetUp);
       return;
     }
-    _showWalletSheet(
-      config: await PaymentService.applePayConfig(),
-      title: s.confirmApplePay,
-      prompt: s.applePayPrompt,
-      builder: (config, onResult, onError) => ApplePayButton(
-        paymentConfiguration: config,
-        paymentItems: [
-          PaymentItem(
-            label: s.accountVerification,
-            amount: '0.00',
-            status: PaymentItemStatus.final_price,
-          ),
-        ],
-        type: ApplePayButtonType.inStore,
-        style: ApplePayButtonStyle.black,
-        height: 54,
-        onPaymentResult: onResult,
-        loadingIndicator: const Center(
-          child: CircularProgressIndicator(color: _gold),
-        ),
-        onError: onError,
-      ),
-      methodId: 'apple_pay',
-      linkedMsg: s.applePayLinked,
-    );
+    await LocalDataService.linkPaymentMethod('apple_pay');
+    await LocalDataService.setDefaultPaymentMethod('apple_pay');
+    if (!mounted) return;
+    _snack(s.applePayLinked);
+    _goNext();
   }
 
   Future<void> _linkGooglePay() async {
@@ -149,117 +130,13 @@ class _RiderAddPaymentScreenState extends State<RiderAddPaymentScreen> {
       _snack(s.googlePayNotSetUp);
       return;
     }
-    _showWalletSheet(
-      config: await PaymentService.googlePayConfig(),
-      title: s.confirmGooglePay,
-      prompt: s.googlePayPrompt,
-      builder: (config, onResult, onError) => GooglePayButton(
-        paymentConfiguration: config,
-        paymentItems: [
-          PaymentItem(
-            label: s.accountVerification,
-            amount: '0.00',
-            status: PaymentItemStatus.final_price,
-          ),
-        ],
-        type: GooglePayButtonType.pay,
-        theme: GooglePayButtonTheme.dark,
-        height: 54,
-        onPaymentResult: onResult,
-        loadingIndicator: const Center(
-          child: CircularProgressIndicator(color: _gold),
-        ),
-        onError: onError,
-      ),
-      methodId: 'google_pay',
-      linkedMsg: s.googlePayLinked,
-    );
+    await LocalDataService.linkPaymentMethod('google_pay');
+    await LocalDataService.setDefaultPaymentMethod('google_pay');
+    if (!mounted) return;
+    _snack(s.googlePayLinked);
+    _goNext();
   }
 
-  void _showWalletSheet({
-    required PaymentConfiguration config,
-    required String title,
-    required String prompt,
-    required Widget Function(
-      PaymentConfiguration config,
-      void Function(Map<String, dynamic>) onResult,
-      void Function(Object? error) onError,
-    ) builder,
-    required String methodId,
-    required String linkedMsg,
-  }) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) => Container(
-        decoration: const BoxDecoration(
-          color: Color(0xFF1C1C22),
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-        ),
-        padding: const EdgeInsets.fromLTRB(24, 16, 24, 36),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.15),
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-            const SizedBox(height: 20),
-            Text(
-              title,
-              style: GoogleFonts.poppins(
-                fontSize: 20,
-                fontWeight: FontWeight.w800,
-                color: Colors.white,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              prompt,
-              textAlign: TextAlign.center,
-              style: GoogleFonts.inter(
-                fontSize: 14,
-                color: Colors.white.withValues(alpha: 0.65),
-              ),
-            ),
-            const SizedBox(height: 24),
-            builder(
-              config,
-              (result) async {
-                Navigator.of(ctx).pop();
-                await LocalDataService.linkPaymentMethod(methodId);
-                await LocalDataService.setDefaultPaymentMethod(methodId);
-                if (!mounted) return;
-                _snack(linkedMsg);
-                _goNext();
-              },
-              (error) {
-                Navigator.of(ctx).pop();
-                if (!mounted) return;
-                _snack(
-                  methodId == 'apple_pay'
-                      ? S.of(context).applePayError('$error')
-                      : S.of(context).googlePayError('$error'),
-                );
-              },
-            ),
-            const SizedBox(height: 12),
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(),
-              child: Text(
-                S.of(ctx).cancel,
-                style: TextStyle(color: Colors.white.withValues(alpha: 0.5)),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 
   void _snack(String msg) {
     ScaffoldMessenger.of(context).showSnackBar(

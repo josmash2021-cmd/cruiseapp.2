@@ -68,7 +68,8 @@ class _DriverApprovedCelebrationScreenState
 
     if (!configured) {
       await Navigator.of(context).push(
-        onboardingFadeSlideRoute(const PayoutMethodsScreen()),
+        onboardingFadeSlideRoute(
+            const PayoutMethodsScreen(autoPopOnBankLinked: true)),
       );
       if (!mounted) return;
       // Re-check on return: success → straight to the guide/home; left

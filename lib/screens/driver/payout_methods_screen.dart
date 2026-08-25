@@ -43,7 +43,14 @@ import '../../widgets/neu_style.dart';
 /// Defaults: the backend atomically clears other defaults whenever a row is
 /// promoted, so the cashout flow always sees exactly one default row.
 class PayoutMethodsScreen extends StatefulWidget {
-  const PayoutMethodsScreen({super.key});
+  const PayoutMethodsScreen({super.key, this.autoPopOnBankLinked = false});
+
+  /// Post-approval gate mode (2026-08-25, user spec): when a bank is
+  /// linked successfully the whole screen pops itself — the celebration's
+  /// gate re-checks and continues the flow, so the driver never has to
+  /// hunt for the back arrow after connecting their bank. The menu and
+  /// earnings entries keep the default (stay on the page).
+  final bool autoPopOnBankLinked;
 
   @override
   State<PayoutMethodsScreen> createState() => _PayoutMethodsScreenState();
@@ -1141,6 +1148,12 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
           if (!mounted) return;
           _snack(S.of(context).bankAccountLinked);
           await _loadMethods();
+          // Post-approval gate: the bank is in, so this screen's job is
+          // done — pop back to the celebration, whose gate re-checks and
+          // continues to the guide/home on its own. No back arrow needed.
+          if (widget.autoPopOnBankLinked && mounted) {
+            Navigator.of(context).pop(true);
+          }
         }
         return;
       }

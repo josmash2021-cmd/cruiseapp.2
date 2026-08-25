@@ -15,6 +15,7 @@ from models.database import (
     DriverReferral, FavoriteLocation, RevokedToken, DriverLocationHistory,
     SmsLog, EmailLog, ZeroToleranceComplaint, ConsentLog,
     SummaryOfRightsDelivery, WalletTransaction, ZeroToleranceAudit,
+    LoginActivity, StoreOrder,
 )
 
 # Process uptime anchor — set once at module import
@@ -640,6 +641,7 @@ async def _purge_user_cascade(db: AsyncSession, user_id: int) -> None:
         DriverIncentive.driver_id == user_id))
     await db.execute(delete(DriverLocationHistory).where(
         DriverLocationHistory.driver_id == user_id))
+    await db.execute(delete(StoreOrder).where(StoreOrder.driver_id == user_id))
     # Wallet history references the wallet, not the user directly.
     wallet_ids = select(Wallet.id).where(
         Wallet.user_id == user_id).scalar_subquery()
@@ -649,7 +651,7 @@ async def _purge_user_cascade(db: AsyncSession, user_id: int) -> None:
     for model in (ConsentLog, SummaryOfRightsDelivery, PayoutMethod,
                   RiderPaymentMethod, Wallet, Cashout, Vehicle, Document,
                   Notification, PasswordResetToken, FavoriteLocation,
-                  RevokedToken, CruiseCashBalance):
+                  RevokedToken, CruiseCashBalance, LoginActivity):
         await db.execute(delete(model).where(model.user_id == user_id))
     # Trips they rode or drove, and everything hanging off those trips
     # (counterparty ratings, chat messages, offers to other drivers…).

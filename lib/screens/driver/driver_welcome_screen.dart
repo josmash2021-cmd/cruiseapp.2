@@ -202,6 +202,8 @@ class _DriverWelcomeScreenState extends State<DriverWelcomeScreen> {
     final pad = MediaQuery.of(context).padding;
 
     return Scaffold(
+      // Fields stay put; only the CTA floats above the keyboard.
+      resizeToAvoidBottomInset: false,
       backgroundColor: _navy,
       body: GestureDetector(
         onTap: () => FocusScope.of(context).unfocus(),

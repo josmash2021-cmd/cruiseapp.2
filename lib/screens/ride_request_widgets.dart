@@ -811,7 +811,7 @@ extension _RideRequestWidgets on _RideRequestScreenState {
             // away vertically without the list jumping sideways.
             ? const SizedBox(width: double.infinity)
             : Padding(
-                padding: const EdgeInsets.only(bottom: 10),
+                padding: EdgeInsets.only(bottom: selected ? 10 : 4),
                 child: _PressableScale(
                   onTap: () {
                     HapticService.selectionClick();
@@ -832,15 +832,17 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                     duration: const Duration(milliseconds: 280),
                     curve: Curves.easeInOutCubic,
                     padding: EdgeInsets.symmetric(
-                        horizontal: 12, vertical: selected ? 16 : 12),
+                        horizontal: 12, vertical: selected ? 16 : 10),
                     decoration: BoxDecoration(
                       color: selected ? neuSurface : Colors.transparent,
                       borderRadius: BorderRadius.circular(18),
+                      // Lyft-style: compact rows are FLAT on the sheet — no
+                      // box, no border. Only the picked tier gets the card.
                       border: Border.all(
                         color: selected
                             ? const Color(0xFFE8C547).withValues(alpha: 0.7)
-                            : Colors.white.withValues(alpha: 0.08),
-                        width: selected ? 1.6 : 1.0,
+                            : Colors.transparent,
+                        width: selected ? 1.6 : 0.0,
                       ),
                     ),
                     child: Column(

@@ -74,21 +74,21 @@ class _FirstTripGuideScreenState extends State<FirstTripGuideScreen> {
         title: s.guideNavigateTitle,
         body: s.guideNavigateBody,
         art: const _GuideImageArt(
-            number: 2, asset: 'assets/images/onboarding/guide_nav.jpg'),
+            number: 2, asset: 'assets/images/onboarding/guide_nav.png'),
       ),
       _GuidePageData(
         number: 3,
         title: s.guideArriveTitle,
         body: s.guideArriveBody,
         art: const _GuideImageArt(
-            number: 3, asset: 'assets/images/onboarding/guide_pickup.jpg'),
+            number: 3, asset: 'assets/images/onboarding/guide_pickup.png'),
       ),
       _GuidePageData(
         number: 4,
         title: s.guideFinishTitle,
         body: s.guideFinishBody,
         art: const _GuideImageArt(
-            number: 4, asset: 'assets/images/onboarding/guide_paid.jpg'),
+            number: 4, asset: 'assets/images/onboarding/guide_paid.png'),
       ),
     ];
 

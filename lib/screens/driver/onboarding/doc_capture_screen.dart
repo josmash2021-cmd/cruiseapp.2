@@ -7,6 +7,7 @@ import 'package:image_picker/image_picker.dart';
 import '../../../config/page_transitions.dart';
 import '../../../l10n/app_localizations.dart';
 import '../../../services/api_service.dart';
+import '../../../services/firebase_storage_service.dart';
 import '../../../widgets/doc_guidelines_view.dart';
 import 'onboarding_items.dart';
 import 'onboarding_widgets.dart';
@@ -151,6 +152,23 @@ class _DocCaptureScreenState extends State<DocCaptureScreen> {
     final s = S.of(context);
     setState(() => _uploading = true);
     try {
+      // Permanent URL mirror for the Dispatch admin — the same one the
+      // legacy documents screen does (2026-08-25: this capture page now
+      // also serves re-uploads from Documents, so both surfaces must see
+      // the photo).
+      try {
+        final me = await ApiService.getMe().timeout(const Duration(seconds: 15));
+        final userId = int.tryParse(me?['id']?.toString() ?? '') ?? 0;
+        final mirrorUrl = await FirebaseStorageService.uploadDocumentPhoto(
+          path,
+          userId,
+          _docType,
+        );
+        await FirebaseStorageService.saveVerificationPhoto(
+            userId, _docType, mirrorUrl);
+      } catch (e) {
+        debugPrint('[DocCapture] Firebase Storage mirror failed: $e');
+      }
       final uploaded = await ApiService.uploadDocument(
         docType: _docType,
         filePath: path,

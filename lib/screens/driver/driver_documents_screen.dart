@@ -11,6 +11,10 @@ import '../../widgets/feathered_image.dart';
 import '../../widgets/neu_style.dart';
 import 'background_check_consent_screen.dart';
 import 'driver_license_plate_screen.dart';
+import 'onboarding/doc_capture_screen.dart';
+import 'onboarding/license_capture_screen.dart';
+import 'onboarding/onboarding_items.dart';
+import 'onboarding/profile_photo_capture_screen.dart';
 
 enum _ExpiryStatus { ok, expiringSoon, expired }
 
@@ -26,12 +30,10 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
   static const _gold = Color(0xFFE8C547);
 
   bool _loading = true;
-  bool _uploading = false;
   List<Map<String, dynamic>> _documents = [];
   String _vehicleLabel = '';
   // The completed list is the whole page — it opens expanded.
   bool _submittedOpen = true;
-  final _picker = ImagePicker();
 
   // All required doc types for drivers
   static const _requiredDocs = [
@@ -276,92 +278,6 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
     return plate.isEmpty ? parts : '$parts (${plate.toUpperCase()})';
   }
 
-  /// Upload a new document photo (for expired or rejected docs)
-  Future<void> _uploadDocument(String docType, String title) async {
-    final source = await showModalBottomSheet<ImageSource>(
-      context: context,
-      backgroundColor: neuSurface,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (ctx) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 16),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 40, height: 4,
-                decoration: BoxDecoration(
-                  color: Colors.white24,
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-              const SizedBox(height: 20),
-              Text('Upload $title',
-                  style: const TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.w800)),
-              const SizedBox(height: 20),
-              ListTile(
-                leading: Container(
-                  width: 44, height: 44,
-                  decoration: BoxDecoration(color: _gold.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(12)),
-                  child: const Icon(Icons.camera_alt_rounded, color: _gold, size: 22),
-                ),
-                title: Text(S.of(context).takePhoto, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
-                subtitle: Text(S.of(context).takePhotoSubtitle,
-                    style: TextStyle(color: Colors.white.withValues(alpha: 0.4), fontSize: 12)),
-                onTap: () => Navigator.pop(ctx, ImageSource.camera),
-              ),
-              ListTile(
-                leading: Container(
-                  width: 44, height: 44,
-                  decoration: BoxDecoration(color: _gold.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(12)),
-                  child: const Icon(Icons.photo_library_rounded, color: _gold, size: 22),
-                ),
-                title: Text(S.of(context).chooseFromGallery, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
-                subtitle: Text(S.of(context).chooseFromGallerySubtitle,
-                    style: TextStyle(color: Colors.white.withValues(alpha: 0.4), fontSize: 12)),
-                onTap: () => Navigator.pop(ctx, ImageSource.gallery),
-              ),
-              const SizedBox(height: 8),
-            ],
-          ),
-        ),
-      ),
-    );
-    if (source == null || !mounted) return;
-
-    try {
-      final xFile = await _picker.pickImage(source: source, maxWidth: 1280, maxHeight: 1280, imageQuality: 75);
-      if (xFile == null || !mounted) return;
-
-      setState(() => _uploading = true);
-      await ApiService.uploadDocument(docType: docType, filePath: xFile.path).timeout(const Duration(seconds: 60));
-
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('$title uploaded — under review'),
-          backgroundColor: const Color(0xFF4CAF50),
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        ),
-      );
-      await _fetchDocuments();
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Failed to upload $title'),
-          backgroundColor: Colors.red,
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        ),
-      );
-    } finally {
-      if (mounted) setState(() => _uploading = false);
-    }
-  }
 
   IconData _iconForDoc(Map<String, dynamic> doc) {
     if (doc['icon'] != null && doc['icon'] is IconData) {
@@ -543,28 +459,6 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
                     ],
                   ),
                 ),
-                if (_uploading)
-                  Container(
-                    color: Colors.black54,
-                    child: Center(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const CircularProgressIndicator(
-                              color: _gold, strokeWidth: 2),
-                          const SizedBox(height: 16),
-                          Text(
-                            S.of(context).uploadingDocument,
-                            style: const TextStyle(
-                              color: Colors.white70,
-                              fontSize: 14,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
               ],
             ),
         ],
@@ -805,6 +699,45 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
   /// card said it three times over: a tinted icon, a coloured border and
   /// a pill on the right, all encoding the same word. The subtitle is
   /// free to say something the icon cannot, which is when it expires.
+  /// Opens the NEW capture experience for this document type (2026-08-25):
+  /// insurance/registration/inspection go to the guided DocCaptureScreen,
+  /// the license to its OCR front/back flow, face biometrics to the
+  /// profile-photo capture. Anything without a guided flow keeps the
+  /// legacy upload sheet. On return the list reloads, so the document
+  /// shows "Pending" until dispatch approves it.
+  Future<void> _openCaptureFor(Map<String, dynamic> doc) async {
+    final docType = doc['doc_type'] as String?;
+    final Widget? page = switch (docType) {
+      'insurance' => DocCaptureScreen(
+          entry: OnboardingItemEntry(
+            item: OnboardingItem.insurance,
+            status: OnboardingItemStatus.pending,
+          ),
+        ),
+      'registration' => DocCaptureScreen(
+          entry: OnboardingItemEntry(
+            item: OnboardingItem.registration,
+            status: OnboardingItemStatus.pending,
+          ),
+        ),
+      'vehicle_inspection' => DocCaptureScreen(
+          entry: OnboardingItemEntry(
+            item: OnboardingItem.inspection,
+            status: OnboardingItemStatus.pending,
+          ),
+        ),
+      'drivers_license' => const LicenseCaptureScreen(),
+      'profile_photo' => const ProfilePhotoCaptureScreen(),
+      _ => null,
+    };
+    if (page == null) {
+      _showUploadSheet(docType: docType);
+      return;
+    }
+    await Navigator.of(context).push(onboardingFadeSlideRoute(page));
+    if (mounted) _fetchDocuments();
+  }
+
   Widget _documentCard(Map<String, dynamic> doc) {
     final s = S.of(context);
     final status = (doc['status'] ?? 'not_uploaded') as String;
@@ -914,7 +847,7 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
                 } else if (docType == 'license_plate') {
                   _editPlate(doc);
                 } else if (canUpload) {
-                  _uploadDocument(docType!, title);
+                  _openCaptureFor(doc);
                 } else {
                   _showDocDetails(doc);
                 }
@@ -1069,7 +1002,7 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
                       child: OutlinedButton.icon(
                         onPressed: () {
                           Navigator.pop(ctx);
-                          _showUploadSheet(docType: doc['doc_type'] as String?);
+                          _openCaptureFor(doc);
                         },
                         icon: const Icon(Icons.refresh_rounded, size: 18),
                         label: FittedBox(

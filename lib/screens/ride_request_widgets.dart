@@ -1065,72 +1065,70 @@ extension _RideRequestWidgets on _RideRequestScreenState {
     }
   }
 
-  /// Action panel (2026-08-24, Lyft-style): FLAT on the sheet's own
-  /// background — no separate floating card, no shadow. Payment method at
-  /// the left (same picker, same logos, same navigation), Schedule at the
-  /// right, and the big gold "Select {tier}" button beneath, separated
-  /// from the list by a hairline. Lives INSIDE the sheet container, so
-  /// _SheetSizeReporter keeps measuring sheet+panel exactly as before.
-  /// Grows in with AnimatedSize the first time a tier is picked.
+  /// Action panel (2026-08-25, user spec — Lyft foto 4): its OWN floating
+  /// card sitting on the sheet — raised surface, rounded corners, visible
+  /// sheet background around it — never flat and edge-to-edge. Payment
+  /// method at the left (same picker, same logos, same navigation),
+  /// Schedule at the right, and the big gold "Select {tier}" button
+  /// beneath. Lives INSIDE the sheet container, so _SheetSizeReporter
+  /// keeps measuring sheet+panel exactly as before. Grows in with
+  /// AnimatedSize the first time a tier is picked.
   Widget _buildActionPanel(AppColors c, RideOption option, bool faresReady) {
     return AnimatedSize(
       duration: const Duration(milliseconds: 300),
       curve: Curves.easeInOutCubic,
       alignment: Alignment.topCenter,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const SizedBox(height: 4),
-          // Hairline between the tier list and the action block.
-          Container(height: 1, color: Colors.white.withValues(alpha: 0.05)),
-          const SizedBox(height: 4),
-          Row(
-            children: [
-              Expanded(
-                child: _PaymentMethodButton(
-                  onTap: () => _showPaymentMethodPicker(c, option),
-                  selectedMethod: _selectedPaymentMethod,
-                  logoBuilder: _paymentLogoWidget,
-                  labelBuilder: _paymentLabel,
+      child: Container(
+        margin: const EdgeInsets.only(top: 10, bottom: 8),
+        padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
+        decoration: neuBox(radius: 20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: _PaymentMethodButton(
+                    onTap: () => _showPaymentMethodPicker(c, option),
+                    selectedMethod: _selectedPaymentMethod,
+                    logoBuilder: _paymentLogoWidget,
+                    labelBuilder: _paymentLabel,
+                  ),
                 ),
-              ),
-              const SizedBox(width: 8),
-              _buildScheduleButton(),
-            ],
-          ),
-          // Hairline divider between the payment row and the button
-          // (rule-18 idiom).
-          Container(height: 1, color: Colors.white.withValues(alpha: 0.05)),
-          const SizedBox(height: 10),
-          _WebRequestButton(
-            // Nobody within fifteen miles means there is nothing to
-            // request. Better to show it disabled than to take the
-            // request and leave the rider watching a search that was
-            // never going to find anyone. Only a confirmed zero disables
-            // it — an unknown count leaves the button live. Only an
-            // IMMEDIATE request is gated on drivers being around: a
-            // reservation goes to the scheduled marketplace (2026-08-17).
-            // And not before the fares are real, or Cruise Cash comes up
-            // short of the FULL fare (user spec 2026-08-04).
-            enabled: !_isProcessingPayment &&
-                _hasAnyPaymentMethod &&
-                (_isScheduledMode || !_noDriversNearby) &&
-                faresReady &&
-                !_cruiseCashShort(option),
-            isLoading: _isProcessingPayment,
-            // "Select {tier}" (2026-08-22): the button no longer pays
-            // inline — it opens the pickup-pin page first, and the SAME
-            // payment pipeline runs from there. The label crossfades on
-            // every tier change inside the button itself.
-            label:
-                S.of(context).selectTierLabel(_tierDisplayName(option)),
-            onTap: () {
-              HapticService.mediumImpact();
-              _openPickupConfirm(c, option);
-            },
-          ),
-          const SizedBox(height: 6),
-        ],
+                const SizedBox(width: 8),
+                _buildScheduleButton(),
+              ],
+            ),
+            const SizedBox(height: 10),
+            _WebRequestButton(
+              // Nobody within fifteen miles means there is nothing to
+              // request. Better to show it disabled than to take the
+              // request and leave the rider watching a search that was
+              // never going to find anyone. Only a confirmed zero disables
+              // it — an unknown count leaves the button live. Only an
+              // IMMEDIATE request is gated on drivers being around: a
+              // reservation goes to the scheduled marketplace (2026-08-17).
+              // And not before the fares are real, or Cruise Cash comes up
+              // short of the FULL fare (user spec 2026-08-04).
+              enabled: !_isProcessingPayment &&
+                  _hasAnyPaymentMethod &&
+                  (_isScheduledMode || !_noDriversNearby) &&
+                  faresReady &&
+                  !_cruiseCashShort(option),
+              isLoading: _isProcessingPayment,
+              // "Select {tier}" (2026-08-22): the button no longer pays
+              // inline — it opens the pickup-pin page first, and the SAME
+              // payment pipeline runs from there. The label crossfades on
+              // every tier change inside the button itself.
+              label:
+                  S.of(context).selectTierLabel(_tierDisplayName(option)),
+              onTap: () {
+                HapticService.mediumImpact();
+                _openPickupConfirm(c, option);
+              },
+            ),
+          ],
+        ),
       ),
     );
   }

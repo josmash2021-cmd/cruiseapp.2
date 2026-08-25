@@ -10,14 +10,17 @@ import '../../../widgets/feathered_image.dart';
 import 'driver_todo_screen.dart';
 import 'onboarding_widgets.dart';
 
-/// Notification-permission page of the DRIVER registration flow (2026-08-25)
-/// — the same Lyft-style page the rider signup has always had
-/// (`notifications_screen.dart`): X to skip, feathered hero, "Help us keep
-/// you informed", gold Allow button, and the native OS prompt fired once
-/// when the page appears. Shown exactly once per device, right after the
-/// intro sequence and before the to-do hub.
+/// Notification-permission page of the registration flows (2026-08-25) —
+/// the same Lyft-style page for rider and driver: X to skip, feathered
+/// hero, "Help us keep you informed", gold Allow button, and the native OS
+/// prompt fired once when the page appears. Shown exactly once per device,
+/// right after the email step; [nextScreen] decides where it lands next.
 class DriverNotificationsScreen extends StatefulWidget {
-  const DriverNotificationsScreen({super.key});
+  const DriverNotificationsScreen({super.key, this.nextScreen});
+
+  /// Where to continue after Allow / skip. Defaults to the driver to-do
+  /// hub (the intro-flow entry keeps working unchanged).
+  final Widget? nextScreen;
 
   /// Per-device latch — the page (and the OS prompt) shows once ever.
   static const shownFlag = 'driver_notif_page_shown_v1';
@@ -67,9 +70,9 @@ class _DriverNotificationsScreenState extends State<DriverNotificationsScreen> {
 
   void _goHub() {
     if (!mounted) return;
-    Navigator.of(
-      context,
-    ).pushReplacement(onboardingFadeSlideRoute(const DriverTodoScreen()));
+    Navigator.of(context).pushReplacement(
+      onboardingFadeSlideRoute(widget.nextScreen ?? const DriverTodoScreen()),
+    );
   }
 
   @override

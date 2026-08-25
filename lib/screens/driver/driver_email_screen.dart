@@ -6,6 +6,7 @@ import '../../l10n/app_localizations.dart';
 import '../../services/api_service.dart';
 import '../../services/user_session.dart';
 import 'driver_drive_city_screen.dart';
+import 'onboarding/driver_notifications_screen.dart';
 
 /// Driver phone onboarding — email step, right after [DriverNameScreen].
 /// Required (no skip): collects the account email, validates the format
@@ -97,8 +98,12 @@ class _DriverEmailScreenState extends State<DriverEmailScreen> {
         );
       }
       if (!mounted) return;
+      // Next: the notification-permission page (OS prompt fires there,
+      // 2026-08-25), then the drive-city step.
       Navigator.of(context).push(
-        onboardingFadeSlideRoute(const DriverDriveCityScreen()),
+        onboardingFadeSlideRoute(
+          const DriverNotificationsScreen(nextScreen: DriverDriveCityScreen()),
+        ),
       );
       setState(() => _saving = false);
     } on ApiException catch (e) {

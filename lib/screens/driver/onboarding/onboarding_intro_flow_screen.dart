@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../config/page_transitions.dart';
-import 'driver_notifications_screen.dart';
 import 'driver_todo_screen.dart';
 import 'onboarding_intro_screen.dart';
 import 'onboarding_items.dart';
@@ -93,19 +92,13 @@ class _OnboardingIntroFlowScreenState extends State<OnboardingIntroFlowScreen> {
     _toHub();
   }
 
-  Future<void> _toHub() async {
+  void _toHub() {
     if (!mounted) return;
-    // Notification-permission page once, between the intro sequence and the
-    // hub (2026-08-25 — the driver flow never showed one before).
-    final notifShown = await DriverNotificationsScreen.wasShown();
-    if (!mounted) return;
-    Navigator.of(context).pushReplacement(
-      onboardingFadeSlideRoute(
-        notifShown
-            ? const DriverTodoScreen()
-            : const DriverNotificationsScreen(),
-      ),
-    );
+    // The notification-permission page moved to right after the email step
+    // (2026-08-25) — the intro sequence goes straight to the hub.
+    Navigator.of(
+      context,
+    ).pushReplacement(onboardingFadeSlideRoute(const DriverTodoScreen()));
   }
 
   @override

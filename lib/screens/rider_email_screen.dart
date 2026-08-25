@@ -4,6 +4,7 @@ import '../config/page_transitions.dart';
 import '../l10n/app_localizations.dart';
 import '../services/api_service.dart';
 import '../services/user_session.dart';
+import 'driver/onboarding/driver_notifications_screen.dart';
 import 'rider_add_payment_screen.dart';
 
 /// Rider phone onboarding — step 3, email collection (Lyft-style):
@@ -90,12 +91,16 @@ class _RiderEmailScreenState extends State<RiderEmailScreen> {
         role: 'rider',
       );
       if (!mounted) return;
-      // Next onboarding step: Add payment method (Lyft-style). That page
-      // skips itself for riders who already have a method on file and lands
-      // on ReadyToRideScreen → home.
+      // Next: the notification-permission page (OS prompt fires there,
+      // 2026-08-25), then Add payment method — which skips itself for
+      // riders who already have a method on file and lands on
+      // ReadyToRideScreen → home.
       Navigator.of(context).push(
         smoothFadeRoute(
-          RiderAddPaymentScreen(user: {...widget.user, 'email': email}),
+          DriverNotificationsScreen(
+            nextScreen: RiderAddPaymentScreen(
+                user: {...widget.user, 'email': email}),
+          ),
         ),
       );
     } on ApiException catch (e) {

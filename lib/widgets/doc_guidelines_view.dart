@@ -62,13 +62,14 @@ class DocGuidelinesView extends StatelessWidget {
       return Center(child: DocScanIllustration(docType: docType, height: 190));
     }
     // Full-width photo of the real license; the vector illustration stays
-    // as the fallback if the asset ever fails to load.
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(18),
+    // as the fallback if the asset ever fails to load. The negative margin
+    // breaks the page's 24px padding so the photo runs edge to edge.
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: -24),
       child: Image.asset(
         asset,
         width: double.infinity,
-        height: 190,
+        height: 210,
         fit: BoxFit.cover,
         errorBuilder: (_, __, ___) =>
             Center(child: DocScanIllustration(docType: docType, height: 190)),

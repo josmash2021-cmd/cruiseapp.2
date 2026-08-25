@@ -558,42 +558,35 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
     tp.paint(
         canvas, Offset(rect.left + hPad + borderW, rect.top + vPad + borderW));
 
-    // ── Hailing person: head + torso + one raised arm, round-cap strokes.
-    // No circle or frame around it — the silhouette IS the marker.
+    // ── Hailing person: the official Material person-with-raised-arm
+    // glyph (2026-08-25 — replaced the hand-drawn stick figure; this
+    // Flutter version has no Icons.hailing, emoji_people_rounded is the
+    // hailing look). Drawn via the icon font, with the pill's soft shadow.
+    const hailingIcon = Icons.emoji_people_rounded;
     final px = (totalW - personW) / 2;
     final py = h + gap;
-    final figure = Paint()
-      ..color = selected ? _gold : const Color(0xFFF2DFA0) // white-gold
-      ..strokeWidth = 3.0
-      ..strokeCap = StrokeCap.round
-      ..style = PaintingStyle.stroke;
-    final figureShadow = Paint()
-      ..color = Colors.black.withValues(alpha: 0.45)
-      ..strokeWidth = 3.0
-      ..strokeCap = StrokeCap.round
-      ..style = PaintingStyle.stroke
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2.2);
-    Offset P(double x, double y) => Offset(px + x, py + y);
-    final cx = personW / 2;
-    void drawFigure(Paint p) {
-      canvas.drawLine(P(cx, 6.6), P(cx, 13.6), p); // torso
-      canvas.drawLine(P(cx, 7.6), P(cx + 4.6, 3.2), p); // raised (hailing) arm
-      canvas.drawLine(P(cx, 7.6), P(cx - 3.6, 10.8), p); // other arm, down
-      canvas.drawLine(P(cx, 13.6), P(cx - 2.8, 20.8), p); // legs
-      canvas.drawLine(P(cx, 13.6), P(cx + 2.8, 20.8), p);
+    TextPainter iconPainter(Color color) {
+      return TextPainter(
+        text: TextSpan(
+          text: String.fromCharCode(hailingIcon.codePoint),
+          style: TextStyle(
+            fontFamily: hailingIcon.fontFamily,
+            package: hailingIcon.fontPackage,
+            fontSize: personH - 2,
+            color: color,
+          ),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout();
     }
 
+    final shadowPainter = iconPainter(Colors.black.withValues(alpha: 0.45));
     canvas.save();
     canvas.translate(0.6, 1.0);
-    drawFigure(figureShadow);
+    shadowPainter.paint(canvas, Offset(px, py));
     canvas.restore();
-    drawFigure(figure);
-    canvas.drawCircle(
-        P(cx, 3.0), 2.7,
-        Paint()
-          ..color = Colors.black.withValues(alpha: 0.45)
-          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2.2));
-    canvas.drawCircle(P(cx, 3.0), 2.7, Paint()..color = figure.color);
+    iconPainter(selected ? _gold : const Color(0xFFF2DFA0))
+        .paint(canvas, Offset(px, py));
 
     final side = shadowPad * 2;
     final img = await recorder.endRecording().toImage(

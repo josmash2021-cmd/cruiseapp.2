@@ -12,11 +12,6 @@ class NotificationsScreen extends StatefulWidget {
   static const _gold = Color(0xFFE8C547);
   static const _goldLight = Color(0xFFF5D990);
 
-  /// SharedPreferences flag — the native prompt is fired automatically the
-  /// first time this page is shown, never again (iOS only prompts once and
-  /// repeated permission_handler asks are no-ops, but we still gate it).
-  static const _autoAskedKey = 'notif_perm_auto_asked_v1';
-
   final String firstName;
   final String lastName;
   final String email;
@@ -41,14 +36,10 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     _autoRequestPermissionOnce();
   }
 
-  /// Fire the native notification prompt as soon as the page appears (once
-  /// ever). The "Allow" button stays as the manual fallback.
+  /// Fire the native notification prompt as soon as the page appears —
+  /// on EVERY registration (2026-08-25: the once-per-device latch is gone;
+  /// the OS itself decides if the dialog can re-show, we always ask).
   Future<void> _autoRequestPermissionOnce() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      if (prefs.getBool(NotificationsScreen._autoAskedKey) == true) return;
-      await prefs.setBool(NotificationsScreen._autoAskedKey, true);
-    } catch (_) {}
     await _requestNativePermission();
   }
 

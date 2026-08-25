@@ -2,7 +2,6 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:permission_handler/permission_handler.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../config/page_transitions.dart';
 import '../../../l10n/app_localizations.dart';
@@ -13,26 +12,16 @@ import 'onboarding_widgets.dart';
 /// Notification-permission page of the registration flows (2026-08-25) —
 /// the same Lyft-style page for rider and driver: X to skip, feathered
 /// hero, "Help us keep you informed", gold Allow button, and the native OS
-/// prompt fired once when the page appears. Shown exactly once per device,
-/// right after the email step; [nextScreen] decides where it lands next.
+/// prompt fired when the page appears. It fires on EVERY registration —
+/// same device or not (user spec: no once-per-device latch). The OS itself
+/// decides whether the dialog can re-show; we always ask.
+/// [nextScreen] decides where it lands next.
 class DriverNotificationsScreen extends StatefulWidget {
   const DriverNotificationsScreen({super.key, this.nextScreen});
 
   /// Where to continue after Allow / skip. Defaults to the driver to-do
   /// hub (the intro-flow entry keeps working unchanged).
   final Widget? nextScreen;
-
-  /// Per-device latch — the page (and the OS prompt) shows once ever.
-  static const shownFlag = 'driver_notif_page_shown_v1';
-
-  static Future<bool> wasShown() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      return prefs.getBool(shownFlag) ?? false;
-    } catch (_) {
-      return false;
-    }
-  }
 
   @override
   State<DriverNotificationsScreen> createState() =>
@@ -43,15 +32,9 @@ class _DriverNotificationsScreenState extends State<DriverNotificationsScreen> {
   @override
   void initState() {
     super.initState();
-    _markShownAndAsk();
-  }
-
-  Future<void> _markShownAndAsk() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setBool(DriverNotificationsScreen.shownFlag, true);
-    } catch (_) {}
-    await _requestNativePermission();
+    // Ask on every registration (2026-08-25): no device latch — a new
+    // signup always gets the OS prompt.
+    _requestNativePermission();
   }
 
   /// Android 13+ goes through permission_handler; iOS needs the

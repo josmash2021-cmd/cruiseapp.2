@@ -921,12 +921,16 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
                 : const NeuDotsBackdrop(),
           ),
 
-          // ── Top bar: flat X + title, then the filter pills ──
+          // ── Top bar: X + title + filter pills inside ONE solid container
+          // (2026-08-25, Lyft reference): they no longer float over the map.
           Positioned(
-            top: media.padding.top + 4,
+            top: 0,
             left: 0,
             right: 0,
-            child: Column(
+            child: Container(
+              color: neuBase,
+              padding: EdgeInsets.only(top: media.padding.top + 4, bottom: 10),
+              child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
                 SizedBox(
@@ -1011,6 +1015,7 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
                   ),
                 ),
               ],
+            ),
             ),
           ),
 

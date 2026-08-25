@@ -5744,6 +5744,18 @@ class S {
   String get obIntroPhotoSub => _es
       ? 'Tómate una foto de perfil para que los pasajeros te encuentren.'
       : 'Take a profile photo to help passengers find you.';
+  // Rider registration photo+gender page (2026-08-25): same title as the
+  // driver intro, but the rider's photo helps DRIVERS find them.
+  String get riderPhotoSubDrivers => _es
+      ? 'Tómate una foto de perfil para ayudar a los conductores a encontrarte.'
+      : 'Take a profile photo to help drivers find you.';
+  String get genderSectionLabel => _es ? 'Género' : 'Gender';
+  String get genderMale => _es ? 'Masculino' : 'Male';
+  String get genderFemale => _es ? 'Femenino' : 'Female';
+  String get genderOther => _es ? 'Otro' : 'Other';
+  String get takePhotoButton => _es ? 'Tomar foto' : 'Take a photo';
+  String get uploadFromGalleryButton =>
+      _es ? 'Cargar desde la galería' : 'Upload from gallery';
   String get obIntroBackgroundTitle => _es
       ? 'Consentimiento de verificación de antecedentes'
       : 'Background check consent';

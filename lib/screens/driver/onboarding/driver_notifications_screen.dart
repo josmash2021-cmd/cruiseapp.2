@@ -1,0 +1,174 @@
+import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
+import 'package:permission_handler/permission_handler.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+import '../../../config/page_transitions.dart';
+import '../../../l10n/app_localizations.dart';
+import '../../../widgets/feathered_image.dart';
+import 'driver_todo_screen.dart';
+import 'onboarding_widgets.dart';
+
+/// Notification-permission page of the DRIVER registration flow (2026-08-25)
+/// — the same Lyft-style page the rider signup has always had
+/// (`notifications_screen.dart`): X to skip, feathered hero, "Help us keep
+/// you informed", gold Allow button, and the native OS prompt fired once
+/// when the page appears. Shown exactly once per device, right after the
+/// intro sequence and before the to-do hub.
+class DriverNotificationsScreen extends StatefulWidget {
+  const DriverNotificationsScreen({super.key});
+
+  /// Per-device latch — the page (and the OS prompt) shows once ever.
+  static const shownFlag = 'driver_notif_page_shown_v1';
+
+  static Future<bool> wasShown() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getBool(shownFlag) ?? false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  @override
+  State<DriverNotificationsScreen> createState() =>
+      _DriverNotificationsScreenState();
+}
+
+class _DriverNotificationsScreenState extends State<DriverNotificationsScreen> {
+  @override
+  void initState() {
+    super.initState();
+    _markShownAndAsk();
+  }
+
+  Future<void> _markShownAndAsk() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(DriverNotificationsScreen.shownFlag, true);
+    } catch (_) {}
+    await _requestNativePermission();
+  }
+
+  /// Android 13+ goes through permission_handler; iOS needs the
+  /// FirebaseMessaging prompt (alert + badge + sound). Asking both is
+  /// harmless on either platform.
+  Future<void> _requestNativePermission() async {
+    await Permission.notification.request();
+    try {
+      await FirebaseMessaging.instance.requestPermission(
+        alert: true,
+        badge: true,
+        sound: true,
+      );
+    } catch (_) {}
+  }
+
+  void _goHub() {
+    if (!mounted) return;
+    Navigator.of(
+      context,
+    ).pushReplacement(onboardingFadeSlideRoute(const DriverTodoScreen()));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final s = S.of(context);
+    return Scaffold(
+      backgroundColor: kOnboardingNavy,
+      body: SafeArea(
+        child: Column(
+          children: [
+            const SizedBox(height: 8),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: Align(
+                alignment: Alignment.topLeft,
+                child: GestureDetector(
+                  onTap: _goHub,
+                  child: Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.06),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Icon(
+                      Icons.close_rounded,
+                      color: Colors.white,
+                      size: 20,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 24),
+            const FeatheredImage(
+              'assets/images/onboarding/notifications.jpg',
+              width: double.infinity,
+              height: 240,
+            ),
+            const SizedBox(height: 36),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: Text(
+                s.helpUsKeepInformed,
+                textAlign: TextAlign.center,
+                style: GoogleFonts.poppins(
+                  fontSize: 28,
+                  fontWeight: FontWeight.w800,
+                  color: Colors.white,
+                  height: 1.2,
+                  letterSpacing: -0.5,
+                ),
+              ),
+            ),
+            const SizedBox(height: 14),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: Text(
+                s.allowNotifsDescription,
+                textAlign: TextAlign.center,
+                style: GoogleFonts.inter(
+                  fontSize: 15,
+                  color: Colors.white.withValues(alpha: 0.6),
+                  height: 1.5,
+                ),
+              ),
+            ),
+            const Spacer(),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+              child: SizedBox(
+                width: double.infinity,
+                height: 56,
+                child: ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: kOnboardingGold,
+                    foregroundColor: const Color(0xFF1A1400),
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(28),
+                    ),
+                  ),
+                  onPressed: () async {
+                    await _requestNativePermission();
+                    _goHub();
+                  },
+                  child: Text(
+                    s.allowBtn,
+                    style: const TextStyle(
+                      fontSize: 17,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}

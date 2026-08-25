@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../config/app_theme.dart';
 import '../config/page_transitions.dart';
 import '../l10n/app_localizations.dart';
+import '../widgets/feathered_image.dart';
 import 'payment_method_screen.dart';
 
 class NotificationsScreen extends StatefulWidget {
@@ -104,17 +105,14 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
             ),
             const SizedBox(height: 24),
 
-            // ── Illustration: full-width image ──
-            ClipRRect(
-              borderRadius: const BorderRadius.only(
+            // ── Illustration: full-width image, feathered edges ──
+            const FeatheredImage(
+              'assets/images/onboarding/notifications.jpg',
+              width: double.infinity,
+              height: 240,
+              borderRadius: BorderRadius.only(
                 bottomLeft: Radius.circular(28),
                 bottomRight: Radius.circular(28),
-              ),
-              child: Image.asset(
-                'assets/images/onboarding/notifications.jpg',
-                width: double.infinity,
-                height: 240,
-                fit: BoxFit.cover,
               ),
             ),
             const SizedBox(height: 36),

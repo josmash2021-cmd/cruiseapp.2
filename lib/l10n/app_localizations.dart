@@ -5652,6 +5652,13 @@ class S {
       ? 'Tengo un vehículo — 2012 o más nuevo, 4 puertas, 5 cinturones'
       : 'I have a vehicle — 2012 or newer, 4 doors, 5 seatbelts';
   String get obInReview => _es ? 'En revisión' : 'In review';
+  // All onboarding items submitted (2026-08-25): the hub swaps the featured
+  // "up next" card for the car hero + this copy while dispatch reviews.
+  String get obAllInReviewTitle =>
+      _es ? '¡Todo listo!' : 'All set!';
+  String get obAllInReviewSub => _es
+      ? 'Estamos revisando tus documentos. Esta pantalla se actualiza sola en cuanto seas aprobado.'
+      : "We're reviewing your documents. This screen updates on its own the moment you're approved.";
   String get obApprovedStatus => _es ? 'Aprobado' : 'Approved';
   String get obRejectedStatus => _es ? 'Rechazado' : 'Rejected';
   String obCompletedSection(int n) =>

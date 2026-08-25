@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../config/app_theme.dart';
 import '../l10n/app_localizations.dart';
 import '../config/page_transitions.dart';
+import '../widgets/feathered_image.dart';
 import 'profile_review_screen.dart';
 
 class ProfilePhotoScreen extends StatefulWidget {
@@ -189,16 +190,13 @@ class _ProfilePhotoScreenState extends State<ProfilePhotoScreen> {
                   ),
                 )
               else
-                ClipRRect(
-                  borderRadius: const BorderRadius.only(
+                const FeatheredImage(
+                  'assets/images/onboarding/profile_photo.jpg',
+                  width: double.infinity,
+                  height: 240,
+                  borderRadius: BorderRadius.only(
                     bottomLeft: Radius.circular(28),
                     bottomRight: Radius.circular(28),
-                  ),
-                  child: Image.asset(
-                    'assets/images/onboarding/profile_photo.jpg',
-                    width: double.infinity,
-                    height: 240,
-                    fit: BoxFit.cover,
                   ),
                 ),
             const SizedBox(height: 32),

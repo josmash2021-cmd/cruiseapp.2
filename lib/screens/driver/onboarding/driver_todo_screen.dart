@@ -1,13 +1,18 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../../config/page_transitions.dart';
 import '../../../l10n/app_localizations.dart';
 import '../../../services/api_service.dart';
+import '../../../services/socket_service.dart';
 import '../../../services/user_session.dart';
+import '../../../widgets/feathered_image.dart';
 import '../../help_screen.dart';
 import '../../splash_screen.dart';
 import 'doc_capture_screen.dart';
+import 'driver_approved_celebration_screen.dart';
 import 'onboarding_intro_screen.dart';
 import 'onboarding_items.dart';
 import 'onboarding_widgets.dart';
@@ -56,11 +61,76 @@ class _DriverTodoScreenState extends State<DriverTodoScreen> {
   bool _loading = true;
   bool _completedExpanded = false;
 
+  /// Live approval watch (2026-08-25): the hub no longer waits for the
+  /// driver to kill and reopen the app. The socket push lands the instant
+  /// dispatch decides; the 25 s poll is the fallback for a dead socket.
+  StreamSubscription<Map<String, dynamic>>? _statusSub;
+  Timer? _approvalPoll;
+
   @override
   void initState() {
     super.initState();
     _load();
+    _statusSub = SocketService.accountStatusStream.listen(_onStatusPush);
+    _approvalPoll = Timer.periodic(
+      const Duration(seconds: 25),
+      (_) => _checkApproval(),
+    );
   }
+
+  @override
+  void dispose() {
+    _statusSub?.cancel();
+    _approvalPoll?.cancel();
+    super.dispose();
+  }
+
+  /// Dispatch decision over the socket. The admin endpoint sends the raw
+  /// action ("approve"/"reject"), the rider auto-verify sends "approved" —
+  /// accept both spellings.
+  void _onStatusPush(Map<String, dynamic> data) {
+    final status = (data['status'] ?? '').toString().toLowerCase();
+    if (status == 'approve' || status == 'approved') {
+      _goApproved();
+    } else if (status == 'reject' || status == 'rejected') {
+      _load(); // re-list with the rejection reasons on the cards
+    }
+  }
+
+  /// HTTP fallback: re-read the profile and route on the server truth.
+  Future<void> _checkApproval() async {
+    if (!mounted) return;
+    try {
+      final user = await ApiService.getMe();
+      if (!mounted || user == null) return;
+      final s = (user['verification_status'] as String? ?? '')
+          .toLowerCase()
+          .trim();
+      final approved = user['is_verified'] == true ||
+          user['isVerified'] == true ||
+          {'approved', 'active', 'online', 'clear', 'verified'}.contains(s);
+      if (approved) {
+        _goApproved();
+      } else if (s == 'rejected') {
+        _load();
+      }
+    } catch (_) {}
+  }
+
+  bool _navigatedToApproved = false;
+
+  /// Approved → celebration → first-trip guide → home, exactly once, with
+  /// no way back to the hub (the same chain the push-tap path uses).
+  void _goApproved() {
+    if (_navigatedToApproved || !mounted) return;
+    _navigatedToApproved = true;
+    _approvalPoll?.cancel();
+    Navigator.of(context).pushAndRemoveUntil(
+      onboardingFadeSlideRoute(const DriverApprovedCelebrationScreen()),
+      (_) => false,
+    );
+  }
+
 
   Future<void> _load() async {
     try {
@@ -231,6 +301,12 @@ class _DriverTodoScreenState extends State<DriverTodoScreen> {
                       physics: const AlwaysScrollableScrollPhysics(),
                       padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
                       children: [
+                        // ── Everything submitted: PNG hero + In review ──
+                        if (open.isEmpty) ...[
+                          _allInReviewCard(),
+                          const SizedBox(height: 8),
+                        ],
+
                         // ── Featured next item (Lyft style) ──
                         if (open.isNotEmpty) ...[
                           _featuredCard(open.first),
@@ -292,46 +368,58 @@ class _DriverTodoScreenState extends State<DriverTodoScreen> {
                         ],
 
                         const SizedBox(height: 20),
-
-                        // ── Footer — support ──
-                        Center(
-                          child: Text(
-                            s.obHereForYou,
-                            style: GoogleFonts.inter(
-                              fontSize: 14,
-                              color: Colors.white.withValues(alpha: 0.55),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: _footerButton(
-                                icon: Icons.chat_bubble_outline_rounded,
-                                label: s.obContactUs,
-                                onTap: () => Navigator.of(context).push(
-                                  onboardingFadeSlideRoute(
-                                    const CruiseSupportChatScreen(),
-                                  ),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: _footerButton(
-                                icon: Icons.help_outline_rounded,
-                                label: s.obHelpCenter,
-                                onTap: () => Navigator.of(context).push(
-                                  onboardingFadeSlideRoute(const HelpScreen()),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
                       ],
                     ),
                   ),
+          ),
+
+          // ── Footer — pinned to the bottom, out of the scroll (2026-08-25)
+          Container(
+            decoration: BoxDecoration(
+              color: kOnboardingNavy,
+              border: Border(
+                top: BorderSide(color: Colors.white.withValues(alpha: 0.07)),
+              ),
+            ),
+            padding: EdgeInsets.fromLTRB(20, 12, 20, pad.bottom + 14),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  s.obHereForYou,
+                  style: GoogleFonts.inter(
+                    fontSize: 14,
+                    color: Colors.white.withValues(alpha: 0.55),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _footerButton(
+                        icon: Icons.chat_bubble_outline_rounded,
+                        label: s.obContactUs,
+                        onTap: () => Navigator.of(context).push(
+                          onboardingFadeSlideRoute(
+                            const CruiseSupportChatScreen(),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: _footerButton(
+                        icon: Icons.help_outline_rounded,
+                        label: s.obHelpCenter,
+                        onTap: () => Navigator.of(context).push(
+                          onboardingFadeSlideRoute(const HelpScreen()),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ),
         ],
       ),
@@ -394,11 +482,40 @@ class _DriverTodoScreenState extends State<DriverTodoScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Image.asset(
-            entry.item.asset,
+          // Step icon instead of a photo (2026-08-25): the hero area shows
+          // the gold icon of the step that's up next (inspection →
+          // registration → insurance → …). The car PNG appears only once
+          // everything is in — see _allInReviewCard.
+          Container(
             width: double.infinity,
-            height: 150,
-            fit: BoxFit.cover,
+            height: 120,
+            color: Colors.white.withValues(alpha: 0.03),
+            child: Center(
+              child: Container(
+                width: 72,
+                height: 72,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: kOnboardingGold.withValues(alpha: 0.12),
+                  border: Border.all(
+                    color: kOnboardingGold.withValues(alpha: 0.45),
+                    width: 1.4,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: kOnboardingGold.withValues(alpha: 0.18),
+                      blurRadius: 28,
+                      spreadRadius: 2,
+                    ),
+                  ],
+                ),
+                child: Icon(
+                  onboardingItemIcon(entry.item),
+                  color: kOnboardingGold,
+                  size: 34,
+                ),
+              ),
+            ),
           ),
           Padding(
             padding: const EdgeInsets.all(16),
@@ -444,6 +561,71 @@ class _DriverTodoScreenState extends State<DriverTodoScreen> {
                       ),
                     ),
                   ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Everything is in — the car PNG hero (feathered edges) and the
+  /// "In review" state. No Continue button: the next move is dispatch's,
+  /// and the socket/poll watch above routes to the celebration on its own.
+  Widget _allInReviewCard() {
+    final s = S.of(context);
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      decoration: BoxDecoration(
+        color: const Color(0xFF101736),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: kOnboardingGold.withValues(alpha: 0.55)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.25),
+            blurRadius: 14,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        children: [
+          const FeatheredImage(
+            'assets/images/onboarding/ride_hero.png',
+            width: double.infinity,
+            height: 170,
+            fit: BoxFit.contain,
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 18),
+            child: Column(
+              children: [
+                Text(
+                  s.obAllInReviewTitle,
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.inter(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.white,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  s.obAllInReviewSub,
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.inter(
+                    fontSize: 13,
+                    height: 1.35,
+                    color: Colors.white.withValues(alpha: 0.6),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                _pill(
+                  icon: Icons.hourglass_top_rounded,
+                  label: s.obInReview,
+                  color: kOnboardingGold,
                 ),
               ],
             ),

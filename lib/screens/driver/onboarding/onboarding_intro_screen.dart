@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../../config/page_transitions.dart';
 import '../../../l10n/app_localizations.dart';
 import '../../../services/api_service.dart';
+import '../../../widgets/feathered_image.dart';
 import 'background_consent_screen.dart';
 import 'doc_capture_screen.dart';
 import 'license_capture_screen.dart';
@@ -100,30 +101,26 @@ class OnboardingIntroScreen extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // ── Hero image ──
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(20),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 24),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(20),
-                        child: Image.asset(
-                          entry.item.asset,
-                          width: double.infinity,
-                          height: 220,
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) => Container(
-                            height: 220,
-                            decoration: BoxDecoration(
-                              color: kOnboardingGold.withValues(alpha: 0.10),
-                              borderRadius: BorderRadius.circular(20),
-                            ),
-                            child: Icon(
-                              onboardingItemIcon(entry.item),
-                              color: kOnboardingGold,
-                              size: 64,
-                            ),
-                          ),
+                  // ── Hero image (feathered edges) ──
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 24),
+                    child: FeatheredImage(
+                      entry.item.asset,
+                      width: double.infinity,
+                      height: 220,
+                      borderRadius: const BorderRadius.all(
+                        Radius.circular(20),
+                      ),
+                      errorBuilder: (_, __, ___) => Container(
+                        height: 220,
+                        decoration: BoxDecoration(
+                          color: kOnboardingGold.withValues(alpha: 0.10),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Icon(
+                          onboardingItemIcon(entry.item),
+                          color: kOnboardingGold,
+                          size: 64,
                         ),
                       ),
                     ),

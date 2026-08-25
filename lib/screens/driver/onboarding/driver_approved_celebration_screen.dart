@@ -10,8 +10,8 @@ import '../payout_methods_screen.dart';
 import 'first_trip_guide_screen.dart';
 
 /// Post-approval celebration — the entry point of the NEW approved-driver
-/// flow (the legacy cinematic `DriverApprovedScreen` stays for the legacy
-/// flow). Shown once when dispatch approves the driver: from the pending
+/// flow (the legacy cinematic `DriverApprovedScreen` and its instructions
+/// guide were removed 2026-08-25 — this flow replaces them). Shown once when dispatch approves the driver: from the pending
 /// screen's poll or from the approval push tap.
 ///
 /// "Start driving" runs the payout gate (`GET /drivers/stripe-connect/status`

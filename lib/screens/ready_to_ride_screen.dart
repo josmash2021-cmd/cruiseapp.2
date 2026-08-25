@@ -4,6 +4,7 @@ import '../config/app_theme.dart';
 import '../l10n/app_localizations.dart';
 import '../config/page_transitions.dart';
 import '../services/user_session.dart';
+import '../widgets/feathered_image.dart';
 import 'home_screen.dart';
 
 /// Lyft-style "You're set to ride" onboarding completion screen.
@@ -80,12 +81,11 @@ class _ReadyToRideScreenState extends State<ReadyToRideScreen> {
         children: [
           Column(
             children: [
-              // ── Full-bleed photo (edge to edge, under the status bar) ──
-              Image.asset(
+              // ── Full-bleed photo (edge to edge, feathered borders) ──
+              FeatheredImage(
                 'assets/images/onboarding/ready_to_ride.jpg',
                 width: double.infinity,
                 height: 240 + MediaQuery.of(context).padding.top,
-                fit: BoxFit.cover,
               ),
 
               Expanded(

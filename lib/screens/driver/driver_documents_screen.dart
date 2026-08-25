@@ -7,6 +7,7 @@ import '../../config/page_transitions.dart';
 import '../../services/api_service.dart';
 import '../../services/firebase_storage_service.dart';
 import '../../l10n/app_localizations.dart';
+import '../../widgets/feathered_image.dart';
 import '../../widgets/neu_style.dart';
 import 'background_check_consent_screen.dart';
 import 'driver_license_plate_screen.dart';
@@ -578,14 +579,11 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        ClipRRect(
-          borderRadius: BorderRadius.circular(20),
-          child: Image.asset(
-            'assets/images/onboarding/documents.jpg',
-            width: double.infinity,
-            height: 200,
-            fit: BoxFit.cover,
-          ),
+        const FeatheredImage(
+          'assets/images/onboarding/documents.jpg',
+          width: double.infinity,
+          height: 200,
+          borderRadius: BorderRadius.all(Radius.circular(20)),
         ),
         const SizedBox(height: 18),
         Text(

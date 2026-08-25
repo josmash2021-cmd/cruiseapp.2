@@ -1186,7 +1186,17 @@ extension _RideRequestWidgets on _RideRequestScreenState {
     HapticService.selectionClick();
     final st = _ctrl.state;
     final dropoff = st.dropoff;
-    if (dropoff == null) return;
+    if (dropoff == null) {
+      // Never a dead tap (2026-08-25): tell the rider why nothing opened.
+      debugPrint('[RideRequest] schedule pill tapped with no dropoff yet');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(S.of(context).connectionError),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
     final pickup = st.pickup;
     final secs = st.route?.durationSeconds;
     final record =

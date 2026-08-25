@@ -268,7 +268,23 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
 
   Future<void> _onSuggestionTap(PlaceSuggestion suggestion) async {
     final details = await _placesService.details(suggestion.placeId);
-    if (details == null || !mounted) return;
+    // Places lookup failed (network hiccup — more likely on a fast repeat):
+    // before, the tap just died silently and the rider thought the flow was
+    // broken (2026-08-25 report: wheels page "sometimes" never shows).
+    if (details == null) {
+      debugPrint('[ScheduleChain] place details lookup failed for '
+          '${suggestion.placeId}');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(S.of(context).connectionError),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+      return;
+    }
+    if (!mounted) return;
 
     if (_editingStop) {
       setState(() {
@@ -537,7 +553,13 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
   /// dropoff is an airport, then RideRequestScreen).
   Future<void> _continueScheduleChain() async {
     final dropoff = _dropoffDetails;
-    if (dropoff == null) return;
+    if (dropoff == null) {
+      // Never silent (2026-08-25): the wheels page not appearing after this
+      // point must leave a trace.
+      debugPrint('[ScheduleChain] continuation called with no dropoff — '
+          'the wheels page cannot open');
+      return;
+    }
 
     // The estimate rides into the wheels page so Depart shows the real
     // drop-off clock time and Arrive the real pickup time. No route → the

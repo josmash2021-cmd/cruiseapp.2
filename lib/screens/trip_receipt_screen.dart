@@ -228,7 +228,7 @@ class _TripReceiptScreenState extends State<TripReceiptScreen>
     final c = AppColors.of(context);
     return Scaffold(
       backgroundColor: neuBase,
-      // The shared speckled ground, so this page sits on the same
+      // The shared backdrop, so this page sits on the same
       // surface as the menu it is reached from.
       body: Stack(
         children: [

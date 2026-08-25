@@ -2098,8 +2098,8 @@ class RideCarIcon extends StatelessWidget {
 }
 
 
-/// Home backdrop — now the shared [NeuDotsBackdrop] (neu_style.dart), so
-/// other pages (Choose ride type) carry the identical speckled ground.
+/// Home backdrop — the shared [NeuDotsBackdrop] (neu_style.dart), so
+/// other pages carry the identical flat neu ground.
 class _HomeBackdrop extends StatelessWidget {
   const _HomeBackdrop();
 

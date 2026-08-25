@@ -153,7 +153,7 @@ class _RideHistoryScreenState extends State<RideHistoryScreen> {
 
     return Scaffold(
       backgroundColor: neuBase,
-      // The shared speckled ground, so this page sits on the same
+      // The shared backdrop, so this page sits on the same
       // surface as the menu it is reached from.
       body: Stack(
         children: [

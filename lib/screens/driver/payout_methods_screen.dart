@@ -197,7 +197,7 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
     final s = S.of(context);
     return Scaffold(
       backgroundColor: neuBase,
-      // The same speckled ground the driver menu that links here carries,
+      // The same shared backdrop the driver menu that links here carries,
       // so arriving does not read as landing in a different app.
       body: Stack(
         children: [

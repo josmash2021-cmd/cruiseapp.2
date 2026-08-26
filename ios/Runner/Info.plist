@@ -91,7 +91,7 @@
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
 	<string>Drivers: Cruise uses your location in the background only while you are online so riders can track trips. Riders: location is used only while the app is open.</string>
 	<key>NSCameraUsageDescription</key>
-	<string>Cruise needs the camera for your profile photo and identity verification.</string>
+	<string>Cruise will only access the camera when a feature that requires it is in use.</string>
 	<key>NSFaceIDUsageDescription</key>
 	<string>Cruise uses Face ID for secure sign-in.</string>
 	<key>NSPhotoLibraryUsageDescription</key>

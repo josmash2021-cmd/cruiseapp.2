@@ -1,12 +1,16 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_stripe/flutter_stripe.dart' as stripe;
 import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../config/api_keys.dart';
 import '../../l10n/app_localizations.dart';
 import '../../services/api_service.dart';
 import '../../services/haptic_service.dart';
+import '../../services/places_service.dart';
 import '../../services/user_session.dart';
 import '../../widgets/neu_style.dart';
 
@@ -66,8 +70,16 @@ class _AddBankAccountScreenState extends State<AddBankAccountScreen> {
   final _confirm = TextEditingController();
   final _holder = TextEditingController();
   final _address = TextEditingController();
+  final _apt = TextEditingController();
   final _city = TextEditingController();
   final _zip = TextEditingController();
+
+  // Address autocomplete (user spec 2026-08-26): debounced suggestions
+  // under the street field; picking one fills street/city/state/ZIP.
+  final _places = PlacesService(ApiKeys.webServices);
+  Timer? _addrDebounce;
+  List<PlaceSuggestion> _addrSuggestions = const [];
+  bool _addrJustPicked = false;
 
   int? _dobDay;
   int? _dobMonth;
@@ -105,8 +117,10 @@ class _AddBankAccountScreenState extends State<AddBankAccountScreen> {
     _confirm.dispose();
     _holder.dispose();
     _address.dispose();
+    _apt.dispose();
     _city.dispose();
     _zip.dispose();
+    _addrDebounce?.cancel();
     super.dispose();
   }
 
@@ -121,6 +135,49 @@ class _AddBankAccountScreenState extends State<AddBankAccountScreen> {
         7 * (d[1] + d[4] + d[7]) +
         1 * (d[2] + d[5] + d[8]);
     return sum % 10 == 0;
+  }
+
+  /// Debounced street autocomplete (user spec 2026-08-26). Four or more
+  /// typed characters open the suggestion list; picking one fills the
+  /// whole address block.
+  void _onAddressChanged(String v) {
+    _addrJustPicked = false;
+    _addrDebounce?.cancel();
+    if (v.trim().length < 4) {
+      if (_addrSuggestions.isNotEmpty) {
+        setState(() => _addrSuggestions = const []);
+      }
+      return;
+    }
+    _addrDebounce = Timer(const Duration(milliseconds: 350), () async {
+      try {
+        final results = await _places.autocomplete(v.trim());
+        if (!mounted || _addrJustPicked) return;
+        setState(() => _addrSuggestions = results.take(5).toList());
+      } catch (_) {}
+    });
+  }
+
+  /// A picked suggestion fills street + city + state + ZIP from the US
+  /// formatted form ("street, city, ST zip, USA").
+  void _pickAddressSuggestion(PlaceSuggestion sug) {
+    _addrJustPicked = true;
+    HapticService.selectionClick();
+    final parts = sug.description.split(',').map((p) => p.trim()).toList();
+    if (parts.length >= 3) {
+      _address.text = parts[0];
+      _city.text = parts[1];
+      final stateZip =
+          parts[2].split(RegExp(r'\s+')).where((p) => p.isNotEmpty).toList();
+      if (stateZip.isNotEmpty) {
+        final code = stateZip[0].toUpperCase();
+        if (_usStates.any((st) => st.$1 == code)) _stateCode = code;
+        if (stateZip.length > 1) _zip.text = stateZip.sublist(1).join(' ');
+      }
+    } else {
+      _address.text = sug.mainText ?? sug.description;
+    }
+    setState(() => _addrSuggestions = const []);
   }
 
   bool get _canSubmit =>
@@ -183,7 +240,11 @@ class _AddBankAccountScreenState extends State<AddBankAccountScreen> {
         lastName: lastName?.isNotEmpty == true ? lastName : null,
         dob: {'day': _dobDay!, 'month': _dobMonth!, 'year': _dobYear!},
         address: {
-          'line1': _address.text.trim(),
+          // Apt/suite rides inside line1 — the backend's address map has
+          // no line2 key, and Stripe reads it fine inline.
+          'line1': _apt.text.trim().isEmpty
+              ? _address.text.trim()
+              : '${_address.text.trim()}, ${_apt.text.trim()}',
           'city': _city.text.trim(),
           'state': _stateCode!,
           'postal_code': _zip.text.trim(),
@@ -285,18 +346,7 @@ class _AddBankAccountScreenState extends State<AddBankAccountScreen> {
             const SizedBox(height: 8),
             Row(
               children: [
-                Expanded(
-                  child: _dropdown<int>(
-                    value: _dobDay,
-                    hint: s.dayLabel,
-                    items: [
-                      for (var d = 1; d <= 31; d++)
-                        DropdownMenuItem(value: d, child: Text('$d')),
-                    ],
-                    onChanged: (v) => setState(() => _dobDay = v),
-                  ),
-                ),
-                const SizedBox(width: 10),
+                // US order (user spec 2026-08-26): Month → Day → Year.
                 Expanded(
                   child: _dropdown<int>(
                     value: _dobMonth,
@@ -314,6 +364,18 @@ class _AddBankAccountScreenState extends State<AddBankAccountScreen> {
                 const SizedBox(width: 10),
                 Expanded(
                   child: _dropdown<int>(
+                    value: _dobDay,
+                    hint: s.dayLabel,
+                    items: [
+                      for (var d = 1; d <= 31; d++)
+                        DropdownMenuItem(value: d, child: Text('$d')),
+                    ],
+                    onChanged: (v) => setState(() => _dobDay = v),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: _dropdown<int>(
                     value: _dobYear,
                     hint: s.yearLabel,
                     items: [
@@ -326,10 +388,82 @@ class _AddBankAccountScreenState extends State<AddBankAccountScreen> {
               ],
             ),
             const SizedBox(height: 18),
+            // Address with live suggestions (user spec 2026-08-26) — the
+            // same autocomplete the booking search uses; picking one fills
+            // street, city, state and ZIP below.
+            Text(
+              s.addressLabel,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Container(
+              decoration: neuBox(radius: 14, pressed: true),
+              child: TextField(
+                controller: _address,
+                keyboardType: TextInputType.streetAddress,
+                style: const TextStyle(color: Colors.white, fontSize: 16),
+                onChanged: _onAddressChanged,
+                decoration: const InputDecoration(
+                  border: InputBorder.none,
+                  contentPadding:
+                      EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                ),
+              ),
+            ),
+            if (_addrSuggestions.isNotEmpty)
+              Container(
+                margin: const EdgeInsets.only(top: 6),
+                constraints: const BoxConstraints(maxHeight: 230),
+                decoration: neuBox(radius: 14),
+                child: ListView.builder(
+                  shrinkWrap: true,
+                  padding: EdgeInsets.zero,
+                  itemCount: _addrSuggestions.length,
+                  itemBuilder: (_, i) {
+                    final sug = _addrSuggestions[i];
+                    return GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: () => _pickAddressSuggestion(sug),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 14, vertical: 10),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              sug.mainText ?? sug.description,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            if ((sug.secondaryText ?? '').isNotEmpty)
+                              Text(
+                                sug.secondaryText!,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                    color: Colors.white38, fontSize: 12),
+                              ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            const SizedBox(height: 18),
             _field(
-              label: s.addressLabel,
-              controller: _address,
-              keyboard: TextInputType.streetAddress,
+              label: s.aptSuiteOptionalLabel,
+              controller: _apt,
             ),
             _field(label: s.cityLabel, controller: _city),
             Text(
@@ -490,7 +624,11 @@ class _AddBankAccountScreenState extends State<AddBankAccountScreen> {
             ),
           ),
           isExpanded: true,
-          dropdownColor: neuBase,
+          // Rounded, capped, neu-surface menu (user spec 2026-08-26) — not
+          // the raw full-height Material slab.
+          dropdownColor: neuSurface,
+          borderRadius: BorderRadius.circular(14),
+          menuMaxHeight: 320,
           iconEnabledColor: Colors.white.withValues(alpha: 0.5),
           style: const TextStyle(color: Colors.white, fontSize: 15),
           items: items,

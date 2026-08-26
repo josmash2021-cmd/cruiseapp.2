@@ -2629,6 +2629,8 @@ class S {
       : 'Enter your credit or debit card details.';
   String get nameOnCard => _es ? 'Nombre en la tarjeta' : 'Name on card';
   String get zipPostalCode => _es ? 'Código postal' : 'ZIP / Postal code';
+  String get aptSuiteOptionalLabel =>
+      _es ? 'Apt, suite, unidad (opcional)' : 'Apt, suite, unit (optional)';
   String get addressLabel => _es ? 'Dirección' : 'Address';
   String get cityLabel => _es ? 'Ciudad' : 'City';
   String get dayLabel => _es ? 'Día' : 'Day';

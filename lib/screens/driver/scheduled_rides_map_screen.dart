@@ -1468,9 +1468,10 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
   }
 
   // ─────────────────────────────────────────────
-  //  Ride card — the Cruise offer-card language: big fare + tips, hourly
-  //  rate, minutes + miles, connected-dot addresses, rider row at the
-  //  bottom. Navy, gold, neu radius, soft lift shadow.
+  //  Ride card — the Cruise offer-card language: big fare + tips, minutes
+  //  + miles, the exact offer-card address rail (gold ring + dot, gradient
+  //  connector, hollow ring), rider row at the bottom. No $/hr estimate
+  //  (user spec 2026-08-25). Navy, gold, neu radius, soft lift shadow.
   // ─────────────────────────────────────────────
 
   /// Rough straight-line distance in km between two points — the payload

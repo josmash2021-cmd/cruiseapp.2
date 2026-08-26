@@ -2664,6 +2664,11 @@ extension _RideRequestMap on _RideRequestScreenState {
           circleStrokeWidth: 2.5,
           circleStrokeColor: 0xFFE8C547,
           circleStrokeOpacity: 0.0,
+          // Projected onto the GROUND plane, not the screen (user spec
+          // 2026-08-26): on a tilted map the waves render as ellipses
+          // lying on the street and travel with the map, instead of a
+          // flat 2D circle glued to the glass.
+          circlePitchAlignment: mapbox.CirclePitchAlignment.MAP,
         ));
       } catch (_) {}
     }

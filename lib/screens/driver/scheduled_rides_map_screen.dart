@@ -5,6 +5,7 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart' show Ticker;
 import 'package:geolocator/geolocator.dart';
 import 'package:intl/intl.dart' show DateFormat;
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' as mapbox;
@@ -73,6 +74,10 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
   mapbox.PointAnnotation? _dotAnnot;
   mapbox.PolylineAnnotationManager? _routeMgr;
   mapbox.PolylineAnnotation? _routeAnnot;
+  // Bubble pop-up entrance: trips already seen render silently; new ones
+  // scale in with a shared ticker.
+  Ticker? _bubblePopTicker;
+  final Set<Object?> _seenBubbleTripIds = {};
   mapbox.CircleAnnotationManager? _dotsEndMgr;
   final List<mapbox.CircleAnnotation> _endDots = [];
   mapbox.Cancelable? _bubbleTap;
@@ -144,6 +149,7 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
     MapSurfaceCoordinator.instance.release(_mapSurfaceOwner);
     _countdownTimer?.cancel();
     _bubbleTap?.cancel();
+    _bubblePopTicker?.dispose();
     _driverDot.dispose();
     _sheetCtrl.dispose();
     super.dispose();
@@ -505,28 +511,31 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
   //  Price bubbles
   // ─────────────────────────────────────────────
 
-  /// Renders the marker as ONE bitmap: the compact "$N" pill floating above
-  /// a small hailing-person figure (silhouette with a raised arm, gold,
-  /// no circle/frame around it, soft shadow). A bare textField cannot draw
-  /// the pill background, and a PointAnnotation takes a single image — so
-  /// pill + figure are rasterised together here. The feet sit at the
-  /// bottom edge so IconAnchor.BOTTOM plants the figure on the pickup.
+  /// Renders the marker as ONE bitmap: a "$N" text-message cube (rounded
+  /// square with the little tail at the bottom — user spec 2026-08-25, no
+  /// more pill) floating above a small hailing-person figure. A bare
+  /// textField cannot draw the bubble background, and a PointAnnotation
+  /// takes a single image — so cube + figure are rasterised together here.
+  /// The feet sit at the bottom edge so IconAnchor.BOTTOM plants the
+  /// figure on the pickup.
   Future<Uint8List?> _bubbleBytes(String label, {bool selected = false}) async {
     final key = '$label|${selected ? 's' : 'n'}';
     final cached = _bubbleByteCache[key];
     if (cached != null) return cached;
     const scale = 3.0; // raster density — stays crisp on retina
-    const hPad = 10.0, vPad = 4.5;
+    const hPad = 12.0, vPad = 6.0;
     const borderW = 1.0;
+    const radius = 6.0; // chat-bubble corners, not a stadium
+    const tailH = 4.5, tailW = 9.0; // the tail pointing at the figure
     const shadowPad = 6.0; // room for the blurred shadow to bleed into
-    const gap = 2.0; // air between the pill and the figure's raised hand
-    const personW = 16.0, personH = 22.0;
+    const gap = 1.5; // air between the tail tip and the figure's hand
+    const personW = 20.0, personH = 27.0;
     final tp = TextPainter(
       text: TextSpan(
         text: label,
         style: TextStyle(
           color: selected ? Colors.black : _gold,
-          fontSize: 12.5,
+          fontSize: 15,
           fontWeight: FontWeight.w800,
           height: 1.0,
         ),
@@ -536,40 +545,48 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
     final w = tp.width + hPad * 2 + borderW * 2;
     final h = tp.height + vPad * 2 + borderW * 2;
     final totalW = max(w, personW);
-    final totalH = h + gap + personH;
+    final totalH = h + tailH + gap + personH;
     final recorder = ui.PictureRecorder();
     final canvas = Canvas(recorder);
     canvas.scale(scale);
     canvas.translate(shadowPad, shadowPad);
-    final rect = RRect.fromRectAndRadius(
-      Rect.fromLTWH((totalW - w) / 2, 0, w, h),
-      Radius.circular(h / 2),
-    );
-    // Soft shadow first, then the pill on top of it.
-    canvas.drawRRect(
-      rect.shift(const Offset(0, 1.5)),
+    final left = (totalW - w) / 2;
+    final bubbleRect = Rect.fromLTWH(left, 0, w, h);
+    // The text-message cube: rounded square + a small triangle tail at the
+    // bottom centre, drawn as one filled path (border goes on the rect
+    // only, so the tail's join is not outlined twice).
+    final bubblePath = Path()
+      ..addRRect(RRect.fromRectAndRadius(
+          bubbleRect, const Radius.circular(radius)))
+      ..moveTo(totalW / 2 - tailW / 2, h - 1)
+      ..lineTo(totalW / 2, h + tailH)
+      ..lineTo(totalW / 2 + tailW / 2, h - 1)
+      ..close();
+    // Soft shadow first, then the cube on top of it.
+    canvas.drawPath(
+      bubblePath.shift(const Offset(0, 1.5)),
       Paint()
         ..color = Colors.black.withValues(alpha: 0.5)
         ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3),
     );
-    canvas.drawRRect(rect, Paint()..color = selected ? _gold : neuSurface);
+    canvas.drawPath(
+        bubblePath, Paint()..color = selected ? _gold : neuSurface);
     canvas.drawRRect(
-      rect,
+      RRect.fromRectAndRadius(bubbleRect, const Radius.circular(radius)),
       Paint()
         ..style = PaintingStyle.stroke
         ..strokeWidth = borderW
         ..color = Colors.white.withValues(alpha: selected ? 0.25 : 0.08),
     );
-    tp.paint(
-        canvas, Offset(rect.left + hPad + borderW, rect.top + vPad + borderW));
+    tp.paint(canvas, Offset(left + hPad + borderW, vPad + borderW));
 
     // ── Hailing person: the official Material person-with-raised-arm
     // glyph (2026-08-25 — replaced the hand-drawn stick figure; this
     // Flutter version has no Icons.hailing, emoji_people_rounded is the
-    // hailing look). Drawn via the icon font, with the pill's soft shadow.
+    // hailing look). Drawn via the icon font, with the cube's soft shadow.
     const hailingIcon = Icons.emoji_people_rounded;
     final px = (totalW - personW) / 2;
-    final py = h + gap;
+    final py = h + tailH + gap;
     TextPainter iconPainter(Color color) {
       return TextPainter(
         text: TextSpan(
@@ -609,6 +626,9 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
       await mgr.deleteAll();
     } catch (_) {}
     _bubbleTrips.clear();
+    // Freshly-appeared trips get the pop-up entrance; trips already on the
+    // map (selection restyle, filter round-trips) re-render silently.
+    final pops = <(mapbox.PointAnnotation, double)>[];
     for (final trip in _filtered) {
       final lat = (trip['pickup_lat'] as num?)?.toDouble();
       final lng = (trip['pickup_lng'] as num?)?.toDouble();
@@ -620,22 +640,47 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
       final bytes = await _bubbleBytes('\$${fare.round()}', selected: isSelected);
       if (!mounted) return;
       if (bytes == null) continue;
+      // The bitmap is rendered at 3× density — ~1.75× logical size so the
+      // cube + figure read clearly at city zoom (user spec 2026-08-25:
+      // bigger). The selected marker stands larger on top.
+      final target = (isSelected ? 1.95 : 1.75) / 3.0;
+      final isNew = _seenBubbleTripIds.add(trip['id']);
       try {
         final annot = await mgr.create(mapbox.PointAnnotationOptions(
           geometry: point,
           image: bytes,
-          // The bitmap is rendered at 3× density — ~1.5× logical size so
-          // the pill + figure stay legible at city zoom (was too small).
-          // The selected marker gets the Lyft-style pop on top.
-          iconSize: (isSelected ? 1.65 : 1.5) / 3.0,
+          iconSize: isNew ? target * 0.2 : target,
           // The figure's feet are the bottom edge — they plant on the
-          // pickup point while the pill floats above.
+          // pickup point while the cube floats above.
           iconAnchor: mapbox.IconAnchor.BOTTOM,
         ));
         _bubbleTrips[annot.id] = trip;
+        if (isNew) pops.add((annot, target));
       } catch (_) {}
       if (!mounted) return;
     }
+    if (pops.isNotEmpty) _popBubbles(pops);
+  }
+
+  /// Pop-up entrance for freshly-appeared bubbles (user spec 2026-08-25):
+  /// one shared ticker scales each new marker 0.2→1.0 with easeOutBack.
+  void _popBubbles(List<(mapbox.PointAnnotation, double)> items) {
+    _bubblePopTicker?.stop();
+    _bubblePopTicker = createTicker((elapsed) {
+      final mgr = _bubbleMgr;
+      if (mgr == null || !mounted) {
+        _bubblePopTicker?.stop();
+        return;
+      }
+      final t = (elapsed.inMilliseconds / 350).clamp(0.0, 1.0);
+      final k = 0.2 + 0.8 * Curves.easeOutBack.transform(t);
+      for (final (annot, target) in items) {
+        annot.iconSize = target * k;
+        unawaited(mgr.update(annot).catchError((Object _) {}));
+      }
+      if (t >= 1) _bubblePopTicker?.stop();
+    })
+      ..start();
   }
 
   // ─────────────────────────────────────────────

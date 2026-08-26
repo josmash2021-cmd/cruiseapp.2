@@ -1,18 +1,16 @@
 """Which paths carry the state rule, and which carry the distance cap.
 
-The two are deliberately split and it is easy to reconnect them by
-accident:
+The current split (2026-08):
 
-  * LIVE work — the cascade, /trips/available — is bounded by distance
-    only. A driver may cross a state line for a live fare inside
-    MAX_DISPATCH_RADIUS_KM. Putting a state filter back on these paths
-    silently un-does that.
+  * LIVE work — the cascade, /trips/available — is SERVICE-AREA scoped:
+    the pickup's state decides the reach (`_radius_for_state`: AL 20 mi /
+    FL 10 mi) and only same-state drivers are offered. A resolved state
+    outside the table means no service; an unresolved one fails OPEN on a
+    fallback radius — a dead geocoder must degrade to "no state rule",
+    never to "nothing matches".
   * RESERVED work — the scheduled marketplace — is same-state only, at
     browse AND at claim. Hiding a card is not enforcement; a trip id
     outlives the list it came from.
-
-Both rules fail open on an unresolved coordinate: a dead geocoder must
-degrade to "no state rule", never to "nothing matches".
 """
 
 import inspect
@@ -40,15 +38,23 @@ def _clean_cache():
     D._state_cache.clear()
 
 
-async def test_live_dispatch_has_no_state_filter():
-    """Crossing a state line for a live fare is allowed, on purpose."""
+async def test_live_dispatch_is_state_scoped_service_area():
+    """Live work IS state-scoped now (2026-08): the pickup's state decides
+    the reach (AL 20 mi / FL 10 mi) and only same-state drivers are
+    offered. Unresolved state fails OPEN (fallback radius — a dead
+    geocoder must not empty the queue); a resolved state outside the
+    table means no service at all."""
     from routers import dispatch as D
 
     src = inspect.getsource(D._find_nearest_drivers)
-    assert "_state_for" not in src and "same_state" not in src, (
-        "live dispatch resolves a state again — that re-closes the "
-        "cross-state fare the radius was widened to allow"
+    assert "_state_for" in src, "live dispatch no longer resolves the pickup state"
+    assert "_radius_for_state" in src, "the state's own reach is not applied"
+    assert "_FALLBACK_RADIUS_KM" in inspect.getsource(D._radius_for_state), (
+        "an unresolved pickup state must fall back, never empty the queue"
     )
+    # A resolved state Cruise does not operate in answers 'nobody' — that
+    # early return is the whole service-area rule.
+    assert "return []" in src
 
 
 def test_available_trips_has_no_state_filter():

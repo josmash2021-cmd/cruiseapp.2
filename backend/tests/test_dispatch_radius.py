@@ -24,13 +24,19 @@ def test_the_ceiling_is_five_hundred_miles():
 
 
 def test_every_live_path_uses_the_shared_ceiling():
-    """No path may quietly keep its own radius."""
+    """No path may quietly keep its own radius.
+
+    The current rule (2026-08): the live reach is the per-state service
+    area (`_radius_for_state` — AL 20 mi / FL 10 mi) and the 500-mile
+    constant survives ONLY as the absolute cap of the SQL bounding box
+    inside the shared search. So: every path must either contain the
+    shared cap itself or route through the shared capped search.
+    """
     from routers import dispatch, trips
     import ghost_driver_agent
 
     for fn in (
         dispatch._find_nearest_drivers,
-        dispatch.dispatch_request,
         trips.get_available_trips,
         ghost_driver_agent.GhostDriverAgent._find_replacement_driver,
     ):
@@ -38,6 +44,13 @@ def test_every_live_path_uses_the_shared_ceiling():
         assert "MAX_DISPATCH_RADIUS_KM" in src, (
             f"{fn.__qualname__} sets its own radius instead of the shared cap"
         )
+
+    # dispatch_request keeps no radius of its own — it goes through the
+    # shared capped search like everyone else.
+    assert "_find_nearest_drivers" in inspect.getsource(
+        dispatch.dispatch_request), (
+        "dispatch_request searches drivers without the shared capped search"
+    )
 
 
 def test_a_generous_caller_is_clamped_not_obeyed():

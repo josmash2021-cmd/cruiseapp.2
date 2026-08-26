@@ -1,4 +1,5 @@
 import os, time, math, secrets, logging, json, re, base64, asyncio, collections, hashlib, hmac
+import urllib.request, urllib.parse, urllib.error
 from datetime import datetime, timedelta, timezone
 from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException, Header, Request, Query, Body, UploadFile, File
@@ -32,6 +33,7 @@ from config import (
     PAYPAL_CLIENT_ID, PAYPAL_SECRET, PAYPAL_SANDBOX,
     PAYPAL_CLIENT_SECRET, PAYPAL_MODE,
     firestore_sync, _HAS_FIRESTORE,
+    TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_SERVICE_SID,
 )
 try:
     from utils.n8n_trigger import trigger_welcome_email
@@ -3278,6 +3280,32 @@ def _web_otp_email_html(code: str) -> str:
 </body></html>"""
 
 
+def _web_verify_api_send(phone: str) -> bool:
+    """Send a login code through Twilio Verify (2026-08-26).
+
+    The direct Messages API from our own number is A2P-blocked — carriers
+    answer 30034 and silently drop every code (proven against production).
+    Twilio Verify sends through Twilio's own registered sender pool, the
+    same service the mobile app uses, and it ARRIVES. Verify generates
+    the code itself, so the OTP row only carries a mode marker.
+    """
+    try:
+        creds = base64.b64encode(
+            f"{TWILIO_ACCOUNT_SID}:{TWILIO_AUTH_TOKEN}".encode()).decode()
+        url = f"https://verify.twilio.com/v2/Services/{TWILIO_SERVICE_SID}/Verifications"
+        data = urllib.parse.urlencode({"To": phone, "Channel": "sms"}).encode()
+        req = urllib.request.Request(url, data=data, headers={
+            "Authorization": f"Basic {creds}",
+            "Content-Type": "application/x-www-form-urlencoded",
+        }, method="POST")
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            return resp.status in (200, 201)
+    except Exception as e:
+        logging.warning("[WebOTP] Twilio Verify send error for %s: %s",
+                        _web_mask_phone(phone), e)
+        return False
+
+
 @router.post("/auth/web/send-otp")
 async def web_send_otp(request: Request, db: AsyncSession = Depends(get_db)):
     """Send a 6-digit login code by SMS or email for the web flow.
@@ -3337,11 +3365,30 @@ async def web_send_otp(request: Request, db: AsyncSession = Depends(get_db)):
                 template_params={"code": code},
             ))
         else:
-            if lang.startswith("en"):
-                msg = f"Your CruiseInRide code is: {code}"
-            else:
-                msg = f"Tu código CruiseInRide es: {code}"
-            sent = await loop.run_in_executor(None, lambda: _send_sms(identifier, msg))
+            # Twilio Verify first (2026-08-26): the Messages API from our
+            # own number is A2P-blocked (30034) — carriers silently drop
+            # every code. Verify sends through Twilio's registered pool,
+            # the same service the mobile app uses, and it ARRIVES. A
+            # Verify failure degrades to the old direct-SMS path rather
+            # than leaving the rider with no code at all.
+            sent = False
+            if TWILIO_SERVICE_SID and TWILIO_SERVICE_SID.startswith("VA"):
+                sent = await loop.run_in_executor(
+                    None, lambda: _web_verify_api_send(identifier))
+                if sent:
+                    # Verify generates the code — the row only marks the mode.
+                    row = await db.execute(
+                        select(OTPCode).where(OTPCode.identifier == identifier))
+                    otp_row = row.scalars().first()
+                    if otp_row is not None:
+                        otp_row.code_hash = "twilio_verify"
+                        await db.commit()
+            if not sent:
+                if lang.startswith("en"):
+                    msg = f"Your CruiseInRide code is: {code}"
+                else:
+                    msg = f"Tu código CruiseInRide es: {code}"
+                sent = await loop.run_in_executor(None, lambda: _send_sms(identifier, msg))
         if not sent:
             logging.warning("[WebOTP] %s delivery failed for %s", channel, masked)
     except Exception as e:
@@ -3381,7 +3428,18 @@ async def web_verify_otp(request: Request, db: AsyncSession = Depends(get_db)):
     if not row or row.attempts >= _WEB_OTP_MAX_ATTEMPTS:
         return {"ok": False}
 
-    if row.code_hash != hashlib.sha256(code.encode()).hexdigest():
+    if row.code_hash == "twilio_verify":
+        # The code lives in Twilio Verify, not in our hash — check it with
+        # the same helper the mobile app uses.
+        from routers.auth import _twilio_verify_check
+        ok = await _twilio_verify_check(identifier, code)
+        if not ok:
+            row.attempts += 1
+            await db.commit()
+            logging.warning("[WebOTP] Invalid Verify code for %s (attempt %d/%d)",
+                            identifier, row.attempts, _WEB_OTP_MAX_ATTEMPTS)
+            return {"ok": False}
+    elif row.code_hash != hashlib.sha256(code.encode()).hexdigest():
         row.attempts += 1
         await db.commit()
         logging.warning("[WebOTP] Invalid code for %s (attempt %d/%d)",
@@ -4060,7 +4118,16 @@ async def web_login(request: Request, db: AsyncSession = Depends(get_db)):
             select(User).where(func.lower(User.email) == identifier.lower())
         )
     else:
-        r = await db.execute(select(User).where(User.phone == identifier))
+        # The same US number can sit in the users table as +1XXXXXXXXXX,
+        # 1XXXXXXXXXX, XXXXXXXXXX or '+1 (XXX) XXX-XXXX' (the mobile flows
+        # have written all four over time). Matching the raw string meant
+        # every web login with a typed phone bounced as "Invalid
+        # credentials" on a perfectly good account (2026-08-26).
+        from routers.auth import _phone_lookup_variants
+        variants = _phone_lookup_variants(identifier)
+        if not variants:
+            raise HTTPException(401, "Invalid credentials")
+        r = await db.execute(select(User).where(User.phone.in_(variants)))
     candidates = r.scalars().all()
     candidates.sort(key=lambda u: 0 if u.role == role else 1)
     user = None

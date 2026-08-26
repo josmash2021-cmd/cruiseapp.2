@@ -1,8 +1,15 @@
-"""Tests for the rating auto-moderator minimum-trips guard and thresholds.
+"""Tests for the rating auto-moderator minimum-count guard and bands.
 
-A driver needs at least MIN_RATED_TRIPS (10) rated trips in the rolling
-30-day window before any automatic action applies. At >= 10 rated trips:
-  avg < 4.2 → warning, avg < 4.0 → probation, avg < 3.8 → suspension.
+Current model (2026-08, services/rating_engine.py): the driver is judged
+on the STEP-BASED score stored on `driver.average_rating` (starts at 5.0,
+moves ±0.5/±1.0 per rating) — never on an average of the Rating rows.
+The rows only count toward the minimum: at least
+MIN_RATINGS_BEFORE_SUSPEND (5) ratings inside the rolling 30-day window
+are required before any automatic action applies. The bands:
+
+  score <= 3.5        → suspension (status suspended + forced offline)
+  3.5 < score < 4.3   → danger notice (a notice, NEVER a status change)
+  4.3 <= score <= 4.5 → warning notice (a notice, NEVER a status change)
 """
 
 from datetime import datetime, timezone
@@ -39,8 +46,11 @@ def agent(monkeypatch):
     return agent
 
 
-async def _driver_with_ratings(db, stars_list):
-    """Create a driver with one rating per stars entry (30-day window)."""
+async def _driver_with_score(db, score, n_ratings):
+    """Create a driver carrying `score` on the column the agent judges
+    (average_rating — the step-based engine score), plus `n_ratings`
+    Rating rows inside the 30-day window so the minimum-count guard has
+    something to count."""
     from main import Rating, Trip, User
 
     rider = User(
@@ -62,6 +72,7 @@ async def _driver_with_ratings(db, stars_list):
         role="driver",
         status="active",
         is_online=True,
+        average_rating=score,
         created_at=datetime.now(timezone.utc),
     )
     db.add_all([rider, driver])
@@ -81,13 +92,13 @@ async def _driver_with_ratings(db, stars_list):
     )
     db.add(trip)
     await db.flush()
-    for stars in stars_list:
+    for _ in range(n_ratings):
         db.add(
             Rating(
                 trip_id=trip.id,
                 from_user_id=rider.id,
                 to_user_id=driver.id,
-                stars=stars,
+                stars=5,
                 created_at=datetime.now(timezone.utc),
             )
         )
@@ -105,9 +116,9 @@ async def _fresh_status(db, driver_id):
         return (await s.execute(select(User).where(User.id == driver_id))).scalar_one()
 
 
-async def test_below_min_rated_trips_no_action(agent, db):
-    """Fewer than 10 rated trips → NO action even with a terrible average."""
-    driver = await _driver_with_ratings(db, [1, 1, 1, 1, 1])  # avg 1.0, n=5
+async def test_below_min_ratings_no_action(agent, db):
+    """Fewer than 5 ratings in the window → NO action, however bad the score."""
+    driver = await _driver_with_score(db, 1.0, 4)
 
     await agent._scan()
 
@@ -119,9 +130,9 @@ async def test_below_min_rated_trips_no_action(agent, db):
     assert agent._stats["suspensions_issued"] == 0
 
 
-async def test_warning_threshold_applies_at_min_trips(agent, db):
-    """avg 4.1 < 4.2 with 10 rated trips → warning (status unchanged)."""
-    driver = await _driver_with_ratings(db, [4] * 9 + [5])  # avg 4.1
+async def test_warning_band_notice_only(agent, db):
+    """score 4.5 (warning band) with 5 ratings → one notice, status unchanged."""
+    driver = await _driver_with_score(db, 4.5, 5)
 
     await agent._scan()
 
@@ -130,20 +141,21 @@ async def test_warning_threshold_applies_at_min_trips(agent, db):
     assert drv.status == "active"
 
 
-async def test_probation_threshold_applies_at_min_trips(agent, db):
-    """avg 3.9 < 4.0 with 10 rated trips → probation."""
-    driver = await _driver_with_ratings(db, [4] * 9 + [3])  # avg 3.9
+async def test_danger_band_notice_only(agent, db):
+    """score 4.0 (danger band) with 5 ratings → one notice, NEVER a status
+    change — that is the whole difference between danger and suspend."""
+    driver = await _driver_with_score(db, 4.0, 5)
 
     await agent._scan()
 
     drv = await _fresh_status(db, driver.id)
-    assert drv.status == "probation"
     assert agent._stats["probations_issued"] == 1
+    assert drv.status == "active"
 
 
-async def test_suspension_threshold_applies_at_min_trips(agent, db):
-    """avg 3.5 < 3.8 with 10 rated trips → suspended + forced offline."""
-    driver = await _driver_with_ratings(db, [4] * 5 + [3] * 5)  # avg 3.5
+async def test_suspend_band_deactivates(agent, db):
+    """score 3.5 (suspend line) with 5 ratings → suspended + forced offline."""
+    driver = await _driver_with_score(db, 3.5, 5)
 
     await agent._scan()
 

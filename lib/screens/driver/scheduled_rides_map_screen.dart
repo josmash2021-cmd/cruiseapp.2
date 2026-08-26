@@ -1516,7 +1516,6 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
     final tripDistMi = tripKm * 0.621371;
 
     final totalMin = (etaToPickup + tripEta).clamp(1, 999);
-    final hourly = totalMin > 0 ? fare / (totalMin / 60.0) : 0.0;
 
     final scheduledAt = _parseScheduledAt(trip);
     final dateStr = scheduledAt != null
@@ -1595,14 +1594,6 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
                             ),
                           ),
                         ],
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        s.offerHourlyRate(hourly.toStringAsFixed(2)),
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 12.5,
-                        ),
                       ),
                       const SizedBox(height: 10),
                       Row(
@@ -1728,9 +1719,10 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
     );
   }
 
-  /// The two stops on one rail, joined by a line — same grammar as the
-  /// offer card's `_offerRoute`: gold pickup dot, white dropoff dot (blue
-  /// for airport runs), a hairline between them.
+  /// The two stops on one rail — the EXACT grammar of the live offer card
+  /// (2026-08-25, user spec): gold ring with a solid dot inside (pickup),
+  /// a gradient connector, and a hollow white ring (dropoff; airport runs
+  /// keep the blue), all inside the same sunken box the offer card uses.
   Widget _addressRail({
     required String pickupMeta,
     required String pickupAddr,
@@ -1739,69 +1731,112 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
     required bool isAirport,
   }) {
     final dropColor = isAirport ? _airport : Colors.white;
-    Widget stop(Color dotColor, String meta, String addr, bool muted) {
-      return Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            margin: const EdgeInsets.only(top: 3),
-            width: 10,
-            height: 10,
-            decoration: BoxDecoration(
-              color: dotColor,
-              shape: BoxShape.circle,
-              border: Border.all(
-                  color: dotColor.withValues(alpha: 0.3), width: 2.5),
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  meta,
-                  style: const TextStyle(color: Colors.white38, fontSize: 11),
-                ),
-                const SizedBox(height: 1),
-                Text(
-                  addr.isNotEmpty
-                      ? addr
-                      : (muted
-                          ? S.of(context).dropOffLabel
-                          : S.of(context).pickupLabel),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: muted ? Colors.white70 : Colors.white,
-                    fontSize: 13,
-                    fontWeight: muted ? FontWeight.w500 : FontWeight.w600,
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: neuBox(radius: 16),
+      child: IntrinsicHeight(
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            SizedBox(
+              width: 16,
+              child: Column(
+                children: [
+                  const SizedBox(height: 4),
+                  // Pickup: gold ring with a solid dot inside.
+                  Container(
+                    width: 11,
+                    height: 11,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: Border.all(color: _gold, width: 1.5),
+                    ),
+                    child: Center(
+                      child: Container(
+                        width: 4,
+                        height: 4,
+                        decoration: const BoxDecoration(
+                          color: _gold,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                    ),
                   ),
-                ),
-              ],
+                  Expanded(
+                    child: Container(
+                      width: 1.5,
+                      margin: const EdgeInsets.symmetric(vertical: 3),
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [
+                            _gold.withValues(alpha: 0.7),
+                            Colors.white.withValues(alpha: 0.35),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                  // Dropoff: hollow ring (airport runs keep the blue).
+                  Container(
+                    width: 11,
+                    height: 11,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: Border.all(color: dropColor, width: 1.5),
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                ],
+              ),
             ),
-          ),
-        ],
-      );
-    }
-
-    return IntrinsicHeight(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          stop(_gold, pickupMeta, pickupAddr, false),
-          Padding(
-            padding: const EdgeInsets.only(left: 4.25),
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child:
-                  Container(width: 1.5, height: 14, color: Colors.white12),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _stopText(pickupMeta, pickupAddr, false),
+                  const SizedBox(height: 22),
+                  _stopText(dropoffMeta, dropoffAddr, true),
+                ],
+              ),
             ),
-          ),
-          stop(dropColor, dropoffMeta, dropoffAddr, true),
-        ],
+          ],
+        ),
       ),
+    );
+  }
+
+  /// One stop on the rail: meta line above the address, same type scale as
+  /// the offer card.
+  Widget _stopText(String meta, String addr, bool muted) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisAlignment: MainAxisAlignment.center,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          meta,
+          style: const TextStyle(color: Colors.white, fontSize: 11),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          addr.isNotEmpty
+              ? addr
+              : (muted
+                  ? S.of(context).dropOffLabel
+                  : S.of(context).pickupLabel),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            color: Colors.white.withValues(alpha: 0.4),
+            fontSize: 14,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+      ],
     );
   }
 

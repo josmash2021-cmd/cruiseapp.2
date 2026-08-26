@@ -35,12 +35,15 @@ class ScannedCard {
 // ═══════════════════════════════════════════════════════════════════
 //  Card Scan — Lyft-style scan-first add card (spec 2026-08-24).
 //
-//  Opens BEFORE the manual form when the rider adds a card. Camera
-//  preview with a gold card-sized guide frame; ML Kit text recognition
-//  runs on a ~2/s throttle until a Luhn-valid number + expiry date are
-//  read, then the manual form opens pre-filled (CVV/ZIP are always
-//  typed — never scanned). "Type details instead" skips to the empty
-//  form. Nothing but the OCR text is used; no card photo is uploaded.
+//  Opens BEFORE the manual form when the rider adds a card. Lyft layout
+//  (2026-08-25): black top bar, the camera clipped inside a thin-bordered
+//  card-ratio frame with the hint centred in it, and the "Scan your card"
+//  copy + dark "Type details instead" button below on black. ML Kit text
+//  recognition runs on a ~2/s throttle until a Luhn-valid number + expiry
+//  date are read, then the manual form opens pre-filled (CVV/ZIP are
+//  always typed — never scanned). "Type details instead" skips to the
+//  empty form. Nothing but the OCR text is used; no card photo is
+//  uploaded.
 // ═══════════════════════════════════════════════════════════════════
 
 class CardScanScreen extends StatefulWidget {
@@ -387,65 +390,26 @@ class _CardScanScreenState extends State<CardScanScreen> {
 
   Widget _buildScanner() {
     final s = S.of(context);
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        if (_initialized && _ctrl != null)
-          Center(child: CameraPreview(_ctrl!))
-        else
-          const Center(
-            child: CircularProgressIndicator(color: _gold),
-          ),
-
-        // Dark veil above/below the guide frame.
-        Container(color: Colors.black.withValues(alpha: 0.35)),
-
-        // Guide frame + hint, centered.
-        Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: MediaQuery.of(context).size.width * 0.82,
-                // ISO 7810 card ratio.
-                height:
-                    MediaQuery.of(context).size.width * 0.82 / 1.586,
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(18),
-                  border: Border.all(color: _gold, width: 2.5),
-                  boxShadow: [
-                    BoxShadow(
-                      color: _gold.withValues(alpha: 0.25),
-                      blurRadius: 18,
-                      spreadRadius: 1,
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 18),
-              Text(
-                s.holdCardToScan,
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  fontFamily: 'Poppins',
-                  color: Colors.white,
-                  fontSize: 15,
-                  fontWeight: FontWeight.w600,
-                  shadows: [Shadow(color: Colors.black87, blurRadius: 6)],
-                ),
-              ),
-            ],
-          ),
-        ),
-
-        // Top bar: X left, centered title, flash toggle right.
-        SafeArea(
-          child: Padding(
+    final frameW = MediaQuery.of(context).size.width - 32;
+    // ISO 7810 card ratio.
+    final frameH = frameW / 1.586;
+    return SafeArea(
+      child: Column(
+        children: [
+          // Top bar: bare X left, centered title, flash toggle right.
+          Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             child: Row(
               children: [
-                _circleButton(
-                    Icons.close_rounded, () => Navigator.of(context).pop()),
+                GestureDetector(
+                  onTap: () => Navigator.of(context).pop(),
+                  child: const SizedBox(
+                    width: 40,
+                    height: 40,
+                    child: Icon(Icons.close_rounded,
+                        color: Colors.white, size: 26),
+                  ),
+                ),
                 Expanded(
                   child: Text(
                     s.scanCardTitle,
@@ -467,60 +431,55 @@ class _CardScanScreenState extends State<CardScanScreen> {
               ],
             ),
           ),
-        ),
+          const SizedBox(height: 8),
 
-        // Bottom: security note + manual entry escape.
-        Positioned(
-          left: 0,
-          right: 0,
-          bottom: 0,
-          child: SafeArea(
-            top: false,
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(24, 0, 24, 20),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
+          // The camera IS the frame (Lyft layout 2026-08-25): preview
+          // clipped to the card ratio with a thin light border, hint
+          // centred inside — no full-screen veil, no gold glow.
+          ClipRRect(
+            borderRadius: BorderRadius.circular(18),
+            child: Container(
+              width: frameW,
+              height: frameH,
+              foregroundDecoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(18),
+                border: Border.all(
+                  color: Colors.white.withValues(alpha: 0.55),
+                  width: 1.5,
+                ),
+              ),
+              child: Stack(
+                fit: StackFit.expand,
                 children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(Icons.lock_outline_rounded,
-                          color: Colors.white.withValues(alpha: 0.75),
-                          size: 15),
-                      const SizedBox(width: 7),
-                      Flexible(
-                        child: Text(
-                          s.paymentInfoStoredSecurely,
-                          style: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.75),
-                            fontSize: 12.5,
-                            fontWeight: FontWeight.w500,
-                          ),
+                  if (_initialized && _ctrl != null)
+                    SizedBox.expand(
+                      child: FittedBox(
+                        fit: BoxFit.cover,
+                        child: SizedBox(
+                          width: _ctrl!.value.previewSize!.height,
+                          height: _ctrl!.value.previewSize!.width,
+                          child: CameraPreview(_ctrl!),
                         ),
                       ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  GestureDetector(
-                    onTap: _typeInstead,
-                    child: Container(
-                      width: double.infinity,
-                      height: 52,
-                      alignment: Alignment.center,
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.10),
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(
-                          color: _gold.withValues(alpha: 0.45),
-                        ),
-                      ),
+                    )
+                  else
+                    const Center(
+                      child: CircularProgressIndicator(color: _gold),
+                    ),
+                  Center(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 20),
                       child: Text(
-                        s.typeDetailsInstead,
+                        s.holdCardToScan,
+                        textAlign: TextAlign.center,
                         style: const TextStyle(
                           fontFamily: 'Poppins',
-                          color: _gold,
-                          fontSize: 15,
+                          color: Colors.white,
+                          fontSize: 21,
                           fontWeight: FontWeight.w700,
+                          shadows: [
+                            Shadow(color: Colors.black87, blurRadius: 8)
+                          ],
                         ),
                       ),
                     ),
@@ -529,8 +488,97 @@ class _CardScanScreenState extends State<CardScanScreen> {
               ),
             ),
           ),
-        ),
-      ],
+
+          const SizedBox(height: 28),
+          Text(
+            s.scanYourCardHeading,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              fontFamily: 'Poppins',
+              color: Colors.white,
+              fontSize: 22,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            s.scanCardNumberVisible,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontFamily: 'Poppins',
+              color: Colors.white.withValues(alpha: 0.70),
+              fontSize: 14,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 32),
+            child: Text(
+              s.scanCardSafestWay,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.50),
+                fontSize: 13,
+                height: 1.5,
+              ),
+            ),
+          ),
+
+          const Spacer(),
+
+          // Bottom: security note + manual entry escape (dark grey, white
+          // text — no gold, Lyft-style).
+          Padding(
+            padding: const EdgeInsets.fromLTRB(24, 0, 24, 12),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.lock_outline_rounded,
+                        color: Colors.white.withValues(alpha: 0.75),
+                        size: 15),
+                    const SizedBox(width: 7),
+                    Flexible(
+                      child: Text(
+                        s.paymentInfoStoredSecurely,
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.75),
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                GestureDetector(
+                  onTap: _typeInstead,
+                  child: Container(
+                    width: double.infinity,
+                    height: 52,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.10),
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: Text(
+                      s.typeDetailsInstead,
+                      style: const TextStyle(
+                        fontFamily: 'Poppins',
+                        color: Colors.white,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 

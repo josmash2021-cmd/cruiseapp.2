@@ -2643,6 +2643,15 @@ class S {
   String get holdCardToScan => _es
       ? 'Sostén tu tarjeta dentro del marco para escanearla'
       : 'Hold your card to scan';
+  // Lyft-layout copy under the camera frame (2026-08-25).
+  String get scanYourCardHeading =>
+      _es ? 'Escanea tu tarjeta' : 'Scan your card';
+  String get scanCardNumberVisible => _es
+      ? 'Asegúrate de que el número de la tarjeta sea visible.'
+      : 'Make sure your account number is visible.';
+  String get scanCardSafestWay => _es
+      ? 'Esta es la forma más segura de verificar la información de tu tarjeta, pero puedes escribir los datos manualmente en cualquier momento.'
+      : 'This is the safest way to verify your card information, but you can still type card info manually at any time.';
   String get paymentInfoStoredSecurely => _es
       ? 'Tu información de pago se guardará de forma segura.'
       : 'Your payment info will be stored securely.';

@@ -22,11 +22,22 @@ import 'vehicle_capture_screen.dart';
 /// - pending/rejected → intro; CTA pushes the item's capture screen.
 /// - submitted/approved → read-only summary of what was sent, with a
 ///   Resubmit action that calls the resubmit endpoint and then opens the
-///   capture flow again.
+///   capture flow again. The documents hub opens the page in this mode
+///   (user spec 2026-08-26): [allowResubmit] false keeps a healthy
+///   approved document purely informational — re-upload only when the
+///   doc is rejected, expired, or inside its renewal window.
 class OnboardingIntroScreen extends StatelessWidget {
-  const OnboardingIntroScreen({super.key, required this.entry});
+  const OnboardingIntroScreen({
+    super.key,
+    required this.entry,
+    this.allowResubmit = true,
+  });
 
   final OnboardingItemEntry entry;
+
+  /// Whether the read-only mode offers the Resubmit action. False when the
+  /// document is approved and current — nothing to redo.
+  final bool allowResubmit;
 
   Widget _captureScreenFor(OnboardingItem item) {
     switch (item) {
@@ -172,7 +183,10 @@ class OnboardingIntroScreen extends StatelessWidget {
                                 const SizedBox(width: 10),
                                 Expanded(
                                   child: Text(
-                                    s.obSubmittedReadOnly,
+                                    entry.status ==
+                                            OnboardingItemStatus.approved
+                                        ? s.obDocApprovedReadOnly
+                                        : s.obSubmittedReadOnly,
                                     style: GoogleFonts.inter(
                                       fontSize: 13.5,
                                       height: 1.4,
@@ -200,10 +214,15 @@ class OnboardingIntroScreen extends StatelessWidget {
             child: Column(
               children: [
                 if (readOnly) ...[
-                  OnboardingGoldButton(
-                    label: s.obResubmit,
-                    onTap: () => _resubmit(context),
-                  ),
+                  // Re-upload only when the caller says this document needs
+                  // it (rejected / expiring / expired). A healthy approved
+                  // document is information only (documents hub spec
+                  // 2026-08-26).
+                  if (allowResubmit)
+                    OnboardingGoldButton(
+                      label: s.obResubmit,
+                      onTap: () => _resubmit(context),
+                    ),
                   OnboardingTextButton(
                     label: s.back,
                     onTap: () => Navigator.of(context).pop(),

@@ -13,6 +13,7 @@ import 'background_check_consent_screen.dart';
 import 'driver_license_plate_screen.dart';
 import 'onboarding/doc_capture_screen.dart';
 import 'onboarding/license_capture_screen.dart';
+import 'onboarding/onboarding_intro_screen.dart';
 import 'onboarding/onboarding_items.dart';
 import 'onboarding/profile_photo_capture_screen.dart';
 
@@ -699,12 +700,11 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
   /// card said it three times over: a tinted icon, a coloured border and
   /// a pill on the right, all encoding the same word. The subtitle is
   /// free to say something the icon cannot, which is when it expires.
-  /// Opens the NEW capture experience for this document type (2026-08-25):
-  /// insurance/registration/inspection go to the guided DocCaptureScreen,
-  /// the license to its OCR front/back flow, face biometrics to the
-  /// profile-photo capture. Anything without a guided flow keeps the
-  /// legacy upload sheet. On return the list reloads, so the document
-  /// shows "Pending" until dispatch approves it.
+  /// Tapping opens the document's registration GUIDE page, read-only
+  /// (2026-08-26, user spec): re-upload only when the document needs it
+  /// (rejected, expired, or inside the renewal window) — that action
+  /// lives on the guide page itself or in the details sheet's Update
+  /// button for types without a guide.
   Future<void> _openCaptureFor(Map<String, dynamic> doc) async {
     final docType = doc['doc_type'] as String?;
     final Widget? page = switch (docType) {
@@ -735,6 +735,48 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
       return;
     }
     await Navigator.of(context).push(onboardingFadeSlideRoute(page));
+    if (mounted) _fetchDocuments();
+  }
+
+  /// Opens the registration GUIDE page for this document (user spec
+  /// 2026-08-26): the same hero + title + subtitle the driver saw at
+  /// signup, read-only. The Resubmit action only appears when the
+  /// document actually needs it — rejected, expired, or inside the
+  /// twenty-day renewal window (`_canReupload`). A healthy approved
+  /// document is information only.
+  Future<void> _openDocGuide(Map<String, dynamic> doc) async {
+    final docType = doc['doc_type'] as String?;
+    final item = switch (docType) {
+      'insurance' => OnboardingItem.insurance,
+      'registration' => OnboardingItem.registration,
+      'vehicle_inspection' => OnboardingItem.inspection,
+      'drivers_license' => OnboardingItem.license,
+      'profile_photo' => OnboardingItem.photo,
+      'background_check' => OnboardingItem.background,
+      _ => null,
+    };
+    if (item == null) {
+      _showDocDetails(doc);
+      return;
+    }
+    final status = (doc['status'] ?? 'not_uploaded') as String;
+    final entry = OnboardingItemEntry(
+      item: item,
+      status: switch (status) {
+        'approved' => OnboardingItemStatus.approved,
+        'rejected' => OnboardingItemStatus.rejected,
+        _ => OnboardingItemStatus.submitted,
+      },
+      reason: (doc['rejection_reason'] ?? doc['reason']) as String?,
+    );
+    await Navigator.of(context).push(
+      onboardingFadeSlideRoute(
+        OnboardingIntroScreen(
+          entry: entry,
+          allowResubmit: _canReupload(doc),
+        ),
+      ),
+    );
     if (mounted) _fetchDocuments();
   }
 
@@ -833,9 +875,9 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: GestureDetector(
-        // Tapping a document to see it is the whole point of a screen
-        // called "view documents", so the tap goes there unless the card
-        // is asking for a re-upload instead.
+        // Tapping a document opens its registration GUIDE page, read-only
+        // (user spec 2026-08-26) — re-upload only when the document needs
+        // it (rejected / expiring / expired).
         onTap: inert
             ? null
             : () {
@@ -846,10 +888,8 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
                   return;
                 } else if (docType == 'license_plate') {
                   _editPlate(doc);
-                } else if (canUpload) {
-                  _openCaptureFor(doc);
                 } else {
-                  _showDocDetails(doc);
+                  _openDocGuide(doc);
                 }
               },
         child: Opacity(

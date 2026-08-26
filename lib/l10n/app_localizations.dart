@@ -5685,6 +5685,9 @@ class S {
   String get obSubmittedReadOnly => _es
       ? 'Tu información fue enviada y está en revisión.'
       : 'Your information was submitted and is under review.';
+  String get obDocApprovedReadOnly => _es
+      ? 'Este documento está aprobado y vigente.'
+      : 'This document is approved and current.';
 
   // ── Document items (registration / insurance / inspection) ───────
   String get obItemRegistrationTitle =>

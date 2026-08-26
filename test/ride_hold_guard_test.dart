@@ -2,14 +2,16 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-/// Guardian for the scheduled-ride hold (hold al agendar + decline claro).
+/// Guardian for the booking payment model (Lyft model, 2026-08-26).
 ///
 /// Pins the wiring the plan depends on:
-///   a. ApiService.createTrip accepts and sends stripe_payment_intent_id.
-///   b. schedule_booking_screen places the hold (createPaymentIntent with
-///      holdOnly) BEFORE createTrip, and passes the PI along.
-///   c. A declined hold (client exception or backend 402) aborts the
-///      creation — the return happens before createTrip/requestRide.
+///   a. ApiService.createTrip accepts and sends stripe_payment_intent_id
+///      (legacy builds that DID hold keep working).
+///   b. A SCHEDULED booking places NO hold and opens no wallet sheet —
+///      both pipelines skip _confirmNativePayment when scheduledAt is set;
+///      the backend authorises the fare off-session at dispatch time.
+///   c. A declined charge (client exception or backend 402) still aborts
+///      the creation — the return happens before createTrip/requestRide.
 ///   d. The sandbox/test-mode/web bypasses survive.
 ///
 /// Source-grep style, same as picker_camera_guard_test.dart: these paths
@@ -40,32 +42,32 @@ void main() {
     });
   });
 
-  group('(b) scheduled booking places the hold before createTrip', () {
-    test('createPaymentIntent(holdOnly) runs before createTrip', () {
-      final hold = scheduleSrc.indexOf('ApiService.createPaymentIntent(');
-      final create = scheduleSrc.indexOf('ApiService.createTrip(');
-      expect(hold, isNonNegative, reason: 'the booking must place a hold');
-      expect(create, isNonNegative);
-      expect(hold, lessThan(create),
-          reason: 'the hold must be placed BEFORE the trip is created');
-      final holdBlock = scheduleSrc.substring(hold, hold + 400);
-      expect(holdBlock, contains('holdOnly: true'),
-          reason: 'scheduled hold must be hold-only (auth, not capture)');
+  group('(b) scheduled booking places NO hold (Lyft model)', () {
+    test('the modal pipeline skips payment when scheduledAt is set', () {
+      expect(scheduleSrc, contains('isScheduledBooking'),
+          reason: 'the modal pipeline must branch on the scheduled flag');
+      expect(
+          scheduleSrc,
+          contains(
+              'if (!isScheduledBooking) {'),
+          reason:
+              '_confirmNativePayment must only run for immediate rides');
     });
 
-    test('the hold id is passed into createTrip', () {
+    test('the direct pipeline gates the charge on scheduledAt == null', () {
+      expect(
+          scheduleSrc,
+          contains(
+              'if (!isTestMode && _ctrl.state.scheduledAt == null) {'),
+          reason:
+              'a scheduled booking opens no wallet sheet and places no hold');
+    });
+
+    test('createTrip still carries the param for legacy held bookings', () {
       final create = scheduleSrc.indexOf('ApiService.createTrip(');
       final block = scheduleSrc.substring(create, create + 1200);
       expect(block, contains('paymentIntentId: _heldPaymentIntentId'),
-          reason: 'createTrip must receive the held PaymentIntent id');
-    });
-
-    test('ride_request scheduled path also sends the held PI', () {
-      final fn = requestSrc.indexOf('Future<void> _createScheduledTrip()');
-      expect(fn, isNonNegative);
-      final block = requestSrc.substring(fn, fn + 3400);
-      expect(block, contains('paymentIntentId: _heldPaymentIntentId'),
-          reason: 'the scheduled createTrip must send the confirmed hold');
+          reason: 'legacy builds that DID hold must keep sending it');
     });
   });
 
@@ -127,7 +129,8 @@ void main() {
     test('test mode still skips the native payment in ride_request', () {
       expect(requestSrc, contains('_isTestModeActive()'),
           reason: 'the test-mode bypass must stay');
-      final i = requestSrc.indexOf('if (!isTestMode) {');
+      final i = requestSrc.indexOf(
+          'if (!isTestMode && _ctrl.state.scheduledAt == null) {');
       expect(i, isNonNegative,
           reason: 'the charge/hold must stay behind the test-mode gate');
     });

@@ -2099,24 +2099,30 @@ async def _scheduled_ride_dispatcher():
                         continue
 
                     # --------------------------------------------------
-                    # Re-verify the payment hold before dispatching.
-                    # Issuer holds expire (~7 days), so a ride booked far
-                    # ahead can reach dispatch time with a dead hold:
-                    # re-authorize off-session for the current total; if
-                    # the card declines, cancel WITHOUT fee and push the
-                    # rider to update their payment method.
+                    # Authorise the fare before dispatching.
+                    # Lyft model (2026-08-26): a scheduled booking holds
+                    # NOTHING up front — the hold is created off-session
+                    # RIGHT HERE, at dispatch time. Legacy bookings that do
+                    # carry a hold are re-verified as before: issuer holds
+                    # expire (~7 days), so a dead one is re-authorized
+                    # off-session for the current total. Either way, a
+                    # decline cancels WITHOUT fee and pushes the rider to
+                    # update their payment method.
                     # --------------------------------------------------
-                    if trip.stripe_payment_intent_id and trip.payment_status == "held":
+                    _needs_hold = bool(trip.stripe_payment_intent_id) or (
+                        (trip.payment_status or "unpaid") in ("unpaid", "held"))
+                    if _needs_hold:
                         from config import _HAS_STRIPE, _stripe_mod
                         if _HAS_STRIPE:
-                            try:
-                                _existing_pi = _stripe_mod.PaymentIntent.retrieve(
-                                    trip.stripe_payment_intent_id)
-                                _pi_ok = getattr(_existing_pi, "status", "") == "requires_capture"
-                            except Exception as _pi_err:
-                                logging.warning(
-                                    "[Scheduler] hold retrieve failed trip=%d: %s", trip.id, _pi_err)
-                                _pi_ok = False
+                            _pi_ok = False
+                            if trip.stripe_payment_intent_id:
+                                try:
+                                    _existing_pi = _stripe_mod.PaymentIntent.retrieve(
+                                        trip.stripe_payment_intent_id)
+                                    _pi_ok = getattr(_existing_pi, "status", "") == "requires_capture"
+                                except Exception as _pi_err:
+                                    logging.warning(
+                                        "[Scheduler] hold retrieve failed trip=%d: %s", trip.id, _pi_err)
                             if not _pi_ok:
                                 _reauthed = False
                                 try:
@@ -2150,7 +2156,7 @@ async def _scheduled_ride_dispatcher():
                                         metadata={
                                             "trip_id": str(trip.id),
                                             "rider_id": str(trip.rider_id),
-                                            "kind": "scheduled_reauth"},
+                                            "kind": "scheduled_dispatch_hold"},
                                     )
                                     if _new_pi.status != "requires_capture":
                                         raise ValueError(f"re-auth status {_new_pi.status}")
@@ -2159,7 +2165,7 @@ async def _scheduled_ride_dispatcher():
                                     await db.commit()
                                     _reauthed = True
                                     logging.info(
-                                        "[Scheduler] trip=%d hold re-authorized off-session (pi=%s)",
+                                        "[Scheduler] trip=%d hold authorized off-session at dispatch (pi=%s)",
                                         trip.id, _new_pi.id)
                                 except Exception as _reauth_err:
                                     logging.warning(

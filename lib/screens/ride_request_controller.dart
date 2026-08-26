@@ -1255,26 +1255,33 @@ extension _RideRequestController on _RideRequestScreenState {
     });
 
     try {
-      try {
-        final success = await _confirmNativePayment(option);
-        if (!mounted) return;
-        if (!success) {
+      // Lyft model (2026-08-26, user spec): a SCHEDULED booking pays
+      // nothing up front — no hold, no wallet sheet. The backend
+      // authorises the fare off-session when the ride dispatches. Only
+      // immediate rides confirm payment here.
+      final isScheduledBooking = _ctrl.state.scheduledAt != null;
+      if (!isScheduledBooking) {
+        try {
+          final success = await _confirmNativePayment(option);
+          if (!mounted) return;
+          if (!success) {
+            setSheetState(() => _isProcessingPayment = false);
+            _setState(() => _isProcessingPayment = false);
+            return; // User cancelled — stay on sheet
+          }
+        } catch (e) {
+          if (!mounted) return;
           setSheetState(() => _isProcessingPayment = false);
           _setState(() => _isProcessingPayment = false);
-          return; // User cancelled — stay on sheet
+          debugPrint('Payment error: $e');
+          _nav?.pop(); // close payment modal
+          _setState(() => _showPaymentDeclinedBanner = true);
+          _showRetrySnackBar(
+            S.of(context).paymentDeclinedMsg,
+            () => _processPayment(context, AppColors.of(context), option, setSheetState),
+          );
+          return;
         }
-      } catch (e) {
-        if (!mounted) return;
-        setSheetState(() => _isProcessingPayment = false);
-        _setState(() => _isProcessingPayment = false);
-        debugPrint('Payment error: $e');
-        _nav?.pop(); // close payment modal
-        _setState(() => _showPaymentDeclinedBanner = true);
-        _showRetrySnackBar(
-          S.of(context).paymentDeclinedMsg,
-          () => _processPayment(context, AppColors.of(context), option, setSheetState),
-        );
-        return;
       }
 
       if (!mounted) return;
@@ -1426,9 +1433,11 @@ extension _RideRequestController on _RideRequestScreenState {
       }
 
       bool nativePayFailed = false;
-      // Confirm payment for ALL non-test methods before creating the trip.
-      // This ensures the hold is placed and verified before dispatching drivers.
-      if (!isTestMode) {
+      // Confirm payment for ALL non-test methods before creating the trip —
+      // IMMEDIATE rides only. A scheduled booking places no hold and opens
+      // no wallet sheet (Lyft model 2026-08-26): the backend authorises the
+      // fare off-session at dispatch time.
+      if (!isTestMode && _ctrl.state.scheduledAt == null) {
         _setState(() => _isProcessingPayment = true);
         try {
           final ok = await _confirmNativePayment(option);
@@ -2238,8 +2247,10 @@ extension _RideRequestController on _RideRequestScreenState {
         terminal: state.airportTerminal,
         pickupZone: state.airportPickupZone,
         notes: notes,
-        // Hold placed by _confirmNativePayment before we got here (skipped
-        // in test mode) — the backend captures/cancels it with the trip.
+        // Lyft model (2026-08-26): scheduled bookings place NO hold — this
+        // is null on the current pipeline (only immediate rides confirm
+        // payment). A legacy build that did hold still sends it and the
+        // backend settles it as before.
         paymentIntentId: _heldPaymentIntentId,
       );
 

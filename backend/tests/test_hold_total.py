@@ -1,9 +1,12 @@
 """Tests for the total-fare hold policy (hold + incremental authorization).
 
 Production rules under test:
-  * POST /dispatch/request and POST /trips REQUIRE a valid PaymentIntent
+  * POST /dispatch/request (immediate rides) REQUIRES a valid PaymentIntent
     hold (status "requires_capture") for riders with a card on file —
     missing/invalid → 402 and no trip is created.
+  * POST /trips SCHEDULED rides book with NO hold (Lyft model, 2026-08-26):
+    the fare is authorised off-session at dispatch time, not at booking.
+    A legacy booking that DOES send a hold is still stored as 'held'.
   * When surcharges (airport/scheduled/meet&greet) or wait-time fees push
     the fare past the authorized hold, the hold is extended via
     stripe.PaymentIntent.increment_authorization.
@@ -160,23 +163,29 @@ async def test_dispatch_within_hold_no_increment(client: AsyncClient, db, test_r
     mock_inc.assert_not_called()
 
 
-# ── (c) POST /trips scheduled: hold required, stored as 'held' ───
+# ── (c) POST /trips scheduled: NO hold up front (Lyft model) ──────
 
-async def test_create_trip_requires_hold_in_prod(client: AsyncClient, db, test_rider, monkeypatch):
+async def test_create_scheduled_trip_without_hold_books_unpaid(client: AsyncClient, db, test_rider, monkeypatch):
+    """Lyft model (2026-08-26): a scheduled booking with a card on file
+    needs NO hold — the trip is created unpaid and the dispatcher will
+    authorise the fare off-session at dispatch time."""
     _prod(monkeypatch)
     rider, token = test_rider
     await _add_card(db, rider)
 
     resp = await client.post("/trips", json=_TRIP_BODY, headers=_headers(token))
-    assert resp.status_code == 402, resp.text
+    assert resp.status_code == 200, resp.text
 
     from main import Trip, SessionLocal
     async with SessionLocal() as s:
-        trips = (await s.execute(select(Trip).where(Trip.rider_id == rider.id))).scalars().all()
-    assert trips == []
+        trip = (await s.execute(select(Trip).where(Trip.rider_id == rider.id))).scalar_one()
+    assert trip.status == "scheduled"
+    assert trip.stripe_payment_intent_id is None
+    assert trip.payment_status == "unpaid"
 
 
 async def test_create_trip_with_valid_hold_is_held(client: AsyncClient, db, test_rider, monkeypatch):
+    """Legacy builds that DO place a hold up front keep the old path."""
     _prod(monkeypatch)
     rider, token = test_rider
     await _add_card(db, rider)

@@ -432,15 +432,18 @@ async def create_trip(body: CreateTripIn, user: User = Depends(_get_current_user
                 400,
                 "No payment method on file. Please add a card in Payment Methods before booking.",
             )
-        # A card-on-file rider must hold the fare up front — without a
-        # hold the scheduled ride is a free ride when the charge fails.
+        # Lyft model (2026-08-25, user spec): a SCHEDULED ride books with
+        # NO hold at all — the fare is only authorised when the ride
+        # dispatches (main.py creates the hold off-session) and captured
+        # when it completes. Immediate rides keep the up-front hold:
+        # without it the ride is a free ride when the charge fails.
         pi_id = body.stripe_payment_intent_id
-        if not pi_id:
+        if not pi_id and not body.scheduled_at:
             raise HTTPException(
                 402,
                 "A payment hold is required before booking. Please retry payment.",
             )
-        if _HAS_STRIPE:
+        if pi_id and _HAS_STRIPE:
             try:
                 intent = _stripe_mod.PaymentIntent.retrieve(pi_id)
                 if intent.status != "requires_capture":
@@ -783,16 +786,75 @@ async def _release_or_capture_fee_on_cancel(trip) -> str:
     wait-timeout no-show agent and the scheduler auto-cancels. Before
     this helper only the rider path released holds.
     """
+    fee_cents = int(round(float(trip.cancellation_fee or 0.0) * 100))
+    if 0 < fee_cents < 50:
+        fee_cents = 50  # Stripe minimum charge
+
     if not (_HAS_STRIPE and trip.stripe_payment_intent_id):
+        # Lyft model (2026-08-26): a scheduled booking holds NOTHING up
+        # front, so a late cancellation with no hold on file cannot
+        # "capture" the fee — it is charged off-session instead. A missing
+        # card or a declined fee never blocks the cancellation itself.
+        if fee_cents > 0 and _HAS_STRIPE:
+            try:
+                async with SessionLocal() as _fee_db:
+                    pm_r = await _fee_db.execute(
+                        select(RiderPaymentMethod).where(
+                            RiderPaymentMethod.user_id == trip.rider_id,
+                            RiderPaymentMethod.method_type == "stripe_card",
+                            RiderPaymentMethod.stripe_pm_id.isnot(None),
+                        ).order_by(
+                            RiderPaymentMethod.is_default.desc(),
+                            RiderPaymentMethod.created_at.asc(),
+                        )
+                    )
+                    _pm = pm_r.scalars().first()
+                    if _pm is None:
+                        raise ValueError("no saved card")
+                    rider_r = await _fee_db.execute(
+                        select(User).where(User.id == trip.rider_id))
+                    _rider_row = rider_r.scalar_one_or_none()
+                    _customer_id = getattr(_rider_row, "stripe_customer_id", None)
+                loop = asyncio.get_event_loop()
+                _fee_pi = await asyncio.wait_for(
+                    loop.run_in_executor(
+                        None,
+                        lambda: _stripe_mod.PaymentIntent.create(
+                            amount=fee_cents,
+                            currency="usd",
+                            payment_method=_pm.stripe_pm_id,
+                            **({"customer": _customer_id} if _customer_id else {}),
+                            confirm=True,
+                            off_session=True,
+                            automatic_payment_methods={
+                                "enabled": True, "allow_redirects": "never"},
+                            metadata={
+                                "trip_id": str(trip.id),
+                                "rider_id": str(trip.rider_id),
+                                "kind": "cancel_fee_off_session"},
+                        ),
+                    ),
+                    timeout=10.0,
+                )
+                if getattr(_fee_pi, "status", "") == "succeeded":
+                    trip.stripe_payment_intent_id = _fee_pi.id
+                    logging.info(
+                        "[CancelHold] trip %s: fee $%.2f charged off-session (no hold on file)",
+                        trip.id, fee_cents / 100.0)
+                    return "paid"
+                logging.warning(
+                    "[CancelHold] trip %s: off-session fee status %s — fee uncollected",
+                    trip.id, getattr(_fee_pi, "status", ""))
+            except Exception as e:
+                logging.warning(
+                    "[CancelHold] trip %s: off-session fee charge failed (%s) — fee uncollected",
+                    trip.id, e)
         return trip.payment_status or "cancelled"
     if trip.payment_status not in ("held", "unpaid"):
         return trip.payment_status or "cancelled"
 
     loop = asyncio.get_event_loop()
     pi_id = trip.stripe_payment_intent_id
-    fee_cents = int(round(float(trip.cancellation_fee or 0.0) * 100))
-    if 0 < fee_cents < 50:
-        fee_cents = 50  # Stripe minimum charge
 
     try:
         existing = await asyncio.wait_for(

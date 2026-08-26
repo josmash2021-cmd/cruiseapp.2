@@ -414,14 +414,10 @@ class _DriverInboxScreenState extends State<DriverInboxScreen>
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Container(
-              width: 44,
-              height: 44,
-              decoration: BoxDecoration(
-                color: const Color(0xFF2C2C2E),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Icon(item.icon, color: item.iconColor, size: 22),
+            // Bare icon (user spec 2026-08-26) — no box behind it.
+            Padding(
+              padding: const EdgeInsets.only(top: 2),
+              child: Icon(item.icon, color: item.iconColor, size: 24),
             ),
             const SizedBox(width: 14),
             Expanded(
@@ -464,15 +460,6 @@ class _DriverInboxScreenState extends State<DriverInboxScreen>
                     ),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    item.time,
-                    style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.25),
-                      fontSize: 11,
-                      fontWeight: FontWeight.w500,
-                    ),
                   ),
                 ],
               ),

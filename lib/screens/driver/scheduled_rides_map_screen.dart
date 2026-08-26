@@ -52,7 +52,9 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
   // Sheet extents: collapsed peek, browsing list, detail card, full list.
   static const _sheetMin = 0.14;
   static const _sheetInitial = 0.26;
-  static const _sheetDetail = 0.52;
+  // Detail sits LOW, Lyft-style (2026-08-25): the card + Reserve take the
+  // bottom ~44% and the route owns the rest of the map.
+  static const _sheetDetail = 0.44;
   static const _sheetMax = 0.85;
 
   // Unique per instance: this screen can sit on top of (or under) other
@@ -465,6 +467,9 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
   // ─────────────────────────────────────────────
 
   Future<void> _syncDriverDot() async {
+    // Detail mode is driverless — a GPS fix mid-detail must not resurrect
+    // the arrow over the framed route.
+    if (_selected != null) return;
     final mgr = _dotMgr;
     final pos = _driverPos;
     if (mgr == null || pos == null || !mounted) return;
@@ -643,6 +648,14 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
       _selected = trip;
       _showSearchArea = false;
     });
+    // Detail mode is driverless, Lyft-style (2026-08-25): the gold arrow
+    // comes off the map so the route owns it; Dismiss draws it back.
+    final dotMgr = _dotMgr;
+    final dotAnnot = _dotAnnot;
+    if (dotMgr != null && dotAnnot != null) {
+      _dotAnnot = null;
+      dotMgr.delete(dotAnnot).catchError((Object _) {});
+    }
     _syncBubbles(); // selected marker turns gold + scales up
     if (_sheetCtrl.isAttached) {
       _sheetCtrl.animateTo(
@@ -658,6 +671,7 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
     setState(() => _selected = null);
     _syncBubbles(); // the gold selected marker returns to normal
     _clearRouteAnnotation();
+    _syncDriverDot(); // the driver's arrow comes back
     if (_sheetCtrl.isAttached) {
       _sheetCtrl.animateTo(
         _sheetInitial,
@@ -916,11 +930,19 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
 
           // ── Top bar: X + title + filter pills inside ONE solid container
           // (2026-08-25, Lyft reference): they no longer float over the map.
+          // Detail mode fades the whole bar out (Lyft photo 2026-08-25):
+          // only the Dismiss pill stays, top-right.
           Positioned(
             top: 0,
             left: 0,
             right: 0,
-            child: Container(
+            child: AnimatedOpacity(
+              duration: const Duration(milliseconds: 250),
+              curve: Curves.easeOutCubic,
+              opacity: _selected == null ? 1.0 : 0.0,
+              child: IgnorePointer(
+                ignoring: _selected != null,
+                child: Container(
               color: neuBase,
               padding: EdgeInsets.only(top: media.padding.top + 4, bottom: 10),
               child: Column(
@@ -1010,12 +1032,15 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
               ],
             ),
             ),
+              ),
+            ),
           ),
 
-          // ── Dismiss pill (detail mode) ──
+          // ── Dismiss pill (detail mode) — top-right where the bar used
+          // to be, matching the Lyft detail layout.
           if (_selected != null)
             Positioned(
-              top: media.padding.top + 108,
+              top: media.padding.top + 12,
               right: 14,
               child: _buildDismissPill(s),
             ),

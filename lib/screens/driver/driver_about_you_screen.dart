@@ -99,8 +99,8 @@ class _DriverAboutYouScreenState extends State<DriverAboutYouScreen> {
         }),
       });
       if (!mounted) return;
-      // First time: the per-item intro sequence runs before the hub; the
-      // flow screen self-redirects to the hub when already seen.
+      // The per-item intro sequence runs before the hub on every
+      // registration (no once-per-device latch since 2026-08-25).
       Navigator.of(context).pushAndRemoveUntil(
         onboardingFadeSlideRoute(const OnboardingIntroFlowScreen()),
         (_) => false,

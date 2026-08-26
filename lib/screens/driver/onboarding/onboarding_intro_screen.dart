@@ -213,10 +213,14 @@ class OnboardingIntroScreen extends StatelessWidget {
                     label: copy.button,
                     onTap: () => _openCapture(context),
                   ),
-                  OnboardingTextButton(
-                    label: s.obSkipForNow,
-                    onTap: () => Navigator.of(context).pop(),
-                  ),
+                  // No skip on the vehicle page (user spec 2026-08-25) —
+                  // the car is the one item without which there is nothing
+                  // to drive. The other intros keep "Skip for now".
+                  if (entry.item != OnboardingItem.vehicle)
+                    OnboardingTextButton(
+                      label: s.obSkipForNow,
+                      onTap: () => Navigator.of(context).pop(),
+                    ),
                 ],
               ],
             ),

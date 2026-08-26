@@ -22,7 +22,11 @@ import '../widgets/neu_style.dart';
 /// dots suggest the nearest points ON the street grid (queried from the
 /// style's road layers — never on water or open land); dropping the pin
 /// within 25 m of a suggestion snaps to it and morphs the pin into the
-/// "Recommended" pill; dragging again turns it back into a pin.
+/// "Recommended" pill; dropping it anywhere ELSE spawns a circle anchored
+/// at the pin's tip that same instant, with the same morph (user spec
+/// 2026-08-25); dragging again turns it back into a pin. A pickup label
+/// with a street number is forward-geocoded on open so the pin starts on
+/// the doorstep, and the pay button goes white for Apple Pay.
 ///
 /// The Pay button calls [onConfirm] with the final pin + note — the caller
 /// (ride_request) runs the existing hold → createTrip pipeline from there.
@@ -87,6 +91,14 @@ class _SetPickupLocationScreenState extends State<SetPickupLocationScreen>
 
   // ── Suggested street points ──
   List<LatLngSafe> _suggested = const [];
+
+  // ── Drop-anchored circle (user spec 2026-08-25) ──
+  // Wherever the pin is released, a circle is born THAT instant under the
+  // pin's tip and the pin anchors to it, exactly like a suggested point.
+  // Only the latest drop keeps its circle — dragging around must not
+  // litter the map with one circle per stop.
+  LatLngSafe? _droppedPoint;
+  mapbox.CircleAnnotation? _droppedCircle;
 
   // ── Pin animation state ──
   // lift while dragging → drop bounce on release; morph to the pill on snap.
@@ -165,6 +177,46 @@ class _SetPickupLocationScreenState extends State<SetPickupLocationScreen>
     }
     _suggestMgr = await ctrl.annotations.createCircleAnnotationManager();
     await _refreshSuggestions();
+    unawaited(_refinePickupFromLabel());
+  }
+
+  /// Sharpen the opening pin to the exact pickup address (user spec
+  /// 2026-08-25): a pickup chosen from a city-level prediction ("Pelham,
+  /// AL 35124") seeds the pin at the city centroid, not at the house. A
+  /// label that carries a street number is forward-geocoded on open and,
+  /// when the rooftop answer sits meaningfully away from the seed, the
+  /// pin + camera move there and the field shows the real address.
+  Future<void> _refinePickupFromLabel() async {
+    final label = widget.pickupLabel.trim();
+    // Only a label that looks like a street address can sharpen the pin —
+    // city-level or "Current location" seeds stay exactly as they are.
+    if (!RegExp(r'\d').hasMatch(label)) return;
+    try {
+      final exact = await _places
+          .geocodeAddress(label)
+          .timeout(const Duration(seconds: 6));
+      if (!mounted || exact == null) return;
+      final d = _meters(
+          LatLngSafe(_pin.lat, _pin.lng), LatLngSafe(exact.lat, exact.lng));
+      if (d < 40) return; // the seed was already on the doorstep
+      setState(() {
+        _pin = PlaceDetails(address: label, lat: exact.lat, lng: exact.lng);
+      });
+      final map = _map;
+      if (map != null) {
+        try {
+          await map.easeTo(
+            mapbox.CameraOptions(
+              center: mapbox.Point(
+                  coordinates: mapbox.Position(exact.lng, exact.lat)),
+            ),
+            mapbox.MapAnimationOptions(duration: 500),
+          );
+        } catch (_) {}
+      }
+      if (!mounted) return;
+      _refreshSuggestions();
+    } catch (_) {}
   }
 
   // ─────────────────────────────────────────────
@@ -198,8 +250,29 @@ class _SetPickupLocationScreenState extends State<SetPickupLocationScreen>
 
     // Snap to a nearby suggested street point, if any.
     final nearest = _nearestSuggestion(center);
-    if (nearest != null &&
+    final dropped = _droppedPoint;
+    if (dropped != null && _meters(center, dropped) <= _snapMeters) {
+      // Re-anchoring to the circle this page already dropped: keep the
+      // circle, glide the camera back onto it, morph again.
+      try {
+        await map.easeTo(
+          mapbox.CameraOptions(
+            center: mapbox.Point(
+                coordinates: mapbox.Position(dropped.lng, dropped.lat)),
+          ),
+          mapbox.MapAnimationOptions(duration: 300),
+        );
+      } catch (_) {}
+      if (!mounted) return;
+      setState(() => _snappedToSuggestion = true);
+      HapticService.selectionClick();
+      _pin = PlaceDetails(
+          address: _pin.address, lat: dropped.lat, lng: dropped.lng);
+    } else if (nearest != null &&
         _meters(center, nearest) <= _snapMeters) {
+      // A real suggestion absorbs the anchor — the drop circle from the
+      // last stop would be a second circle under the same pin.
+      _clearDroppedCircle();
       try {
         await map.easeTo(
           mapbox.CameraOptions(
@@ -215,8 +288,16 @@ class _SetPickupLocationScreenState extends State<SetPickupLocationScreen>
       _pin = PlaceDetails(
           address: _pin.address, lat: nearest.lat, lng: nearest.lng);
     } else {
+      // Drop-anchored point (user spec 2026-08-25): the circle is born
+      // THIS instant, anchored to the pin's tip right where it fell, and
+      // the pin anchors to it with the same Recommended morph a suggested
+      // point gets. The camera is already there — no easeTo needed.
+      final dropPt = LatLngSafe(center.lat, center.lng);
       _pin = PlaceDetails(
           address: _pin.address, lat: center.lat, lng: center.lng);
+      _setDroppedCircle(dropPt);
+      setState(() => _snappedToSuggestion = true);
+      HapticService.selectionClick();
     }
 
     _refreshSuggestions();
@@ -331,6 +412,22 @@ class _SetPickupLocationScreenState extends State<SetPickupLocationScreen>
           ));
         } catch (_) {}
       }
+      // The drop-anchored circle went down with the same deleteAll —
+      // redraw it from its coordinate so it survives every refresh.
+      final dropped = _droppedPoint;
+      if (dropped != null) {
+        _droppedCircle = null;
+        try {
+          _droppedCircle = await mgr.create(mapbox.CircleAnnotationOptions(
+            geometry: mapbox.Point(
+                coordinates: mapbox.Position(dropped.lng, dropped.lat)),
+            circleRadius: 5.0,
+            circleColor: _gold.toARGB32(),
+            circleStrokeColor: _navy.toARGB32(),
+            circleStrokeWidth: 1.5,
+          ));
+        } catch (_) {}
+      }
     } catch (e) {
       debugPrint('[SetPickup] suggestion query failed: $e');
     }
@@ -347,6 +444,36 @@ class _SetPickupLocationScreenState extends State<SetPickupLocationScreen>
       }
     }
     return best;
+  }
+
+  /// Draw (or move) the drop-anchored circle at [p]. Same gold/navy style
+  /// as the suggested street points so the two read as one system.
+  Future<void> _setDroppedCircle(LatLngSafe p) async {
+    _droppedPoint = p;
+    final mgr = _suggestMgr;
+    if (mgr == null || !mounted) return;
+    try {
+      final existing = _droppedCircle;
+      if (existing != null) await mgr.delete(existing);
+      _droppedCircle = await mgr.create(mapbox.CircleAnnotationOptions(
+        geometry: mapbox.Point(coordinates: mapbox.Position(p.lng, p.lat)),
+        circleRadius: 5.0,
+        circleColor: _gold.toARGB32(),
+        circleStrokeColor: _navy.toARGB32(),
+        circleStrokeWidth: 1.5,
+      ));
+    } catch (_) {}
+  }
+
+  Future<void> _clearDroppedCircle() async {
+    _droppedPoint = null;
+    final mgr = _suggestMgr;
+    final existing = _droppedCircle;
+    _droppedCircle = null;
+    if (mgr == null || existing == null) return;
+    try {
+      await mgr.delete(existing);
+    } catch (_) {}
   }
 
   double _meters(LatLngSafe a, LatLngSafe b) {
@@ -714,9 +841,13 @@ class _SetPickupLocationScreenState extends State<SetPickupLocationScreen>
             child: ElevatedButton(
               onPressed: _paying ? null : _onPay,
               style: ElevatedButton.styleFrom(
-                backgroundColor: _gold,
+                // Apple Pay rides on a WHITE button, Apple-style (user spec
+                // 2026-08-25); every other method keeps the Cruise gold.
+                backgroundColor: widget.isApplePay ? Colors.white : _gold,
                 foregroundColor: Colors.black,
-                disabledBackgroundColor: _gold.withValues(alpha: 0.5),
+                disabledBackgroundColor:
+                    (widget.isApplePay ? Colors.white : _gold)
+                        .withValues(alpha: 0.5),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(16),
                 ),

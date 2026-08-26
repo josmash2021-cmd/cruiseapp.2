@@ -3,9 +3,11 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 /// Guardian for the 2026-08-25 phone-first onboarding payment step
-/// (Lyft-style): email → Add payment method → Ready to ride → home.
-///   1. RiderEmailScreen continues to RiderAddPaymentScreen (not straight
-///      to HomeScreen anymore).
+/// (Lyft-style): email → profile photo + gender → notifications →
+/// Add payment method → Ready to ride → home.
+///   1. RiderEmailScreen continues to RiderPhotoGenderScreen, which then
+///      reaches RiderAddPaymentScreen via the notifications page (not
+///      straight to HomeScreen anymore).
 ///   2. The payment page lists Apple Pay (iOS) / Google Pay (Android)
 ///      first, opens the card SCANNER first for cards, and has a discreet
 ///      "Not now" skip.
@@ -18,21 +20,25 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   final email =
       File('lib/screens/rider_email_screen.dart').readAsStringSync();
+  final photoGender =
+      File('lib/screens/rider_photo_gender_screen.dart').readAsStringSync();
   final pay =
       File('lib/screens/rider_add_payment_screen.dart').readAsStringSync();
   final ready =
       File('lib/screens/ready_to_ride_screen.dart').readAsStringSync();
 
   group('email → payment step', () {
-    test('email success reaches RiderAddPaymentScreen via the notifications '
-        'page, not home', () {
-      expect(email, contains("import 'rider_add_payment_screen.dart';"));
-      // 2026-08-25: the notification-permission page sits between email and
-      // payment — the payment screen now arrives as its nextScreen.
-      expect(email, contains('DriverNotificationsScreen('));
-      expect(email, contains('nextScreen: RiderAddPaymentScreen('));
+    test('email success reaches the photo+gender page, then payment via '
+        'the notifications page, not home', () {
+      expect(email, contains("import 'rider_photo_gender_screen.dart';"));
+      expect(email, contains('RiderPhotoGenderScreen('));
       expect(email, isNot(contains('pushAndRemoveUntil')));
       expect(email, isNot(contains('HomeScreen()')));
+      // 2026-08-25: the chain continues photo+gender → notifications →
+      // add payment — the payment screen arrives as the notifications
+      // page's nextScreen.
+      expect(photoGender, contains('DriverNotificationsScreen('));
+      expect(photoGender, contains('nextScreen: RiderAddPaymentScreen('));
     });
   });
 

@@ -22,6 +22,7 @@ import '../../config/route_observers.dart';
 import '../../map/flat_map_projection.dart';
 import '../../map/web_map_view.dart';
 import '../../map/map_surface_coordinator.dart';
+import '../../map/driver_map_host.dart';
 import '../../config/driver_colors.dart';
 import '../../services/api_service.dart';
 import '../../services/gps_service.dart';
@@ -132,6 +133,12 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   /// surfaces, which is the relaunch crash loop. Claiming first costs a
   /// couple of frames on an empty coordinator and removes the case.
   bool _mapSuspended = true;
+
+  /// True while the online overlay is attached to OUR map (DriverMapHost,
+  /// 2026-08-25 Lyft-style handoff): it owns the camera and the marker for
+  /// that span, so our follow writes and our dot stand down — two writers
+  /// on one map is the stutter, two arrows is the historical bug.
+  bool _driverOverlayAttached = false;
 
   /// Mini-map camera glued to the driver. Cleared when they drag it,
   /// restored ten seconds after they stop. See _onHomeMapPanned.
@@ -396,6 +403,8 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     super.initState();
     _enforceDriverRole();
     initPanelAnimation();
+    DriverMapHost.instance.overlayAttached
+        .addListener(_onDriverOverlayAttachedChanged);
     SystemChrome.setSystemUIOverlayStyle(
       const SystemUiOverlayStyle(
         statusBarIconBrightness: Brightness.light,
@@ -718,6 +727,13 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   void dispose() {
     mapRouteObserver.unsubscribe(this);
     MapSurfaceCoordinator.instance.release(_kHomeMapSurfaceOwner);
+    DriverMapHost.instance.overlayAttached
+        .removeListener(_onDriverOverlayAttachedChanged);
+    final ctrl = _mapController;
+    if (ctrl != null) DriverMapHost.instance.unregister(ctrl);
+    if (DriverMapHost.instance.requestRemount == _remountMapForOverlay) {
+      DriverMapHost.instance.requestRemount = null;
+    }
     disposePanelAnimation();
     _pulseCtrl.dispose();
     _glossCtrl.dispose();
@@ -860,6 +876,8 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   }
 
   Future<void> _updateMyLocAnnotation() async {
+    // The online overlay owns the marker while it is attached to our map.
+    if (_driverOverlayAttached) return;
     final mgr = _pointAnnotMgr;
     if (mgr == null) return;
     final bytes = _goldDot.currentBytes;
@@ -980,7 +998,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   }
 
   void _followHomeCameraToDriver() {
-    if (!mounted || !_homeCameraFollowing) return;
+    if (!mounted || !_homeCameraFollowing || _driverOverlayAttached) return;
     final lat = _goldDot.lat ?? _currentLatLng?.latitude;
     final lng = _goldDot.lng ?? _currentLatLng?.longitude;
     if (lat == null || lng == null) return;
@@ -1967,19 +1985,14 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     //   the next frames cleanly), then schedule haptic + sound on the
     //   post-frame callback so they cross the platform boundary AFTER
     //   the route transition has begun.
-    // Our map goes now, before the push — not when the next screen asks.
-    //
-    // The handover was correct but tight. This screen keeps its map on
-    // purpose, so during the 420 ms transition it is still up while the
-    // online screen is being built; the coordinator then revokes ours and
-    // that screen waits. Everything hangs on that wait being honoured on a
-    // platform thread already busy standing up a PlatformView, and two live
-    // Mapbox surfaces close the app on iOS.
-    //
-    // Starting the teardown here removes the overlap instead of sequencing
-    // it: by the time the online screen asks, our surface has been gone for
-    // most of the transition. The coordinator still runs and still waits —
-    // this is a margin on top of it, not a replacement.
+    // Our map STAYS UP for this handoff (user spec 2026-08-25 — Lyft
+    // mechanics): the online screen is pushed as a transparent overlay and
+    // attaches to THIS very surface through DriverMapHost instead of
+    // mounting a second MapWidget. No teardown, no snapshot, no fog, no
+    // black frame — the same map keeps rendering underneath, only the
+    // sheet and the buttons change, and the overlay runs the gentle
+    // 16→15.5 zoom-out on it. Trip screens still take the surface through
+    // the coordinator exactly as before.
     //
     // The chime fires HERE, before the push — not after it. At this line the
     // tap has been answered and the platform thread is idle; the freezes that
@@ -1991,23 +2004,11 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     // recency guard inside playOnlineChime, so this is still one sound.
     if (!_isStillOnline) NotificationService.playOnlineChime();
 
-    // Nothing is awaited, so the push is not delayed. The cost is that the
-    // map behind the transition is a solid card for those 420 ms, which
-    // costs nothing the driver can act on; the crash costs the shift.
-    //
-    // Warm the still the online screen stands in for its map while the
-    // native surface comes up (same URL StaticMapSnapshot will request at
-    // full screen), so the handoff never paints the bare #07080D
-    // placeholder for a frame.
-    final snapCenter = _currentLatLng;
-    if (!kIsWeb && snapCenter != null && mounted) {
-      StaticMapSnapshot.precacheFullScreen(context, snapCenter);
-    }
-    _suspendMap();
-
+    // Nothing is awaited, so the push is not delayed. Non-opaque route:
+    // home's live map shows through while the overlay's UI fades in.
     final pushFuture = Navigator.of(context).push<Map<String, dynamic>>(
       PageRouteBuilder(
-        opaque: true,
+        opaque: false,
         pageBuilder: (ctx, anim1, anim2) => DriverOnlineScreen(
             photoUrl: _photoUrl,
             initialPos: _currentLatLng,
@@ -2018,11 +2019,10 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
         transitionDuration: const Duration(milliseconds: 420),
         reverseTransitionDuration: const Duration(milliseconds: 300),
         transitionsBuilder: (ctx2, anim, anim2b, child) {
-          // Pure crossfade (driver spec 2026-08-22): both sides of this
-          // transition show the same map still over the same camera (see
-          // StaticMapSnapshot), so any slide or scale reads as the page
-          // changing under the driver. A fade reads as what it is — the
-          // same screen going online.
+          // Pure crossfade (driver spec 2026-08-22, kept for the overlay):
+          // both sides of this transition show the SAME live map, so any
+          // slide or scale reads as the page changing under the driver. A
+          // fade reads as what it is — the same screen going online.
           final curved =
               CurvedAnimation(parent: anim, curve: Curves.easeOutCubic);
           return FadeTransition(opacity: curved, child: child);
@@ -2184,7 +2184,10 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       if (!mounted) return;
       final result = await Navigator.of(context).push<Map<String, dynamic>>(
         PageRouteBuilder(
-          opaque: true,
+          // Non-opaque + pure fade, same as _goOnline: the online overlay
+          // attaches to our live map (DriverMapHost) instead of mounting a
+          // second surface, so the map never changes underneath.
+          opaque: false,
           pageBuilder: (ctx, anim1, anim2) => DriverOnlineScreen(
               photoUrl: _photoUrl, initialPos: _currentLatLng),
           transitionDuration: const Duration(milliseconds: 400),
@@ -2192,13 +2195,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
           transitionsBuilder: (ctx2, anim, anim2b, child) {
             final curved =
                 CurvedAnimation(parent: anim, curve: Curves.easeOutCubic);
-            return FadeTransition(
-              opacity: curved,
-              child: ScaleTransition(
-                scale: Tween<double>(begin: 0.97, end: 1.0).animate(curved),
-                child: child,
-              ),
-            );
+            return FadeTransition(opacity: curved, child: child);
           },
         ),
       );
@@ -2472,7 +2469,9 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                   child: ListenableBuilder(
                 listenable: _markerFrame,
                 builder: (context, _) {
-                  if (!_dotOverlayOwnsMarker) return const SizedBox.shrink();
+                  if (!_dotOverlayOwnsMarker || _driverOverlayAttached) {
+                    return const SizedBox.shrink();
+                  }
                   final o = _homeDotOffset;
                   final dot = GoldLocationDotOverlay(bearing: _goldDot.bearing);
                   const half = GoldLocationDot.driverOverlaySize / 2;
@@ -2507,6 +2506,10 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
             _mapController = ctrl;
             // Cache controller for reuse across driver screens
             MapControllerCache.instance.cache(ctrl);
+            // Lend the live map to the online overlay (DriverMapHost): Go
+            // Online then never remounts anything — no fog, no black frame.
+            DriverMapHost.instance.register(ctrl);
+            DriverMapHost.instance.requestRemount = _remountMapForOverlay;
 
             // Correct the camera if GPS already landed.
             //
@@ -2612,17 +2615,26 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                       _pointAnnotMgr!.id, 'icon-allow-overlap', true);
                 } catch (_) {}
               }
+              // The theme reset the overlay's annotation layer props too —
+              // let it re-write its own (attached mode only).
+              DriverMapHost.instance.onStyleReloaded?.call();
             }
           } catch (e) {
             debugPrint('[DriverMap] onStyleLoaded error: $e');
           }
         },
-        onScrollListener: (_) => _onHomeMapPanned(),
+        onScrollListener: (_) {
+          _onHomeMapPanned();
+          // The online overlay owns follow-pause while it is attached.
+          DriverMapHost.instance.onUserScroll?.call();
+        },
         // The camera state is pushed to us here, so the projection never has
         // to ask for it — asking would put the marker back on the channel
         // this whole approach exists to get off.
         onCameraChangeListener: (data) {
           _homeCamState = data.cameraState;
+          // Mirror for the online overlay's projection while attached.
+          DriverMapHost.instance.camState.value = data.cameraState;
           // Repaint the overlay too. Its screen position is derived from
           // this camera, and the motion ticker parks itself when the driver
           // stands still — so a driver dragging the map while stopped would
@@ -4704,6 +4716,8 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   /// it; onMapCreated rebuilds both (and the location dot) on remount.
   void _suspendMap() {
     if (_mapSuspended || !mounted) return;
+    final ctrl = _mapController;
+    if (ctrl != null) DriverMapHost.instance.unregister(ctrl);
     setState(() {
       _mapSuspended = true;
       _mapReady = false;
@@ -4777,6 +4791,39 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
         return;
       }
     }
+    setState(() => _mapSuspended = false);
+  }
+
+  /// The online overlay just attached to / detached from our map
+  /// (DriverMapHost). While attached it owns the camera and the marker:
+  /// our dot annotation is dropped (the overlay draws its own), and both
+  /// come back the moment it detaches.
+  void _onDriverOverlayAttachedChanged() {
+    final attached = DriverMapHost.instance.overlayAttached.value;
+    if (!mounted || attached == _driverOverlayAttached) return;
+    setState(() => _driverOverlayAttached = attached);
+    if (attached) {
+      _dropLocAnnot();
+    } else {
+      _updateMyLocAnnotation();
+    }
+  }
+
+  /// Re-mount our surface for the online overlay after the screen that
+  /// borrowed it (trip accept) is gone. Unlike [_unsuspendMap] there is no
+  /// isCurrent guard here: the overlay IS the route on top of us and it
+  /// has no map of its own — that is the whole design.
+  Future<void> _remountMapForOverlay() async {
+    if (!mounted || !_mapSuspended) return;
+    await MapSurfaceCoordinator.instance.acquire(
+      owner: _kHomeMapSurfaceOwner,
+      onRevoke: () async {
+        if (!mounted) return;
+        if (!_mapSuspended) _suspendMap();
+        await surfaceRemoved();
+      },
+    );
+    if (!mounted || !_mapSuspended) return;
     setState(() => _mapSuspended = false);
   }
 

@@ -3607,6 +3607,13 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
   /// direction.
   Future<void> _remountMapSurface() async {
     if (_mapMounted || !mounted) return;
+    // Attached mode: the surface belongs to home — home brings it back
+    // (it was revoked by the trip screen, not by us), and the host
+    // generation listener re-attaches us to the fresh controller.
+    if (_attachedToHost) {
+      await DriverMapHost.instance.requestRemount?.call();
+      return;
+    }
     await _acquireMapSurface();
     if (!mounted || _mapMounted) return;
     debugPrint('[DriverOnline] remounting map surface');

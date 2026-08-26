@@ -61,6 +61,35 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
         ),
       );
     }
+    // Attached mode (DriverMapHost, user spec 2026-08-25 — Lyft mechanics):
+    // the map is home's LIVE surface showing through this transparent
+    // route. We never mount a MapWidget or a snapshot here — we only
+    // measure the box for the projection and draw the marker overlay.
+    // IgnorePointer on the whole thing: pan/zoom must land on home's
+    // MapWidget underneath, never on this overlay.
+    if (_attachedToHost) {
+      return IgnorePointer(
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            _onlineMapSize =
+                Size(constraints.maxWidth, constraints.maxHeight);
+            return ListenableBuilder(
+              listenable: _markerFrame,
+              builder: (context, _) {
+                if (!_dotOverlayOwnsMarker) return const SizedBox.shrink();
+                final o = _dotScreenOffset;
+                final dot = GoldLocationDotOverlay(bearing: _heading);
+                const half = GoldLocationDot.driverOverlaySize / 2;
+                if (o == null) return Center(child: dot);
+                return Stack(children: [
+                  Positioned(left: o.dx - half, top: o.dy - half, child: dot),
+                ]);
+              },
+            );
+          },
+        ),
+      );
+    }
     // MapWidget mounts immediately (no deferred delay). The native
     // PlatformView starts rendering tiles right away. Annotation managers
     // are created in a background microtask inside onMapCreated.
@@ -233,215 +262,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
           bearing: 0,
           pitch: 0,
         ),
-        onMapCreated: (ctrl) {
-          _map = ctrl;
-          _lastStyleDark = isDark;
-          // Increment generation so any stale annotation refs from the old
-          // PlatformView are recognized as dead and recreated fresh.
-          _mapGeneration++;
-          // Fresh-install guard: onStyleLoaded can fire before `_map` was
-          // stored (or not reach the listener at all), leaving the raw grey
-          // dark-v11 — scale bar included, since the theme is also what
-          // disables the ornaments. Blindly re-apply a few times after the
-          // map exists to cover both orderings; when onStyleLoaded runs
-          // normally it simply applies the same theme again.
-          _navyGoldRetryTimer?.cancel();
-          final themeGen = _mapGeneration;
-          var themeAttempts = 0;
-          _navyGoldRetryTimer =
-              Timer.periodic(const Duration(seconds: 1), (t) {
-            if (!mounted ||
-                _map == null ||
-                _mapGeneration != themeGen ||
-                ++themeAttempts > 5) {
-              t.cancel();
-              return;
-            }
-            MapTheme.applyNavyGold(ctrl);
-          });
-          // Watchdog: if the style never loads (no network, hung renderer)
-          // the driver stares at a dead grey map forever. Give it 7 s, then
-          // tear the surface down and remount it through the same helpers
-          // the coordinator handoff uses. One retry per mount — a phone
-          // without network must not loop.
-          _mapStyleWatchdogTimer?.cancel();
-          _mapStyleLoaded = false;
-          _firstRenderDone = false;
-          if (!_mapStyleWatchdogRetried) {
-            final watchGen = _mapGeneration;
-            _mapStyleWatchdogTimer = Timer(const Duration(seconds: 7), () {
-              if (!mounted ||
-                  !_mapMounted ||
-                  _mapStyleLoaded ||
-                  _mapGeneration != watchGen) {
-                return;
-              }
-              _mapStyleWatchdogRetried = true;
-              debugPrint('[DriverOnline] style never loaded — remounting '
-                  'map surface');
-              _releaseMapSurface();
-              unawaited(_remountMapSurface());
-            });
-          }
-          // CRITICAL: reset all annotation references before creating new managers.
-          // On Android the PlatformView (SurfaceView) is destroyed when the app
-          // goes to background and recreated on resume. This triggers onMapCreated
-          // again with a fresh native map. If we keep stale annotation references
-          // pointing to the old map's managers, _updateDriverAnnotation() will
-          // try to update/delete non-existent native objects, silently fail,
-          // then create duplicates on the new map.
-          _polylineAnnotMgr = null;
-          _pointAnnotMgr = null;
-          _pinAnnotMgr = null;
-          _carAnnot = null;
-          _carAnnotGen = 0;
-          _goldDotAnnot = null;
-          _goldDotAnnotGen = 0;
-          _pickupAnnot = null;
-          _dropoffAnnot = null;
-          _prevDriverAnnot = null;
-          _prevPickupAnnot = null;
-          _prevDropoffAnnot = null;
-          _routeAnnot = null;
-          _previewPickupAnnot = null;
-          _previewDropoffAnnot = null;
-          _dotPopDone = false;
-          _dotPopScale = 0.0;
-
-          // Move ALL heavy annotation manager creation to a background
-          // microtask so the map tiles render FIRST. The driver sees the
-          // map immediately; annotations (gold dot, route lines) appear
-          // a few frames later. This eliminates the 1-2s blank screen.
-          // The generation this map was born in. Everything below is only
-          // allowed to touch `ctrl` while it is still the current one.
-          final gen = _mapGeneration;
-
-          // This microtask is the app's hardest crash.
-          //
-          // It captures `ctrl` and then awaits — five times. Between any two
-          // of those awaits the native map can be gone: the driver backgrounds
-          // the app and Android destroys the SurfaceView, a trip screen takes
-          // the surface through the coordinator, the driver pops the screen.
-          // `_releaseMapSurface` nulls `_map` and bumps `_mapGeneration`
-          // exactly for this, and this method was the one place that never
-          // read it. The next `await ctrl.annotations…` then calls into a
-          // native object that has been freed — and that does not throw a
-          // Dart exception you can catch and shrug at, it takes the process
-          // down. The app closes with no error, which is exactly what a
-          // driver reports as "it just shuts".
-          //
-          // So: check the generation after every await, and wrap the lot. A
-          // stale pass returns quietly; onMapCreated will run again against
-          // the new map and rebuild all of this from scratch.
-          Future.microtask(() async {
-            bool stale() => !mounted || _mapGeneration != gen || _map == null;
-            try {
-              // Pan and zoom, but the driver never turns the map by hand.
-              //
-              // The camera does still rotate on its own while navigating —
-              // that is the map facing the direction of travel, the same as
-              // every turn-by-turn app. What is gone is the two-finger twist,
-              // which could leave the map at an angle nothing would ever
-              // correct, with the arrow pointing somewhere that no longer
-              // matched the streets under it.
-              await ctrl.gestures.updateSettings(mapbox.GesturesSettings(
-                scrollEnabled: true,
-                pinchToZoomEnabled: true,
-                doubleTapToZoomInEnabled: true,
-                doubleTouchToZoomOutEnabled: true,
-                quickZoomEnabled: true,
-                rotateEnabled: false,
-                pitchEnabled: false,
-                simultaneousRotateAndPinchToZoomEnabled: false,
-              ));
-              if (stale()) return;
-
-              // Polyline manager with no 'below' constraint — avoids silent failure
-              // when the layer name doesn't exist in the style.
-              final poly =
-                  await ctrl.annotations.createPolylineAnnotationManager(
-                below: "road-label",
-              );
-              if (stale()) return;
-              _polylineAnnotMgr = poly;
-
-              final point =
-                  await ctrl.annotations.createPointAnnotationManager();
-              if (stale()) return;
-              _pointAnnotMgr = point;
-              try {
-                await ctrl.style.setStyleLayerProperty(
-                    point.id, 'icon-pitch-alignment', 'viewport');
-              } catch (_) {}
-              try {
-                await ctrl.style.setStyleLayerProperty(
-                    point.id, 'icon-allow-overlap', true);
-              } catch (_) {}
-              try {
-                await ctrl.style.setStyleLayerProperty(
-                    point.id, 'icon-ignore-placement', true);
-              } catch (_) {}
-              if (stale()) return;
-
-              // Separate pin manager for teardrop pins — anchored at tip (bottom), upright (viewport)
-              final pin = await ctrl.annotations.createPointAnnotationManager();
-              if (stale()) return;
-              _pinAnnotMgr = pin;
-              try {
-                await ctrl.style.setStyleLayerProperty(
-                    pin.id, 'icon-pitch-alignment', 'viewport');
-              } catch (_) {}
-              try {
-                await ctrl.style.setStyleLayerProperty(
-                    pin.id, 'icon-rotation-alignment', 'viewport');
-              } catch (_) {}
-              try {
-                await ctrl.style
-                    .setStyleLayerProperty(pin.id, 'icon-allow-overlap', true);
-              } catch (_) {}
-              try {
-                await ctrl.style.setStyleLayerProperty(
-                    pin.id, 'icon-ignore-placement', true);
-              } catch (_) {}
-              try {
-                await ctrl.style
-                    .setStyleLayerProperty(pin.id, 'icon-anchor', 'bottom');
-              } catch (_) {}
-              if (stale()) return;
-
-              // Use already-known position from home screen — no blocking GPS call needed
-              final here = _pos;
-              // An offer preview on screen when the surface died gets its
-              // route + pins + frame restored instead of the default
-              // driver-centered boot — otherwise the driver comes back
-              // from another app to the offer card with the route gone.
-              final restorePreview = _previewingOffer != null &&
-                  (_fullSegOne.length >= 2 || _fullSegTwo.length >= 2);
-              // No flyTo here (driver spec 2026-08-24): cameraOptions
-              // already opens centred at zoom 16, and the entry ease in
-              // _onSmoothTick glides 16→15.5. A flyTo fired now cancels
-              // that ease mid-glide — the visible zoom "cut".
-              _updateDriverAnnotation();
-              // Re-draw route if map initialised after _drawRoute already ran
-              if (_routePts.length > 1) {
-                _setRouteAnnotation(_routePts, _navyRoute);
-                final dest = (_phase == _Phase.enRouteToPickup ||
-                        _phase == _Phase.routeSummary)
-                    ? _pickupLL
-                    : _dropoffLL;
-                if (here != null) _fitBounds(here, dest);
-              }
-              if (restorePreview) {
-                await _restoreOfferPreviewOnFreshSurface();
-              }
-            } catch (e) {
-              // Unhandled before. Anything thrown here aborted the rest of
-              // the method, so the driver dot was never drawn either — the
-              // "the arrow is missing" report and this one share a cause.
-              debugPrint('[DriverOnline] annotation setup failed: $e');
-            }
-          });
-        },
+        onMapCreated: (ctrl) => _onOnlineMapReady(ctrl, isDark: isDark),
         onStyleLoadedListener: (_) async {
           // setState, not a bare write: the snapshot overlay over the live
           // surface only fades out when the flag's change triggers a rebuild.
@@ -465,34 +286,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
             }
             // Re-apply pin layer properties after style reload —
             // applyNavyGold resets them so they must be re-set here.
-            if (_pinAnnotMgr != null) {
-              try {
-                await _map!.style.setStyleLayerProperty(
-                    _pinAnnotMgr!.id, 'icon-rotation-alignment', 'viewport');
-              } catch (_) {}
-              try {
-                await _map!.style.setStyleLayerProperty(
-                    _pinAnnotMgr!.id, 'icon-pitch-alignment', 'viewport');
-              } catch (_) {}
-              try {
-                await _map!.style.setStyleLayerProperty(
-                    _pinAnnotMgr!.id, 'icon-anchor', 'bottom');
-              } catch (_) {}
-              try {
-                await _map!.style.setStyleLayerProperty(
-                    _pinAnnotMgr!.id, 'icon-allow-overlap', true);
-              } catch (_) {}
-            }
-            if (_pointAnnotMgr != null) {
-              try {
-                await _map!.style.setStyleLayerProperty(
-                    _pointAnnotMgr!.id, 'icon-pitch-alignment', 'viewport');
-              } catch (_) {}
-              try {
-                await _map!.style.setStyleLayerProperty(
-                    _pointAnnotMgr!.id, 'icon-allow-overlap', true);
-              } catch (_) {}
-            }
+            _reapplyManagerLayerProps();
           }
         },
         onScrollListener: (_) {
@@ -508,6 +302,263 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
         },
       ),
     );
+  }
+
+  /// Everything a fresh map controller needs: generation bump, annotation
+  /// refs reset, and the manager-creation microtask. Called by the
+  /// MapWidget's onMapCreated (legacy self-mount path) AND by the host
+  /// attach path (DriverMapHost) with home's live controller. In attached
+  /// mode the surface belongs to home, so the surface-owner duties stay
+  /// home's: theme retries, the style watchdog, the style-loaded flags and
+  /// the gesture settings (identical there already).
+  void _onOnlineMapReady(mapbox.MapboxMap ctrl, {required bool isDark}) {
+    _map = ctrl;
+    _lastStyleDark = isDark;
+    // Increment generation so any stale annotation refs from the old
+    // PlatformView are recognized as dead and recreated fresh.
+    _mapGeneration++;
+    if (!_attachedToHost) {
+      // Fresh-install guard: onStyleLoaded can fire before `_map` was
+      // stored (or not reach the listener at all), leaving the raw grey
+      // dark-v11 — scale bar included, since the theme is also what
+      // disables the ornaments. Blindly re-apply a few times after the
+      // map exists to cover both orderings; when onStyleLoaded runs
+      // normally it simply applies the same theme again.
+      _navyGoldRetryTimer?.cancel();
+      final themeGen = _mapGeneration;
+      var themeAttempts = 0;
+      _navyGoldRetryTimer =
+          Timer.periodic(const Duration(seconds: 1), (t) {
+        if (!mounted ||
+            _map == null ||
+            _mapGeneration != themeGen ||
+            ++themeAttempts > 5) {
+          t.cancel();
+          return;
+        }
+        MapTheme.applyNavyGold(ctrl);
+      });
+      // Watchdog: if the style never loads (no network, hung renderer)
+      // the driver stares at a dead grey map forever. Give it 7 s, then
+      // tear the surface down and remount it through the same helpers
+      // the coordinator handoff uses. One retry per mount — a phone
+      // without network must not loop.
+      _mapStyleWatchdogTimer?.cancel();
+      _mapStyleLoaded = false;
+      _firstRenderDone = false;
+      if (!_mapStyleWatchdogRetried) {
+        final watchGen = _mapGeneration;
+        _mapStyleWatchdogTimer = Timer(const Duration(seconds: 7), () {
+          if (!mounted ||
+              !_mapMounted ||
+              _mapStyleLoaded ||
+              _mapGeneration != watchGen) {
+            return;
+          }
+          _mapStyleWatchdogRetried = true;
+          debugPrint('[DriverOnline] style never loaded — remounting '
+              'map surface');
+          _releaseMapSurface();
+          unawaited(_remountMapSurface());
+        });
+      }
+    }
+    // CRITICAL: reset all annotation references before creating new managers.
+    // On Android the PlatformView (SurfaceView) is destroyed when the app
+    // goes to background and recreated on resume. This triggers onMapCreated
+    // again with a fresh native map. If we keep stale annotation references
+    // pointing to the old map's managers, _updateDriverAnnotation() will
+    // try to update/delete non-existent native objects, silently fail,
+    // then create duplicates on the new map.
+    _polylineAnnotMgr = null;
+    _pointAnnotMgr = null;
+    _pinAnnotMgr = null;
+    _carAnnot = null;
+    _carAnnotGen = 0;
+    _goldDotAnnot = null;
+    _goldDotAnnotGen = 0;
+    _pickupAnnot = null;
+    _dropoffAnnot = null;
+    _prevDriverAnnot = null;
+    _prevPickupAnnot = null;
+    _prevDropoffAnnot = null;
+    _routeAnnot = null;
+    _previewPickupAnnot = null;
+    _previewDropoffAnnot = null;
+    _dotPopDone = false;
+    _dotPopScale = 0.0;
+
+    // Move ALL heavy annotation manager creation to a background
+    // microtask so the map tiles render FIRST. The driver sees the
+    // map immediately; annotations (gold dot, route lines) appear
+    // a few frames later. This eliminates the 1-2s blank screen.
+    // The generation this map was born in. Everything below is only
+    // allowed to touch `ctrl` while it is still the current one.
+    final gen = _mapGeneration;
+
+    // This microtask is the app's hardest crash.
+    //
+    // It captures `ctrl` and then awaits — five times. Between any two
+    // of those awaits the native map can be gone: the driver backgrounds
+    // the app and Android destroys the SurfaceView, a trip screen takes
+    // the surface through the coordinator, the driver pops the screen.
+    // `_releaseMapSurface` nulls `_map` and bumps `_mapGeneration`
+    // exactly for this, and this method was the one place that never
+    // read it. The next `await ctrl.annotations…` then calls into a
+    // native object that has been freed — and that does not throw a
+    // Dart exception you can catch and shrug at, it takes the process
+    // down. The app closes with no error, which is exactly what a
+    // driver reports as "it just shuts".
+    //
+    // So: check the generation after every await, and wrap the lot. A
+    // stale pass returns quietly; onMapCreated will run again against
+    // the new map and rebuild all of this from scratch.
+    Future.microtask(() async {
+      bool stale() => !mounted || _mapGeneration != gen || _map == null;
+      try {
+        // Attached mode: home's map already carries these exact gesture
+        // settings — re-sending them is a wasted channel round-trip.
+        if (!_attachedToHost) {
+          // Pan and zoom, but the driver never turns the map by hand.
+          //
+          // The camera does still rotate on its own while navigating —
+          // that is the map facing the direction of travel, the same as
+          // every turn-by-turn app. What is gone is the two-finger twist,
+          // which could leave the map at an angle nothing would ever
+          // correct, with the arrow pointing somewhere that no longer
+          // matched the streets under it.
+          await ctrl.gestures.updateSettings(mapbox.GesturesSettings(
+            scrollEnabled: true,
+            pinchToZoomEnabled: true,
+            doubleTapToZoomInEnabled: true,
+            doubleTouchToZoomOutEnabled: true,
+            quickZoomEnabled: true,
+            rotateEnabled: false,
+            pitchEnabled: false,
+            simultaneousRotateAndPinchToZoomEnabled: false,
+          ));
+          if (stale()) return;
+        }
+
+        // Polyline manager with no 'below' constraint — avoids silent failure
+        // when the layer name doesn't exist in the style.
+        final poly = await ctrl.annotations.createPolylineAnnotationManager(
+          below: "road-label",
+        );
+        if (stale()) return;
+        _polylineAnnotMgr = poly;
+
+        final point = await ctrl.annotations.createPointAnnotationManager();
+        if (stale()) return;
+        _pointAnnotMgr = point;
+        try {
+          await ctrl.style.setStyleLayerProperty(
+              point.id, 'icon-pitch-alignment', 'viewport');
+        } catch (_) {}
+        try {
+          await ctrl.style.setStyleLayerProperty(
+              point.id, 'icon-allow-overlap', true);
+        } catch (_) {}
+        try {
+          await ctrl.style.setStyleLayerProperty(
+              point.id, 'icon-ignore-placement', true);
+        } catch (_) {}
+        if (stale()) return;
+
+        // Separate pin manager for teardrop pins — anchored at tip (bottom), upright (viewport)
+        final pin = await ctrl.annotations.createPointAnnotationManager();
+        if (stale()) return;
+        _pinAnnotMgr = pin;
+        try {
+          await ctrl.style.setStyleLayerProperty(
+              pin.id, 'icon-pitch-alignment', 'viewport');
+        } catch (_) {}
+        try {
+          await ctrl.style.setStyleLayerProperty(
+              pin.id, 'icon-rotation-alignment', 'viewport');
+        } catch (_) {}
+        try {
+          await ctrl.style
+              .setStyleLayerProperty(pin.id, 'icon-allow-overlap', true);
+        } catch (_) {}
+        try {
+          await ctrl.style.setStyleLayerProperty(
+              pin.id, 'icon-ignore-placement', true);
+        } catch (_) {}
+        try {
+          await ctrl.style
+              .setStyleLayerProperty(pin.id, 'icon-anchor', 'bottom');
+        } catch (_) {}
+        if (stale()) return;
+        // Use already-known position from home screen — no blocking GPS call needed
+        final here = _pos;
+        // An offer preview on screen when the surface died gets its
+        // route + pins + frame restored instead of the default
+        // driver-centered boot — otherwise the driver comes back
+        // from another app to the offer card with the route gone.
+        final restorePreview = _previewingOffer != null &&
+            (_fullSegOne.length >= 2 || _fullSegTwo.length >= 2);
+        // No flyTo here (driver spec 2026-08-24): cameraOptions
+        // already opens centred at zoom 16, and the entry ease in
+        // _onSmoothTick glides 16→15.5. A flyTo fired now cancels
+        // that ease mid-glide — the visible zoom "cut".
+        _updateDriverAnnotation();
+        // Re-draw route if map initialised after _drawRoute already ran
+        if (_routePts.length > 1) {
+          _setRouteAnnotation(_routePts, _navyRoute);
+          final dest = (_phase == _Phase.enRouteToPickup ||
+                  _phase == _Phase.routeSummary)
+              ? _pickupLL
+              : _dropoffLL;
+          if (here != null) _fitBounds(here, dest);
+        }
+        if (restorePreview) {
+          await _restoreOfferPreviewOnFreshSurface();
+        }
+      } catch (e) {
+        // Unhandled before. Anything thrown here aborted the rest of
+        // the method, so the driver dot was never drawn either — the
+        // "the arrow is missing" report and this one share a cause.
+        debugPrint('[DriverOnline] annotation setup failed: $e');
+      }
+    });
+  }
+
+  /// Re-write the annotation layer props a style reload wipes
+  /// (applyNavyGold resets them). Used by the MapWidget's own
+  /// onStyleLoadedListener and — in attached mode — by home's style
+  /// listener through DriverMapHost.onStyleReloaded.
+  Future<void> _reapplyManagerLayerProps() async {
+    final map = _map;
+    if (map == null) return;
+    if (_pinAnnotMgr != null) {
+      try {
+        await map.style.setStyleLayerProperty(
+            _pinAnnotMgr!.id, 'icon-rotation-alignment', 'viewport');
+      } catch (_) {}
+      try {
+        await map.style.setStyleLayerProperty(
+            _pinAnnotMgr!.id, 'icon-pitch-alignment', 'viewport');
+      } catch (_) {}
+      try {
+        await map.style.setStyleLayerProperty(
+            _pinAnnotMgr!.id, 'icon-anchor', 'bottom');
+      } catch (_) {}
+      try {
+        await map.style.setStyleLayerProperty(
+            _pinAnnotMgr!.id, 'icon-allow-overlap', true);
+      } catch (_) {}
+    }
+    if (_pointAnnotMgr != null) {
+      try {
+        await map.style.setStyleLayerProperty(
+            _pointAnnotMgr!.id, 'icon-pitch-alignment', 'viewport');
+      } catch (_) {}
+      try {
+        await map.style.setStyleLayerProperty(
+            _pointAnnotMgr!.id, 'icon-allow-overlap', true);
+      } catch (_) {}
+    }
   }
 
   // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•

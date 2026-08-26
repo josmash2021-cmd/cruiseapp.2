@@ -49,6 +49,7 @@ import '../../config/map_styles.dart';
 import '../../l10n/app_localizations.dart';
 import '../../map/flat_map_projection.dart';
 import '../../map/map_surface_coordinator.dart';
+import '../../map/driver_map_host.dart';
 import '../../services/resilient_position_stream.dart';
 import '../../services/places_service.dart';
 import '../../utils/driver_location_settings.dart';
@@ -1046,6 +1047,12 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     // So the deadline below is what actually guarantees the map, and the
     // animation is only allowed to make it happen sooner. Whichever fires
     // first wins; claim() is idempotent.
+    // Attached mode first (user spec 2026-08-25): home is right underneath
+    // with its live map registered in DriverMapHost — attach to it and skip
+    // the whole surface claim. The map never changes underneath the driver;
+    // only the sheet and the buttons do.
+    if (!kIsWeb && _tryAttachToHostMap()) return;
+
     bool claimed = false;
     void claim() {
       if (claimed || !mounted) return;
@@ -1088,6 +1095,57 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
 
   bool _appInForeground = true;
 
+  /// Attach to home's live map (DriverMapHost). True when home is
+  /// underneath with a registered surface: no coordinator claim, no
+  /// MapWidget, no snapshot — this overlay drives the map the driver was
+  /// already looking at, and home suppresses its own camera writes and
+  /// marker for exactly this span.
+  bool _tryAttachToHostMap() {
+    final host = DriverMapHost.instance;
+    final ctrl = host.map;
+    if (ctrl == null) return false;
+    _attachedToHost = true;
+    host.overlayAttached.value = true;
+    host.onUserScroll = _onCameraMoveStarted;
+    host.onStyleReloaded = _reapplyManagerLayerProps;
+    _hostCamListener = () {
+      _onlineCamState = host.camState.value;
+      _markerFrame.value++;
+    };
+    host.camState.addListener(_hostCamListener!);
+    _hostGenListener = _onHostGenerationChanged;
+    host.generation.addListener(_hostGenListener!);
+    // The surface is already styled and rendered — the flags the legacy
+    // path waits on are already true here.
+    _mapMounted = true;
+    _onOnlineMapReady(ctrl, isDark: true);
+    _mapStyleLoaded = true;
+    _firstRenderDone = true;
+    _armOnlineChime();
+    return true;
+  }
+
+  /// Home's surface came and went under us (a trip screen claimed it
+  /// through the coordinator, then handed it back): detach from the dead
+  /// controller, or attach to the fresh one. This replaces the legacy
+  /// coordinator revoke/remount cycle while we are an overlay.
+  void _onHostGenerationChanged() {
+    if (!mounted || !_attachedToHost) return;
+    final ctrl = DriverMapHost.instance.map;
+    if (ctrl == null) {
+      // Same teardown as losing our own surface — minus the widget.
+      _releaseMapSurface();
+      return;
+    }
+    if (_map == null) {
+      _mapMounted = true;
+      _onOnlineMapReady(ctrl, isDark: true);
+      _mapStyleLoaded = true;
+      _firstRenderDone = true;
+      _startDotWatchdog();
+    }
+  }
+
   // ── Defer Mapbox mount to eliminate the ~1s entry freeze ──
   // Mounting MapWidget creates a native PlatformView (SurfaceView on
   // Android, native view on iOS) synchronously, which blocks the UI
@@ -1096,6 +1154,17 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   // tap "Go Online". We render a dark placeholder during the transition
   // and mount the real map a few frames after it ends.
   bool _mapMounted = false;
+
+  /// Attached mode (DriverMapHost, user spec 2026-08-25 — Lyft mechanics):
+  /// this screen was pushed as a transparent overlay over the driver home
+  /// and runs its camera/marker/annotation code on HOME's live map instead
+  /// of mounting a second MapWidget. No revoke, no remount, no snapshot —
+  /// the map the driver was already looking at simply keeps rendering.
+  /// False on web and on any entry where home has no live surface to lend;
+  /// the legacy self-mount path then runs exactly as before.
+  bool _attachedToHost = false;
+  VoidCallback? _hostCamListener;
+  VoidCallback? _hostGenListener;
 
   // ── Go-online chime ──
   Timer? _onlineChimeTimer;
@@ -1362,6 +1431,23 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     _offerTiltCtrl?.dispose();
     _offerBearingCtrl?.dispose();
     _pauseTimer?.cancel();
+    if (_attachedToHost) {
+      // Hand home's map back: unsuppress its camera and its marker.
+      final host = DriverMapHost.instance;
+      if (_hostCamListener != null) {
+        host.camState.removeListener(_hostCamListener!);
+      }
+      if (_hostGenListener != null) {
+        host.generation.removeListener(_hostGenListener!);
+      }
+      if (host.onUserScroll == _onCameraMoveStarted) {
+        host.onUserScroll = null;
+      }
+      if (host.onStyleReloaded == _reapplyManagerLayerProps) {
+        host.onStyleReloaded = null;
+      }
+      host.overlayAttached.value = false;
+    }
     // NOTE: Intentionally do NOT dispose the map here.
     // The MapControllerCache owns the map lifecycle for reuse across screens.
     if (_map != null) MapControllerCache.instance.cache(_map!);
@@ -1722,7 +1808,9 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
         if (!didPop) _goBack();
       },
       child: Scaffold(
-        backgroundColor: bg,
+        // Attached mode: home's live map shows through — the Scaffold must
+        // not paint over it. Legacy path keeps its own background.
+        backgroundColor: _attachedToHost ? Colors.transparent : bg,
         body: Stack(
           clipBehavior: Clip.none,
           children: [

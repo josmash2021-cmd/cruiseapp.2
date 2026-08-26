@@ -88,11 +88,8 @@ class _CruisePaymentSheetState extends State<_CruisePaymentSheet> {
   int _selCardIndex = 0;
 
   final List<_SheetCard> _cards = [];
-  String? _bankLast4;
-  String? _bankName;
   int _cashCents = 0;
   bool _saving = false;
-  bool _linkingBank = false;
 
   // Add-card form state (mirrors CreditCardScreen's essentials).
   final _nameCtrl = TextEditingController();
@@ -163,14 +160,6 @@ class _CruisePaymentSheetState extends State<_CruisePaymentSheet> {
       }
     }).catchError((_) {}));
 
-    unawaited(ApiService.getBankAccounts().then((accounts) {
-      if (!mounted || accounts.isEmpty) return;
-      setState(() {
-        _bankLast4 = accounts.first['last4'] as String?;
-        _bankName = accounts.first['bank_name'] as String?;
-      });
-    }).catchError((_) {}));
-
     unawaited(ApiService.getMyReferralInfo().then((res) {
       if (!mounted) return;
       setState(() =>
@@ -214,65 +203,8 @@ class _CruisePaymentSheetState extends State<_CruisePaymentSheet> {
     Navigator.of(context).pop(_selected);
   }
 
-  // ── Bank linking (same flow as the old full-screen picker) ──
-
-  Future<void> _linkBank() async {
-    final s = S.of(context);
-    if (kIsWeb) {
-      _toast(s.bankLinkMobileOnly, error: true);
-      return;
-    }
-    if (_linkingBank) return;
-    _linkingBank = true;
-    try {
-      final result = await ApiService.createFinancialConnectionsSession();
-      final clientSecret = result?['client_secret'] as String?;
-      if (!mounted) return;
-      if (clientSecret == null) {
-        _toast(s.genericPaymentError, error: true);
-        return;
-      }
-      final collected =
-          await Stripe.instance.collectFinancialConnectionsAccounts(
-        clientSecret: clientSecret,
-        params: const CollectFinancialConnectionsAccountsParams(),
-      );
-      if (!mounted) return;
-      final accounts = collected.session.accounts;
-      if (accounts.isEmpty) return; // sheet closed without selecting
-      final attached = await ApiService.attachBankAccount(accounts.first.id);
-      if (!mounted) return;
-      if (attached?['requires_verification'] == true) {
-        _toast(s.bankNeedsVerification, error: true);
-        return;
-      }
-      final last4 = attached?['last4'] as String? ?? accounts.first.last4;
-      final pmId = attached?['stripe_pm_id'] as String?;
-      if (pmId != null) {
-        await LocalDataService.saveStripeBankPmId(pmId);
-        await LocalDataService.linkPaymentMethod('bank_account');
-      }
-      if (last4 != null) await LocalDataService.saveBankLast4(last4);
-      if (!mounted) return;
-      setState(() {
-        _bankLast4 = last4;
-        _bankName = attached?['bank_name'] as String? ??
-            accounts.first.institutionName;
-        _selected = PaymentMethodId.bank;
-      });
-    } on StripeException catch (e) {
-      if (!mounted) return;
-      final code = e.error.code.toString().toLowerCase();
-      if (!code.contains('cancel')) {
-        _toast(e.error.localizedMessage ?? s.genericPaymentError,
-            error: true);
-      }
-    } catch (_) {
-      if (mounted) _toast(s.genericPaymentError, error: true);
-    } finally {
-      _linkingBank = false;
-    }
-  }
+  // ── Bank linking removed (2026-08-26): the rider no longer pays by
+  // bank account — see _methodRows.
 
   /// Page 1 → page 0, dropping any scanned-card seed so the next add
   /// starts from an empty field unless the scanner runs again.
@@ -652,23 +584,9 @@ class _CruisePaymentSheetState extends State<_CruisePaymentSheet> {
       ));
     }
 
-    // Bank — linked selects (radio); unlinked starts the linking flow,
-    // so it reads as navigation: chevron, like the add-card row.
-    rows.add(_methodRow(
-      selected: _selected == PaymentMethodId.bank,
-      leading: _logoTile(
-        const Color(0xFF0F1A12),
-        const Icon(Icons.account_balance_rounded,
-            color: Color(0xFF22C55E), size: 17),
-      ),
-      label: _bankLast4 != null
-          ? '${_bankName ?? 'Bank'} •••• $_bankLast4'
-          : 'Bank Account',
-      trailingChevron: _bankLast4 == null,
-      onTap: _bankLast4 != null
-          ? () => _pick(PaymentMethodId.bank)
-          : _linkBank,
-    ));
+    // Bank Account removed for riders (user spec 2026-08-26): ACH never
+    // supported holds anyway, so the option only led to a broken payment
+    // path. Cards, wallets and Cruise Cash are the rider's methods now.
 
     // Add card row — scan-first (camera), then this in-sheet form.
     rows.add(_methodRow(

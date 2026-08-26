@@ -7,6 +7,7 @@ import '../config/page_transitions.dart';
 import '../l10n/app_localizations.dart';
 import '../services/api_service.dart';
 import '../services/calendar_service.dart';
+import '../widgets/feathered_image.dart';
 import '../widgets/neu_style.dart';
 import 'pickup_dropoff_search_screen.dart';
 import 'schedule_cancel_policy_screen.dart';
@@ -140,9 +141,10 @@ class _ScheduleHubScreenState extends State<ScheduleHubScreen> {
     if (mounted) setState(() => _events = events);
   }
 
-  /// Hub → addresses page (schedule chain mode) → the page itself drives
-  /// the Depart/Arrive wheels (with the real route estimate) and the
-  /// booking tail. Nothing to continue here — the chain owns itself.
+  /// Hub → addresses page. "Schedule a Ride" goes DIRECT — the immediate
+  /// ride-request flow (user spec 2026-08-25: no date/time wheels here).
+  /// The calendar-event path below keeps the schedule chain, because that
+  /// one does carry a date.
   Future<void> _openScheduleFlow({DateTime? prefill}) async {
     double? lat;
     double? lng;
@@ -157,7 +159,9 @@ class _ScheduleHubScreenState extends State<ScheduleHubScreen> {
       slideUpFadeRoute(PickupDropoffSearchScreen(
         initialPickupLat: lat,
         initialPickupLng: lng,
-        scheduleChain: true,
+        // A calendar prefill means the rider tapped an event to plan for
+        // THAT time — the schedule chain stays for that path only.
+        scheduleChain: prefill != null,
         schedulePrefill: prefill,
       )),
     );
@@ -236,15 +240,15 @@ class _ScheduleHubScreenState extends State<ScheduleHubScreen> {
                 ),
                 const SizedBox(height: 22),
 
-                // ── Hero: full-bleed photo (edge-to-edge, breaks the
-                // ListView's 24px padding), title sits BELOW the photo.
+                // ── Hero: full-bleed photo with feathered edges (the same
+                // FeatheredImage every other hero wears — it dissolves into
+                // the navy ground instead of ending in a hard crop).
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: -24),
-                  child: Image.asset(
+                  child: const FeatheredImage(
                     'assets/images/schedule_hero.jpg',
                     width: double.infinity,
                     height: 190,
-                    fit: BoxFit.cover,
                   ),
                 ),
                 const SizedBox(height: 22),
@@ -419,9 +423,7 @@ class _ScheduleHubScreenState extends State<ScheduleHubScreen> {
                 ],
               ),
               const SizedBox(height: 10),
-              _addressRow(Icons.trip_origin_rounded, pickup),
-              const SizedBox(height: 4),
-              _addressRow(Icons.location_on_rounded, dropoff),
+              _addressRail(pickup: pickup, dropoff: dropoff),
               const SizedBox(height: 6),
               Text(
                 _tierLabel(t['vehicle_type']),
@@ -435,20 +437,99 @@ class _ScheduleHubScreenState extends State<ScheduleHubScreen> {
     );
   }
 
-  Widget _addressRow(IconData icon, String address) {
-    return Row(
-      children: [
-        Icon(icon, color: _gold, size: 15),
-        const SizedBox(width: 8),
-        Expanded(
-          child: Text(
-            address,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(color: Colors.white70, fontSize: 13),
-          ),
+  /// The two stops on one rail — the EXACT grammar of the offer card
+  /// (user spec 2026-08-25): gold ring with a solid dot inside (pickup),
+  /// a gradient connector, and a hollow white ring (dropoff), inside the
+  /// same sunken box the offer card uses.
+  Widget _addressRail({required String pickup, required String dropoff}) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: neuBox(radius: 16, pressed: true),
+      child: IntrinsicHeight(
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            SizedBox(
+              width: 16,
+              child: Column(
+                children: [
+                  const SizedBox(height: 4),
+                  // Pickup: gold ring with a solid dot inside.
+                  Container(
+                    width: 11,
+                    height: 11,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: Border.all(color: _gold, width: 1.5),
+                    ),
+                    child: Center(
+                      child: Container(
+                        width: 4,
+                        height: 4,
+                        decoration: const BoxDecoration(
+                          color: _gold,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    child: Container(
+                      width: 1.5,
+                      margin: const EdgeInsets.symmetric(vertical: 3),
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [
+                            _gold.withValues(alpha: 0.7),
+                            Colors.white.withValues(alpha: 0.35),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                  // Dropoff: hollow white ring.
+                  Container(
+                    width: 11,
+                    height: 11,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: Border.all(color: Colors.white, width: 1.5),
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                ],
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _railStop(pickup),
+                  const SizedBox(height: 16),
+                  _railStop(dropoff),
+                ],
+              ),
+            ),
+          ],
         ),
-      ],
+      ),
+    );
+  }
+
+  Widget _railStop(String address) {
+    return Text(
+      address,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: TextStyle(
+        color: Colors.white.withValues(alpha: 0.55),
+        fontSize: 14,
+        fontWeight: FontWeight.w500,
+      ),
     );
   }
 
@@ -499,11 +580,10 @@ class _ScheduleHubScreenState extends State<ScheduleHubScreen> {
               style: const TextStyle(color: _gold, fontSize: 13.5),
             ),
             const SizedBox(height: 16),
-            _addressRow(Icons.trip_origin_rounded,
-                (t['pickup_address'] as String? ?? '').trim()),
-            const SizedBox(height: 6),
-            _addressRow(Icons.location_on_rounded,
-                (t['dropoff_address'] as String? ?? '').trim()),
+            _addressRail(
+              pickup: (t['pickup_address'] as String? ?? '').trim(),
+              dropoff: (t['dropoff_address'] as String? ?? '').trim(),
+            ),
             const SizedBox(height: 18),
             GestureDetector(
               onTap: () => Navigator.of(sheetCtx).push(slideUpFadeRoute(

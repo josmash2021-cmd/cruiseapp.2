@@ -4893,7 +4893,8 @@ class S {
       _es ? 'Programar viaje' : 'Schedule ride';
 
   // ── "Your rides" — the rider's active reservations in the hub ──
-  String get yourRidesTitle => _es ? 'Tus viajes' : 'Your rides';
+  String get yourRidesTitle =>
+      _es ? 'Tus viajes agendados' : 'Your Scheduled rides';
   String get findingDriverLabel =>
       _es ? 'Buscando conductor' : 'Finding driver';
   String get rideCancelFreeNote => _es

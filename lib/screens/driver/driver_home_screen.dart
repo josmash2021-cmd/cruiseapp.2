@@ -2380,8 +2380,18 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
             child: _buildDraggablePanel(pad),
           ),
 
-          // ── GO — travels out of the panel as the sheet closes ──
-          _buildMorphingGoButton(pad),
+          // ── GO — travels out of the panel as the sheet closes. Hidden
+          // while online (user spec 2026-08-27): the way back to the
+          // online screen is tapping the sheet, and a GO disc beside
+          // "You're online" read as a second, contradictory action.
+          AnimatedOpacity(
+            duration: const Duration(milliseconds: 250),
+            opacity: _isStillOnline ? 0.0 : 1.0,
+            child: IgnorePointer(
+              ignoring: _isStillOnline,
+              child: _buildMorphingGoButton(pad),
+            ),
+          ),
         ],
       ),
     );
@@ -4179,6 +4189,11 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
             // ── Header row: photo | status | list — also draggable ──
             GestureDetector(
               behavior: HitTestBehavior.translucent,
+              // While online the sheet is the way back to the online
+              // screen (user spec 2026-08-27 — the GO disc is hidden).
+              onTap: () {
+                if (_isStillOnline) _goOnline();
+              },
               onVerticalDragStart: (_) => setState(() => _dragging = true),
               onVerticalDragUpdate: (d) {
                 setState(() => _dragging = true);

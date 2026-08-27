@@ -1190,7 +1190,11 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                     child: SafeArea(
                       top: false,
                       child: SizedBox(
-                        height: 62,
+                        // Same collapsed height as home's sheet
+                        // (_panelBaseMinH = 52), so the offline→online swap
+                        // changes the content, never the size (user spec
+                        // 2026-08-27).
+                        height: 52,
                         child: Row(
                           children: [
                             const SizedBox(width: 16),

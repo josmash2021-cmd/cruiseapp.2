@@ -2004,11 +2004,25 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     // recency guard inside playOnlineChime, so this is still one sound.
     if (!_isStillOnline) NotificationService.playOnlineChime();
 
+    // Never attach to nothing (2026-08-27 — the black-screen bug): in the
+    // first seconds of a cold start our MapWidget may still be booting
+    // (onMapCreated has not run, so DriverMapHost has no controller). The
+    // old flow pushed anyway, the online screen took the legacy path and
+    // its claim revoked a map mid-creation — two surfaces racing and iOS
+    // killing the new one, which renders black forever. Wait (bounded) for
+    // the registration; if it never comes, fall back to the legacy
+    // handoff instead of attaching to a zombie.
+    final hostReady = await _waitForHostMap();
+    if (!mounted) return;
+    if (!hostReady) {
+      _suspendMap();
+    }
+
     // Nothing is awaited, so the push is not delayed. Non-opaque route:
     // home's live map shows through while the overlay's UI fades in.
     final pushFuture = Navigator.of(context).push<Map<String, dynamic>>(
       PageRouteBuilder(
-        opaque: false,
+        opaque: !hostReady,
         pageBuilder: (ctx, anim1, anim2) => DriverOnlineScreen(
             photoUrl: _photoUrl,
             initialPos: _currentLatLng,
@@ -2182,12 +2196,16 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
         return;
       }
       if (!mounted) return;
+      // Same boot race as _goOnline (2026-08-27): never attach to nothing.
+      final hostReady = await _waitForHostMap();
+      if (!mounted) return;
+      if (!hostReady) _suspendMap();
       final result = await Navigator.of(context).push<Map<String, dynamic>>(
         PageRouteBuilder(
           // Non-opaque + pure fade, same as _goOnline: the online overlay
           // attaches to our live map (DriverMapHost) instead of mounting a
           // second surface, so the map never changes underneath.
-          opaque: false,
+          opaque: !hostReady,
           pageBuilder: (ctx, anim1, anim2) => DriverOnlineScreen(
               photoUrl: _photoUrl, initialPos: _currentLatLng),
           transitionDuration: const Duration(milliseconds: 400),
@@ -4792,6 +4810,19 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       }
     }
     setState(() => _mapSuspended = false);
+  }
+
+  /// Bounded wait for our map controller to appear in DriverMapHost
+  /// (i.e. onMapCreated already ran). False means the map never came up
+  /// and the legacy handoff must take over — attaching to nothing is the
+  /// black screen.
+  Future<bool> _waitForHostMap({int timeoutMs = 2500}) async {
+    final deadline = DateTime.now().millisecondsSinceEpoch + timeoutMs;
+    while (DateTime.now().millisecondsSinceEpoch < deadline) {
+      if (DriverMapHost.instance.map != null) return true;
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+    }
+    return DriverMapHost.instance.map != null;
   }
 
   /// The online overlay just attached to / detached from our map

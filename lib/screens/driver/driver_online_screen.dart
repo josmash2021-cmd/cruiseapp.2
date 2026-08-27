@@ -1137,7 +1137,10 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
       _releaseMapSurface();
       return;
     }
-    if (_map == null) {
+    if (_map != ctrl) {
+      // A FRESH controller — home remounted under us (or the app returned
+      // from background and iOS rebuilt the view). Re-attach to it; never
+      // keep driving the dead one (2026-08-27 — that rendered black).
       _mapMounted = true;
       _onOnlineMapReady(ctrl, isDark: true);
       _mapStyleLoaded = true;

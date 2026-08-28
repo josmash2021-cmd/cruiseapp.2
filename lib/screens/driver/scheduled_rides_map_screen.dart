@@ -529,7 +529,8 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
     const tailH = 4.5, tailW = 9.0; // the tail pointing at the figure
     const shadowPad = 6.0; // room for the blurred shadow to bleed into
     const gap = 1.5; // air between the tail tip and the figure's hand
-    const personW = 20.0, personH = 27.0;
+    // Bigger figure (user spec 2026-08-28): the person reads at map zoom.
+    const personW = 24.0, personH = 33.0;
     final tp = TextPainter(
       text: TextSpan(
         text: label,
@@ -755,9 +756,17 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
       if (!mounted || _selected != trip) return;
       // Straight line as fallback so the frame still has something to show
       // when every directions provider is down.
-      final pts = (result != null && result.points.length >= 2)
+      final raw = (result != null && result.points.length >= 2)
           ? result.points
           : <LatLng>[pickup, dropoff];
+      // Anchor the line to the exact pins (user spec 2026-08-28): the
+      // directions geometry starts/ends at the road snap, a few metres off
+      // the dot — splice the true endpoints so the line MEETS them.
+      final pts = <LatLng>[
+        if (_havKm(pickup, raw.first) * 1000 > 2) pickup,
+        ...raw,
+        if (_havKm(dropoff, raw.last) * 1000 > 2) dropoff,
+      ];
       await _setRouteAnnotation(pts);
       await _setEndpointDots(pickup, dropoff);
       if (!mounted || _selected != trip) return;
@@ -789,30 +798,40 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
     }
   }
 
-  /// Small dots at both ends of the drawn route — gold at pickup, white at
-  /// dropoff, mirroring the markers on the card's address rail.
+  /// Ring markers at both ends of the drawn route — the exact style of the
+  /// card's address rail (user spec 2026-08-28): pickup is a gold ring with
+  /// a solid gold dot inside, dropoff a hollow white ring.
   Future<void> _setEndpointDots(LatLng pickup, LatLng dropoff) async {
     final mgr = _dotsEndMgr;
     if (mgr == null) return;
     await _clearEndpointDots();
-    for (final (pt, color) in [
-      (pickup, _gold),
-      (dropoff, Colors.white),
-    ]) {
+
+    Future<void> ring(LatLng pt, Color color, {required bool filled}) async {
       final point = safePoint(pt.longitude, pt.latitude);
-      if (point == null) continue;
+      if (point == null) return;
       try {
-        final annot = await mgr.create(mapbox.CircleAnnotationOptions(
+        final ringAnnot = await mgr.create(mapbox.CircleAnnotationOptions(
           geometry: point,
-          circleRadius: 5.0,
-          circleColor: color.toARGB32(),
-          circleStrokeWidth: 2.0,
-          circleStrokeColor: const Color(0xFF0A1128).toARGB32(),
+          circleRadius: 5.5,
+          circleColor: Colors.transparent.toARGB32(),
+          circleStrokeWidth: 1.5,
+          circleStrokeColor: color.toARGB32(),
         ));
-        _endDots.add(annot);
+        _endDots.add(ringAnnot);
+        if (filled) {
+          final dotAnnot = await mgr.create(mapbox.CircleAnnotationOptions(
+            geometry: point,
+            circleRadius: 2.2,
+            circleColor: color.toARGB32(),
+          ));
+          _endDots.add(dotAnnot);
+        }
       } catch (_) {}
       if (!mounted) return;
     }
+
+    await ring(pickup, _gold, filled: true);
+    await ring(dropoff, Colors.white, filled: false);
   }
 
   Future<void> _clearEndpointDots() async {

@@ -308,24 +308,15 @@ extension _RideRequestWidgets on _RideRequestScreenState {
         // bar anchor to this, not to a fraction-of-screen estimate.
         child: _SheetSizeReporter(
           onChanged: _onSheetHeightChanged,
-          // One reporter around BOTH the sheet and the floating action
-          // panel under it, so the route fit clears the pair. SafeArea
-          // moves out here too: in flush mode it is the action panel —
-          // not the sheet — that meets the system nav bar.
+          // The bottom system inset must be painted BY THE SHEET, not left
+          // as transparent padding AROUND it (2026-08-28 — the map strip
+          // showing below the Select button): the inset lives in the
+          // sheet's own Padding, inside the navy background, so the sheet
+          // covers the screen's bottom edge in every state.
           child: SafeArea(
             top: false,
-            // viewPadding, not padding: padding can arrive already consumed
-            // by an ancestor, and on Android that left the Request Ride
-            // button under the system nav/gesture bar (user report
-            // 2026-08-04). viewPadding always carries the real bar height;
-            // minimum guarantees it even when SafeArea's own padding
-            // lookup reads 0. Flush mode only — floating already hovers
-            // 24px above the edge.
-            minimum: EdgeInsets.only(
-              bottom: floating
-                  ? 0
-                  : MediaQuery.viewPaddingOf(context).bottom,
-            ),
+            bottom: false,
+            minimum: EdgeInsets.zero,
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -385,9 +376,14 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                 // Bottom is tighter than the other 3 sides so the panel
                 // hugs the last visible row (badges when no tier is
                 // picked yet, or the Request Ride button after one is).
-                // Otherwise the 14px equal-all-around padding leaves a
-                // visible empty band below the badges in the no-pick state.
-                padding: const EdgeInsets.fromLTRB(14, 12, 14, 6),
+                // The bottom SYSTEM INSET rides inside this padding — the
+                // sheet's navy background paints over it, so nothing of
+                // the map ever shows below the Select button (the strip
+                // the rider saw, 2026-08-28). viewPadding, not padding:
+                // padding can arrive already consumed by an ancestor, and
+                // on Android that left the button under the gesture bar.
+                padding: EdgeInsets.fromLTRB(14, 12, 14,
+                    6 + MediaQuery.viewPaddingOf(context).bottom),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.stretch,

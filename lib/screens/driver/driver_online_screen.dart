@@ -2069,7 +2069,10 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                       44,
                       fabBg,
                       fabBorder,
-                      fabIcon,
+                      // Gold with the available count when there are rides
+                      // (user spec 2026-08-28) — same badge as the panel's
+                      // calendar action.
+                      _scheduledAvailCount > 0 ? _gold : fabIcon,
                       () => Navigator.push(
                         context,
                         slideFromRightRoute(
@@ -2080,6 +2083,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                         _remountMapSurface();
                       }),
                       stagger: 0,
+                      badge: _scheduledAvailCount,
                     ),
                     const SizedBox(height: 10),
                     // Destination filter ("heading to"). Gold while a filter

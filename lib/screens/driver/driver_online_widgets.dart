@@ -4506,6 +4506,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
     Color iconColor,
     VoidCallback tap, {
     int stagger = -1,
+    int badge = 0,
   }) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final button = GestureDetector(
@@ -4523,7 +4524,40 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                 shape: BoxShape.circle,
                 border: Border.all(color: border),
               ),
-        child: Icon(ic, color: iconColor, size: sz * 0.44),
+        child: badge > 0
+            ? Stack(
+                clipBehavior: Clip.none,
+                alignment: Alignment.center,
+                children: [
+                  Icon(ic, color: iconColor, size: sz * 0.44),
+                  // Same gold count pill the panel's calendar action wears
+                  // (user spec 2026-08-28) — one count, same look.
+                  Positioned(
+                    top: -5,
+                    right: -7,
+                    child: Container(
+                      constraints: const BoxConstraints(minWidth: 15),
+                      height: 15,
+                      padding: const EdgeInsets.symmetric(horizontal: 4),
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: _gold,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        '$badge',
+                        style: const TextStyle(
+                          fontFamily: 'Poppins',
+                          color: Color(0xFF0B0B0F),
+                          fontSize: 9.5,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              )
+            : Icon(ic, color: iconColor, size: sz * 0.44),
       ),
     );
     // Entrance stagger: side FABs fade+scale in one after another.

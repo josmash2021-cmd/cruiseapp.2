@@ -3500,55 +3500,9 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     } catch (_) {}
   }
 
-  /// Animated banner above "Finding trips" showing scheduled ride count.
-  Widget _buildScheduledRidesBanner() {
-    if (_scheduledAvailableCount == 0) return const SizedBox.shrink();
-    return GestureDetector(
-      onTap: () {
-        HapticService.selectionClick();
-        Navigator.of(context).push(
-          slideFromRightRoute(const ScheduledRidesScreen()),
-        );
-      },
-      child: TweenAnimationBuilder<double>(
-        tween: Tween(begin: 0.0, end: 1.0),
-        duration: const Duration(milliseconds: 500),
-        curve: Curves.easeOutBack,
-        builder: (context, scale, child) => Transform.scale(
-          scaleY: scale,
-          alignment: Alignment.topCenter,
-          child: child,
-        ),
-        child: Container(
-          margin: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-          decoration: neuBox(
-            radius: 16,
-            borderColor: _gold.withValues(alpha: 0.35),
-          ),
-          child: Row(
-            children: [
-              const Icon(Icons.event_available_rounded, color: _gold, size: 18),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  S
-                      .of(context)
-                      .scheduledRidesAvailableLabel(_scheduledAvailableCount),
-                  style: const TextStyle(
-                    color: _gold,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-              const Icon(Icons.chevron_right_rounded, color: _gold, size: 18),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
+  // The floating "N scheduled rides available" banner was removed
+  // (2026-08-28, user spec): the count lives on the online screen's
+  // calendar FAB badge instead — one count, one place.
 
   // _getGreeting is gone with the greeting it fed: the top pill shows today's
   // and this week's earnings now, not the time of day and the driver's own name.
@@ -4182,10 +4136,6 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                 ),
               ),
             ),
-            // ── Scheduled Rides Banner (only when online & no active trip) ──
-            if (_isStillOnline && _activeTripData == null)
-              _buildScheduledRidesBanner(),
-
             // ── Header row: photo | status | list — also draggable ──
             GestureDetector(
               behavior: HitTestBehavior.translucent,

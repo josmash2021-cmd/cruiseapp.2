@@ -309,7 +309,11 @@ class _ScheduledRideDetailsScreenState extends State<ScheduledRideDetailsScreen>
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('${S.of(context).error}: $e'), backgroundColor: Colors.red),
+        // Clean message (2026-08-28): never the raw "ApiException(400): …".
+        SnackBar(
+            content: Text(
+                '${S.of(context).error}: ${e is ApiException ? e.message : S.of(context).connectionError}'),
+            backgroundColor: Colors.red),
       );
     } finally {
       if (mounted) setState(() => _cancelling = false);

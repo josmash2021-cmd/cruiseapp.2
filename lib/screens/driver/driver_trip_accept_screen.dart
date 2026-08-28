@@ -2633,7 +2633,9 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('${S.of(context).reportError}: $e'),
+        // Clean message (2026-08-28): never the raw "ApiException(400): …".
+        content: Text(
+            '${S.of(context).reportError}: ${e is ApiException ? e.message : S.of(context).connectionError}'),
         backgroundColor: Colors.red,
       ));
     }
@@ -2838,7 +2840,9 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('${S.of(context).driverCancelFailed}: $e'),
+          // Clean message (2026-08-28): never the raw "ApiException(400): …".
+          content: Text(
+              '${S.of(context).driverCancelFailed}: ${e is ApiException ? e.message : S.of(context).connectionError}'),
           backgroundColor: Colors.red.shade700,
           behavior: SnackBarBehavior.floating,
           duration: const Duration(seconds: 5),

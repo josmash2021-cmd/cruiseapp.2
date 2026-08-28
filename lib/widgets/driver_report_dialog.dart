@@ -1,5 +1,6 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import '../l10n/app_localizations.dart';
+import '../services/api_service.dart';
 import '../services/driver_report_service.dart';
 import '../services/user_session.dart';
 
@@ -78,8 +79,13 @@ class _DriverReportDialogState extends State<DriverReportDialog> {
       }
     } catch (e) {
       if (mounted) {
+        // Clean message (2026-08-28): the server's words for ApiException,
+        // a generic one otherwise — never the raw "ApiException(400): …".
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e')),
+          SnackBar(
+              content: Text(e is ApiException
+                  ? e.message
+                  : S.of(context).connectionError)),
         );
       }
     } finally {

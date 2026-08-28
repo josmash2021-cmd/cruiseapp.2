@@ -468,8 +468,13 @@ class _SafetyScreenState extends State<SafetyScreen> {
       }
     } catch (e) {
       if (mounted) {
+        // Clean message (2026-08-28): the server's words for ApiException,
+        // a generic one otherwise — never the raw "ApiException(400): …".
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to send alert: $e')),
+          SnackBar(
+              content: Text(e is ApiException
+                  ? e.message
+                  : S.of(context).connectionError)),
         );
       }
     } finally {

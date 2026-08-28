@@ -109,8 +109,11 @@ class _SavedAddressesScreenState extends State<SavedAddressesScreen> {
       _load();
     } catch (e) {
       if (!mounted) return;
+      // Clean message (2026-08-28): never the raw "ApiException(400): …".
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('${S.of(context).failedToSaveAddress}: $e')),
+        SnackBar(
+            content: Text(
+                '${S.of(context).failedToSaveAddress}: ${e is ApiException ? e.message : S.of(context).connectionError}')),
       );
     }
   }
@@ -186,7 +189,9 @@ class _SavedAddressesScreenState extends State<SavedAddressesScreen> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('${S.of(context).failedToDelete}: $e')),
+        SnackBar(
+            content: Text(
+                '${S.of(context).failedToDelete}: ${e is ApiException ? e.message : S.of(context).connectionError}')),
       );
     }
   }

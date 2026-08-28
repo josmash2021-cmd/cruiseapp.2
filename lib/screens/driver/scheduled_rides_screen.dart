@@ -983,7 +983,9 @@ class _DriverMyRideCardState extends State<_DriverMyRideCard>
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('${S.of(context).error}: $e'),
+          // Clean message (2026-08-28): never the raw "ApiException(400): …".
+          content: Text(
+              '${S.of(context).error}: ${e is ApiException ? e.message : S.of(context).connectionError}'),
           backgroundColor: Colors.red,
           behavior: SnackBarBehavior.floating,
           shape:

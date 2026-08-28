@@ -141,10 +141,10 @@ class _ScheduleHubScreenState extends State<ScheduleHubScreen> {
     if (mounted) setState(() => _events = events);
   }
 
-  /// Hub → addresses page. "Schedule a Ride" goes DIRECT — the immediate
-  /// ride-request flow (user spec 2026-08-25: no date/time wheels here).
-  /// The calendar-event path below keeps the schedule chain, because that
-  /// one does carry a date.
+  /// Hub → addresses page in schedule-chain mode (2026-08-28, user spec —
+  /// reverted the 2026-08-26 direct-to-ride-request experiment): "Schedule
+  /// a Ride" leads to the Depart/Arrive wheels (with the real route
+  /// estimate) and the booking tail. The chain owns itself from there.
   Future<void> _openScheduleFlow({DateTime? prefill}) async {
     double? lat;
     double? lng;
@@ -159,9 +159,7 @@ class _ScheduleHubScreenState extends State<ScheduleHubScreen> {
       slideUpFadeRoute(PickupDropoffSearchScreen(
         initialPickupLat: lat,
         initialPickupLng: lng,
-        // A calendar prefill means the rider tapped an event to plan for
-        // THAT time — the schedule chain stays for that path only.
-        scheduleChain: prefill != null,
+        scheduleChain: true,
         schedulePrefill: prefill,
       )),
     );

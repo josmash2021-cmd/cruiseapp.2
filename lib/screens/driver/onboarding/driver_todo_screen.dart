@@ -9,6 +9,7 @@ import '../../../services/api_service.dart';
 import '../../../services/socket_service.dart';
 import '../../../services/user_session.dart';
 import '../../../widgets/feathered_image.dart';
+import '../../../widgets/neu_style.dart';
 import '../../help_screen.dart';
 import '../../splash_screen.dart';
 import 'doc_capture_screen.dart';
@@ -182,7 +183,7 @@ class _DriverTodoScreenState extends State<DriverTodoScreen> {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFF101736),
+        backgroundColor: neuSurface,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
         title: Text(
           s.signOutTitle,
@@ -467,7 +468,8 @@ class _DriverTodoScreenState extends State<DriverTodoScreen> {
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
       decoration: BoxDecoration(
-        color: const Color(0xFF101736),
+        // App grey, not navy (user spec 2026-08-28).
+        color: neuSurface,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: kOnboardingGold.withValues(alpha: 0.55)),
         boxShadow: [
@@ -578,7 +580,8 @@ class _DriverTodoScreenState extends State<DriverTodoScreen> {
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
       decoration: BoxDecoration(
-        color: const Color(0xFF101736),
+        // App grey, not navy (user spec 2026-08-28).
+        color: neuSurface,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: kOnboardingGold.withValues(alpha: 0.55)),
         boxShadow: [
@@ -645,7 +648,8 @@ class _DriverTodoScreenState extends State<DriverTodoScreen> {
       child: Container(
         margin: const EdgeInsets.only(bottom: 12),
         decoration: BoxDecoration(
-          color: const Color(0xFF101736),
+          // App grey, not navy (user spec 2026-08-28).
+        color: neuSurface,
           borderRadius: BorderRadius.circular(16),
           border: Border.all(
             color: rejected

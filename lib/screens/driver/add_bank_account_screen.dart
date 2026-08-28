@@ -324,13 +324,11 @@ class _AddBankAccountScreenState extends State<AddBankAccountScreen> {
               label: s.bankAccountNumber,
               controller: _account,
               keyboard: TextInputType.number,
-              obscure: true,
             ),
             _field(
               label: s.reenterAccountNumber,
               controller: _confirm,
               keyboard: TextInputType.number,
-              obscure: true,
               showError: _confirm.text.isNotEmpty &&
                   _confirm.text.trim() != _account.text.trim(),
               errorText: s.accountNumbersDoNotMatch,
@@ -612,7 +610,9 @@ class _AddBankAccountScreenState extends State<AddBankAccountScreen> {
   }) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12),
-      decoration: neuBox(radius: 14, pressed: true),
+      // App grey surface, not the near-black pressed well (user spec
+      // 2026-08-28).
+      decoration: neuBox(radius: 14),
       child: DropdownButtonHideUnderline(
         child: DropdownButton<T>(
           value: value,

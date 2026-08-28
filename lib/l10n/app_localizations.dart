@@ -5768,6 +5768,7 @@ class S {
   String get genderMale => _es ? 'Masculino' : 'Male';
   String get genderFemale => _es ? 'Femenino' : 'Female';
   String get genderOther => _es ? 'Otro' : 'Other';
+  String get instructionsTitle => _es ? 'Instrucciones' : 'Instructions';
   String get takePhotoButton => _es ? 'Tomar foto' : 'Take a photo';
   String get uploadFromGalleryButton =>
       _es ? 'Cargar desde la galería' : 'Upload from gallery';

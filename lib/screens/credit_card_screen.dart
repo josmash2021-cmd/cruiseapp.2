@@ -97,6 +97,21 @@ class _CreditCardScreenState extends State<CreditCardScreen> {
                 .substring(widget.scannedNumber!.length - 4)
             : null,
       );
+      // initialDetails alone never reaches the native field on iOS — the
+      // "scan fills nothing" bug (2026-08-28). Push the values again once
+      // the field exists, a beat after the first frame so the platform
+      // view is already up.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        Future.delayed(const Duration(milliseconds: 300), () {
+          if (!mounted) return;
+          Stripe.instance.dangerouslyUpdateCardDetails(CardDetails(
+            number: widget.scannedNumber,
+            expirationMonth: widget.scannedExpMonth,
+            expirationYear: widget.scannedExpYear,
+          ));
+        });
+      });
     }
     _nameCtrl.addListener(_refresh);
     _addrCtrl.addListener(_refresh);

@@ -245,6 +245,21 @@ class _CruisePaymentSheetState extends State<_CruisePaymentSheet> {
         );
         _page = 1;
       });
+      // initialDetails alone never reaches the native field on iOS — the
+      // "scan fills nothing" bug (2026-08-28). Push the scanned values
+      // again once the field exists, a beat after the first frame so the
+      // platform view is already up.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        Future.delayed(const Duration(milliseconds: 300), () {
+          if (!mounted) return;
+          Stripe.instance.dangerouslyUpdateCardDetails(CardDetails(
+            number: res.number,
+            expirationMonth: res.expMonth,
+            expirationYear: res.expYear,
+          ));
+        });
+      });
     } else if (res == 'manual') {
       setState(() => _page = 1);
     }
@@ -833,6 +848,9 @@ class _CruisePaymentSheetState extends State<_CruisePaymentSheet> {
               : CardField(
                   controller: _cardCtl,
                   enablePostalCode: false,
+                  // Lets the scan seed the field programmatically
+                  // (dangerouslyUpdateCardDetails) on iOS.
+                  dangerouslyGetFullCardDetails: true,
                   style:
                       const TextStyle(color: Colors.white, fontSize: 16),
                   decoration: InputDecoration(

@@ -2297,8 +2297,11 @@ extension _RideRequestController on _RideRequestScreenState {
         );
         return;
       }
+      // Clean message (2026-08-28): the server's own words for an
+      // ApiException — never the raw "ApiException(400): …" prefix.
       _showRetrySnackBar(
-        S.of(context).failedToScheduleRide(e.toString()),
+        S.of(context).failedToScheduleRide(
+            e is ApiException ? e.message : S.of(context).connectionError),
         _createScheduledTrip,
       );
     }

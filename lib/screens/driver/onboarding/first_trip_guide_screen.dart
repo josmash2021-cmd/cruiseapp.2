@@ -97,20 +97,34 @@ class _FirstTripGuideScreenState extends State<FirstTripGuideScreen> {
       body: SafeArea(
         child: Column(
           children: [
-            // Skip, top right.
-            Align(
-              alignment: Alignment.centerRight,
-              child: TextButton(
-                onPressed: _finish,
-                child: Text(
-                  s.skip,
-                  style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.55),
-                    fontSize: 15,
-                    fontWeight: FontWeight.w600,
+            // Title left ("Instructions", user spec 2026-08-28) + Skip right.
+            Row(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.only(left: 24),
+                  child: Text(
+                    s.instructionsTitle,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 17,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: -0.2,
+                    ),
                   ),
                 ),
-              ),
+                const Spacer(),
+                TextButton(
+                  onPressed: _finish,
+                  child: Text(
+                    s.skip,
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.55),
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
             ),
 
             Expanded(
@@ -356,6 +370,9 @@ class _StaticOfferCardState extends State<_StaticOfferCard>
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
+        Stack(
+          clipBehavior: Clip.none,
+          children: [
         Container(
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
@@ -645,33 +662,34 @@ class _StaticOfferCardState extends State<_StaticOfferCard>
               ],
             ),
           ),
-          // Gold page number badge — top-LEFT in the same gold circle the
-          // other three guide pages use (it used to float as bare text at
-          // the top-right, next to the countdown ring).
-          Positioned(
-            top: 10,
-            left: 12,
-            child: Container(
-              width: 26,
-              height: 26,
-              decoration: const BoxDecoration(
-                shape: BoxShape.circle,
-                color: _gold,
-              ),
-              child: const Center(
-                child: Text(
-                  '1',
-                  style: TextStyle(
-                    color: Color(0xFF14141A),
-                    fontWeight: FontWeight.w800,
-                    fontSize: 13,
-                  ),
+        ],
+      ),
+        ),
+        // Gold page number badge floats on the card's OUTER corner
+        // (user spec 2026-08-28) — inside the card it overlapped the fare.
+        Positioned(
+          top: -6,
+          left: -6,
+          child: Container(
+            width: 26,
+            height: 26,
+            decoration: const BoxDecoration(
+              shape: BoxShape.circle,
+              color: _gold,
+            ),
+            child: const Center(
+              child: Text(
+                '1',
+                style: TextStyle(
+                  color: Color(0xFF14141A),
+                  fontWeight: FontWeight.w800,
+                  fontSize: 13,
                 ),
               ),
             ),
           ),
-        ],
-      ),
+        ),
+          ],
         ),
         const SizedBox(height: 12),
         // Gold Accept stadium — static replica of the pill that floats

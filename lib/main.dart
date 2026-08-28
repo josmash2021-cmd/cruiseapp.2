@@ -895,6 +895,18 @@ void main() async {
                         textAlign: TextAlign.center,
                         style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 14),
                       ),
+                      // The modal used to say nothing (2026-08-28): a crash
+                      // loop with no visible cause is undebuggable from a
+                      // screenshot. The exception is already logged to
+                      // Crashlytics above; showing it here lets a photo of
+                      // the screen carry the diagnosis home.
+                      const SizedBox(height: 10),
+                      Text(
+                        details.exception.toString().substring(
+                            0, details.exception.toString().length.clamp(0, 300)),
+                        textAlign: TextAlign.center,
+                        style: TextStyle(color: Colors.white.withValues(alpha: 0.35), fontSize: 11, fontFamily: 'monospace'),
+                      ),
                     ],
                   ),
                 ),

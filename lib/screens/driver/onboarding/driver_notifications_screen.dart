@@ -60,7 +60,13 @@ class _DriverNotificationsScreenState extends State<DriverNotificationsScreen> {
   /// FirebaseMessaging prompt (alert + badge + sound). Asking both is
   /// harmless on either platform.
   Future<void> _requestNativePermission() async {
-    await Permission.notification.request();
+    // Every native ask wrapped (2026-08-28): this page fires at login while
+    // home's own FCM registration may be asking at the same moment — a
+    // concurrent permission request throws a PlatformException, and an
+    // unwrapped one in initState took the whole screen down silently.
+    try {
+      await Permission.notification.request();
+    } catch (_) {}
     try {
       await FirebaseMessaging.instance.requestPermission(
         alert: true,

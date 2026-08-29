@@ -2384,14 +2384,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
           // while online (user spec 2026-08-27): the way back to the
           // online screen is tapping the sheet, and a GO disc beside
           // "You're online" read as a second, contradictory action.
-          AnimatedOpacity(
-            duration: const Duration(milliseconds: 250),
-            opacity: _isStillOnline ? 0.0 : 1.0,
-            child: IgnorePointer(
-              ignoring: _isStillOnline,
-              child: _buildMorphingGoButton(pad),
-            ),
-          ),
+          _buildMorphingGoButton(pad, hidden: _isStillOnline),
         ],
       ),
     );
@@ -3621,7 +3614,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   /// an animation that plays after the gesture: it IS the gesture. Let go
   /// halfway and the button is halfway, and the panel's own spring carries
   /// both the rest of the way together.
-  Widget _buildMorphingGoButton(EdgeInsets pad) {
+  Widget _buildMorphingGoButton(EdgeInsets pad, {bool hidden = false}) {
     final t = panelExtent; // 0 = closed circle, 1 = open pill
     final height = ui.lerpDouble(_kGoCircleD, _kGoPillH, t)!;
     final radius = ui.lerpDouble(_kGoCircleD / 2, 16.0, t)!;
@@ -3680,9 +3673,17 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       bottom: bottom,
       left: ui.lerpDouble(_kGoSideInset, 0, t)!,
       right: ui.lerpDouble(_kGoSideInset, 0, t)!,
-      child: FadeTransition(
-        opacity: _fabScale,
-        child: Container(
+      // Hidden while online (user spec 2026-08-27) — the wrapper lives
+      // INSIDE the Positioned: anything between a Positioned and its Stack
+      // is a StackParentData cast crash on every rebuild (2026-08-28).
+      child: IgnorePointer(
+        ignoring: hidden,
+        child: AnimatedOpacity(
+          duration: const Duration(milliseconds: 250),
+          opacity: hidden ? 0.0 : 1.0,
+          child: FadeTransition(
+            opacity: _fabScale,
+            child: Container(
           padding: EdgeInsets.fromLTRB(
             ui.lerpDouble(0, 20, t)!,
             ui.lerpDouble(0, 14, t)!,
@@ -3711,6 +3712,8 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                 height: height,
                 child: _buildGoButton(radius: radius, morph: t),
               ),
+            ),
+          ),
             ),
           ),
         ),

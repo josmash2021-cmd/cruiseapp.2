@@ -24,9 +24,12 @@ import '../widgets/neu_style.dart';
 /// within 25 m of a suggestion snaps to it and morphs the pin into the
 /// "Recommended" pill; dropping it anywhere ELSE spawns a circle anchored
 /// at the pin's tip that same instant, with the same morph (user spec
-/// 2026-08-25); dragging again turns it back into a pin. A pickup label
-/// with a street number is forward-geocoded on open so the pin starts on
-/// the doorstep, and the pay button goes white for Apple Pay.
+/// 2026-08-25); dragging again turns it back into a pin. The field opens
+/// with the exact address text the client entered; a city-level label
+/// ("Pelham, AL 35124") sharpens to the street address of the pin's
+/// coordinates, and only a label with a leading street number is
+/// forward-geocoded on open so the pin starts on the doorstep — never
+/// dragged to the city centroid. The pay button goes white for Apple Pay.
 ///
 /// The Pay button calls [onConfirm] with the final pin + note — the caller
 /// (ride_request) runs the existing hold → createTrip pipeline from there.
@@ -86,6 +89,13 @@ class _SetPickupLocationScreenState extends State<SetPickupLocationScreen>
 
   late PlaceDetails _pin;
   bool _userMovedMap = false;
+  // True while the open-time refine easeTo runs — its scroll/idle events
+  // must not count as a rider drag (they would re-anchor the pin onto a
+  // road vertex and reverse-geocode over the client's exact address).
+  bool _cameraAnimating = false;
+  // Once the rider grabs the map, the open-time refine never moves the
+  // camera out from under their drop.
+  bool _userDraggedOnce = false;
   Timer? _geocodeDebounce;
   bool _geocoding = false;
 
@@ -112,7 +122,14 @@ class _SetPickupLocationScreenState extends State<SetPickupLocationScreen>
   @override
   void initState() {
     super.initState();
-    _pin = widget.pickup;
+    // The field opens with the exact address text the client typed/picked
+    // on the search page — the PlaceDetails address can be coarser and
+    // must not replace what the client just confirmed.
+    final label = widget.pickupLabel.trim();
+    _pin = label.isNotEmpty
+        ? PlaceDetails(
+            address: label, lat: widget.pickup.lat, lng: widget.pickup.lng)
+        : widget.pickup;
     _pinDropCtrl = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 380),
@@ -122,11 +139,15 @@ class _SetPickupLocationScreenState extends State<SetPickupLocationScreen>
       curve: Curves.bounceOut,
     );
     _acquireMapSurface();
-    // A generic "Current location" label resolves to the real street
-    // address right away instead of after the first drag.
-    if (_pin.address.trim().isEmpty ||
-        _pin.address.trim().toLowerCase() == 'current location') {
+    // A generic "Current location" placeholder resolves to the real street
+    // address right away instead of after the first drag; a city-level
+    // label ("Pelham, AL 35124") names a ZIP, not a doorstep, so it
+    // sharpens to the street address of the pin's exact coordinates.
+    final address = _pin.address.trim();
+    if (address.isEmpty || address.toLowerCase() == 'current location') {
       _reverseGeocodeDebounced(_pin.lat, _pin.lng);
+    } else if (_isCityLevel(address)) {
+      unawaited(_sharpenCityLevelLabel());
     }
   }
 
@@ -188,14 +209,20 @@ class _SetPickupLocationScreenState extends State<SetPickupLocationScreen>
   /// pin + camera move there and the field shows the real address.
   Future<void> _refinePickupFromLabel() async {
     final label = widget.pickupLabel.trim();
-    // Only a label that looks like a street address can sharpen the pin —
-    // city-level or "Current location" seeds stay exactly as they are.
-    if (!RegExp(r'\d').hasMatch(label)) return;
+    // Only a label that STARTS with a street number ("2600 Pelham Pkwy …")
+    // can sharpen the pin. A city/ZIP label ("Pelham, AL 35124") passes a
+    // bare "\d" test through its ZIP and geocodes right back to the city
+    // centroid — refining on it DRAGGED the pin off the client's exact
+    // spot (GPS fix / picked address) onto the centroid instead.
+    if (!RegExp(r'^\d+\s').hasMatch(label)) return;
     try {
       final exact = await _places
           .geocodeAddress(label)
           .timeout(const Duration(seconds: 6));
       if (!mounted || exact == null) return;
+      // A rider who already grabbed the map keeps their drop — the
+      // opening refine must never yank the camera out from under them.
+      if (_userDraggedOnce) return;
       final d = _meters(
           LatLngSafe(_pin.lat, _pin.lng), LatLngSafe(exact.lat, exact.lng));
       if (d < 40) return; // the seed was already on the doorstep
@@ -204,6 +231,11 @@ class _SetPickupLocationScreenState extends State<SetPickupLocationScreen>
       });
       final map = _map;
       if (map != null) {
+        // Programmatic move: without the flag its scroll/idle events trip
+        // the snap cycle — the pin re-anchors onto a road vertex and the
+        // reverse geocoder stomps the client's exact address with
+        // whatever coarse string it returns (city-level text).
+        _cameraAnimating = true;
         try {
           await map.easeTo(
             mapbox.CameraOptions(
@@ -213,9 +245,45 @@ class _SetPickupLocationScreenState extends State<SetPickupLocationScreen>
             mapbox.MapAnimationOptions(duration: 500),
           );
         } catch (_) {}
+        // Drain this animation's trailing onMapIdle before rider drags
+        // count as moves again.
+        await Future<void>.delayed(const Duration(milliseconds: 150));
+        _cameraAnimating = false;
       }
       if (!mounted) return;
       _refreshSuggestions();
+    } catch (_) {}
+  }
+
+  /// True for a city-level label — "Pelham, AL 35124" / "Pelham, AL" —
+  /// which names a ZIP or a town, not a doorstep. POI names ("Oak
+  /// Mountain …") deliberately do NOT match: a place name is exact
+  /// information the driver wants to see.
+  static bool _isCityLevel(String address) {
+    return RegExp(r'^[^,]+,\s*[A-Z]{2}(\s+\d{5}(-\d{4})?)?$')
+        .hasMatch(address.trim());
+  }
+
+  /// Opening-address sharpen for city-level seeds: the pin's coordinates
+  /// are exact even when the text that came with them is not, so the
+  /// field upgrades to the street address of those coordinates
+  /// (Google-first via [PlacesService.reverseGeocodeDetailed]). Only a
+  /// non-city-level answer is adopted — a second ZIP string is not an
+  /// upgrade, and the rider keeps the text they confirmed.
+  Future<void> _sharpenCityLevelLabel() async {
+    try {
+      final exact = await _places
+          .reverseGeocodeDetailed(lat: _pin.lat, lng: _pin.lng)
+          .timeout(const Duration(seconds: 6));
+      if (!mounted) return;
+      if (exact != null &&
+          exact.address.trim().isNotEmpty &&
+          !_isCityLevel(exact.address)) {
+        setState(() {
+          _pin = PlaceDetails(
+              address: exact.address, lat: _pin.lat, lng: _pin.lng);
+        });
+      }
     } catch (_) {}
   }
 
@@ -224,7 +292,12 @@ class _SetPickupLocationScreenState extends State<SetPickupLocationScreen>
   // ─────────────────────────────────────────────
 
   void _onScroll() {
+    // A programmatic easeTo (the open-time refine) is not a rider drag —
+    // treating it as one re-anchors the pin off the client's address and
+    // reverse-geocodes over the exact label.
+    if (_cameraAnimating) return;
     _userMovedMap = true;
+    _userDraggedOnce = true;
     if (_snappedToSuggestion) {
       // Dragging away from a suggestion turns the pill back into a pin.
       setState(() => _snappedToSuggestion = false);
@@ -232,6 +305,7 @@ class _SetPickupLocationScreenState extends State<SetPickupLocationScreen>
   }
 
   Future<void> _onIdle() async {
+    if (_cameraAnimating) return;
     if (!_userMovedMap) return;
     _userMovedMap = false;
     final map = _map;

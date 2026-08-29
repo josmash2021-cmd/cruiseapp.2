@@ -19,7 +19,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
-COPY backend/requirements.txt .
+# railway.toml lives in backend/, so the build context IS backend/ —
+# requirements.txt is at the context root, not under backend/.
+COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
@@ -87,7 +89,7 @@ ENV UVICORN_LIMIT_CONCURRENCY=2000
 ENV FORWARDED_ALLOW_IPS=100.64.0.0/10,127.0.0.1
 
 # Copy application code
-COPY backend/ .
+COPY . .
 
 # Verify files are in place during build
 RUN echo "=== Files in /app ===" && ls -la /app && \

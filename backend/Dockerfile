@@ -19,9 +19,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
-# railway.toml lives in backend/, so the build context IS backend/ —
-# requirements.txt is at the context root, not under backend/.
-COPY requirements.txt .
+# railway.toml lives at the REPO ROOT (the only place Railway reads it),
+# so the build context is the repo root and paths carry the backend/
+# prefix. Moving the config into backend/ does NOT move the context —
+# that assumption broke the build (2026-08-29, "requirements.txt: not found").
+COPY backend/requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
@@ -88,8 +90,8 @@ ENV UVICORN_LIMIT_CONCURRENCY=2000
 # default behaviour. Override in Railway if the internal range ever changes.
 ENV FORWARDED_ALLOW_IPS=100.64.0.0/10,127.0.0.1
 
-# Copy application code
-COPY . .
+# Copy application code (context = repo root — see the note above)
+COPY backend/ .
 
 # Verify files are in place during build
 RUN echo "=== Files in /app ===" && ls -la /app && \

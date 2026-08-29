@@ -656,6 +656,24 @@ extension _RideRequestController on _RideRequestScreenState {
             _ctrl.selectRideOption(match);
           }
         }
+        // Default selection (user spec 2026-08-29): with nothing picked the
+        // sheet stays a flat list — no Select button, no payment row, and
+        // after the skeleton it read as a broken half-state. Pick Standard
+        // ('fusion') as soon as the real options land so the sheet always
+        // opens complete; the rider can still tap any other tier.
+        if (!_didAutoSelectRide &&
+            widget.initialRideId == null &&
+            s.selectedOption == null &&
+            s.rideOptions.isNotEmpty) {
+          _didAutoSelectRide = true;
+          final match = s.rideOptions.cast<RideOption?>().firstWhere(
+            (o) => o!.id == 'fusion',
+            orElse: () => s.rideOptions.last,
+          );
+          if (match != null) {
+            _ctrl.selectRideOption(match);
+          }
+        }
         break;
       case RiderPhase.requesting:
       case RiderPhase.searchingDriver:

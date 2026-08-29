@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cruise · Guía para fotografiar tu licencia</title>
+<style>
+  :root{--navy:#0A1128;--card:#141c38;--gold:#E8C547;--txt:#fff;--txt2:rgba(255,255,255,.55)}
+  *{margin:0;padding:0;box-sizing:border-box;font-family:'Poppins','Segoe UI',system-ui,sans-serif}
+  body{background:#111;display:flex;justify-content:center;align-items:center;height:100vh}
+  .phone{width:350px;height:720px;border-radius:32px;overflow:hidden;position:relative;background:var(--navy);box-shadow:0 0 0 6px #222,0 25px 60px rgba(0,0,0,.7);display:flex;flex-direction:column;padding:18px 22px 22px}
+  .x{width:38px;height:38px;border-radius:12px;background:rgba(255,255,255,.06);display:flex;align-items:center;justify-content:center;color:#fff;font-size:16px}
+  .art{margin:26px auto 0;width:250px;height:150px;border-radius:18px;background:linear-gradient(145deg,#16224a,#0c142e);border:1px solid rgba(232,197,71,.25);position:relative;display:flex;align-items:center;justify-content:center}
+  .art::after{content:'';position:absolute;width:170px;height:170px;border-radius:50%;background:radial-gradient(circle,rgba(232,197,71,.20),transparent 65%)}
+  .idcard{position:relative;z-index:2;width:150px;height:92px;border-radius:10px;background:#0d1530;border:2px solid var(--gold);padding:10px}
+  .idcard .photo{position:absolute;left:10px;top:14px;width:34px;height:44px;border-radius:6px;background:rgba(232,197,71,.25)}
+  .idcard .lines{position:absolute;left:54px;top:16px;right:10px}
+  .idcard .lines i{display:block;height:6px;border-radius:3px;background:rgba(255,255,255,.25);margin-bottom:7px}
+  .idcard .lines i:nth-child(2){width:75%}.idcard .lines i:nth-child(3){width:55%;background:rgba(232,197,71,.5)}
+  .corners i{position:absolute;width:16px;height:16px;border:2.5px solid var(--gold);z-index:3}
+  .corners i:nth-child(1){top:-7px;left:-7px;border-right:none;border-bottom:none;border-radius:4px 0 0 0}
+  .corners i:nth-child(2){top:-7px;right:-7px;border-left:none;border-bottom:none;border-radius:0 4px 0 0}
+  .corners i:nth-child(3){bottom:-7px;left:-7px;border-right:none;border-top:none;border-radius:0 0 0 4px}
+  .corners i:nth-child(4){bottom:-7px;right:-7px;border-left:none;border-top:none;border-radius:0 0 4px 0}
+  h1{color:#fff;font-size:22px;font-weight:800;text-align:center;margin:26px 0 20px;line-height:1.25}
+  .bullet{display:flex;gap:12px;align-items:flex-start;margin-bottom:16px}
+  .bullet .ck{width:24px;height:24px;border-radius:50%;background:rgba(232,197,71,.14);color:var(--gold);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;flex:none}
+  .bullet p{color:var(--txt2);font-size:13.5px;line-height:1.45}
+  .bullet p b{color:#fff;font-weight:600}
+  .cta{margin-top:auto;border:none;border-radius:24px;background:var(--gold);color:#0A1128;font-size:16px;font-weight:800;padding:15px;width:100%}
+</style>
+</head>
+<body>
+<div class="phone">
+  <div class="x">✕</div>
+  <div class="art">
+    <div class="idcard">
+      <div class="photo"></div>
+      <div class="lines"><i></i><i></i><i></i></div>
+      <div class="corners"><i></i><i></i><i></i><i></i></div>
+    </div>
+  </div>
+  <h1>Guidelines for taking a photo of your driver's license</h1>
+  <div class="bullet"><div class="ck">✓</div><p>Use a <b>valid, current license</b> — expired documents are rejected.</p></div>
+  <div class="bullet"><div class="ck">✓</div><p>Take the photo of the <b>physical card</b>, not a screenshot or photocopy.</p></div>
+  <div class="bullet"><div class="ck">✓</div><p>Make sure <b>all 4 corners</b> are visible, in focus, with good light and no glare.</p></div>
+  <button class="cta">Next</button>
+</div>
+</body>
+</html>

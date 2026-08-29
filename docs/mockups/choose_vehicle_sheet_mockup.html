@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cruise · Choose a vehicle (mockup)</title>
+<style>
+  :root{
+    --navy:#0A1128; --navy2:#101a3a; --card:#141c38; --card2:#1a2344;
+    --gold:#E8C547; --gold-soft:rgba(232,197,71,.9); --txt:#fff; --txt2:rgba(255,255,255,.55);
+  }
+  *{margin:0;padding:0;box-sizing:border-box;font-family:'Segoe UI',system-ui,sans-serif;-webkit-tap-highlight-color:transparent}
+  body{background:#000;display:flex;justify-content:center;align-items:center;height:100vh;overflow:hidden}
+  .phone{width:390px;height:780px;border-radius:36px;overflow:hidden;position:relative;background:var(--navy);box-shadow:0 0 0 8px #1a1a1a,0 30px 80px rgba(0,0,0,.8)}
+
+  /* fake map */
+  .map{position:absolute;inset:0;background:
+    radial-gradient(ellipse 300px 200px at 70% 20%, #122048 0%, transparent 60%),
+    radial-gradient(ellipse 400px 300px at 20% 70%, #0e1a3e 0%, transparent 60%),
+    linear-gradient(#0A1128,#0A1128)}
+  .map svg{position:absolute;inset:0;width:100%;height:100%}
+  .route{stroke:var(--gold);stroke-width:2.5;fill:none;opacity:.95}
+  .pin{position:absolute;width:14px;height:14px;border-radius:50%;background:var(--navy);border:3px solid var(--gold)}
+  .hint{position:absolute;top:16px;left:50%;transform:translateX(-50%);color:var(--txt2);font-size:12px;background:rgba(10,17,40,.75);padding:6px 14px;border-radius:20px;white-space:nowrap}
+
+  /* sheet */
+  .sheet{position:absolute;left:0;right:0;bottom:0;display:flex;flex-direction:column;gap:10px;padding:0 12px 14px}
+  .grab{width:44px;height:5px;border-radius:3px;background:rgba(255,255,255,.3);margin:6px auto 2px;cursor:pointer;flex:none}
+  .card{background:var(--card);border-radius:22px;padding:14px 14px 10px;box-shadow:0 12px 30px rgba(0,0,0,.45)}
+  .title{color:var(--txt);font-size:19px;font-weight:700;text-align:center;margin-bottom:8px;cursor:pointer}
+
+  .tiers{display:flex;flex-direction:column;gap:8px}
+  .tier{border:1.5px solid transparent;border-radius:16px;padding:9px 12px;cursor:pointer;
+        transition:border-color .28s ease, background .28s ease;overflow:hidden;background:transparent}
+  .tier .row{display:flex;align-items:center;gap:12px}
+  .tier .car{flex:none;transition:width .28s cubic-bezier(.4,0,.2,1),height .28s cubic-bezier(.4,0,.2,1);
+             width:60px;height:42px;display:flex;align-items:center;justify-content:center}
+  .tier .car svg{width:100%;height:100%}
+  .tier .info{flex:1;min-width:0}
+  .tier .name{color:var(--txt);font-weight:700;font-size:15px}
+  .tier .eta{color:var(--txt2);font-size:12.5px;margin-top:2px}
+  .tier .price{color:var(--txt);font-weight:700;font-size:16px;white-space:nowrap}
+
+  /* collapsed rows */
+  .tier{max-height:64px;opacity:1;transition:max-height .3s cubic-bezier(.4,0,.2,1),opacity .25s ease,border-color .28s ease,padding .3s ease}
+  .sheet.collapsed .tier:not(.sel){max-height:0;opacity:0;padding-top:0;padding-bottom:0;margin:0;pointer-events:none}
+  .tiers{transition:gap .3s ease}
+  .sheet.collapsed .tiers{gap:0}
+
+  /* selected = expanded */
+  .tier.sel{border-color:var(--gold);background:var(--card2);max-height:190px}
+  .tier.sel .car{width:108px;height:72px}
+  .tier .detail{max-height:0;opacity:0;transition:max-height .3s cubic-bezier(.4,0,.2,1),opacity .25s ease .05s,margin .3s ease}
+  .tier.sel .detail{max-height:90px;opacity:1;margin-top:10px}
+  .tier.sel .name{font-size:16px}
+  .cap{color:var(--txt2);font-weight:500;font-size:13px;margin-left:6px}
+  .desc{background:rgba(0,0,0,.25);border-radius:10px;color:var(--txt2);font-size:12.5px;padding:8px 10px;margin-top:8px;display:flex;gap:6px;align-items:center}
+
+  /* floating panel */
+  .panel{background:var(--card);border-radius:22px;padding:12px 16px 14px;box-shadow:0 12px 30px rgba(0,0,0,.5)}
+  .payrow{display:flex;justify-content:space-between;align-items:center;padding:2px 2px 12px}
+  .pay{display:flex;align-items:center;gap:8px;color:var(--txt);font-size:14px;cursor:pointer}
+  .pay .logo{background:#fff;color:#000;font-weight:700;font-size:10px;border-radius:4px;padding:3px 6px}
+  .sched{display:flex;align-items:center;gap:7px;color:var(--gold);font-size:14px;font-weight:600;cursor:pointer;background:none;border:none}
+  .divider{height:1px;background:rgba(255,255,255,.08);margin:0 -16px 12px}
+  .cta{width:100%;border:none;border-radius:26px;background:var(--gold);color:#0A1128;font-size:17px;font-weight:800;padding:15px;cursor:pointer;position:relative;overflow:hidden}
+  .cta span{position:relative;display:inline-block;transition:opacity .22s ease,transform .22s ease}
+  .cta.swap span{opacity:0;transform:translateY(8px)}
+</style>
+</head>
+<body>
+<div class="phone">
+  <div class="map">
+    <svg viewBox="0 0 390 780" preserveAspectRatio="none">
+      <g stroke="#1c2a52" stroke-width="7" fill="none" opacity=".8">
+        <path d="M-10 120 H400"/><path d="M-10 260 H400"/><path d="M-10 420 H400"/>
+        <path d="M60 -10 V790"/><path d="M180 -10 V790"/><path d="M310 -10 V790"/>
+        <path d="M-10 60 Q200 90 400 40"/><path d="M-10 560 Q200 520 400 600"/>
+      </g>
+      <path class="route" d="M120 90 Q140 220 195 330 T230 560"/>
+    </svg>
+    <div class="pin" style="top:82px;left:113px"></div>
+    <div class="pin" style="top:552px;left:223px"></div>
+  </div>
+  <div class="hint">👆 Toca los vehículos · Arrastra la manija para colapsar</div>
+
+  <div class="sheet" id="sheet">
+    <div class="card">
+      <div class="grab" id="grab"></div>
+      <div class="title" id="title">Choose a vehicle</div>
+      <div class="tiers" id="tiers"></div>
+    </div>
+    <div class="panel">
+      <div class="payrow">
+        <div class="pay"><span class="logo"> Pay</span> <span style="color:var(--txt2)">›</span></div>
+        <button class="sched" onclick="alert('Abre las ruedas de fecha/hora y vuelve sin reconstruir')">📅 Schedule</button>
+      </div>
+      <div class="divider"></div>
+      <button class="cta" id="cta"><span id="ctaTxt">Select Standard</span></button>
+    </div>
+  </div>
+</div>
+
+<script>
+const CAR = `<svg viewBox="0 0 100 60"><path d="M15 40 Q18 28 30 24 L40 14 Q44 10 52 10 L68 10 Q76 10 80 16 L86 26 Q95 30 93 40 L90 44 L12 44 Z" fill="#dfe3ea"/><rect x="42" y="14" width="24" height="12" rx="3" fill="#E8C547" opacity=".85"/><circle cx="30" cy="44" r="7" fill="#222"/><circle cx="30" cy="44" r="3" fill="#888"/><circle cx="74" cy="44" r="7" fill="#222"/><circle cx="74" cy="44" r="3" fill="#888"/></svg>`;
+const TIERS = [
+  {name:'Black', cap:4, price:'$25.98', eta:'in 18 min', clock:'2:00 AM', desc:'🖤 Luxury black car, top-rated drivers'},
+  {name:'Premium', cap:4, price:'$20.98', eta:'in 13 min', clock:'1:55 AM', desc:'✨ A nicer ride, guaranteed'},
+  {name:'Compact', cap:4, price:'$10.40', eta:'in 8 min', clock:'1:42 AM', desc:'🚗 Everyday rides at the lowest price'},
+  {name:'Standard', cap:4, price:'$12.41', eta:'in 14 min', clock:'1:56 AM', desc:'🚗 Comfortable sedans, our most popular'},
+];
+let sel = 3;
+const tiersEl = document.getElementById('tiers');
+TIERS.forEach((t,i)=>{
+  const d = document.createElement('div');
+  d.className = 'tier' + (i===sel?' sel':'');
+  d.innerHTML = `
+    <div class="row">
+      <div class="car">${CAR}</div>
+      <div class="info">
+        <div class="name">${t.name}<span class="cap">👤 ${t.cap}</span></div>
+        <div class="eta">${t.eta}</div>
+      </div>
+      <div class="price">${t.price}</div>
+    </div>
+    <div class="detail">
+      <div class="eta" style="text-align:right;color:var(--txt2)">${t.eta} · ${t.clock}</div>
+      <div class="desc">${t.desc}</div>
+    </div>`;
+  d.onclick = ()=>{
+    if (document.getElementById('sheet').classList.contains('collapsed') && i===sel){
+      toggle(); return;
+    }
+    sel = i; render(); swapCta();
+  };
+  tiersEl.appendChild(d);
+});
+function render(){
+  [...tiersEl.children].forEach((el,i)=>el.classList.toggle('sel', i===sel));
+}
+function swapCta(){
+  const cta = document.getElementById('cta'), txt = document.getElementById('ctaTxt');
+  cta.classList.add('swap');
+  setTimeout(()=>{ txt.textContent = 'Select ' + TIERS[sel].name; cta.classList.remove('swap'); }, 220);
+}
+function toggle(){ document.getElementById('sheet').classList.toggle('collapsed'); }
+document.getElementById('grab').onclick = toggle;
+document.getElementById('title').onclick = toggle;
+// drag on grab
+let startY=null;
+const grab = document.getElementById('grab');
+grab.addEventListener('pointerdown', e=>{startY=e.clientY;});
+window.addEventListener('pointerup', e=>{
+  if(startY===null) return;
+  const dy = e.clientY - startY; startY=null;
+  const sh = document.getElementById('sheet');
+  if (dy > 40) sh.classList.add('collapsed');
+  else if (dy < -40) sh.classList.remove('collapsed');
+});
+</script>
+</body>
+</html>

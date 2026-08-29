@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cruise · First trip guide (mockup)</title>
+<style>
+  :root{--navy:#0A1128;--card:#141c38;--gold:#E8C547;--txt:#fff;--txt2:rgba(255,255,255,.55)}
+  *{margin:0;padding:0;box-sizing:border-box;font-family:'Segoe UI',system-ui,sans-serif;-webkit-tap-highlight-color:transparent}
+  body{background:#000;display:flex;justify-content:center;align-items:center;height:100vh}
+  .phone{width:380px;height:780px;border-radius:36px;overflow:hidden;position:relative;background:var(--navy);box-shadow:0 0 0 8px #1a1a1a,0 30px 80px rgba(0,0,0,.8);display:flex;flex-direction:column}
+  .skip{position:absolute;top:20px;right:22px;color:var(--txt2);font-size:14px;z-index:5;cursor:pointer}
+  .track{flex:1;display:flex;transition:transform .35s cubic-bezier(.4,0,.2,1)}
+  .page{min-width:100%;padding:70px 30px 20px;display:flex;flex-direction:column;align-items:center;text-align:center}
+  .art{width:270px;height:250px;border-radius:22px;background:linear-gradient(145deg,#16224a,#0d1530);border:1px solid rgba(232,197,71,.25);display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden;margin-bottom:34px}
+  .art::after{content:'';position:absolute;width:220px;height:220px;border-radius:50%;background:radial-gradient(circle,rgba(232,197,71,.22),transparent 65%);animation:b 3s ease-in-out infinite}
+  @keyframes b{0%,100%{transform:scale(1)}50%{transform:scale(1.15)}}
+  .art span{font-size:74px;z-index:2}
+  .num{position:absolute;top:12px;left:14px;z-index:2;width:30px;height:30px;border-radius:50%;background:var(--gold);color:#0A1128;font-weight:800;display:flex;align-items:center;justify-content:center;font-size:14px}
+  .page h1{color:#fff;font-size:24px;font-weight:800;margin-bottom:10px;line-height:1.2}
+  .page p{color:var(--txt2);font-size:14.5px;line-height:1.55;max-width:290px}
+  .page p b{color:var(--gold)}
+  .dots{display:flex;gap:8px;justify-content:center;padding:14px 0 18px}
+  .dot{width:8px;height:8px;border-radius:50%;background:rgba(255,255,255,.18);transition:all .3s}
+  .dot.on{width:22px;border-radius:5px;background:var(--gold)}
+  .cta{margin:0 24px 34px;border:none;border-radius:26px;background:var(--gold);color:#0A1128;font-size:17px;font-weight:800;padding:16px;width:calc(100% - 48px);cursor:pointer}
+  .mini{position:absolute;bottom:14px;left:0;right:0;text-align:center;color:var(--txt2);font-size:11px}
+  /* offer card demo on page 1 */
+  .offer{position:absolute;bottom:16px;left:14px;right:14px;z-index:2;background:var(--card);border-radius:14px;padding:9px 12px;text-align:left;box-shadow:0 8px 18px rgba(0,0,0,.5)}
+  .offer b{color:#fff;font-size:15px}.offer small{color:var(--txt2);font-size:10.5px;display:block}
+  .offer .ring{float:right;width:26px;height:26px;border-radius:50%;border:3px solid var(--gold);display:flex;align-items:center;justify-content:center;color:var(--gold);font-size:11px;font-weight:800}
+</style>
+</head>
+<body>
+<div class="phone">
+  <div class="skip" onclick="finish()">Skip</div>
+  <div class="track" id="track">
+
+    <div class="page">
+      <div class="art"><div class="num">1</div><span>🚗</span>
+        <div class="offer"><div class="ring">20</div><b>$12.40 · $38/hr</b><small>Pickup 1.2 mi · Trip 4.3 mi</small></div>
+      </div>
+      <h1>Go online, get trip offers</h1>
+      <p>Tap <b>Go Online</b> on your home map. When a rider requests a trip, an offer card pops up with the fare, distance and destination — you have <b>20 seconds</b> to accept it.</p>
+    </div>
+
+    <div class="page">
+      <div class="art"><div class="num">2</div><span>🧭</span></div>
+      <h1>Navigate your way</h1>
+      <p>After accepting, tap <b>Start Trip</b> — your favorite maps app opens with the route (Apple Maps on iPhone, or the one you prefer). Your in-app mini map keeps tracking the trip too.</p>
+    </div>
+
+    <div class="page">
+      <div class="art"><div class="num">3</div><span>🙋</span></div>
+      <h1>Arrive & pick up</h1>
+      <p>At the pickup, tap <b>Arrived</b> and wait for your rider. When they're in the car, <b>slide to pick up</b> and head to the drop-off the same way.</p>
+    </div>
+
+    <div class="page">
+      <div class="art"><div class="num">4</div><span>💰</span></div>
+      <h1>Finish & get paid</h1>
+      <p>At the destination, <b>slide to finish ride</b>. Earnings land in your balance instantly — paid out <b>every Monday</b> to your bank, or <b>instantly</b> to your debit card anytime.</p>
+    </div>
+
+  </div>
+  <div class="dots" id="dots"><div class="dot on"></div><div class="dot"></div><div class="dot"></div><div class="dot"></div></div>
+  <button class="cta" id="cta" onclick="next()">Next</button>
+  <div class="mini">Mockup — navegable: usa Next o arrastra</div>
+</div>
+<script>
+let i=0;const n=4,track=document.getElementById('track'),dots=document.getElementById('dots'),cta=document.getElementById('cta');
+function render(){track.style.transform=`translateX(-${i*100}%)`;[...dots.children].forEach((d,k)=>d.classList.toggle('on',k===i));cta.textContent=i===n-1?'Start driving':'Next';}
+function next(){if(i<n-1){i++;render();}else finish();}
+function finish(){cta.textContent='→ Home (Go Online)';setTimeout(()=>{i=0;render();cta.textContent='Next';},1200);}
+let sx=null;
+document.addEventListener('touchstart',e=>sx=e.touches[0].clientX,{passive:true});
+document.addEventListener('touchend',e=>{if(sx===null)return;const dx=e.changedTouches[0].clientX-sx;sx=null;if(dx<-50&&i<n-1){i++;render();}else if(dx>50&&i>0){i--;render();}},{passive:true});
+let mx=null;
+document.addEventListener('mousedown',e=>mx=e.clientX);
+document.addEventListener('mouseup',e=>{if(mx===null)return;const dx=e.clientX-mx;mx=null;if(dx<-50&&i<n-1){i++;render();}else if(dx>50&&i>0){i--;render();}});
+</script>
+</body>
+</html>

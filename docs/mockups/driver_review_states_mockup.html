@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cruise · Driver review states (mockup)</title>
+<style>
+  :root{--navy:#0A1128;--card:#141c38;--card2:#1a2344;--gold:#E8C547;--txt:#fff;--txt2:rgba(255,255,255,.55);--green:#4CAF50;--red:#ff6b6b}
+  *{margin:0;padding:0;box-sizing:border-box;font-family:'Segoe UI',system-ui,sans-serif}
+  body{background:#000;display:flex;gap:36px;justify-content:center;align-items:center;height:100vh;overflow:hidden}
+  .phone{width:375px;height:760px;border-radius:36px;overflow:hidden;position:relative;background:var(--navy);box-shadow:0 0 0 8px #1a1a1a,0 30px 80px rgba(0,0,0,.8);display:flex;flex-direction:column}
+  .label{position:absolute;top:-30px;left:0;right:0;text-align:center;color:var(--txt2);font-size:13px;letter-spacing:1px}
+  .wrap{position:relative}
+
+  /* ── shared ── */
+  .xbtn{position:absolute;top:18px;left:18px;color:#fff;font-size:20px;opacity:.8;z-index:5}
+  .pillN{background:var(--card2);color:var(--txt2);border-radius:14px;padding:3px 10px;font-size:12px;font-weight:600}
+  .todo{padding:64px 18px 18px;overflow:hidden;flex:1}
+  .todo h1{color:#fff;font-size:24px;font-weight:800;display:flex;align-items:center;gap:10px;margin-bottom:4px}
+  .banner{margin:14px 0 18px;background:rgba(232,197,71,.10);border:1px solid rgba(232,197,71,.35);border-radius:14px;padding:12px 14px;display:flex;gap:10px;align-items:flex-start}
+  .banner .clock{color:var(--gold);font-size:18px;animation:pulse 1.8s ease-in-out infinite}
+  .banner p{color:var(--txt);font-size:12.5px;line-height:1.45}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+  .card{background:var(--card);border-radius:16px;padding:13px 14px;display:flex;gap:12px;align-items:center;margin-bottom:11px;box-shadow:0 8px 20px rgba(0,0,0,.35)}
+  .ic{width:40px;height:40px;border-radius:12px;background:rgba(232,197,71,.12);display:flex;align-items:center;justify-content:center;font-size:19px;flex:none}
+  .ct{flex:1}.ct b{color:#fff;font-size:14.5px;display:block}.ct span{color:var(--txt2);font-size:12px}
+  .st{font-size:11px;font-weight:700;padding:4px 9px;border-radius:10px;white-space:nowrap}
+  .st.review{color:var(--txt2);background:rgba(255,255,255,.07)}
+  .st.ok{color:#0A1128;background:var(--gold)}
+  .st.bad{color:#fff;background:rgba(255,107,107,.2);border:1px solid var(--red)}
+  .reason{width:100%;margin-top:8px;background:rgba(255,107,107,.12);border-left:3px solid var(--red);border-radius:8px;color:#ffb3b3;font-size:11.5px;padding:7px 9px}
+  .completed{margin-top:6px;border-top:1px solid rgba(255,255,255,.08);padding-top:12px;color:#fff;font-weight:700;font-size:15px;display:flex;justify-content:space-between;align-items:center}
+  .footer{margin-top:auto;padding:16px 18px 26px;border-top:1px solid rgba(255,255,255,.07)}
+  .footer small{color:var(--txt2);display:block;margin-bottom:2px}
+  .footer b{color:#fff;font-size:16px;display:block;margin-bottom:12px}
+  .btnrow{display:flex;gap:10px}
+  .btn{flex:1;border:none;border-radius:22px;padding:13px;font-size:14px;font-weight:800;cursor:pointer}
+  .btn.gold{background:var(--gold);color:#0A1128}
+  .btn.ghost{background:var(--card2);color:#fff}
+
+  /* ── approved ── */
+  .approved{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:30px;text-align:center;position:relative;overflow:hidden}
+  .glow{position:absolute;width:340px;height:340px;border-radius:50%;background:radial-gradient(circle,rgba(232,197,71,.28),transparent 65%);top:6%;animation:breathe 3s ease-in-out infinite}
+  @keyframes breathe{0%,100%{transform:scale(1)}50%{transform:scale(1.12)}}
+  .badge{width:120px;height:120px;border-radius:50%;background:var(--gold);display:flex;align-items:center;justify-content:center;font-size:58px;color:#0A1128;box-shadow:0 0 0 10px rgba(232,197,71,.18),0 0 60px rgba(232,197,71,.35);animation:pop .7s cubic-bezier(.2,1.6,.4,1) both .2s}
+  @keyframes pop{from{transform:scale(0)}to{transform:scale(1)}}
+  .approved h1{color:#fff;font-size:30px;font-weight:800;margin:26px 0 8px}
+  .approved p{color:var(--txt2);font-size:14px;line-height:1.55;max-width:270px}
+  .approved .cta{margin-top:34px;width:100%;border:none;border-radius:26px;background:var(--gold);color:#0A1128;font-size:17px;font-weight:800;padding:16px;cursor:pointer}
+  .confetti{position:absolute;top:-10px;font-size:16px;animation:fall linear forwards}
+  @keyframes fall{to{transform:translateY(820px) rotate(320deg);opacity:0}}
+  .demo{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);color:var(--txt2);font-size:12px}
+</style>
+</head>
+<body>
+
+<div class="wrap"><div class="label">1 · EN REVISIÓN (dispatch revisando)</div>
+<div class="phone">
+  <div class="xbtn">✕</div>
+  <div class="todo">
+    <h1>To-do <span class="pillN">2 items</span></h1>
+    <div class="banner"><span class="clock">🕐</span><p><b>We're reviewing your application.</b> This can take from a few hours to a couple of days. We'll notify you — you can close the app.</p></div>
+    <div class="card"><div class="ic">🚘</div><div class="ct"><b>License plate number</b><span>This will help passengers confirm the right ride</span></div><span class="st review">In review</span></div>
+    <div class="card"><div class="ic">🪪</div><div class="ct"><b>Social Security number</b><span>We need it to run your background check</span></div><span class="st review">In review</span></div>
+    <div class="card" style="border:1px solid var(--red)"><div class="ic">📄</div><div class="ct"><b>Driver's License</b><span>Confirm your identity</span><div class="reason">Rejected: photo is blurry — please retake in good light.</div></div><span class="st bad">Resubmit</span></div>
+    <div class="card"><div class="ic">🖊️</div><div class="ct"><b>Background check consent</b><span>Your authorization is needed</span></div><span class="st review">In review</span></div>
+    <div class="completed">Completed (2) <span style="color:var(--gold)">▾</span></div>
+    <div class="card" style="opacity:.75"><div class="ic">🚗</div><div class="ct"><b>Vehicle</b><span>2019 Toyota Camry · Black</span></div><span class="st ok">✓</span></div>
+    <div class="card" style="opacity:.75"><div class="ic">🙂</div><div class="ct"><b>Profile photo</b><span>Make it easy for riders to find you</span></div><span class="st ok">✓</span></div>
+  </div>
+  <div class="footer">
+    <small>Need help?</small><b>Whatever it is, we're here for you</b>
+    <div class="btnrow"><button class="btn ghost">Contact us</button><button class="btn gold">Help Center</button></div>
+  </div>
+</div></div>
+
+<div class="wrap"><div class="label">2 · APROBADO (dispatch aprobó)</div>
+<div class="phone">
+  <div class="approved" id="appr">
+    <div class="glow"></div>
+    <div class="badge">✓</div>
+    <h1>You're approved!</h1>
+    <p>Welcome to Cruise, Jhon. Your documents are verified and your background check is clear. You're ready to start earning.</p>
+    <button class="cta">Start driving</button>
+  </div>
+</div></div>
+
+<div class="demo">Mockup — look Cruise real: navy + dorado, mismos componentes de la app</div>
+
+<script>
+const appr = document.getElementById('appr');
+const pieces = ['🎉','✨','⭐'];
+for(let i=0;i<14;i++){
+  const c=document.createElement('div');
+  c.className='confetti'; c.textContent=pieces[i%3];
+  c.style.left=(6+Math.random()*88)+'%';
+  c.style.animationDuration=(2.6+Math.random()*2.4)+'s';
+  c.style.animationDelay=(Math.random()*2.5)+'s';
+  c.style.fontSize=(12+Math.random()*12)+'px';
+  appr.appendChild(c);
+  setInterval(()=>{c.style.animation='none';void c.offsetWidth;c.style.animation='';},7000);
+}
+</script>
+</body>
+</html>

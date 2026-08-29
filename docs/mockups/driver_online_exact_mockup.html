@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cruise · Driver online (diseño exacto)</title>
+<style>
+  :root{--navy:#0A1128;--card:#141c38;--card2:#1a2344;--gold:#E8C547;--txt:#fff;--txt2:rgba(255,255,255,.55)}
+  *{margin:0;padding:0;box-sizing:border-box;font-family:'Poppins','Segoe UI',system-ui,sans-serif;-webkit-tap-highlight-color:transparent}
+  body{background:#000;display:flex;justify-content:center;align-items:center;height:100vh}
+  .phone{width:375px;height:770px;border-radius:34px;overflow:hidden;position:relative;background:var(--navy);box-shadow:0 0 0 7px #1c1c1c,0 25px 70px rgba(0,0,0,.8)}
+  /* fake map */
+  .map{position:absolute;inset:0;background:
+    radial-gradient(ellipse 260px 180px at 65% 22%, #122048 0%, transparent 60%),
+    radial-gradient(ellipse 380px 300px at 25% 68%, #0e1a3e 0%, transparent 60%),#0A1128}
+  .map svg{position:absolute;inset:0;width:100%;height:100%}
+  .puck{position:absolute;top:42%;left:50%;transform:translate(-50%,-50%);width:44px;height:44px;border-radius:50%;background:var(--navy);border:2px solid var(--gold);display:flex;align-items:center;justify-content:center;z-index:2;box-shadow:0 0 18px rgba(232,197,71,.35)}
+  .puck::after{content:'';width:0;height:0;border-left:9px solid transparent;border-right:9px solid transparent;border-bottom:16px solid var(--gold)}
+  /* top UI */
+  .top{position:absolute;top:14px;left:14px;right:14px;display:flex;justify-content:space-between;align-items:center;z-index:3}
+  .circle{width:40px;height:40px;border-radius:50%;background:rgba(10,17,40,.85);border:1px solid rgba(255,255,255,.08);display:flex;align-items:center;justify-content:center;color:#fff;font-size:16px}
+  .earn{background:rgba(10,17,40,.85);border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:7px 14px;text-align:center}
+  .earn b{color:#fff;font-size:15px}.earn span{display:block;color:var(--txt2);font-size:8.5px;letter-spacing:1px}
+  .side{position:absolute;right:14px;top:38%;display:flex;flex-direction:column;gap:10px;z-index:3}
+  .sideB{position:absolute;left:14px;bottom:170px;z-index:3}
+  /* bottom sheet */
+  .sheet{position:absolute;left:0;right:0;bottom:0;background:#0d1430;border-radius:22px 22px 0 0;padding:14px 18px 22px;z-index:4;box-shadow:0 -10px 30px rgba(0,0,0,.5);transition:padding .3s}
+  .grab{width:40px;height:4px;border-radius:2px;background:rgba(255,255,255,.25);margin:0 auto 12px}
+  .finding{display:flex;align-items:center;justify-content:center;gap:10px;color:#fff;font-size:17px;font-weight:700;height:26px;overflow:hidden}
+  .waves{display:none;align-items:flex-end;gap:3px;height:16px}
+  .waves i{width:3px;background:var(--gold);border-radius:2px;animation:w 1.1s ease-in-out infinite}
+  .waves i:nth-child(1){height:6px;animation-delay:0s}.waves i:nth-child(2){height:12px;animation-delay:.15s}
+  .waves i:nth-child(3){height:16px;animation-delay:.3s}.waves i:nth-child(4){height:9px;animation-delay:.45s}
+  @keyframes w{0%,100%{transform:scaleY(.4);opacity:.5}50%{transform:scaleY(1);opacity:1}}
+  /* toggle pill */
+  .toggleWrap{display:flex;justify-content:center;margin-top:14px}
+  .pill{position:relative;border:none;border-radius:28px;padding:14px 34px;font-size:16px;font-weight:800;cursor:pointer;transition:all .35s cubic-bezier(.4,0,.2,1);overflow:hidden;min-width:190px}
+  .pill.go{background:var(--gold);color:#0A1128}
+  .pill.on{background:var(--card2);color:#fff;border:1px solid rgba(232,197,71,.4)}
+  .pill.on .dotLive{display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--gold);margin-right:9px;animation:live 1.6s ease-in-out infinite}
+  @keyframes live{0%,100%{box-shadow:0 0 0 0 rgba(232,197,71,.5)}50%{box-shadow:0 0 0 7px rgba(232,197,71,0)}}
+  /* offer card */
+  .ocard{position:absolute;left:12px;right:12px;bottom:12px;background:var(--card);border-radius:18px;padding:14px;z-index:6;box-shadow:0 14px 34px rgba(0,0,0,.6);transform:translateY(120%);transition:transform .45s cubic-bezier(.2,1.1,.3,1)}
+  .ocard.show{transform:translateY(0)}
+  .oprice{color:#fff;font-size:25px;font-weight:800}.otips{color:var(--gold);font-size:12.5px;font-weight:600}
+  .orate{color:var(--txt2);font-size:11px}
+  .ox{position:absolute;top:10px;right:10px;width:28px;height:28px;border-radius:50%;background:rgba(255,255,255,.08);color:var(--txt2);border:none;font-size:13px;cursor:pointer}
+  .ochips{display:flex;gap:7px;margin:9px 0 10px}
+  .ochip{background:rgba(232,197,71,.10);border-radius:8px;padding:4px 8px;color:var(--gold);font-size:10.5px;font-weight:600}
+  .orail{border-left:2px solid rgba(232,197,71,.35);margin-left:6px;padding-left:13px}
+  .ostop{position:relative;margin-bottom:9px}
+  .ostop::before{content:'';position:absolute;left:-18px;top:3px;width:8px;height:8px;border-radius:50%;background:var(--navy);border:2px solid var(--gold)}
+  .ostop.d::before{border-color:#fff}
+  .oeta{color:var(--txt2);font-size:9.5px}.oaddr{color:#fff;font-size:11.5px;font-weight:600}
+  .orider{display:flex;align-items:center;gap:8px;border-top:1px solid rgba(255,255,255,.08);padding-top:9px;margin-top:2px}
+  .oava{width:26px;height:26px;border-radius:50%;background:linear-gradient(145deg,#3a4a7a,#1a2344);display:flex;align-items:center;justify-content:center;color:var(--gold);font-weight:800;font-size:11px}
+  .oname{color:#fff;font-size:12px;font-weight:700;flex:1}.otag{color:var(--gold);font-size:10px;font-weight:600}
+  .oring{position:absolute;top:12px;right:44px}
+  .demo{position:fixed;bottom:14px;left:50%;transform:translateX(-50%);color:var(--txt2);font-size:12px;text-align:center}
+</style>
+</head>
+<body>
+<div class="phone" id="phone">
+  <div class="map">
+    <svg viewBox="0 0 375 770" preserveAspectRatio="none">
+      <g stroke="#1c2a52" stroke-width="6" fill="none" opacity=".8">
+        <path d="M-10 130 H385"/><path d="M-10 300 H385"/><path d="M-10 470 H385"/>
+        <path d="M70 -10 V780"/><path d="M190 -10 V780"/><path d="M300 -10 V780"/>
+        <path d="M-10 70 Q190 100 385 50"/><path d="M-10 600 Q190 560 385 640"/>
+      </g>
+    </svg>
+  </div>
+  <div class="puck" id="puck"></div>
+  <div class="top">
+    <div class="circle">🏠</div>
+    <div class="earn"><b>$0.00</b><span>WEEK</span></div>
+    <div class="circle">🔔</div>
+  </div>
+  <div class="side"><div class="circle">🛡</div><div class="circle">◎</div></div>
+  <div class="sideB"><div class="circle">📅</div></div>
+
+  <div class="sheet" id="sheet">
+    <div class="grab"></div>
+    <div class="finding"><span id="fText">You're offline</span><span class="waves" id="waves"><i></i><i></i><i></i><i></i></span></div>
+    <div class="toggleWrap"><button class="pill go" id="pill" onclick="toggleOnline()">Go Online</button></div>
+  </div>
+
+  <div class="ocard" id="ocard">
+    <button class="ox" onclick="dismissOffer()">✕</button>
+    <div class="oring"><svg width="46" height="46" viewBox="0 0 46 46"><circle cx="23" cy="23" r="20" fill="none" stroke="rgba(232,197,71,.15)" stroke-width="4"/><circle id="ring" cx="23" cy="23" r="20" fill="none" stroke="#E8C547" stroke-width="4" stroke-linecap="round" stroke-dasharray="126" stroke-dashoffset="0" transform="rotate(-90 23 23)"/><text x="23" y="27" text-anchor="middle" fill="#E8C547" font-size="12" font-weight="800" id="ringT">20</text></svg></div>
+    <div><span class="oprice">$6.44</span> <span class="otips">+ Tips</span><div class="orate">$38.64/hr est. rate for this ride</div></div>
+    <div class="ochips"><div class="ochip">◷ 10 min</div><div class="ochip">➤ 4.3 mi</div></div>
+    <div class="orail">
+      <div class="ostop"><div class="oeta">1 min (0.0 mi) away</div><div class="oaddr">3412 Canopy Drive, Pelham, Alabama</div></div>
+      <div class="ostop d"><div class="oeta">9 min (4.3 mi) trip</div><div class="oaddr">3659 Lorna Road, Hoover, Alabama</div></div>
+    </div>
+    <div class="orider"><div class="oava">J</div><div class="oname">jhon martinez</div><div class="otag">New rider</div></div>
+  </div>
+</div>
+<div class="demo">Toca <b style="color:#E8C547">Go Online</b> → llega una oferta a los 2s · la ✕ la rechaza · tap a la tarjeta = aceptar</div>
+<script>
+let online=false, offerTimer=null, ringInt=null;
+const pill=document.getElementById('pill'),fText=document.getElementById('fText'),waves=document.getElementById('waves'),ocard=document.getElementById('ocard');
+function toggleOnline(){
+  online=!online;
+  if(online){
+    pill.className='pill on';pill.innerHTML='<span class="dotLive"></span>You\'re online';
+    fText.textContent='Finding trips';waves.style.display='inline-flex';
+    offerTimer=setTimeout(showOffer,2000);
+  }else{
+    pill.className='pill go';pill.textContent='Go Online';
+    fText.textContent="You're offline";waves.style.display='none';
+    hideOffer();clearTimeout(offerTimer);
+  }
+}
+function showOffer(){
+  if(!online)return;
+  ocard.classList.add('show');
+  let t=20;const ring=document.getElementById('ring'),rt=document.getElementById('ringT');
+  clearInterval(ringInt);
+  ringInt=setInterval(()=>{t--;if(t<0){dismissOffer();return;}rt.textContent=t;ring.style.strokeDashoffset=126*(1-t/20);},1000);
+}
+function hideOffer(){ocard.classList.remove('show');clearInterval(ringInt);}
+function dismissOffer(){hideOffer();}
+document.getElementById('ocard').addEventListener('click',e=>{
+  if(e.target.closest('.ox'))return;
+  hideOffer();fText.textContent='On trip — heading to pickup';waves.style.display='none';
+  setTimeout(()=>{if(online){fText.textContent='Finding trips';waves.style.display='inline-flex';offerTimer=setTimeout(showOffer,2500);}},2500);
+});
+</script>
+</body>
+</html>

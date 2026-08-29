@@ -223,3 +223,82 @@ async def test_offer_is_not_duplicated_for_the_same_driver(
         )
     ).scalars().all()
     assert len(rows) == 1, f"expected 1 pending offer, found {len(rows)}"
+
+
+# ══════════════════════════════════════════════════════════════════
+#  ACCEPT — a reservation accepted early must not start
+# ══════════════════════════════════════════════════════════════════
+
+
+# Both tests below read the status out of the response rather than off the
+# row. `accept_offer` fires several background tasks that open their own
+# sessions, and on the suite's shared SQLite connection those undo the
+# request's write once the response is out — so a row read afterwards shows
+# the pre-request status no matter what the endpoint decided. The response is
+# serialised after `db.commit()` with `expire_on_commit` in force, so it is
+# the committed status, and it is the status the driver and rider apps act on.
+
+
+async def test_accept_on_a_reservation_does_not_start_the_trip(
+    client: AsyncClient, db, test_trip, test_driver
+):
+    """A priority offer on a booking for next week assigns, it does not start.
+
+    Dispatch can offer a reservation to a driver days ahead. Accepting used
+    to drop the trip straight into driver_en_route, so the rider's app
+    announced a driver on the way for a ride that had not happened yet and
+    the scheduled pipeline (scheduled_active at ride time, the driver's own
+    start call) was skipped entirely.
+    """
+    from datetime import datetime, timedelta, timezone
+
+    from models.database import DispatchOffer
+
+    driver, token = test_driver
+    test_trip.status = "scheduled"
+    test_trip.scheduled_at = datetime.now(timezone.utc) + timedelta(days=3)
+    test_trip.driver_id = None
+    offer = DispatchOffer(
+        trip_id=test_trip.id, driver_id=driver.id, status="pending"
+    )
+    db.add(offer)
+    await db.commit()
+    await db.refresh(offer)
+
+    resp = await client.post(
+        f"/dispatch/driver/accept?offer_id={offer.id}&driver_id={driver.id}",
+        headers=_driver_headers(token),
+    )
+    assert resp.status_code == 200, resp.text
+
+    body = resp.json()["trip"]
+    assert body["status"] == "scheduled_accepted"
+    assert body["driver_id"] == driver.id
+
+
+async def test_accept_on_an_immediate_trip_still_starts_it(
+    client: AsyncClient, db, test_trip, test_driver
+):
+    """The reservation branch must not touch ordinary dispatch."""
+    from models.database import DispatchOffer
+
+    driver, token = test_driver
+    test_trip.status = "requested"
+    test_trip.scheduled_at = None
+    test_trip.driver_id = None
+    offer = DispatchOffer(
+        trip_id=test_trip.id, driver_id=driver.id, status="pending"
+    )
+    db.add(offer)
+    await db.commit()
+    await db.refresh(offer)
+
+    resp = await client.post(
+        f"/dispatch/driver/accept?offer_id={offer.id}&driver_id={driver.id}",
+        headers=_driver_headers(token),
+    )
+    assert resp.status_code == 200, resp.text
+
+    body = resp.json()["trip"]
+    assert body["status"] == "driver_en_route"
+    assert body["driver_id"] == driver.id

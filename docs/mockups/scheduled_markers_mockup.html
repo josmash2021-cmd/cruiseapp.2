@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cruise · Scheduled rides markers (diseño exacto)</title>
+<style>
+  :root{--navy:#0A1128;--card:#141c38;--gold:#E8C547;--txt:#fff;--txt2:rgba(255,255,255,.55)}
+  *{margin:0;padding:0;box-sizing:border-box;font-family:'Poppins','Segoe UI',system-ui,sans-serif}
+  body{background:#000;display:flex;justify-content:center;align-items:center;height:100vh}
+  .phone{width:375px;height:720px;border-radius:34px;overflow:hidden;position:relative;background:var(--navy);box-shadow:0 0 0 7px #1c1c1c,0 25px 70px rgba(0,0,0,.8)}
+  .map{position:absolute;inset:0;background:
+    radial-gradient(ellipse 260px 180px at 65% 22%, #122048 0%, transparent 60%),
+    radial-gradient(ellipse 380px 300px at 25% 68%, #0e1a3e 0%, transparent 60%),#0A1128}
+  .map svg{position:absolute;inset:0;width:100%;height:100%}
+  .topbar{position:absolute;top:14px;left:12px;right:12px;z-index:5;display:flex;gap:8px;align-items:center}
+  .xbtn{color:#fff;font-size:18px}
+  .title{color:#fff;font-size:15px;font-weight:700;margin-left:6px}
+  .pills{position:absolute;top:52px;left:0;right:0;display:flex;gap:7px;justify-content:center;z-index:5}
+  .fpill{background:rgba(13,20,48,.92);border:1px solid rgba(255,255,255,.09);border-radius:16px;color:#fff;font-size:11.5px;font-weight:600;padding:7px 11px;box-shadow:0 6px 16px rgba(0,0,0,.45);display:flex;gap:5px;align-items:center}
+
+  /* ── marker: price pill above small person, floating with shadow ── */
+  .marker{position:absolute;display:flex;flex-direction:column;align-items:center;cursor:pointer;transition:transform .25s cubic-bezier(.4,0,.2,1)}
+  .marker .bubble{background:#131c3a;border:1px solid rgba(255,255,255,.12);border-radius:14px;color:var(--gold);font-size:13px;font-weight:800;padding:6px 11px;box-shadow:0 8px 18px rgba(0,0,0,.55);position:relative;z-index:2}
+  .marker .bubble::after{content:'';position:absolute;left:50%;bottom:-5px;transform:translateX(-50%);width:10px;height:10px;background:#131c3a;border-right:1px solid rgba(255,255,255,.12);border-bottom:1px solid rgba(255,255,255,.12);rotate:45deg}
+  .marker .person{margin-top:9px;width:26px;height:26px;border-radius:50%;background:var(--gold);display:flex;align-items:center;justify-content:center;box-shadow:0 6px 14px rgba(0,0,0,.5)}
+  .marker .person svg{width:16px;height:16px}
+  .marker.sel{transform:scale(1.12)}
+  .marker.sel .bubble{background:var(--gold);color:#0A1128;border-color:var(--gold)}
+  .marker.sel .bubble::after{background:var(--gold);border-color:var(--gold)}
+
+  .driverPuck{position:absolute;top:58%;left:22%;width:40px;height:40px;border-radius:50%;background:var(--navy);border:2px solid var(--gold);z-index:2;display:flex;align-items:center;justify-content:center;box-shadow:0 0 16px rgba(232,197,71,.3)}
+  .driverPuck::after{content:'';width:0;height:0;border-left:8px solid transparent;border-right:8px solid transparent;border-bottom:14px solid var(--gold)}
+
+  .sheet{position:absolute;left:0;right:0;bottom:0;background:#0d1430;border-radius:22px 22px 0 0;padding:12px 16px 20px;z-index:6;box-shadow:0 -10px 30px rgba(0,0,0,.5)}
+  .grab{width:38px;height:4px;border-radius:2px;background:rgba(255,255,255,.25);margin:0 auto 10px}
+  .stitle{color:#fff;font-size:18px;font-weight:800}.ssub{color:var(--txt2);font-size:12.5px;margin-top:2px}
+  .card{display:none;margin-top:12px;background:var(--card);border-radius:18px;padding:14px;box-shadow:0 10px 24px rgba(0,0,0,.45)}
+  .card.show{display:block}
+  .card .fare{color:#fff;font-size:24px;font-weight:800}.card .tips{color:var(--gold);font-size:12px;font-weight:600}
+  .card .rate{color:var(--txt2);font-size:10.5px}
+  .chips{display:flex;gap:7px;margin:8px 0 9px}
+  .chip{background:rgba(232,197,71,.10);border-radius:8px;padding:4px 8px;color:var(--gold);font-size:10.5px;font-weight:600}
+  .rail{border-left:2px solid rgba(232,197,71,.35);margin-left:6px;padding-left:13px}
+  .stop{position:relative;margin-bottom:8px}
+  .stop::before{content:'';position:absolute;left:-18px;top:3px;width:8px;height:8px;border-radius:50%;background:var(--navy);border:2px solid var(--gold)}
+  .stop.d::before{border-color:#fff}
+  .eta{color:var(--txt2);font-size:9.5px}.addr{color:#fff;font-size:11.5px;font-weight:600}
+  .rider{display:flex;align-items:center;gap:8px;border-top:1px solid rgba(255,255,255,.08);padding-top:9px;margin-top:4px}
+  .ava{width:26px;height:26px;border-radius:50%;background:linear-gradient(145deg,#3a4a7a,#1a2344);display:flex;align-items:center;justify-content:center;color:var(--gold);font-weight:800;font-size:11px}
+  .rname{color:#fff;font-size:12px;font-weight:700;flex:1}
+  .reserve{margin-top:11px;width:100%;border:none;border-radius:22px;background:var(--gold);color:#0A1128;font-size:15px;font-weight:800;padding:13px;cursor:pointer}
+  .note{color:var(--txt2);font-size:11px;text-align:center;margin-top:10px}
+  .demo{position:fixed;bottom:12px;left:50%;transform:translateX(-50%);color:var(--txt2);font-size:12px;text-align:center}
+</style>
+</head>
+<body>
+<div class="phone">
+  <div class="map">
+    <svg viewBox="0 0 375 720" preserveAspectRatio="none">
+      <g stroke="#1c2a52" stroke-width="6" fill="none" opacity=".8">
+        <path d="M-10 120 H385"/><path d="M-10 290 H385"/><path d="M-10 460 H385"/>
+        <path d="M70 -10 V730"/><path d="M190 -10 V730"/><path d="M300 -10 V730"/>
+        <path d="M-10 60 Q190 90 385 45"/><path d="M-10 570 Q190 530 385 610"/>
+      </g>
+    </svg>
+  </div>
+  <div class="topbar"><span class="xbtn">✕</span><span class="title">Scheduled rides</span></div>
+  <div class="pills">
+    <div class="fpill">✓ Your rides (0)</div><div class="fpill">✈ Airport</div><div class="fpill">📅 Date ▾</div><div class="fpill">◷ Time</div>
+  </div>
+
+  <div class="driverPuck"></div>
+
+  <div class="marker" style="top:26%;left:56%" onclick="pick(this)">
+    <div class="bubble">$16</div>
+    <div class="person"><svg viewBox="0 0 24 24" fill="#0A1128"><circle cx="12" cy="7.5" r="4"/><path d="M4.5 20c1-4.2 4-6.3 7.5-6.3s6.5 2.1 7.5 6.3z"/></svg></div>
+  </div>
+  <div class="marker" style="top:36%;left:70%" onclick="pick(this)">
+    <div class="bubble">$12</div>
+    <div class="person"><svg viewBox="0 0 24 24" fill="#0A1128"><circle cx="12" cy="7.5" r="4"/><path d="M4.5 20c1-4.2 4-6.3 7.5-6.3s6.5 2.1 7.5 6.3z"/></svg></div>
+  </div>
+  <div class="marker" style="top:44%;left:44%" onclick="pick(this)">
+    <div class="bubble">$9</div>
+    <div class="person"><svg viewBox="0 0 24 24" fill="#0A1128"><circle cx="12" cy="7.5" r="4"/><path d="M4.5 20c1-4.2 4-6.3 7.5-6.3s6.5 2.1 7.5 6.3z"/></svg></div>
+  </div>
+
+  <div class="sheet">
+    <div class="grab"></div>
+    <div class="stitle">Available rides</div>
+    <div class="ssub">Move map to search for rides</div>
+    <div class="card" id="card">
+      <div><span class="fare">$12.93</span> <span class="tips">+ Tips</span><div class="rate">$38.64/hr est. rate for this ride</div></div>
+      <div class="chips"><div class="chip">◷ Today · 10:15 PM</div><div class="chip">➤ 2.2 mi</div></div>
+      <div class="rail">
+        <div class="stop"><div class="eta">Pickup</div><div class="addr">Medford Rd & Parkway E</div></div>
+        <div class="stop d"><div class="eta">Drop-off</div><div class="addr">Paragon Pkwy & Rockingham Rd</div></div>
+      </div>
+      <div class="rider"><div class="ava">K</div><div class="rname">Kietra</div><span style="color:var(--gold);font-size:11px;font-weight:600">★ 5.0</span></div>
+      <button class="reserve">Reserve</button>
+    </div>
+    <div class="note" id="note">Toca una burbuja/marcador para ver el viaje</div>
+  </div>
+</div>
+<div class="demo">Puck dorado = tú · burbuja $ sobre la personita = viaje disponible · toca uno → tarjeta + Reserve</div>
+<script>
+function pick(el){
+  document.querySelectorAll('.marker').forEach(m=>m.classList.remove('sel'));
+  el.classList.add('sel');
+  document.getElementById('card').classList.add('show');
+  document.getElementById('note').style.display='none';
+}
+</script>
+</body>
+</html>

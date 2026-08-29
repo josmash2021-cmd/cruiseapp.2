@@ -10,7 +10,7 @@ from models.database import (
     get_db, SessionLocal, User, Trip, RiderPaymentMethod, Vehicle, DispatchOffer, Rating,
     OTPCode, SupportChat, SupportMessage,
 )
-from models.schemas import PaymentIntentIn, PayPalOrderIn, PayPalCaptureIn, RiderPaymentMethodIn, BankAccountAttachIn
+from models.schemas import PaymentIntentIn, PayPalOrderIn, PayPalCaptureIn, RiderPaymentMethodIn, BankAccountAttachIn, SaveWalletMethodIn
 from utils.security import (
     HMAC_SECRET,
 
@@ -401,7 +401,6 @@ async def sync_payment_method(
     off-session charging and survives app reinstalls."""
     if not body.stripe_pm_id:
         raise HTTPException(400, "stripe_pm_id is required")
-
     # Check if already exists
     existing_r = await db.execute(
         select(RiderPaymentMethod).where(
@@ -434,6 +433,77 @@ async def sync_payment_method(
     db.add(method)
     await db.commit()
     await db.refresh(method)
+    return {"status": "created", "method_id": method.id}
+
+
+@router.post("/payments/save-wallet-method", dependencies=[Depends(_verify_api_key)])
+async def save_wallet_method(
+    body: SaveWalletMethodIn,
+    user: User = Depends(_get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Persist the card behind a confirmed Apple Pay / Google Pay payment.
+
+    The wallet sheet confirms a PaymentIntent created with the rider's
+    customer and setup_future_usage=off_session, so Stripe attaches the
+    underlying card to that customer — but without a rider_payment_methods
+    ROW the booking gate ("No payment method on file") and the scheduled
+    dispatcher's off-session hold cannot see it. This endpoint reads the
+    PaymentMethod off the confirmed intent and files the row.
+    """
+    if body.method_type not in ("apple_pay", "google_pay"):
+        raise HTTPException(400, "method_type must be apple_pay or google_pay")
+    if not _HAS_STRIPE:
+        return {"status": "skipped"}
+    if not body.payment_intent_id and not body.setup_intent_id:
+        raise HTTPException(400, "payment_intent_id or setup_intent_id is required")
+    try:
+        if body.setup_intent_id:
+            si = _stripe_mod.SetupIntent.retrieve(body.setup_intent_id)
+            metadata = getattr(si, "metadata", None) or {}
+            pm_id = getattr(si, "payment_method", None)
+            customer_on_intent = getattr(si, "customer", None)
+        else:
+            intent = _stripe_mod.PaymentIntent.retrieve(body.payment_intent_id)
+            metadata = getattr(intent, "metadata", None) or {}
+            pm_id = getattr(intent, "payment_method", None)
+            customer_on_intent = getattr(intent, "customer", None)
+    except _stripe_mod.error.StripeError as e:
+        raise HTTPException(400, str(getattr(e, "user_message", None) or e))
+    # The intent must belong to the caller — the rider/user id metadata is
+    # written at creation and cannot be edited from the client.
+    owner = metadata.get("rider_id") or metadata.get("user_id")
+    if owner != str(user.id):
+        raise HTTPException(403, "Not your payment intent")
+    if not pm_id:
+        raise HTTPException(400, "Intent carries no payment method")
+    # And the card must actually be parked on the rider's customer, or an
+    # off-session charge against it will fail later.
+    customer_id = await _get_or_create_stripe_customer(user, db)
+    if customer_id and customer_on_intent not in (None, customer_id):
+        raise HTTPException(400, "Payment method is not attached to your account")
+
+    display = "Apple Pay" if body.method_type == "apple_pay" else "Google Pay"
+    existing_r = await db.execute(
+        select(RiderPaymentMethod).where(
+            RiderPaymentMethod.user_id == user.id,
+            RiderPaymentMethod.stripe_pm_id == pm_id,
+        )
+    )
+    existing = existing_r.scalar_one_or_none()
+    if existing:
+        return {"status": "already_exists", "method_id": existing.id}
+    method = RiderPaymentMethod(
+        user_id=user.id,
+        method_type=body.method_type,
+        display_name=display,
+        stripe_pm_id=pm_id,
+        is_default=False,
+    )
+    db.add(method)
+    await db.commit()
+    await db.refresh(method)
+    logging.info("[Wallet] Saved %s pm for rider %s", body.method_type, user.id)
     return {"status": "created", "method_id": method.id}
 
 
@@ -2933,7 +3003,8 @@ async def web_booking_tip(booking_id: int, request: Request, db: AsyncSession = 
         pm = (await db.execute(
             select(RiderPaymentMethod).where(
                 RiderPaymentMethod.user_id == user.id,
-                RiderPaymentMethod.method_type == "stripe_card",
+                RiderPaymentMethod.method_type.in_(
+                    ("stripe_card", "apple_pay", "google_pay")),
                 RiderPaymentMethod.stripe_pm_id.isnot(None),
             ).order_by(RiderPaymentMethod.is_default.desc())
         )).scalars().first()

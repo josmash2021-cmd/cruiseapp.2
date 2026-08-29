@@ -2129,7 +2129,11 @@ async def _scheduled_ride_dispatcher():
                                     pm_r = await db.execute(
                                         select(RiderPaymentMethod).where(
                                             RiderPaymentMethod.user_id == trip.rider_id,
-                                            RiderPaymentMethod.method_type == "stripe_card",
+                                            # Cards saved through Apple Pay /
+                                            # Google Pay are chargeable
+                                            # off-session too (2026-08-29).
+                                            RiderPaymentMethod.method_type.in_(
+                                                ("stripe_card", "apple_pay", "google_pay")),
                                             RiderPaymentMethod.stripe_pm_id.isnot(None),
                                         ).order_by(
                                             RiderPaymentMethod.is_default.desc(),

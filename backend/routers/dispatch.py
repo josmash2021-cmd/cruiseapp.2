@@ -1658,7 +1658,9 @@ async def dispatch_request(body: DispatchRequestIn, user: User = Depends(_get_cu
         pm_r = await db.execute(
             select(RiderPaymentMethod).where(
                 RiderPaymentMethod.user_id == user.id,
-                RiderPaymentMethod.method_type == "stripe_card",
+                # Wallet-saved cards count as cards on file (2026-08-29).
+                RiderPaymentMethod.method_type.in_(
+                    ("stripe_card", "apple_pay", "google_pay")),
                 RiderPaymentMethod.stripe_pm_id.isnot(None),
             )
         )

@@ -1495,6 +1495,37 @@ extension _RideRequestController on _RideRequestScreenState {
       AnalyticsService.instance.logRideRequested(option.name, option.priceEstimate);
 
       if (_ctrl.state.scheduledAt != null) {
+        // A wallet-only rider has no chargeable card on file until they pay
+        // once; a scheduled booking never opens the wallet sheet (no hold),
+        // so save the card via a $0 SetupIntent first or the backend gate
+        // answers "No payment method on file" (2026-08-29). The chargeable
+        // check asks the BACKEND (same predicate as its gate), not local
+        // prefs — a reinstall must not reopen the sheet.
+        if (!isTestMode &&
+            (_selectedPaymentMethod == 'apple_pay' ||
+                _selectedPaymentMethod == 'google_pay')) {
+          bool hasChargeable = false;
+          try {
+            final pms = await ApiService.getMyPaymentMethods();
+            hasChargeable = pms.any((m) =>
+                m['stripe_pm_id'] != null &&
+                const {'stripe_card', 'apple_pay', 'google_pay'}
+                    .contains(m['method_type']));
+          } catch (_) {
+            hasChargeable = true; // don't block the booking on a lookup error
+          }
+          if (!mounted) return false;
+          if (!hasChargeable) {
+            final saved = await _saveCardViaWalletSheet();
+            if (!mounted) return false;
+            if (!saved) {
+              _stuckPaymentFuse?.cancel();
+              _setState(() => _isProcessingPayment = false);
+              _rideFlowLocked = false;
+              return false;
+            }
+          }
+        }
         await _createScheduledTrip();
         return true;
       }
@@ -1949,6 +1980,10 @@ extension _RideRequestController on _RideRequestScreenState {
           ),
         ),
       );
+      // File the card behind the sheet: without a rider_payment_methods row
+      // the booking gate and the scheduled dispatcher's off-session hold
+      // cannot see it ("No payment method on file", 2026-08-29).
+      _persistWalletMethod('apple_pay');
       return true;
     } on stripe.StripeException catch (e, stack) {
       debugPrint('[ApplePay] StripeException: ${e.error.code} - ${e.error.message}');
@@ -1999,6 +2034,8 @@ extension _RideRequestController on _RideRequestScreenState {
           ),
         ),
       );
+      // Same filing as Apple Pay — see _persistWalletMethod.
+      _persistWalletMethod('google_pay');
       return true;
     } on stripe.StripeException catch (e) {
       debugPrint('[GooglePay] StripeException: ${e.error.code} - ${e.error.message}');
@@ -2009,6 +2046,79 @@ extension _RideRequestController on _RideRequestScreenState {
     } catch (e) {
       debugPrint('[GooglePay] Error: $e');
       rethrow;
+    }
+  }
+
+  /// Send the PM behind a confirmed wallet payment to the backend so the
+  /// booking gate / scheduled dispatcher can find it. Fire-and-forget: the
+  /// ride already paid; a missed sync only delays the wallet appearing as
+  /// a saved method, and the next successful wallet payment files it again.
+  void _persistWalletMethod(String methodType) {
+    final piId = _heldPaymentIntentId;
+    if (piId == null) return;
+    unawaited(ApiService.saveWalletMethod(
+      paymentIntentId: piId,
+      methodType: methodType,
+    ).catchError((Object e) {
+      debugPrint('[Wallet] save-wallet-method failed: $e');
+      return <String, dynamic>{};
+    }));
+  }
+
+  /// Scheduled rides place no hold (Lyft model), but the dispatcher still
+  /// needs a chargeable card on file for the off-session authorisation.
+  /// A wallet-only rider has none until they pay once — so the first
+  /// scheduled booking with Apple/Google Pay opens the wallet sheet on a
+  /// $0 SetupIntent that saves the card, then books (2026-08-29).
+  Future<bool> _saveCardViaWalletSheet() async {
+    if (kIsWeb) return true;
+    try {
+      final clientSecret = await ApiService.createSetupIntent();
+      if (clientSecret == null) return false;
+      if (clientSecret.startsWith('seti_mock') || clientSecret.startsWith('mock_')) {
+        return true;
+      }
+      final isApple = _selectedPaymentMethod == 'apple_pay';
+      final si = await stripe.Stripe.instance.confirmPlatformPaySetupIntent(
+        clientSecret: clientSecret,
+        confirmParams: isApple
+            ? stripe.PlatformPayConfirmParams.applePay(
+                applePay: stripe.ApplePayParams(
+                  cartItems: [
+                    stripe.ApplePayCartSummaryItem.immediate(
+                      label: 'Cruise',
+                      amount: '0.00',
+                    ),
+                  ],
+                  merchantCountryCode: 'US',
+                  currencyCode: 'USD',
+                ),
+              )
+            : stripe.PlatformPayConfirmParams.googlePay(
+                googlePay: stripe.GooglePayParams(
+                  testEnv: kDebugMode,
+                  merchantName: 'Cruise',
+                  merchantCountryCode: 'US',
+                  currencyCode: 'USD',
+                ),
+              ),
+      );
+      final siId = si.id;
+      unawaited(ApiService.saveWalletMethod(
+        setupIntentId: siId,
+        methodType: isApple ? 'apple_pay' : 'google_pay',
+      ).catchError((Object e) {
+        debugPrint('[Wallet] save-wallet-method (setup) failed: $e');
+        return <String, dynamic>{};
+      }));
+      return true;
+    } on stripe.StripeException catch (e) {
+      debugPrint('[Wallet] setup sheet: ${e.error.code} - ${e.error.message}');
+      // Canceled means the rider backed out of the sheet — not an error.
+      return false;
+    } catch (e) {
+      debugPrint('[Wallet] setup sheet error: $e');
+      return false;
     }
   }
 

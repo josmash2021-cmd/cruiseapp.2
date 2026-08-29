@@ -4268,6 +4268,30 @@ class ApiService {
     return _parse(res);
   }
 
+  /// Persist the card behind a confirmed Apple Pay / Google Pay intent so
+  /// the booking gate and the scheduled dispatcher can charge it
+  /// off-session (2026-08-29: a wallet-only rider hit "No payment method
+  /// on file" booking a scheduled ride).
+  static Future<Map<String, dynamic>> saveWalletMethod({
+    String? paymentIntentId,
+    String? setupIntentId,
+    required String methodType, // 'apple_pay' | 'google_pay'
+  }) async {
+    final h = await _authHeaders();
+    final res = await _client
+        .post(
+          Uri.parse('$_baseUrl/payments/save-wallet-method'),
+          headers: {...h, 'Content-Type': 'application/json'},
+          body: jsonEncode({
+            if (paymentIntentId != null) 'payment_intent_id': paymentIntentId,
+            if (setupIntentId != null) 'setup_intent_id': setupIntentId,
+            'method_type': methodType,
+          }),
+        )
+        .timeout(const Duration(seconds: 10));
+    return _parse(res);
+  }
+
   /// Fetch the rider's saved payment methods from the backend.
   /// Used to restore cards after app reinstall.
   static Future<List<Map<String, dynamic>>> getMyPaymentMethods() async {

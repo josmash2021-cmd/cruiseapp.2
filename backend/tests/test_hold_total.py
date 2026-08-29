@@ -184,6 +184,58 @@ async def test_create_scheduled_trip_without_hold_books_unpaid(client: AsyncClie
     assert trip.payment_status == "unpaid"
 
 
+async def _add_wallet_pm(db, rider, method_type="apple_pay"):
+    """A card saved through the Apple Pay / Google Pay sheet."""
+    from main import RiderPaymentMethod
+
+    pm = RiderPaymentMethod(
+        user_id=rider.id,
+        method_type=method_type,
+        display_name="Apple Pay",
+        stripe_pm_id="pm_wallet_123",
+        is_default=True,
+        created_at=datetime.now(timezone.utc),
+    )
+    db.add(pm)
+    await db.commit()
+    return pm
+
+
+async def test_scheduled_booking_accepts_wallet_pm(client: AsyncClient, db, test_rider, monkeypatch):
+    """2026-08-29: a rider whose only payment method is Apple Pay must be
+    able to book a scheduled ride — the wallet sheet saved the underlying
+    card to their Stripe customer, so it is as chargeable off-session as a
+    typed-in card. Before this, the gate demanded method_type='stripe_card'
+    and answered 400 "No payment method on file"."""
+    _prod(monkeypatch)
+    rider, token = test_rider
+    await _add_wallet_pm(db, rider)
+
+    resp = await client.post("/trips", json=_TRIP_BODY, headers=_headers(token))
+    assert resp.status_code == 200, resp.text
+
+
+async def test_scheduled_booking_without_any_pm_still_400(client: AsyncClient, db, test_rider, monkeypatch):
+    """The gate still stands: no chargeable PM at all → 400."""
+    _prod(monkeypatch)
+    rider, token = test_rider
+
+    resp = await client.post("/trips", json=_TRIP_BODY, headers=_headers(token))
+    assert resp.status_code == 400, resp.text
+    assert "No payment method on file" in resp.text
+
+
+async def test_scheduled_booking_bank_only_still_400(client: AsyncClient, db, test_rider, monkeypatch):
+    """ACH cannot hold — a bank account alone must not pass the gate."""
+    _prod(monkeypatch)
+    rider, token = test_rider
+    await _add_wallet_pm(db, rider, method_type="bank_account")
+
+    resp = await client.post("/trips", json=_TRIP_BODY, headers=_headers(token))
+    assert resp.status_code == 400, resp.text
+    assert "No payment method on file" in resp.text
+
+
 async def test_create_trip_with_valid_hold_is_held(client: AsyncClient, db, test_rider, monkeypatch):
     """Legacy builds that DO place a hold up front keep the old path."""
     _prod(monkeypatch)

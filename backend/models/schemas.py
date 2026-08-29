@@ -226,6 +226,15 @@ class RiderPaymentMethodIn(BaseModel):
     set_default: bool = False
 
 
+class SaveWalletMethodIn(BaseModel):
+    """Persist the card behind a confirmed Apple Pay / Google Pay intent.
+    One of the two ids is required: a PaymentIntent (a ride hold) or a
+    SetupIntent (a scheduled ride saving its card, no charge)."""
+    payment_intent_id: Optional[str] = None
+    setup_intent_id: Optional[str] = None
+    method_type: str  # 'apple_pay' | 'google_pay'
+
+
 class BankAccountAttachIn(BaseModel):
     # Financial Connections account id (fca_...) collected client-side by the
     # native Stripe SDK. Raw account/routing numbers are never accepted.

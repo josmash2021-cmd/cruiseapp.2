@@ -422,7 +422,12 @@ async def create_trip(body: CreateTripIn, user: User = Depends(_get_current_user
         pm_r = await db.execute(
             select(RiderPaymentMethod).where(
                 RiderPaymentMethod.user_id == user.id,
-                RiderPaymentMethod.method_type == "stripe_card",
+                # A saved Apple Pay / Google Pay card is as chargeable
+                # off-session as a typed-in card (2026-08-29): the wallet
+                # sheet saves the underlying PM to the rider's customer.
+                # Bank accounts stay excluded — ACH cannot hold.
+                RiderPaymentMethod.method_type.in_(
+                    ("stripe_card", "apple_pay", "google_pay")),
                 RiderPaymentMethod.stripe_pm_id.isnot(None),
             )
         )
@@ -804,7 +809,8 @@ async def _release_or_capture_fee_on_cancel(trip) -> str:
                     pm_r = await _fee_db.execute(
                         select(RiderPaymentMethod).where(
                             RiderPaymentMethod.user_id == trip.rider_id,
-                            RiderPaymentMethod.method_type == "stripe_card",
+                            RiderPaymentMethod.method_type.in_(
+                                ("stripe_card", "apple_pay", "google_pay")),
                             RiderPaymentMethod.stripe_pm_id.isnot(None),
                         ).order_by(
                             RiderPaymentMethod.is_default.desc(),
@@ -969,7 +975,8 @@ async def _charge_trip(trip, db: AsyncSession) -> dict:
                         pm_r = await db.execute(
                             select(RiderPaymentMethod).where(
                                 RiderPaymentMethod.user_id == trip.rider_id,
-                                RiderPaymentMethod.method_type == "stripe_card",
+                                RiderPaymentMethod.method_type.in_(
+                                ("stripe_card", "apple_pay", "google_pay")),
                                 RiderPaymentMethod.stripe_pm_id.isnot(None),
                             ).order_by(
                                 RiderPaymentMethod.is_default.desc(),
@@ -1052,16 +1059,18 @@ async def _charge_trip(trip, db: AsyncSession) -> dict:
             # Fall through to create new charge
 
     # No existing hold - charge the saved method directly.
-    # Cards first (they settle instantly); a linked bank account (ACH) is the
+    # Cards first (they settle instantly — a card saved through Apple Pay /
+    # Google Pay counts, 2026-08-29); a linked bank account (ACH) is the
     # fallback so riders who only ever linked a bank aren't a free ride. The
     # ACH mandate created at attach time is what makes this debit legal.
     pm_r = await db.execute(
         select(RiderPaymentMethod).where(
             RiderPaymentMethod.user_id == trip.rider_id,
-            RiderPaymentMethod.method_type.in_(("stripe_card", "bank_account")),
+            RiderPaymentMethod.method_type.in_(
+                ("stripe_card", "apple_pay", "google_pay", "bank_account")),
             RiderPaymentMethod.stripe_pm_id.isnot(None),
         ).order_by(
-            case((RiderPaymentMethod.method_type == "stripe_card", 0), else_=1),
+            case((RiderPaymentMethod.method_type == "bank_account", 1), else_=0),
             RiderPaymentMethod.is_default.desc(),
             RiderPaymentMethod.created_at.asc(),
         )
@@ -2718,7 +2727,8 @@ async def rate_trip(trip_id: int, request: Request, user: User = Depends(_get_cu
                 pm_r = await db.execute(
                     select(RiderPaymentMethod).where(
                         RiderPaymentMethod.user_id == user.id,
-                        RiderPaymentMethod.method_type == "stripe_card",
+                        RiderPaymentMethod.method_type.in_(
+                            ("stripe_card", "apple_pay", "google_pay")),
                         RiderPaymentMethod.stripe_pm_id.isnot(None),
                     ).order_by(RiderPaymentMethod.is_default.desc())
                 )
@@ -2977,7 +2987,8 @@ async def add_tip(trip_id: int, tip_amount: float = Body(..., ge=0, le=100), use
             pm_r = await db.execute(
                 select(RiderPaymentMethod).where(
                     RiderPaymentMethod.user_id == user.id,
-                    RiderPaymentMethod.method_type == "stripe_card",
+                    RiderPaymentMethod.method_type.in_(
+                        ("stripe_card", "apple_pay", "google_pay")),
                     RiderPaymentMethod.stripe_pm_id.isnot(None),
                 ).order_by(RiderPaymentMethod.is_default.desc())
             )

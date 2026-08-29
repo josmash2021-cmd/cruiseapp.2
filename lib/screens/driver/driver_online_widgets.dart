@@ -61,35 +61,6 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
         ),
       );
     }
-    // Attached mode (DriverMapHost, user spec 2026-08-25 — Lyft mechanics):
-    // the map is home's LIVE surface showing through this transparent
-    // route. We never mount a MapWidget or a snapshot here — we only
-    // measure the box for the projection and draw the marker overlay.
-    // IgnorePointer on the whole thing: pan/zoom must land on home's
-    // MapWidget underneath, never on this overlay.
-    if (_attachedToHost) {
-      return IgnorePointer(
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            _onlineMapSize =
-                Size(constraints.maxWidth, constraints.maxHeight);
-            return ListenableBuilder(
-              listenable: _markerFrame,
-              builder: (context, _) {
-                if (!_dotOverlayOwnsMarker) return const SizedBox.shrink();
-                final o = _dotScreenOffset;
-                final dot = GoldLocationDotOverlay(bearing: _heading);
-                const half = GoldLocationDot.driverOverlaySize / 2;
-                if (o == null) return Center(child: dot);
-                return Stack(children: [
-                  Positioned(left: o.dx - half, top: o.dy - half, child: dot),
-                ]);
-              },
-            );
-          },
-        ),
-      );
-    }
     // MapWidget mounts immediately (no deferred delay). The native
     // PlatformView starts rendering tiles right away. Annotation managers
     // are created in a background microtask inside onMapCreated.
@@ -111,7 +82,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
           fit: StackFit.expand,
           children: [
             Positioned.fill(
-                child: StaticMapSnapshot(center: _pos!, zoom: 16, veilAlpha: 0.85)),
+                child: StaticMapSnapshot(center: _pos!, zoom: 16, veilAlpha: 0.30)),
             Center(child: GoldLocationDotOverlay(bearing: _heading)),
           ],
         ),
@@ -146,7 +117,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                       opacity: (_mapStyleLoaded && _firstRenderDone) ? 0.0 : 1.0,
                       duration: const Duration(milliseconds: 200),
                       child: StaticMapSnapshot(
-                          center: here, zoom: 16, veilAlpha: 0.85),
+                          center: here, zoom: 16, veilAlpha: 0.30),
                     ),
                   ),
                 ),
@@ -306,62 +277,56 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
 
   /// Everything a fresh map controller needs: generation bump, annotation
   /// refs reset, and the manager-creation microtask. Called by the
-  /// MapWidget's onMapCreated (legacy self-mount path) AND by the host
-  /// attach path (DriverMapHost) with home's live controller. In attached
-  /// mode the surface belongs to home, so the surface-owner duties stay
-  /// home's: theme retries, the style watchdog, the style-loaded flags and
-  /// the gesture settings (identical there already).
+  /// MapWidget's onMapCreated.
   void _onOnlineMapReady(mapbox.MapboxMap ctrl, {required bool isDark}) {
     _map = ctrl;
     _lastStyleDark = isDark;
     // Increment generation so any stale annotation refs from the old
     // PlatformView are recognized as dead and recreated fresh.
     _mapGeneration++;
-    if (!_attachedToHost) {
-      // Fresh-install guard: onStyleLoaded can fire before `_map` was
-      // stored (or not reach the listener at all), leaving the raw grey
-      // dark-v11 — scale bar included, since the theme is also what
-      // disables the ornaments. Blindly re-apply a few times after the
-      // map exists to cover both orderings; when onStyleLoaded runs
-      // normally it simply applies the same theme again.
-      _navyGoldRetryTimer?.cancel();
-      final themeGen = _mapGeneration;
-      var themeAttempts = 0;
-      _navyGoldRetryTimer =
-          Timer.periodic(const Duration(seconds: 1), (t) {
+    // Fresh-install guard: onStyleLoaded can fire before `_map` was
+    // stored (or not reach the listener at all), leaving the raw grey
+    // dark-v11 — scale bar included, since the theme is also what
+    // disables the ornaments. Blindly re-apply a few times after the
+    // map exists to cover both orderings; when onStyleLoaded runs
+    // normally it simply applies the same theme again.
+    _navyGoldRetryTimer?.cancel();
+    final themeGen = _mapGeneration;
+    var themeAttempts = 0;
+    _navyGoldRetryTimer =
+        Timer.periodic(const Duration(seconds: 1), (t) {
+      if (!mounted ||
+          _map == null ||
+          _mapGeneration != themeGen ||
+          ++themeAttempts > 5) {
+        t.cancel();
+        return;
+      }
+      MapTheme.applyNavyGold(ctrl);
+    });
+    // Watchdog: if the style never loads (no network, hung renderer)
+    // the driver stares at a dead grey map forever. Give it 7 s, then
+    // tear the surface down and remount it through the same helpers
+    // the coordinator handoff uses. One retry per mount — a phone
+    // without network must not loop.
+    _mapStyleWatchdogTimer?.cancel();
+    _mapStyleLoaded = false;
+    _firstRenderDone = false;
+    if (!_mapStyleWatchdogRetried) {
+      final watchGen = _mapGeneration;
+      _mapStyleWatchdogTimer = Timer(const Duration(seconds: 7), () {
         if (!mounted ||
-            _map == null ||
-            _mapGeneration != themeGen ||
-            ++themeAttempts > 5) {
-          t.cancel();
+            !_mapMounted ||
+            _mapStyleLoaded ||
+            _mapGeneration != watchGen) {
           return;
         }
-        MapTheme.applyNavyGold(ctrl);
+        _mapStyleWatchdogRetried = true;
+        debugPrint('[DriverOnline] style never loaded — remounting '
+            'map surface');
+        _releaseMapSurface();
+        unawaited(_remountMapSurface());
       });
-      // Watchdog: if the style never loads (no network, hung renderer)
-      // the driver stares at a dead grey map forever. Give it 7 s, then
-      // tear the surface down and remount it through the same helpers
-      // the coordinator handoff uses. One retry per mount — a phone
-      // without network must not loop.
-      _mapStyleWatchdogTimer?.cancel();
-      _mapStyleLoaded = false;
-      _firstRenderDone = false;
-      if (!_mapStyleWatchdogRetried) {
-        final watchGen = _mapGeneration;
-        _mapStyleWatchdogTimer = Timer(const Duration(seconds: 7), () {
-          if (!mounted ||
-              !_mapMounted ||
-              _mapStyleLoaded ||
-              _mapGeneration != watchGen) {
-            return;
-          }
-          _mapStyleWatchdogRetried = true;
-          debugPrint('[DriverOnline] style never loaded — remounting '
-              'map surface');
-          _releaseMapSurface();
-          unawaited(_remountMapSurface());
-        });
-      }
     }
     // CRITICAL: reset all annotation references before creating new managers.
     // On Android the PlatformView (SurfaceView) is destroyed when the app
@@ -416,29 +381,25 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
     Future.microtask(() async {
       bool stale() => !mounted || _mapGeneration != gen || _map == null;
       try {
-        // Attached mode: home's map already carries these exact gesture
-        // settings — re-sending them is a wasted channel round-trip.
-        if (!_attachedToHost) {
-          // Pan and zoom, but the driver never turns the map by hand.
-          //
-          // The camera does still rotate on its own while navigating —
-          // that is the map facing the direction of travel, the same as
-          // every turn-by-turn app. What is gone is the two-finger twist,
-          // which could leave the map at an angle nothing would ever
-          // correct, with the arrow pointing somewhere that no longer
-          // matched the streets under it.
-          await ctrl.gestures.updateSettings(mapbox.GesturesSettings(
-            scrollEnabled: true,
-            pinchToZoomEnabled: true,
-            doubleTapToZoomInEnabled: true,
-            doubleTouchToZoomOutEnabled: true,
-            quickZoomEnabled: true,
-            rotateEnabled: false,
-            pitchEnabled: false,
-            simultaneousRotateAndPinchToZoomEnabled: false,
-          ));
-          if (stale()) return;
-        }
+        // Pan and zoom, but the driver never turns the map by hand.
+        //
+        // The camera does still rotate on its own while navigating —
+        // that is the map facing the direction of travel, the same as
+        // every turn-by-turn app. What is gone is the two-finger twist,
+        // which could leave the map at an angle nothing would ever
+        // correct, with the arrow pointing somewhere that no longer
+        // matched the streets under it.
+        await ctrl.gestures.updateSettings(mapbox.GesturesSettings(
+          scrollEnabled: true,
+          pinchToZoomEnabled: true,
+          doubleTapToZoomInEnabled: true,
+          doubleTouchToZoomOutEnabled: true,
+          quickZoomEnabled: true,
+          rotateEnabled: false,
+          pitchEnabled: false,
+          simultaneousRotateAndPinchToZoomEnabled: false,
+        ));
+        if (stale()) return;
 
         // Polyline manager with no 'below' constraint — avoids silent failure
         // when the layer name doesn't exist in the style.
@@ -526,8 +487,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
 
   /// Re-write the annotation layer props a style reload wipes
   /// (applyNavyGold resets them). Used by the MapWidget's own
-  /// onStyleLoadedListener and — in attached mode — by home's style
-  /// listener through DriverMapHost.onStyleReloaded.
+  /// onStyleLoadedListener.
   Future<void> _reapplyManagerLayerProps() async {
     final map = _map;
     if (map == null) return;

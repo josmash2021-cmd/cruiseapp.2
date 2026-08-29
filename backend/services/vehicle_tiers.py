@@ -17,9 +17,10 @@ worth less:
   2022 or newer; 2026 is just the newest year that exists today. A
   hardcoded upper bound would silently drop every 2027 car to Standard
   a few months from now, and that is a pay cut nobody would notice.
-* Premium is `seats >= 6`, not `seats == 6`. A seven-seat SUV from 2018
-  misses Black on year; without this it would fall past Premium all the
-  way to Standard and earn less than a six-seat car beside it.
+* Premium is `seats >= 6`, not `seats == 6`. A seven-seat SUV that misses
+  Black on year is still at least a Premium car when it clears Premium's
+  own floor (2020 since 2026-08-29) instead of falling straight to
+  Standard beside a five-seat car.
 
 Seats are the input this codebase does not have. `vehicles` stores make,
 model and year — nothing about the body or how many people fit. Until it
@@ -50,9 +51,14 @@ TIERS = (TIER_STANDARD, TIER_COMPACT, TIER_PREMIUM, TIER_BLACK)
 TIER_ORDER = {t: i for i, t in enumerate(TIERS)}
 
 # ── Year floors ───────────────────────────────────────────────────────
+# Product rule 2026-08-29: Premium moved up to 2020+, Compact to 2016+,
+# and a 2021+ sedan can now reach Premium (it could never leave Standard
+# before). Standard is everything else — sedans and SUVs roughly
+# 2012-2016, and anything older still drives as Standard.
 BLACK_MIN_YEAR = 2022
-PREMIUM_MIN_YEAR = 2015
-COMPACT_MIN_YEAR = 2015
+PREMIUM_MIN_YEAR = 2020
+COMPACT_MIN_YEAR = 2016
+SEDAN_PREMIUM_MIN_YEAR = 2021
 
 # ── Commission, platform share first ──────────────────────────────────
 # Flat 70/30 in every tier (pricing policy 2026-08: the driver earns
@@ -166,7 +172,8 @@ _add(
 )
 
 # Sedans, coupes and hatchbacks. Listed so the table can answer "what is
-# this" rather than shrugging, even though every one of them is Standard.
+# this" rather than shrugging. Since 2026-08-29 a 2021+ sedan reaches
+# Premium; anything older stays Standard.
 _add(
     BODY_SEDAN, 5,
     "camry", "corolla", "avalon", "crown", "prius", "yaris", "accord",
@@ -238,22 +245,26 @@ def classify(
             body = body or found[0]
             seats = found[1] if seats is None else seats
 
-    if not body or body not in _ROOMY_BODIES:
-        return TIER_STANDARD
-
     try:
         seats = int(seats or 0)
     except (TypeError, ValueError):
         seats = 0
 
-    if seats >= 7 and year >= BLACK_MIN_YEAR:
-        return TIER_BLACK
-    if seats >= 6 and year >= PREMIUM_MIN_YEAR:
+    if body in _ROOMY_BODIES:
+        if seats >= 7 and year >= BLACK_MIN_YEAR:
+            return TIER_BLACK
+        if seats >= 6 and year >= PREMIUM_MIN_YEAR:
+            return TIER_PREMIUM
+        if 4 <= seats <= 5 and year >= COMPACT_MIN_YEAR:
+            return TIER_COMPACT
+        # A 2013 Suburban, a 2010 RAV4. It still drives; it just never
+        # reaches a higher tier.
+        return TIER_STANDARD
+
+    # A recent sedan earns Premium too (product rule 2026-08-29) — a 2021+
+    # four-door is the Premium experience without the third row.
+    if body == BODY_SEDAN and year >= SEDAN_PREMIUM_MIN_YEAR:
         return TIER_PREMIUM
-    if 4 <= seats <= 5 and year >= COMPACT_MIN_YEAR:
-        return TIER_COMPACT
-    # A 2013 Suburban, a 2010 RAV4. It still drives; it just never
-    # reaches a higher tier.
     return TIER_STANDARD
 
 

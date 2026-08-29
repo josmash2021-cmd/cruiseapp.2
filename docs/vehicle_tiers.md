@@ -11,10 +11,10 @@ driver never picks it.
 
 | Tier | Vehicle | Years |
 |---|---|---|
-| **Standard** | Sedan or compact car | any year (fallback) |
-| **Compact** | SUV, 4–5 seats | 2015 – 2026 |
-| **Premium** | SUV, 6 seats | 2015 – 2026 |
-| **Black** | Suburban, Escalade, 7+ seats | 2022 – 2026 |
+| **Standard** | Sedan or compact car | any year (fallback) — in practice 2012 – 2016 and older |
+| **Compact** | SUV, 4–5 seats | 2016 or newer |
+| **Premium** | SUV, 6 seats — or any sedan | 2020 or newer; sedans 2021 or newer |
+| **Black** | Suburban, Escalade, 7+ seats | 2022 or newer |
 
 A vehicle outside its tier's year range does not qualify for that tier.
 A car that qualifies for none — a 2011 sedan, a 2014 SUV — falls into

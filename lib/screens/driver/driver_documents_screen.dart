@@ -183,7 +183,10 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
           continue;
         }
 
-        // Insurance/Registration — check vehicle-level validity
+        // Insurance/Registration — check vehicle-level validity. These are
+        // about THIS car: a verified driver with a brand-new second vehicle
+        // has still uploaded nothing for it, so the driver-level approval
+        // must not mark them approved (user spec 2026-08-29).
         if (docType == 'insurance' || docType == 'registration') {
           final vehicleOk = docType == 'insurance' ? insuranceValid : registrationValid;
           final existing = docs.firstWhere(
@@ -192,12 +195,12 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
           );
 
           String status;
-          if (vehicleOk || isVerified) {
+          if (vehicleOk) {
             status = 'approved';
           } else if (existing.isNotEmpty) {
             status = existing['status'] as String? ?? 'pending';
           } else {
-            status = isVerified ? 'approved' : 'not_uploaded';
+            status = 'not_uploaded';
           }
 
           merged.add({
@@ -266,8 +269,10 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
         });
       }
 
-      // Inspection only applies where the state requires one; the row
-      // appears when dispatch actually has one on file.
+      // Inspection only applies where the state requires one (Alabama,
+      // same rule as the backend's onboarding items). The row appears when
+      // dispatch has one on file — or, for an Alabama driver, as a to-do
+      // when this car has none yet (user spec 2026-08-29).
       final inspection = docs.firstWhere(
         (d) => d['doc_type'] == 'vehicle_inspection',
         orElse: () => <String, dynamic>{},
@@ -278,6 +283,16 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
           'doc_type': 'vehicle_inspection',
           'status': inspection['status'] ?? 'pending',
         });
+      } else {
+        final driveState =
+            (me?['drive_state'] ?? '').toString().trim().toUpperCase();
+        final inspectionValid = vehicle['inspection_valid'] == true;
+        if (driveState == 'AL') {
+          merged.add({
+            'doc_type': 'vehicle_inspection',
+            'status': inspectionValid ? 'approved' : 'not_uploaded',
+          });
+        }
       }
 
       setState(() {
@@ -351,17 +366,19 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
     }
   }
 
-  /// The only four records a driver may ever touch themselves.
+  /// The records a driver may touch themselves.
   ///
-  /// Everything else — background check, registration, the inspection
-  /// form — is issued or verified by someone other than the driver, so
-  /// the card is inert. A tap that does nothing is worse than a card
-  /// that plainly cannot be tapped.
+  /// Registration and the Alabama inspection joined the list for the
+  /// multi-vehicle flow (2026-08-29): a freshly added car owes both, and
+  /// hiding the upload behind a read-only card stranded it. Background
+  /// check stays inert — it is issued by someone other than the driver.
   static const _editableDocTypes = {
     'license_plate',
     'drivers_license',
     'profile_photo',
     'insurance',
+    'registration',
+    'vehicle_inspection',
   };
 
   /// Open the plate editor and reload if it actually changed anything.
@@ -441,6 +458,9 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
       });
     final approvedCount =
         docs.where((d) => d['status'] == 'approved').length;
+    // "You're all set" is a lie while any row still asks for an upload —
+    // a freshly added car has insurance/registration(/inspection) to do.
+    final allSet = docs.isNotEmpty && !docs.any(_needsAction);
 
     return Scaffold(
       backgroundColor: neuBase,
@@ -461,7 +481,7 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
                     children: [
                       _closeRow(s),
                       const SizedBox(height: 18),
-                      _hero(s),
+                      _hero(s, allSet),
                       const SizedBox(height: 22),
                       if (_vehicleLabel.isNotEmpty) ...[
                         _vehicleCard(s),
@@ -495,10 +515,11 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
     );
   }
 
-  /// Illustration + greeting, Lyft-style. This page is read for pleasure
-  /// ("you're done") far more often than for work, so it opens with the
-  /// good news instead of a form label.
-  Widget _hero(S s) {
+  /// Illustration + greeting, Lyft-style. When every document is done this
+  /// opens with the good news; while anything is missing (a freshly added
+  /// car still owes insurance/registration) it says so instead of claiming
+  /// the driver is all set (user spec 2026-08-29).
+  Widget _hero(S s, bool allSet) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -510,7 +531,7 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
         ),
         const SizedBox(height: 18),
         Text(
-          s.docsAllSetTitle,
+          allSet ? s.docsAllSetTitle : s.docsActionNeeded,
           style: const TextStyle(
             color: Colors.white,
             fontSize: 22,
@@ -520,7 +541,7 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
         ),
         const SizedBox(height: 4),
         Text(
-          s.docsAllSetSubtitle,
+          allSet ? s.docsAllSetSubtitle : s.docsTodoSubtitle,
           style: TextStyle(
             color: Colors.white.withValues(alpha: 0.5),
             fontSize: 14,

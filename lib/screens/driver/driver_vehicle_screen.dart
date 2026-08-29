@@ -20,7 +20,6 @@ class DriverVehicleScreen extends StatefulWidget {
 
 class _DriverVehicleScreenState extends State<DriverVehicleScreen> {
   static const _gold = Color(0xFFE8C547);
-  static const _green = Color(0xFF4CAF50);
 
   // Multi-vehicle (2026-08-29): the screen lists every vehicle the driver
   // owns. The active one receives trips; pending ones wait on dispatch.
@@ -219,9 +218,9 @@ class _DriverVehicleScreenState extends State<DriverVehicleScreen> {
   ///
   /// The card shows the year and name on the left, the plate and colour chip
   /// under them, the car small on the right, and one bottom row that opens
-  /// the detail. The active vehicle carries an "In use" badge; a pending or
-  /// incomplete one carries "Pending approval" / "Requires attention" and a
-  /// "Use" button once it is approved.
+  /// the detail. The active vehicle carries a plain "In use" line; a car
+  /// missing paperwork carries "Requires attention"; "Pending approval" is
+  /// reserved for a fully-uploaded car still waiting on dispatch.
   Widget _buildVehicleCard(Map<String, dynamic> vehicle) {
     final s = S.of(context);
     final make = (vehicle['make'] ?? '') as String;
@@ -244,7 +243,14 @@ class _DriverVehicleScreenState extends State<DriverVehicleScreen> {
     final missingDocs = (insuranceValid || insuranceStatus == 'pending' ? 0 : 1) +
         (registrationValid || registrationStatus == 'pending' ? 0 : 1);
     final isApproved = approvalStatus == 'approved';
-    final needsAttention = isApproved && missingDocs > 0;
+    // Missing paperwork is "Requires attention", never "Pending approval" —
+    // the car is waiting on the driver, not on dispatch (user spec
+    // 2026-08-29). "Pending approval" is only for a car with everything
+    // uploaded that dispatch has not reviewed yet, and it never shows on
+    // the car in use: an active car is, by definition, one dispatch lets
+    // work, whatever the legacy approval flag says.
+    final needsAttention = missingDocs > 0;
+    final awaitingReview = !isApproved && !needsAttention && !isActive;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 14),
@@ -352,16 +358,15 @@ class _DriverVehicleScreenState extends State<DriverVehicleScreen> {
           const SizedBox(height: 10),
 
           // ── Status badges ──
-          if (isActive || !isApproved || needsAttention)
+          if (isActive || awaitingReview || needsAttention)
             Padding(
               padding: const EdgeInsets.only(bottom: 8),
               child: Wrap(
                 spacing: 8,
                 runSpacing: 6,
                 children: [
-                  if (isActive)
-                    _statusBadge(s.inUse, _green, Icons.check_circle_rounded),
-                  if (!isApproved)
+                  if (isActive) _inUseLabel(s),
+                  if (awaitingReview)
                     _statusBadge(s.pendingApproval, const Color(0xFFFFA726),
                         Icons.hourglass_top_rounded),
                   if (needsAttention)
@@ -449,6 +454,31 @@ class _DriverVehicleScreenState extends State<DriverVehicleScreen> {
                 ),
               ),
             ),
+        ],
+      ),
+    );
+  }
+
+  /// "In use" is a fact, not an alert: plain text, no pill, no tint
+  /// (user spec 2026-08-29).
+  Widget _inUseLabel(S s) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.check_circle_rounded,
+              size: 13, color: Colors.white.withValues(alpha: 0.55)),
+          const SizedBox(width: 6),
+          Text(
+            s.inUse,
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.55),
+              fontSize: 11.5,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 0.3,
+            ),
+          ),
         ],
       ),
     );

@@ -2065,6 +2065,9 @@ class S {
       _es ? 'Listo para manejar' : "You're all set to drive";
   String get docsAllSetSubtitle =>
       _es ? 'Bien. A rodar.' : "Nice. Let's hit the road.";
+  String get docsTodoSubtitle => _es
+      ? 'Sube lo que le falta a este vehículo.'
+      : 'Upload what this vehicle is still missing.';
   String get docsOnFile => _es ? 'En archivo' : 'On file';
   String get docsFaceBiometrics => _es ? 'Biometría facial' : 'Face Biometrics';
   String get docsCarInsurance => _es ? 'Seguro del auto' : 'Car Insurance';

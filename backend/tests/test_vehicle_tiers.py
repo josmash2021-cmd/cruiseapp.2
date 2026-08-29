@@ -34,24 +34,31 @@ CASES = [
 
     # ── A big SUV that misses Black's year falls to Premium, not past it ──
     ("a 2021 Suburban is Premium", tier("Chevrolet", "Suburban", 2021), vt.TIER_PREMIUM),
-    ("a 2016 Tahoe is Premium", tier("Chevrolet", "Tahoe", 2016), vt.TIER_PREMIUM),
+    ("a 2020 Tahoe is Premium", tier("Chevrolet", "Tahoe", 2020), vt.TIER_PREMIUM),
+    ("a 2019 Suburban misses Premium's 2020 floor",
+     tier("Chevrolet", "Suburban", 2019), vt.TIER_STANDARD),
     ("a 2014 Suburban is Standard", tier("Chevrolet", "Suburban", 2014), vt.TIER_STANDARD),
 
-    # ── Premium: six seats, 2015 or newer ─────────────────────────────
-    ("a 2019 Explorer is Premium", tier("Ford", "Explorer", 2019), vt.TIER_PREMIUM),
-    ("a 2015 XC90 is Premium", tier("Volvo", "XC90", 2015), vt.TIER_PREMIUM),
-    ("a 2014 XC90 is Standard", tier("Volvo", "XC90", 2014), vt.TIER_STANDARD),
+    # ── Premium: six seats, 2020 or newer (floor raised 2026-08-29) ───
+    ("a 2020 Explorer is Premium", tier("Ford", "Explorer", 2020), vt.TIER_PREMIUM),
+    ("a 2020 XC90 is Premium", tier("Volvo", "XC90", 2020), vt.TIER_PREMIUM),
+    ("a 2019 XC90 is Standard", tier("Volvo", "XC90", 2019), vt.TIER_STANDARD),
     ("a 2023 Explorer is Premium, not Black", tier("Ford", "Explorer", 2023), vt.TIER_PREMIUM),
 
-    # ── Compact: a two-row SUV, 2015 or newer ─────────────────────────
+    # ── Premium: a 2021+ sedan earns it too (2026-08-29) ──────────────
+    ("a 2021 Camry is Premium", tier("Toyota", "Camry", 2021), vt.TIER_PREMIUM),
+    ("a 2024 5 Series is Premium", tier("BMW", "5 Series", 2024), vt.TIER_PREMIUM),
+    ("a 2020 Camry stays Standard", tier("Toyota", "Camry", 2020), vt.TIER_STANDARD),
+
+    # ── Compact: a two-row SUV, 2016 or newer (floor raised 2026-08-29) ─
     ("a 2020 RAV4 is Compact", tier("Toyota", "RAV4", 2020), vt.TIER_COMPACT),
-    ("a 2015 CR-V is Compact", tier("Honda", "CR-V", 2015), vt.TIER_COMPACT),
-    ("a 2014 CR-V is Standard", tier("Honda", "CR-V", 2014), vt.TIER_STANDARD),
+    ("a 2016 CR-V is Compact", tier("Honda", "CR-V", 2016), vt.TIER_COMPACT),
+    ("a 2015 CR-V is Standard", tier("Honda", "CR-V", 2015), vt.TIER_STANDARD),
     ("a 2025 Model Y is Compact", tier("Tesla", "Model Y", 2025), vt.TIER_COMPACT),
 
-    # ── Standard: every sedan, and everything unrecognised ────────────
+    # ── Standard: older cars, and everything unrecognised ─────────────
     ("a 2018 Camry is Standard", tier("Toyota", "Camry", 2018), vt.TIER_STANDARD),
-    ("a 2024 Camry is Standard too", tier("Toyota", "Camry", 2024), vt.TIER_STANDARD),
+    ("a 2016 sedan is Standard", tier("Honda", "Accord", 2016), vt.TIER_STANDARD),
     ("a 2011 sedan is Standard", tier("Honda", "Accord", 2011), vt.TIER_STANDARD),
     ("a car nobody listed is Standard", tier("Fiat", "Qubo", 2023), vt.TIER_STANDARD),
     ("an empty model is Standard", tier("", "", 2023), vt.TIER_STANDARD),
@@ -77,8 +84,8 @@ CASES = [
      tier("Ford", "Explorer", 2023, seats=7, body="suv"), vt.TIER_BLACK),
     ("a stated five seats demotes a big SUV",
      tier("Chevrolet", "Suburban", 2023, seats=5, body="suv"), vt.TIER_COMPACT),
-    ("seats on a sedan body still means Standard",
-     tier("Toyota", "Camry", 2023, seats=5, body="sedan"), vt.TIER_STANDARD),
+    ("a stated sedan body reaches Premium on year alone",
+     tier("Toyota", "Camry", 2023, seats=5, body="sedan"), vt.TIER_PREMIUM),
     ("an unlisted SUV with stated seats is classified",
      tier("Rivian", "R1S", 2024, seats=7, body="suv"), vt.TIER_BLACK),
 

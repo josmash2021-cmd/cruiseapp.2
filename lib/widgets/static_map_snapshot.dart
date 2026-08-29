@@ -24,7 +24,7 @@ class StaticMapSnapshot extends StatelessWidget {
 
   /// Opacity of the navy veil over the factory-grey dark-v11 render. The
   /// default matches StaticRoutePreview's thumbnails; the driver
-  /// offline→online handoff passes ~0.85 so the still reads as the navy
+  /// offline→online handoff passes 0.60 so the still reads as the navy
   /// live map it stands in for, not as a grey map.
   final double veilAlpha;
 

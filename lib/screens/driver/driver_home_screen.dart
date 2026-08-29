@@ -1966,8 +1966,8 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     // 2026-08-29): the transparent-overlay experiment (DriverMapHost,
     // 2026-08-25) rendered black on iOS and bled home's UI through the
     // route — the proven path is back: suspend ours, the online screen
-    // mounts its own surface, and a light-veil snapshot (0.30, a sharp
-    // still — not the old fog) fills the gap. Trip screens take the
+    // mounts its own surface, and a navy-veil snapshot (0.60 — 0.30 read
+    // grey against the live map) fills the gap. Trip screens take the
     // surface through the coordinator exactly as before.
     //
     // The chime fires HERE, before the push — not after it. At this line the
@@ -1984,15 +1984,20 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     // the push, and the online screen mounts its own surface — the
     // transparent-overlay experiment (DriverMapHost) rendered black on iOS
     // and bled home's UI through, so the snapshot stands in for the gap
-    // again, with the LIGHT veil (0.30 — a sharp still, not the fog).
+    // again, with the navy veil (0.60 — matches the live map's navy).
     final snapCenter = _currentLatLng;
     if (!kIsWeb && snapCenter != null && mounted) {
       StaticMapSnapshot.precacheFullScreen(context, snapCenter);
     }
     _suspendMap();
 
-    // Nothing is awaited, so the push is not delayed. The map behind the
-    // transition is the snapshot still for those 420 ms.
+    // Nothing is awaited, so the push is not delayed.
+    //
+    // Zero-duration cut, not a 420 ms fade (driver spec 2026-08-29): both
+    // sides of this handoff show the SAME map still over the SAME camera
+    // (StaticMapSnapshot), so an animated crossfade is a visible flicker
+    // between two identical images. An instant cut reads as what it is —
+    // the same map, with only the sheet and buttons changing.
     final pushFuture = Navigator.of(context).push<Map<String, dynamic>>(
       PageRouteBuilder(
         opaque: true,
@@ -2003,18 +2008,9 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
             // Already online — this is Resume, not Go. The screen skips the
             // whole go-online handshake and opens straight in searching.
             resuming: _isStillOnline),
-        transitionDuration: const Duration(milliseconds: 420),
-        reverseTransitionDuration: const Duration(milliseconds: 300),
-        transitionsBuilder: (ctx2, anim, anim2b, child) {
-          // Pure crossfade (driver spec 2026-08-22): both sides of this
-          // transition show the same map still over the same camera (see
-          // StaticMapSnapshot), so any slide or scale reads as the page
-          // changing under the driver. A fade reads as what it is — the
-          // same screen going online.
-          final curved =
-              CurvedAnimation(parent: anim, curve: Curves.easeOutCubic);
-          return FadeTransition(opacity: curved, child: child);
-        },
+        transitionDuration: Duration.zero,
+        reverseTransitionDuration: Duration.zero,
+        transitionsBuilder: (ctx2, anim, anim2b, child) => child,
       ),
     );
     // The chime left this spot for the tap above (see the comment there):
@@ -2375,7 +2371,10 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     if (_mapSuspended) {
       final c = _currentLatLng;
       if (kIsWeb || c == null) return Container(color: neuBase);
-      return StaticMapSnapshot(center: c, zoom: 16, veilAlpha: 0.30);
+      // Veil 0.60 (driver spec 2026-08-29): at 0.30 the factory-grey
+      // dark-v11 tiles showed through and the handoff read as the map
+      // "going grey"; 0.60 matches the navy the live map actually paints.
+      return StaticMapSnapshot(center: c, zoom: 16, veilAlpha: 0.60);
     }
     // Use Google Maps on both iOS and Android
     // Mapbox Maps Flutter has no web implementation — its MapWidget crashes

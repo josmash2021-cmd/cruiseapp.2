@@ -82,7 +82,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
           fit: StackFit.expand,
           children: [
             Positioned.fill(
-                child: StaticMapSnapshot(center: _pos!, zoom: 16, veilAlpha: 0.30)),
+                child: StaticMapSnapshot(center: _pos!, zoom: 16, veilAlpha: 0.60)),
             Center(child: GoldLocationDotOverlay(bearing: _heading)),
           ],
         ),
@@ -109,7 +109,8 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
               // dark-v11 and the PlatformView's first black frames are
               // painted underneath it, so neither is ever visible. Once
               // onStyleLoaded fires it fades out over 200 ms — the live
-              // map underneath is already navy by then.
+              // map underneath is already navy by then. Veil 0.60 matches
+              // that navy (2026-08-29): at 0.30 the still itself read grey.
               if (!kIsWeb)
                 Positioned.fill(
                   child: IgnorePointer(
@@ -117,7 +118,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                       opacity: (_mapStyleLoaded && _firstRenderDone) ? 0.0 : 1.0,
                       duration: const Duration(milliseconds: 200),
                       child: StaticMapSnapshot(
-                          center: here, zoom: 16, veilAlpha: 0.30),
+                          center: here, zoom: 16, veilAlpha: 0.60),
                     ),
                   ),
                 ),

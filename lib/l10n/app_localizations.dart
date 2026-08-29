@@ -3347,6 +3347,18 @@ class S {
   String get vehicleModel => _es ? 'Modelo' : 'Model';
   String get vehicleYear => _es ? 'Año' : 'Year';
   String get vehicleColor => _es ? 'Color' : 'Color';
+  String get vehicleDoors => _es ? 'Puertas' : 'Doors';
+  String get vehicleSeatbelts => _es ? 'Cinturones' : 'Seatbelts';
+  String get addVehicleTitle =>
+      _es ? 'Agregar vehículo personal' : 'Add Personal Vehicle';
+  String get useThisVehicle => _es ? 'Usar' : 'Use';
+  String get inUse => _es ? 'En uso' : 'In use';
+  String get requiresAttention =>
+      _es ? 'Requiere atención' : 'Requires attention';
+  String get pendingApproval =>
+      _es ? 'Pendiente de aprobación' : 'Pending approval';
+  String get vehicleNowInUse =>
+      _es ? 'Vehículo en uso' : 'Vehicle now in use';
   String get licensePlateLabel =>
       _es ? 'Número de placa' : 'License plate number';
   String get vehicleRequirements => _es

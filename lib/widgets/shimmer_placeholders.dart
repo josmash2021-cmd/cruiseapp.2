@@ -57,9 +57,9 @@ class _ShimmerBoxState extends State<ShimmerBox>
               begin: Alignment(-1.0 + 2.0 * _ctrl.value, 0),
               end: Alignment(-0.4 + 2.0 * _ctrl.value, 0),
               colors: const [
-                Color(0xFF1A1F35),
-                Color(0xFF2A3045),
-                Color(0xFF1A1F35),
+                Color(0xFF1C1C1E),
+                Color(0xFF2C2C2E),
+                Color(0xFF1C1C1E),
               ],
             ),
           ),
@@ -193,7 +193,7 @@ class WalletShimmer extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.all(20),
       children: const [
-        _WalletRowShimmer(goldRim: true),
+        _WalletRowShimmer(),
         SizedBox(height: 24),
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -214,26 +214,15 @@ class WalletShimmer extends StatelessWidget {
 }
 
 class _WalletRowShimmer extends StatelessWidget {
-  const _WalletRowShimmer({this.goldRim = false});
-
-  final bool goldRim;
+  const _WalletRowShimmer();
 
   @override
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: const Color(0xFF1A1F35),
+        color: const Color(0xFF1C1C1E),
         borderRadius: BorderRadius.circular(16),
-        // The Cruise Cash card carries the gold rim on the real screen, so
-        // its placeholder does too — dimmer, because it is not the balance
-        // yet, only the shape of it.
-        border: goldRim
-            ? Border.all(
-                color: const Color(0xFFE8C547).withValues(alpha: 0.25),
-                width: 1.2,
-              )
-            : null,
       ),
       child: const Row(
         children: [

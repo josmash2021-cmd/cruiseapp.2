@@ -3689,15 +3689,86 @@ class ApiService {
     return _parse(res);
   }
 
+  /// List all vehicles the driver owns (multi-vehicle 2026-08-29).
+  static Future<List<Map<String, dynamic>>> getVehicles() async {
+    final h = await _authHeaders();
+    final res = await _client
+        .get(Uri.parse('$_baseUrl/drivers/vehicles'), headers: h)
+        .timeout(const Duration(seconds: 8));
+    final data = _parse(res);
+    final list = data['vehicles'] as List? ?? [];
+    return list.cast<Map<String, dynamic>>();
+  }
+
+  /// Add a NEW vehicle (does not touch the existing one).
+  static Future<Map<String, dynamic>> addVehicle({
+    required String make,
+    required String model,
+    required int year,
+    String? color,
+    required String plate,
+    String? vin,
+    int? doors,
+    int? seatbelts,
+  }) async {
+    final h = await _authHeaders();
+    final res = await _client
+        .post(
+          Uri.parse('$_baseUrl/drivers/vehicles'),
+          headers: h,
+          body: jsonEncode({
+            'make': make,
+            'model': model,
+            'year': year,
+            if (color != null) 'color': color,
+            'plate': plate,
+            if (vin != null) 'vin': vin,
+            if (doors != null) 'doors': doors,
+            if (seatbelts != null) 'seatbelts': seatbelts,
+          }),
+        )
+        .timeout(const Duration(seconds: 10));
+    return _parse(res);
+  }
+
+  /// Mark one vehicle as the active one (the one that receives trips).
+  static Future<Map<String, dynamic>> useVehicle(int vehicleId) async {
+    final h = await _authHeaders();
+    final res = await _client
+        .post(
+          Uri.parse('$_baseUrl/drivers/vehicles/$vehicleId/use'),
+          headers: h,
+        )
+        .timeout(const Duration(seconds: 10));
+    return _parse(res);
+  }
+
+  /// Remove a vehicle. If it was active, the oldest approved one becomes
+  /// active; if none are approved, the driver is offline.
+  static Future<Map<String, dynamic>> deleteVehicle(int vehicleId) async {
+    final h = await _authHeaders();
+    final res = await _client
+        .delete(
+          Uri.parse('$_baseUrl/drivers/vehicles/$vehicleId'),
+          headers: h,
+        )
+        .timeout(const Duration(seconds: 10));
+    return _parse(res);
+  }
+
   // ═══════════════════════════════════════════════════════
   //  DOCUMENT  ENDPOINTS
   // ═══════════════════════════════════════════════════════
 
-  /// Get all driver documents.
-  static Future<List<Map<String, dynamic>>> getDocuments() async {
+  /// Get all driver documents. If [vehicleId] is given, only documents for
+  /// that vehicle are returned (multi-vehicle 2026-08-29).
+  static Future<List<Map<String, dynamic>>> getDocuments({int? vehicleId}) async {
     final h = await _authHeaders();
+    final uri = vehicleId != null
+        ? Uri.parse('$_baseUrl/drivers/documents?vehicle_id=$vehicleId')
+        : Uri.parse('$_baseUrl/drivers/documents');
     final res = await _client
-        .get(Uri.parse('$_baseUrl/drivers/documents'), headers: h)
+        .get(uri, headers: h)
         .timeout(const Duration(seconds: 8));
     if (res.statusCode >= 200 && res.statusCode < 300) {
       final list = jsonDecode(res.body) as List;
@@ -3708,12 +3779,15 @@ class ApiService {
 
   /// Upload a document via multipart file upload (no base64 overhead).
   /// [filePath] is the local file path to upload.
+  /// [vehicleId] links vehicle-level docs (insurance/registration/inspection)
+  /// to a specific car (multi-vehicle 2026-08-29).
   static Future<Map<String, dynamic>> uploadDocument({
     required String docType,
     String? photoBase64,
     String? docNumber,
     String? expiryDate,
     String? filePath,
+    int? vehicleId,
   }) async {
     // ── Multipart upload (preferred — sends raw file, no base64 bloat) ──
     if (filePath != null) {
@@ -3725,6 +3799,7 @@ class ApiService {
         if (k.toLowerCase() != 'content-type') req.headers[k] = v;
       });
       req.fields['doc_type'] = docType;
+      if (vehicleId != null) req.fields['vehicle_id'] = vehicleId.toString();
       req.files.add(await http.MultipartFile.fromPath('file', filePath));
       debugPrint('[ApiService] uploadDocument($docType) multipart file=${filePath.split('/').last} → $uri');
       final streamed = await req.send().timeout(const Duration(seconds: 60));
@@ -3743,6 +3818,7 @@ class ApiService {
       if (photoBase64 != null) 'photo': photoBase64,
       if (docNumber != null) 'doc_number': docNumber,
       if (expiryDate != null) 'expiry_date': expiryDate,
+      if (vehicleId != null) 'vehicle_id': vehicleId,
     });
     debugPrint('[ApiService] uploadDocument($docType) base64 payload=${(payload.length / 1024).toStringAsFixed(0)}KB');
     final res = await _client

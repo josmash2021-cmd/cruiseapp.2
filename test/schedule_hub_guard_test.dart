@@ -93,4 +93,12 @@ void main() {
     expect(entry, contains('AirportSelection('),
         reason: 'the pick must travel in the AirportSelection the booking reads');
   });
+
+  test('schedule hub opens date/time wheels before addresses', () {
+    // 2026-08-29 user spec: tapping "Schedule a ride" lands on the
+    // Depart/Arrive wheels first, not on the address search.
+    expect(hub, contains('ScheduleDateTimeScreen('));
+    expect(hub, isNot(contains('scheduleChain: true')),
+        reason: 'the hub no longer starts the chain from the address page');
+  });
 }

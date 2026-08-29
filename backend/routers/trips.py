@@ -676,7 +676,10 @@ async def accept_trip(trip_id: int, body: AcceptTripIn, user: User = Depends(_ge
         _drv_r = await db.execute(select(User).where(User.id == body.driver_id))
         _accept_driver = _drv_r.scalar_one_or_none()
         _veh_r = await db.execute(
-            select(Vehicle).where(Vehicle.user_id == body.driver_id).limit(1)
+            select(Vehicle).where(
+                Vehicle.user_id == body.driver_id,
+                Vehicle.is_active == True,
+            ).limit(1)
         )
         _accept_vehicle = _veh_r.scalar_one_or_none()
     except Exception as _load_err:

@@ -9,8 +9,9 @@ import '../services/api_service.dart';
 import '../services/calendar_service.dart';
 import '../widgets/feathered_image.dart';
 import '../widgets/neu_style.dart';
-import 'pickup_dropoff_search_screen.dart';
 import 'schedule_cancel_policy_screen.dart';
+import 'schedule_datetime_screen.dart';
+import 'schedule_flow_entry.dart';
 
 /// Schedule hub — the rider's "Trips" page (2026-08-22, Lyft-style clone in
 /// navy/gold): hero + "Schedule a ride" into the datetime page, the rider's
@@ -141,10 +142,9 @@ class _ScheduleHubScreenState extends State<ScheduleHubScreen> {
     if (mounted) setState(() => _events = events);
   }
 
-  /// Hub → addresses page in schedule-chain mode (2026-08-28, user spec —
-  /// reverted the 2026-08-26 direct-to-ride-request experiment): "Schedule
-  /// a Ride" leads to the Depart/Arrive wheels (with the real route
-  /// estimate) and the booking tail. The chain owns itself from there.
+  /// Hub → Depart/Arrive wheels FIRST, then addresses (2026-08-29, user spec).
+  /// The rider picks date/time before entering the address search; once the
+  /// address pair is confirmed we continue to the shared booking tail.
   Future<void> _openScheduleFlow({DateTime? prefill}) async {
     double? lat;
     double? lng;
@@ -155,14 +155,31 @@ class _ScheduleHubScreenState extends State<ScheduleHubScreen> {
       lng = pos?.longitude;
     } catch (_) {}
     if (!mounted) return;
-    await Navigator.of(context).push(
-      slideUpFadeRoute(PickupDropoffSearchScreen(
+
+    // 1) Date/time first — the wheels page has no addresses yet.
+    final record = await Navigator.of(context)
+        .push<(DateTime, Map<String, dynamic>?)>(
+      slideUpFadeRoute(ScheduleDateTimeScreen(
         initialPickupLat: lat,
         initialPickupLng: lng,
-        scheduleChain: true,
-        schedulePrefill: prefill,
+        initialDateTime: prefill,
       )),
     );
+    if (record == null || !mounted) return;
+    final (scheduledAt, searchResult) = record;
+
+    // 2) The wheels page either returns a complete searchResult (calendar
+    //    shortcut or address-first chain) or it pushes the address search itself
+    //    and pops the final pair — in both cases we just run the booking tail.
+    if (searchResult != null) {
+      await continueScheduleToBooking(
+        context,
+        scheduledAt: scheduledAt,
+        searchResult: searchResult,
+        fallbackPickupLat: lat,
+        fallbackPickupLng: lng,
+      );
+    }
   }
 
   /// Month table instead of DateFormat: the project never calls

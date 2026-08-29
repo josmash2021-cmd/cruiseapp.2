@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../config/page_transitions.dart';
 import '../../l10n/app_localizations.dart';
-import '../../utils/vehicle_tier_style.dart';
+import '../../services/api_service.dart';
 import '../../services/haptic_service.dart';
 import '../../widgets/neu_style.dart';
 import 'driver_documents_screen.dart';
@@ -25,6 +25,10 @@ class DriverVehicleDetailScreen extends StatelessWidget {
     required this.tierLabel,
     required this.tierColor,
     required this.tierIcon,
+    this.vehicleId,
+    this.isActive = false,
+    this.approvalStatus = 'pending',
+    this.missingDocsCount = 0,
   });
 
   final String make;
@@ -36,6 +40,10 @@ class DriverVehicleDetailScreen extends StatelessWidget {
   final String tierLabel;
   final Color tierColor;
   final IconData tierIcon;
+  final int? vehicleId;
+  final bool isActive;
+  final String approvalStatus;
+  final int missingDocsCount;
 
   static const _gold = Color(0xFFE8C547);
 
@@ -75,84 +83,118 @@ class DriverVehicleDetailScreen extends StatelessWidget {
   /// Make small above the model, the facts stacked under it, the car to
   /// the right — the same reading order as the card that opened this.
   Widget _header(S s) {
+    final isApproved = approvalStatus == 'approved';
+    final needsAttention = isApproved && missingDocsCount > 0;
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: neuBox(radius: 22),
-      child: Row(
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // The tier leads, above the make. It used to be the last
-                // of three fact rows, below the plate — the least
-                // prominent line on a card about which work this car
-                // gets and what share of it the driver keeps.
-                Row(
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Same glyph the list card shows — Standard is a
-                    // painted steering wheel, the rest are Icons.
-                    tierGlyph(tierLabel, size: 15, color: tierColor),
-                    const SizedBox(width: 6),
+                    // The tier leads, above the make. It used to be the last
+                    // of three fact rows, below the plate — the least
+                    // prominent line on a card about which work this car
+                    // gets and what share of it the driver keeps.
+                    Row(
+                      children: [
+                        Icon(tierIcon, size: 15, color: tierColor),
+                        const SizedBox(width: 6),
+                        Text(
+                          tierLabel.toUpperCase(),
+                          style: TextStyle(
+                            color: tierColor,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 1.2,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    if (make.isNotEmpty)
+                      Text(
+                        make.toUpperCase(),
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.45),
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 1.2,
+                        ),
+                      ),
+                    const SizedBox(height: 2),
                     Text(
-                      tierLabel.toUpperCase(),
-                      style: TextStyle(
-                        color: tierColor,
-                        fontSize: 13,
+                      model.isEmpty ? '—' : model,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 26,
                         fontWeight: FontWeight.w800,
-                        letterSpacing: 1.2,
+                        letterSpacing: -0.5,
                       ),
                     ),
+                    const SizedBox(height: 14),
+                    _fact(
+                      Icons.directions_car_rounded,
+                      [year, color.toUpperCase()]
+                          .where((v) => v.isNotEmpty)
+                          .join('  '),
+                    ),
+                    if (plate.isNotEmpty)
+                      _fact(Icons.confirmation_number_rounded, plate.toUpperCase()),
                   ],
                 ),
-                const SizedBox(height: 10),
-                if (make.isNotEmpty)
+              ),
+              const SizedBox(width: 10),
+              SizedBox(
+                width: 128,
+                height: 96,
+                child: Image.asset(
+                  carImage,
+                  fit: BoxFit.contain,
+                  errorBuilder: (_, __, ___) => Icon(
+                    Icons.directions_car_rounded,
+                    color: _gold.withValues(alpha: 0.5),
+                    size: 44,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          if (needsAttention) ...[
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: const Color(0xFFEF5350).withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(
+                    color: const Color(0xFFEF5350).withValues(alpha: 0.4)),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.warning_amber_rounded,
+                      size: 13, color: Color(0xFFEF5350)),
+                  const SizedBox(width: 6),
                   Text(
-                    make.toUpperCase(),
-                    style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.45),
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 1.2,
+                    s.requiresAttention,
+                    style: const TextStyle(
+                      color: Color(0xFFEF5350),
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 0.3,
                     ),
                   ),
-                const SizedBox(height: 2),
-                Text(
-                  model.isEmpty ? '—' : model,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 26,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: -0.5,
-                  ),
-                ),
-                const SizedBox(height: 14),
-                _fact(
-                  Icons.directions_car_rounded,
-                  [year, color.toUpperCase()]
-                      .where((v) => v.isNotEmpty)
-                      .join('  '),
-                ),
-                if (plate.isNotEmpty)
-                  _fact(Icons.confirmation_number_rounded, plate.toUpperCase()),
-              ],
-            ),
-          ),
-          const SizedBox(width: 10),
-          SizedBox(
-            width: 128,
-            height: 96,
-            child: Image.asset(
-              carImage,
-              fit: BoxFit.contain,
-              errorBuilder: (_, __, ___) => Icon(
-                Icons.directions_car_rounded,
-                color: _gold.withValues(alpha: 0.5),
-                size: 44,
+                ],
               ),
             ),
-          ),
+          ],
         ],
       ),
     );
@@ -222,7 +264,7 @@ class DriverVehicleDetailScreen extends StatelessWidget {
                 height: 42,
                 decoration: neuBox(radius: 13, pressed: true),
                 child: Center(
-                  child: tierGlyph(tierLabel, size: 20, color: tierColor),
+                  child: Icon(tierIcon, size: 20, color: tierColor),
                 ),
               ),
               const SizedBox(width: 14),
@@ -270,6 +312,36 @@ class DriverVehicleDetailScreen extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 14),
+
+        // ── Use this vehicle ──
+        // An approved but inactive car can be put on the road from here.
+        // Pending/rejected cars do not get the button — the backend rejects
+        // the call anyway.
+        if (!isActive && approvalStatus == 'approved' && vehicleId != null)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 14),
+            child: SizedBox(
+              width: double.infinity,
+              height: 48,
+              child: ElevatedButton(
+                onPressed: () => _useVehicle(context, vehicleId!),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: _gold,
+                  foregroundColor: Colors.black,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  elevation: 0,
+                ),
+                child: Text(
+                  s.useThisVehicle,
+                  style: const TextStyle(
+                      fontSize: 15, fontWeight: FontWeight.w800),
+                ),
+              ),
+            ),
+          ),
+
         Container(
           decoration: neuBox(radius: 20),
           child: Column(
@@ -282,8 +354,10 @@ class DriverVehicleDetailScreen extends StatelessWidget {
                 Icons.description_outlined,
                 s.viewDocuments,
                 () => Navigator.of(context).push(
-                  slideFromRightRoute(const DriverDocumentsScreen()),
+                  slideFromRightRoute(
+                      DriverDocumentsScreen(vehicleId: vehicleId)),
                 ),
+                badgeCount: missingDocsCount,
               ),
               Divider(
                 height: 1,
@@ -306,12 +380,31 @@ class DriverVehicleDetailScreen extends StatelessWidget {
     );
   }
 
+  Future<void> _useVehicle(BuildContext context, int vehicleId) async {
+    try {
+      await ApiService.useVehicle(vehicleId);
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(S.of(context).vehicleNowInUse)),
+        );
+        Navigator.of(context).pop();
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(S.of(context).connectionError)),
+        );
+      }
+    }
+  }
+
   Widget _manageRow(
     BuildContext context,
     IconData icon,
     String label,
     VoidCallback onTap, {
     bool danger = false,
+    int badgeCount = 0,
   }) {
     final c = danger ? const Color(0xFFE57373) : Colors.white;
     return InkWell(
@@ -341,6 +434,24 @@ class DriverVehicleDetailScreen extends StatelessWidget {
                 ),
               ),
             ),
+            if (badgeCount > 0)
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEF5350),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  '$badgeCount',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+            const SizedBox(width: 8),
             Icon(
               Icons.chevron_right_rounded,
               color: Colors.white.withValues(alpha: 0.3),
@@ -380,14 +491,23 @@ class DriverVehicleDetailScreen extends StatelessWidget {
             ),
           ),
           TextButton(
-            onPressed: () {
+            onPressed: () async {
               Navigator.pop(dctx);
-              // Removing the car a driver works from takes their documents
-              // and their tier with it, so it goes through support rather
-              // than a tap on this screen.
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text(s.removeVehicleContactSupport)),
-              );
+              if (vehicleId != null) {
+                try {
+                  await ApiService.deleteVehicle(vehicleId!);
+                  if (context.mounted) {
+                    Navigator.of(context).pop();
+                  }
+                } catch (e) {
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                          content: Text(S.of(context).connectionError)),
+                    );
+                  }
+                }
+              }
             },
             child: const Text(
               'OK',

@@ -521,9 +521,12 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                   // crossfade in when the prices are ready (user spec
                   // 2026-08-24: the entry state must read as "loading",
                   // never as the old list popping in).
+                  // Forced for the first 4 seconds (user spec 2026-08-29):
+                  // the sheet always opens as skeletons, even when the
+                  // estimated fares were ready faster.
                   AnimatedSwitcher(
                     duration: const Duration(milliseconds: 300),
-                    child: !faresReady &&
+                    child: (_skeletonForced || !faresReady) &&
                             _ctrl.state.pickup != null &&
                             _ctrl.state.dropoff != null
                         ? _buildSkeletonTierRows()

@@ -430,6 +430,10 @@ def _vehicle_dict(v) -> dict:
         # True while a plate change is waiting on dispatch to approve a
         # registration that names the new plate.
         "plate_pending_review": getattr(v, "plate_pending_review", False) or False,
+        "is_active": getattr(v, "is_active", False) or False,
+        "approval_status": getattr(v, "approval_status", "pending"),
+        "doors": getattr(v, "doors", None),
+        "seatbelts": getattr(v, "seatbelts", None),
     }
 
 
@@ -442,6 +446,7 @@ def _doc_dict(d) -> dict:
         "doc_number": d.doc_number,
         "expiry_date": d.expiry_date.isoformat() if d.expiry_date else None,
         "rejection_reason": d.rejection_reason,
+        "vehicle_id": getattr(d, "vehicle_id", None),
         "created_at": d.created_at.isoformat() if d.created_at else None,
     }
 

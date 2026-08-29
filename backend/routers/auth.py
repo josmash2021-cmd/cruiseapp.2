@@ -2732,10 +2732,14 @@ async def submit_verification(request: Request, user: User = Depends(_get_curren
     # Also detect existing profile photo
     profile_photo_url = db_user.photo_url
 
-    # Fetch vehicle data for this driver
+    # Fetch vehicle data for this driver (the ACTIVE one — the one dispatch
+    # and the rider would see).
     vehicle_data = None
     try:
-        veh_result = await db.execute(select(Vehicle).where(Vehicle.user_id == db_user.id))
+        veh_result = await db.execute(select(Vehicle).where(
+            Vehicle.user_id == db_user.id,
+            Vehicle.is_active == True,
+        ))
         veh = veh_result.scalar_one_or_none()
         if veh:
             vehicle_data = {
@@ -3998,7 +4002,10 @@ def _set_onboarding_override(db_user: User, item: str, status: str, reason: Opti
 
 
 async def _derive_onboarding_items(db: AsyncSession, db_user: User) -> dict:
-    veh_result = await db.execute(select(Vehicle).where(Vehicle.user_id == db_user.id))
+    veh_result = await db.execute(select(Vehicle).where(
+        Vehicle.user_id == db_user.id,
+        Vehicle.is_active == True,
+    ))
     veh = veh_result.scalars().first()
     # Document rows (registration / insurance / vehicle_inspection uploads via
     # /drivers/documents[/upload]) back the same items — a non-rejected row
@@ -4087,7 +4094,10 @@ async def submit_onboarding_plate(body: _OnboardingPlateIn, user: User = Depends
     # If the driver already has a Vehicle row, that row is the source of
     # truth for the plate; otherwise stash it on the user until the
     # vehicle step creates the row.
-    veh_result = await db.execute(select(Vehicle).where(Vehicle.user_id == db_user.id))
+    veh_result = await db.execute(select(Vehicle).where(
+        Vehicle.user_id == db_user.id,
+        Vehicle.is_active == True,
+    ))
     veh = veh_result.scalars().first()
     if veh:
         veh.plate = plate
@@ -4123,7 +4133,10 @@ async def submit_onboarding_vehicle(body: _OnboardingVehicleIn, user: User = Dep
     db_user = result.scalar_one_or_none()
     if not db_user:
         raise HTTPException(404, "User not found")
-    veh_result = await db.execute(select(Vehicle).where(Vehicle.user_id == db_user.id))
+    veh_result = await db.execute(select(Vehicle).where(
+        Vehicle.user_id == db_user.id,
+        Vehicle.is_active == True,
+    ))
     veh = veh_result.scalars().first()
     if veh:
         veh.year = body.year

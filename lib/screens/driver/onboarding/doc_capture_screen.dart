@@ -22,9 +22,12 @@ import 'onboarding_widgets.dart';
 /// mechanism (`/drivers/documents/upload`) and mirrors the URL onto the user
 /// column via `POST /auth/onboarding-items/{item}/doc`, then pops `true`.
 class DocCaptureScreen extends StatefulWidget {
-  const DocCaptureScreen({super.key, required this.entry});
+  const DocCaptureScreen({super.key, required this.entry, this.vehicleId});
 
   final OnboardingItemEntry entry;
+  /// Multi-vehicle (2026-08-29): insurance/registration/inspection belong to
+  /// a specific car; the upload carries its id.
+  final int? vehicleId;
 
   @override
   State<DocCaptureScreen> createState() => _DocCaptureScreenState();
@@ -172,6 +175,7 @@ class _DocCaptureScreenState extends State<DocCaptureScreen> {
       final uploaded = await ApiService.uploadDocument(
         docType: _docType,
         filePath: path,
+        vehicleId: widget.vehicleId,
       );
       final url = uploaded['file_path'] as String?;
       if (url != null && url.isNotEmpty) {

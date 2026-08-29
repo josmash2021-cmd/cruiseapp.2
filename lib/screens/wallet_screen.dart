@@ -341,22 +341,11 @@ class _WalletScreenState extends State<WalletScreen> {
       },
       // Built like a saved payment method, because that is what it is.
       //
-      // It had its own geometry — 22 of radius against 16, an icon of 50
-      // against 44, a balance at 28 pt — so the one thing on this screen that
-      // pays for rides looked like a banner sitting above the list of things
-      // that pay for rides. Same padding, radius, well and gap as
-      // _buildMethodItem now: it reads as another card in the wallet.
-      //
-      // The gold rim stays, at the strength a default method uses. It is the
-      // balance; it is allowed to be the one that catches the eye.
+      // No gold rim (user spec 2026-08-29): it reads as another card in the
+      // wallet, not as a banner sitting above the list.
       child: Container(
         padding: const EdgeInsets.all(14),
-        decoration: neuBox(radius: 16).copyWith(
-          border: Border.all(
-            color: _gold.withValues(alpha: 0.45),
-            width: 1.4,
-          ),
-        ),
+        decoration: neuBox(radius: 16),
         child: Row(
           children: [
             Container(

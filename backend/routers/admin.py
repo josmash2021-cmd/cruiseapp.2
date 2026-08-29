@@ -30,7 +30,7 @@ from utils.security import (
 )
 from utils.helpers import (
     utc_now, utc_today_start, utc_month_start,
-    _user_dict, _trip_dict, _doc_dict, _haversine, _resolve_rider_display, _safe_create_task,
+    _user_dict, _trip_dict, _doc_dict, _vehicle_dict, _haversine, _resolve_rider_display, _safe_create_task,
     _abs_photo_url,
     SETTABLE_ACCOUNT_STATUSES, ACTIVE_ACCOUNT_STATUSES, normalise_account_status,
 )
@@ -992,8 +992,15 @@ async def admin_get_user(user_id: int, db: AsyncSession = Depends(get_db)):
         select(Document).where(Document.user_id == user_id).order_by(Document.created_at.desc())
     )
     docs = docs_result.scalars().all()
+    # Get ALL vehicles (multi-vehicle 2026-08-29) — admin sees each with its
+    # approval status and active flag.
+    veh_result = await db.execute(
+        select(Vehicle).where(Vehicle.user_id == user_id).order_by(Vehicle.created_at.asc())
+    )
+    vehicles = veh_result.scalars().all()
     ud = _user_dict(user)
     ud["documents"] = [_doc_dict(d) for d in docs]
+    ud["vehicles"] = [_vehicle_dict(v) for v in vehicles]
     ud["has_password"] = user.password_hash is not None and len(user.password_hash) > 0
     ud["created_at"] = user.created_at.isoformat() if user.created_at else None
     # Password reset available but never expose plaintext (security best practice)
@@ -1287,7 +1294,10 @@ async def get_online_drivers(db: AsyncSession = Depends(get_db)):
     try:
         result = await db.execute(
             select(User, Vehicle).outerjoin(
-                Vehicle, Vehicle.user_id == User.id
+                Vehicle, and_(
+                    Vehicle.user_id == User.id,
+                    Vehicle.is_active == True,
+                )
             ).where(
                 and_(User.role == "driver", User.is_online == True)
             )
@@ -2200,4 +2210,56 @@ async def admin_get_driver_earnings(
         "daily_earnings": daily_earnings,
         "day_labels": day_labels,
     }
+
+
+@router.post("/admin/vehicles/{vehicle_id}/status", dependencies=[Depends(_require_dispatch_auth)])
+async def admin_set_vehicle_status(vehicle_id: int, request: Request, db: AsyncSession = Depends(get_db)):
+    """Approve or reject a vehicle (multi-vehicle 2026-08-29).
+
+    A pending vehicle cannot receive trips; approving it lets the driver
+    mark it active with /drivers/vehicles/{id}/use.
+    """
+    body = await request.json()
+    action = (body.get("action") or "").lower()
+    if action not in ("approve", "reject"):
+        raise HTTPException(400, "action must be 'approve' or 'reject'")
+    reason = (body.get("reason") or "").strip()
+
+    result = await db.execute(select(Vehicle).where(Vehicle.id == vehicle_id))
+    vehicle = result.scalar_one_or_none()
+    if not vehicle:
+        raise HTTPException(404, "Vehicle not found")
+
+    vehicle.approval_status = "approved" if action == "approve" else "rejected"
+    if action == "reject":
+        # A rejected vehicle is never active.
+        vehicle.is_active = False
+    await db.commit()
+    await db.refresh(vehicle)
+    logging.info("[Admin] Vehicle %s %s by dispatch", vehicle_id, vehicle.approval_status)
+    return {"vehicle": _vehicle_dict(vehicle)}
+
+
+@router.post("/admin/documents/{document_id}/status", dependencies=[Depends(_require_dispatch_auth)])
+async def admin_set_document_status(document_id: int, request: Request, db: AsyncSession = Depends(get_db)):
+    """Approve or reject one document. Used by dispatch for both driver-level
+    and vehicle-level docs."""
+    body = await request.json()
+    action = (body.get("action") or "").lower()
+    if action not in ("approve", "reject"):
+        raise HTTPException(400, "action must be 'approve' or 'reject'")
+    reason = (body.get("reason") or "").strip()
+
+    result = await db.execute(select(Document).where(Document.id == document_id))
+    doc = result.scalar_one_or_none()
+    if not doc:
+        raise HTTPException(404, "Document not found")
+
+    doc.status = "approved" if action == "approve" else "rejected"
+    doc.rejection_reason = reason if action == "reject" else None
+    doc.updated_at = datetime.now(timezone.utc)
+    await db.commit()
+    await db.refresh(doc)
+    logging.info("[Admin] Document %s %s by dispatch", document_id, doc.status)
+    return {"document": _doc_dict(doc)}
 

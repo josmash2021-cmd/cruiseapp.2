@@ -476,7 +476,7 @@ async def _find_nearest_drivers(
     # Single JOIN query: User + Vehicle with haversine sort
     result = await db.execute(
         select(User)
-        .join(Vehicle, User.id == Vehicle.user_id, isouter=True)
+        .join(Vehicle, and_(User.id == Vehicle.user_id, Vehicle.is_active == True), isouter=True)
         .where(and_(*conditions))
         .where(vehicle_condition)
         .order_by(haversine_expr.asc())
@@ -1505,7 +1505,10 @@ async def sync_verifications_to_firestore(db: AsyncSession = Depends(get_db)):
     users = result.scalars().all()
     synced = []
     for u in users:
-        veh_result = await db.execute(select(Vehicle).where(Vehicle.user_id == u.id))
+        veh_result = await db.execute(select(Vehicle).where(
+            Vehicle.user_id == u.id,
+            Vehicle.is_active == True,
+        ))
         veh = veh_result.scalar_one_or_none()
         vehicle_data = {"make": veh.make, "model": veh.model, "year": veh.year, "color": veh.color, "plate": veh.plate} if veh else None
         try:
@@ -1612,7 +1615,8 @@ async def _filter_drivers_by_vehicle_tier(
 
     veh_result = await db.execute(
         select(Vehicle.user_id, Vehicle.vehicle_type).where(
-            Vehicle.user_id.in_(driver_ids)
+            Vehicle.user_id.in_(driver_ids),
+            Vehicle.is_active == True,
         )
     )
     return {
@@ -2223,7 +2227,10 @@ async def accept_offer(offer_id: int = Query(...), driver_id: int = Query(...), 
                 async with SessionLocal() as _db:
                     drv_result = await _db.execute(select(User).where(User.id == driver_id))
                     drv = drv_result.scalar_one_or_none()
-                    veh_result = await _db.execute(select(Vehicle).where(Vehicle.user_id == driver_id))
+                    veh_result = await _db.execute(select(Vehicle).where(
+                        Vehicle.user_id == driver_id,
+                        Vehicle.is_active == True,
+                    ))
                     veh = veh_result.scalar_one_or_none()
                     firestore_sync.sync_trip_status(
                         trip_id=trip.id, status=accepted_status,
@@ -2248,7 +2255,10 @@ async def accept_offer(offer_id: int = Query(...), driver_id: int = Query(...), 
             async with SessionLocal() as _db2:
                 drv_r = await _db2.execute(select(User).where(User.id == driver_id))
                 drv = drv_r.scalar_one_or_none()
-                veh_r = await _db2.execute(select(Vehicle).where(Vehicle.user_id == driver_id))
+                veh_r = await _db2.execute(select(Vehicle).where(
+                    Vehicle.user_id == driver_id,
+                    Vehicle.is_active == True,
+                ))
                 veh = veh_r.scalar_one_or_none()
                 # Fetch actual driver stats from ratings
                 _stats_r = await _db2.execute(
@@ -2884,7 +2894,10 @@ async def get_dispatch_status(trip_id: int = Query(...), user: User = Depends(_g
                     DispatchOffer.status == "accepted",
                 ))
                 .outerjoin(DriverUser, DriverUser.id == DispatchOffer.driver_id)
-                .outerjoin(Vehicle, Vehicle.user_id == DispatchOffer.driver_id)
+                .outerjoin(Vehicle, and_(
+                    Vehicle.user_id == DispatchOffer.driver_id,
+                    Vehicle.is_active == True,
+                ))
                 .where(Trip.id == trip_id)
             )
             result = row.first()
@@ -2984,7 +2997,10 @@ async def get_dispatch_status(trip_id: int = Query(...), user: User = Depends(_g
         if trip.driver_id:
             _fb_drv_r = await db.execute(select(User).where(User.id == trip.driver_id))
             _fb_drv = _fb_drv_r.scalar_one_or_none()
-            _fb_veh_r = await db.execute(select(Vehicle).where(Vehicle.user_id == trip.driver_id))
+            _fb_veh_r = await db.execute(select(Vehicle).where(
+                Vehicle.user_id == trip.driver_id,
+                Vehicle.is_active == True,
+            ))
             _fb_veh = _fb_veh_r.scalar_one_or_none()
             if _fb_drv:
                 _fb_stats_r = await db.execute(

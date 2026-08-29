@@ -151,4 +151,26 @@ void main() {
       expect(pin, contains('MapSurfaceCoordinator.instance.acquire('));
     });
   });
+
+  group('ride request map resilience', () {
+    test('surface revoke clears _cinematicRunning so onMapCreated can redraw', () {
+      // Returning from the pickup pin page left the map bare because a live
+      // _cinematicRunning blocked every redraw path on the remount.
+      final revoke = screen.indexOf('onRevoke:');
+      expect(revoke, greaterThan(-1));
+      final block = screen.substring(revoke, revoke + 1400);
+      expect(block, contains('_cinematicRunning = false'),
+          reason: 'without this, _drawRoute bails on _cinematicRunning and '
+              'the recreated map shows no pins or route');
+    });
+
+    test('the tier sheet opens with a forced 4-second skeleton', () {
+      // User spec 2026-08-29: the choose-a-ride sheet always reads as
+      // skeleton rows for the first 4 seconds, even when fares are ready.
+      expect(screen, contains('_skeletonForced = true'));
+      expect(screen, contains('Duration(seconds: 4)'));
+      expect(widgets, contains('_skeletonForced || !faresReady'),
+          reason: 'the AnimatedSwitcher must honour the forced window');
+    });
+  });
 }

@@ -3,7 +3,7 @@ from datetime import date, datetime, timedelta, timezone
 from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException, Header, Request, Query, Body, UploadFile, File, Form
 from fastapi.responses import JSONResponse, FileResponse, Response
-from sqlalchemy import select, func, and_, or_, text
+from sqlalchemy import select, func, and_, or_, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from models.database import (
     get_db, SessionLocal, User, Trip, Vehicle, Document, DispatchOffer,
@@ -463,7 +463,9 @@ async def get_nearby_drivers(
             return {}
         rows = (await db.execute(
             select(Vehicle.user_id, Vehicle.vehicle_type).where(
-                Vehicle.user_id.in_(driver_ids))
+                Vehicle.user_id.in_(driver_ids),
+                Vehicle.is_active == True,
+            )
         )).all()
         return {uid: (vt or "") for uid, vt in rows}
 
@@ -2848,7 +2850,10 @@ async def reevaluate_driver_tier(db: AsyncSession, driver_id: int):
     by cruise_level_agent and by the suspension rules in rating_engine.
     """
     result = await db.execute(
-        select(Vehicle).where(Vehicle.user_id == driver_id)
+        select(Vehicle).where(
+            Vehicle.user_id == driver_id,
+            Vehicle.is_active == True,
+        )
     )
     vehicle = result.scalar_one_or_none()
     if not vehicle:
@@ -2887,14 +2892,25 @@ async def can_go_online(user: User = Depends(_get_current_user), db: AsyncSessio
     if not approved:
         reasons.append("account_not_approved")
 
-    # 2. Check vehicle exists
-    v_result = await db.execute(select(Vehicle).where(Vehicle.user_id == user.id))
+    # 2. Check the ACTIVE vehicle exists and is approved
+    v_result = await db.execute(select(Vehicle).where(
+        Vehicle.user_id == user.id,
+        Vehicle.is_active == True,
+    ))
     vehicle = v_result.scalar_one_or_none()
     if not vehicle:
         reasons.append("no_vehicle")
+    elif (vehicle.approval_status or "").lower() != "approved":
+        reasons.append("vehicle_not_approved")
 
-    # 3. Check documents
-    docs_result = await db.execute(select(Document).where(Document.user_id == user.id))
+    # 3. Check documents: driver-level (vehicle_id IS NULL) plus the active
+    # vehicle's own docs (insurance / registration / inspection).
+    docs_result = await db.execute(
+        select(Document).where(
+            Document.user_id == user.id,
+            or_(Document.vehicle_id == None, Document.vehicle_id == (vehicle.id if vehicle else None)),
+        )
+    )
     docs = docs_result.scalars().all()
     all_docs_approved = len(docs) >= 1 and all(
         (d.status or "").lower() == "approved" for d in docs
@@ -2932,6 +2948,7 @@ async def can_go_online(user: User = Depends(_get_current_user), db: AsyncSessio
         "can_go_online": can_go,
         "approved": approved,
         "has_vehicle": vehicle is not None,
+        "vehicle_approved": bool(vehicle and (vehicle.approval_status or "").lower() == "approved"),
         "all_docs_approved": all_docs_approved,
         "has_expired_docs": has_expired,
         "plate_change_pending": plate_pending,
@@ -2976,7 +2993,10 @@ async def change_license_plate(
     if confirm and confirm != plate:
         raise HTTPException(400, "The two plate numbers do not match")
 
-    result = await db.execute(select(Vehicle).where(Vehicle.user_id == user.id))
+    result = await db.execute(select(Vehicle).where(
+        Vehicle.user_id == user.id,
+        Vehicle.is_active == True,
+    ))
     vehicle = result.scalar_one_or_none()
     if not vehicle:
         raise HTTPException(404, "No vehicle on file")
@@ -3039,16 +3059,19 @@ async def change_license_plate(
 
 @router.get("/drivers/vehicle", dependencies=[Depends(_verify_api_key)])
 async def get_vehicle(user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(Vehicle).where(Vehicle.user_id == user.id))
-    v = result.scalar_one_or_none()
+    # The ACTIVE vehicle is the one dispatch and the rider see. A driver with
+    # several cars still has exactly one active at a time.
+    v = await _get_active_vehicle(db, user.id)
     if not v:
         return {"vehicle": None}
     return {"vehicle": _vehicle_dict(v)}
 
 @router.post("/drivers/vehicle", dependencies=[Depends(_verify_api_key)])
 async def create_or_update_vehicle(body: VehicleIn, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(Vehicle).where(Vehicle.user_id == user.id))
-    v = result.scalar_one_or_none()
+    # Compatibility shim: this endpoint updates the ACTIVE vehicle, or creates
+    # the first one if the driver has none. New vehicles are added through
+    # POST /drivers/vehicles.
+    v = await _get_active_vehicle(db, user.id)
     update_data = body.model_dump(exclude_unset=True)
     if v:
         for k, val in update_data.items():
@@ -3063,6 +3086,10 @@ async def create_or_update_vehicle(body: VehicleIn, user: User = Depends(_get_cu
             plate=body.plate or "",
             vin=body.vin,
             vehicle_type="comfort",  # will be auto-classified below
+            is_active=True,
+            approval_status="pending",
+            doors=body.doors,
+            seatbelts=body.seatbelts,
         )
         db.add(v)
 
@@ -3078,15 +3105,126 @@ async def create_or_update_vehicle(body: VehicleIn, user: User = Depends(_get_cu
     logging.info("[Vehicle] Driver %s: %s %s %s → tier=%s", user.id, make, model, year, v.vehicle_type)
     return {"vehicle": _vehicle_dict(v)}
 
+
+async def _get_active_vehicle(db: AsyncSession, user_id: int) -> Vehicle | None:
+    """The driver's currently selected vehicle — the one dispatch reads."""
+    result = await db.execute(
+        select(Vehicle).where(
+            Vehicle.user_id == user_id,
+            Vehicle.is_active == True,
+        )
+    )
+    return result.scalar_one_or_none()
+
+
+@router.get("/drivers/vehicles", dependencies=[Depends(_verify_api_key)])
+async def list_vehicles(user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
+    """All vehicles the driver has ever added, oldest first."""
+    result = await db.execute(
+        select(Vehicle).where(Vehicle.user_id == user.id).order_by(Vehicle.created_at.asc())
+    )
+    vehicles = result.scalars().all()
+    return {"vehicles": [_vehicle_dict(v) for v in vehicles]}
+
+
+@router.post("/drivers/vehicles", dependencies=[Depends(_verify_api_key)])
+async def add_vehicle(body: VehicleIn, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
+    """Add a NEW vehicle — never touches the existing one.
+
+    The first vehicle a driver adds becomes active by default; every later
+    one starts pending until dispatch approves its documents.
+    """
+    result = await db.execute(select(Vehicle).where(Vehicle.user_id == user.id))
+    existing = result.scalars().all()
+    is_first = len(existing) == 0
+
+    vehicle = Vehicle(
+        user_id=user.id,
+        make=body.make or "",
+        model=body.model or "",
+        year=body.year or 2020,
+        color=body.color,
+        plate=body.plate or "",
+        vin=body.vin,
+        vehicle_type=_classify_vehicle_tier(body.make or "", body.model or "", body.year or 0),
+        is_active=is_first,
+        approval_status="pending",
+        doors=body.doors,
+        seatbelts=body.seatbelts,
+    )
+    db.add(vehicle)
+    await db.commit()
+    await db.refresh(vehicle)
+    logging.info("[Vehicle] Driver %s added vehicle %s: %s %s %s → tier=%s",
+                 user.id, vehicle.id, vehicle.make, vehicle.model, vehicle.year, vehicle.vehicle_type)
+    return {"vehicle": _vehicle_dict(vehicle)}
+
+
+@router.post("/drivers/vehicles/{vehicle_id}/use", dependencies=[Depends(_verify_api_key)])
+async def use_vehicle(vehicle_id: int, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
+    """Mark one vehicle as the active one (the one that receives trips)."""
+    result = await db.execute(
+        select(Vehicle).where(Vehicle.id == vehicle_id, Vehicle.user_id == user.id)
+    )
+    vehicle = result.scalar_one_or_none()
+    if not vehicle:
+        raise HTTPException(404, "Vehicle not found")
+    if (vehicle.approval_status or "").lower() != "approved":
+        raise HTTPException(400, "Vehicle is not approved yet")
+
+    await db.execute(
+        update(Vehicle).where(Vehicle.user_id == user.id).values(is_active=False)
+    )
+    vehicle.is_active = True
+    await db.commit()
+    await db.refresh(vehicle)
+    logging.info("[Vehicle] Driver %s switched active vehicle to %s", user.id, vehicle_id)
+    return {"vehicle": _vehicle_dict(vehicle)}
+
+
+@router.delete("/drivers/vehicles/{vehicle_id}", dependencies=[Depends(_verify_api_key)])
+async def delete_vehicle(vehicle_id: int, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
+    """Remove a vehicle. If it was the active one, the oldest approved
+    vehicle becomes active; if none are approved, the driver is offline."""
+    result = await db.execute(
+        select(Vehicle).where(Vehicle.id == vehicle_id, Vehicle.user_id == user.id)
+    )
+    vehicle = result.scalar_one_or_none()
+    if not vehicle:
+        raise HTTPException(404, "Vehicle not found")
+    was_active = bool(vehicle.is_active)
+    await db.delete(vehicle)
+    await db.commit()
+    if was_active:
+        result = await db.execute(
+            select(Vehicle).where(
+                Vehicle.user_id == user.id,
+                Vehicle.approval_status == "approved",
+            ).order_by(Vehicle.created_at.asc())
+        )
+        next_vehicle = result.scalars().first()
+        if next_vehicle:
+            next_vehicle.is_active = True
+            await db.commit()
+    logging.info("[Vehicle] Driver %s deleted vehicle %s", user.id, vehicle_id)
+    return {"deleted": True}
+
+
 # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 #  DOCUMENT  ENDPOINTS
 # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 @router.get("/drivers/documents", dependencies=[Depends(_verify_api_key)])
-async def get_documents(user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
-    result = await db.execute(
-        select(Document).where(Document.user_id == user.id).order_by(Document.created_at.desc())
-    )
+async def get_documents(
+    vehicle_id: Optional[int] = Query(None),
+    user: User = Depends(_get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    query = select(Document).where(Document.user_id == user.id)
+    if vehicle_id is not None:
+        query = query.where(Document.vehicle_id == vehicle_id)
+    query = query.order_by(Document.created_at.desc())
+    result = await db.execute(query)
     docs = result.scalars().all()
     return [_doc_dict(d) for d in docs]
 
@@ -3098,6 +3236,23 @@ async def upload_document(request: Request, user: User = Depends(_get_current_us
     allowed_types = {"drivers_license", "insurance", "registration", "background_check", "vehicle_inspection", "profile_photo"}
     if doc_type not in allowed_types:
         raise HTTPException(400, f"Invalid document type. Allowed: {', '.join(allowed_types)}")
+
+    # Multi-vehicle (2026-08-29): vehicle-level docs (insurance/registration/
+    # inspection) carry the vehicle they belong to. Driver-level docs stay
+    # vehicle_id = NULL.
+    vehicle_id = body.get("vehicle_id")
+    vehicle_level = {"insurance", "registration", "vehicle_inspection"}
+    if doc_type in vehicle_level:
+        if vehicle_id is None:
+            raise HTTPException(400, "vehicle_id is required for this document type")
+        v_result = await db.execute(
+            select(Vehicle).where(Vehicle.id == vehicle_id, Vehicle.user_id == user.id)
+        )
+        if not v_result.scalar_one_or_none():
+            raise HTTPException(404, "Vehicle not found")
+    else:
+        vehicle_id = None
+
     # Save base64 photo if provided
     file_path = None
     photo_b64 = body.get("photo")
@@ -3133,9 +3288,14 @@ async def upload_document(request: Request, user: User = Depends(_get_current_us
             raise HTTPException(503, "Document storage unavailable. Please try again later.")
 
     # Check if doc of this type already exists ï¿½ update it
-    result = await db.execute(
-        select(Document).where(and_(Document.user_id == user.id, Document.doc_type == doc_type))
+    query = select(Document).where(
+        and_(Document.user_id == user.id, Document.doc_type == doc_type)
     )
+    if vehicle_id is not None:
+        query = query.where(Document.vehicle_id == vehicle_id)
+    else:
+        query = query.where(Document.vehicle_id == None)
+    result = await db.execute(query)
     existing = result.scalar_one_or_none()
     if existing:
         existing.status = "pending"
@@ -3149,6 +3309,7 @@ async def upload_document(request: Request, user: User = Depends(_get_current_us
     else:
         doc = Document(
             user_id=user.id,
+            vehicle_id=vehicle_id,
             doc_type=doc_type,
             status="pending",
             file_path=file_path,
@@ -3163,6 +3324,7 @@ async def upload_document(request: Request, user: User = Depends(_get_current_us
 @router.post("/drivers/documents/upload", dependencies=[Depends(_verify_api_key)])
 async def upload_document_multipart(
     doc_type: str = Form(...),
+    vehicle_id: Optional[int] = Form(None),
     file: UploadFile = File(...),
     user: User = Depends(_get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -3172,6 +3334,20 @@ async def upload_document_multipart(
     allowed_types = {"drivers_license", "insurance", "registration", "background_check", "vehicle_inspection", "profile_photo"}
     if doc_type not in allowed_types:
         raise HTTPException(400, f"Invalid document type. Allowed: {', '.join(allowed_types)}")
+
+    # Multi-vehicle (2026-08-29): vehicle-level docs carry the vehicle they
+    # belong to; driver-level docs stay vehicle_id = NULL.
+    vehicle_level = {"insurance", "registration", "vehicle_inspection"}
+    if doc_type in vehicle_level:
+        if vehicle_id is None:
+            raise HTTPException(400, "vehicle_id is required for this document type")
+        v_result = await db.execute(
+            select(Vehicle).where(Vehicle.id == vehicle_id, Vehicle.user_id == user.id)
+        )
+        if not v_result.scalar_one_or_none():
+            raise HTTPException(404, "Vehicle not found")
+    else:
+        vehicle_id = None
 
     data = await file.read()
     if len(data) > 4 * 1024 * 1024:
@@ -3205,9 +3381,12 @@ async def upload_document_multipart(
         raise HTTPException(503, "Document storage unavailable. Please try again later.")
 
     # Upsert document record
-    result = await db.execute(
-        select(Document).where(and_(Document.user_id == user.id, Document.doc_type == doc_type))
-    )
+    query = select(Document).where(and_(Document.user_id == user.id, Document.doc_type == doc_type))
+    if vehicle_id is not None:
+        query = query.where(Document.vehicle_id == vehicle_id)
+    else:
+        query = query.where(Document.vehicle_id == None)
+    result = await db.execute(query)
     existing = result.scalar_one_or_none()
     if existing:
         existing.status = "pending"
@@ -3218,6 +3397,7 @@ async def upload_document_multipart(
     else:
         doc = Document(
             user_id=user.id,
+            vehicle_id=vehicle_id,
             doc_type=doc_type,
             status="pending",
             file_path=file_path,

@@ -656,6 +656,24 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
     final dropLabel =
         _dropoffLabel.isNotEmpty ? _dropoffLabel : dropoff.address;
 
+    // Schedule with a fixed datetime: return the address record to the
+    // datetime page above us; it will pop the complete (scheduledAt,
+    // searchResult) pair to the caller and run the shared booking tail.
+    if (widget.scheduledAt != null) {
+      final searchResult = <String, dynamic>{
+        'pickup': effectivePickup,
+        'dropoff': dropoff,
+        'pickupLabel': _pickupLabel,
+        'dropoffLabel': dropLabel,
+        if (_stopDetails != null &&
+            (_stopLabel.isNotEmpty || _stopDetails!.address.isNotEmpty))
+          'stopAddress':
+              _stopLabel.isNotEmpty ? _stopLabel : _stopDetails!.address,
+      };
+      if (mounted) Navigator.of(context).pop(searchResult);
+      return;
+    }
+
     RouteResult? preloaded;
     if (effectivePickup != null) {
       try {

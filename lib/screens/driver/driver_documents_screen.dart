@@ -21,7 +21,11 @@ enum _ExpiryStatus { ok, expiringSoon, expired }
 
 /// Document management screen – driver's license, insurance, registration.
 class DriverDocumentsScreen extends StatefulWidget {
-  const DriverDocumentsScreen({super.key});
+  const DriverDocumentsScreen({super.key, this.vehicleId});
+
+  /// When set (multi-vehicle 2026-08-29), the screen opens on this vehicle's
+  /// documents and the "Primary Vehicle" selector starts there.
+  final int? vehicleId;
 
   @override
   State<DriverDocumentsScreen> createState() => _DriverDocumentsScreenState();
@@ -35,6 +39,12 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
   String _vehicleLabel = '';
   // The completed list is the whole page — it opens expanded.
   bool _submittedOpen = true;
+
+  // Multi-vehicle (2026-08-29): the driver picks which car's documents they
+  // are looking at. The dropdown lists every vehicle they own; the upload
+  // calls carry its id.
+  List<Map<String, dynamic>> _vehicles = const [];
+  int? _selectedVehicleId;
 
   // All required doc types for drivers
   static const _requiredDocs = [
@@ -77,25 +87,43 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
   @override
   void initState() {
     super.initState();
-    _fetchDocuments();
+    _selectedVehicleId = widget.vehicleId;
+    _fetchVehicles().then((_) => _fetchDocuments());
+  }
+
+  Future<void> _fetchVehicles() async {
+    try {
+      final vehicles = await ApiService.getVehicles();
+      if (!mounted) return;
+      setState(() {
+        _vehicles = vehicles;
+        // Default to the active vehicle when the caller did not name one.
+        _selectedVehicleId ??= vehicles.firstWhere(
+          (v) => v['is_active'] == true,
+          orElse: () => vehicles.isNotEmpty ? vehicles.first : {},
+        )['id'] as int?;
+      });
+    } catch (_) {}
   }
 
   Future<void> _fetchDocuments() async {
     setState(() => _loading = true);
     try {
+      final vehicle = _vehicles.firstWhere(
+        (v) => v['id'] == _selectedVehicleId,
+        orElse: () => <String, dynamic>{},
+      );
       final results = await Future.wait([
-        ApiService.getDocuments(),
+        ApiService.getDocuments(vehicleId: _selectedVehicleId),
         ApiService.getMe(),
-        ApiService.getVehicle(),
         ApiService.getOnboardingItems(),
       ]);
       if (!mounted) return;
 
       final docs = results[0] as List<Map<String, dynamic>>;
       final me = results[1] as Map<String, dynamic>?;
-      final vehicle = results[2] as Map<String, dynamic>?;
       final onboarding =
-          (results[3] as Map<String, dynamic>?)?['items']
+          (results[2] as Map<String, dynamic>?)?['items']
               as Map<String, dynamic>? ??
           <String, dynamic>{};
 
@@ -105,8 +133,8 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
       final bgCheckStatus = me?['background_check_status'] as String? ?? 'none';
 
       // Vehicle-level document validity
-      final insuranceValid = vehicle?['insurance_valid'] == true;
-      final registrationValid = vehicle?['registration_valid'] == true;
+      final insuranceValid = vehicle['insurance_valid'] == true;
+      final registrationValid = vehicle['registration_valid'] == true;
 
       // Merge with required doc types
       final merged = <Map<String, dynamic>>[];
@@ -117,8 +145,8 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
         // "Pending" here means the driver changed it and dispatch has
         // not approved the new registration yet.
         if (docType == 'license_plate') {
-          final plate = (vehicle?['plate'] ?? '').toString().trim();
-          final pending = vehicle?['plate_pending_review'] == true;
+          final plate = (vehicle['plate'] ?? '').toString().trim();
+          final pending = vehicle['plate_pending_review'] == true;
           merged.add({
             'doc_type': docType,
             'title': req['title'],
@@ -129,7 +157,7 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
                     ? 'pending'
                     : 'approved',
             'plate': plate,
-            'plate_state': (vehicle?['plate_state'] ?? '').toString(),
+            'plate_state': (vehicle['plate_state'] ?? '').toString(),
           });
           continue;
         }
@@ -530,7 +558,9 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
   ///
   /// Insurance, registration and the inspection form are all about one
   /// specific vehicle, and a driver with two of them has no other way to
-  /// tell which list they are looking at.
+  /// tell which list they are looking at. With multi-vehicle (2026-08-29)
+  /// this is a dropdown: the driver picks the car and the list below reloads
+  /// with that car's documents.
   Widget _vehicleCard(S s) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 15),
@@ -547,16 +577,48 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
             ),
           ),
           const SizedBox(height: 4),
-          Text(
-            _vehicleLabel,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 16,
-              fontWeight: FontWeight.w700,
+          if (_vehicles.length > 1)
+            DropdownButtonHideUnderline(
+              child: DropdownButton<int>(
+                value: _selectedVehicleId,
+                isExpanded: true,
+                dropdownColor: const Color(0xFF1A1A1F),
+                icon: const Icon(Icons.keyboard_arrow_down_rounded,
+                    color: Colors.white54),
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                ),
+                onChanged: (id) {
+                  if (id == null || id == _selectedVehicleId) return;
+                  setState(() => _selectedVehicleId = id);
+                  _fetchDocuments();
+                },
+                items: _vehicles.map((v) {
+                  final label = _describeVehicle(v);
+                  return DropdownMenuItem<int>(
+                    value: v['id'] as int?,
+                    child: Text(
+                      label.isEmpty ? 'Vehicle ${v['id']}' : label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  );
+                }).toList(),
+              ),
+            )
+          else
+            Text(
+              _vehicleLabel,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
+              ),
             ),
-          ),
         ],
       ),
     );
@@ -713,18 +775,21 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
             item: OnboardingItem.insurance,
             status: OnboardingItemStatus.pending,
           ),
+          vehicleId: _selectedVehicleId,
         ),
       'registration' => DocCaptureScreen(
           entry: OnboardingItemEntry(
             item: OnboardingItem.registration,
             status: OnboardingItemStatus.pending,
           ),
+          vehicleId: _selectedVehicleId,
         ),
       'vehicle_inspection' => DocCaptureScreen(
           entry: OnboardingItemEntry(
             item: OnboardingItem.inspection,
             status: OnboardingItemStatus.pending,
           ),
+          vehicleId: _selectedVehicleId,
         ),
       'drivers_license' => const LicenseCaptureScreen(),
       'profile_photo' => const ProfilePhotoCaptureScreen(),
@@ -1450,6 +1515,7 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
       await ApiService.uploadDocument(
         docType: docType,
         photoBase64: base64Photo,
+        vehicleId: _selectedVehicleId,
       );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(

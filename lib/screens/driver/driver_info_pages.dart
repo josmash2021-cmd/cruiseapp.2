@@ -14,11 +14,13 @@ class _InfoPageShell extends StatelessWidget {
   final IconData icon;
   final Color iconColor;
   final List<Widget> children;
+  final String? heroImage;
 
   const _InfoPageShell({
     required this.title,
     required this.icon,
     this.iconColor = const Color(0xFFE8C547),
+    this.heroImage,
     required this.children,
   });
 
@@ -86,6 +88,19 @@ class _InfoPageShell extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 24),
+                  if (heroImage != null) ...[
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(20),
+                      child: Image.asset(
+                        heroImage!,
+                        width: double.infinity,
+                        height: 180,
+                        fit: BoxFit.cover,
+                        errorBuilder: (context, error, stackTrace) => const SizedBox.shrink(),
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                  ],
                   ...children,
                   const SizedBox(height: 40),
                 ],
@@ -380,6 +395,7 @@ class TaxInfoScreen extends StatelessWidget {
       title: S.of(context).taxInfo,
       icon: Icons.receipt_long_rounded,
       iconColor: const Color(0xFFFF9800),
+      heroImage: 'assets/images/tax_hero.png',
       children: [
         _card(
           S.of(context).taxDocumentsTitle,

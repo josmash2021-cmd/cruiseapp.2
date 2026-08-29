@@ -267,6 +267,21 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
                             ),
                             padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
                             children: [
+                              // Hero image (2026-08-29): the driver
+                              // payout illustration heads the page.
+                              Padding(
+                                padding: const EdgeInsets.only(bottom: 16),
+                                child: ClipRRect(
+                                  borderRadius: BorderRadius.circular(20),
+                                  child: Image.asset(
+                                    'assets/images/payout_hero.png',
+                                    width: double.infinity,
+                                    height: 180,
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (context, error, stackTrace) => const SizedBox.shrink(),
+                                  ),
+                                ),
+                              ),
                               if (_loadError != null) ...[
                                 _errorStrip(_loadError!),
                                 const SizedBox(height: 14),

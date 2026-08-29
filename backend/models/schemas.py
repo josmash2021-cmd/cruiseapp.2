@@ -318,6 +318,8 @@ class VehicleIn(BaseModel):
     color: Optional[str] = None
     plate: Optional[str] = None
     vin: Optional[str] = None
+    doors: Optional[int] = None
+    seatbelts: Optional[int] = None
 class ZeroToleranceReportIn(BaseModel):
     """Rider intake for a zero-tolerance (drug/alcohol) complaint."""
     driver_id: Optional[int] = None  # derived from trip_id when omitted

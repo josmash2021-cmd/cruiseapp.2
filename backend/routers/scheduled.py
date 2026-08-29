@@ -230,7 +230,10 @@ async def get_available_scheduled_trips(
     from services.vehicle_tiers import eligible_tiers, normalize_tier
     from models.database import Vehicle
     veh = await db.execute(
-        select(Vehicle.vehicle_type).where(Vehicle.user_id == user.id)
+        select(Vehicle.vehicle_type).where(
+            Vehicle.user_id == user.id,
+            Vehicle.is_active == True,
+        )
     )
     driver_vtype = (veh.scalar_one_or_none() or "standard")
     eligible_request_tiers = {
@@ -422,7 +425,10 @@ async def claim_scheduled_trip(
     _claim_vehicle = None  # also feeds the trips/sql_<id> mirror below
     try:
         veh_r = await db.execute(
-            select(Vehicle).where(Vehicle.user_id == user.id).limit(1)
+            select(Vehicle).where(
+                Vehicle.user_id == user.id,
+                Vehicle.is_active == True,
+            ).limit(1)
         )
         _veh_for_notif = veh_r.scalar_one_or_none()
         _claim_vehicle = _veh_for_notif

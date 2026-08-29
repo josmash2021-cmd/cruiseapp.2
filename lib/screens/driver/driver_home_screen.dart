@@ -1920,21 +1920,16 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
 
     // If doc status has loaded, enforce doc gates synchronously (no await)
     if (_docStatusLoaded) {
-      // If docs expired, navigate to documents page to re-upload
-      if (_hasExpiredDocs) {
+      // If docs expired or the active vehicle is not approved, navigate to
+      // documents page to re-upload — and open it on the problem car.
+      if (_hasExpiredDocs || !_vehicleDocsApproved) {
         HapticService.mediumImpact();
+        final activeVehicle = await ApiService.getVehicle();
+        if (!mounted) return;
         await Navigator.of(context).push(
-          slideFromRightRoute(const DriverDocumentsScreen()),
-        );
-        if (mounted) await _checkVehicleDocStatus();
-        return;
-      }
-
-      // If vehicle docs not approved, navigate to documents page
-      if (!_vehicleDocsApproved) {
-        HapticService.mediumImpact();
-        await Navigator.of(context).push(
-          slideFromRightRoute(const DriverDocumentsScreen()),
+          slideFromRightRoute(DriverDocumentsScreen(
+            vehicleId: activeVehicle?['id'] as int?,
+          )),
         );
         if (mounted) await _checkVehicleDocStatus();
         return;
@@ -3923,11 +3918,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                                             // own doing and has one fix, so
                                             // the button names the problem
                                             // rather than the folder.
-                                            ? (_plateChangePending
-                                                ? S.of(context).viewIssue
-                                                : _hasExpiredDocs
-                                                    ? 'EXPIRED DOCS'
-                                                    : 'DOCUMENTS')
+                                            ? S.of(context).viewIssue
                                             : (_activeTripData != null ||
                                                     _isStillOnline)
                                                 ? S.of(context).resumeOnline

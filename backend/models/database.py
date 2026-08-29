@@ -492,6 +492,14 @@ class Vehicle(Base):
     insurance_expiry = Column(DateTime(timezone=True), nullable=True)
     registration_valid = Column(Boolean, default=False)
     registration_expiry = Column(DateTime(timezone=True), nullable=True)
+    # Multi-vehicle (2026-08-29): a driver may own several cars. The active
+    # one is what dispatch reads; the rest are pending, inactive, or archived.
+    # Default TRUE so existing single-vehicle rows and tests keep working;
+    # POST /drivers/vehicles flips it explicitly for every car after the first.
+    is_active = Column(Boolean, default=True, nullable=False)
+    approval_status = Column(String(20), default="pending")  # pending | approved | rejected
+    doors = Column(Integer, nullable=True)
+    seatbelts = Column(Integer, nullable=True)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 
@@ -499,6 +507,10 @@ class Document(Base):
     __tablename__ = "documents"
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    # Multi-vehicle (2026-08-29): null = driver-level doc (license, background,
+    # photo); not-null = vehicle-level doc (insurance, registration, inspection)
+    # tied to a specific car.
+    vehicle_id = Column(Integer, ForeignKey("vehicles.id"), nullable=True)
     doc_type = Column(String(50), nullable=False)
     status = Column(String(20), default="pending")
     file_path = Column(Text, nullable=True)
@@ -1016,6 +1028,15 @@ async def migrate_add_columns(conn):
         ("vehicles", "vin", "VARCHAR(50)"),
         ("vehicles", "inspection_valid", "BOOLEAN DEFAULT 0"),
         ("vehicles", "inspection_expiry", "DATETIME"),
+        ("vehicles", "insurance_valid", "BOOLEAN DEFAULT 0"),
+        ("vehicles", "insurance_expiry", "DATETIME"),
+        ("vehicles", "registration_valid", "BOOLEAN DEFAULT 0"),
+        ("vehicles", "registration_expiry", "DATETIME"),
+        ("vehicles", "is_active", "BOOLEAN DEFAULT 1"),
+        ("vehicles", "approval_status", "VARCHAR(20) DEFAULT 'pending'"),
+        ("vehicles", "doors", "INTEGER"),
+        ("vehicles", "seatbelts", "INTEGER"),
+        ("documents", "vehicle_id", "INTEGER REFERENCES vehicles(id)"),
         ("users", "status", "VARCHAR(20) DEFAULT 'active'"),
         ("users", "stripe_connect_id", "VARCHAR(100)"),
         ("users", "referral_code", "VARCHAR(20)"),
@@ -1231,6 +1252,11 @@ async def migrate_postgres(conn):
         ("vehicles", "insurance_expiry", "TIMESTAMP WITH TIME ZONE"),
         ("vehicles", "registration_valid", "BOOLEAN DEFAULT FALSE"),
         ("vehicles", "registration_expiry", "TIMESTAMP WITH TIME ZONE"),
+        ("vehicles", "is_active", "BOOLEAN DEFAULT TRUE"),
+        ("vehicles", "approval_status", "VARCHAR(20) DEFAULT 'pending'"),
+        ("vehicles", "doors", "INTEGER"),
+        ("vehicles", "seatbelts", "INTEGER"),
+        ("documents", "vehicle_id", "INTEGER REFERENCES vehicles(id)"),
         ("support_chats", "agent_name", "VARCHAR(100)"),
         ("support_chats", "bot_phase", "VARCHAR(30) DEFAULT 'welcome'"),
         ("support_chats", "needs_escalation", "BOOLEAN DEFAULT FALSE"),

@@ -298,6 +298,17 @@ class _DriverReferralScreenState extends State<DriverReferralScreen> {
       ),
       child: Column(
         children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(14),
+            child: Image.asset(
+              'assets/images/referral_hero.png',
+              width: double.infinity,
+              height: 150,
+              fit: BoxFit.cover,
+              errorBuilder: (context, error, stackTrace) => const SizedBox.shrink(),
+            ),
+          ),
+          const SizedBox(height: 18),
           Text(
             s.driverEarnHero(_dollars(_amountCents)),
             textAlign: TextAlign.center,

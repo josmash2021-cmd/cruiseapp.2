@@ -663,6 +663,12 @@ class _RideRequestScreenState extends State<RideRequestScreen>
   bool _optionsLoaded = false;
   Timer? _shimmerTimeoutTimer;
 
+  // ── 4-second skeleton (user spec 2026-08-29): the tier sheet always opens
+  // as Lyft-style skeleton rows for the first 4 seconds, then the real fares
+  // crossfade in — even when the estimates were ready faster.
+  bool _skeletonForced = true;
+  Timer? _skeletonTimer;
+
   // ── Price shimmer while waiting for real route ──
   late AnimationController _priceShimmerCtrl;
 
@@ -938,6 +944,11 @@ class _RideRequestScreenState extends State<RideRequestScreen>
         setState(() => _optionsLoaded = true);
       }
     });
+    // 4-second skeleton window (user spec 2026-08-29): the sheet always reads
+    // as "loading" for the first 4 s, then the real tiers appear.
+    _skeletonTimer = Timer(const Duration(seconds: 4), () {
+      if (mounted) setState(() => _skeletonForced = false);
+    });
 
     _shakeCtrl = AnimationController(
       vsync: this,
@@ -1167,6 +1178,12 @@ class _RideRequestScreenState extends State<RideRequestScreen>
         _pickupAnnot = null;
         _dropoffAnnot = null;
         _routeAnnot = null;
+        // A dead surface takes any in-flight cinematic with it. Leaving
+        // `_cinematicRunning` true blocked onMapCreated's redraw path, so
+        // returning from the pickup pin page left the map bare (user report
+        // 2026-08-29). `_cinematicDone` stays as-is: a finished cinematic
+        // still wants the direct redraw, not a replay.
+        _cinematicRunning = false;
         _setState(() => _mapMounted = false);
         await surfaceRemoved();
       },
@@ -1194,6 +1211,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
     mapRouteObserver.unsubscribe(this);
     MapSurfaceCoordinator.instance.release(_mapSurfaceOwner);
     _shimmerTimeoutTimer?.cancel();
+    _skeletonTimer?.cancel();
     _stuckPaymentFuse?.cancel();
     _waitRefreshTimer?.cancel();
     _webRouteAnimTimer?.cancel();

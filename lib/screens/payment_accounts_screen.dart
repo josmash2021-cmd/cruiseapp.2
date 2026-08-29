@@ -10,7 +10,7 @@ import '../services/haptic_service.dart';
 import '../services/local_data_service.dart';
 import '../widgets/neu_style.dart';
 import '../widgets/shimmer_placeholders.dart';
-import 'credit_card_screen.dart';
+import 'card_scan_screen.dart';
 
 /// Screen where users can link / manage their payment accounts
 /// (cards, bank account via ACH) and manage saved methods.
@@ -144,6 +144,10 @@ class _PaymentAccountsScreenState extends State<PaymentAccountsScreen>
 
   /// Opens the native Stripe Financial Connections sheet to link a bank
   /// account (ACH), then attaches it server-side so it can be charged.
+  ///
+  /// Dead path (2026-08-29): the Bank Account tile is gone — riders add
+  /// debit/credit cards only. Kept so the delete flow still recognises a
+  /// legacy bank row.
   Future<void> _openBankConnection() async {
     if (_linkingBank) return; // double-tap guard
     HapticService.selectionClick();
@@ -291,10 +295,13 @@ class _PaymentAccountsScreenState extends State<PaymentAccountsScreen>
     }
   }
 
+  /// Add a card: the scanner opens FIRST (CardScanScreen), and a confirmed
+  /// read lands on the manual form pre-filled. "Type details instead" opens
+  /// the same form empty. The form's result ("brand:last4") pops back here.
   Future<void> _linkCreditCard() async {
     final result = await Navigator.of(
       context,
-    ).push<String>(slideFromRightRoute(const CreditCardScreen()));
+    ).push<String>(slideFromRightRoute(const CardScanScreen()));
     if (!mounted || result == null || result.isEmpty) return;
     // result = "brand:last4" e.g. "visa:4242"
     String brand = 'card';
@@ -405,12 +412,6 @@ class _PaymentAccountsScreenState extends State<PaymentAccountsScreen>
               ),
               const SizedBox(height: 24),
 
-              // ── Device-wallet explainer ──
-              // Sits at the top: Apple Pay / Google Pay are detected at
-              // checkout and are not something you add here, so saying so
-              // first stops riders hunting for them in the lists below.
-              const _DeviceWalletNote(),
-
               const SizedBox(height: 28),
 
               // ── Add new methods section ──
@@ -432,27 +433,6 @@ class _PaymentAccountsScreenState extends State<PaymentAccountsScreen>
                 label: S.of(context).addDebitCreditCardAction,
                 linked: false,
                 onTap: _linkCreditCard,
-              ),
-              const SizedBox(height: 12),
-
-              // ── Bank Account (ACH via Stripe Financial Connections) ──
-              _accountTile(
-                c: c,
-                logoWidget: Container(
-                  width: 40,
-                  height: 40,
-                  decoration: neuBox(radius: 12, pressed: true),
-                  alignment: Alignment.center,
-                  child: const Icon(Icons.account_balance_rounded,
-                      color: Color(0xFF22C55E), size: 20),
-                ),
-                label: _bankLast4 != null
-                    ? (_bankName != null
-                        ? '$_bankName •••• $_bankLast4'
-                        : 'Bank •••• $_bankLast4')
-                    : 'Bank Account',
-                linked: _bankLast4 != null,
-                onTap: _bankLast4 != null ? () {} : _openBankConnection,
               ),
 
               // ── Added payment methods ──
@@ -749,63 +729,8 @@ class _PaymentAccountsScreenState extends State<PaymentAccountsScreen>
   }
 }
 
-/// Subtle informational tile that explains why Apple Pay / Google Pay
-/// don't appear in the "Add Payment Method" list. Shown only on the
-/// Payment Accounts screen — replaces the old fake "Add Apple Pay /
-/// Add Google Pay" rows that did a $0.00 verification and stored a flag.
-///
-/// Reasoning:
-///   Apple Pay and Google Pay are device wallets, not saved payment
-///   methods. They cannot be persisted on our side — what gets passed to
-///   Stripe is a single-use, per-transaction tokenized PAN. Asking the
-///   user to "link" them is double-friction with zero value: the same
-///   Face ID / Touch ID prompt happens at the moment of the actual ride.
-class _DeviceWalletNote extends StatelessWidget {
-  const _DeviceWalletNote();
+/// Device wallet note — REMOVED (2026-08-29, user spec): the explainer row
+/// that said "Apple Pay & Google Pay — nothing to add here" is gone. The
+/// rider only needs the Add Debit/Credit Card action; the wallets surface
+/// at checkout on their own.
 
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-      decoration: neuBox(radius: 16, pressed: true),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          const Icon(
-            Icons.smartphone_rounded,
-            color: Color(0xFFE8C547),
-            size: 20,
-          ),
-          const SizedBox(width: 12),
-          const Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Apple Pay & Google Pay',
-                  style: TextStyle(
-                    fontFamily: 'Poppins',
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
-                    color: Colors.white,
-                  ),
-                ),
-                SizedBox(height: 2),
-                Text(
-                  'Nothing to add here — pick it at checkout when you '
-                  'request a ride.',
-                  style: TextStyle(
-                    fontFamily: 'Poppins',
-                    fontSize: 12,
-                    height: 1.35,
-                    color: Color(0xFFB0B0B6),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}

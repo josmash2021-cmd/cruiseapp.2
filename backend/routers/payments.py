@@ -2437,17 +2437,18 @@ async def _web_trip_status_payload(trip: Trip, db: AsyncSession) -> dict:
             else:
                 resp["driver_rating"] = None
 
-            # Fetch driver's vehicle — prefer matching vehicle_type
+            # Fetch driver's ACTIVE vehicle — prefer matching vehicle_type when
+            # the trip asks for a specific tier, else fall back to the active car.
             vq = (
                 select(Vehicle)
-                .where(Vehicle.user_id == driver.id)
+                .where(Vehicle.user_id == driver.id, Vehicle.is_active == True)
                 .order_by(Vehicle.id.desc())
                 .limit(1)
             )
             if trip.vehicle_type:
                 vq_typed = (
                     select(Vehicle)
-                    .where(Vehicle.user_id == driver.id, Vehicle.vehicle_type == trip.vehicle_type)
+                    .where(Vehicle.user_id == driver.id, Vehicle.vehicle_type == trip.vehicle_type, Vehicle.is_active == True)
                     .order_by(Vehicle.id.desc())
                     .limit(1)
                 )

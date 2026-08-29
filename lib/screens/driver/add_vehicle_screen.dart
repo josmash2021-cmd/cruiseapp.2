@@ -43,15 +43,15 @@ class _AddVehicleScreenState extends State<AddVehicleScreen> {
   static const Map<String, List<String>> _models = {
     'Acura': ['ILX', 'Integra', 'MDX', 'RDX', 'TLX'],
     'Alfa Romeo': ['Giulia', 'Stelvio', 'Tonale'],
-    'Audi': ['A3', 'A4', 'A5', 'A6', 'Q3', 'Q5', 'Q7', 'Q8', 'e-tron'],
-    'BMW': ['2 Series', '3 Series', '4 Series', '5 Series', 'X1', 'X3', 'X5', 'X7', 'iX'],
+    'Audi': ['A3', 'A4', 'A5', 'A6', 'A7', 'A8', 'Q3', 'Q5', 'Q7', 'Q8', 'e-tron', 'TT'],
+    'BMW': ['2 Series', '3 Series', '4 Series', '5 Series', '7 Series', 'X1', 'X2', 'X3', 'X4', 'X5', 'X6', 'X7', 'iX', 'Z4'],
     'Buick': ['Enclave', 'Encore', 'Envision', 'Envista'],
     'Cadillac': ['CT4', 'CT5', 'Escalade', 'Lyriq', 'XT4', 'XT5', 'XT6'],
-    'Chevrolet': ['Blazer', 'Camaro', 'Colorado', 'Corvette', 'Equinox', 'Malibu', 'Silverado', 'Suburban', 'Tahoe', 'Trax'],
-    'Chrysler': ['300', 'Pacifica'],
+    'Chevrolet': ['Blazer', 'Camaro', 'Colorado', 'Corvette', 'Equinox', 'Impala', 'Malibu', 'Silverado', 'Suburban', 'Tahoe', 'Trailblazer', 'Traverse', 'Trax'],
+    'Chrysler': ['300', 'Pacifica', 'Voyager'],
     'Dodge': ['Challenger', 'Charger', 'Durango', 'Hornet'],
     'Fiat': ['500', '500X'],
-    'Ford': ['Bronco', 'Edge', 'Escape', 'Explorer', 'F-150', 'Maverick', 'Mustang', 'Ranger'],
+    'Ford': ['Bronco', 'EcoSport', 'Edge', 'Escape', 'Expedition', 'Explorer', 'F-150', 'F-250', 'F-350', 'Fusion', 'Maverick', 'Mustang', 'Ranger', 'Transit'],
     'Genesis': ['G70', 'G80', 'G90', 'GV70', 'GV80'],
     'GMC': ['Acadia', 'Canyon', 'Sierra', 'Terrain', 'Yukon'],
     'Honda': ['Accord', 'Civic', 'CR-V', 'HR-V', 'Odyssey', 'Passport', 'Pilot', 'Ridgeline'],
@@ -68,12 +68,12 @@ class _AddVehicleScreenState extends State<AddVehicleScreen> {
     'Mercedes-Benz': ['A-Class', 'C-Class', 'E-Class', 'GLA', 'GLB', 'GLC', 'GLE', 'GLS', 'S-Class'],
     'Mini': ['Clubman', 'Cooper', 'Countryman'],
     'Mitsubishi': ['Eclipse Cross', 'Outlander', 'Outlander Sport'],
-    'Nissan': ['Altima', 'Frontier', 'Kicks', 'Leaf', 'Maxima', 'Murano', 'Pathfinder', 'Rogue', 'Sentra', 'Versa'],
+    'Nissan': ['Altima', 'Armada', 'Frontier', 'Kicks', 'Leaf', 'Maxima', 'Murano', 'Pathfinder', 'Rogue', 'Sentra', 'Titan', 'Versa'],
     'Porsche': ['911', 'Cayenne', 'Macan', 'Panamera', 'Taycan'],
     'Ram': ['1500', '2500', '3500', 'ProMaster'],
     'Subaru': ['Ascent', 'Crosstrek', 'Forester', 'Impreza', 'Legacy', 'Outback'],
     'Tesla': ['Model 3', 'Model S', 'Model X', 'Model Y'],
-    'Toyota': ['4Runner', 'Camry', 'Corolla', 'Highlander', 'Prius', 'RAV4', 'Sienna', 'Tacoma', 'Tundra'],
+    'Toyota': ['4Runner', 'Avalon', 'Camry', 'Corolla', 'Highlander', 'Prius', 'RAV4', 'Sienna', 'Tacoma', 'Tundra', 'Venza'],
     'Volkswagen': ['Atlas', 'Golf', 'ID.4', 'Jetta', 'Passat', 'Tiguan'],
     'Volvo': ['S60', 'S90', 'XC40', 'XC60', 'XC90'],
   };
@@ -155,6 +155,7 @@ class _AddVehicleScreenState extends State<AddVehicleScreen> {
               color: Colors.white54),
           style: const TextStyle(color: Colors.white, fontSize: 15),
           onChanged: onChanged,
+          menuMaxHeight: 320, // scrollable — no more page-long lists
           items: items
               .map((item) => DropdownMenuItem<T>(
                     value: item,

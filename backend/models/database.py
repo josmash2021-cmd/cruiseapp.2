@@ -1433,3 +1433,17 @@ async def migrate_postgres(conn):
                 logging.info("Created index %s", idx_name)
         except Exception as _e:
             logging.warning("Index migration skip: %s", _e)
+
+    # ── Multi-vehicle data migration (2026-08-29) ──
+    # Every vehicle that existed before the is_active column is now the
+    # driver's ONLY vehicle, so it becomes the active one. Without this,
+    # existing drivers would read as having no car.
+    try:
+        await conn.execute(text("""
+            UPDATE vehicles
+            SET is_active = TRUE
+            WHERE is_active IS NULL OR is_active = FALSE
+        """))
+        logging.info("Multi-vehicle data migration: existing vehicles marked active")
+    except Exception as _e:
+        logging.warning("Multi-vehicle data migration skip: %s", _e)

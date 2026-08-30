@@ -1462,14 +1462,21 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                     // Retry _drawRoute now that managers are ready. If the
                     // controller fired previewRoute before the map finished
                     // loading, _drawRoute bailed early — this is our catch-up.
-                    // Not in the map picker: a route draw here also starts the
-                    // route-fit flight, which is the picker's snap-back.
+                    // Gated on PHASE, never on widget.pickerMode: this canvas
+                    // keeps pickerMode=true after a successful Confirm and
+                    // runs the whole booking flow with it (choose ride → pin
+                    // page → searching), so a pickerMode gate here left the
+                    // remounted map BARE — SetPickupLocationScreen revokes
+                    // the surface, the payment flips the phase to searching
+                    // while the managers are null, and this catch-up is the
+                    // only redraw left (report: no pins/route while
+                    // searching). The pickingLocation phase check alone is
+                    // what keeps the picker's snap-back out.
                     if (mounted) {
                       final s = _ctrl.state;
                       if (s.route != null &&
                           s.pickup != null &&
                           s.dropoff != null &&
-                          !widget.pickerMode &&
                           s.phase != RiderPhase.pickingLocation) {
                         if (s.phase == RiderPhase.requesting ||
                             s.phase == RiderPhase.searchingDriver ||

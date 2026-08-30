@@ -114,6 +114,29 @@ void main() {
               'back to the seed and the drag is lost');
     });
 
+    test('onMapCreated redraw gate uses the phase, never widget.pickerMode',
+        () {
+      // 2026-08-30 report: no pins / no gold route on the searching map.
+      // This canvas keeps pickerMode=true after a successful Confirm and
+      // runs the whole booking flow with it, so when SetPickupLocationScreen
+      // revoked the map surface (and the payment flipped the phase to
+      // searching while the managers were null), the onMapCreated catch-up
+      // was the only redraw left — and its `!widget.pickerMode` term gated
+      // it out forever. The phase check alone keeps the picker's snap-back
+      // out; the flag must never gate drawing on this canvas.
+      final created = src.indexOf('onMapCreated: (ctrl) async {');
+      expect(created, isNonNegative, reason: 'onMapCreated not found');
+      final gate = src.indexOf('s.route != null &&', created);
+      expect(gate, isNonNegative, reason: 'redraw gate not found');
+      final gateExpr = src.substring(gate, gate + 420);
+      expect(gateExpr.contains('RiderPhase.pickingLocation'), isTrue,
+          reason: 'the phase term is what keeps the picker from drawing');
+      expect(gateExpr.contains('widget.pickerMode'), isFalse,
+          reason: 'pickerMode stays true after Confirm — gating the redraw '
+              'on it leaves the remounted searching map with no pins and '
+              'no route (the 2026-08-30 report)');
+    });
+
     test('onCameraChangeListener feeds _lastCam*', () {
       final listener = RegExp(r'onCameraChangeListener:\s*\(cam\)\s*\{');
       final start = listener.firstMatch(src)!.end;

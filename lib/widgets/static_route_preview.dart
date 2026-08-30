@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 import '../config/mapbox_config.dart';
@@ -24,6 +26,8 @@ class StaticRoutePreview extends StatelessWidget {
     this.route = const <LatLng>[],
     this.borderRadius = 0,
     this.pins = true,
+    this.pitch = 0,
+    this.bearing = 0,
   });
 
   final double pickupLat;
@@ -42,6 +46,15 @@ class StaticRoutePreview extends StatelessWidget {
   /// blur is a gold smudge nobody can read, and a smudge that looks like it
   /// was meant to say something.
   final bool pins;
+
+  /// Camera tilt of the still, in degrees. 0 keeps the top-down `auto`
+  /// framing; anything above 0 needs an explicit viewport (the Static
+  /// Images API cannot combine `auto` with bearing/pitch), so the
+  /// overlay's bounds are then fitted by hand in [_tiltedView].
+  final double pitch;
+
+  /// Camera rotation, in degrees. Only applies together with [pitch].
+  final double bearing;
 
   bool get _hasDropoff => dropoffLat != null && dropoffLng != null;
 
@@ -163,17 +176,77 @@ class StaticRoutePreview extends StatelessWidget {
 
     // "auto" frames everything in the overlay, so it needs an overlay to
     // frame. With one pin, or none at all, an explicit centre and zoom are
-    // required or Mapbox answers 422.
+    // required or Mapbox answers 422. `auto` cannot carry bearing/pitch —
+    // a tilted still fits the overlay's bounds by hand instead.
+    final tilted = pitch > 0 || bearing != 0;
     final canAutoFrame = line.isNotEmpty || (pins && _hasDropoff);
-    final view =
-        canAutoFrame ? 'auto' : '${f(pickupLng)},${f(pickupLat)},13,0';
+    final view = tilted
+        ? _tiltedView(w, h, line)
+        : canAutoFrame
+            ? 'auto'
+            : '${f(pickupLng)},${f(pickupLat)},13,0';
 
     // An empty overlay list would leave a double slash, which is a 404.
     final overlay = parts.isEmpty ? '' : '${parts.join(",")}/';
 
+    // `padding` only applies to `auto`; the hand-fitted viewport carries
+    // its own margin inside the zoom maths.
+    final pad = tilted ? '' : 'padding=30&';
+
     return 'https://api.mapbox.com/styles/v1/mapbox/dark-v11/static/'
         '$overlay$view/${w}x$h@2x'
-        '?padding=30&logo=false&attribution=false&access_token=$token';
+        '?${pad}logo=false&attribution=false&access_token=$token';
+  }
+
+  /// Centre/zoom for a pitched still, fitted by hand to the overlay's
+  /// bounds in Web Mercator space (a degree of latitude is not a degree of
+  /// longitude away from the equator, so the vertical span is measured in
+  /// mercator units). The zoom backs off after the flat fit — a pitched
+  /// camera foreshortens the ground, and the tight flat fit left the pins
+  /// on the image edges once tilted.
+  String _tiltedView(int w, int h, List<LatLng> line) {
+    String f(double v) => v.toStringAsFixed(5);
+
+    var minLat = 90.0, maxLat = -90.0, minLng = 180.0, maxLng = -180.0;
+    void eat(double lat, double lng) {
+      if (lat < minLat) minLat = lat;
+      if (lat > maxLat) maxLat = lat;
+      if (lng < minLng) minLng = lng;
+      if (lng > maxLng) maxLng = lng;
+    }
+
+    eat(pickupLat, pickupLng);
+    if (_hasDropoff) eat(dropoffLat!, dropoffLng!);
+    for (final p in line) {
+      eat(p.latitude, p.longitude);
+    }
+
+    final centerLat = (minLat + maxLat) / 2;
+    final centerLng = (minLng + maxLng) / 2;
+    // A lone point has no span to fit — hold street level.
+    if ((maxLat - minLat) < 1e-6 && (maxLng - minLng) < 1e-6) {
+      return '${f(centerLng)},${f(centerLat)},15,${f(bearing)},${f(pitch)}';
+    }
+
+    double mercY(double lat) {
+      final r = lat * math.pi / 180;
+      return (1 - math.log(math.tan(r) + 1 / math.cos(r)) / math.pi) / 2;
+    }
+
+    const tile = 256.0;
+    const pad = 30.0; // same margin the flat framing asks the API for
+    final spanX = (maxLng - minLng) / 360 * tile;
+    final spanY = (mercY(minLat) - mercY(maxLat)) * tile;
+    final zx =
+        math.log(math.max(w - 2 * pad, 16) / math.max(spanX, 1e-6)) /
+            math.ln2;
+    final zy =
+        math.log(math.max(h - 2 * pad, 16) / math.max(spanY, 1e-6)) /
+            math.ln2;
+    final zoom = (math.min(zx, zy) - 0.9).clamp(10.0, 15.5);
+
+    return '${f(centerLng)},${f(centerLat)},'
+        '${zoom.toStringAsFixed(2)},${f(bearing)},${f(pitch)}';
   }
 
   @override

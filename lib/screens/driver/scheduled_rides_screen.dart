@@ -894,6 +894,9 @@ class _DriverMyRideCardState extends State<_DriverMyRideCard>
   bool _routeLoaded = false;
   bool _routeLoading = false;
   String _tripDuration = '';
+  // Route geometry behind the still preview — drawn as the gold path
+  // overlay once the fetch lands.
+  List<LatLng> _routePts = const [];
 
   // ── Countdown timer ──
   Timer? _countdownTimer;
@@ -999,13 +1002,13 @@ class _DriverMyRideCardState extends State<_DriverMyRideCard>
 
   // ── Mapbox callbacks ──
 
-  /// Fetches the trip duration for the chip on the preview.
+  /// Fetches the route for the preview's gold line + the "X min trip" chip.
   ///
   /// This used to be _loadRouteAndAnimate and was kicked off by the map's
   /// onMapCreated — drawing pins and animating a polyline onto a live Mapbox
-  /// surface. The preview is a still image now, so the drawing is gone; the
-  /// duration is not, and it still has to load or the "X min trip" chip
-  /// never appears.
+  /// surface. The preview is a still image now; the geometry feeds
+  /// [StaticRoutePreview.route] (2026-08-30: the line is back — the still
+  /// drew pins only and read as a bare map) and the duration feeds the chip.
   Future<void> _loadRouteDuration() async {
     if (_routeLoading || _routeLoaded || !_hasCoords) return;
     setState(() => _routeLoading = true);
@@ -1018,6 +1021,7 @@ class _DriverMyRideCardState extends State<_DriverMyRideCard>
       if (route == null) return;
       setState(() {
         _tripDuration = route.durationText;
+        _routePts = route.points;
         _routeLoaded = true;
       });
     } catch (_) {
@@ -1043,7 +1047,6 @@ class _DriverMyRideCardState extends State<_DriverMyRideCard>
     final pickup = trip['pickup_address'] as String? ?? '';
     final dropoff = trip['dropoff_address'] as String? ?? '';
     final fare = (trip['fare'] as num?)?.toDouble();
-    final vehicleType = trip['vehicle_type'] as String? ?? 'Comfort';
     final isAirport = trip['is_airport'] == true;
     final terminal = trip['terminal'] as String?;
     final airportCode = trip['airport_code'] as String?;
@@ -1199,20 +1202,20 @@ class _DriverMyRideCardState extends State<_DriverMyRideCard>
                 ),
               ),
 
-              // ── Chips ──
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-                child: Wrap(spacing: 8, runSpacing: 6, children: [
-                  TierBadge(rideName: vehicleType),
-                  if (fare != null && fare > 0)
-                    _chip(Icons.attach_money_rounded,
-                        '\$${fare.toStringAsFixed(2)}', _gold),
-                  if (terminal != null)
-                    _chip(Icons.door_front_door_outlined, terminal, _airport),
-                  if (pickupZone != null)
-                    _chip(Icons.pin_drop_outlined, pickupZone, _airport),
-                ]),
-              ),
+              // ── Chips (airport rides only) ──
+              // No tier badge / fare chip in this card (2026-08-30 spec) —
+              // the header already carries the fare pill, and the tier bar
+              // said nothing the driver needs at this size.
+              if (terminal != null || pickupZone != null)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                  child: Wrap(spacing: 8, runSpacing: 6, children: [
+                    if (terminal != null)
+                      _chip(Icons.door_front_door_outlined, terminal, _airport),
+                    if (pickupZone != null)
+                      _chip(Icons.pin_drop_outlined, pickupZone, _airport),
+                  ]),
+                ),
 
               // ── Expandable route preview ──
               if (_hasCoords)
@@ -1457,7 +1460,9 @@ class _DriverMyRideCardState extends State<_DriverMyRideCard>
   Widget _buildMiniMap() {
     // Every expanded card used to mount its own live Mapbox surface, so two
     // cards open at once was already two of them. This is a still image, so
-    // the count no longer matters.
+    // the count no longer matters. Tilted at 45° with the gold route drawn
+    // in (2026-08-30 spec) — flat and route-less it read as a random map,
+    // not as THIS trip.
     return ClipRRect(
       borderRadius: BorderRadius.circular(16),
       child: Stack(
@@ -1468,6 +1473,8 @@ class _DriverMyRideCardState extends State<_DriverMyRideCard>
               pickupLng: _pickupLng!,
               dropoffLat: _dropoffLat,
               dropoffLng: _dropoffLng,
+              route: _routePts,
+              pitch: 45,
             ),
           ),
           // Fade the bottom edge into the card surface.

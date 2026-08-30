@@ -1,31 +1,29 @@
 import 'dart:async';
-
-import '../../map/map_surface_coordinator.dart';
 import 'dart:math' as math;
-import 'dart:ui' as ui;
 
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import '../../services/haptic_service.dart';
 import 'package:cached_network_image/cached_network_image.dart';
-import 'package:geolocator/geolocator.dart';
 import 'package:intl/intl.dart';
-import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' as mapbox;
 
-import '../../config/map_theme.dart';
-import '../../config/mapbox_config.dart';
-import '../../map/web_map_view.dart';
-import '../../config/app_theme.dart';
 import '../../config/page_transitions.dart';
 import '../../l10n/app_localizations.dart';
 import '../../models/lat_lng.dart';
 import '../../services/api_service.dart';
-import '../../services/map_controller_cache.dart';
 import '../../services/masked_call_service.dart';
+import '../../widgets/neu_style.dart';
 import 'driver_trip_accept_screen.dart';
 
 /// Full-screen countdown + details for an upcoming scheduled ride.
 /// Shown when driver is "locked" (<=30 min before pickup).
+///
+/// Visual system: the shared dark-neumorphism of `neu_style.dart`
+/// (redesign 2026-08-30) — flat [neuBase] page, [neuBox] surfaces, the
+/// gold→goldLight gradient CTA of the scheduled-rides cards. Before, this
+/// page mounted a full-screen live map under a 0.75-alpha blur tint (an
+/// invisible map that still claimed the one native surface) with ad-hoc
+/// `_cardBg` panels and a thin gradient ring — none of it matched the
+/// rest of the app.
 class ScheduledRideDetailsScreen extends StatefulWidget {
   final Map<String, dynamic> trip;
   final double minutesUntil;
@@ -43,19 +41,9 @@ class ScheduledRideDetailsScreen extends StatefulWidget {
 
 class _ScheduledRideDetailsScreenState extends State<ScheduledRideDetailsScreen>
     with SingleTickerProviderStateMixin, WidgetsBindingObserver {
-  /// Identifies this screen to [MapSurfaceCoordinator].
-  ///
-  /// It mounts a full-screen Mapbox background, and every other screen that
-  /// does is registered — an unregistered one leaves whatever it was opened
-  /// from holding a second live surface, which is a native crash on iOS.
-  static const String _mapSurfaceOwner = 'ScheduledRideDetails';
-
-  /// The backdrop waits until the surface is actually free.
-  bool _mapMounted = false;
-
   static const _gold = Color(0xFFE8C547);
-  static const _darkBg = Color(0xFF0A0E21);
-  static const _cardBg = Color(0xFF1A1A2E);
+  static const _goldLight = Color(0xFFFBE47A);
+  static const _red = Color(0xFFFF5252);
 
   late int _secondsRemaining;
   Timer? _countdownTimer;
@@ -90,30 +78,11 @@ class _ScheduledRideDetailsScreenState extends State<ScheduledRideDetailsScreen>
       vsync: this,
       duration: const Duration(milliseconds: 1500),
     )..repeat(reverse: true);
-    unawaited(_acquireMapSurface());
-  }
-
-  /// Claim the one live Mapbox surface before mounting the backdrop.
-  Future<void> _acquireMapSurface() async {
-    await MapSurfaceCoordinator.instance.acquire(
-      owner: _mapSurfaceOwner,
-      onRevoke: () async {
-        if (!mounted || !_mapMounted) return;
-        setState(() => _mapMounted = false);
-        await surfaceRemoved();
-      },
-    );
-    if (!mounted) {
-      MapSurfaceCoordinator.instance.release(_mapSurfaceOwner);
-      return;
-    }
-    setState(() => _mapMounted = true);
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    MapSurfaceCoordinator.instance.release(_mapSurfaceOwner);
     _countdownTimer?.cancel();
     _pulseCtrl.dispose();
     super.dispose();
@@ -274,13 +243,14 @@ class _ScheduledRideDetailsScreenState extends State<ScheduledRideDetailsScreen>
   }
 
   Future<void> _cancelRide() async {
-    final s = S.of(context);
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) {
         final ls = S.of(ctx);
         return AlertDialog(
-          backgroundColor: _cardBg,
+          backgroundColor: neuSurface,
+          shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(20)),
           title: Text(ls.cancelRideTitle, style: const TextStyle(color: Colors.white)),
           content: Text(
             ls.cancelRideBody,
@@ -293,7 +263,7 @@ class _ScheduledRideDetailsScreenState extends State<ScheduledRideDetailsScreen>
             ),
             TextButton(
               onPressed: () => Navigator.pop(ctx, true),
-              child: Text(ls.cancel, style: const TextStyle(color: Colors.red)),
+              child: Text(ls.cancel, style: const TextStyle(color: _red)),
             ),
           ],
         );
@@ -347,8 +317,6 @@ class _ScheduledRideDetailsScreenState extends State<ScheduledRideDetailsScreen>
     final riderName = trip['rider_name'] ?? '';
     final riderPhoto = trip['rider_photo_url']?.toString() ?? '';
     final vehicleType = trip['vehicle_type'] ?? 'standard';
-    final pickupLat = (trip['pickup_lat'] as num?)?.toDouble();
-    final pickupLng = (trip['pickup_lng'] as num?)?.toDouble();
     final scheduledAt = trip['scheduled_at'] != null
         ? DateTime.tryParse(trip['scheduled_at'])
         : null;
@@ -359,56 +327,8 @@ class _ScheduledRideDetailsScreenState extends State<ScheduledRideDetailsScreen>
     final canStart = _secondsRemaining <= 900; // Can start 15 min early
 
     return Scaffold(
-      backgroundColor: Colors.transparent,
-      body: Stack(
-        children: [
-          // ── Live map background ──
-          if (_mapMounted && pickupLat != null && pickupLng != null)
-            Positioned.fill(
-              child: IgnorePointer(
-                // The native MapWidget has no web implementation — GL JS
-                // takes over in the browser.
-                child: kIsWeb
-                    ? WebMapView(
-                        key: const ValueKey('scheduled_details_map_web'),
-                        initialLng: pickupLng,
-                        initialLat: pickupLat,
-                        initialZoom: 13.0,
-                        styleUri: MapboxConfig.styleDark,
-                        onControllerCreated: (c) => c.applyNavyGoldTheme(),
-                      )
-                    : mapbox.MapWidget(
-                  styleUri: MapboxConfig.styleDark,
-                  cameraOptions: mapbox.CameraOptions(
-                    center: mapbox.Point(
-                      coordinates: mapbox.Position(pickupLng, pickupLat),
-                    ),
-                    zoom: 13.0,
-                    pitch: 0.0,
-                  ),
-                  onMapCreated: (ctrl) async {
-                    // Cache controller for reuse across driver screens
-                    MapControllerCache.instance.cache(ctrl);
-                    ctrl.scaleBar.updateSettings(mapbox.ScaleBarSettings(enabled: false));
-                    ctrl.compass.updateSettings(mapbox.CompassSettings(enabled: false));
-                    ctrl.attribution.updateSettings(mapbox.AttributionSettings(enabled: false));
-                    ctrl.logo.updateSettings(mapbox.LogoSettings(enabled: false));
-                  },
-                  onStyleLoadedListener: (_) {},
-                ),
-              ),
-            ),
-          // ── Semi-transparent dark tint (map visible behind) ──
-          Positioned.fill(
-            child: BackdropFilter(
-              filter: ui.ImageFilter.blur(sigmaX: 3, sigmaY: 3),
-              child: Container(
-                color: const Color(0xFF0A0E21).withValues(alpha: 0.75),
-              ),
-            ),
-          ),
-          // ── Content ──
-          SafeArea(
+      backgroundColor: neuBase,
+      body: SafeArea(
         child: Column(
           children: [
             // Top bar: SCHEDULED RIDE badge + X close button
@@ -417,11 +337,8 @@ class _ScheduledRideDetailsScreenState extends State<ScheduledRideDetailsScreen>
               child: Row(
                 children: [
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: _gold.withValues(alpha: 0.15),
-                      borderRadius: BorderRadius.circular(20),
-                    ),
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                    decoration: neuBox(radius: 20, pressed: true),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
@@ -444,13 +361,11 @@ class _ScheduledRideDetailsScreenState extends State<ScheduledRideDetailsScreen>
                   GestureDetector(
                     onTap: () => Navigator.of(context).pop(),
                     child: Container(
-                      width: 36,
-                      height: 36,
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.1),
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(Icons.close, color: Colors.white70, size: 20),
+                      width: 38,
+                      height: 38,
+                      decoration: neuBox(radius: 13),
+                      child: const Icon(Icons.close_rounded,
+                          color: Colors.white70, size: 20),
                     ),
                   ),
                 ],
@@ -459,7 +374,8 @@ class _ScheduledRideDetailsScreenState extends State<ScheduledRideDetailsScreen>
 
             const SizedBox(height: 20),
 
-            // Countdown circle
+            // Countdown circle — a raised neu coin with a faint gold edge
+            // (the old thin gradient ring is gone).
             AnimatedBuilder(
               animation: _pulseCtrl,
               builder: (context, child) {
@@ -469,16 +385,9 @@ class _ScheduledRideDetailsScreenState extends State<ScheduledRideDetailsScreen>
               child: Container(
                 width: 200,
                 height: 200,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  gradient: RadialGradient(
-                    colors: [
-                      _gold.withValues(alpha: 0.2),
-                      _gold.withValues(alpha: 0.05),
-                      Colors.transparent,
-                    ],
-                  ),
-                  border: Border.all(color: _gold.withValues(alpha: 0.4), width: 3),
+                decoration: neuBox(
+                  radius: 100,
+                  borderColor: _gold.withValues(alpha: 0.2),
                 ),
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
@@ -515,11 +424,7 @@ class _ScheduledRideDetailsScreenState extends State<ScheduledRideDetailsScreen>
               child: Container(
                 margin: const EdgeInsets.symmetric(horizontal: 16),
                 padding: const EdgeInsets.all(20),
-                decoration: BoxDecoration(
-                  color: _cardBg.withValues(alpha: 0.85),
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: _gold.withValues(alpha: 0.15)),
-                ),
+                decoration: neuBox(radius: 20),
                 child: Column(
                   children: [
                     Expanded(
@@ -541,7 +446,7 @@ class _ScheduledRideDetailsScreenState extends State<ScheduledRideDetailsScreen>
                       // Dropoff
                       _addressRow(
                         icon: Icons.circle,
-                        color: Colors.red,
+                        color: _red,
                         label: S.of(context).dropoffUpperLabel,
                         address: dropoff,
                       ),
@@ -578,10 +483,7 @@ class _ScheduledRideDetailsScreenState extends State<ScheduledRideDetailsScreen>
                         const SizedBox(height: 16),
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                          decoration: BoxDecoration(
-                            color: Colors.white.withValues(alpha: 0.05),
-                            borderRadius: BorderRadius.circular(12),
-                          ),
+                          decoration: neuBox(radius: 14, pressed: true),
                           child: Row(
                             children: [
                               CircleAvatar(
@@ -652,10 +554,10 @@ class _ScheduledRideDetailsScreenState extends State<ScheduledRideDetailsScreen>
                   child: Container(
                     width: double.infinity,
                     padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                    decoration: BoxDecoration(
-                      color: Colors.orange.withValues(alpha: 0.08),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: Colors.orange.withValues(alpha: 0.2)),
+                    decoration: neuBox(
+                      radius: 12,
+                      pressed: true,
+                      borderColor: Colors.orange.withValues(alpha: 0.25),
                     ),
                     child: Row(
                       children: [
@@ -687,60 +589,72 @@ class _ScheduledRideDetailsScreenState extends State<ScheduledRideDetailsScreen>
                   if (_secondsRemaining > 3600) ...[
                   Expanded(
                     flex: 1,
-                    child: SizedBox(
-                      height: 52,
-                      child: OutlinedButton(
-                        onPressed: _cancelling ? null : _cancelRide,
-                        style: OutlinedButton.styleFrom(
-                          side: const BorderSide(color: Colors.red, width: 1.5),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(14),
-                          ),
+                    child: GestureDetector(
+                      onTap: _cancelling ? null : _cancelRide,
+                      child: Container(
+                        height: 52,
+                        decoration: neuBox(
+                          radius: 14,
+                          pressed: true,
+                          borderColor: _red.withValues(alpha: 0.35),
                         ),
-                        child: _cancelling
-                            ? const SizedBox(
-                                width: 18, height: 18,
-                                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.red),
-                              )
-                            : Text(
-                                loc.cancel.toUpperCase(),
-                                style: const TextStyle(
-                                  color: Colors.red, fontWeight: FontWeight.w700, fontSize: 13,
+                        child: Center(
+                          child: _cancelling
+                              ? const SizedBox(
+                                  width: 18, height: 18,
+                                  child: CircularProgressIndicator(strokeWidth: 2, color: _red),
+                                )
+                              : Text(
+                                  loc.cancel.toUpperCase(),
+                                  style: const TextStyle(
+                                    color: _red, fontWeight: FontWeight.w700, fontSize: 13,
+                                  ),
                                 ),
-                              ),
+                        ),
                       ),
                     ),
                   ),
                   const SizedBox(width: 12),
                   ],
-                  // Start ride button
+                  // Start ride button — the gold→goldLight gradient CTA of
+                  // the scheduled-rides cards; a sunken well while disabled.
                   Expanded(
                     flex: _secondsRemaining > 3600 ? 2 : 1,
-                    child: SizedBox(
-                      height: 52,
-                      child: ElevatedButton(
-                        onPressed: canStart && !_starting ? _startRide : null,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: canStart ? _gold : Colors.grey[700],
-                          foregroundColor: Colors.black,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(14),
-                          ),
-                        ),
-                        child: _starting
-                            ? const SizedBox(
-                                width: 20, height: 20,
-                                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black),
+                    child: GestureDetector(
+                      onTap: canStart && !_starting ? _startRide : null,
+                      child: Container(
+                        height: 52,
+                        decoration: canStart
+                            ? BoxDecoration(
+                                gradient: const LinearGradient(
+                                    colors: [_gold, _goldLight]),
+                                borderRadius: BorderRadius.circular(14),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: _gold.withValues(alpha: 0.25),
+                                    blurRadius: 8,
+                                    offset: const Offset(0, 3),
+                                  ),
+                                ],
                               )
-                            : Text(
-                                canStart
-                                    ? loc.startRideButton
-                                    : '${loc.availableInLabel} ${_formatMinutesAsTime((_secondsRemaining ~/ 60) - 15)}',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.w800,
-                                  fontSize: canStart ? 16 : 12,
+                            : neuBox(radius: 14, pressed: true),
+                        child: Center(
+                          child: _starting
+                              ? const SizedBox(
+                                  width: 20, height: 20,
+                                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black87),
+                                )
+                              : Text(
+                                  canStart
+                                      ? loc.startRideButton
+                                      : '${loc.availableInLabel} ${_formatMinutesAsTime((_secondsRemaining ~/ 60) - 15)}',
+                                  style: TextStyle(
+                                    color: canStart ? Colors.black87 : Colors.white38,
+                                    fontWeight: FontWeight.w800,
+                                    fontSize: canStart ? 16 : 12,
+                                  ),
                                 ),
-                              ),
+                        ),
                       ),
                     ),
                   ),
@@ -750,8 +664,6 @@ class _ScheduledRideDetailsScreenState extends State<ScheduledRideDetailsScreen>
           ],
         ),
       ),
-        ], // Stack children
-      ), // Stack
     );
   }
 

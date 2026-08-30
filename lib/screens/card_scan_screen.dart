@@ -1,9 +1,9 @@
 import 'dart:async';
-import 'dart:io';
 
 import 'package:camera/camera.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
 import 'package:permission_handler/permission_handler.dart';
 
@@ -77,7 +77,10 @@ class _CardScanScreenState extends State<CardScanScreen> {
   FlashMode _flashMode = FlashMode.off;
 
   final _textRecognizer = TextRecognizer();
-  Timer? _scanTimer;
+  // The scan rides the SILENT preview stream (2026-08-30) — a takePicture()
+  // per tick played the shutter sound ~2×/s, like the page was shooting
+  // photos on its own. The throttle below keeps the ~2 reads/s cadence.
+  DateTime? _lastScanTick;
   bool _scanning = false;
   bool _handingOff = false; // a card was found; navigation in flight
   // Lyft-grade accuracy: the same card (number + expiry) must be read on
@@ -111,13 +114,22 @@ class _CardScanScreenState extends State<CardScanScreen> {
       (c) => c.lensDirection == CameraLensDirection.back,
       orElse: () => cameras.first,
     );
-    _ctrl = CameraController(rear, _capturePreset, enableAudio: false);
+    // nv21/bgra8888 stream format: the only ones each platform's ML Kit
+    // converter accepts (same rule as face_liveness_screen.dart).
+    _ctrl = CameraController(
+      rear,
+      _capturePreset,
+      enableAudio: false,
+      imageFormatGroup: AppPlatform.isAndroid
+          ? ImageFormatGroup.nv21
+          : ImageFormatGroup.bgra8888,
+    );
     try {
       await _ctrl!.initialize().timeout(const Duration(seconds: 5));
       await _ctrl!.setFlashMode(FlashMode.off);
       if (mounted) {
         setState(() => _initialized = true);
-        _startScanning();
+        unawaited(_startStream());
       }
     } catch (e) {
       debugPrint('[CardScan] camera init failed: $e');
@@ -125,35 +137,77 @@ class _CardScanScreenState extends State<CardScanScreen> {
     }
   }
 
-  /// ~2 OCR passes per second. takePicture (not the image stream) — same
-  /// approach as LicenseScannerScreen: no per-platform rotation math, and
-  /// the _scanning guard keeps passes from piling up on slow devices.
-  void _startScanning() {
-    // ML Kit has no web implementation — the preview still shows and the
-    // rider uses "Type details instead".
+  /// Starts the silent frame feed that powers the OCR scan. ML Kit has no
+  /// web implementation — the preview still shows there and the rider uses
+  /// "Type details instead".
+  Future<void> _startStream() async {
     if (kIsWeb) return;
-    _scanTimer = Timer.periodic(
-      const Duration(milliseconds: 550),
-      (_) => _scanFrame(),
+    final c = _ctrl;
+    if (c == null || !c.value.isInitialized || c.value.isStreamingImages) {
+      return;
+    }
+    try {
+      await c.startImageStream(_onStreamFrame);
+    } catch (_) {}
+  }
+
+  void _onStreamFrame(CameraImage img) {
+    if (_scanning || _handingOff || !mounted) return;
+    final now = DateTime.now();
+    if (_lastScanTick != null &&
+        now.difference(_lastScanTick!) < const Duration(milliseconds: 550)) {
+      return;
+    }
+    _lastScanTick = now;
+    _scanning = true;
+    _scanFrame(img).whenComplete(() => _scanning = false);
+  }
+
+  // iOS rotates the stream buffers natively at the connection
+  // (face_liveness 2026-08-08) — applying the sensor angle there
+  // double-rotates and ML Kit reads the card sideways.
+  static const _orientationDegrees = <DeviceOrientation, int>{
+    DeviceOrientation.portraitUp: 0,
+    DeviceOrientation.landscapeLeft: 90,
+    DeviceOrientation.portraitDown: 180,
+    DeviceOrientation.landscapeRight: 270,
+  };
+
+  int _rotationDegrees() {
+    final cam = _ctrl;
+    if (cam == null) return 0;
+    if (!AppPlatform.isAndroid) return 0;
+    final sensor = cam.description.sensorOrientation;
+    final device = _orientationDegrees[cam.value.deviceOrientation] ?? 0;
+    return (sensor - device + 360) % 360; // rear camera
+  }
+
+  InputImage? _frameToInputImage(CameraImage img) {
+    if (img.planes.isEmpty) return null;
+    final rotation = InputImageRotationValue.fromRawValue(_rotationDegrees());
+    if (rotation == null) return null;
+    // Stated, not read off the frame: the controller was opened asking for
+    // exactly these and they are the only two each converter accepts.
+    final format = AppPlatform.isAndroid
+        ? InputImageFormat.nv21
+        : InputImageFormat.bgra8888;
+    final plane = img.planes[0];
+    return InputImage.fromBytes(
+      bytes: plane.bytes,
+      metadata: InputImageMetadata(
+        size: Size(img.width.toDouble(), img.height.toDouble()),
+        rotation: rotation,
+        format: format,
+        bytesPerRow: plane.bytesPerRow,
+      ),
     );
   }
 
-  Future<void> _scanFrame() async {
-    if (_ctrl == null ||
-        !_ctrl!.value.isInitialized ||
-        _scanning ||
-        _handingOff ||
-        !mounted) {
-      return;
-    }
-    _scanning = true;
+  Future<void> _scanFrame(CameraImage img) async {
     try {
-      final xFile = await _ctrl!.takePicture();
-      final result = await _textRecognizer
-          .processImage(InputImage.fromFilePath(xFile.path));
-      try {
-        File(xFile.path).deleteSync();
-      } catch (_) {}
+      final inputImage = _frameToInputImage(img);
+      if (inputImage == null) return;
+      final result = await _textRecognizer.processImage(inputImage);
       final card = _parseCard(result.text);
       if (card != null && !_handingOff) {
         _missedTicks = 0;
@@ -163,10 +217,8 @@ class _CardScanScreenState extends State<CardScanScreen> {
             _pendingCard!.expMonth == card.expMonth &&
             _pendingCard!.expYear == card.expYear) {
           _handingOff = true;
-          _scanTimer?.cancel();
           HapticService.lightImpact();
           if (!mounted) {
-            _scanning = false;
             return;
           }
           if (widget.returnResult) {
@@ -194,9 +246,8 @@ class _CardScanScreenState extends State<CardScanScreen> {
         }
       }
     } catch (_) {
-      // Transient OCR/capture hiccup — next tick retries.
+      // Transient OCR hiccup — the next stream frame retries.
     }
-    _scanning = false;
   }
 
   /// Pulls a Luhn-valid 13–19 digit number and a MM/YY(YY) expiry out of
@@ -265,7 +316,6 @@ class _CardScanScreenState extends State<CardScanScreen> {
   /// Replaces this screen with the manual form so the form's result
   /// ("brand:last4") pops straight back to whoever pushed the scanner.
   Future<void> _openForm({ScannedCard? prefill}) async {
-    _scanTimer?.cancel();
     if (!mounted) return;
     await Navigator.of(context).pushReplacement(
       MaterialPageRoute(
@@ -287,7 +337,6 @@ class _CardScanScreenState extends State<CardScanScreen> {
 
   @override
   void dispose() {
-    _scanTimer?.cancel();
     _textRecognizer.close();
     _ctrl?.dispose();
     super.dispose();

@@ -7,6 +7,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../services/haptic_service.dart';
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -1299,7 +1300,7 @@ class _InlineDocScannerState extends State<_InlineDocScanner>
   /// `isHighResolutionPhotoEnabled` on the still capture — on iOS 16+ that
   /// capture raises a native NSException (hi-res stills need
   /// `maxPhotoDimensions`, which the plugin never sets), so the app CLOSES
-  /// on the first 1.5 s scan tick. 4K stills leave the frame crop at
+  /// the moment a still is taken. 4K stills leave the frame crop at
   /// ~1940×1224 through the plain session-preset path. Android keeps max.
   static ResolutionPreset get _capturePreset =>
       AppPlatform.isIOS ? ResolutionPreset.ultraHigh : ResolutionPreset.max;
@@ -1315,7 +1316,10 @@ class _InlineDocScannerState extends State<_InlineDocScanner>
   bool _documentDetected = false;
   String _detectedHint = '';
   FlashMode _flashMode = FlashMode.off;
-  Timer? _scanTimer;
+  // Document detection rides the SILENT preview stream (2026-08-30) —
+  // takePicture() per tick played the shutter sound every 1.5 s and the
+  // page sounded like it was shooting photos on its own.
+  DateTime? _lastScanTick;
 
   late AnimationController _cornerAnim;
 
@@ -1347,8 +1351,7 @@ class _InlineDocScannerState extends State<_InlineDocScanner>
         _documentDetected = false;
         _detectedHint = '';
       });
-      _scanTimer?.cancel();
-      _startDocumentDetection();
+      unawaited(_startStream());
     }
   }
 
@@ -1402,13 +1405,22 @@ class _InlineDocScannerState extends State<_InlineDocScanner>
     );
     // See _capturePreset: max or the OCR crop comes back illegible —
     // and on iOS the .max still path closes the app natively.
-    _ctrl = CameraController(rear, _capturePreset, enableAudio: false);
+    // nv21/bgra8888 stream format: the only ones each platform's ML Kit
+    // converter accepts (same rule as face_liveness_screen.dart).
+    _ctrl = CameraController(
+      rear,
+      _capturePreset,
+      enableAudio: false,
+      imageFormatGroup: AppPlatform.isAndroid
+          ? ImageFormatGroup.nv21
+          : ImageFormatGroup.bgra8888,
+    );
     try {
       await _ctrl!.initialize().timeout(const Duration(seconds: 5));
       await _ctrl!.setFlashMode(FlashMode.off);
       if (mounted) {
         setState(() => _initialized = true);
-        _startDocumentDetection();
+        unawaited(_startStream());
       }
     } catch (e) {
       debugPrint('Camera init failed: $e');
@@ -1416,12 +1428,19 @@ class _InlineDocScannerState extends State<_InlineDocScanner>
       try {
         _ctrl?.dispose();
         // Same preset as the first attempt — see _capturePreset.
-        _ctrl = CameraController(rear, _capturePreset, enableAudio: false);
+        _ctrl = CameraController(
+          rear,
+          _capturePreset,
+          enableAudio: false,
+          imageFormatGroup: AppPlatform.isAndroid
+              ? ImageFormatGroup.nv21
+              : ImageFormatGroup.bgra8888,
+        );
         await _ctrl!.initialize().timeout(const Duration(seconds: 5));
         await _ctrl!.setFlashMode(FlashMode.off);
         if (mounted) {
           setState(() => _initialized = true);
-          _startDocumentDetection();
+          unawaited(_startStream());
         }
       } catch (_) {
         if (mounted) widget.onCancel();
@@ -1429,10 +1448,66 @@ class _InlineDocScannerState extends State<_InlineDocScanner>
     }
   }
 
-  void _startDocumentDetection() {
-    _scanTimer = Timer.periodic(
-      const Duration(milliseconds: 1500),
-      (_) => _scanForDocument(),
+  /// Starts the silent frame feed that powers document detection.
+  Future<void> _startStream() async {
+    final c = _ctrl;
+    if (c == null || !c.value.isInitialized || c.value.isStreamingImages) {
+      return;
+    }
+    try {
+      await c.startImageStream(_onStreamFrame);
+    } catch (_) {}
+  }
+
+  void _onStreamFrame(CameraImage img) {
+    if (_capturing || _scanning || _capturedPath != null || !mounted) return;
+    final now = DateTime.now();
+    if (_lastScanTick != null &&
+        now.difference(_lastScanTick!) < const Duration(milliseconds: 1500)) {
+      return;
+    }
+    _lastScanTick = now;
+    _scanning = true;
+    _scanForDocument(img).whenComplete(() => _scanning = false);
+  }
+
+  // iOS rotates the stream buffers natively at the connection
+  // (face_liveness 2026-08-08) — applying the sensor angle there
+  // double-rotates and ML Kit reads the document sideways.
+  static const _orientationDegrees = <DeviceOrientation, int>{
+    DeviceOrientation.portraitUp: 0,
+    DeviceOrientation.landscapeLeft: 90,
+    DeviceOrientation.portraitDown: 180,
+    DeviceOrientation.landscapeRight: 270,
+  };
+
+  int _rotationDegrees() {
+    final cam = _ctrl;
+    if (cam == null) return 0;
+    if (!AppPlatform.isAndroid) return 0;
+    final sensor = cam.description.sensorOrientation;
+    final device = _orientationDegrees[cam.value.deviceOrientation] ?? 0;
+    return (sensor - device + 360) % 360; // rear camera
+  }
+
+  InputImage? _frameToInputImage(CameraImage img) {
+    if (img.planes.isEmpty) return null;
+    final rotation = InputImageRotationValue.fromRawValue(_rotationDegrees());
+    if (rotation == null) return null;
+    // Stated, not read off the frame: the controller was opened asking for
+    // exactly these and they are the only two each converter accepts.
+    final format = AppPlatform.isAndroid
+        ? InputImageFormat.nv21
+        : InputImageFormat.bgra8888;
+    final plane = img.planes[0];
+    return InputImage.fromBytes(
+      bytes: plane.bytes,
+      metadata: InputImageMetadata(
+        size: Size(img.width.toDouble(), img.height.toDouble()),
+        rotation: rotation,
+        format: format,
+        bytesPerRow: plane.bytesPerRow,
+      ),
     );
   }
 
@@ -1443,15 +1518,10 @@ class _InlineDocScannerState extends State<_InlineDocScanner>
     if (mounted) setState(() => _flashMode = next);
   }
 
-  Future<void> _scanForDocument() async {
-    if (_ctrl == null || !_ctrl!.value.isInitialized || _capturing || _scanning ||
-        _capturedPath != null || !mounted) {
-      return;
-    }
-    _scanning = true;
+  Future<void> _scanForDocument(CameraImage img) async {
     try {
-      final xFile = await _ctrl!.takePicture();
-      final inputImage = InputImage.fromFilePath(xFile.path);
+      final inputImage = _frameToInputImage(img);
+      if (inputImage == null) return;
       final result = await _textRecognizer.processImage(inputImage);
       final text = result.text.toLowerCase();
       final hasDocText =
@@ -1466,11 +1536,9 @@ class _InlineDocScannerState extends State<_InlineDocScanner>
       if (mounted && _capturedPath == null) {
         setState(() => _documentDetected = hasDocText);
       }
-      try { File(xFile.path).deleteSync(); } catch (_) {}
     } catch (e) {
       debugPrint('Doc-scan error: $e');
     }
-    _scanning = false;
   }
 
   @override
@@ -1478,7 +1546,6 @@ class _InlineDocScannerState extends State<_InlineDocScanner>
     _cornerAnim.dispose();
     _textRecognizer.close();
     _ctrl?.dispose();
-    _scanTimer?.cancel();
     super.dispose();
   }
 
@@ -1567,10 +1634,11 @@ class _InlineDocScannerState extends State<_InlineDocScanner>
     // await gap that can outlive the element. Size.zero makes _cropToFrame
     // bail to the full photo rather than crop against garbage.
     final screen = MediaQuery.maybeOf(context)?.size ?? Size.zero;
-    _scanTimer?.cancel();
     while (_scanning) {
       await Future.delayed(const Duration(milliseconds: 50));
     }
+    // Stream off before the still: that shutter is the only sound by design.
+    try { await _ctrl!.stopImageStream(); } catch (_) {}
     if (mounted) setState(() => _capturing = true);
     HapticService.mediumImpact();
     try {
@@ -1638,8 +1706,7 @@ class _InlineDocScannerState extends State<_InlineDocScanner>
       _documentDetected = false;
       _detectedHint = '';
     });
-    _scanTimer?.cancel();
-    _startDocumentDetection();
+    unawaited(_startStream());
   }
 
   void _usePhoto() {

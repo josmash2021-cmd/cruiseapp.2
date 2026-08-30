@@ -1267,6 +1267,9 @@ class S {
   String get meetDriverAtPickup => _es
       ? 'Encuéntrate con el conductor en el punto de recogida en'
       : 'Meet driver at pickup spot on';
+  String get callingYouBack => _es
+      ? 'Te estamos llamando para conectarte…'
+      : "We're calling you to connect you…";
   String get enterCustomAmount =>
       _es ? 'Ingresar monto personalizado' : 'Enter custom amount';
   String get cancelCustomTip =>

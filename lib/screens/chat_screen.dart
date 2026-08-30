@@ -603,8 +603,8 @@ class _ChatScreenState extends State<ChatScreen> {
 
   Future<void> _callRecipient() async {
     HapticService.mediumImpact();
-    // Calls go through the masked-call bridge (Twilio number + short-lived
-    // extension) so neither side ever sees the other's real phone number.
+    // Masked callback: the server rings the caller's phone and bridges to
+    // the other party — neither side ever sees the other's real number.
     final tripId = widget.tripId;
     if (tripId == null) {
       if (!mounted) return;
@@ -618,15 +618,16 @@ class _ChatScreenState extends State<ChatScreen> {
       return;
     }
     final ok = await MaskedCallService.callCounterparty(tripId: tripId, role: _myRole);
-    if (!ok && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(S.of(context).driverContacted),
-          behavior: SnackBarBehavior.floating,
-          duration: const Duration(milliseconds: 1200),
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          ok ? S.of(context).callingYouBack : S.of(context).driverContacted,
         ),
-      );
-    }
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(milliseconds: 1200),
+      ),
+    );
   }
 
   // ── Build ─────────────────────────────────────────────────────────────

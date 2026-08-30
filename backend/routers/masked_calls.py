@@ -32,8 +32,19 @@ NOTE: extension codes are kept in an in-memory TTLCache (same pattern as the
 voice sessions in routers/voice.py). That assumes a single-process backend;
 if the deployment ever scales to multiple workers, move ``_bridge_codes`` to
 Redis.
+
+Callback calling ("we call you") — newer app builds
+---------------------------------------------------
+Newer builds never open the dialer: the app POSTs
+``/trips/{trip_id}/callback-call?role=...``, the server places an OUTBOUND
+Twilio call to the caller's registered number, and when they answer, the
+``POST /voice/callback?token=...`` webhook answers that leg with TwiML that
+<Dial>s the counterparty. No extension to display or type — the caller is
+authenticated by the fact that WE called their registered number. The
+extension flow above stays live for older app builds.
 """
 
+import asyncio
 import logging
 import re
 import secrets
@@ -43,7 +54,13 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from config import TWILIO_PHONE_NUMBER, TWILIO_PROXY_PHONE_NUMBER
+from config import (
+    PUBLIC_URL,
+    TWILIO_ACCOUNT_SID,
+    TWILIO_AUTH_TOKEN,
+    TWILIO_PHONE_NUMBER,
+    TWILIO_PROXY_PHONE_NUMBER,
+)
 from models.database import get_db, Trip, User
 from routers.voice import _validate_twilio_sig
 from utils.bounded_cache import TTLCache
@@ -262,6 +279,151 @@ async def voice_bridge(request: Request, db: AsyncSession = Depends(get_db)):
     twiml = (
         '<?xml version="1.0" encoding="UTF-8"?>'
         "<Response>"
+        f'<Dial callerId="{_xml_escape(_MASKED_NUMBER)}" timeout="25">'
+        f"{_xml_escape(target)}"
+        "</Dial>"
+        "</Response>"
+    )
+    return Response(content=twiml, media_type="application/xml")
+
+
+# ── Callback calling ("we call you") ──────────────────────────────────────
+#
+# The app never opens the dialer: it POSTs here, we have Twilio ring the
+# CALLER's registered number, and /voice/callback bridges the answered leg
+# to the counterparty. No extension, no DTMF — nothing ugly in the dialer.
+
+_CALLBACK_TOKEN_TTL_SECONDS = 120  # one Twilio fetch, then it's dead weight
+# opaque token -> {"trip_id": int, "role": "rider"|"driver"}
+_callback_tokens: TTLCache[str, dict] = TTLCache(
+    ttl_seconds=_CALLBACK_TOKEN_TTL_SECONDS, max_size=5000,
+    name="masked_call_callbacks",
+)
+
+
+@router.post("/trips/{trip_id}/callback-call", dependencies=[Depends(_verify_api_key)])
+async def start_callback_call(
+    trip_id: int,
+    role: str = Query(..., pattern="^(rider|driver)$"),
+    user: User = Depends(_get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Ring the caller's registered phone, then bridge to the counterparty.
+
+    Same guards as get_masked_contact. The response never contains real
+    phone numbers — just {"status": "calling"}.
+    """
+    if not _MASKED_NUMBER or not TWILIO_ACCOUNT_SID or not TWILIO_AUTH_TOKEN:
+        raise HTTPException(503, "Masked calling is not configured")
+
+    trip = await db.get(Trip, trip_id)
+    if not trip:
+        raise HTTPException(404, "Trip not found")
+
+    # The caller must be the trip party matching the claimed role.
+    party_id = trip.rider_id if role == "rider" else trip.driver_id
+    if not party_id or party_id != user.id:
+        raise HTTPException(403, "You are not a party to this trip")
+
+    if (trip.status or "") not in _CALLABLE_TRIP_STATUSES:
+        raise HTTPException(409, "Trip is not active")
+
+    caller_phone = await _resolve_party_phone(db, trip, role)
+    if not caller_phone:
+        raise HTTPException(404, "Your account has no phone number on file")
+
+    counterparty_side = "driver" if role == "rider" else "rider"
+    counterparty_phone = await _resolve_party_phone(db, trip, counterparty_side)
+    if not counterparty_phone:
+        raise HTTPException(404, "The other party has no phone number on file")
+
+    token = secrets.token_urlsafe(16)
+    _callback_tokens[token] = {"trip_id": trip.id, "role": role}
+
+    def _place_call():
+        from twilio.rest import Client as TwilioClient
+        client = TwilioClient(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
+        return client.calls.create(
+            to=caller_phone,
+            from_=_MASKED_NUMBER,
+            url=f"{PUBLIC_URL}/voice/callback?token={token}",
+            timeout=20,
+        )
+
+    try:
+        # The Twilio SDK is synchronous — keep it off the event loop.
+        call = await asyncio.to_thread(_place_call)
+    except Exception as e:
+        _callback_tokens.pop(token, None)
+        _log.warning("[MaskedCall] callback create failed for trip=%s: %s", trip.id, e)
+        raise HTTPException(502, "Could not place the call")
+
+    _log.info(
+        "[MaskedCall] callback sid=%s trip=%s role=%s caller=%s",
+        getattr(call, "sid", "?"), trip.id, role, _mask(caller_phone),
+    )
+    return {"status": "calling"}
+
+
+@router.post("/voice/callback")
+async def voice_callback(
+    request: Request,
+    token: str = Query(default=""),
+    db: AsyncSession = Depends(get_db),
+):
+    """TwiML webhook for the callback leg we placed to the caller.
+
+    Configure nothing in Twilio — calls.create() passes this URL per call.
+    """
+    form = await request.form()
+    _validate_twilio_sig(
+        str(request.url), dict(form), request.headers.get("X-Twilio-Signature", ""),
+    )
+
+    # One-shot: the token is consumed by the first (and only) TwiML fetch.
+    entry = _callback_tokens.pop(token, None) if token else None
+    if not entry:
+        _log.info("[MaskedCall] callback rejected: unknown/expired token")
+        return Response(
+            content=_twiml_reject(
+                "This call link is invalid or has expired. Please try again from the app.",
+                "Este enlace de llamada es inv&#225;lido o expir&#243;. Int&#233;ntalo de nuevo desde la app.",
+            ),
+            media_type="application/xml",
+        )
+
+    trip = await db.get(Trip, entry["trip_id"])
+    if not trip or (trip.status or "") not in _CALLABLE_TRIP_STATUSES:
+        _log.info("[MaskedCall] callback rejected: trip=%s no longer active", entry["trip_id"])
+        return Response(
+            content=_twiml_reject(
+                "This trip is no longer active. Goodbye.",
+                "Este viaje ya no est&#225; activo. Adi&#243;s.",
+            ),
+            media_type="application/xml",
+        )
+
+    role = entry["role"]
+    counterparty_side = "driver" if role == "rider" else "rider"
+    target = await _resolve_party_phone(db, trip, counterparty_side)
+    if not target:
+        return Response(
+            content=_twiml_reject(
+                "The other party cannot be reached by phone. Goodbye.",
+                "La otra persona no est&#225; disponible por tel&#233;fono. Adi&#243;s.",
+            ),
+            media_type="application/xml",
+        )
+
+    _log.info(
+        "[MaskedCall] callback bridging trip=%s role=%s -> %s",
+        trip.id, role, _mask(target),
+    )
+    twiml = (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        "<Response>"
+        '<Say voice="Google.es-US-Studio-B" language="es-US">Conectando.</Say>'
+        '<Say voice="Google.en-US-Studio-O" language="en-US">Connecting.</Say>'
         f'<Dial callerId="{_xml_escape(_MASKED_NUMBER)}" timeout="25">'
         f"{_xml_escape(target)}"
         "</Dial>"

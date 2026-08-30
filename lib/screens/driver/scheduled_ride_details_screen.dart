@@ -617,10 +617,23 @@ class _ScheduledRideDetailsScreenState extends State<ScheduledRideDetailsScreen>
                               ),
                               IconButton(
                                   icon: const Icon(Icons.phone, color: Colors.green, size: 20),
-                                  onPressed: () => MaskedCallService.callCounterparty(
-                                    tripId: _tripId,
-                                    role: 'driver',
-                                  ),
+                                  onPressed: () async {
+                                    // Masked callback — the server rings the
+                                    // driver's phone, then bridges to the rider.
+                                    final ok = await MaskedCallService.callCounterparty(
+                                      tripId: _tripId,
+                                      role: 'driver',
+                                    );
+                                    if (!context.mounted) return;
+                                    ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+                                      SnackBar(
+                                        content: Text(ok
+                                            ? S.of(context).callingYouBack
+                                            : S.of(context).connectionError),
+                                        behavior: SnackBarBehavior.floating,
+                                      ),
+                                    );
+                                  },
                                   constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
                                   padding: EdgeInsets.zero,
                                 ),

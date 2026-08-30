@@ -1714,6 +1714,34 @@ class ApiService {
     }
   }
 
+  /// Callback calling ("we call you"): ask the backend to ring the caller's
+  /// registered phone via Twilio and bridge to the counterparty on answer.
+  /// [role] is the CALLER's role: 'rider' or 'driver'.
+  /// Returns true when the call was placed. Replaces the old
+  /// `tel:proxy,,,extension` dialer flow (ugly raw dial string on iOS).
+  static Future<bool> startCallbackCall(
+    int tripId, {
+    required String role,
+  }) async {
+    final h = await _authHeaders();
+    try {
+      final res = await _client
+          .post(
+            Uri.parse('$_baseUrl/trips/$tripId/callback-call?role=$role'),
+            headers: h,
+          )
+          .timeout(const Duration(seconds: 12));
+      if (res.statusCode == 200) return true;
+      debugPrint(
+        '[ApiService] startCallbackCall($tripId) status=${res.statusCode}',
+      );
+      return false;
+    } catch (e) {
+      debugPrint('[ApiService] startCallbackCall($tripId) exception: $e');
+      return false;
+    }
+  }
+
   /// Submit identity verification for dispatch review.
   /// [idOcrText] is the full OCR text read off the ID at capture — the
   /// backend matches the document name against the account name.

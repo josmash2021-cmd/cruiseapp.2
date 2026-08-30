@@ -225,3 +225,181 @@ async def test_guest_sms_templates_have_no_phone_placeholder():
     for event, bucket in sms_service._TPL.items():
         for lang, tpl in bucket.items():
             assert "{driver_phone}" not in tpl, f"{event}/{lang}"
+
+
+# ── callback calling ("we call you") ─────────────────────────────────────
+#
+# POST /trips/{id}/callback-call places an OUTBOUND Twilio call to the
+# caller's registered number; /voice/callback then bridges to the
+# counterparty. No extension, no real numbers in any response.
+
+
+class _FakeTwilioCall:
+    sid = "CAtest1234567890"
+
+
+def _patch_twilio(monkeypatch):
+    """Give the endpoint fake credentials + a fake Twilio REST client.
+
+    Returns the list of calls.create() kwargs for assertions.
+    """
+    from routers import masked_calls
+
+    monkeypatch.setattr(masked_calls, "TWILIO_ACCOUNT_SID", "ACtest")
+    monkeypatch.setattr(masked_calls, "TWILIO_AUTH_TOKEN", "tokentest")
+
+    created = []
+
+    class _FakeCalls:
+        def create(self, **kwargs):
+            created.append(kwargs)
+            return _FakeTwilioCall()
+
+    class _FakeClient:
+        def __init__(self, *a, **k):
+            self.calls = _FakeCalls()
+
+    import twilio.rest
+
+    monkeypatch.setattr(twilio.rest, "Client", _FakeClient)
+    return created
+
+
+def _token_from_url(url: str) -> str:
+    from urllib.parse import parse_qs, urlparse
+
+    return parse_qs(urlparse(url).query)["token"][0]
+
+
+async def test_callback_call_rings_the_caller_never_exposes_numbers(
+    client: AsyncClient, test_rider, test_driver, test_trip, monkeypatch,
+):
+    created = _patch_twilio(monkeypatch)
+    rider, rider_token = test_rider
+    driver, _ = test_driver
+
+    resp = await client.post(
+        f"/trips/{test_trip.id}/callback-call?role=rider",
+        headers=_headers(rider_token),
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json() == {"status": "calling"}
+    # No real phone number anywhere in the response.
+    blob = json.dumps(resp.json())
+    assert rider.phone not in blob and driver.phone not in blob
+
+    # Twilio rings the CALLER's registered number from the proxy number.
+    assert len(created) == 1
+    assert created[0]["to"] == rider.phone
+    assert created[0]["from_"] == _PROXY_NUMBER
+    assert "/voice/callback?token=" in created[0]["url"]
+
+
+async def test_callback_call_driver_side_rings_the_driver(
+    client: AsyncClient, test_driver, test_trip, monkeypatch,
+):
+    created = _patch_twilio(monkeypatch)
+    driver, driver_token = test_driver
+
+    resp = await client.post(
+        f"/trips/{test_trip.id}/callback-call?role=driver",
+        headers=_headers(driver_token),
+    )
+    assert resp.status_code == 200, resp.text
+    assert created[0]["to"] == driver.phone
+
+
+async def test_callback_call_rejects_non_party(
+    client: AsyncClient, test_rider, test_trip, monkeypatch,
+):
+    created = _patch_twilio(monkeypatch)
+    _, rider_token = test_rider
+    resp = await client.post(
+        f"/trips/{test_trip.id}/callback-call?role=driver",
+        headers=_headers(rider_token),
+    )
+    assert resp.status_code == 403
+    assert created == []  # no Twilio call placed
+
+
+async def test_callback_call_rejects_inactive_trip(
+    client: AsyncClient, test_rider, test_trip, db, monkeypatch,
+):
+    created = _patch_twilio(monkeypatch)
+    _, rider_token = test_rider
+    test_trip.status = "completed"
+    db.add(test_trip)
+    await db.commit()
+
+    resp = await client.post(
+        f"/trips/{test_trip.id}/callback-call?role=rider",
+        headers=_headers(rider_token),
+    )
+    assert resp.status_code == 409
+    assert created == []
+
+
+async def test_callback_call_503_without_twilio_credentials(
+    client: AsyncClient, test_rider, test_trip,
+):
+    """No TWILIO_ACCOUNT_SID/AUTH_TOKEN configured → clean 503, never a 500."""
+    _, rider_token = test_rider
+    resp = await client.post(
+        f"/trips/{test_trip.id}/callback-call?role=rider",
+        headers=_headers(rider_token),
+    )
+    assert resp.status_code == 503
+
+
+async def test_callback_webhook_bridges_to_counterparty_once(
+    client: AsyncClient, test_rider, test_driver, test_trip, monkeypatch,
+):
+    created = _patch_twilio(monkeypatch)
+    rider, rider_token = test_rider
+    driver, _ = test_driver
+
+    await client.post(
+        f"/trips/{test_trip.id}/callback-call?role=rider",
+        headers=_headers(rider_token),
+    )
+    token = _token_from_url(created[0]["url"])
+
+    resp = await client.post(f"/voice/callback?token={token}", data={})
+    assert resp.status_code == 200
+    assert "<Dial" in resp.text
+    assert f'callerId="{_PROXY_NUMBER}"' in resp.text
+    assert driver.phone in resp.text  # bridge target (server-side TwiML only)
+    # The caller's own number is never dialed/echoed.
+    assert f">{rider.phone}<" not in resp.text
+
+    # One-shot: a replay of the same webhook URL is rejected.
+    replay = await client.post(f"/voice/callback?token={token}", data={})
+    assert "<Dial" not in replay.text
+    assert "<Hangup" in replay.text
+
+
+async def test_callback_webhook_rejects_unknown_token(client: AsyncClient):
+    resp = await client.post("/voice/callback?token=garbage", data={})
+    assert resp.status_code == 200
+    assert "<Dial" not in resp.text
+    assert "<Hangup" in resp.text
+
+
+async def test_callback_webhook_rejects_inactive_trip(
+    client: AsyncClient, test_rider, test_trip, db, monkeypatch,
+):
+    created = _patch_twilio(monkeypatch)
+    _, rider_token = test_rider
+    await client.post(
+        f"/trips/{test_trip.id}/callback-call?role=rider",
+        headers=_headers(rider_token),
+    )
+    token = _token_from_url(created[0]["url"])
+
+    test_trip.status = "cancelled"
+    db.add(test_trip)
+    await db.commit()
+
+    resp = await client.post(f"/voice/callback?token={token}", data={})
+    assert resp.status_code == 200
+    assert "<Dial" not in resp.text

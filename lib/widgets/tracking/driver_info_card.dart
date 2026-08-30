@@ -332,9 +332,9 @@ extension _RiderTrackingDriverInfoCard on _RiderTrackingScreenState {
     );
   }
 
-  /// Call the driver through the masked-call bridge — fetches a short-lived
-  /// masked contact (Twilio number + extension) and dials that, so neither
-  /// side ever sees the other's real phone number.
+  /// Call the driver via the masked callback — the server rings the rider's
+  /// phone and bridges to the driver, so neither side ever sees the other's
+  /// real phone number (and nobody sees a raw tel:,,,ext dial string).
   Future<void> _handleCallDriver() async {
     final name = nh.displayName(widget.driverName, widget.rideName);
     final tripId = widget.tripId;
@@ -349,14 +349,15 @@ extension _RiderTrackingDriverInfoCard on _RiderTrackingScreenState {
     }
 
     final ok = await MaskedCallService.callCounterparty(tripId: tripId, role: 'rider');
-    if (!ok && mounted) {
-      _messenger?.showSnackBar(
-        SnackBar(
-          content: Text('${S.of(context).phoneNotAvailable} - $name'),
-          // Uses global snackBarTheme
-        ),
-      );
-    }
+    if (!mounted) return;
+    _messenger?.showSnackBar(
+      SnackBar(
+        content: Text(ok
+            ? S.of(context).callingYouBack
+            : '${S.of(context).phoneNotAvailable} - $name'),
+        // Uses global snackBarTheme
+      ),
+    );
   }
 
   /// Share a Google Maps deep-link to the driver's current GPS location.

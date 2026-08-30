@@ -737,9 +737,9 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
     );
   }
 
-  /// Dial the driver through the masked-call bridge: the app fetches a
-  /// short-lived masked contact (company number + extension) and dials
-  /// that, so neither side ever sees the other's real phone number.
+  /// Call the driver via the masked callback: the server rings the rider's
+  /// phone and bridges to the driver — neither side ever sees the other's
+  /// real phone number.
   ///
   /// Every failure used to be a silent `return`: no number on the trip, or
   /// the dialer refusing, and the rider just tapped a button that did
@@ -760,7 +760,15 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
     if (!ok) {
       debugPrint('[ConfirmPickup] masked call failed');
       _showCallFailed();
+      return;
     }
+    if (!mounted) return;
+    ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+      SnackBar(
+        content: Text(S.of(context).callingYouBack),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
   }
 
   void _showCallFailed() {

@@ -1655,9 +1655,18 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
 
   // ── Phone / Message ───────────────────────────────────────────────────────
   Future<void> _call() async {
-    // Masked call via the Twilio bridge — the rider's real number is never
-    // exposed to the driver (nor the driver's to the rider).
-    await MaskedCallService.callCounterparty(tripId: widget.tripId, role: 'driver');
+    // Masked callback — the server rings the driver's phone and bridges to
+    // the rider; real numbers are never exposed on either side.
+    final ok = await MaskedCallService.callCounterparty(tripId: widget.tripId, role: 'driver');
+    if (!mounted) return;
+    ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+      SnackBar(
+        content: Text(
+          ok ? S.of(context).callingYouBack : S.of(context).connectionError,
+        ),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
   }
 
   // ═══ Fase 2: the driver PROPOSES a route change ═══

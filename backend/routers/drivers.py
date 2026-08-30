@@ -2884,7 +2884,15 @@ async def reevaluate_driver_tier(db: AsyncSession, driver_id: int):
 
 @router.get("/drivers/can-go-online", dependencies=[Depends(_verify_api_key)])
 async def can_go_online(user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
-    """Check if driver is eligible to go online. Single source of truth."""
+    """Check if driver is eligible to go online. Single source of truth.
+
+    Multi-vehicle hardening (2026-08-30): everything rides on the ACTIVE
+    vehicle. Before, `no_vehicle` / `vehicle_not_approved` were advisory
+    only — `can_go = approved or all_docs_approved` ignored them — and any
+    doc with vehicle_id NULL counted for EVERY car, so a driver could add
+    a second car and work on it under the FIRST car's insurance,
+    registration and inspection.
+    """
     reasons = []
 
     # 1. Account must be approved
@@ -2892,66 +2900,114 @@ async def can_go_online(user: User = Depends(_get_current_user), db: AsyncSessio
     if not approved:
         reasons.append("account_not_approved")
 
-    # 2. Check the ACTIVE vehicle exists and is approved
+    # 2. The ACTIVE vehicle must exist and be approved. The first (only)
+    # car of drivers approved before vehicle approval existed is still
+    # "pending" in the rows — nothing ever stamped it — so a lone pending
+    # vehicle under an approved account counts as reviewed. A SECOND car
+    # must be approved outright (use_vehicle already refuses the switch
+    # until it is).
     v_result = await db.execute(select(Vehicle).where(
         Vehicle.user_id == user.id,
         Vehicle.is_active == True,
     ))
     vehicle = v_result.scalar_one_or_none()
+    n_vehicles = await db.scalar(
+        select(func.count(Vehicle.id)).where(Vehicle.user_id == user.id)
+    ) or 0
+    single_vehicle = n_vehicles <= 1
+
+    vehicle_ok = False
     if not vehicle:
         reasons.append("no_vehicle")
-    elif (vehicle.approval_status or "").lower() != "approved":
-        reasons.append("vehicle_not_approved")
+    else:
+        v_approved = (vehicle.approval_status or "").lower() == "approved"
+        if v_approved or (single_vehicle and approved):
+            vehicle_ok = True
+        else:
+            reasons.append("vehicle_not_approved")
 
-    # 3. Check documents: driver-level (vehicle_id IS NULL) plus the active
-    # vehicle's own docs (insurance / registration / inspection).
-    docs_result = await db.execute(
-        select(Document).where(
-            Document.user_id == user.id,
-            or_(Document.vehicle_id == None, Document.vehicle_id == (vehicle.id if vehicle else None)),
-        )
-    )
-    docs = docs_result.scalars().all()
-    all_docs_approved = len(docs) >= 1 and all(
-        (d.status or "").lower() == "approved" for d in docs
-    )
-
-    # If account is approved OR all docs approved → can go online
-    can_go = approved or all_docs_approved
-
-    # Check for expired docs (only if they have docs)
+    # 3. Vehicle-level documents must describe the ACTIVE car: insurance +
+    # registration, plus the inspection for Alabama drivers. A row counts
+    # when it is not rejected and not expired and either names this vehicle
+    # or — only with exactly one car on the account, where there is no
+    # doubt which car the paper belongs to — is a legacy vehicle_id NULL
+    # row / user-level URL column.
+    now = datetime.now(timezone.utc)
+    all_docs_approved = False
     has_expired = False
-    if docs:
-        from datetime import datetime, timezone
-        now = datetime.now(timezone.utc)
-        for d in docs:
-            if d.expiry_date and d.expiry_date < now and (d.status or "").lower() == "approved":
+    missing_docs: List[str] = []
+    if vehicle:
+        docs_result = await db.execute(
+            select(Document).where(
+                Document.user_id == user.id,
+                Document.doc_type.in_(
+                    ["insurance", "registration", "vehicle_inspection"]),
+            )
+        )
+        docs = docs_result.scalars().all()
+
+        legacy_url = {
+            "insurance": user.insurance_url,
+            "registration": user.vehicle_registration_url,
+            "vehicle_inspection": user.inspection_url,
+        }
+        required = ["insurance", "registration"]
+        if (user.drive_state or "").strip().upper() == "AL":
+            required.append("vehicle_inspection")
+
+        def _covers(d: Document) -> bool:
+            return d.vehicle_id == vehicle.id or (
+                single_vehicle and d.vehicle_id is None)
+
+        for doc_type in required:
+            rows = [d for d in docs if d.doc_type == doc_type and _covers(d)]
+            live = [
+                d for d in rows
+                if (d.status or "").lower() != "rejected"
+                and (d.expiry_date is None or d.expiry_date >= now)
+            ]
+            if any(
+                d.expiry_date is not None and d.expiry_date < now
+                and (d.status or "").lower() == "approved"
+                for d in rows
+            ):
                 has_expired = True
-                break
+            if live or (single_vehicle and legacy_url[doc_type]):
+                continue
+            missing_docs.append(doc_type)
 
-    if has_expired:
-        reasons.append("expired_documents")
-        can_go = False
+        if missing_docs:
+            reasons.append("vehicle_docs_missing")
+        all_docs_approved = not missing_docs
 
-    # 4. A plate change that dispatch has not signed off yet.
-    #
-    # This one overrides an approved account on purpose. `can_go` above is
-    # true as soon as verification_status is approved, regardless of
-    # documents — so without this a driver could change their plate and
-    # keep working on a registration that names a different car.
+    # 4. A plate change that dispatch has not signed off yet overrides an
+    # approved account on purpose: the registration on file names a
+    # different car until the new one is uploaded and reviewed.
     plate_pending = bool(vehicle and getattr(vehicle, "plate_pending_review", False))
     if plate_pending:
         reasons.append("plate_change_pending")
-        can_go = False
+
+    if has_expired:
+        reasons.append("expired_documents")
+
+    can_go = (
+        approved
+        and vehicle_ok
+        and all_docs_approved
+        and not has_expired
+        and not plate_pending
+    )
 
     return {
         "can_go_online": can_go,
         "approved": approved,
         "has_vehicle": vehicle is not None,
-        "vehicle_approved": bool(vehicle and (vehicle.approval_status or "").lower() == "approved"),
+        "vehicle_approved": bool(
+            vehicle and (vehicle.approval_status or "").lower() == "approved"),
         "all_docs_approved": all_docs_approved,
         "has_expired_docs": has_expired,
         "plate_change_pending": plate_pending,
+        "missing_vehicle_docs": missing_docs,
         "reasons": reasons,
     }
 

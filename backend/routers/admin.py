@@ -647,9 +647,11 @@ async def _purge_user_cascade(db: AsyncSession, user_id: int) -> None:
         Wallet.user_id == user_id).scalar_subquery()
     await db.execute(delete(WalletTransaction).where(
         WalletTransaction.wallet_id.in_(wallet_ids)))
-    # Plain user_id children.
+    # Plain user_id children. Document must precede Vehicle: the prod DB
+    # carries a documents.vehicle_id FK the ORM never declared, so deleting
+    # the vehicle first died on a FK violation and the panel got a bare 500.
     for model in (ConsentLog, SummaryOfRightsDelivery, PayoutMethod,
-                  RiderPaymentMethod, Wallet, Cashout, Vehicle, Document,
+                  RiderPaymentMethod, Wallet, Cashout, Document, Vehicle,
                   Notification, PasswordResetToken, FavoriteLocation,
                   RevokedToken, CruiseCashBalance, LoginActivity):
         await db.execute(delete(model).where(model.user_id == user_id))

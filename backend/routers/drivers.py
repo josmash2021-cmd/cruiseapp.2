@@ -3210,6 +3210,33 @@ async def delete_vehicle(vehicle_id: int, user: User = Depends(_get_current_user
     return {"deleted": True}
 
 
+async def _resolve_doc_vehicle(
+    db: AsyncSession, user_id: int, vehicle_id: Optional[int]
+) -> int:
+    """Attach a vehicle-level doc (insurance/registration/inspection) to a
+    car. When the client omits vehicle_id — the onboarding doc-capture flow
+    never had one to send (prod 2026-08-29: "vehicle_id is required for
+    this document type" blocked new-driver uploads) — fall back to the
+    driver's active vehicle, else their most recent one. Only a driver
+    with NO vehicle at all still gets a 400, with a actionable message."""
+    if vehicle_id is not None:
+        result = await db.execute(
+            select(Vehicle).where(Vehicle.id == vehicle_id, Vehicle.user_id == user_id)
+        )
+        if not result.scalar_one_or_none():
+            raise HTTPException(404, "Vehicle not found")
+        return vehicle_id
+    result = await db.execute(
+        select(Vehicle)
+        .where(Vehicle.user_id == user_id)
+        .order_by(Vehicle.is_active.desc(), Vehicle.created_at.desc())
+    )
+    vehicle = result.scalars().first()
+    if vehicle is None:
+        raise HTTPException(400, "Add your vehicle first, then upload this document")
+    return vehicle.id
+
+
 # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 #  DOCUMENT  ENDPOINTS
 # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
@@ -3239,17 +3266,12 @@ async def upload_document(request: Request, user: User = Depends(_get_current_us
 
     # Multi-vehicle (2026-08-29): vehicle-level docs (insurance/registration/
     # inspection) carry the vehicle they belong to. Driver-level docs stay
-    # vehicle_id = NULL.
+    # vehicle_id = NULL. Clients that don't send a vehicle (onboarding)
+    # fall back to the active/most-recent vehicle inside the resolver.
     vehicle_id = body.get("vehicle_id")
     vehicle_level = {"insurance", "registration", "vehicle_inspection"}
     if doc_type in vehicle_level:
-        if vehicle_id is None:
-            raise HTTPException(400, "vehicle_id is required for this document type")
-        v_result = await db.execute(
-            select(Vehicle).where(Vehicle.id == vehicle_id, Vehicle.user_id == user.id)
-        )
-        if not v_result.scalar_one_or_none():
-            raise HTTPException(404, "Vehicle not found")
+        vehicle_id = await _resolve_doc_vehicle(db, user.id, vehicle_id)
     else:
         vehicle_id = None
 
@@ -3336,16 +3358,11 @@ async def upload_document_multipart(
         raise HTTPException(400, f"Invalid document type. Allowed: {', '.join(allowed_types)}")
 
     # Multi-vehicle (2026-08-29): vehicle-level docs carry the vehicle they
-    # belong to; driver-level docs stay vehicle_id = NULL.
+    # belong to; driver-level docs stay vehicle_id = NULL. Same onboarding
+    # fallback as the JSON endpoint — resolve inside the helper.
     vehicle_level = {"insurance", "registration", "vehicle_inspection"}
     if doc_type in vehicle_level:
-        if vehicle_id is None:
-            raise HTTPException(400, "vehicle_id is required for this document type")
-        v_result = await db.execute(
-            select(Vehicle).where(Vehicle.id == vehicle_id, Vehicle.user_id == user.id)
-        )
-        if not v_result.scalar_one_or_none():
-            raise HTTPException(404, "Vehicle not found")
+        vehicle_id = await _resolve_doc_vehicle(db, user.id, vehicle_id)
     else:
         vehicle_id = None
 

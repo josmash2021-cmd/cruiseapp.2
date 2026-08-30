@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../../l10n/app_localizations.dart';
+import '../../../widgets/neu_style.dart';
 
 /// Shared visual language for the driver onboarding Phase 2 flow
 /// (app-standard grey #14141A + gold #E8C547). Keep every screen on these.
@@ -197,7 +198,10 @@ class OnboardingDropdown<T> extends StatelessWidget {
           ),
       ],
       onChanged: onChanged,
-      dropdownColor: const Color(0xFF131C3A),
+      // App-standard grey surface (same as bank/plate/vehicle dropdowns) —
+      // the navy 0xFF131C3A menu read as a foreign element on the grey
+      // onboarding background.
+      dropdownColor: neuSurface,
       icon: Icon(
         Icons.keyboard_arrow_down_rounded,
         color: Colors.white.withValues(alpha: 0.6),

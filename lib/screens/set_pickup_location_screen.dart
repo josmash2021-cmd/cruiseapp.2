@@ -17,16 +17,24 @@ import '../widgets/neu_style.dart';
 /// "Set your pickup location" — the pickup-confirm page between "Select
 /// {tier}" and payment (2026-08-22 spec).
 ///
-/// Lyft mechanics in navy/gold: the pin is a fixed Flutter widget at screen
-/// centre and the map slides underneath (no marker churn = no lag); small
-/// dots suggest the nearest points ON the street grid (queried from the
-/// style's road layers — never on water or open land); dropping the pin
+/// Lyft mechanics in navy/gold: the pin is a fixed Flutter widget and the
+/// map slides underneath (no marker churn = no lag). The pin's TIP is the
+/// camera focal point — bottom camera padding lifts the focal point to the
+/// pin's anchor (0.33 H, above the sheet), so the pin always points at
+/// exactly the coordinate the logic reads (fix 2026-08-30: before, the pin
+/// floated at 0.33 H while the logic used raw screen centre, so the pin
+/// pointed ~150 m away from the address the client had picked). The pin
+/// OPENS anchored on the client's selected pickup — the anchor circle is
+/// dropped under the tip on map create and it never auto-moves elsewhere.
+/// Small dots suggest the nearest points ON the street grid (queried from
+/// the style's road layers — never on water or open land); dropping the pin
 /// within 25 m of a suggestion snaps to it and morphs the pin into the
-/// "Recommended" pill; dropping it anywhere ELSE spawns a circle anchored
+/// "Recommended" pin; dropping it anywhere ELSE spawns a circle anchored
 /// at the pin's tip that same instant, with the same morph (user spec
-/// 2026-08-25); dragging again turns it back into a pin. The field opens
-/// with the exact address text the client entered; a city-level label
-/// ("Pelham, AL 35124") sharpens to the street address of the pin's
+/// 2026-08-25); dragging again turns it back into the plain pin. BOTH
+/// states are pins — stem + anchor dot at the tip (2026-08-30 spec). The
+/// field opens with the exact address text the client entered; a city-level
+/// label ("Pelham, AL 35124") sharpens to the street address of the pin's
 /// coordinates, and only a label with a leading street number is
 /// forward-geocoded on open so the pin starts on the doorstep — never
 /// dragged to the city centroid. The pay button goes white for Apple Pay.
@@ -197,8 +205,22 @@ class _SetPickupLocationScreenState extends State<SetPickupLocationScreen>
       } catch (_) {}
     }
     _suggestMgr = await ctrl.annotations.createCircleAnnotationManager();
+    // The pin OPENS anchored on the pickup the client already selected —
+    // the anchor circle drops under the tip on open so the spot reads
+    // pinned to the map from the first frame, and tiny accidental drags
+    // (≤25 m) re-anchor to the client's spot instead of wandering.
+    _droppedPoint = LatLngSafe(_pin.lat, _pin.lng);
     await _refreshSuggestions();
     unawaited(_refinePickupFromLabel());
+  }
+
+  /// Bottom camera padding = the sheet's height share, so the camera focal
+  /// point lands on the pin's tip (0.33 H) instead of raw screen centre.
+  /// EVERY camera move must carry it or the pin drifts off the coordinate
+  /// it points at.
+  mapbox.MbxEdgeInsets _cameraPadding() {
+    final h = MediaQuery.of(context).size.height;
+    return mapbox.MbxEdgeInsets(top: 0, left: 0, bottom: h * 0.34, right: 0);
   }
 
   /// Sharpen the opening pin to the exact pickup address (user spec
@@ -229,6 +251,9 @@ class _SetPickupLocationScreenState extends State<SetPickupLocationScreen>
       setState(() {
         _pin = PlaceDetails(address: label, lat: exact.lat, lng: exact.lng);
       });
+      // The anchor follows the sharpened doorstep — the open-time circle
+      // still sits on the coarse seed.
+      _droppedPoint = LatLngSafe(exact.lat, exact.lng);
       final map = _map;
       if (map != null) {
         // Programmatic move: without the flag its scroll/idle events trip
@@ -241,6 +266,7 @@ class _SetPickupLocationScreenState extends State<SetPickupLocationScreen>
             mapbox.CameraOptions(
               center: mapbox.Point(
                   coordinates: mapbox.Position(exact.lng, exact.lat)),
+              padding: _cameraPadding(),
             ),
             mapbox.MapAnimationOptions(duration: 500),
           );
@@ -333,6 +359,7 @@ class _SetPickupLocationScreenState extends State<SetPickupLocationScreen>
           mapbox.CameraOptions(
             center: mapbox.Point(
                 coordinates: mapbox.Position(dropped.lng, dropped.lat)),
+            padding: _cameraPadding(),
           ),
           mapbox.MapAnimationOptions(duration: 300),
         );
@@ -352,6 +379,7 @@ class _SetPickupLocationScreenState extends State<SetPickupLocationScreen>
           mapbox.CameraOptions(
             center: mapbox.Point(
                 coordinates: mapbox.Position(nearest.lng, nearest.lat)),
+            padding: _cameraPadding(),
           ),
           mapbox.MapAnimationOptions(duration: 300),
         );
@@ -411,8 +439,10 @@ class _SetPickupLocationScreenState extends State<SetPickupLocationScreen>
     try {
       final size = MediaQuery.of(context).size;
       final cx = size.width / 2;
-      final cy = size.height / 2;
-      const r = 130.0; // px around the centre
+      // The query box rings the PIN TIP, not raw screen centre — the bottom
+      // camera padding lifts the focal point to 0.33 H (above the sheet).
+      final cy = size.height * 0.33;
+      const r = 130.0; // px around the pin tip
       final features = await map.queryRenderedFeatures(
         mapbox.RenderedQueryGeometry.fromScreenBox(
           mapbox.ScreenBox(
@@ -469,6 +499,10 @@ class _SetPickupLocationScreenState extends State<SetPickupLocationScreen>
             _meters(p, LatLngSafe(_pin.lat, _pin.lng)) <= 30) {
           continue;
         }
+        // …nor on top of the drop-anchored circle — two overlapping dots
+        // at the pin's tip read as a rendering glitch.
+        final anchor = _droppedPoint;
+        if (anchor != null && _meters(p, anchor) < 30) continue;
         picked.add(p);
       }
       if (!mounted) return;
@@ -629,6 +663,15 @@ class _SetPickupLocationScreenState extends State<SetPickupLocationScreen>
                             coordinates: mapbox.Position(
                                 widget.pickup.lng, widget.pickup.lat)),
                         zoom: 16.5,
+                        // The client's selected pickup opens EXACTLY under
+                        // the pin's tip — the bottom padding lifts the
+                        // camera focal point off raw screen centre to the
+                        // pin's anchor above the sheet.
+                        padding: mapbox.MbxEdgeInsets(
+                            top: 0,
+                            left: 0,
+                            bottom: media.size.height * 0.34,
+                            right: 0),
                       ),
                       onMapCreated: _onMapCreated,
                       onStyleLoadedListener: (_) async {
@@ -643,9 +686,13 @@ class _SetPickupLocationScreenState extends State<SetPickupLocationScreen>
                 : const NeuDotsBackdrop(),
           ),
 
-          // ── Fixed centre pin / "Recommended" pill ──
+          // ── Fixed centre pin / "Recommended" pin ──
           // The sheet covers the bottom, so the pin's anchor sits above the
-          // sheet top edge, not at raw screen centre.
+          // sheet top edge, not at raw screen centre — the bottom camera
+          // padding puts the focal point at this region's centre. The
+          // FractionalTranslation lifts the graphic by half its height so
+          // the column's TIP (the anchor dot) lands exactly on that focal
+          // point in both states, whatever each column's height is.
           Positioned.fill(
             bottom: media.size.height * 0.34,
             child: Center(
@@ -656,17 +703,20 @@ class _SetPickupLocationScreenState extends State<SetPickupLocationScreen>
                   final dy = -18.0 * (1 - _pinDropAnim.value);
                   return Transform.translate(
                     offset: Offset(0, dy),
-                    child: AnimatedSwitcher(
-                      duration: const Duration(milliseconds: 260),
-                      switchInCurve: Curves.easeOutBack,
-                      switchOutCurve: Curves.easeIn,
-                      transitionBuilder: (child, anim) => FadeTransition(
-                        opacity: anim,
-                        child: ScaleTransition(scale: anim, child: child),
+                    child: FractionalTranslation(
+                      translation: const Offset(0, -0.5),
+                      child: AnimatedSwitcher(
+                        duration: const Duration(milliseconds: 260),
+                        switchInCurve: Curves.easeOutBack,
+                        switchOutCurve: Curves.easeIn,
+                        transitionBuilder: (child, anim) => FadeTransition(
+                          opacity: anim,
+                          child: ScaleTransition(scale: anim, child: child),
+                        ),
+                        child: _snappedToSuggestion
+                            ? _buildRecommendedPill(s)
+                            : _buildPin(),
                       ),
-                      child: _snappedToSuggestion
-                          ? _buildRecommendedPill(s)
-                          : _buildPin(),
                     ),
                   );
                 },
@@ -729,51 +779,76 @@ class _SetPickupLocationScreenState extends State<SetPickupLocationScreen>
           ),
           child: const Icon(Icons.person_rounded, color: _gold, size: 24),
         ),
-        // Stem + ground shadow sell "pinned to the map".
+        // Stem + anchor dot sell "pinned to the map" — the dot is the
+        // pin's tip and lands exactly on the camera focal point.
         Container(width: 3, height: 10, color: _gold),
-        Container(
-          width: 12,
-          height: 5,
-          decoration: BoxDecoration(
-            color: Colors.black.withValues(alpha: 0.4),
-            borderRadius: BorderRadius.circular(6),
-          ),
-        ),
+        _buildAnchorDot(),
       ],
     );
   }
 
-  Widget _buildRecommendedPill(S s) {
+  /// The anchor at the stem's tip — the point that pins the marker to the
+  /// map. Same gold/navy language as the suggested street dots, slightly
+  /// bigger so the anchored spot reads first.
+  Widget _buildAnchorDot() {
     return Container(
-      key: const ValueKey('recommended'),
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+      width: 12,
+      height: 12,
       decoration: BoxDecoration(
         color: _gold,
-        borderRadius: BorderRadius.circular(20),
+        shape: BoxShape.circle,
+        border: Border.all(color: _navy, width: 2),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.4),
-            blurRadius: 12,
-            offset: const Offset(0, 4),
+            color: Colors.black.withValues(alpha: 0.45),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
           ),
         ],
       ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Icon(Icons.check_circle_rounded,
-              color: Colors.black, size: 16),
-          const SizedBox(width: 6),
-          Text(
-            s.recommendedPin,
-            style: const TextStyle(
-              color: Colors.black,
-              fontSize: 13,
-              fontWeight: FontWeight.w800,
-            ),
+    );
+  }
+
+  Widget _buildRecommendedPill(S s) {
+    // Recommended is a pin too (2026-08-30 spec): same stem + anchor dot
+    // under the pill so the snapped spot stays visually anchored.
+    return Column(
+      key: const ValueKey('recommended'),
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+          decoration: BoxDecoration(
+            color: _gold,
+            borderRadius: BorderRadius.circular(20),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.4),
+                blurRadius: 12,
+                offset: const Offset(0, 4),
+              ),
+            ],
           ),
-        ],
-      ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.check_circle_rounded,
+                  color: Colors.black, size: 16),
+              const SizedBox(width: 6),
+              Text(
+                s.recommendedPin,
+                style: const TextStyle(
+                  color: Colors.black,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ],
+          ),
+        ),
+        Container(width: 3, height: 10, color: _gold),
+        _buildAnchorDot(),
+      ],
     );
   }
 

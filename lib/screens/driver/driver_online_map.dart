@@ -497,7 +497,18 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
           ));
         } catch (_) {}
       }
-      if (!mounted || _previewingOffer != null) return;
+      if (!mounted || _previewingOffer == null) {
+        // Dismissed mid-restore: the reject clear already ran before g1
+        // existed — take it back or it floats over "Finding trips".
+        final stale = _previewPickupAnnot;
+        _previewPickupAnnot = null;
+        if (stale != null) {
+          try {
+            await polyMgr.delete(stale);
+          } catch (_) {}
+        }
+        return;
+      }
       final g2 = _fullSegTwo.length >= 2 ? safeLineString(_fullSegTwo) : null;
       if (g2 != null) {
         try {
@@ -511,7 +522,7 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
         } catch (_) {}
       }
     }
-    if (!mounted || _previewingOffer != null) return;
+    if (!mounted || _previewingOffer == null) return;
 
     // Endpoint pins at their post-pop size — the pop is an entrance
     // animation, not state worth replaying.
@@ -545,7 +556,11 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
         ));
       } catch (_) {}
     }
-    if (!mounted || _previewingOffer != null) return;
+    if (!mounted || _previewingOffer == null) {
+      // Same dismiss-mid-restore hole as g1 above, for the pins.
+      unawaited(_clearPickupDropoffAnnotations().catchError((_) {}));
+      return;
+    }
 
     // A recreated surface boots centered on the driver at street zoom —
     // reframe the whole route or the lines just drawn sit off-screen.
@@ -1119,6 +1134,13 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     _offerRandomBearing = 0;
     if (!mounted || _previewingOffer == null) {
       _isCardAnimating = false;
+      // Dismissed while the endpoint pins were being created above: the
+      // reject/expire clear ran BEFORE they existed, so it had no handle
+      // to them — take them back here or they float over "Finding trips"
+      // with no card to explain them. From this guard on, every dismiss
+      // path's own clear reaches them (they are tracked), so this is the
+      // only bail that needs the sweep.
+      unawaited(_clearPickupDropoffAnnotations().catchError((_) {}));
       return;
     }
 
@@ -1553,7 +1575,10 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
         final fullSafe = safeLineString(points);
         if (fullSafe != null && ml != null) {
           ml.geometry = fullSafe;
-          polyMgr.update(ml);
+          // catchError like every other call here: the handle may already
+          // be natively deleted (clear beat the ticker to it), and an
+          // unawaited rejection is an unhandled async error.
+          polyMgr.update(ml).catchError((_) {});
         }
         // Handle already tracked since creation — nothing to assign here.
         if (!completer.isCompleted) completer.complete();
@@ -1667,7 +1692,7 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
         final fullSafe = safeLineString(points);
         if (fullSafe != null && sl != null) {
           sl.geometry = fullSafe;
-          polyMgr.update(sl);
+          polyMgr.update(sl).catchError((_) {});
         }
         // Handle already tracked since creation — nothing to assign here.
         if (!completer.isCompleted) completer.complete();

@@ -197,6 +197,49 @@ void main() {
           reason: 'seg2 handle must be assigned BEFORE the ticker starts — '
               'same orphan-on-kill hole as seg1');
     });
+
+    test('the fresh-surface restore bails only when the preview is GONE', () {
+      // All three mid-restore guards were typed `!= null` — but the restore
+      // only RUNS when a preview is up, so it drew seg1 and returned: no
+      // seg2, no pins, no reframe. They must be `== null` like the pin
+      // guard between them (which was the only correct one).
+      final map =
+          File('lib/screens/driver/driver_online_map.dart').readAsStringSync();
+      final start =
+          map.indexOf('Future<void> _restoreOfferPreviewOnFreshSurface(');
+      expect(start, isNonNegative, reason: 'restore fn not found');
+      final end = map.indexOf('Future<void> _setPickupAnnotation(', start);
+      final body = map.substring(start, end > start ? end : start + 4500);
+      expect(body.contains('_previewingOffer != null'), isFalse,
+          reason: 'an != null guard inside the restore returns immediately '
+              'after seg1 — inverted: it must bail only when the preview '
+              'went AWAY (== null)');
+      expect(body.contains('_previewingOffer == null'), isTrue,
+          reason: 'the restore needs its dismiss bails pointing at GONE');
+    });
+
+    test('the first bail after pin creation sweeps the just-created pins',
+        () {
+      // X landing while PHASE 2's pin creates are in flight: the reject
+      // clear already ran before the pins existed, so they used to float
+      // over "Finding trips" with no card — the pin-shaped twin of the
+      // orphaned gold line.
+      final map =
+          File('lib/screens/driver/driver_online_map.dart').readAsStringSync();
+      final start = map.indexOf('Future<void> _onOfferCardTap(');
+      expect(start, isNonNegative, reason: '_onOfferCardTap not found');
+      final pinCreate = map.indexOf('_prevDropoffAnnot = await pointMgr.create',
+          start);
+      expect(pinCreate, isNonNegative, reason: 'pin creation not found');
+      final bail = map.indexOf(
+          'if (!mounted || _previewingOffer == null) {', pinCreate);
+      expect(bail, isNonNegative, reason: 'post-pin-creation bail not found');
+      final bailBody = map.substring(bail, bail + 800);
+      expect(bailBody.contains('_clearPickupDropoffAnnotations()'), isTrue,
+          reason: 'the first bail after the pin creates must sweep them — '
+              'the dismiss clear had no handle to pins that did not exist '
+              'yet when it ran');
+    });
   });
 
   group('trip end never replays the Go chime', () {    test('every return-to-online from a trip is a resume', () {

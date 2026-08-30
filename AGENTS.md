@@ -111,6 +111,7 @@
 12. **Cuando el usuario reporta un bug visual, CRÉELE PRIMERO y rastrea el layout — no culpes al build.** (2026-08-28: el strip de mapa bajo el sheet de tiers lo descarté dos veces como "build viejo" porque `bottom: 0` "debía" ser flush — y era real: el `SafeArea` estaba FUERA del contenedor que pinta el fondo, dejando la franja del home-indicator transparente.) Regla: si el usuario lo ve en el build actual, existe; lee la jerarquía de widgets completa antes de argumentar versión.
 13. **El inset del sistema lo pinta el fondo del sheet, nunca un SafeArea transparente por fuera** — un `SafeArea`/`Padding` que envuelve al contenedor con color deja una franja transparente por donde se ve el mapa. El inset va DENTRO del padding del contenedor que tiene el color (fix en `ride_request_widgets.dart` `_buildRoutePreviewSheet`, 2026-08-28).
 14. **Cada push de feature nueva necesita su bump de build en `pubspec.yaml` el mismo día** — Codemagic no adivina; App Store Connect rechaza versiones duplicadas y un build viejo en el device del usuario produce reportes "fantasma" de bugs ya arreglados (o esconde los reales, ver #12).
+15. **`railway.toml` es load-bearing (probado 2026-08-29)** — el dashboard del servicio NO tiene el Dockerfile path configurado; borrar el archivo hace que Railway caiga a Railpack (auto-detección Node) y el build muere con "No start command detected" (deploy e07e4191 falló así; el servicio quedó online con el deploy anterior y se restauró el archivo).
 
 ---
 

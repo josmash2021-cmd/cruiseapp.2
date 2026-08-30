@@ -1436,6 +1436,24 @@ async def security_headers_middleware(request: Request, call_next):
     response.headers["Connection"] = "keep-alive"
     return response
 
+# Read-only endpoints the app polls on a timer while a trip is active.
+#
+# One rider mid-trip legitimately fires ~100+ req/min from a single device:
+# trip poll every 2 s, support-chat messages every 2 s, unread-badge peek
+# every 8 s, /trips/active checks. Counting those against the shared
+# 100 req/min per-IP tier exhausted the bucket and the SAME tier then 429'd
+# real user actions — cancel trip and support chat send included (prod
+# outage 2026-08-30, trip 625). These GETs skip the tier but remain under
+# the global DDoS cap; POSTs on the same paths (chat send, typing) keep it.
+def _is_read_poll_path(path: str) -> bool:
+    return (
+        path == "/trips/active"
+        or path == "/support/chats"
+        or (path.startswith("/trips/") and (path.endswith("/poll") or path.endswith("/chat")))
+        or (path.startswith("/support/chats/") and path.endswith("/messages"))
+    )
+
+
 # -- LAYER 3: Rate Limiting (per-IP, anti-DDoS) --------
 _RATE_LIMIT = 3000        # max requests per IP per window (1500+ users + SSE + polling)
 _RATE_WINDOW = 60         # per this many seconds
@@ -1454,7 +1472,11 @@ async def rate_limit_middleware(request: Request, call_next):
     if _path.endswith("/stream") or _path.startswith("/socket.io") or _is_hot_path(_path):
         return await call_next(request)
     # Skip tiered limits for health/docs/static (they don't need per-endpoint throttling)
-    if _path not in ("/ping", "/docs", "/openapi.json"):
+    # and for read-only poll GETs (they skip the 100/min tier but STAY under
+    # the global DDoS cap below).
+    if _path not in ("/ping", "/docs", "/openapi.json") and not (
+        request.method == "GET" and _is_read_poll_path(_path)
+    ):
         # ── Tiered rate limiting (stricter for auth, moderate for general API) ──
         # This runs BEFORE the global DDoS cap below and provides per-category limits.
         # The limiter may be sync (in-memory) or async (Redis) — handle both.

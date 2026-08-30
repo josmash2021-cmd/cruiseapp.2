@@ -1469,6 +1469,15 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
       } catch (_) {}
       return;
     }
+    // Track the handle NOW, not at progress 1.0. The cleanup contract used
+    // to be "the ticker deletes the half-drawn line itself when it notices
+    // the preview is gone" — but anything that kills the ticker before that
+    // frame runs (_closePreview disposes it, the 8s timeout in
+    // _onOfferCardTap letting PHASE 6 stop/dispose a seg1 ticker frozen by
+    // an iOS background) left the line with no handle at all, and no clear
+    // on reject/expire could reach it: the gold route stayed painted with
+    // the offer card already gone.
+    _previewPickupAnnot = mainLine;
 
     final totalMs = (points.length * 10).clamp(1800, 3500);
     final completer = Completer<void>();
@@ -1481,12 +1490,11 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
       if (!mounted || !wanted()) {
         _routeDrawTicker?.stop();
         if (!completer.isCompleted) completer.complete();
-        // Take the half-drawn line back with it. The append variant (seg2)
-        // has always done this; seg1 stopping without the delete left an
-        // UNTRACKED polyline on the map — _previewPickupAnnot is only
-        // assigned at progress 1.0, so the clear that runs on
-        // reject/expire has no handle to it and the yellow route stayed
-        // painted with the offer card already gone.
+        // Take the half-drawn line back with it. Belt-and-suspenders: the
+        // handle is already tracked from creation (see above), so the clear
+        // on reject/expire reaches it even if this frame never runs — this
+        // delete covers the window where the clear already ran before the
+        // handle was assigned.
         final stale = mainLine;
         if (stale != null) {
           polyMgr.delete(stale).catchError((_) {});
@@ -1547,7 +1555,7 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
           ml.geometry = fullSafe;
           polyMgr.update(ml);
         }
-        _previewPickupAnnot = mainLine;
+        // Handle already tracked since creation — nothing to assign here.
         if (!completer.isCompleted) completer.complete();
       }
     });
@@ -1586,6 +1594,11 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
       ));
     } catch (_) {}
     if (!mounted || seg2Line == null) return;
+    // Same early tracking as seg1: a ticker killed before its first frame
+    // (_closePreview disposes it, an iOS background freeze + the 8s draw
+    // timeout) must not orphan the half-drawn line — the reject/expire
+    // clear only reaches annotations reachable through the State fields.
+    _previewDropoffAnnot = seg2Line;
 
     final totalMs = (points.length * 10).clamp(1800, 3500);
     final completer = Completer<void>();
@@ -1656,7 +1669,7 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
           sl.geometry = fullSafe;
           polyMgr.update(sl);
         }
-        _previewDropoffAnnot = seg2Line;
+        // Handle already tracked since creation — nothing to assign here.
         if (!completer.isCompleted) completer.complete();
       }
     });

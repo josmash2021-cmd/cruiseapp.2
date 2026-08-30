@@ -8,65 +8,46 @@ accounts; this script makes the link explicit by stamping each NULL row
 with the driver's ACTIVE vehicle (first one when none is flagged).
 
 Idempotent: the UPDATE only touches rows still NULL. Safe to re-run.
+Plain sync psycopg3 like the _diag scripts — models.database's engine
+kwargs for the public proxy are asyncpg-style and its psycopg3 dialect
+rejects them.
 
-Run: railway run python backend/scripts/backfill_vehicle_doc_ids.py
+Run: railway run ./.venv/Scripts/python.exe backend/scripts/backfill_vehicle_doc_ids.py
 """
 
-import asyncio
 import os
-import sys
 
-# railway run injects the internal hostname, unreachable from a local
-# machine — swap it for the public proxy (same trick as the _diag scripts).
-_db_url = os.getenv("DATABASE_URL", "")
-if "postgres.railway.internal:5432" in _db_url:
-    os.environ["DATABASE_URL"] = _db_url.replace(
-        "postgres.railway.internal:5432", "switchyard.proxy.rlwy.net:12460")
+import psycopg
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+db = os.getenv("DATABASE_URL", "").replace(
+    "postgres.railway.internal:5432", "switchyard.proxy.rlwy.net:12460")
+# psycopg3 wants a plain postgresql:// URI (strip any SQLAlchemy driver).
+db = db.replace("postgresql+psycopg://", "postgresql://")
+conn = psycopg.connect(db)
+conn.autocommit = False
+cur = conn.cursor()
 
-from sqlalchemy import select, update  # noqa: E402
-from models.database import SessionLocal, Vehicle, Document  # noqa: E402
+# Active vehicle first per driver, else the oldest.
+cur.execute(
+    "SELECT id, user_id FROM vehicles "
+    "ORDER BY user_id, is_active DESC, created_at ASC"
+)
+by_user: dict[int, int] = {}
+for vehicle_id, user_id in cur.fetchall():
+    by_user.setdefault(user_id, vehicle_id)
 
-VEHICLE_LEVEL = ("insurance", "registration", "vehicle_inspection")
+total = 0
+for user_id, vehicle_id in by_user.items():
+    cur.execute(
+        "UPDATE documents SET vehicle_id = %s "
+        "WHERE user_id = %s AND vehicle_id IS NULL "
+        "AND doc_type IN ('insurance', 'registration', 'vehicle_inspection')",
+        (vehicle_id, user_id),
+    )
+    if cur.rowcount:
+        total += cur.rowcount
+        print(f"driver {user_id}: {cur.rowcount} doc(s) -> vehicle {vehicle_id}")
 
-
-async def main() -> None:
-    async with SessionLocal() as db:
-        vehicles = (
-            await db.execute(
-                select(Vehicle).order_by(
-                    Vehicle.user_id,
-                    Vehicle.is_active.desc(),  # active vehicle first
-                    Vehicle.created_at.asc(),  # else the oldest
-                )
-            )
-        ).scalars().all()
-
-        by_user: dict[int, list[Vehicle]] = {}
-        for v in vehicles:
-            by_user.setdefault(v.user_id, []).append(v)
-
-        total = 0
-        for user_id, vs in by_user.items():
-            target = vs[0]
-            res = await db.execute(
-                update(Document)
-                .where(
-                    Document.user_id == user_id,
-                    Document.vehicle_id == None,  # noqa: E711
-                    Document.doc_type.in_(VEHICLE_LEVEL),
-                )
-                .values(vehicle_id=target.id)
-            )
-            if res.rowcount:
-                total += res.rowcount
-                multi = "" if len(vs) == 1 else f" ({len(vs)} vehicles!)"
-                print(f"driver {user_id}: {res.rowcount} doc(s) → "
-                      f"vehicle {target.id}{multi}")
-        await db.commit()
-        print(f"done — {total} document(s) stamped")
-
-
-if __name__ == "__main__":
-    asyncio.run(main())
+conn.commit()
+print(f"done — {total} document(s) stamped")
+conn.close()

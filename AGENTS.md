@@ -113,6 +113,7 @@
 13. **El inset del sistema lo pinta el fondo del sheet, nunca un SafeArea transparente por fuera** — un `SafeArea`/`Padding` que envuelve al contenedor con color deja una franja transparente por donde se ve el mapa. El inset va DENTRO del padding del contenedor que tiene el color (fix en `ride_request_widgets.dart` `_buildRoutePreviewSheet`, 2026-08-28).
 14. **Cada push de feature nueva necesita su bump de build en `pubspec.yaml` el mismo día** — Codemagic no adivina; App Store Connect rechaza versiones duplicadas y un build viejo en el device del usuario produce reportes "fantasma" de bugs ya arreglados (o esconde los reales, ver #12).
 15. **`railway.toml` es load-bearing (probado 2026-08-29)** — el dashboard del servicio NO tiene el Dockerfile path configurado; borrar el archivo hace que Railway caiga a Railpack (auto-detección Node) y el build muere con "No start command detected" (deploy e07e4191 falló así; el servicio quedó online con el deploy anterior y se restauró el archivo).
+16. **El tier de rate limit por IP (100/min) NO cuenta los polls GET de solo lectura** (2026-08-30, outage trip 625: el rider con viaje activo + support chat genera 100+ req/min de polling y el 429 tumbaba cancel/chat) — `_is_read_poll_path` en `main.py` exime `/trips/active`, `/trips/{id}/poll`, `/trips/{id}/chat`, `/support/chats[/.../messages]` (siguen bajo el cap DDoS 3000; los POST conservan el tier). Al meter un endpoint polleable nuevo, clasifícalo ahí. Guardián: `backend/tests/test_rate_limit_read_polls.py`.
 
 ---
 

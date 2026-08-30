@@ -103,3 +103,43 @@ async def test_admin_delete_user_removes_dependents(client, test_rider, test_dri
     # The counterparty is untouched.
     await db.refresh(rider)
     assert rider.id is not None
+
+
+@pytest.mark.asyncio
+async def test_admin_delete_user_with_vehicle_documents(client, test_driver, db):
+    """Prod carries a documents.vehicle_id FK the ORM never declared, so the
+    purge deleting the vehicle first died on a FK violation and the dispatch
+    panel showed a bare 500. Documents must be purged before vehicles."""
+    from sqlalchemy import select, text
+    from models.database import User, Vehicle, Document
+    from tests.conftest import _make_auth_headers
+
+    driver, _ = test_driver
+    # Mirror the prod-only constraint, with FK enforcement on.
+    await db.execute(text("PRAGMA foreign_keys=ON"))
+    await db.execute(text(
+        "ALTER TABLE documents ADD COLUMN vehicle_id INTEGER REFERENCES vehicles(id)"
+    ))
+    await db.commit()
+    vehicle = Vehicle(user_id=driver.id, make="Toyota", model="Camry",
+                      year=2020, plate="ABC123")
+    db.add(vehicle)
+    await db.commit()
+    await db.refresh(vehicle)
+    await db.execute(
+        text("INSERT INTO documents (user_id, doc_type, status, vehicle_id) "
+             "VALUES (:uid, 'insurance', 'approved', :vid)"),
+        {"uid": driver.id, "vid": vehicle.id},
+    )
+    await db.commit()
+
+    try:
+        headers = _make_auth_headers("test-dispatch-key")
+        resp = await client.delete(f"/admin/users/{driver.id}", headers=headers)
+        assert resp.status_code == 200, resp.text
+
+        assert (await db.execute(select(User).where(User.id == driver.id))).scalar_one_or_none() is None
+        assert (await db.execute(select(Vehicle).where(Vehicle.user_id == driver.id))).scalars().all() == []
+        assert (await db.execute(select(Document).where(Document.user_id == driver.id))).scalars().all() == []
+    finally:
+        await db.execute(text("PRAGMA foreign_keys=OFF"))

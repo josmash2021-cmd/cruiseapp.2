@@ -115,12 +115,10 @@ async def test_admin_delete_user_with_vehicle_documents(client, test_driver, db)
     from tests.conftest import _make_auth_headers
 
     driver, _ = test_driver
-    # Mirror the prod-only constraint, with FK enforcement on.
+    # vehicle_id is a real ORM column since multi-vehicle (2026-08-29) — no
+    # ALTER needed; just turn FK enforcement on so the purge order is what
+    # keeps the delete alive (documents before vehicles).
     await db.execute(text("PRAGMA foreign_keys=ON"))
-    await db.execute(text(
-        "ALTER TABLE documents ADD COLUMN vehicle_id INTEGER REFERENCES vehicles(id)"
-    ))
-    await db.commit()
     vehicle = Vehicle(user_id=driver.id, make="Toyota", model="Camry",
                       year=2020, plate="ABC123")
     db.add(vehicle)

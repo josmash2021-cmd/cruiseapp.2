@@ -28,6 +28,12 @@ import sys
 from collections import Counter
 from pathlib import Path
 
+# Windows defaults to the Proactor event loop, which psycopg refuses to
+# run async on: "Psycopg cannot use the 'ProactorEventLoop'". Same guard
+# as run_migrations.py — this script is meant to run from a dev machine.
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
 _backend_dir = Path(__file__).parent.resolve()
 if str(_backend_dir) not in sys.path:
     sys.path.insert(0, str(_backend_dir))

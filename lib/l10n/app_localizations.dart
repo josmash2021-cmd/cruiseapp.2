@@ -3073,6 +3073,13 @@ class S {
       ? 'Tu viaje ha sido cancelado por el operador. Por favor solicita un nuevo viaje.'
       : 'Your trip has been cancelled by the operator. Please request a new ride.';
   String get okButton => _es ? 'OK' : 'OK';
+  // Welcome push — shown once, the moment the account is approved (never
+  // on a signup timer, no promo code).
+  String get welcomeNotifTitle =>
+      _es ? '¡Bienvenido a Cruise! 🎉' : 'Welcome to Cruise! 🎉';
+  String get welcomeNotifBody => _es
+      ? 'Tu cuenta está aprobada — ya puedes pedir tu primer viaje.'
+      : "Your account is approved — you're all set for your first ride.";
   String arrivalTime(String time) => _es ? 'Llegada $time' : 'Arrival $time';
   String etaLabel(String eta) => 'ETA $eta';
   String get addOrChange => _es ? 'Agregar o\nCambiar' : 'Add or\nChange';

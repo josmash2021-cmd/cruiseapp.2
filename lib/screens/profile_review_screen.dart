@@ -8,7 +8,7 @@ import '../config/app_theme.dart';
 import '../config/page_transitions.dart';
 import '../services/api_service.dart';
 import '../services/local_data_service.dart';
-import '../services/notification_service.dart';
+import '../services/prefs_cache.dart';
 import '../services/firebase_storage_service.dart';
 import '../services/photo_recovery_service.dart';
 import '../widgets/dismiss_keyboard.dart';
@@ -300,17 +300,13 @@ class _ProfileReviewScreenState extends State<ProfileReviewScreen> {
     // Auto-enable biometric login so it appears on next sign-in
     await LocalDataService.setBiometricLogin(true);
 
-    // Schedule welcome notification 10 minutes after registration
+    // Welcome notification: planted as a flag here, shown by home when the
+    // account is APPROVED — not on a 10-minute timer, and with no promo
+    // code (user spec 2026-08-31: just "Welcome to Cruise").
     final role = await UserSession.getMode();
     if (role != 'driver') {
-      NotificationService.scheduleAt(
-        id: 9999,
-        title: 'Welcome to Cruise! \u{1F389}',
-        body:
-            'Thanks for joining! Enjoy 10% off your first ride with code WELCOME10 \u{1F697}',
-        scheduledTime: DateTime.now().add(const Duration(minutes: 10)),
-        payload: 'welcome_discount',
-      );
+      final prefs = PrefsCache.instanceSync ?? await PrefsCache.instance;
+      await prefs.setBool('welcome_pending_v1', true);
     }
 
     if (!mounted) return;

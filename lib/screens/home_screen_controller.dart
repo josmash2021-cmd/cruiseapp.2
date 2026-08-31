@@ -246,6 +246,24 @@ extension _HomeScreenController on _HomeScreenState {
   /// Check backend for verification status using dashboard (single call).
   /// Handles reinstall/new device where SharedPreferences is empty but the
   /// user was already approved via dispatch.
+  /// "Welcome to Cruise" — shown ONCE, the moment the account flips to
+  /// approved (boot check, 300 s poll and the approval socket push all
+  /// converge in _checkBackendVerification). The flag is planted at
+  /// registration (profile_review_screen); accounts that predate it never
+  /// carry the flag, so nobody gets a late "welcome" months in.
+  Future<void> _maybeShowWelcomeOnApproval() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (!(prefs.getBool('welcome_pending_v1') ?? false)) return;
+    await prefs.setBool('welcome_pending_v1', false);
+    if (!mounted) return;
+    await NotificationService.show(
+      id: 9999,
+      title: S.of(context).welcomeNotifTitle,
+      body: S.of(context).welcomeNotifBody,
+      payload: 'welcome',
+    );
+  }
+
   Future<void> _checkBackendVerification() async {
     try {
       final dashboard = await ApiService.getDashboard();
@@ -270,6 +288,7 @@ extension _HomeScreenController on _HomeScreenState {
             _verificationStatus = 'approved';
           });
         }
+        await _maybeShowWelcomeOnApproval();
       }
       
       // Check account status in same call

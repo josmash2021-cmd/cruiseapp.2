@@ -190,13 +190,44 @@ async def test_post_vehicle_creates_row_and_marks_submitted(client, db, test_dri
     resp = await client.post(
         "/auth/onboarding-items/vehicle",
         headers=_hdrs(token),
-        json={"year": 2021, "make": "Toyota", "model": "Camry", "color": "White"},
+        json={"year": 2021, "make": "Toyota", "model": "Camry", "color": "White",
+              "seats": 5, "seatbelts": 5},
     )
     assert resp.status_code == 200, resp.text
     veh = (await db.execute(select(Vehicle).where(Vehicle.user_id == driver.id))).scalar_one()
     assert veh.year == 2021 and veh.make == "Toyota" and veh.model == "Camry"
     assert veh.plate == "ABC123"  # plate step carried into the Vehicle row
+    assert veh.seatbelts == 5
+    # The tier is classified on submit — never left at the "comfort"
+    # default. A 2021 sedan is Premium (sedan floor 2021, 2026-08-29).
+    assert veh.vehicle_type == "premium"
     assert (await _get_items(client, token))["vehicle"]["status"] == "submitted"
+
+
+async def test_post_vehicle_classifies_tier_on_submit(client, db, test_driver):
+    """Onboarding registration used to leave vehicle_type at the column
+    default ("comfort" → Standard), so a brand-new Escalade was offered
+    Standard work. The tier must come from the car, not the default."""
+    _, token = test_driver
+    resp = await client.post(
+        "/auth/onboarding-items/vehicle",
+        headers=_hdrs(token),
+        json={"year": 2024, "make": "Cadillac", "model": "Escalade",
+              "color": "Black", "seats": 7, "seatbelts": 7},
+    )
+    assert resp.status_code == 200, resp.text
+    veh = (await db.execute(select(Vehicle).where(Vehicle.user_id == test_driver[0].id))).scalar_one()
+    assert veh.vehicle_type == "black"  # 7 seats + 2022 or newer
+
+    # An unlisted model with no roomy body is Standard — the safe floor.
+    resp = await client.post(
+        "/auth/onboarding-items/vehicle",
+        headers=_hdrs(token),
+        json={"year": 2013, "make": "Toyota", "model": "Camry", "color": "White"},
+    )
+    assert resp.status_code == 200, resp.text
+    await db.refresh(veh)
+    assert veh.vehicle_type == "standard"
 
 
 async def test_post_vehicle_year_under_2012_is_400(client, db, test_driver):

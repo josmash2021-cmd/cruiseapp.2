@@ -22,6 +22,8 @@ class _VehicleCaptureScreenState extends State<VehicleCaptureScreen> {
   String? _make;
   String? _model;
   String? _color;
+  int? _seats;
+  int? _seatbelts;
   bool _saving = false;
 
   @override
@@ -44,7 +46,9 @@ class _VehicleCaptureScreenState extends State<VehicleCaptureScreen> {
       _year != null &&
       _make != null &&
       _effectiveModel != null &&
-      _color != null;
+      _color != null &&
+      _seats != null &&
+      _seatbelts != null;
 
   Future<void> _save() async {
     if (!_valid || _saving) return;
@@ -56,6 +60,8 @@ class _VehicleCaptureScreenState extends State<VehicleCaptureScreen> {
         make: _make!,
         model: _effectiveModel!,
         color: _color!,
+        seats: _seats!,
+        seatbelts: _seatbelts!,
       );
       if (!mounted) return;
       Navigator.of(context).pop(true);
@@ -143,6 +149,24 @@ class _VehicleCaptureScreenState extends State<VehicleCaptureScreen> {
                     value: _color,
                     items: vehicleColors,
                     onChanged: (v) => setState(() => _color = v),
+                  ),
+                  const SizedBox(height: 16),
+                  // Capacity decides the tier (Lyft rule: seatbelts, not the
+                  // driver, say which ride types the car may take), so the
+                  // form asks for it instead of trusting the model table
+                  // alone.
+                  OnboardingDropdown<int>(
+                    label: s.obVehicleSeats,
+                    value: _seats,
+                    items: vehicleCapacityOptions,
+                    onChanged: (v) => setState(() => _seats = v),
+                  ),
+                  const SizedBox(height: 16),
+                  OnboardingDropdown<int>(
+                    label: s.obVehicleSeatbelts,
+                    value: _seatbelts,
+                    items: vehicleCapacityOptions,
+                    onChanged: (v) => setState(() => _seatbelts = v),
                   ),
                 ],
               ),

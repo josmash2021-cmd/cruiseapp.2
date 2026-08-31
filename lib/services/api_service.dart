@@ -1831,11 +1831,15 @@ class ApiService {
     required String make,
     required String model,
     required String color,
+    required int seats,
+    required int seatbelts,
   }) => _postOnboardingItem('vehicle', {
     'year': year,
     'make': make,
     'model': model,
     'color': color,
+    'seats': seats,
+    'seatbelts': seatbelts,
   });
 
   static Future<Map<String, dynamic>> submitOnboardingBackground() =>

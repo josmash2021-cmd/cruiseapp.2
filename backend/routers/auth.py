@@ -27,6 +27,7 @@ from utils.security import (
 )
 from utils.helpers import _safe_create_task, utc_now, _user_dict, _haversine, _trip_dict, _compute_user_rating, validate_driver_minimum_age, _name_matches
 from utils.image_validation import validate_image_bytes
+from services import vehicle_tiers
 from services.fcm_service import _send_fcm_push_async
 from services.email_sms_service import _send_email
 from services.guest_link_service import link_guest_trips_to_user
@@ -4151,6 +4152,11 @@ class _OnboardingVehicleIn(BaseModel):
     make: str = Field(..., min_length=1, max_length=100)
     model: str = Field(..., min_length=1, max_length=100)
     color: str = Field(..., min_length=1, max_length=50)
+    # Driver-reported capacity, captured on the onboarding form. `seats`
+    # feeds the tier classifier directly; `seatbelts` is kept on the
+    # vehicle record (the platform policy metric, Lyft-style: 5-8).
+    seats: Optional[int] = Field(default=None, ge=2, le=15)
+    seatbelts: Optional[int] = Field(default=None, ge=2, le=15)
 
 
 class _OnboardingBackgroundIn(BaseModel):
@@ -4212,11 +4218,22 @@ async def submit_onboarding_vehicle(body: _OnboardingVehicleIn, user: User = Dep
         Vehicle.is_active == True,
     ))
     veh = veh_result.scalars().first()
+    # The tier is the car — classify here too, exactly like
+    # POST /drivers/vehicles does. This endpoint used to leave the column
+    # at its "comfort" default, so every car registered through onboarding
+    # (an Escalade included) drove as Standard forever.
+    tier = vehicle_tiers.classify(
+        body.make.strip(), body.model.strip(), body.year, seats=body.seats,
+    )
     if veh:
         veh.year = body.year
         veh.make = body.make.strip()
         veh.model = body.model.strip()
         veh.color = body.color.strip()
+        veh.vehicle_type = tier
+        # Old app builds do not send seatbelts — never erase a known value.
+        if body.seatbelts is not None:
+            veh.seatbelts = body.seatbelts
     else:
         db.add(Vehicle(
             user_id=db_user.id,
@@ -4226,6 +4243,8 @@ async def submit_onboarding_vehicle(body: _OnboardingVehicleIn, user: User = Dep
             color=body.color.strip(),
             plate=db_user.plate_number or "",
             plate_state=db_user.plate_state,
+            vehicle_type=tier,
+            seatbelts=body.seatbelts,
         ))
     _set_onboarding_override(db_user, "vehicle", "submitted")
     # A vehicle row now holds the plate captured in the plate step.

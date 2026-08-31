@@ -5682,6 +5682,11 @@ class S {
       ? 'Tengo un vehículo — 2012 o más nuevo, 4 puertas, 5 cinturones'
       : 'I have a vehicle — 2012 or newer, 4 doors, 5 seatbelts';
   String get obInReview => _es ? 'En revisión' : 'In review';
+  // Shown next to the "In review" pill so a new driver knows the wait up
+  // front instead of wondering when the account gets reviewed.
+  String get obReviewEta => _es
+      ? 'La revisión suele tardar de 24 a 72 horas'
+      : 'Review usually takes 24 to 72 hours';
   // All onboarding items submitted (2026-08-25): the hub swaps the featured
   // "up next" card for the car hero + this copy while dispatch reviews.
   String get obAllInReviewTitle =>
@@ -5832,6 +5837,10 @@ class S {
   String get obVehicleMake => _es ? 'Marca' : 'Make';
   String get obVehicleModel => _es ? 'Modelo' : 'Model';
   String get obVehicleColor => _es ? 'Color' : 'Color';
+  // Total seating capacity, driver included — the number the tier
+  // classifier reads (a 7-seat SUV is Premium/Black territory).
+  String get obVehicleSeats => _es ? 'Asientos (incluido el tuyo)' : 'Seats (including yours)';
+  String get obVehicleSeatbelts => _es ? 'Cinturones de seguridad' : 'Seatbelts';
 
   // ── Captura: licencia (cámara in-app) ────────────────────────────
   String get obLicenseFrontTitle =>

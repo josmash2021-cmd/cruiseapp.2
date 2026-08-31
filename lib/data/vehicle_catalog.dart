@@ -118,3 +118,8 @@ const List<String> vehicleColors = [
   'Purple',
   'Maroon',
 ];
+
+/// Seats / seatbelts a rideshare car can plausibly carry. Platform policy
+/// floors at 5 belts; 4 stays selectable so the reviewer sees the real
+/// number instead of a rounded-up lie.
+const List<int> vehicleCapacityOptions = [4, 5, 6, 7, 8];

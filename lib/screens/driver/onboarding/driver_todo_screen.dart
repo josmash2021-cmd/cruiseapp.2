@@ -250,20 +250,12 @@ class _DriverTodoScreenState extends State<DriverTodoScreen> {
                     color: Colors.white,
                   ),
                 ),
-                const SizedBox(width: 10),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 5,
-                  ),
-                  decoration: BoxDecoration(
-                    color: kOnboardingGold.withValues(alpha: 0.14),
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(
-                      color: kOnboardingGold.withValues(alpha: 0.5),
-                    ),
-                  ),
-                  child: Text(
+                // Count only when something is actually pending — "0 items"
+                // is noise on the all-done review state, and it reads as
+                // plain gold text with no pill around it.
+                if (open.isNotEmpty) ...[
+                  const SizedBox(width: 10),
+                  Text(
                     s.obTodoCount(open.length),
                     style: const TextStyle(
                       fontSize: 13,
@@ -271,7 +263,7 @@ class _DriverTodoScreenState extends State<DriverTodoScreen> {
                       color: kOnboardingGold,
                     ),
                   ),
-                ),
+                ],
                 const Spacer(),
                 IconButton(
                   onPressed: _confirmLogout,
@@ -629,6 +621,27 @@ class _DriverTodoScreenState extends State<DriverTodoScreen> {
                   icon: Icons.hourglass_top_rounded,
                   label: s.obInReview,
                   color: kOnboardingGold,
+                ),
+                const SizedBox(height: 8),
+                // The wait, stated up front: a new driver should not have to
+                // guess how long the review takes.
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.schedule_rounded,
+                      size: 13,
+                      color: Colors.white.withValues(alpha: 0.55),
+                    ),
+                    const SizedBox(width: 5),
+                    Text(
+                      s.obReviewEta,
+                      style: GoogleFonts.inter(
+                        fontSize: 12,
+                        color: Colors.white.withValues(alpha: 0.55),
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),

@@ -3722,7 +3722,10 @@ async def checkr_webhook(request: Request, db: AsyncSession = Depends(get_db)):
         _record_background_check_result(driver, now)
         if status == "clear":
             driver.background_check_status = "clear"
-            driver.verification_status = "approved"
+            # The background check no longer approves the account by itself:
+            # it is one document in the set (license + background + vehicle
+            # docs). The driver hears about THIS document instantly, and the
+            # aggregation approves the account when the rest are green too.
             await _restore_recheck_suspension(driver)
         elif status == "consider":
             driver.background_check_status = "consider"
@@ -3731,6 +3734,19 @@ async def checkr_webhook(request: Request, db: AsyncSession = Depends(get_db)):
             driver.background_check_status = status
         await db.commit()
         logging.info(f"Checkr report.completed: driver={driver.id} status={status}")
+        if status == "clear":
+            try:
+                # Never a 500 to Checkr (they retry) — a push/aggregation
+                # failure is logged, and the next document flip re-runs the
+                # aggregation anyway.
+                from services import driver_approval
+                await driver_approval.notify_document_reviewed(
+                    driver, "background", True)
+                await driver_approval.recompute_driver_approval(db, driver)
+            except Exception as e:
+                logging.warning(
+                    "Checkr clear post-actions failed for driver %s: %s",
+                    driver.id, e)
 
     elif event_type == "invitation.completed":
         driver.background_check_status = "processing"
@@ -3745,7 +3761,6 @@ async def checkr_webhook(request: Request, db: AsyncSession = Depends(get_db)):
         _record_background_check_result(driver, now)
         if status == "clear":
             driver.background_check_status = "clear"
-            driver.verification_status = "approved"
             await _restore_recheck_suspension(driver)
         elif status == "consider":
             driver.background_check_status = "consider"
@@ -3753,6 +3768,19 @@ async def checkr_webhook(request: Request, db: AsyncSession = Depends(get_db)):
         driver.background_check_completed_at = now
         await db.commit()
         logging.info(f"Checkr report.upgraded: driver={driver.id} status={status}")
+        if status == "clear":
+            try:
+                # Never a 500 to Checkr (they retry) — a push/aggregation
+                # failure is logged, and the next document flip re-runs the
+                # aggregation anyway.
+                from services import driver_approval
+                await driver_approval.notify_document_reviewed(
+                    driver, "background", True)
+                await driver_approval.recompute_driver_approval(db, driver)
+            except Exception as e:
+                logging.warning(
+                    "Checkr clear post-actions failed for driver %s: %s",
+                    driver.id, e)
 
     return {"ok": True}
 

@@ -59,6 +59,8 @@ class SocketService {
       StreamController<Map<String, dynamic>>.broadcast();
   static var _accountStatusController =
       StreamController<Map<String, dynamic>>.broadcast();
+  static var _onboardingItemController =
+      StreamController<Map<String, dynamic>>.broadcast();
 
   /// Stream of driver location updates.
   /// Payload: {trip_id, lat, lng, heading, speed, timestamp}
@@ -90,6 +92,13 @@ class SocketService {
   /// The 300 s REST poll on the home screen stays as the fallback.
   static Stream<Map<String, dynamic>> get accountStatusStream =>
       _accountStatusController.stream;
+
+  /// Stream of per-document review decisions pushed by the server.
+  /// Payload: {item: 'license'|'insurance'|..., status: 'approved'|'rejected',
+  /// reason: ''}. The driver's To-do hub reloads on this instead of the
+  /// rider finding out on the next app open.
+  static Stream<Map<String, dynamic>> get onboardingItemStream =>
+      _onboardingItemController.stream;
 
   // ── Public API ──────────────────────────────────────────────────────
 
@@ -285,6 +294,12 @@ class SocketService {
       final map = _toMap(data);
       _accountStatusController.add(map);
       debugPrint('[Socket.io] Account status changed: ${map['status']}');
+    });
+
+    _socket!.on('onboarding_item_changed', (data) {
+      final map = _toMap(data);
+      _onboardingItemController.add(map);
+      debugPrint('[Socket.io] Onboarding item changed: ${map['item']} → ${map['status']}');
     });
 
     // Listen to network recovery to proactively reconnect.

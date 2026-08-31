@@ -38,7 +38,10 @@ async def test_checkr_webhook_invalid_signature(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_checkr_webhook_report_completed_clear(client: AsyncClient, test_driver, db):
-    """report.completed with status=clear marks driver as approved."""
+    """report.completed with status=clear marks the BACKGROUND approved —
+    never the whole account. Since 2026-08-31 the account approves only
+    when the full document set is green (license + background + vehicle
+    docs), via driver_approval.recompute_driver_approval."""
     driver, _ = test_driver
     # Set checkr_candidate_id on the driver
     driver.checkr_candidate_id = "cand_test_clear"
@@ -73,8 +76,10 @@ async def test_checkr_webhook_report_completed_clear(client: AsyncClient, test_d
     # Verify driver was updated
     await db.refresh(driver)
     assert driver.background_check_status == "clear"
-    assert driver.verification_status == "approved"
     assert driver.checkr_report_id == "rpt_clear_1"
+    # The account does NOT approve on the background check alone — this
+    # driver has no approved license/vehicle docs.
+    assert (driver.verification_status or "") != "approved"
 
 
 @pytest.mark.asyncio

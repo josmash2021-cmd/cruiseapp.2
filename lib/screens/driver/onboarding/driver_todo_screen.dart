@@ -68,11 +68,17 @@ class _DriverTodoScreenState extends State<DriverTodoScreen> {
   StreamSubscription<Map<String, dynamic>>? _statusSub;
   Timer? _approvalPoll;
 
+  /// Per-document decisions (2026-08-31): dispatch approves/rejects ONE
+  /// document and the card flips live — same "no reopen needed" rule as
+  /// the account-level watch above.
+  StreamSubscription<Map<String, dynamic>>? _itemSub;
+
   @override
   void initState() {
     super.initState();
     _load();
     _statusSub = SocketService.accountStatusStream.listen(_onStatusPush);
+    _itemSub = SocketService.onboardingItemStream.listen((_) => _load());
     _approvalPoll = Timer.periodic(
       const Duration(seconds: 25),
       (_) => _checkApproval(),
@@ -82,6 +88,7 @@ class _DriverTodoScreenState extends State<DriverTodoScreen> {
   @override
   void dispose() {
     _statusSub?.cancel();
+    _itemSub?.cancel();
     _approvalPoll?.cancel();
     super.dispose();
   }

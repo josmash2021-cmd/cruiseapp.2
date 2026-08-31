@@ -2263,5 +2263,31 @@ async def admin_set_document_status(document_id: int, request: Request, db: Asyn
     await db.commit()
     await db.refresh(doc)
     logging.info("[Admin] Document %s %s by dispatch", document_id, doc.status)
+
+    # A document decision is a live event for the driver, not a row they
+    # discover on the next app open: onboarding override (the To-do hub),
+    # instant FCM + socket, then re-evaluate the whole account - the last
+    # green document is what approves the driver.
+    u_r = await db.execute(select(User).where(User.id == doc.user_id))
+    doc_user = u_r.scalar_one_or_none()
+    if doc_user:
+        from services import driver_approval
+        item = driver_approval.doc_to_onboarding_item(doc.doc_type)
+        if item:
+            try:
+                from routers.auth import _set_onboarding_override
+                _set_onboarding_override(
+                    doc_user, item, doc.status,
+                    reason=doc.rejection_reason)
+                await db.commit()
+            except Exception as e:
+                logging.warning("[Admin] onboarding override failed: %s", e)
+        await driver_approval.notify_document_reviewed(
+            doc_user, doc.doc_type, action == "approve",
+            reason=doc.rejection_reason)
+        try:
+            await driver_approval.recompute_driver_approval(db, doc_user)
+        except Exception as e:
+            logging.warning("[Admin] approval recompute failed: %s", e)
     return {"document": _doc_dict(doc)}
 

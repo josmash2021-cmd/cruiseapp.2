@@ -952,6 +952,11 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
   int _pollFailures = 0;
   int _initAttemptCount = 0;
 
+  /// Backstop for the typing bubble: if a reply never arrives (backend
+  /// hiccup between send and generation) the bubble must not sit there
+  /// forever pretending someone is writing.
+  Timer? _typingBackstop;
+
   _ChatPhase _phase = _ChatPhase.bot;
   int _queueDuration = 180;
 
@@ -981,6 +986,7 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
     _pollTimer?.cancel();
     _typingDebounce?.cancel();
     _queueSafetyTimer?.cancel();
+    _typingBackstop?.cancel();
     if (_isUserTyping && _chatId != null) {
       ApiService.setSupportTypingStatus(_chatId!, false);
     }
@@ -1273,8 +1279,10 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
         }
       }
 
-      // Deliver new messages with typing indicator for agent phase
-      if (_phase == _ChatPhase.agent && newMessages.length > _messages.length) {
+      // Deliver new bot replies with a typing indicator, in bot AND agent
+      // phase: the answer reads as written, not pasted. The delay comes
+      // from the message length, so a long answer visibly takes longer.
+      if (_phase != _ChatPhase.queue && newMessages.length > _messages.length) {
         final newOnes = newMessages.skip(_messages.length).toList();
         final agentMessages = newOnes.where((m) => m.role == 'bot').toList();
 
@@ -1292,11 +1300,12 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
           if (!mounted) return;
           final stick = _atBottom();
           setState(() {
+            _typingBackstop?.cancel();
             _isAgentTyping = false;
             _mergeMessages(newMessages);
             if (_chatClosed) {
               _subtitle = S.of(context).chatClosed;
-            } else if (_agentName != null) {
+            } else if (_phase == _ChatPhase.agent && _agentName != null) {
               _subtitle = '${_agentName!} · ${_isSpanish ? 'En línea' : 'Online'}';
             }
           });
@@ -1563,10 +1572,16 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
 
     try {
       await ApiService.sendSupportMessage(_chatId!, text);
-      // Show typing indicator while waiting for bot/agent response
-      if (mounted && _phase == _ChatPhase.agent) {
+      // Typing bubble while the reply is composed, in bot phase too — a
+      // person does not answer the instant you hit send, and the same LLM
+      // writes both the bot and the "agent" lines.
+      if (mounted && _phase != _ChatPhase.queue) {
         setState(() => _isAgentTyping = true);
         _scrollToBottom(force: true);
+        _typingBackstop?.cancel();
+        _typingBackstop = Timer(const Duration(seconds: 25), () {
+          if (mounted) setState(() => _isAgentTyping = false);
+        });
       }
       // Poll now.
       //

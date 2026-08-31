@@ -946,7 +946,8 @@ async def lifespan(app: FastAPI):
         if _PROVIDER == "none":
             logging.warning(
                 "[Support AI] no provider configured — every support chat "
-                "will be handed straight to a human. Set MOONSHOT_API_KEY."
+                "will be handed straight to a human. Set OPENAI_API_KEY "
+                "(or MOONSHOT_API_KEY)."
             )
         else:
             logging.info("[Support AI] provider=%s model=%s", _PROVIDER, _MODEL)

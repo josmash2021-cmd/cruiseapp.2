@@ -6,9 +6,11 @@ apply promo, escalate...).
 
 Provider
 --------
-Kimi (Moonshot AI) when MOONSHOT_API_KEY is set, OpenAI otherwise. Kimi
-speaks the OpenAI wire protocol, so the same client and the same request
-shape work for both — only the base URL and the model name change.
+OpenAI (GPT) when OPENAI_API_KEY is set, Kimi (Moonshot AI) when only
+MOONSHOT_API_KEY is set. Whichever key is configured second stands by: a
+primary whose key is rejected or out of quota demotes to it at request
+time (_demote_primary), loudly, instead of falling through to the
+rule-based replies in cruise_ai_engine.
 
 There is no fine-tuning involved for either. What makes this agent good
 or bad at Cruise support is _SYSTEM_PROMPT below: the app's real
@@ -21,6 +23,7 @@ import os
 from typing import Any
 
 import httpx
+import openai
 
 
 class SupportAuthError(Exception):
@@ -47,14 +50,14 @@ _ESCALATION_PHRASES = (
 )
 
 # ── Provider ─────────────────────────────────────────────────────────
-# Kimi, and nothing behind it.
-#
-# OpenAI used to stand by here. It is gone by request, which means a Kimi
-# key that is missing, rejected or out of quota no longer moves sideways to
-# another model — it falls through to the rule-based replies in
-# cruise_ai_engine, and past those to a human. Support never goes silent;
-# it just stops sounding like a person until Kimi answers again.
+# OpenAI (GPT) leads; Kimi stands by. Product call 2026-08-31: the support
+# agent runs on GPT — the Kimi Code endpoint is a coding subscription
+# sharing its quota with production support, which is how riders ended up
+# reading rule-based form letters when it ran dry. A primary whose key is
+# missing, rejected or out of quota now demotes at request time
+# (_demote_primary) to the other provider instead of falling through.
 _MOONSHOT_API_KEY = os.getenv("MOONSHOT_API_KEY", "") or os.getenv("KIMI_API_KEY", "")
+_OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 
 # Kimi Code (kimi.com/code) speaks the ANTHROPIC Messages protocol, not
 # OpenAI's — verified against a live key. Keys from that console are the
@@ -62,8 +65,15 @@ _MOONSHOT_API_KEY = os.getenv("MOONSHOT_API_KEY", "") or os.getenv("KIMI_API_KEY
 # which is a separate product with separate billing.
 _KIMI_BASE_URL = os.getenv("MOONSHOT_BASE_URL", "https://api.kimi.com/coding")
 
-# Model ids move faster than this file does, so it is env-overridable.
+# Model ids move faster than this file does, so both are env-overridable.
 _MOONSHOT_MODEL = os.getenv("MOONSHOT_MODEL", "k3")
+_OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+
+
+def _build_openai() -> tuple[Any, str, str] | None:
+    if not _OPENAI_API_KEY:
+        return None
+    return (openai.AsyncOpenAI(api_key=_OPENAI_API_KEY), _OPENAI_MODEL, "openai")
 
 
 def _build_kimi() -> tuple[Any, str, str] | None:
@@ -77,12 +87,22 @@ def _build_kimi() -> tuple[Any, str, str] | None:
     return (None, _MOONSHOT_MODEL, "kimi")
 
 
-_MODEL = _MOONSHOT_MODEL
+_openai_client = None
+_MODEL = _OPENAI_MODEL
 _PROVIDER = "none"
 
-_primary = _build_kimi()
+# OpenAI first, Kimi behind it.
+_primary = _build_openai() or _build_kimi()
 if _primary:
-    _, _MODEL, _PROVIDER = _primary
+    _openai_client, _MODEL, _PROVIDER = _primary
+
+# The standby is whatever the primary is not — it is what a rejected or
+# exhausted primary key falls back TO.
+_fallback = (
+    _build_kimi() if _PROVIDER == "openai"
+    else _build_openai() if _PROVIDER == "kimi"
+    else None
+)
 
 # Not logged here: main.py's lifespan reports the resolved provider at
 # startup, which is where an operator actually looks. Logging it at import
@@ -200,24 +220,96 @@ async def _anthropic_completion(messages: list[dict[str, Any]]) -> dict[str, Any
     }
 
 
-def _demote_primary(reason: str) -> bool:
-    """Kimi rejected the request. There is nowhere to demote to.
+async def _openai_completion(messages: list[dict[str, Any]]) -> dict[str, Any]:
+    """One turn against OpenAI's chat completions.
 
-    Kept as a function so the call sites read the same and a standby can be
-    put back later by returning True from here. It logs loudly because this
-    is the line that explains a support bot which suddenly sounds like a
-    form letter: the caller falls through to the rule-based replies.
-
-    The usual cause is not a bad key — a rejected key answers 401. Quota
-    answers 403, and reads identically from the outside.
+    Returns the same {response, function_call?, escalate} dict the Kimi
+    path returns, so the caller cannot tell which provider answered.
     """
+    global _TOOLS_UNSUPPORTED
+    extra = {} if _TOOLS_UNSUPPORTED else {
+        "tools": _FUNCTIONS,
+        "tool_choice": "auto",
+    }
+    try:
+        resp = await _openai_client.chat.completions.create(
+            model=_MODEL,
+            messages=messages,
+            max_tokens=800,
+            temperature=0.7,
+            **extra,
+        )
+    except openai.BadRequestError as e:
+        if _TOOLS_UNSUPPORTED:
+            raise
+        _log.warning(
+            "[Support AI] openai rejected tools (%s) — retrying without them", e,
+        )
+        _TOOLS_UNSUPPORTED = True
+        resp = await _openai_client.chat.completions.create(
+            model=_MODEL,
+            messages=messages,
+            max_tokens=800,
+            temperature=0.7,
+        )
+
+    message = resp.choices[0].message
+    if message.tool_calls:
+        call = message.tool_calls[0]
+        _log.info("[Support AI] openai tool call: %s", call.function.name)
+        return {
+            "response": message.content or "I'll help you with that right away.",
+            "function_call": {
+                "name": call.function.name,
+                "arguments": json.loads(call.function.arguments or "{}"),
+            },
+            "escalate": False,
+        }
+
+    text = (message.content or "").strip()
+    return {
+        "response": text,
+        "escalate": any(kw in text.lower() for kw in _ESCALATION_PHRASES),
+    }
+
+
+async def _completion(messages: list[dict[str, Any]]) -> dict[str, Any]:
+    """The active provider answers one turn. Both paths return the same
+    dict, so switching providers mid-process (demote) is invisible here."""
+    if _PROVIDER == "kimi":
+        return await _anthropic_completion(messages)
+    return await _openai_completion(messages)
+
+
+def _demote_primary(reason: str) -> bool:
+    """Primary provider rejected our credentials or ran out of quota —
+    switch to the standby, permanently, and say so loudly.
+
+    Config-time selection alone is not a fallback chain: a key that is
+    present but INVALID would otherwise shadow a perfectly good standby
+    and answer every rider with the escalation message, with nothing in
+    the logs explaining why. A rejected key has to demote at request time.
+
+    Returns True when a standby took over.
+    """
+    global _openai_client, _MODEL, _PROVIDER, _fallback, _TOOLS_UNSUPPORTED
+    if not _fallback:
+        _log.error(
+            "[Support AI] %s rejected the request (%s) and no standby is "
+            "configured — falling through to rule-based replies. A 401 is a "
+            "bad key; a 403/429 is quota, not configuration.",
+            _PROVIDER, reason,
+        )
+        return False
     _log.error(
-        "[Support AI] Kimi rejected the request (%s) and no standby is "
-        "configured — falling through to rule-based replies. If this is a "
-        "403, the account is out of quota rather than misconfigured.",
-        reason,
+        "[Support AI] %s rejected the request (%s) — falling back to %s. "
+        "Fix or remove that key.",
+        _PROVIDER, reason, _fallback[2],
     )
-    return False
+    _openai_client, _MODEL, _PROVIDER = _fallback
+    _fallback = None
+    _TOOLS_UNSUPPORTED = False  # a different provider, a different answer
+    return True
 
 # System prompt for Cruise support agent
 _SYSTEM_PROMPT = """You are Cruise Support, an AI assistant for a premium ride-sharing app called Cruise.
@@ -519,12 +611,12 @@ async def generate_support_response(
     messages: list[dict[str, Any]],
     user_context: dict[str, Any],
 ) -> dict[str, Any]:
-    """Generate a support response using OpenAI GPT-4o.
-    
+    """Generate a support response with the active provider (_PROVIDER).
+
     Args:
         messages: List of message dicts with 'role' and 'content'
         user_context: Dict with user info, active trip, recent trips, etc.
-    
+
     Returns:
         Dict with 'response' (str), 'function_call' (optional), 'escalate' (bool)
     """
@@ -532,7 +624,7 @@ async def generate_support_response(
     # raw HTTP and legitimately has no client. Checking _openai_client here
     # silently escalated every rider even with a working Kimi key.
     if _PROVIDER == "none":
-        _log.error("[Support AI] no provider configured — set MOONSHOT_API_KEY")
+        _log.error("[Support AI] no provider configured — set OPENAI_API_KEY or MOONSHOT_API_KEY")
         return {
             "response": "I'm having trouble connecting to my knowledge base. Let me connect you with a human agent who can help you right away.",
             "escalate": True,
@@ -572,65 +664,27 @@ async def generate_support_response(
         
         openai_messages.append({"role": openai_role, "content": content})
 
-    global _TOOLS_UNSUPPORTED
     try:
-        # Kimi answers over the Anthropic protocol and returns the finished
-        # dict directly. It is the only provider now, so there is no second
-        # branch to fall through to — a refusal raises and the caller drops
-        # to the rule-based replies.
         try:
-            return await _anthropic_completion(openai_messages)
-        except SupportAuthError as e:
-            _demote_primary(str(e)[:120])
+            return await _completion(openai_messages)
+        except (SupportAuthError, openai.AuthenticationError,
+                openai.RateLimitError) as e:
+            # A rejected key or an exhausted quota demotes the primary for
+            # the life of the process, and the standby answers this turn.
+            if _demote_primary(str(e)[:120]):
+                return await _completion(openai_messages)
             raise
-
-        message = response.choices[0].message
-
-        # Check if the model wants to call a function
-        if message.tool_calls:
-            tool_call = message.tool_calls[0]
-            function_name = tool_call.function.name
-            function_args = json.loads(tool_call.function.arguments)
-            
-            _log.info("[OpenAI] Function call: %s(%s)", function_name, function_args)
-            
-            return {
-                "response": message.content or "I'll help you with that right away.",
-                "function_call": {
-                    "name": function_name,
-                    "arguments": function_args,
-                },
-                "escalate": False,
-            }
-
-        # Check for implicit escalation keywords
-        content = message.content or ""
-        escalate = any(kw in content.lower() for kw in [
-            "connect you with a human", "supervisor", "human agent",
-            "connect you with a supervisor", "transfer you to",
-        ])
-
-        return {
-            "response": content,
-            "escalate": escalate,
-        }
-
-    except SupportAuthError:
-        _log.warning("[OpenAI] Rate limit exceeded")
+    except (SupportAuthError, openai.AuthenticationError,
+            openai.RateLimitError):
+        _log.warning("[Support AI] credentials/quota rejected on every provider")
         return {
             "response": "I'm experiencing high demand right now. Please try again in a moment, or I can connect you with a human agent.",
             "escalate": True,
         }
     except Exception as e:
-        _log.error("[OpenAI] API error: %s", e)
+        _log.error("[Support AI] %s error: %s", _PROVIDER, e)
         return {
             "response": "I'm having technical difficulties. Let me connect you with a human agent who can assist you.",
-            "escalate": True,
-        }
-    except Exception as e:
-        _log.error("[OpenAI] Unexpected error: %s", e)
-        return {
-            "response": "Something went wrong on my end. Let me get a human to help you.",
             "escalate": True,
         }
 

@@ -5,7 +5,6 @@ import 'package:image_picker/image_picker.dart';
 import '../services/ai_support_service.dart';
 import '../config/agent_prompts.dart';
 import '../widgets/typing_indicator.dart';
-import '../widgets/queue_status_widget.dart';
 import 'package:flutter/material.dart';
 import '../services/haptic_service.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -930,6 +929,11 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
   /// cannot cut the wait short the moment it lands.
   DateTime? _queueEnteredAt;
 
+  /// Backstop for the handoff: the server's "has joined" row normally ends
+  /// the queue, but if that row never comes (backend hiccup) the user must
+  /// not sit on "Connecting…" forever — this forces the phase forward.
+  Timer? _queueSafetyTimer;
+
   int? _chatId;
   String? _agentName;
   String _subtitle = '';
@@ -976,6 +980,7 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
   void dispose() {
     _pollTimer?.cancel();
     _typingDebounce?.cancel();
+    _queueSafetyTimer?.cancel();
     if (_isUserTyping && _chatId != null) {
       ApiService.setSupportTypingStatus(_chatId!, false);
     }
@@ -1242,6 +1247,10 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
             await Future.delayed(const Duration(seconds: 2));
             if (mounted) {
               _queueEnteredAt = DateTime.now();
+              _queueSafetyTimer?.cancel();
+              _queueSafetyTimer = Timer(const Duration(seconds: 15), () {
+                if (mounted && _phase == _ChatPhase.queue) _onQueueComplete();
+              });
               setState(() {
                 _phase = _ChatPhase.queue;
                 _subtitle = _isSpanish
@@ -1337,7 +1346,8 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
 
   void _onQueueComplete() async {
     if (!mounted) return;
-    // Both the countdown widget and the poll can reach this — the poll ends
+    _queueSafetyTimer?.cancel();
+    // Both the safety timer and the poll can reach this — the poll ends
     // the wait the moment the server's "has joined" row lands, whatever the
     // timer thinks. Second callers must fall straight through or the reveal
     // loop below runs twice over the same buffer.
@@ -1345,24 +1355,17 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
 
     // The handover, paced like one.
     //
-    // A real transfer has beats: the queue ends, a moment passes, someone
+    // A real transfer has beats: the wait ends, a moment passes, someone
     // arrives, and only then do they start typing. Running those together
-    // reads as a script firing rather than a person picking up — the queue
-    // card vanished and a fully-formed paragraph was already on screen.
-    //
-    //   queue ends → 20 s → "X has joined" (the card goes with it)
-    //                → 15 s → typing starts, for as long as the line takes
-    //                → then 30 s of visible typing between replies
-    //
-    // Nothing here is a fixed wait for the whole handover: the typing
-    // duration still comes from the message, so a long answer takes visibly
-    // longer to write than a short one.
+    // reads as a script firing rather than a person picking up. Two seconds
+    // is enough for the beat — the greeting itself is already throttled by
+    // the visible typing duration below.
     setState(() {
       _phase = _ChatPhase.agent;
       _showQuickActions = false;
     });
 
-    await Future.delayed(const Duration(seconds: 20));
+    await Future.delayed(const Duration(seconds: 2));
     if (!mounted) return;
 
     // Reveal buffered messages one at a time with typing delays
@@ -2191,11 +2194,39 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
         opacity: _phase == _ChatPhase.queue ? 1 : 0,
         duration: const Duration(milliseconds: 320),
         curve: Curves.easeOut,
+        // A chat bubble, not a dashboard card: the old widget showed a fake
+        // queue position, ETA and progress bar for a wait that is one AI
+        // handing the chat to itself. A single inline line is all the
+        // handoff needs to say.
         child: _phase == _ChatPhase.queue
-            ? QueueStatusWidget(
-                totalDuration: _queueDuration,
-                onComplete: _onQueueComplete,
-                isSpanish: _isSpanish,
+            ? Center(
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF1E1E1E),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: _gold.withValues(alpha: 0.15)),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.hourglass_top_rounded,
+                          size: 14, color: _gold),
+                      const SizedBox(width: 8),
+                      Text(
+                        _isSpanish
+                            ? 'Conectando con un agente…'
+                            : 'Connecting you with an agent…',
+                        style: const TextStyle(
+                          color: Colors.white70,
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               )
             : const SizedBox(width: double.infinity),
       ),

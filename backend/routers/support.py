@@ -1035,8 +1035,13 @@ def _parse_action_markers(response: str) -> tuple[str, list[dict[str, Any]]]:
 #
 # Seconds from the announcement that a supervisor was coming, to that
 # supervisor appearing; then from their arrival to their first line.
-_SUPERVISOR_JOINS_AFTER_S = 60
-_SUPERVISOR_GREETS_AFTER_S = 20
+# The handoff beat, not a hold: the "supervisor" is the same AI with a
+# name, so the join/greet delays exist only to read as a transfer rather
+# than an instant costume change. They were 60/20 when the wait was sold
+# as a real queue; with the queue card gone, a minute of dead air is just
+# bad service.
+_SUPERVISOR_JOINS_AFTER_S = 8
+_SUPERVISOR_GREETS_AFTER_S = 3
 
 _JOINED_RE = re.compile(r"se ha conectado|joined the chat", re.I)
 

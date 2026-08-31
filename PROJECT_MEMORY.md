@@ -214,7 +214,6 @@
 | Trip Action Buttons | `tracking/trip_action_buttons.dart` | Call/message/cancel buttons |
 | Trip Phase Indicator | `tracking/trip_phase_indicator.dart` | Trip progress steps |
 | Fare Breakdown | `fare_breakdown_widget.dart` | Price breakdown |
-| Queue Status | `queue_status_widget.dart` | Driver queue position |
 | Velocity Aware Panel | `velocity_aware_panel.dart` | Panel that hides on movement |
 | Smart Map Pin | `smart_map_pin.dart` | Intelligent map pin |
 | Cruise Map Pin | `cruise_map_pin.dart` | Branded map pin |

@@ -921,8 +921,8 @@ async def complete_login(body: CompleteLoginIn, request: Request, db: AsyncSessi
 # trip entirely (a review device cannot receive our texts). Rider role only —
 # a driver-side bypass would be a far bigger hole. The stored phone is not a
 # routable number; it only names the standing demo account.
-APPLE_REVIEW_PHONE_DIGITS = "23456789"
-APPLE_REVIEW_PHONE = "+123456789"
+APPLE_REVIEW_PHONE_DIGITS = "1234567890"
+APPLE_REVIEW_PHONE = "+11234567890"
 
 
 async def _apple_review_login(db: AsyncSession, request: Request):

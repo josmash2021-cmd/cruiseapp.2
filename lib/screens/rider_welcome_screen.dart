@@ -49,7 +49,7 @@ class _RiderWelcomeScreenState extends State<RiderWelcomeScreen> {
   /// App Store review account (rider): these digits enable the button and
   /// skip the SMS code screen entirely — the backend issues the session
   /// directly (a review device cannot receive our texts).
-  static const _appleReviewDigits = '23456789';
+  static const _appleReviewDigits = '1234567890';
 
   /// Result of the successful phone-login, captured by the customVerify
   /// closure so the success callback can route by `is_new_user`.

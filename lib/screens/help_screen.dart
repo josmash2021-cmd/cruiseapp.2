@@ -31,7 +31,24 @@ class _HelpScreenState extends State<HelpScreen> {
   final _searchCtrl = TextEditingController();
   String _query = '';
 
-  List<_HelpCategory> _categories() => [
+  /// The topics differ by role — a driver reading "I lost an item" or "My
+  /// driver made me feel unsafe" is reading someone else's manual.
+  /// getMode answers 'driver' even mid-onboarding, so the Help Center
+  /// opened from the To-do hub gets the registration topics too.
+  bool _isDriver = false;
+
+  @override
+  void initState() {
+    super.initState();
+    UserSession.getMode().then((mode) {
+      if (mounted && mode == 'driver') setState(() => _isDriver = true);
+    });
+  }
+
+  List<_HelpCategory> _categories() =>
+      _isDriver ? _driverCategories() : _riderCategories();
+
+  List<_HelpCategory> _riderCategories() => [
     _HelpCategory(
       title: 'Trips & Fare',
       icon: Icons.directions_car_rounded,
@@ -197,6 +214,148 @@ class _HelpScreenState extends State<HelpScreen> {
               '3. Clear the app cache\n'
               '4. Restart the app\n\n'
               'This usually resolves the issue. If not, try reinstalling the app.',
+        ),
+      ],
+    ),
+  ];
+
+  /// Driver-side topics — every number below mirrors the real rule in the
+  /// backend (review window, tier bands, referral milestones, offer timer),
+  /// not marketing copy.
+  List<_HelpCategory> _driverCategories() => [
+    _HelpCategory(
+      title: 'Getting approved',
+      icon: Icons.verified_user_outlined,
+      items: [
+        _HelpTopic(
+          icon: Icons.hourglass_top_rounded,
+          title: 'When will I be approved?',
+          answer:
+              'Our team reviews every new driver account, which usually takes 24 to 72 hours.\n\n'
+              'You don\'t need to do anything else: the To-do screen updates on its own the moment you\'re approved. '
+              'If an item was rejected, it shows the reason and a Resubmit option — fix that item and the review continues.',
+        ),
+        _HelpTopic(
+          icon: Icons.description_outlined,
+          title: 'My document was rejected',
+          answer:
+              'Open the rejected item on your To-do screen — the rejection reason is shown there.\n\n'
+              'Most rejections are photo quality:\n'
+              '• All four corners of the document visible\n'
+              '• No glare or blur, text clearly readable\n'
+              '• The document current (not expired)\n\n'
+              'Retake the photo and tap Resubmit.',
+        ),
+        _HelpTopic(
+          icon: Icons.fact_check_outlined,
+          title: 'Background check status',
+          answer:
+              'After you accept the background-check disclosure, the screening runs with our verification vendor. '
+              'Most checks finish within a few days, and the result appears on your To-do screen automatically.\n\n'
+              'If it has been more than a week, contact support and we\'ll look into it.',
+        ),
+      ],
+    ),
+    _HelpCategory(
+      title: 'Earnings & tiers',
+      icon: Icons.payments_outlined,
+      items: [
+        _HelpTopic(
+          icon: Icons.percent_rounded,
+          title: 'How much do I earn per trip?',
+          answer:
+              'You keep 70% of the fare on every trip, in every tier — plus 100% of tips.\n\n'
+              'Your trips and earnings are listed in the app so you can verify each payout yourself.',
+        ),
+        _HelpTopic(
+          icon: Icons.account_balance_rounded,
+          title: 'When do I get paid?',
+          answer:
+              'Payouts run weekly, on Mondays (US Central time), through Stripe Connect to your linked bank account.\n\n'
+              'Make sure your bank details are set up — a payout can\'t go out without them.',
+        ),
+        _HelpTopic(
+          icon: Icons.directions_car_outlined,
+          title: 'Vehicle tiers',
+          answer:
+              'You never pick a tier — your car does, from its body style, seats and model year:\n\n'
+              '• Compact: two-row SUVs, 4-5 seats, ~2016 or newer\n'
+              '• Standard: sedans and SUVs ~2012-2016\n'
+              '• Premium: three-row SUVs (6+ seats) 2020 or newer, and sedans 2021 or newer\n'
+              '• Black: large SUVs (7+ seats) 2022 or newer — these also receive Premium requests\n\n'
+              'If your car landed in the wrong tier, contact support and we\'ll review it.',
+        ),
+        _HelpTopic(
+          icon: Icons.card_giftcard_rounded,
+          title: 'Driver referral bonuses',
+          answer:
+              'Refer a new driver with your code:\n\n'
+              '• They earn \$25 after their first 2 trips\n'
+              '• You earn \$50 when they reach 50 trips within 60 days\n'
+              '• You earn \$150 more when they reach 200 trips within 180 days\n\n'
+              'Watch the clock: if the 60-day window closes before 50 trips, the referral expires.',
+        ),
+      ],
+    ),
+    _HelpCategory(
+      title: 'Driving',
+      icon: Icons.toggle_on_outlined,
+      items: [
+        _HelpTopic(
+          icon: Icons.wifi_tethering_rounded,
+          title: 'Going online and trip offers',
+          answer:
+              'Toggle GO ONLINE to start receiving offers. Each offer shows the fare, earnings per hour, '
+              'distance and duration, and gives you 20 seconds to accept before it goes to the next driver.\n\n'
+              'Going offline expires any pending offer, so stay online while you wait.',
+        ),
+        _HelpTopic(
+          icon: Icons.block_rounded,
+          title: 'I can\'t go online',
+          answer:
+              'Going online requires all of these:\n\n'
+              '• Your account approved (see "Getting approved")\n'
+              '• An approved vehicle set as active\n'
+              '• Its documents current: insurance, registration (and inspection where required)\n\n'
+              'If everything looks right and it still won\'t let you, contact support.',
+        ),
+        _HelpTopic(
+          icon: Icons.notifications_off_outlined,
+          title: 'Not receiving trip offers',
+          answer:
+              'If you\'re online but no offers arrive:\n\n'
+              '1. Check notifications are enabled for Cruise in your device settings\n'
+              '2. Make sure "Do Not Disturb" is off\n'
+              '3. On Android, exclude Cruise from battery optimization\n'
+              '4. Confirm you\'re online — the app shows "Finding trips"\n\n'
+              'Offers also depend on rider demand near you.',
+        ),
+      ],
+    ),
+    _HelpCategory(
+      title: 'Safety & account',
+      icon: Icons.shield_outlined,
+      items: [
+        _HelpTopic(
+          icon: Icons.warning_amber_rounded,
+          title: 'Report a safety issue',
+          answer:
+              'If a rider made you feel unsafe or something happened during a trip:\n\n'
+              '1. If you\'re in immediate danger, call 911 first\n'
+              '2. Report it through the app as soon as you can\n'
+              '3. Include the trip details and what happened\n\n'
+              'Our safety team reviews every report and follows up with you directly.',
+        ),
+        _HelpTopic(
+          icon: Icons.delete_outline_rounded,
+          title: 'Delete my account',
+          answer:
+              'To delete your driver account:\n\n'
+              '1. Go to Account → Settings → Privacy\n'
+              '2. Scroll to the bottom\n'
+              '3. Tap "Delete Account"\n'
+              '4. Confirm your decision\n\n'
+              '⚠️ This is permanent: your data, trip history and any unpaid earnings balance are removed.',
         ),
       ],
     ),
@@ -404,13 +563,11 @@ class _HelpScreenState extends State<HelpScreen> {
   }
 
   Widget _quickFaqSection(AppColors c) {
-    final faqs = [
-      'How to pay?',
-      'Cancel ride',
-      'Lost item',
-      'Safety',
-      'Refund',
-    ];
+    // Chips are search seeds: each must be a substring of some topic's
+    // title or answer for this role, or the tap lands on an empty result.
+    final faqs = _isDriver
+        ? const ['Approved', 'Payout', 'Vehicle tiers', 'Referral', 'Safety']
+        : const ['How to pay?', 'Cancel ride', 'Lost item', 'Safety', 'Refund'];
     return Wrap(
       spacing: 8,
       runSpacing: 8,

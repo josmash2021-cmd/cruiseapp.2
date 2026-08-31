@@ -46,6 +46,11 @@ class _RiderWelcomeScreenState extends State<RiderWelcomeScreen> {
   bool _sending = false;
   bool _appleLoading = false;
 
+  /// App Store review account (rider): these digits enable the button and
+  /// skip the SMS code screen entirely — the backend issues the session
+  /// directly (a review device cannot receive our texts).
+  static const _appleReviewDigits = '23456789';
+
   /// Result of the successful phone-login, captured by the customVerify
   /// closure so the success callback can route by `is_new_user`.
   Map<String, dynamic>? _loginResult;
@@ -68,12 +73,17 @@ class _RiderWelcomeScreenState extends State<RiderWelcomeScreen> {
   }
 
   void _validate() {
-    final ok = usPhoneDigits(_phoneCtrl.text).length == 10;
+    final digits = usPhoneDigits(_phoneCtrl.text);
+    final ok = digits.length == 10 || digits == _appleReviewDigits;
     if (ok != _canNext) setState(() => _canNext = ok);
   }
 
   Future<void> _next() async {
     if (!_canNext || _sending) return;
+    // App Store review account: no SMS, no code screen — straight session.
+    if (usPhoneDigits(_phoneCtrl.text) == _appleReviewDigits) {
+      return _appleReviewLogin();
+    }
     final e164 = usPhoneToE164(_phoneCtrl.text);
     if (e164.isEmpty) return;
     setState(() => _sending = true);
@@ -108,6 +118,41 @@ class _RiderWelcomeScreenState extends State<RiderWelcomeScreen> {
         ),
       ),
     );
+  }
+
+  /// Apple review fast path: phone-login without the SMS round trip. The
+  /// backend recognises the fixed digits and returns a full session in one
+  /// shot; routing afterwards is the same [_onLoggedIn] the code screen uses.
+  Future<void> _appleReviewLogin() async {
+    final connectionError = S.of(context).connectionError;
+    setState(() => _sending = true);
+    String? error;
+    try {
+      _loginResult = await ApiService.phoneLogin(
+          phone: _appleReviewDigits, code: '', role: 'rider');
+    } on ApiException catch (e) {
+      error = e.message;
+    } catch (_) {
+      error = connectionError;
+    }
+    if (!mounted) return;
+    setState(() => _sending = false);
+    if (error != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: const Color(0xFFB3261E),
+          behavior: SnackBarBehavior.floating,
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          content: Text(
+            error,
+            style: const TextStyle(fontWeight: FontWeight.w600),
+          ),
+        ),
+      );
+      return;
+    }
+    await _onLoggedIn();
   }
 
   /// Custom verify hook for the code screen: the backend checks the OTP and

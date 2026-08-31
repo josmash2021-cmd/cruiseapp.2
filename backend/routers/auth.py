@@ -915,6 +915,72 @@ async def complete_login(body: CompleteLoginIn, request: Request, db: AsyncSessi
 
 
 # -- Phone Login (SMS OTP, Lyft-style) -------------------------
+
+# App Store review account: fixed demo digits that skip the SMS code round
+# trip entirely (a review device cannot receive our texts). Rider role only —
+# a driver-side bypass would be a far bigger hole. The stored phone is not a
+# routable number; it only names the standing demo account.
+APPLE_REVIEW_PHONE_DIGITS = "23456789"
+APPLE_REVIEW_PHONE = "+123456789"
+
+
+async def _apple_review_login(db: AsyncSession, request: Request):
+    """Session for the App Store review account — find-or-create, no OTP.
+
+    Always reports is_new_user=False: this is a standing demo account, so the
+    app routes straight home instead of the new-rider name screen.
+    """
+    result = await db.execute(
+        select(User).where(User.phone == APPLE_REVIEW_PHONE, User.role == "rider")
+    )
+    user = result.scalars().first()
+    now = datetime.now(timezone.utc)
+    if user is not None:
+        if user.status in ("deleted", "pending_deletion"):
+            user.status = "active"
+            user.deletion_requested_at = None
+        if user.status == "blocked":
+            raise HTTPException(403, "Account blocked")
+        user.phone_verified = True
+        user.phone_verified_at = now
+        await db.commit()
+        await db.refresh(user)
+    else:
+        import secrets as _secrets
+        user = User(
+            first_name="Apple",
+            last_name="Review",
+            email=None,
+            phone=APPLE_REVIEW_PHONE,
+            password_hash=pwd.hash(_secrets.token_hex(32)),
+            role="rider",
+            auth_provider="phone",
+            phone_verified=True,
+            phone_verified_at=now,
+        )
+        db.add(user)
+        await db.commit()
+        await db.refresh(user)
+        try:
+            from routers.referrals import _ensure_referral_code  # lazy: import cycle
+            await _ensure_referral_code(user, db)
+            await db.refresh(user)
+        except Exception as e:
+            logging.warning("[AppleReview] referral code mint failed: %s", e)
+
+    await _record_login_activity(db, request, user.id)
+
+    token = await _create_driver_aware_token_from_user(user, db)
+    refresh = _create_refresh_token(user.id)
+    return {
+        "access_token": token,
+        "refresh_token": refresh,
+        "token_type": "bearer",
+        "user": _user_dict(user),
+        "is_new_user": False,
+    }
+
+
 @router.post("/auth/phone-login", dependencies=[Depends(_verify_api_key)])
 async def phone_login(body: PhoneLoginIn, request: Request, db: AsyncSession = Depends(get_db)):
     """Log in (or sign up) with a phone number + SMS code.
@@ -930,6 +996,14 @@ async def phone_login(body: PhoneLoginIn, request: Request, db: AsyncSession = D
     digits = re.sub(r"\D", "", body.phone or "")
     if digits.startswith("1") and len(digits) == 11:
         digits = digits[1:]
+
+    # App Store review account: the fixed demo digits (with or without the
+    # +1 prefix) log straight in — no OTP row, no Twilio call, no code
+    # format requirement. Rider role only.
+    if role == "rider" and digits in (
+            APPLE_REVIEW_PHONE_DIGITS, "1" + APPLE_REVIEW_PHONE_DIGITS):
+        return await _apple_review_login(db, request)
+
     if len(digits) != 10:
         raise HTTPException(400, "A valid 10-digit US phone number is required")
     if not code or not code.isdigit() or len(code) != 6:

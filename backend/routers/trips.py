@@ -1271,6 +1271,107 @@ async def _notify_driver_route_change(db, trip, title: str, body_text: str):
         ))
 
 
+async def _push_ride_live_activity(trip_id: int, new_status: str):
+    """Repaint/end the RIDER's Live Activity (the lock-screen trip card)
+    from the server's side, so it stays true while the app is backgrounded
+    or killed. Fail-soft everywhere: no APNs creds, no token, no row —
+    silent no-op. Runs in its own session; never blocks the transition.
+
+    Only the statuses the server can speak truthfully about: en_route is
+    excluded on purpose — the pickup ETA needs the driver's live position,
+    which the app has and the server does not, so the card's approach leg
+    belongs to the client."""
+    try:
+        from services import apns_liveactivity
+        if not apns_liveactivity.apns_configured():
+            return
+        async with SessionLocal() as db:
+            trip = (await db.execute(
+                select(Trip).where(Trip.id == trip_id))).scalar_one_or_none()
+            if not trip or not trip.rider_id:
+                return
+            rider = (await db.execute(
+                select(User).where(User.id == trip.rider_id))).scalar_one_or_none()
+            token = getattr(rider, "apns_la_ride_token", None) if rider else None
+            if not token:
+                return
+
+            if new_status in ("completed", "cancelled"):
+                outcome = await apns_liveactivity.end_ride_live_activity(
+                    ride_token=token)
+                if outcome == "stale":
+                    rider.apns_la_ride_token = None
+                    await db.commit()
+                return
+
+            phase = {"arrived": "arrived", "in_trip": "on_trip"}.get(new_status)
+            if phase is None:
+                return
+
+            driver = None
+            if trip.driver_id:
+                driver = (await db.execute(
+                    select(User).where(User.id == trip.driver_id))
+                ).scalar_one_or_none()
+            driver_name = (getattr(driver, "first_name", "") or "").strip()
+            driver_photo = getattr(driver, "photo_url", None) or ""
+            if driver_photo:
+                from utils.helpers import _abs_photo_url
+                driver_photo = _abs_photo_url(driver_photo) or ""
+            rating = getattr(driver, "average_rating", None) or 5.0
+
+            now = int(time.time())
+            started = trip.started_at if phase == "on_trip" else (
+                getattr(trip, "arrived_at", None) or getattr(trip, "driver_assigned_at", None))
+            if started is not None and started.tzinfo is None:
+                started = started.replace(tzinfo=timezone.utc)
+            started_ts = int(started.timestamp()) if started else now
+            # ETA: the app owns the precise one (live GPS); from the server
+            # the card gets the same 24 mph urban fallback the app itself
+            # uses, so a backgrounded repaint never shows a wilder number.
+            eta_min = 0
+            if phase == "on_trip" and trip.pickup_lat and trip.dropoff_lat:
+                miles = _haversine(
+                    trip.pickup_lat, trip.pickup_lng,
+                    trip.dropoff_lat, trip.dropoff_lng) * 0.621371
+                eta_min = max(1, int(miles / 0.4))
+            dropoff_ts = now + eta_min * 60
+
+            tier = vehicle_tiers.normalize_tier(
+                getattr(trip, "vehicle_type", None))
+            car_image = ("CarSuv" if tier in ("premium", "black")
+                         else "CarEconomy" if tier == "compact"
+                         else "CarSedan")
+
+            alert = None
+            if phase == "arrived":
+                # The one repaint that must be SEEN: it breaks the island
+                # out and raises the lock-screen banner.
+                alert = {
+                    "title": "Your driver is here",
+                    "body": f"{driver_name} is waiting at the pickup spot."
+                            if driver_name else "Meet your car at the pickup spot.",
+                    "sound": "default",
+                }
+            outcome = await apns_liveactivity.update_ride_live_activity(
+                ride_token=token,
+                phase=phase,
+                started_at=started_ts,
+                dropoff_at=dropoff_ts,
+                dropoff_address=(trip.dropoff_address or "")[:120],
+                driver_name=driver_name,
+                driver_rating=f"{rating:.1f}",
+                driver_photo_url=driver_photo,
+                car_image=car_image,
+                alert=alert,
+            )
+            if outcome == "stale":
+                rider.apns_la_ride_token = None
+                await db.commit()
+    except Exception as e:
+        logging.warning("[RideLA] push failed for trip %s: %s", trip_id, e)
+
+
 @router.post("/trips/{trip_id}/stops", dependencies=[Depends(_verify_api_key)])
 async def add_trip_stop(trip_id: int, body: TripStopIn,
                         user: User = Depends(_get_current_user),
@@ -1730,6 +1831,11 @@ async def update_trip_status(trip_id: int, request: Request, status: str = Query
             "payment_status": trip.payment_status,
         },
     ))
+
+    # The rider's lock-screen card (Live Activity) — repainted/ended from
+    # the server so it stays true with the app backgrounded or killed.
+    # Own session inside; adds zero latency to this request.
+    _safe_create_task(_push_ride_live_activity(trip.id, canonical_new))
 
     # SSE — the rider app's primary status channel (sub-second).
     await event_bus.push_trip_update(trip.id, {

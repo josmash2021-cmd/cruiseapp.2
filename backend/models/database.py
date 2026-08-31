@@ -176,6 +176,10 @@ class User(Base):
     # a Live Activity.
     apns_la_start_token = Column(String(128), nullable=True)
     apns_la_activity_token = Column(String(128), nullable=True)
+    # The RIDER's trip Live Activity (lock screen / island card with the
+    # drop-off ETA, destination and driver line). Its own channel: a user
+    # who both drives and rides must not clobber one token with the other.
+    apns_la_ride_token = Column(String(128), nullable=True)
     # Unique referral code shown to the rider (e.g. "JHON-A4F9"). Used by
     # invitees during signup to credit the referrer once they qualify.
     referral_code = Column(String(20), nullable=True, unique=True, index=True)
@@ -1060,6 +1064,7 @@ async def migrate_add_columns(conn):
         ("users", "background_recheck_suspended", "BOOLEAN DEFAULT 0"),
         ("users", "apns_la_start_token", "VARCHAR(128)"),
         ("users", "apns_la_activity_token", "VARCHAR(128)"),
+        ("users", "apns_la_ride_token", "VARCHAR(128)"),
         ("users", "verification_ocr_text", "VARCHAR(4000)"),
         ("users", "phone_verified", "BOOLEAN DEFAULT 0"),
         ("users", "phone_verified_at", "DATETIME"),
@@ -1191,6 +1196,7 @@ async def migrate_postgres(conn):
         ("users", "average_rating", "FLOAT DEFAULT 5.0"),
         ("users", "apns_la_start_token", "VARCHAR(128)"),
         ("users", "apns_la_activity_token", "VARCHAR(128)"),
+        ("users", "apns_la_ride_token", "VARCHAR(128)"),
         ("users", "verification_ocr_text", "VARCHAR(4000)"),
         ("users", "drive_city", "VARCHAR(120)"),
         ("users", "drive_state", "VARCHAR(2)"),

@@ -773,6 +773,9 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       }
     }
 
+    // Lock-screen card: repaints only when the ETA minute or phase moved.
+    _syncRideLiveActivity();
+
     // Throttle UI rebuilds to max 3/sec — car annotation is updated
     // directly in _updateCarSmooth() without needing widget rebuild.
     final now2 = DateTime.now();
@@ -1040,6 +1043,119 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
   }
 
   /// Process trip status changes from Firestore.
+  // ── Live Activity / trip progress notification ─────────────────────
+  // The trip on the rider's lock screen (iOS Live Activity, 1:1 with the
+  // Lyft reference: drop-off time + destination, driver photo/name/rating,
+  // car sliding along the bar) and pinned in the Android tray. The bar is
+  // time-driven on both sides, so this only repaints on a phase change or
+  // an ETA shift of a full minute. Everything here is fail-soft — a
+  // cosmetic card must never take tracking down with it.
+  // NOTE: the fields live on the State class (rider_tracking_screen.dart,
+  // next to _phase) — this part is an extension, and extensions cannot
+  // declare instance fields.
+
+  String get _laPhaseName {
+    switch (_phase) {
+      case _TrackPhase.arriving:
+        return 'en_route';
+      case _TrackPhase.arrived:
+        return 'arrived';
+      default:
+        return 'on_trip';
+    }
+  }
+
+  String _laCarImage([Map<String, dynamic>? data]) {
+    final raw = (data?['vehicleType'] ??
+            data?['vehicle_type'] ??
+            widget.rideName)
+        .toString()
+        .toLowerCase();
+    if (raw.contains('suv') ||
+        raw.contains('xl') ||
+        raw.contains('black') ||
+        raw.contains('premium')) {
+      return 'CarSuv';
+    }
+    if (raw.contains('compact') || raw.contains('economy')) {
+      return 'CarEconomy';
+    }
+    return 'CarSedan';
+  }
+
+  void _syncRideLiveActivity({bool end = false, Map<String, dynamic>? data}) {
+    if (kIsWeb) return;
+    if (end) {
+      if (_laStarted) {
+        _laStarted = false;
+        _laPhase = '';
+        _laEtaMin = -1;
+        LiveActivityService.endRide();
+        NotificationService.cancelTripProgress();
+      }
+      return;
+    }
+    if (_phase == _TrackPhase.completed) return;
+    final phaseName = _laPhaseName;
+    final etaMin = _phase == _TrackPhase.arrived ? 0 : _etaMinutes;
+    // The bar moves on its own (time-driven natively) — a repaint only
+    // earns its keep when the phase changed or the ETA moved a minute.
+    if (_laStarted && phaseName == _laPhase && etaMin == _laEtaMin) return;
+    final now = DateTime.now();
+    final first = !_laStarted;
+    if (first || phaseName != _laPhase) {
+      // A new leg re-anchors the bar: assigned for en_route, pickup for
+      // on_trip. (arrived pins the bar full — its anchors don't matter.)
+      _laLegStart = now;
+    }
+    _laStarted = true;
+    _laPhase = phaseName;
+    _laEtaMin = etaMin;
+    final dropoffAt = now.add(Duration(minutes: etaMin));
+    final photo = _driverPhotoUrl ?? widget.driverPhotoUrl ?? '';
+    final car = _laCarImage(data);
+    final driverFirst = widget.driverName.split(' ').first;
+    final rating = widget.driverRating.toStringAsFixed(1);
+
+    if (first) {
+      LiveActivityService.startRide(
+        phase: phaseName, startedAt: _laLegStart, dropoffAt: dropoffAt,
+        dropoffAddress: widget.dropoffLabel, driverName: driverFirst,
+        driverRating: rating, driverPhotoUrl: photo, carImage: car,
+      );
+    } else {
+      LiveActivityService.updateRide(
+        phase: phaseName, startedAt: _laLegStart, dropoffAt: dropoffAt,
+        dropoffAddress: widget.dropoffLabel, driverName: driverFirst,
+        driverRating: rating, driverPhotoUrl: photo, carImage: car,
+      );
+    }
+
+    if (AppPlatform.isAndroid) {
+      final es = Localizations.localeOf(context).languageCode.startsWith('es');
+      final time = MaterialLocalizations.of(context)
+          .formatTimeOfDay(TimeOfDay.fromDateTime(dropoffAt));
+      final title = switch (phaseName) {
+        'en_route' => es ? 'Cruise · Recogida $time' : 'Cruise · $time pickup',
+        'arrived' => es ? 'Cruise · Tu driver llegó' : 'Cruise · Your driver is here',
+        _ => es ? 'Cruise · Destino $time' : 'Cruise · $time drop-off',
+      };
+      final total = dropoffAt.difference(_laLegStart).inSeconds;
+      final pct = phaseName == 'arrived'
+          ? 100
+          : total <= 0
+              ? 0
+              : ((now.difference(_laLegStart).inSeconds / total) * 100)
+                  .round()
+                  .clamp(0, 100);
+      NotificationService.showTripProgress(
+        title: title,
+        body: '$driverFirst · ★$rating · ${widget.dropoffLabel}',
+        progress: pct,
+      );
+    }
+  }
+
   void _onTripStatusUpdate(Map<String, dynamic> data) {
     // Fase 2: a driver-proposed stop/destination rides the same doc.
     _handleDriverProposal(data);
@@ -1131,6 +1247,9 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       _rtdbDriverLocSub = null;
       _rtdbDriverId = null;
       _mapCar?.clear();
+      // No driver anymore — the trip card on the lock screen is for a
+      // driver who is coming, so it comes down until a new one is found.
+      _syncRideLiveActivity(end: true);
 
       // Back to the ride request screen's "Looking for your driver" card
       // (user spec 2026-08-04) — it used to stay HERE with a blanked
@@ -1172,6 +1291,7 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       debugPrint('[RiderTracking] ✅ TRIP COMPLETED — navigating to rating in 1.5s');
       _goingToRating = true;
       unawaited(LocalDataService.clearActiveRide());
+      _syncRideLiveActivity(end: true);
       _setState(() {
         _phase = _TrackPhase.completed;
         _showPickupOverlay = false;
@@ -1210,6 +1330,7 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
         _saveRideState();
         if (!_arrivedDotPulse.isAnimating) _arrivedDotPulse.repeat(reverse: true);
         _handleDriverArrived();
+        _syncRideLiveActivity(data: data);
       }
       // Show fullscreen pickup confirmation overlay (RiderConfirmPickupScreen)
       _showRiderConfirmPickup();
@@ -1251,6 +1372,9 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       // callback AFTER the widget has been disposed. Bail out early to
       // avoid touching `context` on a dead State.
       if (!mounted || _phase == _TrackPhase.completed) return;
+
+      // The trip is dead — the lock-screen card must not outlive it.
+      _syncRideLiveActivity(end: true);
 
       // C2 fix: previously we ignored `cancelled` while in active phases
       // (onTrip / nearDestination) to defend against stale Firestore
@@ -1316,6 +1440,14 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
         _showDriverCancelledDialog(message: operatorMessage);
       }
     }
+
+    // Any non-terminal update refreshes the lock-screen card (a late
+    // vehicle_type, a fresh photo URL, the first arriving paint). Terminal
+    // statuses already ended it in their own branches — a repaint here
+    // would resurrect a dead trip's card.
+    if (!isCompletedStatus && !isCancelledStatus && !isBackInQueueStatus) {
+      _syncRideLiveActivity(data: data);
+    }
   }
 
   /// Transition to the onTrip phase — shared by normal flow and catch-up flow.
@@ -1377,6 +1509,8 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     _shouldFollowDriver = true;
     _startCameraFollowTracking();
     _saveRideState();
+    // The bar re-anchors here: pickup→dropoff, with the fresh trip ETA.
+    _syncRideLiveActivity();
     _tripStartedTimer?.cancel();
     _tripStartedTimer = Timer(const Duration(seconds: 2), () {
       if (mounted) _setState(() => _tripJustStarted = false);
@@ -1824,6 +1958,10 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       _greetingSent = true;
       _arrivedNotifSent = true;
     }
+
+    // The lock-screen card dies with the process but iOS may have kept it —
+    // re-sync so what survives a reopen matches the trip's real phase.
+    _syncRideLiveActivity();
 
     // Restore route
     if (activeRide.routePoints.isNotEmpty) {

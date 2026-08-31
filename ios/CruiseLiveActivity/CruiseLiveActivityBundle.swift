@@ -29,6 +29,7 @@ private func statusLine(_ status: String) -> String {
 struct CruiseLiveActivityBundle: WidgetBundle {
   var body: some Widget {
     CruiseLiveActivityWidget()
+    CruiseRideLiveActivityWidget()
   }
 }
 

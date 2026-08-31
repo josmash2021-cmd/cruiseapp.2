@@ -92,8 +92,85 @@ class LiveActivityService {
     return _invoke('stop', null);
   }
 
+  // ── Rider trip activity ─────────────────────────────────────────────
+  // The rider's trip on THEIR lock screen / island while the app is
+  // backgrounded (Lyft-style: drop-off ETA, destination, driver
+  // photo/name/rating, car sliding along the bar). Started when a driver
+  // is assigned, repainted on phase changes, ended on complete/cancel.
+
+  static Future<void> startRide({
+    required String phase, // 'en_route' | 'arrived' | 'on_trip'
+    required DateTime startedAt,
+    required DateTime dropoffAt,
+    required String dropoffAddress,
+    required String driverName,
+    required String driverRating,
+    required String driverPhotoUrl,
+    required String carImage, // 'CarSedan' | 'CarSuv' | 'CarEconomy'
+  }) =>
+      _invoke('startRide', null, extra: _rideArgs(
+        phase: phase, startedAt: startedAt, dropoffAt: dropoffAt,
+        dropoffAddress: dropoffAddress, driverName: driverName,
+        driverRating: driverRating, driverPhotoUrl: driverPhotoUrl,
+        carImage: carImage,
+      ));
+
+  /// Repaint the running ride activity (phase change or ETA shift). Silent
+  /// no-op when nothing is running — the activity is never force-started
+  /// from here, so a stale update after the trip ended cannot resurrect it.
+  static Future<void> updateRide({
+    required String phase,
+    required DateTime startedAt,
+    required DateTime dropoffAt,
+    required String dropoffAddress,
+    required String driverName,
+    required String driverRating,
+    required String driverPhotoUrl,
+    required String carImage,
+  }) =>
+      _invoke('updateRide', null, extra: _rideArgs(
+        phase: phase, startedAt: startedAt, dropoffAt: dropoffAt,
+        dropoffAddress: dropoffAddress, driverName: driverName,
+        driverRating: driverRating, driverPhotoUrl: driverPhotoUrl,
+        carImage: carImage,
+      ));
+
+  /// Dates cross the channel as epoch SECONDS (double) — the Swift side
+  /// decodes them into Date for the timer-driven bar; every text arrives
+  /// pre-formatted so the lock screen and the in-app card never disagree.
+  static Map<String, Object> _rideArgs({
+    required String phase,
+    required DateTime startedAt,
+    required DateTime dropoffAt,
+    required String dropoffAddress,
+    required String driverName,
+    required String driverRating,
+    required String driverPhotoUrl,
+    required String carImage,
+  }) =>
+      {
+        'phase': phase,
+        'startedAt': startedAt.millisecondsSinceEpoch / 1000,
+        'dropoffAt': dropoffAt.millisecondsSinceEpoch / 1000,
+        'dropoffAddress': dropoffAddress,
+        'driverName': driverName,
+        'driverRating': driverRating,
+        'driverPhotoUrl': driverPhotoUrl,
+        'carImage': carImage,
+      };
+
+  /// Trip completed or cancelled — take the ride off the lock screen. The
+  /// ride activity's push channel dies with it; the backend's copy is
+  /// cleared so it stops paying for pushes to a dead channel.
+  static Future<void> endRide() {
+    if (AppPlatform.isIOS) {
+      ApiService.registerLiveActivityToken(kind: 'ride_activity', token: '');
+    }
+    return _invoke('endRide', null);
+  }
+
   static Future<void> _invoke(String method, String? status,
-      {Map<String, String>? extra}) async {
+      {Map<String, Object>? extra}) async {
     if (!AppPlatform.isIOS) return;
     try {
       await _channel.invokeMethod(method, {

@@ -27,6 +27,8 @@ import '../services/directions_service.dart';
 import '../services/local_data_service.dart';
 import '../services/analytics_service.dart';
 import '../services/notification_service.dart';
+import '../services/live_activity_service.dart';
+import '../utils/app_platform.dart';
 import '../services/trip_firestore_service.dart';
 import '../services/socket_service.dart';
 import '../config/feature_flags.dart';
@@ -311,6 +313,14 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   bool _dropoffPinAdded = false;
 
   _TrackPhase _phase = _TrackPhase.arriving;
+
+  // Live Activity / trip-progress notification state (used by
+  // _syncRideLiveActivity in the controller extension — extensions can't
+  // declare fields, so they live here).
+  bool _laStarted = false;
+  String _laPhase = '';
+  int _laEtaMin = -1;
+  DateTime _laLegStart = DateTime.now();
   bool _mapLoadError = false;
   String _mapErrorMessage = '';
   bool _greetingSent = false;

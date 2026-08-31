@@ -325,6 +325,19 @@ class NotificationService {
       enableVibration: true,
       vibrationPattern: Int64List.fromList([0, 150, 100, 150, 100, 150]),
     ));
+
+    // Rider trip progress — silent, ongoing, the Android counterpart of the
+    // iOS Live Activity: the trip stays pinned in the tray with the
+    // drop-off ETA, the driver line and a progress bar.
+    await android.createNotificationChannel(const AndroidNotificationChannel(
+      'cruise_trip',
+      'Current Trip',
+      description: 'Live trip progress while you ride',
+      importance: Importance.low,
+      playSound: false,
+      enableVibration: false,
+      showBadge: false,
+    ));
   }
 
   static String _guessTimezone() {
@@ -533,6 +546,58 @@ class NotificationService {
   static Future<void> cancelDriverOnlineNotification() async {
     await _plugin.cancel(id: _driverOnlineId);
     debugPrint('[NotificationService] driver online notification cancelled');
+  }
+
+  // ── Rider trip progress (Android counterpart of the iOS Live Activity) ──
+
+  static const int _tripProgressId = 7777;
+
+  /// Pin/update the ongoing "trip in progress" tray entry. [progress] is
+  /// 0..100; the bar mirrors the same time-based fraction the iOS Live
+  /// Activity computes. Silent and ongoing: it informs, it never buzzes.
+  static Future<void> showTripProgress({
+    required String title,
+    required String body,
+    required int progress,
+  }) async {
+    if (!_initialized) await init();
+    final pct = progress.clamp(0, 100);
+    await _plugin.show(
+      id: _tripProgressId,
+      title: title,
+      body: body,
+      notificationDetails: NotificationDetails(
+        android: AndroidNotificationDetails(
+          'cruise_trip',
+          'Current Trip',
+          channelDescription: 'Live trip progress while you ride',
+          importance: Importance.low,
+          priority: Priority.low,
+          ongoing: true,
+          autoCancel: false,
+          playSound: false,
+          enableVibration: false,
+          showProgress: true,
+          maxProgress: 100,
+          progress: pct,
+          icon: '@mipmap/ic_launcher',
+          color: const Color(0xFFE8C547),
+          category: AndroidNotificationCategory.progress,
+        ),
+        // iOS gets the Live Activity instead; nothing to do there.
+        iOS: const DarwinNotificationDetails(
+          presentAlert: false,
+          presentBadge: false,
+          presentSound: false,
+        ),
+      ),
+      payload: 'trip_progress',
+    );
+  }
+
+  /// Trip ended or cancelled — unpin the tray entry.
+  static Future<void> cancelTripProgress() async {
+    await _plugin.cancel(id: _tripProgressId);
   }
 
   // ── In-app sounds (audioplayers) ──────────────────────────────────────

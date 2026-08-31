@@ -2799,17 +2799,20 @@ async def register_live_activity_token(
 
     kind=push_to_start — the broadcast token that can START an activity on a
     killed app (iOS 17.2+). kind=activity — the running activity's own
-    channel, used for offer updates. An empty token clears the field (the
-    app sends that when the activity ends or the island is turned off).
+    channel, used for offer updates. kind=ride_activity — the RIDER's trip
+    card channel, used for trip updates. An empty token clears the field
+    (the app sends that when the activity ends or the island is turned off).
     """
     kind = (payload.get("kind") or "").strip() if isinstance(payload, dict) else ""
     token = (payload.get("token") or "").strip() if isinstance(payload, dict) else ""
-    if kind not in ("push_to_start", "activity"):
-        raise HTTPException(400, "kind must be push_to_start or activity")
+    if kind not in ("push_to_start", "activity", "ride_activity"):
+        raise HTTPException(400, "kind must be push_to_start, activity or ride_activity")
     if len(token) > 128:
         raise HTTPException(400, "token too long")
     if kind == "push_to_start":
         user.apns_la_start_token = token or None
+    elif kind == "ride_activity":
+        user.apns_la_ride_token = token or None
     else:
         user.apns_la_activity_token = token or None
     await db.commit()

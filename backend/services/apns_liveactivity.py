@@ -220,3 +220,121 @@ async def send_live_activity_offer(
     except Exception as e:
         logger.warning("[APNs-LA] offer push error: %s", e)
         return "error"
+
+
+# ════════════════════════════════════════════════════════════════════
+#  RIDER trip card — the passenger's Live Activity (drop-off ETA,
+#  destination, driver photo/name/rating, car on the bar). The client
+#  starts the activity itself when the trip is assigned (the app is
+#  necessarily foreground at booking, so no push-to-start here); these
+#  pushes keep it truthful while the app is backgrounded or killed.
+# ════════════════════════════════════════════════════════════════════
+
+# Content-state keys mirror CruiseRideActivityAttributes.ContentState —
+# a rename on either side silently drops the field (decodeIfPresent).
+def _ride_content_state(
+    *,
+    phase: str,
+    started_at: int,
+    dropoff_at: int,
+    dropoff_address: str = "",
+    driver_name: str = "",
+    driver_rating: str = "",
+    driver_photo_url: str = "",
+    car_image: str = "",
+) -> dict:
+    return {
+        "phase": phase,
+        "startedAt": started_at,
+        "dropoffAt": dropoff_at,
+        "dropoffAddress": dropoff_address,
+        "driverName": driver_name,
+        "driverRating": driver_rating,
+        "driverPhotoUrl": driver_photo_url,
+        "carImage": car_image,
+    }
+
+
+async def _ride_push(ride_token: str, aps: dict) -> str | None:
+    """One APNs liveactivity POST for the rider card. Same contract as the
+    offer path: None on success/not configured, "stale" on a dead channel
+    (caller clears the column), "error" otherwise."""
+    token = _apns_jwt()
+    if token is None or not ride_token:
+        return None
+    headers = {
+        "authorization": f"bearer {token}",
+        "apns-topic": f"{_BUNDLE}.push-type.liveactivity",
+        "apns-push-type": "liveactivity",
+        "apns-priority": "10",
+    }
+    try:
+        async with httpx.AsyncClient(http2=True, timeout=10) as client:
+            r = await client.post(
+                f"{_HOST}/3/device/{ride_token}", headers=headers, json=aps)
+        if r.status_code == 200:
+            logger.info("[APNs-LA] ride %s sent (channel ...%s)",
+                        aps.get("event"), ride_token[-6:])
+            return None
+        logger.warning("[APNs-LA] ride push failed: HTTP %s %s",
+                       r.status_code, r.text[:200])
+        if r.status_code in (400, 410):
+            return "stale"
+        return "error"
+    except Exception as e:
+        logger.warning("[APNs-LA] ride push error: %s", e)
+        return "error"
+
+
+async def update_ride_live_activity(
+    *,
+    ride_token: str | None,
+    phase: str,
+    started_at: int,
+    dropoff_at: int,
+    dropoff_address: str = "",
+    driver_name: str = "",
+    driver_rating: str = "",
+    driver_photo_url: str = "",
+    car_image: str = "",
+    alert: dict | None = None,
+) -> str | None:
+    """Repaint the rider's trip card. Silent by design (no alert block):
+    a phase change that must be SEEN (driver arrived) passes `alert`."""
+    aps = {
+        "timestamp": int(time.time()),
+        "event": "update",
+        "content-state": _ride_content_state(
+            phase=phase, started_at=started_at, dropoff_at=dropoff_at,
+            dropoff_address=dropoff_address, driver_name=driver_name,
+            driver_rating=driver_rating, driver_photo_url=driver_photo_url,
+            car_image=car_image,
+        ),
+    }
+    if alert:
+        aps["alert"] = alert
+    return await _ride_push(ride_token, aps) if ride_token else None
+
+
+async def end_ride_live_activity(
+    *,
+    ride_token: str | None,
+    phase: str = "on_trip",
+    started_at: int = 0,
+    dropoff_at: int = 0,
+) -> str | None:
+    """Trip completed or cancelled — take the card down. APNs requires the
+    final content-state on an end event; the timestamps are ignored by the
+    widget once it is gone, so stale anchors are harmless."""
+    if not ride_token:
+        return None
+    aps = {
+        "timestamp": int(time.time()),
+        "event": "end",
+        "content-state": _ride_content_state(
+            phase=phase,
+            started_at=started_at or int(time.time()),
+            dropoff_at=dropoff_at or int(time.time()),
+        ),
+    }
+    return await _ride_push(ride_token, aps)

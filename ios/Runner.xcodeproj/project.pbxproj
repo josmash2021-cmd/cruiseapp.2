@@ -21,6 +21,9 @@
 		CA11AC7101DECAFE00000012 /* CruiseActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA11AC7101DECAFE00000003 /* CruiseActivityAttributes.swift */; };
 		CA11AC7101DECAFE00000013 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = CA11AC7101DECAFE00000005 /* Assets.xcassets */; };
 		CA11AC7101DECAFE00000014 /* CruiseActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA11AC7101DECAFE00000003 /* CruiseActivityAttributes.swift */; };
+		CA11AC7101DECAFE00000061 /* CruiseRideActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA11AC7101DECAFE00000060 /* CruiseRideActivityAttributes.swift */; };
+		CA11AC7101DECAFE00000062 /* CruiseRideActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA11AC7101DECAFE00000060 /* CruiseRideActivityAttributes.swift */; };
+		CA11AC7101DECAFE00000064 /* CruiseRideLiveActivityWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA11AC7101DECAFE00000063 /* CruiseRideLiveActivityWidget.swift */; };
 		CA11AC7101DECAFE00000015 /* CruiseLiveActivity.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = CA11AC7101DECAFE00000001 /* CruiseLiveActivity.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		C4A1550FF3A11CE500000101 /* cruise_online.wav in Resources */ = {isa = PBXBuildFile; fileRef = C4A1550FF3A11CE500000102 /* cruise_online.wav */; };
 		C4A1550FF3A11CE500000103 /* cruise_offer.wav in Resources */ = {isa = PBXBuildFile; fileRef = C4A1550FF3A11CE500000104 /* cruise_offer.wav */; };
@@ -90,6 +93,8 @@
 		CA11AC7101DECAFE00000001 /* CruiseLiveActivity.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = CruiseLiveActivity.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		CA11AC7101DECAFE00000002 /* CruiseLiveActivityBundle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CruiseLiveActivityBundle.swift; sourceTree = "<group>"; };
 		CA11AC7101DECAFE00000003 /* CruiseActivityAttributes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CruiseActivityAttributes.swift; sourceTree = "<group>"; };
+		CA11AC7101DECAFE00000060 /* CruiseRideActivityAttributes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CruiseRideActivityAttributes.swift; sourceTree = "<group>"; };
+		CA11AC7101DECAFE00000063 /* CruiseRideLiveActivityWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CruiseRideLiveActivityWidget.swift; sourceTree = "<group>"; };
 		CA11AC7101DECAFE00000004 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		CA11AC7101DECAFE00000005 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		C4A1550FF3A11CE500000102 /* cruise_online.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = cruise_online.wav; sourceTree = "<group>"; };
@@ -127,6 +132,8 @@
 			children = (
 				CA11AC7101DECAFE00000002 /* CruiseLiveActivityBundle.swift */,
 				CA11AC7101DECAFE00000003 /* CruiseActivityAttributes.swift */,
+				CA11AC7101DECAFE00000060 /* CruiseRideActivityAttributes.swift */,
+				CA11AC7101DECAFE00000063 /* CruiseRideLiveActivityWidget.swift */,
 				CA11AC7101DECAFE00000005 /* Assets.xcassets */,
 				CA11AC7101DECAFE00000004 /* Info.plist */,
 			);
@@ -363,6 +370,8 @@
 			files = (
 				CA11AC7101DECAFE00000011 /* CruiseLiveActivityBundle.swift in Sources */,
 				CA11AC7101DECAFE00000012 /* CruiseActivityAttributes.swift in Sources */,
+				CA11AC7101DECAFE00000061 /* CruiseRideActivityAttributes.swift in Sources */,
+				CA11AC7101DECAFE00000064 /* CruiseRideLiveActivityWidget.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -382,6 +391,7 @@
 				1498D2341E8E89220040F4C2 /* GeneratedPluginRegistrant.m in Sources */,
 				7884E8682EC3CC0700C636F2 /* SceneDelegate.swift in Sources */,
 				CA11AC7101DECAFE00000014 /* CruiseActivityAttributes.swift in Sources */,
+				CA11AC7101DECAFE00000062 /* CruiseRideActivityAttributes.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

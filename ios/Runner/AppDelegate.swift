@@ -71,6 +71,31 @@ import ActivityKit
       case "stop":
         CruiseLiveActivityManager.shared.stop()
         result(true)
+      case "startRide":
+        CruiseLiveActivityManager.shared.startRide(
+          phase: args?["phase"] as? String ?? "en_route",
+          startedAt: epochSeconds(args?["startedAt"]),
+          dropoffAt: epochSeconds(args?["dropoffAt"]),
+          dropoffAddress: args?["dropoffAddress"] as? String ?? "",
+          driverName: args?["driverName"] as? String ?? "",
+          driverRating: args?["driverRating"] as? String ?? "",
+          driverPhotoUrl: args?["driverPhotoUrl"] as? String ?? "",
+          carImage: args?["carImage"] as? String ?? "")
+        result(true)
+      case "updateRide":
+        CruiseLiveActivityManager.shared.updateRide(
+          phase: args?["phase"] as? String ?? "en_route",
+          startedAt: epochSeconds(args?["startedAt"]),
+          dropoffAt: epochSeconds(args?["dropoffAt"]),
+          dropoffAddress: args?["dropoffAddress"] as? String ?? "",
+          driverName: args?["driverName"] as? String ?? "",
+          driverRating: args?["driverRating"] as? String ?? "",
+          driverPhotoUrl: args?["driverPhotoUrl"] as? String ?? "",
+          carImage: args?["carImage"] as? String ?? "")
+        result(true)
+      case "endRide":
+        CruiseLiveActivityManager.shared.endRide()
+        result(true)
       default:
         result(FlutterMethodNotImplemented)
       }
@@ -110,6 +135,13 @@ import ActivityKit
   ) {
     completionHandler()
   }
+}
+
+// MethodChannel numbers land as NSNumber and may cast to either side.
+private func epochSeconds(_ v: Any?) -> Date {
+  if let d = v as? Double { return Date(timeIntervalSince1970: d) }
+  if let i = v as? Int { return Date(timeIntervalSince1970: TimeInterval(i)) }
+  return Date()
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -325,6 +357,100 @@ final class CruiseLiveActivityManager {
     activity = nil
     enqueue {
       for a in Activity<CruiseActivityAttributes>.activities {
+        await a.end(nil, dismissalPolicy: .immediate)
+      }
+    }
+  }
+
+  // ── Rider trip activity ────────────────────────────────────────────
+  // A second, parallel activity type: the rider's trip on their own lock
+  // screen. Same one-at-a-time rule, same stale sweep — the handle is
+  // lost across restarts, so Activity<...>.activities is the truth.
+  private var rideActivity: Activity<CruiseRideActivityAttributes>?
+
+  /// The ride activity's own push channel, so the backend can repaint it
+  /// (phase changes, ETA shifts) while the rider's app is killed.
+  private func observeRidePushToken(_ a: Activity<CruiseRideActivityAttributes>) {
+    if let data = a.pushToken {
+      NSLog("[LiveActivity] ride activity token EMITTED (%d bytes) — forwarding to Dart", data.count)
+      forwardToken("ride_activity", hex(data))
+    }
+    Task {
+      for await data in a.pushTokenUpdates {
+        NSLog("[LiveActivity] ride activity token ROTATED (%d bytes) — forwarding to Dart", data.count)
+        forwardToken("ride_activity", hex(data))
+      }
+    }
+  }
+
+  private func rideState(
+    phase: String, startedAt: Date, dropoffAt: Date,
+    dropoffAddress: String, driverName: String, driverRating: String,
+    driverPhotoUrl: String, carImage: String
+  ) -> CruiseRideActivityAttributes.ContentState {
+    CruiseRideActivityAttributes.ContentState(
+      phase: phase, startedAt: startedAt, dropoffAt: dropoffAt,
+      dropoffAddress: dropoffAddress, driverName: driverName,
+      driverRating: driverRating, driverPhotoUrl: driverPhotoUrl,
+      carImage: carImage)
+  }
+
+  func startRide(
+    phase: String, startedAt: Date, dropoffAt: Date,
+    dropoffAddress: String, driverName: String, driverRating: String,
+    driverPhotoUrl: String, carImage: String
+  ) {
+    guard ActivityAuthorizationInfo().areActivitiesEnabled else {
+      NSLog("[LiveActivity] startRide refused: Live Activities are disabled "
+        + "for this app in Settings — nothing will appear on the lock screen")
+      return
+    }
+    let state = rideState(
+      phase: phase, startedAt: startedAt, dropoffAt: dropoffAt,
+      dropoffAddress: dropoffAddress, driverName: driverName,
+      driverRating: driverRating, driverPhotoUrl: driverPhotoUrl,
+      carImage: carImage)
+    enqueue {
+      for stale in Activity<CruiseRideActivityAttributes>.activities {
+        await stale.end(nil, dismissalPolicy: .immediate)
+      }
+      do {
+        let act = try Activity.request(
+          attributes: CruiseRideActivityAttributes(),
+          content: .init(state: state, staleDate: nil)
+        )
+        self.rideActivity = act
+        self.observeRidePushToken(act)
+      } catch {
+        NSLog("[LiveActivity] startRide failed: %@", "\(error)")
+      }
+    }
+  }
+
+  func updateRide(
+    phase: String, startedAt: Date, dropoffAt: Date,
+    dropoffAddress: String, driverName: String, driverRating: String,
+    driverPhotoUrl: String, carImage: String
+  ) {
+    let state = rideState(
+      phase: phase, startedAt: startedAt, dropoffAt: dropoffAt,
+      dropoffAddress: dropoffAddress, driverName: driverName,
+      driverRating: driverRating, driverPhotoUrl: driverPhotoUrl,
+      carImage: carImage)
+    enqueue {
+      for a in Activity<CruiseRideActivityAttributes>.activities {
+        // Silent repaint, no alert — a ringing phone on every ETA tick is
+        // worse than a stale minute. Phase changes that must be seen
+        // (driver arrived) come through as their own push/notification.
+        await a.update(.init(state: state, staleDate: nil))
+      }
+    }
+  }
+
+  func endRide() {
+    rideActivity = nil
+    enqueue {
+      for a in Activity<CruiseRideActivityAttributes>.activities {
         await a.end(nil, dismissalPolicy: .immediate)
       }
     }

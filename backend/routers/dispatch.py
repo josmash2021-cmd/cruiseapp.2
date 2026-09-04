@@ -2866,6 +2866,34 @@ async def reject_offer(
     # Cascade: find next available driver using shared helper (exclude already-tried)
     trip_result = await db.execute(select(Trip).where(Trip.id == offer.trip_id))
     trip = trip_result.scalar_one_or_none()
+
+    # The scheduled dispatcher (main.py) writes trip.driver_id at OFFER time,
+    # so a rejection leaves the trip pointing at a driver who just said no —
+    # the rider's schedule hub keeps showing "Driver Assigned" forever.
+    # Clear the provisional assignment before requeuing. Live trips never
+    # carry driver_id pre-accept, so this only fires for scheduled offers.
+    if (
+        trip is not None
+        and trip.status == "requested"
+        and trip.driver_id == driver_id
+    ):
+        trip.driver_id = None
+        trip.driver_assigned_at = None
+        await db.commit()
+        _dispatch_status_cache.pop(trip.id, None)
+        if _HAS_FIRESTORE:
+            try:
+                firestore_sync.sync_trip_released(trip.id)
+                if trip.scheduled_at is not None:
+                    firestore_sync.sync_scheduled_ride(
+                        trip_id=trip.id,
+                        rider_id=trip.rider_id,
+                        status="scheduled",
+                        driver_id=None,
+                    )
+            except Exception as e:
+                logging.warning("[Reject] Firestore release mirror failed for trip %s: %s", trip.id, e)
+
     await _requeue_trip_to_next_driver(db, trip)
 
     return {"status": "rejected", "reason_stored": reason is not None}

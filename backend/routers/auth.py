@@ -926,15 +926,21 @@ async def complete_login(body: CompleteLoginIn, request: Request, db: AsyncSessi
 APPLE_REVIEW_PHONE_DIGITS = "1234567890"
 APPLE_REVIEW_PHONE = "+11234567890"
 
+# Google Play review account: same mechanism, declared in the Play Console
+# "App access" section. 9 digits on purpose — it can never collide with a
+# real 10-digit US number.
+GOOGLE_REVIEW_PHONE_DIGITS = "098765432"
+GOOGLE_REVIEW_PHONE = "+1098765432"
 
-async def _apple_review_login(db: AsyncSession, request: Request):
-    """Session for the App Store review account — find-or-create, no OTP.
+
+async def _review_phone_login(db: AsyncSession, request: Request, phone: str, first_name: str):
+    """Session for a store review account — find-or-create, no OTP.
 
     Always reports is_new_user=False: this is a standing demo account, so the
     app routes straight home instead of the new-rider name screen.
     """
     result = await db.execute(
-        select(User).where(User.phone == APPLE_REVIEW_PHONE, User.role == "rider")
+        select(User).where(User.phone == phone, User.role == "rider")
     )
     user = result.scalars().first()
     now = datetime.now(timezone.utc)
@@ -951,10 +957,10 @@ async def _apple_review_login(db: AsyncSession, request: Request):
     else:
         import secrets as _secrets
         user = User(
-            first_name="Apple",
+            first_name=first_name,
             last_name="Review",
             email=None,
-            phone=APPLE_REVIEW_PHONE,
+            phone=phone,
             password_hash=pwd.hash(_secrets.token_hex(32)),
             role="rider",
             auth_provider="phone",
@@ -969,7 +975,7 @@ async def _apple_review_login(db: AsyncSession, request: Request):
             await _ensure_referral_code(user, db)
             await db.refresh(user)
         except Exception as e:
-            logging.warning("[AppleReview] referral code mint failed: %s", e)
+            logging.warning("[ReviewLogin] referral code mint failed: %s", e)
 
     await _record_login_activity(db, request, user.id)
 
@@ -982,6 +988,10 @@ async def _apple_review_login(db: AsyncSession, request: Request):
         "user": _user_dict(user),
         "is_new_user": False,
     }
+
+
+async def _apple_review_login(db: AsyncSession, request: Request):
+    return await _review_phone_login(db, request, APPLE_REVIEW_PHONE, "Apple")
 
 
 @router.post("/auth/phone-login", dependencies=[Depends(_verify_api_key)])
@@ -1000,12 +1010,14 @@ async def phone_login(body: PhoneLoginIn, request: Request, db: AsyncSession = D
     if digits.startswith("1") and len(digits) == 11:
         digits = digits[1:]
 
-    # App Store review account: the fixed demo digits (with or without the
+    # Store review accounts: the fixed demo digits (with or without the
     # +1 prefix) log straight in — no OTP row, no Twilio call, no code
     # format requirement. Rider role only.
-    if role == "rider" and digits in (
-            APPLE_REVIEW_PHONE_DIGITS, "1" + APPLE_REVIEW_PHONE_DIGITS):
-        return await _apple_review_login(db, request)
+    if role == "rider":
+        if digits in (APPLE_REVIEW_PHONE_DIGITS, "1" + APPLE_REVIEW_PHONE_DIGITS):
+            return await _apple_review_login(db, request)
+        if digits in (GOOGLE_REVIEW_PHONE_DIGITS, "1" + GOOGLE_REVIEW_PHONE_DIGITS):
+            return await _review_phone_login(db, request, GOOGLE_REVIEW_PHONE, "Google")
 
     if len(digits) != 10:
         raise HTTPException(400, "A valid 10-digit US phone number is required")

@@ -426,16 +426,18 @@ async def login(body: LoginIn, request: Request, db: AsyncSession = Depends(get_
 
     await _record_login_activity(db, request, user.id)
 
-    # Apple App Store review bypass: skip OTP, return tokens directly.
-    # These accounts must log in with email+password ONLY — no OTP screen,
-    # no verification step. Apple reviewers cannot receive SMS/email codes.
-    # Configure APPLE_REVIEW_EMAILS as a comma-separated env var.
-    _APPLE_REVIEW_EMAILS = {
+    # App store review bypass (Apple + Google Play): skip OTP, return tokens
+    # directly. These accounts must log in with email+password ONLY — no OTP
+    # screen, no verification step. Reviewers cannot receive SMS/email codes.
+    # Configure APPLE_REVIEW_EMAILS / GOOGLE_REVIEW_EMAILS as comma-separated
+    # env vars.
+    _REVIEW_EMAILS = {
         e.strip().lower()
-        for e in os.environ.get('APPLE_REVIEW_EMAILS', '').split(',')
+        for var in ('APPLE_REVIEW_EMAILS', 'GOOGLE_REVIEW_EMAILS')
+        for e in os.environ.get(var, '').split(',')
         if e.strip()
     }
-    if user.email and user.email.lower() in _APPLE_REVIEW_EMAILS:
+    if user.email and user.email.lower() in _REVIEW_EMAILS:
         token = await _create_driver_aware_token_from_user(user, db)
         refresh = _create_refresh_token(user.id)
         return {

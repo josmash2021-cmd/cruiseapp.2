@@ -18,10 +18,9 @@ if not PASSWORD:
     raise SystemExit("Set REVIEW_DEMO_PASSWORD env var first")
 ACCOUNTS = [
     ("applereview@cruiseinride.com", "rider"),
-    ("applereview@cruiseinride.com", "rider"),
     ("appledriver@cruiseinride.com", "driver"),
-    ("applereviewdriver@cruiseinride.com", "driver"),
-    ("applereviewdriver@cruiseinride.com", "driver"),
+    ("googlereview@cruiseinride.com", "rider"),
+    ("googlereviewdriver@cruiseinride.com", "driver"),
 ]
 
 api_key = os.environ["API_KEY"]

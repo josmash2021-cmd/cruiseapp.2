@@ -46,10 +46,12 @@ class _RiderWelcomeScreenState extends State<RiderWelcomeScreen> {
   bool _sending = false;
   bool _appleLoading = false;
 
-  /// App Store review account (rider): these digits enable the button and
+  /// Store review accounts (rider): these digits enable the button and
   /// skip the SMS code screen entirely — the backend issues the session
-  /// directly (a review device cannot receive our texts).
-  static const _appleReviewDigits = '1234567890';
+  /// directly (a review device cannot receive our texts). '098765432' is
+  /// the Google Play account declared in the Play Console; the input mask
+  /// strips a leading country-code 1, so '1098765432' arrives as 9 digits.
+  static const _reviewDigits = {'1234567890', '098765432'};
 
   /// Result of the successful phone-login, captured by the customVerify
   /// closure so the success callback can route by `is_new_user`.
@@ -74,15 +76,16 @@ class _RiderWelcomeScreenState extends State<RiderWelcomeScreen> {
 
   void _validate() {
     final digits = usPhoneDigits(_phoneCtrl.text);
-    final ok = digits.length == 10 || digits == _appleReviewDigits;
+    final ok = digits.length == 10 || _reviewDigits.contains(digits);
     if (ok != _canNext) setState(() => _canNext = ok);
   }
 
   Future<void> _next() async {
     if (!_canNext || _sending) return;
-    // App Store review account: no SMS, no code screen — straight session.
-    if (usPhoneDigits(_phoneCtrl.text) == _appleReviewDigits) {
-      return _appleReviewLogin();
+    // Store review account: no SMS, no code screen — straight session.
+    final enteredDigits = usPhoneDigits(_phoneCtrl.text);
+    if (_reviewDigits.contains(enteredDigits)) {
+      return _reviewLogin(enteredDigits);
     }
     final e164 = usPhoneToE164(_phoneCtrl.text);
     if (e164.isEmpty) return;
@@ -120,16 +123,16 @@ class _RiderWelcomeScreenState extends State<RiderWelcomeScreen> {
     );
   }
 
-  /// Apple review fast path: phone-login without the SMS round trip. The
+  /// Store review fast path: phone-login without the SMS round trip. The
   /// backend recognises the fixed digits and returns a full session in one
   /// shot; routing afterwards is the same [_onLoggedIn] the code screen uses.
-  Future<void> _appleReviewLogin() async {
+  Future<void> _reviewLogin(String digits) async {
     final connectionError = S.of(context).connectionError;
     setState(() => _sending = true);
     String? error;
     try {
       _loginResult = await ApiService.phoneLogin(
-          phone: _appleReviewDigits, code: '', role: 'rider');
+          phone: digits, code: '', role: 'rider');
     } on ApiException catch (e) {
       error = e.message;
     } catch (_) {

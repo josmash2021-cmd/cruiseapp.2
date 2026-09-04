@@ -29,6 +29,7 @@ ACCOUNTS = [
         'email': 'googlereviewdriver@cruiseinride.com',
         'phone': '+15550001241',
         'role': 'driver',
+        'date_of_birth': '1990-01-15',
     },
 ]
 

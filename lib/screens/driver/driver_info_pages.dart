@@ -1,5 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
+import 'dart:io' show Platform;
+import 'package:package_info_plus/package_info_plus.dart';
 import '../../services/haptic_service.dart';
+import '../../services/api_service.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../l10n/app_localizations.dart';
 import '../../config/page_transitions.dart';
@@ -912,6 +916,38 @@ class _BugReporterScreenState extends State<BugReporterScreen> {
   final _controller = TextEditingController();
   String _category = 'App Crash';
   bool _submitted = false;
+  bool _sending = false;
+
+  Future<void> _submit() async {
+    final description = _controller.text.trim();
+    if (description.isEmpty || _sending) return;
+    HapticService.mediumImpact();
+    setState(() => _sending = true);
+    try {
+      String version = '';
+      try {
+        final info = await PackageInfo.fromPlatform();
+        version = '${info.version}+${info.buildNumber}';
+      } catch (_) {}
+      await ApiService.submitBugReport(
+        category: _category,
+        description: description,
+        platform: kIsWeb ? 'web' : Platform.operatingSystem,
+        appVersion: version,
+      );
+      if (mounted) setState(() => _submitted = true);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Could not send the report. Check your connection and try again.'),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _sending = false);
+    }
+  }
 
   final _categories = [
     'App Crash',
@@ -1082,11 +1118,7 @@ class _BugReporterScreenState extends State<BugReporterScreen> {
                       width: double.infinity,
                       height: 52,
                       child: ElevatedButton(
-                        onPressed: () {
-                          if (_controller.text.trim().isEmpty) return;
-                          HapticService.mediumImpact();
-                          setState(() => _submitted = true);
-                        },
+                        onPressed: _submit,
                         style: ElevatedButton.styleFrom(
                           backgroundColor: _gold,
                           foregroundColor: Colors.black,
@@ -1094,13 +1126,22 @@ class _BugReporterScreenState extends State<BugReporterScreen> {
                             borderRadius: BorderRadius.circular(16),
                           ),
                         ),
-                        child: const Text(
-                          'Submit Report',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
+                        child: _sending
+                            ? const SizedBox(
+                                width: 22,
+                                height: 22,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2.4,
+                                  color: Colors.black,
+                                ),
+                              )
+                            : const Text(
+                                'Submit Report',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
                       ),
                     ),
                   ],

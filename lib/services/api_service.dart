@@ -1545,6 +1545,34 @@ class ApiService {
     return _parse(res);
   }
 
+  /// Submit a bug report from the driver menu Bug Reporter screen.
+  /// The backend posts it into the user's support chat and emails the owner.
+  static Future<Map<String, dynamic>> submitBugReport({
+    required String category,
+    required String description,
+    String platform = '',
+    String appVersion = '',
+  }) async {
+    final token = await getToken();
+    if (token == null) throw ApiException(401, 'Not logged in');
+    final res = await _withRetry(
+      () => _client
+          .post(
+            Uri.parse('$_baseUrl/support/bug-report'),
+            headers: _jsonHeaders(token),
+            body: jsonEncode({
+              'category': category,
+              'description': description,
+              'platform': platform,
+              'app_version': appVersion,
+            }),
+          )
+          .timeout(const Duration(seconds: 12)),
+      maxAttempts: 2,
+    );
+    return _parse(res);
+  }
+
   /// List all support chats for the current user.
   static Future<List<Map<String, dynamic>>> getSupportChats() async {
     final token = await getToken();

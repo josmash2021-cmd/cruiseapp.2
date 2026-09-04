@@ -32,10 +32,21 @@ from services.storage import upload_file, get_signed_url
 from config import (
     firestore_sync, _HAS_FIRESTORE,  # type: ignore[attr-defined]
 )
+from pydantic import BaseModel, Field
 from support_cache import find_cached_response, add_natural_variation, maybe_cache_response
 from cruise_ai_engine import detect_intent, generate_response, detect_language
 
 router = APIRouter()
+
+# Where driver bug reports are emailed (Bug Reporter screen in the driver menu).
+BUG_REPORT_EMAIL = os.getenv("BUG_REPORT_EMAIL", "josmash2021@gmail.com")
+
+
+class BugReportBody(BaseModel):
+    category: str = Field(min_length=1, max_length=50)
+    description: str = Field(min_length=1, max_length=4000)
+    platform: str = Field(default="", max_length=30)
+    app_version: str = Field(default="", max_length=30)
 
 # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 #  AI SUPPORT AGENT ENGINE
@@ -2683,6 +2694,78 @@ async def send_support_message(chat_id: int, request: Request, user: User = Depe
     _inactivity_tasks[chat_id] = _safe_create_task(_check_chat_inactivity(chat_id))
 
     return _support_msg_dict(msg, user_full)
+
+@router.post("/support/bug-report", dependencies=[Depends(_verify_api_key)])
+async def submit_bug_report(body: "BugReportBody", user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
+    """Bug Reporter (driver menu). Delivers the report two ways:
+    1) as a message in the user's support chat (visible in the dispatch panel),
+    2) by email to the owner. The old in-app screen showed a fake success
+    checkmark and discarded the text — nothing ever left the device.
+    """
+    # Tight cap: a bug report is one-shot, not a conversation.
+    _now = time.monotonic()
+    _uid_key = f"bug_report_{user.id}"
+    _hits = _support_msg_rate.get(_uid_key, [])
+    _hits = [t for t in _hits if _now - t < 3600]
+    if len(_hits) >= 10:
+        raise HTTPException(429, "Too many reports. Please try again later.")
+    _hits.append(_now)
+    _support_msg_rate[_uid_key] = _hits
+
+    category = body.category.strip()[:50]
+    description = body.description.strip()
+    chat = await _get_or_create_support_chat(user, db, subject=f"Bug report: {category}")
+    chat_id = chat["id"]
+
+    meta_bits = [b for b in (body.platform.strip(), body.app_version.strip()) if b]
+    meta = f"\n\n— {', '.join(meta_bits)}" if meta_bits else ""
+    report_text = f"🐞 Bug report — {category}\n\n{description}{meta}"
+
+    msg = SupportMessage(chat_id=chat_id, sender_id=user.id, sender_role=user.role or "rider", message=report_text)
+    db.add(msg)
+    chat_row = (await db.execute(select(SupportChat).where(SupportChat.id == chat_id))).scalar_one_or_none()
+    if chat_row:
+        chat_row.updated_at = datetime.now(timezone.utc)
+        chat_row.last_user_message_at = datetime.now(timezone.utc)
+    await db.commit()
+    await db.refresh(msg)
+
+    user_full = f"{user.first_name} {user.last_name}".strip() or user.email or f"user {user.id}"
+    if _HAS_FIRESTORE:
+        try:
+            firestore_sync.sync_support_message(chat_id, msg.id, user.id, user_full, user.role or "rider", report_text)
+            firestore_sync.sync_dispatch_notification(chat_id, user_full, "new_message", f"🐞 [{category}] {description[:100]}")
+        except Exception as e:
+            logging.error("Firestore bug report sync failed: %s", e)
+
+    # Email is blocking (SMTP) — run off the event loop like the other callers.
+    if BUG_REPORT_EMAIL:
+        import html as _html
+        subject = f"[Cruise Bug] {category} — {user_full}"
+        body_html = (
+            f"<h3>Bug report de la app</h3>"
+            f"<p><b>Categoría:</b> {_html.escape(category)}<br>"
+            f"<b>Usuario:</b> {_html.escape(user_full)} (id {user.id}, {_html.escape(user.role or 'rider')})<br>"
+            f"<b>Email:</b> {_html.escape(user.email or '')}<br>"
+            f"<b>Plataforma:</b> {_html.escape(body.platform or '?')} — {_html.escape(body.app_version or '?')}</p>"
+            f"<p><b>Descripción:</b></p><p>{_html.escape(description).replace(chr(10), '<br>')}</p>"
+            f"<p><small>Chat de soporte #{chat_id}</small></p>"
+        )
+        async def _send_bug_email_bg():
+            try:
+                from services.email_sms_service import _send_email
+                loop = asyncio.get_event_loop()
+                sent = await loop.run_in_executor(None, lambda: _send_email(BUG_REPORT_EMAIL, subject, body_html))
+                if not sent:
+                    logging.error("[bug-report] email to %s failed for user %s", BUG_REPORT_EMAIL, user.id)
+            except Exception as e:
+                logging.error("[bug-report] email error: %s", e)
+        _safe_create_task(_send_bug_email_bg())
+    else:
+        logging.warning("[bug-report] BUG_REPORT_EMAIL not set — report %s only in support chat", msg.id)
+
+    return {"ok": True, "chat_id": chat_id, "message_id": msg.id}
+
 
 @router.post("/support/chats/{chat_id}/typing", dependencies=[Depends(_verify_api_key)])
 async def set_typing_status(chat_id: int, request: Request, user: User = Depends(_get_current_user)):

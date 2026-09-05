@@ -17,7 +17,10 @@
     <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
-    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
+    <!-- ACCESS_BACKGROUND_LOCATION intentionally NOT declared: driver
+         background GPS runs behind the location foreground service
+         (while-in-use + FGS), so the Play background-location declaration
+         does not apply. The app never requests LocationPermission.always. -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.VIBRATE" />
 

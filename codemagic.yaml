@@ -782,12 +782,15 @@ workflows:
           # Same source as the AAB and the IPA — see android-release below.
           PUBSPEC_BUILD=$(grep '^version:' pubspec.yaml | sed 's/.*+//')
           flutter build apk --release --no-tree-shake-icons \
+            --obfuscate --split-debug-info=build/symbols \
             --dart-define=MAPBOX_TOKEN=$MAPBOX_ACCESS_TOKEN \
             --build-number=${PUBSPEC_BUILD:-$BUILD_NUMBER}
           APK=$(find build/app/outputs -name "*.apk" | head -1)
           echo "APK: $APK  ($(du -sh "$APK" | cut -f1))"
     artifacts:
       - build/app/outputs/**/*.apk
+      - build/app/outputs/mapping/release/mapping.txt
+      - build/symbols/**/*
     publishing:
       email:
         recipients:
@@ -856,10 +859,16 @@ workflows:
           PUBSPEC_BUILD=$(grep '^version:' pubspec.yaml | sed 's/.*+//')
           echo "Build number from pubspec: $PUBSPEC_BUILD"
           flutter build appbundle --release --no-tree-shake-icons \
+            --obfuscate --split-debug-info=build/symbols \
             --dart-define=MAPBOX_TOKEN=$MAPBOX_ACCESS_TOKEN \
             --build-number=${PUBSPEC_BUILD:-$BUILD_NUMBER}
     artifacts:
       - build/app/outputs/**/*.aab
+      # R8 mapping + Dart symbols: upload mapping.txt to Play Console →
+      # App bundle explorer → Deobfuscation files on every release, or
+      # the obfuscation metric and crash traces stay unreadable.
+      - build/app/outputs/mapping/release/mapping.txt
+      - build/symbols/**/*
     publishing:
       email:
         recipients:

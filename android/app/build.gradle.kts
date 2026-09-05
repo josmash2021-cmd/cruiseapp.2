@@ -107,13 +107,13 @@ android {
             } else {
                 signingConfigs.getByName("debug")
             }
-            // Stated rather than inherited. Both already defaulted to false,
-            // but "the default is false" is not something you want to be
-            // guessing at while a build dies of memory exhaustion — with
-            // these off, R8 runs dex-only instead of whole-program, which is
-            // the difference between fitting in 8 GB and not.
-            isMinifyEnabled = false
-            isShrinkResources = false
+            // Minify + shrink are ON: Play's app-optimization threshold
+            // flags obfuscation below 25% (deadline Feb 2027). The old OOM
+            // was full-mode R8 whole-program analysis on the 8 GB builder;
+            // gradle.properties keeps android.enableR8.fullMode=false, so
+            // R8 obfuscates in compat mode, which fits the machine.
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"

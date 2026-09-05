@@ -114,8 +114,11 @@ android {
             // R8 obfuscates in compat mode, which fits the machine.
             isMinifyEnabled = true
             isShrinkResources = true
+            // proguard-android.txt (NOT -optimize): the optimization passes
+            // are what blew the heap on the 8 GB builder — plain shrinking +
+            // obfuscation is far lighter and satisfies Play's metric.
             proguardFiles(
-                getDefaultProguardFile("proguard-android-optimize.txt"),
+                getDefaultProguardFile("proguard-android.txt"),
                 "proguard-rules.pro"
             )
         }

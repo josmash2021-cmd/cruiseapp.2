@@ -740,7 +740,10 @@ workflows:
   # ────────────────────────────────────────────────────────────────────────────
   android-apk:
     name: Android APK (release)
-    max_build_duration: 60
+    # 120, not 60: minify is on now, and with a single Gradle worker R8 +
+    # Kotlin run serially — build #22 timed out at the 60-minute mark still
+    # compiling, not crashed.
+    max_build_duration: 120
     # Not linux_x2. Linux instances need a paid plan; this account has
     # the Mac tier, which is why every Android build failed before it
     # ran a single step — "instance type is not available with the
@@ -805,7 +808,9 @@ workflows:
   # ────────────────────────────────────────────────────────────────────────────
   android-release:
     name: Android AAB (Play Store)
-    max_build_duration: 60
+    # 120, not 60: see android-apk. Build #22 died on the clock at 60 min
+    # with R8 still running.
+    max_build_duration: 120
     # See android-apk above: Linux is a paid tier on this account.
     instance_type: mac_mini_m2
     triggering:

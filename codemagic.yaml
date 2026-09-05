@@ -740,10 +740,7 @@ workflows:
   # ────────────────────────────────────────────────────────────────────────────
   android-apk:
     name: Android APK (release)
-    # 120, not 60: minify is on now, and with a single Gradle worker R8 +
-    # Kotlin run serially — build #22 timed out at the 60-minute mark still
-    # compiling, not crashed.
-    max_build_duration: 120
+    max_build_duration: 60
     # Not linux_x2. Linux instances need a paid plan; this account has
     # the Mac tier, which is why every Android build failed before it
     # ran a single step — "instance type is not available with the
@@ -792,7 +789,7 @@ workflows:
           echo "APK: $APK  ($(du -sh "$APK" | cut -f1))"
     artifacts:
       - build/app/outputs/**/*.apk
-      - build/app/outputs/mapping/release/mapping.txt
+      # Dart obfuscation symbols (no R8 mapping — minify is off).
       - build/symbols/**/*
     publishing:
       email:
@@ -808,10 +805,8 @@ workflows:
   # ────────────────────────────────────────────────────────────────────────────
   android-release:
     name: Android AAB (Play Store)
-    # 120, not 60: see android-apk. Build #22 died on the clock at 60 min
-    # with R8 still running.
-    max_build_duration: 120
     # See android-apk above: Linux is a paid tier on this account.
+    max_build_duration: 60
     instance_type: mac_mini_m2
     triggering:
       events:
@@ -869,10 +864,9 @@ workflows:
             --build-number=${PUBSPEC_BUILD:-$BUILD_NUMBER}
     artifacts:
       - build/app/outputs/**/*.aab
-      # R8 mapping + Dart symbols: upload mapping.txt to Play Console →
-      # App bundle explorer → Deobfuscation files on every release, or
-      # the obfuscation metric and crash traces stay unreadable.
-      - build/app/outputs/mapping/release/mapping.txt
+      # Dart obfuscation symbols only. There is no R8 mapping.txt while
+      # minify is off (it does not fit the 8 GB builder — see
+      # android/app/build.gradle.kts release block).
       - build/symbols/**/*
     publishing:
       email:

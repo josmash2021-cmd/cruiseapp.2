@@ -107,16 +107,17 @@ android {
             } else {
                 signingConfigs.getByName("debug")
             }
-            // Minify + shrink are ON: Play's app-optimization threshold
-            // flags obfuscation below 25% (deadline Feb 2027). The old OOM
-            // was full-mode R8 whole-program analysis on the 8 GB builder;
-            // gradle.properties keeps android.enableR8.fullMode=false, so
-            // R8 obfuscates in compat mode, which fits the machine.
-            isMinifyEnabled = true
-            isShrinkResources = true
-            // proguard-android.txt (NOT -optimize): the optimization passes
-            // are what blew the heap on the 8 GB builder — plain shrinking +
-            // obfuscation is far lighter and satisfies Play's metric.
+            // Minify stays OFF. Play flags obfuscation <25% (deadline Feb
+            // 2027), but R8 shrink+obfuscate does not fit the 8 GB
+            // mac_mini_m2 builder with this dependency graph (Stripe,
+            // Mapbox, ML Kit, Firebase): OOM with optimize, then two
+            // straight timeouts (60 and 120 min) without it — builds
+            // #22/#23/#24 on 2026-09-05. Dex-only R8 fits fine. Revisit
+            // obfuscation with a bigger instance or a local AAB build
+            // before Feb 2027; Dart-level --obfuscate stays on in
+            // codemagic.yaml in the meantime.
+            isMinifyEnabled = false
+            isShrinkResources = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android.txt"),
                 "proguard-rules.pro"

@@ -1359,6 +1359,18 @@ app.mount(
     name="static",
 )
 
+# Serve the dispatch admin panel (Flutter web build lives in dispatch_panel/).
+# html=True makes /panel and /panel/ answer index.html; the app uses hash
+# routing, so there are no deep links to rewrite.
+app.mount(
+    "/panel",
+    StaticFiles(
+        directory=os.path.join(os.path.dirname(os.path.abspath(__file__)), "dispatch_panel"),
+        html=True,
+    ),
+    name="dispatch_panel",
+)
+
 # ═══════════════════════════════════════════════════════
 #  8 LAYERS OF SECURITY PROTECTION
 # ═══════════════════════════════════════════════════════
@@ -1402,7 +1414,7 @@ _CORS_LOCALHOST_RE = r"http://(localhost|127\.0\.0\.1)(:\d+)?"
 
 # -- LAYER 2: Security Headers -------------------------
 # Paths served to browsers (dispatch dashboard, photos, uploads)
-_BROWSER_PATHS = ("/dispatch", "/photos", "/uploads")
+_BROWSER_PATHS = ("/dispatch", "/photos", "/uploads", "/panel")
 
 @app.middleware("http")
 async def security_headers_middleware(request: Request, call_next):
@@ -1424,8 +1436,12 @@ async def security_headers_middleware(request: Request, call_next):
     response.headers["Permissions-Policy"] = "geolocation=(), camera=(), microphone=()"
     if any(_path.startswith(p) for p in _BROWSER_PATHS):
         response.headers["Content-Security-Policy"] = (
-            "default-src 'self'; script-src 'self' 'unsafe-inline'; "
-            "style-src 'self' 'unsafe-inline'; "
+            # 'wasm-unsafe-eval': Flutter's CanvasKit renderer compiles
+            # canvaskit.wasm — Chrome blocks WebAssembly without it.
+            # fonts.googleapis/gstatic: the panel's Google Fonts (Inter).
+            "default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; "
+            "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+            "font-src 'self' data: https://fonts.gstatic.com; "
             "img-src 'self' data: blob: *; "
             "media-src 'self' blob: *; "
             "connect-src 'self' *; "

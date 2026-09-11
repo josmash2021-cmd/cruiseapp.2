@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<!-- Diagnóstico temporal: comprueba si Firestore LISTEN funciona en este origen. Se borra tras la prueba. -->
+<html>
+<head><meta charset="utf-8"><title>fs-probe</title></head>
+<body>
+<pre id="out">boot</pre>
+<script src="https://www.gstatic.com/firebasejs/11.9.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/11.9.1/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/11.9.1/firebase-firestore-compat.js"></script>
+<script>
+const out = (m) => {
+  document.getElementById('out').textContent += '\n' + m;
+  document.title = 'PROBE ' + m.slice(0, 60);
+};
+(async () => {
+  try {
+    firebase.initializeApp({
+      apiKey: 'AIzaSyAdwPUqsI8UuaEQEXw6aaNz7umWeGdWjjg',
+      authDomain: 'cruise-af9f1.firebaseapp.com',
+      projectId: 'cruise-af9f1',
+    });
+    out('init ok');
+    const cred = await firebase.auth().signInWithEmailAndPassword(
+      'dispatch-diag-1789168459@cruisediag.local', 'Diag!1789168459');
+    out('auth ok');
+    const db = firebase.firestore();
+    const q = db.collection('trips').orderBy('createdAt', 'desc').limit(1);
+    try {
+      const snap = await q.get();
+      out('GET ok -> ' + snap.docs.map(d => d.id).join(','));
+    } catch (e) { out('GET FAIL -> ' + e.code + ' ' + e.message); }
+    q.onSnapshot(
+      s => out('LISTEN ok -> ' + s.docs.map(d => d.id).join(',')),
+      e => out('LISTEN FAIL -> ' + e.code + ' ' + e.message));
+  } catch (e) {
+    out('FATAL -> ' + (e.code || '') + ' ' + e.message);
+  }
+})();
+</script>
+</body>
+</html>

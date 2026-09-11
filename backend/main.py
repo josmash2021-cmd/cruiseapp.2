@@ -1438,10 +1438,16 @@ async def security_headers_middleware(request: Request, call_next):
         response.headers["Content-Security-Policy"] = (
             # 'wasm-unsafe-eval': Flutter's CanvasKit renderer compiles
             # canvaskit.wasm — Chrome blocks WebAssembly without it.
+            # gstatic: flutterfire injects the Firebase JS SDKs from there;
+            # without them Firebase never initializes and the panel renders
+            # a white page. api.mapbox.com: the web fleet map's GL JS bundle.
+            # worker-src blob: Mapbox GL spins its workers up from blob URLs.
             # fonts.googleapis/gstatic: the panel's Google Fonts (Inter).
-            "default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; "
-            "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+            "default-src 'self'; "
+            "script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' https://www.gstatic.com https://api.mapbox.com; "
+            "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://api.mapbox.com; "
             "font-src 'self' data: https://fonts.gstatic.com; "
+            "worker-src 'self' blob:; "
             "img-src 'self' data: blob: *; "
             "media-src 'self' blob: *; "
             "connect-src 'self' *; "

@@ -1,13 +1,13 @@
 """Which paths carry the state rule, and which carry the distance cap.
 
-The current split (2026-08):
+The current split (2026-09):
 
-  * LIVE work — the cascade, /trips/available — is SERVICE-AREA scoped:
-    the pickup's state decides the reach (`_radius_for_state`: AL 20 mi /
-    FL 10 mi) and only same-state drivers are offered. A resolved state
-    outside the table means no service; an unresolved one fails OPEN on a
-    fallback radius — a dead geocoder must degrade to "no state rule",
-    never to "nothing matches".
+  * LIVE work — the cascade, /trips/available — is NATIONWIDE: every
+    state is served, and the pickup's state only tunes the reach
+    (`_radius_for_state`: AL 20 mi / FL 10 mi / default 20 mi). Only
+    same-state drivers are offered — the border guard survives. An
+    unresolved state fails OPEN on a fallback radius — a dead geocoder
+    must degrade to "no state rule", never to "nothing matches".
   * RESERVED work — the scheduled marketplace — is same-state only, at
     browse AND at claim. Hiding a card is not enforcement; a trip id
     outlives the list it came from.
@@ -38,12 +38,13 @@ def _clean_cache():
     D._state_cache.clear()
 
 
-async def test_live_dispatch_is_state_scoped_service_area():
-    """Live work IS state-scoped now (2026-08): the pickup's state decides
-    the reach (AL 20 mi / FL 10 mi) and only same-state drivers are
-    offered. Unresolved state fails OPEN (fallback radius — a dead
-    geocoder must not empty the queue); a resolved state outside the
-    table means no service at all."""
+async def test_live_dispatch_is_nationwide_with_per_state_tuning():
+    """Live work is nationwide now (2026-09-11): the pickup's state only
+    tunes the reach (AL 20 mi / FL 10 mi / default 20 mi) and only
+    same-state drivers are offered. There is no "outside the service
+    area" answer left — a resolved state Cruise has no tuning for still
+    dispatches at the default reach. Unresolved state fails OPEN
+    (fallback radius — a dead geocoder must not empty the queue)."""
     from routers import dispatch as D
 
     src = inspect.getsource(D._find_nearest_drivers)
@@ -52,9 +53,19 @@ async def test_live_dispatch_is_state_scoped_service_area():
     assert "_FALLBACK_RADIUS_KM" in inspect.getsource(D._radius_for_state), (
         "an unresolved pickup state must fall back, never empty the queue"
     )
-    # A resolved state Cruise does not operate in answers 'nobody' — that
-    # early return is the whole service-area rule.
-    assert "return []" in src
+    # The old service-area rule answered 'nobody' for a resolved state
+    # outside the table. Nationwide means that early return is gone.
+    assert "return []" not in src, (
+        "a resolved state still gets 'no service' — the nationwide "
+        "default is not wired"
+    )
+    # The tuning table: known states keep their own reach, every other
+    # resolved state gets the default, an unresolved one the fallback.
+    assert D._radius_for_state("AL") == 32.19
+    assert D._radius_for_state("FL") == 16.09
+    assert D._radius_for_state("TX") == D._DEFAULT_STATE_RADIUS_KM
+    assert D._radius_for_state("WY") == D._DEFAULT_STATE_RADIUS_KM
+    assert D._radius_for_state(None) == D._FALLBACK_RADIUS_KM
 
 
 def test_available_trips_has_no_state_filter():

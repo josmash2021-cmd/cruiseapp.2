@@ -510,10 +510,13 @@ async def _find_nearest_drivers(
     # ── Same state as the pickup ──────────────────────────────────────
     #
     # Live dispatch used to be bounded by distance alone, on the reasoning
-    # that crossing a state line for a real fare is not a mistake. It is
-    # bounded by both now: a driver is only offered work in the state they
-    # are standing in, which is also the rule reserved rides already
-    # follow.
+    # that crossing a state line for a real fare is not a mistake, then by
+    # a two-state service area (AL/FL) that refused every other pickup.
+    # Nationwide since 2026-09-11: the pickup's state now only tunes how
+    # far the request reaches (_radius_for_state), never whether it is
+    # served. What survives of the old rule is the border guard: a driver
+    # is only offered work in the state they are standing in, which is
+    # also the rule reserved rides already follow.
     #
     # The resolver is cached per coarse cell, so this is a handful of
     # lookups over rows that already passed everything else — and it fails
@@ -521,16 +524,6 @@ async def _find_nearest_drivers(
     # dropped, because a geocoder that is down must not empty the queue.
     pickup_state = await _state_for(pickup_lat, pickup_lng)
     state_radius = _radius_for_state(pickup_state)
-
-    if state_radius is None:
-        # A resolved state Cruise does not operate in. There is nobody to
-        # offer this to, and saying so here is the whole answer.
-        logging.info(
-            "[NearbySearch] pickup is in %s — outside the service area "
-            "(%s), no drivers offered",
-            pickup_state, ", ".join(sorted(_STATE_RADIUS_KM)),
-        )
-        return []
 
     if pickup_state:
         same = []
@@ -2528,58 +2521,61 @@ async def _dispatch_first_offer_after_delay(trip_id: int) -> None:
 # stop asking rather than ring one phone forever.
 
 # ══════════════════════════════════════════════════════════════════════
-#  Where Cruise operates, and how far a ride reaches inside it
+#  How far a ride reaches, tuned per state
 # ══════════════════════════════════════════════════════════════════════
 #
-# Two states, each its own island. A ride requested in Alabama only ever
-# rings an Alabama driver's phone; one requested in Florida only reaches
-# Florida. Nothing crosses.
+# A ride requested in Alabama only ever rings an Alabama driver's phone;
+# one requested in Florida only reaches Florida. Nothing crosses — that
+# border guard is still the rule, here and in the reserved marketplace.
 #
 # The radius differs per state because the states do: Alabama's drivers
 # are spread thin enough that twenty miles is a reasonable reach, Florida
 # dense enough that ten is plenty and more would only mean dead mileage.
 #
-# A pickup anywhere else is not served. Not "served badly" — not served:
-# there are no drivers there to offer it to, and a rider in Atlanta asking
-# to be driven to Alabama is asking for a car that does not exist. What
-# the rider's destination is does not enter into it; a fare that *leaves*
-# Alabama for Georgia is a real fare and still dispatches.
+# Nationwide since 2026-09-11: a pickup in any other state IS served, at
+# the default reach below. The table no longer decides where Cruise
+# operates, only how far a pickup reaches there. What the rider's
+# destination is does not enter into it; a fare that *leaves* Alabama
+# for Georgia is a real fare and still dispatches.
 _STATE_RADIUS_KM: dict[str, float] = {
     "AL": 32.19,  # 20 miles
     "FL": 16.09,  # 10 miles
 }
+
+# Every state without its own entry reaches this far — 20 miles.
+_DEFAULT_STATE_RADIUS_KM = 32.19
 
 # Used when the pickup's state cannot be resolved at all — see
 # _radius_for_state. Not a service area, a fallback.
 _FALLBACK_RADIUS_KM = 32.19
 
 
-def _radius_for_state(state: str | None) -> float | None:
-    """How far this pickup reaches, or None when it is outside the map.
+def _radius_for_state(state: str | None) -> float:
+    """How far this pickup reaches.
 
-    A resolved state that is not in the table means no service, and that
-    is a real answer — the rider is told nobody is available, because
-    nobody is.
+    There is no "outside the map" anymore: a resolved state without its
+    own entry in the table gets the nationwide default, so every state is
+    served.
 
     A state of None is a different thing: the geocoder did not answer.
     That is our outage, not the rider's location, and refusing every ride
-    in both states because a Google endpoint is slow is a far worse
-    failure than serving one ride from a few miles outside. It falls back
-    and says so in the log.
+    because a Google endpoint is slow is a far worse failure than serving
+    one ride from a few miles outside. It falls back and says so in the
+    log.
     """
     if state is None:
         logging.warning(
             "[Dispatch] pickup state unresolved — falling back to %.0f km. "
-            "Service-area limits are not being enforced for this request.",
+            "Per-state reach tuning is not being applied for this request.",
             _FALLBACK_RADIUS_KM,
         )
         return _FALLBACK_RADIUS_KM
-    return _STATE_RADIUS_KM.get(state)
+    return _STATE_RADIUS_KM.get(state, _DEFAULT_STATE_RADIUS_KM)
 
 
 # The widest any live ride reaches, for the bounding-box pre-filter that
 # runs before the state is known.
-_LIVE_DISPATCH_RADIUS_KM = max(_STATE_RADIUS_KM.values())
+_LIVE_DISPATCH_RADIUS_KM = max(_DEFAULT_STATE_RADIUS_KM, *_STATE_RADIUS_KM.values())
 
 # Same number, kept under the name the re-offer path reads.
 _REOFFER_RADIUS_KM = _LIVE_DISPATCH_RADIUS_KM

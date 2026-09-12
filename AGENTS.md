@@ -17,6 +17,18 @@
 
 ---
 
+## 📏 Contrato de comportamiento — TODA sesión (2026-09-11, spec del usuario)
+
+1. **Verifica que NO existe antes de proponer construirlo.** Grep primero, planear después. (2026-09-11: se entró a plan-mode a "crear" el gate del botón Select que ya existía en `ride_request_widgets.dart` — pérdida de tiempo.)
+2. **Pregunta antes de actuar ante cualquier ambigüedad, cambio grande o algo fuera de lo pedido.** No autonomía: el usuario decide; tú ejecutas lo decidido. Si la orden es clara y chica, hazla sin preguntar.
+3. **Nada roto se entrega:** tras editar corre `flutter analyze` (Dart) / `pytest tests/ -q` (Python) COMPLETOS — no solo el test que tocaste. Si tu cambio rompe otra cosa, arreglarla es parte de la tarea. Declara en el mensaje final lo que NO pudiste verificar.
+4. **Diff mínimo y limpio:** estilo del archivo, sin comentarios ruido, sin archivos/reportes no pedidos, no tocar lo que no requiere la tarea.
+5. **Cero vulnerabilidades nuevas:** sin `catch (_) {}` silenciosos, sin secretos hardcodeados, todo endpoint nuevo con `_verify_api_key` + auth, inputs con Pydantic, SQL con ORM/`text()` parametrizado.
+6. **Cero regresiones de diseño/UI:** si tocas una pantalla, verifica estados hermanos (botón on/off, loading, error, vacío, ES/EN) — no solo el caso feliz.
+7. **Si dudas de algo que el usuario afirma, créeselo primero y rastrea el código; con evidencia en mano, dilo y acata su decisión.**
+
+---
+
 ## 🧠 Mapa de flujos — dónde está cada cosa
 
 **Push de oferta al driver (Issue 1, arreglado 2026-08-07; endurecido 2026-08-08)**

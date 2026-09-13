@@ -4562,14 +4562,12 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
             // ── Map preview (tilt animation on enter) ─────────────────
             Padding(
               padding: EdgeInsets.fromLTRB(Responsive.w(16), 0, Responsive.w(16), Responsive.h(12)),
-              child: Container(
-                // Same raised block as every other card on the screen. The
-                // hand-rolled gold glow + heavy black drop was a third
-                // shadow language on a screen that already has one
-                // (project rule 18: no ad-hoc shadows).
-                decoration: neuBox(radius: 18),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(18),
+              child: ClipRRect(
+                // Frameless (user spec 2026-09-13): the map no longer sits in
+                // the shared raised card — its edges dissolve into the page
+                // via _buildMapEdgeFade below, like the rider's Find-My mini
+                // map. The ClipRRect keeps the rounded-18 corners.
+                borderRadius: BorderRadius.circular(18),
                   child: SizedBox(
                     // Taller (was 190) — more of the trip in view (user
                     // spec 2026-08-04).
@@ -4631,6 +4629,13 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
                               onStyleLoadedListener: _onStyleLoaded,
                             ),
                           ),
+                        // Edges dissolve into the page background (user spec
+                        // 2026-09-13) — the frame is this fade, not a card.
+                        // Above the map, below the chips and the Mapbox
+                        // attribution.
+                        Positioned.fill(
+                          child: IgnorePointer(child: _buildMapEdgeFade()),
+                        ),
                         // The 3D fade vignettes that darkened the top and
                         // bottom edges are gone (user spec 2026-08-05):
                         // they sold the old tilted look, but on a flat
@@ -4695,7 +4700,6 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
                       ],
                     ),
                   ),
-                ),
               ),
             ),
 
@@ -5094,6 +5098,58 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
           ),
         );
       },
+    );
+  }
+
+  /// The preview map's edges dissolving into the page background (user spec
+  /// 2026-09-13): two multi-stop linear fades (vertical + horizontal) plus a
+  /// radial vignette for the corners, all in the page's _bg color — the same
+  /// treatment as the rider's Find-My mini map.
+  Widget _buildMapEdgeFade() {
+    LinearGradient edge(Alignment begin, Alignment end) => LinearGradient(
+          begin: begin,
+          end: end,
+          colors: [
+            _bg,
+            _bg.withValues(alpha: .85),
+            _bg.withValues(alpha: .35),
+            Colors.transparent,
+            Colors.transparent,
+            _bg.withValues(alpha: .35),
+            _bg.withValues(alpha: .85),
+            _bg,
+          ],
+          stops: const [0, .05, .11, .22, .78, .89, .95, 1],
+        );
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        DecoratedBox(
+          decoration: BoxDecoration(
+            gradient: edge(Alignment.topCenter, Alignment.bottomCenter),
+          ),
+        ),
+        DecoratedBox(
+          decoration: BoxDecoration(
+            gradient: edge(Alignment.centerLeft, Alignment.centerRight),
+          ),
+        ),
+        DecoratedBox(
+          decoration: BoxDecoration(
+            gradient: RadialGradient(
+              center: Alignment.center,
+              radius: 1.15,
+              colors: [
+                Colors.transparent,
+                Colors.transparent,
+                _bg.withValues(alpha: .42),
+                _bg,
+              ],
+              stops: const [0, .48, .76, 1],
+            ),
+          ),
+        ),
+      ],
     );
   }
 

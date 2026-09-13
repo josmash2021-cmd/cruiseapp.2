@@ -131,8 +131,23 @@ extension _RiderTrackingPhaseIndicator on _RiderTrackingScreenState {
     }
 
     return Container(
-      // Raised neumorphic bar (shared system — see neu_style.dart).
-      decoration: neuBox(radius: 22),
+      // Edges dissolve into the map instead of a hard card border (user spec
+      // 2026-09-13): solid at the centre where the text sits, feathering to
+      // transparent on every side.
+      decoration: BoxDecoration(
+        gradient: RadialGradient(
+          center: Alignment.center,
+          radius: 1.35,
+          colors: [
+            neuSurface,
+            neuSurface.withValues(alpha: .96),
+            neuSurface.withValues(alpha: .70),
+            neuSurface.withValues(alpha: 0),
+          ],
+          stops: const [0, .52, .78, 1],
+        ),
+        borderRadius: BorderRadius.circular(22),
+      ),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       child: AnimatedSwitcher(
         duration: const Duration(milliseconds: 500),

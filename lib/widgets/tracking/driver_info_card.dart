@@ -396,13 +396,14 @@ extension _RiderTrackingDriverInfoCard on _RiderTrackingScreenState {
     );
   }
 
-  /// Call the driver via the masked callback — the server rings the rider's
-  /// phone and bridges to the driver, so neither side ever sees the other's
-  /// real phone number (and nobody sees a raw tel:,,,ext dial string).
+  /// Call the driver DIRECTLY on his registered number (user spec
+  /// 2026-09-13): the rider's dialer opens with it — no Twilio bridge, no
+  /// number masking on the rider side. The masked callback flow stays on
+  /// the driver's own call button.
   Future<void> _handleCallDriver() async {
     final name = nh.displayName(widget.driverName, widget.rideName);
-    final tripId = widget.tripId;
-    if (tripId == null) {
+    final phone = (widget.driverPhone ?? '').trim();
+    if (phone.isEmpty) {
       _messenger?.showSnackBar(
         SnackBar(
           content: Text('${S.of(context).phoneNotAvailable} - $name'),
@@ -411,16 +412,10 @@ extension _RiderTrackingDriverInfoCard on _RiderTrackingScreenState {
       );
       return;
     }
-
-    final ok = await MaskedCallService.callCounterparty(tripId: tripId, role: 'rider');
-    if (!mounted) return;
-    _messenger?.showSnackBar(
-      SnackBar(
-        content: Text(ok
-            ? S.of(context).callingYouBack
-            : '${S.of(context).phoneNotAvailable} - $name'),
-        // Uses global snackBarTheme
-      ),
+    HapticService.selectionClick();
+    await launchUrl(
+      Uri.parse('tel:$phone'),
+      mode: LaunchMode.externalApplication,
     );
   }
 

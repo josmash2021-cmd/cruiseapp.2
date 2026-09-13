@@ -1,0 +1,481 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cruise — preview REAL (mapa Mapbox real)</title>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<link href="https://api.mapbox.com/mapbox-gl-js/v3.8.0/mapbox-gl.css" rel="stylesheet">
+<script src="https://api.mapbox.com/mapbox-gl-js/v3.8.0/mapbox-gl.js"></script>
+<style>
+  :root{
+    --bg:#14141A; --surface:#1C1C24; --pressed:#101014;
+    --gold:#E8C547; --txt:#fff; --txt2:rgba(255,255,255,.55); --txt3:rgba(255,255,255,.35); --green:#22C55E;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;font-family:'Poppins',system-ui,sans-serif}
+  body{background:#000;display:flex;flex-direction:column;justify-content:center;align-items:center;min-height:100vh;gap:12px;padding:10px}
+  .stage{display:flex;gap:40px;transform-origin:center}
+  .frameCol{display:flex;flex-direction:column;gap:10px;align-items:center}
+  .frameTag{color:var(--txt2);font-size:12px;font-weight:700;letter-spacing:1.5px;text-align:center}
+  .frameTag b{color:var(--gold)}
+  .phone{width:390px;height:844px;border-radius:44px;overflow:hidden;position:relative;background:var(--bg);
+         box-shadow:0 0 0 8px #1b1b1b,0 30px 80px rgba(0,0,0,.85)}
+
+  .statusbar{position:absolute;top:0;left:0;right:0;height:44px;display:flex;justify-content:space-between;align-items:center;padding:0 26px;z-index:5;pointer-events:none}
+  .statusbar .time{color:#fff;font-size:14px;font-weight:600;text-shadow:0 1px 6px rgba(0,0,0,.6)}
+  .statusbar .icons{display:flex;gap:6px;align-items:center}
+  .statusbar .icons svg{height:12px;fill:#fff;opacity:.9}
+  .homeBar{position:absolute;bottom:7px;left:50%;transform:translateX(-50%);width:120px;height:4px;border-radius:2px;background:rgba(255,255,255,.28);z-index:6;pointer-events:none}
+
+  /* ═══ FIND-MY (pantalla nueva) ═══ */
+  .heroGlow{position:absolute;inset:0;pointer-events:none;z-index:1;transition:none;
+    background:radial-gradient(ellipse 130% 46% at 50% -4%, rgba(232,197,71,.52) 0%, rgba(232,197,71,.22) 34%, rgba(232,197,71,.06) 52%, transparent 68%)}
+  .found .heroGlow{background:radial-gradient(ellipse 130% 46% at 50% -4%, rgba(34,197,94,.5) 0%, rgba(34,197,94,.2) 34%, rgba(34,197,94,.06) 52%, transparent 68%)}
+  .heroGlow{transition:none}
+  .heroGlowWrap{position:absolute;inset:0;z-index:1;pointer-events:none}
+  .heroGlowWrap .g{position:absolute;inset:0;transition:opacity .9s ease}
+  .gGreen{opacity:0;background:radial-gradient(ellipse 130% 46% at 50% -4%, rgba(34,197,94,.5) 0%, rgba(34,197,94,.2) 34%, rgba(34,197,94,.06) 52%, transparent 68%)}
+  .found .gGreen{opacity:1}
+  .found .gGold{opacity:0}
+
+  .hdr{position:absolute;top:50px;left:18px;right:18px;display:flex;justify-content:flex-end;align-items:center;z-index:5}
+  .statePill{padding:7px 14px;border-radius:20px;border:1px solid rgba(232,197,71,.55);color:var(--gold);
+             font-size:10px;font-weight:700;letter-spacing:2.5px;transition:all .35s}
+  .found .statePill{background:var(--green);color:#14141A;border-color:var(--green)}
+
+  .hero{position:absolute;top:82px;left:0;right:0;display:flex;flex-direction:column;align-items:center;z-index:4}
+  .ringWrap{position:relative;width:170px;height:170px}
+  .particles{position:absolute;inset:0;animation:spin 26s linear infinite}
+  .particles circle{transition:stroke .9s ease}
+  .found .particles circle{stroke:rgba(34,197,94,.85)}
+  .found .particles.p2 circle{stroke:rgba(34,197,94,.95)}
+  .found .particles.p3 circle{stroke:rgba(34,197,94,.55)}
+  .particles.p2{animation:spinRev 38s linear infinite;opacity:.55}
+  .particles.p3{animation:spin 46s linear infinite;opacity:.3}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  @keyframes spinRev{to{transform:rotate(-360deg)}}
+  .arrowWrap{width:96px;height:96px;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%)}
+  .arrowWrap svg{position:absolute;inset:0}
+  .arrowCheck{opacity:0;transition:opacity .3s}
+  .arrowDir{transition:opacity .3s}
+  .found .arrowDir{opacity:0}
+  .found .arrowCheck{opacity:1}
+  .dist{margin-top:6px;color:#fff;font-size:29px;font-weight:800;letter-spacing:-.5px}
+  .dist small{font-size:13px;font-weight:600;color:var(--txt2);margin-left:4px}
+
+  .divider{position:absolute;top:296px;left:28px;right:28px;height:1.5px;z-index:4;border-radius:1px;
+    background:linear-gradient(to right, transparent 0%, rgba(255,255,255,.14) 18%, rgba(232,197,71,.55) 50%, rgba(255,255,255,.14) 82%, transparent 100%);
+    box-shadow:0 0 8px rgba(232,197,71,.18)}
+
+  .infoCard{position:absolute;top:310px;left:24px;right:24px;z-index:4}
+  .specRow{display:flex;justify-content:center;gap:48px;text-align:center}
+  .spec .lbl{color:var(--txt3);font-size:9.5px;font-weight:600;letter-spacing:1.6px;text-transform:uppercase}
+  .spec .val{color:#fff;font-size:15px;font-weight:700;margin-top:3px}
+  .metaRow{display:flex;justify-content:space-between;align-items:center;margin-top:16px}
+  .driverRow{display:flex;align-items:center;gap:11px}
+  .avatar{width:46px;height:46px;border-radius:50%;background:var(--surface);border:2px solid var(--gold);
+          display:flex;align-items:center;justify-content:center;color:var(--gold);font-size:18px;font-weight:800;
+          box-shadow:0 0 16px rgba(232,197,71,.28)}
+  .driverMeta .nm{color:#fff;font-size:14.5px;font-weight:700}
+  .driverMeta .sub{color:var(--txt2);font-size:10.5px;font-weight:500;display:flex;align-items:center;gap:4px}
+  .driverMeta .sub svg{width:11px;height:11px;fill:var(--gold)}
+  .waitBlock{text-align:right}
+  .waitBlock .lbl{color:var(--txt3);font-size:9.5px;font-weight:600;letter-spacing:1.6px;text-transform:uppercase;
+          display:flex;align-items:center;gap:5px;justify-content:flex-end}
+  .waitBlock .v{color:var(--gold);font-size:19px;font-weight:800;margin-top:2px}
+  .pinRow{display:flex;justify-content:space-between;align-items:center;margin-top:14px}
+  .pinMeta .lbl{color:var(--txt3);font-size:9.5px;font-weight:600;letter-spacing:1.6px;text-transform:uppercase}
+  .pinMeta .sub{color:var(--txt2);font-size:9.5px;font-weight:500;margin-top:2px}
+  .pinDigits{display:flex;gap:7px}
+  .pinDigits span{width:31px;height:38px;border-radius:10px;background:var(--surface);
+    border:1px solid rgba(232,197,71,.30);display:flex;align-items:center;justify-content:center;
+    color:var(--gold);font-size:18px;font-weight:800;
+    box-shadow:3px 3px 10px rgba(0,0,0,.4),-2px -2px 8px rgba(255,255,255,.04)}
+
+  /* mini mapa REAL con bordes desvanecidos */
+  .minimap{position:absolute;left:0;right:0;top:492px;bottom:124px;z-index:2;overflow:hidden}
+  #miniMap{position:absolute;inset:0}
+  .mapFade{position:absolute;inset:0;z-index:3;pointer-events:none;
+    background:
+      linear-gradient(to bottom, var(--bg) 0%, rgba(20,20,26,.85) 5%, rgba(20,20,26,.35) 11%, transparent 22%, transparent 78%, rgba(20,20,26,.35) 89%, rgba(20,20,26,.85) 95%, var(--bg) 100%),
+      linear-gradient(to right,  var(--bg) 0%, rgba(20,20,26,.8) 4%, rgba(20,20,26,.3) 9%, transparent 18%, transparent 82%, rgba(20,20,26,.3) 91%, rgba(20,20,26,.8) 96%, var(--bg) 100%),
+      radial-gradient(ellipse 86% 82% at 50% 50%, transparent 48%, rgba(20,20,26,.42) 76%, var(--bg) 100%);
+  }
+
+  .departOverlay{position:absolute;inset:0;z-index:8;background:rgba(20,20,26,.45);
+    backdrop-filter:blur(16px) saturate(.75);-webkit-backdrop-filter:blur(16px) saturate(.75);
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;
+    opacity:0;pointer-events:none;transition:opacity .6s ease}
+  .depart .departOverlay{opacity:1}
+  .departOverlay .big{width:76px;height:76px;border-radius:50%;background:var(--green);
+    display:flex;align-items:center;justify-content:center;box-shadow:0 12px 34px rgba(34,197,94,.45)}
+  .departOverlay .big svg{width:38px;height:38px;fill:#14141A}
+  .departOverlay .t1{color:#fff;font-size:19px;font-weight:800;letter-spacing:-.2px}
+  .departOverlay .t2{color:rgba(255,255,255,.62);font-size:12px;font-weight:500}
+
+  /* ═══ VIAJE EN CURSO ═══ */
+  .fullmap{position:absolute;inset:0;z-index:1}
+  .topCard{position:absolute;top:56px;left:16px;right:16px;z-index:4;border-radius:22px;background:radial-gradient(ellipse 135% 130% at 50% 50%, var(--surface) 0%, rgba(28,28,36,.96) 52%, rgba(28,28,36,.70) 78%, rgba(28,28,36,0) 100%);
+    padding:12px 16px;display:flex;align-items:center;gap:12px}
+  .topCard .dot{width:10px;height:10px;border-radius:50%;background:var(--gold);flex:none}
+  .topCard .lbl{color:#fff;font-size:15px;font-weight:700;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .etaBadge{border-radius:14px;background:var(--pressed);padding:7px 13px;text-align:center;
+    box-shadow:inset 3px 3px 8px rgba(0,0,0,.5),inset -2px -2px 7px rgba(255,255,255,.03)}
+  .etaBadge b{color:var(--gold);font-size:16px;font-weight:800}
+  .etaBadge span{display:block;color:var(--txt3);font-size:8px;font-weight:700;letter-spacing:1.2px}
+
+  .bottomCard{position:absolute;left:0;right:0;bottom:0;z-index:4;background:var(--surface);
+    border-radius:26px 26px 0 0;border:1px solid rgba(255,255,255,.04);border-bottom:none;
+    box-shadow:0 -8px 28px rgba(0,0,0,.5);padding:15px 16px 14px}
+  .statusRow{display:flex;align-items:center;gap:8px}
+  .statusRow .dot{width:8px;height:8px;border-radius:50%;background:var(--gold)}
+  .statusRow .t{color:var(--gold);font-size:11px;font-weight:600;letter-spacing:.8px}
+  .driverRow2{display:flex;align-items:center;gap:10px;margin-top:11px}
+  .avatar2{position:relative;width:46px;height:46px;border-radius:50%;background:var(--pressed);border:2px solid var(--gold);
+    display:flex;align-items:center;justify-content:center;color:var(--gold);font-size:18px;font-weight:800;flex:none}
+  .avatar2 .vbadge{position:absolute;right:-2px;bottom:-2px;width:16px;height:16px;border-radius:50%;background:var(--green);
+    display:flex;align-items:center;justify-content:center;border:2px solid var(--surface)}
+  .avatar2 .vbadge svg{width:9px;height:9px;fill:#fff}
+  .dmeta{flex:1;min-width:0}
+  .dmeta .nm{color:#fff;font-size:15px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .dmeta .rt{display:flex;align-items:center;gap:3px;color:rgba(255,255,255,.6);font-size:12.5px;margin-top:2px}
+  .dmeta .rt svg{width:13px;height:13px;fill:var(--gold)}
+  .vmeta{display:flex;flex-direction:column;align-items:flex-end;gap:3px}
+  .vmeta .vl{color:rgba(255,255,255,.55);font-size:10px;font-weight:600;max-width:120px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .vmeta img{width:64px;filter:drop-shadow(0 3px 6px rgba(0,0,0,.5))}
+  .plate{background:#fff;color:#000;border-radius:5px;padding:2px 8px;font-size:11px;font-weight:900;letter-spacing:1.5px}
+
+  .actionsRow{display:flex;align-items:center;justify-content:center;gap:22px;margin-top:13px}
+  .rbtn{position:relative;width:46px;height:46px;border-radius:50%;background:var(--surface);border:1px solid rgba(255,255,255,.07);flex:none;
+    display:flex;align-items:center;justify-content:center;cursor:pointer;
+    box-shadow:3px 3px 10px rgba(0,0,0,.4),-2px -2px 8px rgba(255,255,255,.04)}
+  .rbtn svg{width:18px;height:18px;fill:#fff}
+  .rbtn.gold{background:var(--gold);border-color:var(--gold);box-shadow:0 6px 18px rgba(232,197,71,.35)}
+  .rbtn.gold svg{fill:#14141A}
+  .rbtn .n{position:absolute;top:-4px;right:-4px;min-width:18px;height:18px;border-radius:9px;background:#EF4444;color:#fff;
+    font-size:10px;font-weight:800;display:flex;align-items:center;justify-content:center;padding:0 5px}
+
+  .riderDotEl{width:16px;height:16px;border-radius:50%;background:#3B82F6;border:2.5px solid #fff;
+    box-shadow:0 0 10px rgba(59,130,246,.8)}
+  .carEl img{width:46px;display:block;filter:drop-shadow(0 4px 8px rgba(0,0,0,.6))}
+  .destEl img{width:30px;display:block;filter:drop-shadow(0 3px 6px rgba(0,0,0,.5))}
+  .demoCtl{display:flex;gap:10px;align-items:center;max-width:860px}
+  .demoCtl button{background:var(--gold);border:none;color:#14141A;font-weight:700;font-size:13px;padding:10px 20px;border-radius:22px;cursor:pointer;white-space:nowrap}
+  .demoCtl span{color:var(--txt2);font-size:12px}
+</style>
+</head>
+<body>
+<div class="stage" id="stage">
+
+  <!-- ══════ FIND-MY — pantalla nueva, mapa REAL ══════ -->
+  <div class="frameCol">
+    <div class="frameTag">RIDER — <b>Find your driver</b> (pantalla NUEVA · mapa Mapbox REAL)</div>
+    <div class="phone" id="phoneFind">
+      <div class="heroGlowWrap" id="glowWrap">
+        <div class="g gGold" style="background:radial-gradient(ellipse 130% 46% at 50% -4%, rgba(232,197,71,.52) 0%, rgba(232,197,71,.22) 34%, rgba(232,197,71,.06) 52%, transparent 68%)"></div>
+        <div class="g gGreen"></div>
+      </div>
+
+      <div class="statusbar">
+        <span class="time">9:41</span>
+        <span class="icons">
+          <svg viewBox="0 0 18 12"><path d="M1 8h2v3H1zM5 6h2v5H5zM9 3h2v8H9zM13 0h2v11h-2z"/></svg>
+          <svg viewBox="0 0 16 12"><path d="M8 9.5a1.6 1.6 0 1 1 0 3.2 1.6 1.6 0 0 1 0-3.2zM8 5.5c2 0 3.7.7 4.9 1.9l-1.5 1.5A4.9 4.9 0 0 0 8 7.7a4.9 4.9 0 0 0-3.4 1.2L3.1 7.4A6.7 6.7 0 0 1 8 5.5zM8 1c2.9 0 5.6 1.1 7.6 3l-1.5 1.5A8.4 8.4 0 0 0 8 3.2a8.4 8.4 0 0 0-6.1 2.3L.4 4A10.6 10.6 0 0 1 8 1z"/></svg>
+          <svg viewBox="0 0 25 12"><rect x="0" y="1" width="20" height="10" rx="3" fill="none" stroke="#fff" opacity=".5"/><rect x="2" y="3" width="13" height="6" rx="1.5"/><rect x="21.5" y="4" width="2.5" height="4" rx="1" opacity=".5"/></svg>
+        </span>
+      </div>
+
+      <div class="hdr"><div class="statePill" id="statePill">FINDING</div></div>
+
+      <div class="hero">
+        <div class="ringWrap">
+          <svg class="particles" viewBox="0 0 196 196"><circle cx="98" cy="98" r="88" fill="none" stroke="rgba(255,255,255,.85)" stroke-width="3" stroke-dasharray="0.1 7" stroke-linecap="round"/></svg>
+          <svg class="particles p2" viewBox="0 0 196 196"><circle cx="98" cy="98" r="77" fill="none" stroke="rgba(232,197,71,.75)" stroke-width="2.5" stroke-dasharray="0.1 9" stroke-linecap="round"/></svg>
+          <svg class="particles p3" viewBox="0 0 196 196"><circle cx="98" cy="98" r="67" fill="none" stroke="rgba(255,255,255,.7)" stroke-width="2" stroke-dasharray="0.1 10.5" stroke-linecap="round"/></svg>
+          <div class="arrowWrap" id="arrowWrap">
+            <svg class="arrowDir" viewBox="0 0 132 132">
+              <g stroke="#fff" stroke-width="13" stroke-linecap="round" stroke-linejoin="round" fill="none">
+                <path d="M30 102 L92 40"/><path d="M92 40 L54 44"/><path d="M92 40 L88 78"/>
+              </g>
+            </svg>
+            <svg class="arrowCheck" viewBox="0 0 132 132">
+              <circle cx="66" cy="66" r="52" fill="none" stroke="#22C55E" stroke-width="10"/>
+              <path d="M44 68 L60 84 L90 50" fill="none" stroke="#22C55E" stroke-width="11" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </div>
+        </div>
+        <div class="dist"><span id="distNum">590</span><small>ft</small><small style="margin-left:8px">to your driver</small></div>
+      </div>
+
+      <div class="divider"></div>
+
+      <div class="infoCard">
+        <div class="specRow">
+          <div class="spec"><div class="lbl">License Plate</div><div class="val">ASDF</div></div>
+          <div class="spec"><div class="lbl">Vehicle</div><div class="val">Black Cadillac Escalade</div></div>
+        </div>
+        <div class="metaRow">
+          <div class="driverRow">
+            <div class="avatar">J</div>
+            <div class="driverMeta">
+              <div class="nm">Jhon Martinez</div>
+              <div class="sub"><svg viewBox="0 0 24 24"><path d="M12 2l2.9 6.3 6.9.8-5.1 4.7 1.4 6.8L12 17.2 5.9 20.6l1.4-6.8L2.2 9.1l6.9-.8z"/></svg>5.0 · Your driver</div>
+            </div>
+          </div>
+          <div class="waitBlock">
+            <div class="lbl">FREE WAIT TIME</div>
+            <div class="v">1:13</div>
+          </div>
+        </div>
+        <div class="pinRow">
+          <div class="pinMeta"><div class="lbl">Pickup code</div><div class="sub">Tell it to your driver</div></div>
+          <div class="pinDigits"><span>4</span><span>2</span><span>7</span><span>9</span></div>
+        </div>
+      </div>
+
+      <div class="minimap">
+        <div id="miniMap"></div>
+        <div class="mapFade"></div>
+      </div>
+
+      <div class="departOverlay">
+        <div class="big"><svg viewBox="0 0 24 24"><path d="M9.5 16.2 5.3 12l-1.4 1.4 5.6 5.6 12-12-1.4-1.4z"/></svg></div>
+        <div class="t1">Driver confirmed</div>
+        <div class="t2">Starting your ride…</div>
+      </div>
+
+      <div class="actionsRow" style="position:absolute;bottom:20px;left:0;right:0;z-index:5">
+        <div class="rbtn"><svg viewBox="0 0 24 24"><path d="M4 3h16a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H8l-5 4V5a2 2 0 0 1 2-2z"/></svg></div>
+        <div class="rbtn gold"><svg viewBox="0 0 24 24"><path d="M6.6 10.8a15 15 0 0 0 6.6 6.6l2.2-2.2a1 1 0 0 1 1-.25 11.4 11.4 0 0 0 3.6.58 1 1 0 0 1 1 1V20a1 1 0 0 1-1 1A17 17 0 0 1 3 4a1 1 0 0 1 1-1h3.5a1 1 0 0 1 1 1 11.4 11.4 0 0 0 .57 3.6 1 1 0 0 1-.25 1z"/></svg></div>
+        <div class="rbtn"><svg viewBox="0 0 24 24"><path d="M12 3a8 8 0 0 0-8 8v5a3 3 0 0 0 3 3h1a1 1 0 0 0 1-1v-6a1 1 0 0 0-1-1H6v-1a6 6 0 0 1 12 0v1h-2a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h1a3 3 0 0 0 3-3v-5a8 8 0 0 0-8-8z"/></svg></div>
+      </div>
+
+      <div class="homeBar"></div>
+    </div>
+  </div>
+
+  <!-- ══════ VIAJE EN CURSO — mapa REAL ══════ -->
+  <div class="frameCol">
+    <div class="frameTag">RIDER — <b>Viaje en curso</b> (mapa Mapbox REAL · chat ya redondo)</div>
+    <div class="phone">
+      <div id="tripMap" class="fullmap"></div>
+
+      <div class="statusbar">
+        <span class="time">9:41</span>
+        <span class="icons">
+          <svg viewBox="0 0 18 12"><path d="M1 8h2v3H1zM5 6h2v5H5zM9 3h2v8H9zM13 0h2v11h-2z"/></svg>
+          <svg viewBox="0 0 16 12"><path d="M8 9.5a1.6 1.6 0 1 1 0 3.2 1.6 1.6 0 0 1 0-3.2zM8 5.5c2 0 3.7.7 4.9 1.9l-1.5 1.5A4.9 4.9 0 0 0 8 7.7a4.9 4.9 0 0 0-3.4 1.2L3.1 7.4A6.7 6.7 0 0 1 8 5.5zM8 1c2.9 0 5.6 1.1 7.6 3l-1.5 1.5A8.4 8.4 0 0 0 8 3.2a8.4 8.4 0 0 0-6.1 2.3L.4 4A10.6 10.6 0 0 1 8 1z"/></svg>
+          <svg viewBox="0 0 25 12"><rect x="0" y="1" width="20" height="10" rx="3" fill="none" stroke="#fff" opacity=".5"/><rect x="2" y="3" width="13" height="6" rx="1.5"/><rect x="21.5" y="4" width="2.5" height="4" rx="1" opacity=".5"/></svg>
+        </span>
+      </div>
+
+      <div class="topCard">
+        <span class="dot"></span>
+        <div class="lbl" id="topLabel">Your trip has started</div>
+        <div class="etaBadge" id="etaBadge" style="opacity:0;transition:opacity .4s"><b>24</b><span>MIN</span></div>
+      </div>
+
+      <div class="bottomCard">
+        <div class="statusRow"><span class="dot"></span><span class="t">ON TRIP TO DESTINATION</span></div>
+        <div class="driverRow2">
+          <div class="avatar2">J<span class="vbadge"><svg viewBox="0 0 24 24"><path d="M9.5 16.2 5.3 12l-1.4 1.4 5.6 5.6 12-12-1.4-1.4z"/></svg></span></div>
+          <div class="dmeta">
+            <div class="nm">Jhon Martinez</div>
+            <div class="rt"><svg viewBox="0 0 24 24"><path d="M12 2l2.9 6.3 6.9.8-5.1 4.7 1.4 6.8L12 17.2 5.9 20.6l1.4-6.8L2.2 9.1l6.9-.8z"/></svg>5.0</div>
+          </div>
+          <div class="vmeta">
+            <div class="vl">Black Cadillac Escalade</div>
+            <img src="../../assets/images/car_suv.png" alt="vehicle">
+            <div class="plate">ASDF</div>
+          </div>
+        </div>
+        <div class="actionsRow">
+          <div class="rbtn"><svg viewBox="0 0 24 24"><path d="M4 3h16a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H8l-5 4V5a2 2 0 0 1 2-2z"/></svg><div class="n">1</div></div>
+          <div class="rbtn gold"><svg viewBox="0 0 24 24"><path d="M6.6 10.8a15 15 0 0 0 6.6 6.6l2.2-2.2a1 1 0 0 1 1-.25 11.4 11.4 0 0 0 3.6.58 1 1 0 0 1 1 1V20a1 1 0 0 1-1 1A17 17 0 0 1 3 4a1 1 0 0 1 1-1h3.5a1 1 0 0 1 1 1 11.4 11.4 0 0 0 .57 3.6 1 1 0 0 1-.25 1z"/></svg></div>
+          <div class="rbtn"><svg viewBox="0 0 24 24"><path d="M18 8a3 3 0 1 0-2.83-4H15a3 3 0 0 0-.59.06L8.1 7.62a3 3 0 1 0 0 4.76l6.31 3.56a3 3 0 1 0 .86-1.72L9.2 10.8a3.3 3.3 0 0 0 0-1.6l6.07-3.42c.53.5 1.22.78 1.73.78z"/></svg></div>
+          <div class="rbtn"><svg viewBox="0 0 24 24"><path d="M12 8a2 2 0 1 0 0-4 2 2 0 0 0 0 4zm0 6a2 2 0 1 0 0-4 2 2 0 0 0 0 4zm0 6a2 2 0 1 0 0-4 2 2 0 0 0 0 4z"/></svg></div>
+        </div>
+      </div>
+
+      <div class="homeBar"></div>
+    </div>
+  </div>
+</div>
+
+<div class="demoCtl">
+  <button id="simBtn">▶ Simular acercamiento (rider)</button>
+  <span><b>Mapas Mapbox dark-v11 REALES</b> — calles de verdad (JFK → Times Square), ruta dorada por Directions API, el PNG del carro real de la app. El viaje en curso avanza solo y <b>la línea se borra detrás del carrito</b> (como en la app).</span>
+</div>
+
+<script>
+  mapboxgl.accessToken = 'pk.eyJ1Ijoicm95YWxwdXJwbGVjb3JwIiwiYSI6ImNtbHk4cmpsNjExamwzZm9sOGFobXZoZTMifQ.YNkz-m3W7noKKDKbwn9y3w';
+
+  function fit(){
+    const s = Math.min(1, (window.innerHeight - 120) / 920, (window.innerWidth - 60) / 900);
+    document.getElementById('stage').style.transform = 'scale(' + s + ')';
+  }
+  window.addEventListener('resize', fit); fit();
+
+  // Interpolación a lo largo de una polyline [ [lng,lat], ... ]
+  function makeWalker(coords){
+    const cum = [0];
+    let total = 0;
+    for (let i = 1; i < coords.length; i++){
+      const [a,b] = coords[i-1], [c,d] = coords[i];
+      total += Math.hypot(c-a, d-b);
+      cum.push(total);
+    }
+    return function(p){
+      const target = p * total;
+      let i = 1;
+      while (i < cum.length - 1 && cum[i] < target) i++;
+      const segT = cum[i] === cum[i-1] ? 0 : (target - cum[i-1]) / (cum[i] - cum[i-1]);
+      const [x1,y1] = coords[i-1], [x2,y2] = coords[i];
+      return { lng: x1 + (x2-x1)*segT, lat: y1 + (y2-y1)*segT,
+               bearing: Math.atan2(x2-x1, y2-y1) * 180 / Math.PI, idx: i };
+    };
+  }
+
+  async function fetchRoute(from, to, profile){
+    try{
+      const url = `https://api.mapbox.com/directions/v5/mapbox/${profile}/${from[0]},${from[1]};${to[0]},${to[1]}?geometries=geojson&overview=full&access_token=${mapboxgl.accessToken}`;
+      const r = await fetch(url);
+      const j = await r.json();
+      const c = j.routes && j.routes[0] && j.routes[0].geometry && j.routes[0].geometry.coordinates;
+      if (c && c.length > 1) return c;
+    }catch(e){}
+    return [from, to]; // fallback línea recta
+  }
+
+  // ═══ FIND-MY: rider camina al carro (JFK T4, calles reales) ═══
+  const RIDER = [-73.78688, 40.64610];
+  const CAR   = [-73.78466, 40.64736];
+
+  const mini = new mapboxgl.Map({
+    container: 'miniMap', style: 'mapbox://styles/mapbox/dark-v11',
+    center: RIDER, zoom: 17.2, pitch: 0, bearing: 0,
+    interactive: false, attributionControl: false, logoPosition: 'bottom-right',
+  });
+
+  mini.on('load', async () => {
+    const coords = await fetchRoute(RIDER, CAR, 'walking');
+    mini.addSource('guide', { type:'geojson', data:{ type:'Feature', geometry:{ type:'LineString', coordinates: coords } } });
+    mini.addLayer({ id:'guide', type:'line', source:'guide',
+      paint:{ 'line-color':'#E8C547', 'line-width':4, 'line-dasharray':[1.4,1.4], 'line-opacity':.9 },
+      layout:{ 'line-cap':'round' } });
+
+    const carEl = document.createElement('div');
+    carEl.className = 'carEl';
+    carEl.innerHTML = '<img src="../../assets/images/car_suv.png">';
+    new mapboxgl.Marker({ element: carEl, rotationAlignment:'map', pitchAlignment:'map' })
+      .setLngLat(CAR).setRotation(-35).addTo(mini);
+
+    const dotEl = document.createElement('div');
+    dotEl.className = 'riderDotEl';
+    const dotMarker = new mapboxgl.Marker({ element: dotEl }).setLngLat(coords[0]).addTo(mini);
+
+    const bounds = coords.reduce((b,c)=>b.extend(c), new mapboxgl.LngLatBounds(coords[0], coords[0]));
+    mini.fitBounds(bounds, { padding: {top:70, bottom:70, left:60, right:60}, duration: 0 });
+
+    // Simulación: el dot camina por la ruta REAL
+    const walk = makeWalker(coords);
+    const phone = document.getElementById('phoneFind');
+    const dist = document.getElementById('distNum');
+    const pill = document.getElementById('statePill');
+    const arrow = document.getElementById('arrowWrap');
+    const START_FT = 590;
+    let raf = null;
+    document.getElementById('simBtn').addEventListener('click', () => {
+      if (raf) return;
+      phone.classList.remove('found'); phone.classList.remove('depart');
+      pill.textContent = 'FINDING';
+      let t0 = performance.now();
+      const DUR = 6000;
+      function frame(ts){
+        const raw = Math.min(1, (ts - t0) / DUR);
+        const p = raw < .5 ? 2*raw*raw : 1 - Math.pow(-2*raw + 2, 2)/2;
+        const w = walk(p);
+        dotMarker.setLngLat([w.lng, w.lat]);
+        arrow.style.transform = `translate(-50%,-50%) rotate(${w.bearing + 45}deg)`;
+        dist.textContent = Math.round(START_FT - p * (START_FT - 6));
+        if (raw < 1){ raf = requestAnimationFrame(frame); return; }
+        // FOUND
+        phone.classList.add('found'); pill.textContent = 'FOUND';
+        setTimeout(() => phone.classList.add('depart'), 2200);
+        setTimeout(() => {
+          phone.classList.remove('found'); phone.classList.remove('depart');
+          pill.textContent = 'FINDING';
+          dotMarker.setLngLat(coords[0]);
+          dist.textContent = START_FT;
+          arrow.style.transform = 'translate(-50%,-50%)';
+          cancelAnimationFrame(raf); raf = null;
+        }, 5200);
+      }
+      raf = requestAnimationFrame(frame);
+    });
+  });
+
+  // ═══ VIAJE EN CURSO: carro avanzando por la ruta REAL (JFK → Times Sq) ═══
+  const PICKUP = [-73.79003, 40.64372];
+  const DEST   = [-73.98550, 40.75800];
+
+  const trip = new mapboxgl.Map({
+    container: 'tripMap', style: 'mapbox://styles/mapbox/dark-v11',
+    center: PICKUP, zoom: 11, pitch: 0, bearing: 0,
+    interactive: true, attributionControl: false, logoPosition: 'bottom-left',
+  });
+
+  trip.on('load', async () => {
+    const coords = await fetchRoute(PICKUP, DEST, 'driving');
+    trip.addSource('routeGlow', { type:'geojson', data:{ type:'Feature', geometry:{ type:'LineString', coordinates: coords } } });
+    trip.addLayer({ id:'glow', type:'line', source:'routeGlow',
+      paint:{ 'line-color':'rgba(232,197,71,.25)', 'line-width':11 }, layout:{ 'line-cap':'round' } });
+    trip.addLayer({ id:'route', type:'line', source:'routeGlow',
+      paint:{ 'line-color':'#E8C547', 'line-width':5 }, layout:{ 'line-cap':'round' } });
+
+    const destEl = document.createElement('div');
+    destEl.className = 'destEl';
+    destEl.innerHTML = '<img src="../../assets/markers/driver_arrow.png" onerror="this.outerHTML=\'\'">';
+    // pin de destino: dibujo propio, no dependemos de assets de marcadores
+    const destPin = document.createElement('div');
+    destPin.innerHTML = '<svg width="30" height="30" viewBox="0 0 24 24"><path d="M12 2a7 7 0 0 1 7 7c0 5-7 13-7 13S5 14 5 9a7 7 0 0 1 7-7z" fill="#E8C547"/><circle cx="12" cy="9" r="2.6" fill="#14141A"/></svg>';
+    new mapboxgl.Marker({ element: destPin, anchor: 'bottom' }).setLngLat(DEST).addTo(trip);
+
+    const carEl = document.createElement('div');
+    carEl.className = 'carEl';
+    carEl.innerHTML = '<img src="../../assets/images/car_suv.png">';
+    const carMarker = new mapboxgl.Marker({ element: carEl, rotationAlignment:'map', pitchAlignment:'map' })
+      .setLngLat(coords[Math.floor(coords.length * 0.3)]).addTo(trip);
+
+    const bounds = coords.reduce((b,c)=>b.extend(c), new mapboxgl.LngLatBounds(coords[0], coords[0]));
+    trip.fitBounds(bounds, { padding: {top:120, bottom:280, left:50, right:50}, duration: 0 });
+
+    const drive = makeWalker(coords);
+    let p = 0.0, last = performance.now(), lastErase = 0;
+    function frame(ts){
+      const dt = Math.min(80, ts - last); last = ts;
+      p += (dt / 1000) * 0.004;                 // avance calmado, continuo
+      if (p > 0.93) p = 0.0;                    // loop suave del demo
+      const w = drive(p);
+      carMarker.setLngLat([w.lng, w.lat]);
+      carMarker.setRotation(w.bearing);
+      // Como en la app (_eraseRouteBehindCar): la línea dorada es SOLO el
+      // tramo que falta — lo ya recorrido se borra detrás del carrito.
+      if (ts - lastErase > 150){
+        lastErase = ts;
+        const remaining = [[w.lng, w.lat], ...coords.slice(w.idx)];
+        const src = trip.getSource('routeGlow');
+        if (src) src.setData({ type:'Feature', geometry:{ type:'LineString', coordinates: remaining } });
+      }
+      requestAnimationFrame(frame);
+    }
+    requestAnimationFrame(frame);
+
+    setTimeout(() => {
+      document.getElementById('topLabel').textContent = 'On the way to your destination';
+      document.getElementById('etaBadge').style.opacity = '1';
+    }, 3200);
+  });
+</script>
+</body>
+</html>

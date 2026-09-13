@@ -122,7 +122,11 @@ void main() {
     });
     test('chat and call stay', () {
       expect(src.contains('ChatScreen('), isTrue);
-      expect(src.contains('MaskedCallService.callCounterparty('), isTrue);
+      // Call is a DIRECT dial to the driver's number now (user spec
+      // 2026-09-13) — the masked Twilio callback must not come back.
+      expect(src.contains("Uri.parse('tel:\$phone')"), isTrue);
+      expect(src.contains('MaskedCallService'), isFalse,
+          reason: 'rider-side calls dial the driver directly, no bridge');
     });
   });
 

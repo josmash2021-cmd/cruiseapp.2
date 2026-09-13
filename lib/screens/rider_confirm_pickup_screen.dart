@@ -18,8 +18,8 @@ import '../map/map_surface_coordinator.dart';
 import '../models/lat_lng.dart';
 import '../services/directions_service.dart';
 import '../services/haptic_service.dart';
-import '../services/masked_call_service.dart';
 import '../utils/mapbox_safe.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../utils/smooth_motion.dart';
 import '../widgets/neu_style.dart';
 import '../widgets/static_route_preview.dart';
@@ -1693,9 +1693,10 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
     );
   }
 
-  /// Call the driver via the masked callback: the server rings the rider's
-  /// phone and bridges to the driver — neither side ever sees the other's
-  /// real phone number.
+  /// Call the driver DIRECTLY on his registered number (user spec
+  /// 2026-09-13): the rider's dialer opens with it — no Twilio bridge, no
+  /// number masking on the rider side. The masked callback flow stays on
+  /// the driver's own call button.
   ///
   /// Every failure used to be a silent `return`: no number on the trip, or
   /// the dialer refusing, and the rider just tapped a button that did
@@ -1703,27 +1704,15 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
   /// surface as a snackbar.
   Future<void> _callDriver() async {
     HapticService.lightImpact();
-    final tripId = widget.tripId;
-    if (tripId == null) {
-      debugPrint('[ConfirmPickup] call: no trip id for masked call');
+    final phone = (widget.driverPhone ?? '').trim();
+    if (phone.isEmpty) {
+      debugPrint('[ConfirmPickup] call: no driver phone on the trip payload');
       _showCallFailed();
       return;
     }
-    final ok = await MaskedCallService.callCounterparty(
-      tripId: tripId,
-      role: 'rider',
-    );
-    if (!ok) {
-      debugPrint('[ConfirmPickup] masked call failed');
-      _showCallFailed();
-      return;
-    }
-    if (!mounted) return;
-    ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-      SnackBar(
-        content: Text(S.of(context).callingYouBack),
-        behavior: SnackBarBehavior.floating,
-      ),
+    await launchUrl(
+      Uri.parse('tel:$phone'),
+      mode: LaunchMode.externalApplication,
     );
   }
 

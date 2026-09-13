@@ -5,6 +5,7 @@ import logging
 import math
 import os
 import re
+import secrets
 import time
 import unicodedata
 from datetime import date, datetime, timedelta, timezone
@@ -158,6 +159,18 @@ def _haversine(lat1, lng1, lat2, lng2):
     dlng = math.radians(lng2 - lng1)
     a = math.sin(dlat / 2) ** 2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlng / 2) ** 2
     return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+
+
+# ═══════════════════════════════════════════════════════
+#  Pickup handshake PIN (2026-09-12)
+# ═══════════════════════════════════════════════════════
+
+def _gen_pickup_pin() -> str:
+    """4-digit code shown on the rider's Find-My pickup screen. The rider
+    reads it out to the driver, who enters it to unlock Start Ride when the
+    proximity handshake (~2 m) can't fire. Leading zeros allowed."""
+    return f"{secrets.randbelow(10000):04d}"
+
 
 
 # ═══════════════════════════════════════════════════════
@@ -359,6 +372,9 @@ def _trip_dict(t) -> dict:
             "per_mile_rate": getattr(t, "per_mile_rate", None),
             "per_minute_rate": getattr(t, "per_minute_rate", None),
             "share_token": getattr(t, "share_token", None),
+            # 4-digit pickup handshake: rider-facing only — the driver dict
+            # strips it in _driver_visible_trip_dict.
+            "pickup_pin": getattr(t, "pickup_pin", None),
             "created_at": t.created_at.isoformat() if getattr(t, "created_at", None) else None,
             "updated_at": t.updated_at.isoformat() if getattr(t, "updated_at", None) else None,
             # Guest booking contact info (web widget / no registered account).

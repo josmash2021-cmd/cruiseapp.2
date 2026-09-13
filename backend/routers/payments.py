@@ -19,7 +19,7 @@ from utils.security import (
     _check_login_throttle, _record_login_failure, _clear_login_failures,
     JWT_SECRET, JWT_ALGORITHM,
 )
-from utils.helpers import _safe_create_task, _haversine, _abs_photo_url, _user_dict, _resolve_rider_display
+from utils.helpers import _safe_create_task, _haversine, _abs_photo_url, _user_dict, _resolve_rider_display, _gen_pickup_pin
 from services.fcm_service import _send_fcm_push
 from services import vehicle_tiers, web_pricing
 from services.sms_service import notify_guest_welcome
@@ -2131,6 +2131,7 @@ async def web_create_booking(request: Request, db: AsyncSession = Depends(get_db
             guest_email=guest_email or None,
             guest_lang=guest_lang or "en",
             payment_status="held" if payment_intent_id else "unpaid",
+            pickup_pin=_gen_pickup_pin(),
         )
         db.add(trip)
         await db.commit()

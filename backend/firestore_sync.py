@@ -1191,6 +1191,24 @@ def sync_rider_confirmed_pickup(trip_id: int) -> bool:
         return False
 
 
+def sync_pickup_pin(trip_id: int, pin: str) -> bool:
+    """Mirror the 4-digit pickup handshake onto the Firestore trip doc
+    (2026-09-12). The rider's Find-My screen already listens to that doc, so
+    this is how the code reaches it without a new channel. The driver app
+    never displays it — the driver hears it from the rider and types it in."""
+    _ensure_init()
+    if _db is None or not pin:
+        return False
+    try:
+        _retry_sync(lambda: _db.collection("trips").document(f"sql_{trip_id}")
+                    .set({"pickup_pin": pin}, merge=True, timeout=_FS_TIMEOUT))
+        log.info("🔄 Synced pickup_pin sql_%d", trip_id)
+        return True
+    except Exception as e:
+        log.error("❌ pickup_pin sync failed for %d: %s", trip_id, e)
+        return False
+
+
 def sync_trip_released(trip_id: int):
     """Put a trip back in the dispatch queue and strip its driver.
 

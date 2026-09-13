@@ -231,6 +231,24 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   StreamSubscription? _riderConfirmSub;
   bool _riderConfirmedPickup = false;
 
+  // ── Pickup PIN (arrived / waiting-for-rider stage) ──
+  // The rider reads a 4-digit code from their app; a correct entry sets the
+  // same local flag the Firestore listener sets, so the "Waiting for your
+  // rider" pill morphs into Start Ride even if the backend's flag write
+  // lands a beat later.
+  final TextEditingController _pinCtrl = TextEditingController();
+  final FocusNode _pinFocusNode = FocusNode();
+  late final AnimationController _pinShakeCtrl;
+  bool _pinSubmitting = false;
+  bool _pinLocked = false;
+  Timer? _pinLockTimer;
+  String? _pinError; // 'invalid' | 'locked'
+
+  /// True exactly while [_buildSlideWaitingForRider] is the active phase
+  /// widget — never before arriving, never after the ride started.
+  bool get _showPickupPinCard =>
+      _arrivedConfirmed && !_rideStarted && !_riderConfirmedPickup && !_waitingOverride;
+
   // Safety-net: backend status poll. The Firestore listener above is the
   // primary signal but can silently miss events (auth expired, doc not
   // mirrored yet, transient network). Without this poll the driver can
@@ -696,6 +714,12 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
       CurvedAnimation(parent: _shimmerCtrl, curve: Curves.easeInOut),
     );
 
+    // Shake for a rejected pickup PIN (403).
+    _pinShakeCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 420),
+    );
+
     // Listen for rider confirming pickup in Firestore
     _listenForRiderConfirmation();
     _startStatusPoll();
@@ -853,6 +877,10 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     _confirmBannerTimer?.cancel();
     _routeBannerTimer?.cancel();
     _waitingOverrideTimer?.cancel();
+    _pinCtrl.dispose();
+    _pinFocusNode.dispose();
+    _pinShakeCtrl.dispose();
+    _pinLockTimer?.cancel();
     _carGpsSub?.cancel();
     _carTicker?.stop();
     _carTicker?.dispose();
@@ -1944,6 +1972,204 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     _waitingOverrideTimer = Timer(const Duration(seconds: 90), () {
       if (mounted) setState(() => _waitingOverride = true);
     });
+  }
+
+  // ── Pickup PIN ────────────────────────────────────────────────────────────
+
+  void _onPinChanged(String value) {
+    if (_pinLocked || _pinSubmitting) return;
+    if (_pinError == 'invalid') _pinError = null;
+    if (value.length == 4) {
+      _pinFocusNode.unfocus();
+      _submitPickupPin();
+    }
+    setState(() {});
+  }
+
+  Future<void> _submitPickupPin() async {
+    if (_pinSubmitting) return;
+    final pin = _pinCtrl.text;
+    if (pin.length != 4) return;
+    HapticService.mediumImpact();
+    setState(() => _pinSubmitting = true);
+    try {
+      await ApiService.confirmPickupPin(widget.tripId, pin);
+      if (!mounted) return;
+      HapticService.heavyImpact();
+      // Same local state the Firestore proximity listener sets — the
+      // listener stays the cross-device source of truth and early-returns
+      // on this flag, so its late write causes no double haptic/banner.
+      setState(() => _riderConfirmedPickup = true);
+      _showConfirmBanner();
+      ScaffoldMessenger.maybeOf(context)?.showSnackBar(SnackBar(
+        content: Text(S.of(context).pickupCodeMatched),
+        behavior: SnackBarBehavior.floating,
+      ));
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      _pinCtrl.clear();
+      if (e.statusCode == 403) {
+        HapticService.vibrate();
+        setState(() => _pinError = 'invalid');
+        _pinShakeCtrl.forward(from: 0);
+        _pinFocusNode.requestFocus();
+      } else if (e.statusCode == 429) {
+        setState(() {
+          _pinError = 'locked';
+          _pinLocked = true;
+        });
+        _pinLockTimer?.cancel();
+        _pinLockTimer = Timer(const Duration(minutes: 1), () {
+          if (!mounted) return;
+          setState(() {
+            _pinLocked = false;
+            if (_pinError == 'locked') _pinError = null;
+          });
+        });
+      } else {
+        // 409 / 422 / 503 — nothing client-side to fix, or a transient
+        // write failure on a correct code: neutral note, fresh boxes.
+        setState(() {});
+        ScaffoldMessenger.maybeOf(context)?.showSnackBar(SnackBar(
+          content: Text(S.of(context).networkError),
+          behavior: SnackBarBehavior.floating,
+        ));
+      }
+    } catch (e) {
+      debugPrint('[Driver] pickup PIN confirm failed: $e');
+      if (!mounted) return;
+      _pinCtrl.clear();
+      setState(() {});
+      ScaffoldMessenger.maybeOf(context)?.showSnackBar(SnackBar(
+        content: Text(S.of(context).networkError),
+        behavior: SnackBarBehavior.floating,
+      ));
+    } finally {
+      if (mounted) setState(() => _pinSubmitting = false);
+    }
+  }
+
+  /// "PICKUP CODE · Ask the rider" card with the 4 digit boxes. The boxes
+  /// are paint; a zero-sized TextField inside owns the numeric keyboard,
+  /// backspace and paste (OTP autofill included).
+  Widget _buildPickupPinCard() {
+    final s = S.of(context);
+    const pinGold = Color(0xFFE8C547);
+    const pinRed = Color(0xFFEF4444);
+    final pin = _pinCtrl.text;
+    final hasError = _pinError != null;
+    final accent = hasError ? pinRed : pinGold;
+    return GestureDetector(
+      onTap: (_pinLocked || _pinSubmitting)
+          ? null
+          : () => _pinFocusNode.requestFocus(),
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+        decoration: neuBox(radius: 18, borderColor: accent.withValues(alpha: 0.22)),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(s.pickupCodeTitle,
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.35),
+                          fontSize: 9.5, fontWeight: FontWeight.w600,
+                          letterSpacing: 1.4,
+                        )),
+                      const SizedBox(height: 2),
+                      Text(s.pickupCodeAskRider,
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.55),
+                          fontSize: 9.5, fontWeight: FontWeight.w500,
+                        )),
+                    ],
+                  ),
+                ),
+                AnimatedBuilder(
+                  animation: _pinShakeCtrl,
+                  builder: (context, child) {
+                    final t = _pinShakeCtrl.value;
+                    final dx = math.sin(t * math.pi * 5) * 8 * (1 - t);
+                    return Transform.translate(
+                        offset: Offset(dx, 0), child: child);
+                  },
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: List.generate(4, (i) {
+                      final filled = i < pin.length;
+                      final isCursor =
+                          !hasError && !_pinLocked && i == pin.length;
+                      return Container(
+                        width: 30, height: 38,
+                        margin: EdgeInsets.only(left: i == 0 ? 0 : 6),
+                        alignment: Alignment.center,
+                        decoration: neuBox(
+                          radius: 9,
+                          pressed: true,
+                          borderColor: hasError
+                              ? pinRed.withValues(alpha: 0.65)
+                              : isCursor
+                                  ? pinGold
+                                  : Colors.white.withValues(alpha: 0.09),
+                        ),
+                        child: Text(
+                          filled ? pin[i] : '',
+                          style: TextStyle(
+                            color: hasError ? pinRed : pinGold,
+                            fontSize: 17, fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      );
+                    }),
+                  ),
+                ),
+              ],
+            ),
+            SizedBox(
+              width: 1, height: 1,
+              child: Opacity(
+                opacity: 0.01,
+                child: TextField(
+                  controller: _pinCtrl,
+                  focusNode: _pinFocusNode,
+                  enabled: !_pinLocked,
+                  keyboardType: TextInputType.number,
+                  autofillHints: const [AutofillHints.oneTimeCode],
+                  inputFormatters: [
+                    FilteringTextInputFormatter.digitsOnly,
+                    LengthLimitingTextInputFormatter(4),
+                  ],
+                  onChanged: _onPinChanged,
+                  showCursor: false,
+                  style: const TextStyle(fontSize: 1),
+                  decoration: const InputDecoration(
+                    border: InputBorder.none,
+                    isCollapsed: true,
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                ),
+              ),
+            ),
+            if (hasError) ...[
+              const SizedBox(height: 8),
+              Text(
+                _pinError == 'locked'
+                    ? s.pickupCodeTooManyAttempts
+                    : s.pickupCodeInvalid,
+                style: const TextStyle(
+                  color: pinRed, fontSize: 11.5, fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
   }
 
   // ── Helpers ───────────────────────────────────────────────────────────────
@@ -4511,6 +4737,22 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
                   showChevron: true,
                 ),
               ),
+            ),
+            // ── Pickup PIN card — waiting-for-rider stage only ──────────
+            // Slides in exactly while _buildSlideWaitingForRider() is the
+            // active phase widget: a correct code flips _riderConfirmedPickup
+            // locally and the pill below morphs into Start Ride.
+            AnimatedSize(
+              duration: const Duration(milliseconds: 420),
+              curve: Curves.easeInOutCubicEmphasized,
+              alignment: Alignment.topCenter,
+              child: _showPickupPinCard
+                  ? Padding(
+                      padding: EdgeInsets.fromLTRB(Responsive.w(16),
+                          Responsive.h(10), Responsive.w(16), 0),
+                      child: _buildPickupPinCard(),
+                    )
+                  : const SizedBox.shrink(),
             ),
             // ── Stop card (rider added mid-trip) — slides in animated ──
             AnimatedSize(

@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cruise · Pantalla del driver — HOY vs PROPUESTA PIN</title>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#14141A; --surface:#1C1C24; --gold:#E8C547;
+    --txt:#fff; --txt2:rgba(255,255,255,.55); --txt3:rgba(255,255,255,.35); --green:#22C55E;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;font-family:'Poppins',system-ui,sans-serif}
+  body{background:#000;display:flex;flex-direction:column;justify-content:center;align-items:center;min-height:100vh;gap:12px}
+  .stage{display:flex;gap:44px;transform-origin:center}
+  .frameCol{display:flex;flex-direction:column;gap:10px;align-items:center}
+  .frameTag{color:var(--txt2);font-size:12px;font-weight:700;letter-spacing:2px}
+  .frameTag b{color:var(--gold)}
+  .phone{width:390px;height:844px;border-radius:44px;overflow:hidden;position:relative;background:var(--bg);
+         box-shadow:0 0 0 8px #1b1b1b,0 30px 80px rgba(0,0,0,.85)}
+
+  .statusbar{position:absolute;top:0;left:0;right:0;height:44px;display:flex;justify-content:space-between;align-items:center;padding:0 26px;z-index:5}
+  .statusbar .time{color:#fff;font-size:14px;font-weight:600}
+  .statusbar .icons{display:flex;gap:6px;align-items:center}
+  .statusbar .icons svg{height:12px;fill:#fff;opacity:.9}
+
+  /* ── header driver ── */
+  .dhdr{position:absolute;top:52px;left:16px;right:16px;z-index:4}
+  .dhdrTop{display:flex;justify-content:space-between;align-items:center}
+  .hicon{width:40px;height:40px;border-radius:50%;background:var(--surface);border:1px solid rgba(255,255,255,.06);
+         display:flex;align-items:center;justify-content:center;
+         box-shadow:3px 3px 10px rgba(0,0,0,.4),-2px -2px 8px rgba(255,255,255,.04)}
+  .hicon svg{width:19px;height:19px;fill:#fff}
+  .hicon.gold svg{fill:var(--gold)}
+  .dtitle{margin-top:14px;color:#fff;font-size:24px;font-weight:800;line-height:1.15}
+  .deta{margin-top:3px;color:rgba(255,255,255,.42);font-size:13px}
+  .riderRow{display:flex;align-items:center;gap:11px;margin-top:15px}
+  .avatar{width:46px;height:46px;border-radius:50%;background:var(--surface);border:2px solid var(--gold);
+          display:flex;align-items:center;justify-content:center;color:var(--gold);font-size:18px;font-weight:800;
+          box-shadow:0 0 16px rgba(232,197,71,.28)}
+  .rmeta{flex:1;min-width:0}
+  .rmeta .nm{color:#fff;font-size:15px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .rmeta .sub{display:flex;align-items:center;gap:4px;margin-top:3px;color:rgba(255,255,255,.55);font-size:11px;font-weight:600}
+  .rmeta .sub svg{width:11px;height:11px;fill:var(--gold)}
+  .rbtn{width:44px;height:44px;border-radius:50%;background:var(--surface);border:1px solid rgba(255,255,255,.07);position:relative;
+        display:flex;align-items:center;justify-content:center;
+        box-shadow:3px 3px 10px rgba(0,0,0,.4),-2px -2px 8px rgba(255,255,255,.04)}
+  .rbtn svg{width:18px;height:18px;fill:#fff}
+  .rbadge{position:absolute;top:-3px;right:-3px;width:17px;height:17px;border-radius:50%;background:#EF4444;
+          color:#fff;font-size:9.5px;font-weight:800;display:flex;align-items:center;justify-content:center}
+
+  /* ── mapa preview (card neu, borde 18 — como hoy) ── */
+  .mapCard{position:absolute;top:268px;left:16px;right:16px;height:240px;border-radius:18px;overflow:hidden;z-index:3;
+           background:var(--surface);border:1px solid rgba(255,255,255,.04);
+           box-shadow:4px 4px 16px rgba(0,0,0,.32),-3px -3px 12px rgba(255,255,255,.04)}
+  .mapCard svg.mapTiles{position:absolute;inset:0;width:100%;height:100%}
+  .mapCard .route{stroke:rgba(232,197,71,.85);stroke-width:4;stroke-linecap:round;fill:none}
+  .chipCol{position:absolute;top:10px;right:10px;display:flex;flex-direction:column;gap:6px;align-items:flex-end;z-index:4}
+  .mchip{background:rgba(20,20,26,.82);border:1px solid rgba(255,255,255,.08);border-radius:10px;
+         padding:6px 10px;color:#fff;font-size:12px;font-weight:700;display:flex;align-items:center;gap:5px}
+  .mchip svg{width:12px;height:12px;fill:var(--gold)}
+  .carMarker{position:absolute;z-index:2;width:46px;transform:translate(-50%,-50%) rotate(22deg);
+             filter:drop-shadow(0 4px 8px rgba(0,0,0,.6))}
+  .pinP,.pinD{position:absolute;z-index:2;width:26px;height:26px;transform:translate(-50%,-100%)}
+  .mbAttr{position:absolute;bottom:5px;left:8px;color:rgba(255,255,255,.45);font-size:9px;z-index:4}
+
+  /* ── tarjeta dirección pickup ── */
+  .addrCard{position:absolute;top:522px;left:16px;right:16px;z-index:3;display:flex;align-items:center;gap:12px;
+            background:var(--surface);border-radius:18px;padding:13px 14px;border:1px solid rgba(255,255,255,.04);
+            box-shadow:4px 4px 16px rgba(0,0,0,.32),-3px -3px 12px rgba(255,255,255,.04)}
+  .addrCard .pinIc{width:38px;height:38px;border-radius:12px;background:rgba(232,197,71,.12);display:flex;align-items:center;justify-content:center}
+  .addrCard .pinIc svg{width:19px;height:19px;fill:var(--gold)}
+  .addrCard .aLbl{color:var(--txt3);font-size:9.5px;font-weight:600;letter-spacing:1.4px;text-transform:uppercase}
+  .addrCard .aVal{color:#fff;font-size:13.5px;font-weight:600;margin-top:2px}
+  .addrCard .chev{margin-left:auto;color:var(--txt3);font-size:18px;font-weight:600}
+
+  /* ── tarjeta PIN (SOLO propuesta) ── */
+  .pinCard{position:absolute;top:594px;left:16px;right:16px;z-index:3;display:flex;align-items:center;gap:12px;
+            background:var(--surface);border-radius:18px;padding:13px 14px;border:1px solid rgba(232,197,71,.22);
+            box-shadow:4px 4px 16px rgba(0,0,0,.32),-3px -3px 12px rgba(255,255,255,.04)}
+  .pinCard .pLbl{color:var(--txt3);font-size:9.5px;font-weight:600;letter-spacing:1.4px;text-transform:uppercase}
+  .pinCard .pSub{color:var(--txt2);font-size:9.5px;font-weight:500;margin-top:2px}
+  .pinBoxes{display:flex;gap:6px;margin-left:auto}
+  .pinBoxes span{width:30px;height:38px;border-radius:9px;background:#101014;border:1px solid rgba(255,255,255,.09);
+    display:flex;align-items:center;justify-content:center;color:var(--gold);font-size:17px;font-weight:800}
+  .pinBoxes span.cursor{border-color:var(--gold);box-shadow:0 0 0 3px rgba(232,197,71,.15)}
+
+  /* ── pill inferior: waiting / start ride ── */
+  .bottomZone{position:absolute;left:16px;right:16px;bottom:22px;z-index:5}
+  .waitPill{position:relative;overflow:hidden;height:62px;border-radius:31px;display:flex;align-items:center;justify-content:center;
+            background:rgba(232,197,71,.14);border:1px solid rgba(232,197,71,.38)}
+  .waitPill .t{color:var(--gold);font-size:16px;font-weight:700}
+  .shine::after{content:'';position:absolute;top:-20%;bottom:-20%;width:60px;transform:skewX(-18deg);
+            background:linear-gradient(90deg,transparent,rgba(255,255,255,.13),transparent);animation:sweep 2.2s ease-in-out infinite}
+  @keyframes sweep{0%{left:-80px}60%,100%{left:calc(100% + 80px)}}
+  .startRide{height:62px;border-radius:31px;display:none;align-items:center;justify-content:center;gap:9px;
+            background:var(--gold);color:#14141A;font-size:17px;font-weight:800;cursor:pointer;
+            box-shadow:0 10px 26px rgba(232,197,71,.42);animation:pulseGold 1.6s ease-in-out infinite}
+  .startRide svg{width:20px;height:20px;fill:#14141A}
+  @keyframes pulseGold{0%,100%{box-shadow:0 10px 26px rgba(232,197,71,.42)}50%{box-shadow:0 10px 34px rgba(232,197,71,.62)}}
+  .pinOk .waitPill{display:none}
+  .pinOk .startRide{display:flex}
+
+  .homeBar{position:absolute;bottom:7px;left:50%;transform:translateX(-50%);width:120px;height:4px;border-radius:2px;background:rgba(255,255,255,.28);z-index:6}
+
+  .demoCtl{display:flex;gap:10px;align-items:center;max-width:760px}
+  .demoCtl button{background:var(--gold);border:none;color:#14141A;font-weight:700;font-size:13px;padding:10px 20px;border-radius:22px;cursor:pointer;white-space:nowrap}
+  .demoCtl span{color:var(--txt2);font-size:12px}
+</style>
+</head>
+<body>
+<div class="stage" id="stage">
+
+  <!-- ══════════ HOY ══════════ -->
+  <div class="frameCol">
+    <div class="frameTag">HOY — pantalla actual del driver</div>
+    <div class="phone">
+      <div class="statusbar">
+        <span class="time">9:41</span>
+        <span class="icons">
+          <svg viewBox="0 0 18 12"><path d="M1 8h2v3H1zM5 6h2v5H5zM9 3h2v8H9zM13 0h2v11h-2z"/></svg>
+          <svg viewBox="0 0 16 12"><path d="M8 9.5a1.6 1.6 0 1 1 0 3.2 1.6 1.6 0 0 1 0-3.2zM8 5.5c2 0 3.7.7 4.9 1.9l-1.5 1.5A4.9 4.9 0 0 0 8 7.7a4.9 4.9 0 0 0-3.4 1.2L3.1 7.4A6.7 6.7 0 0 1 8 5.5zM8 1c2.9 0 5.6 1.1 7.6 3l-1.5 1.5A8.4 8.4 0 0 0 8 3.2a8.4 8.4 0 0 0-6.1 2.3L.4 4A10.6 10.6 0 0 1 8 1z"/></svg>
+          <svg viewBox="0 0 25 12"><rect x="0" y="1" width="20" height="10" rx="3" fill="none" stroke="#fff" opacity=".5"/><rect x="2" y="3" width="13" height="6" rx="1.5"/><rect x="21.5" y="4" width="2.5" height="4" rx="1" opacity=".5"/></svg>
+        </span>
+      </div>
+
+      <div class="dhdr">
+        <div class="dhdrTop">
+          <div class="hicon"><svg viewBox="0 0 24 24"><path d="M3 6h18v2.2H3zM3 11h18v2.2H3zM3 16h18v2.2H3z"/></svg></div>
+          <div class="hicon gold"><svg viewBox="0 0 24 24"><path d="M12 2 4 5v6c0 5 3.4 9.4 8 11 4.6-1.6 8-6 8-11V5z"/></svg></div>
+        </div>
+        <div class="dtitle">Ride for Marlin Weber</div>
+        <div class="deta">by 1:58 PM</div>
+        <div class="riderRow">
+          <div class="avatar">M</div>
+          <div class="rmeta">
+            <div class="nm">Marlin Weber</div>
+            <div class="sub"><svg viewBox="0 0 24 24"><path d="M12 2l2.9 6.3 6.9.8-5.1 4.7 1.4 6.8L12 17.2 5.9 20.6l1.4-6.8L2.2 9.1l6.9-.8z"/></svg>4.8</div>
+          </div>
+          <div class="rbtn"><svg viewBox="0 0 24 24"><path d="M6.6 10.8a15 15 0 0 0 6.6 6.6l2.2-2.2a1 1 0 0 1 1-.25 11.4 11.4 0 0 0 3.6.58 1 1 0 0 1 1 1V20a1 1 0 0 1-1 1A17 17 0 0 1 3 4a1 1 0 0 1 1-1h3.5a1 1 0 0 1 1 1 11.4 11.4 0 0 0 .57 3.6 1 1 0 0 1-.25 1z"/></svg></div>
+          <div class="rbtn"><svg viewBox="0 0 24 24"><path d="M4 3h16a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H8l-5 4V5a2 2 0 0 1 2-2z"/></svg><div class="rbadge">1</div></div>
+        </div>
+      </div>
+
+      <div class="mapCard">
+        <svg class="mapTiles" viewBox="0 0 358 240" preserveAspectRatio="xMidYMid slice">
+          <rect width="358" height="240" fill="#191C24"/>
+          <g fill="#1E222C">
+            <rect x="16" y="12" width="88" height="52" rx="4"/><rect x="128" y="10" width="96" height="56" rx="4"/>
+            <rect x="250" y="14" width="92" height="50" rx="4"/><rect x="18" y="92" width="84" height="54" rx="4"/>
+            <rect x="250" y="92" width="92" height="56" rx="4"/><rect x="18" y="172" width="84" height="52" rx="4"/>
+            <rect x="128" y="176" width="96" height="48" rx="4"/><rect x="250" y="172" width="92" height="52" rx="4"/>
+          </g>
+          <g stroke="#2C303C" stroke-width="3" fill="none">
+            <path d="M0 78 H358"/><path d="M0 158 H358"/><path d="M116 0 V240"/><path d="M236 0 V240"/>
+          </g>
+          <g stroke="#3C4150" stroke-width="6" fill="none">
+            <path d="M0 118 H358"/><path d="M176 0 V240"/><path d="M0 198 H358"/>
+          </g>
+          <path class="route" d="M70 200 C 110 170, 130 130, 180 105 S 260 70, 296 52"/>
+        </svg>
+        <img class="carMarker" src="../../assets/images/car_suv.png" style="top:74%;left:26%" alt="car">
+        <svg class="pinP" style="top:83%;left:19.5%" viewBox="0 0 24 24"><path d="M12 2a7 7 0 0 1 7 7c0 5-7 13-7 13S5 14 5 9a7 7 0 0 1 7-7z" fill="#E8C547"/><circle cx="12" cy="9" r="2.6" fill="#14141A"/></svg>
+        <svg class="pinD" style="top:22%;left:82.7%" viewBox="0 0 24 24"><path d="M12 2a7 7 0 0 1 7 7c0 5-7 13-7 13S5 14 5 9a7 7 0 0 1 7-7z" fill="#fff"/><circle cx="12" cy="9" r="2.6" fill="#14141A"/></svg>
+        <div class="chipCol">
+          <div class="mchip">14 min trip</div>
+          <div class="mchip"><svg viewBox="0 0 24 24"><path d="M12 2 4 5v6c0 5 3.4 9.4 8 11 4.6-1.6 8-6 8-11V5z"/></svg>0.2 mi to pickup</div>
+        </div>
+        <div class="mbAttr">Mapbox</div>
+      </div>
+
+      <div class="addrCard">
+        <div class="pinIc"><svg viewBox="0 0 24 24"><path d="M12 2a7 7 0 0 1 7 7c0 5-7 13-7 13S5 14 5 9a7 7 0 0 1 7-7z"/><circle cx="12" cy="9" r="2.6" fill="#14141A"/></svg></div>
+        <div><div class="aLbl">Pickup</div><div class="aVal">JFK Airport — Terminal 4</div></div>
+        <div class="chev">›</div>
+      </div>
+
+      <div class="bottomZone">
+        <div class="waitPill shine"><span class="t">Waiting for your rider</span></div>
+      </div>
+
+      <div class="homeBar"></div>
+    </div>
+  </div>
+
+  <!-- ══════════ PROPUESTA (con PIN) ══════════ -->
+  <div class="frameCol">
+    <div class="frameTag">PROPUESTA — <b>campo PIN para iniciar el viaje</b></div>
+    <div class="phone" id="phoneB">
+      <div class="statusbar">
+        <span class="time">9:41</span>
+        <span class="icons">
+          <svg viewBox="0 0 18 12"><path d="M1 8h2v3H1zM5 6h2v5H5zM9 3h2v8H9zM13 0h2v11h-2z"/></svg>
+          <svg viewBox="0 0 16 12"><path d="M8 9.5a1.6 1.6 0 1 1 0 3.2 1.6 1.6 0 0 1 0-3.2zM8 5.5c2 0 3.7.7 4.9 1.9l-1.5 1.5A4.9 4.9 0 0 0 8 7.7a4.9 4.9 0 0 0-3.4 1.2L3.1 7.4A6.7 6.7 0 0 1 8 5.5zM8 1c2.9 0 5.6 1.1 7.6 3l-1.5 1.5A8.4 8.4 0 0 0 8 3.2a8.4 8.4 0 0 0-6.1 2.3L.4 4A10.6 10.6 0 0 1 8 1z"/></svg>
+          <svg viewBox="0 0 25 12"><rect x="0" y="1" width="20" height="10" rx="3" fill="none" stroke="#fff" opacity=".5"/><rect x="2" y="3" width="13" height="6" rx="1.5"/><rect x="21.5" y="4" width="2.5" height="4" rx="1" opacity=".5"/></svg>
+        </span>
+      </div>
+
+      <div class="dhdr">
+        <div class="dhdrTop">
+          <div class="hicon"><svg viewBox="0 0 24 24"><path d="M3 6h18v2.2H3zM3 11h18v2.2H3zM3 16h18v2.2H3z"/></svg></div>
+          <div class="hicon gold"><svg viewBox="0 0 24 24"><path d="M12 2 4 5v6c0 5 3.4 9.4 8 11 4.6-1.6 8-6 8-11V5z"/></svg></div>
+        </div>
+        <div class="dtitle">Ride for Marlin Weber</div>
+        <div class="deta">by 1:58 PM</div>
+        <div class="riderRow">
+          <div class="avatar">M</div>
+          <div class="rmeta">
+            <div class="nm">Marlin Weber</div>
+            <div class="sub"><svg viewBox="0 0 24 24"><path d="M12 2l2.9 6.3 6.9.8-5.1 4.7 1.4 6.8L12 17.2 5.9 20.6l1.4-6.8L2.2 9.1l6.9-.8z"/></svg>4.8</div>
+          </div>
+          <div class="rbtn"><svg viewBox="0 0 24 24"><path d="M6.6 10.8a15 15 0 0 0 6.6 6.6l2.2-2.2a1 1 0 0 1 1-.25 11.4 11.4 0 0 0 3.6.58 1 1 0 0 1 1 1V20a1 1 0 0 1-1 1A17 17 0 0 1 3 4a1 1 0 0 1 1-1h3.5a1 1 0 0 1 1 1 11.4 11.4 0 0 0 .57 3.6 1 1 0 0 1-.25 1z"/></svg></div>
+          <div class="rbtn"><svg viewBox="0 0 24 24"><path d="M4 3h16a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H8l-5 4V5a2 2 0 0 1 2-2z"/></svg><div class="rbadge">1</div></div>
+        </div>
+      </div>
+
+      <div class="mapCard">
+        <svg class="mapTiles" viewBox="0 0 358 240" preserveAspectRatio="xMidYMid slice">
+          <rect width="358" height="240" fill="#191C24"/>
+          <g fill="#1E222C">
+            <rect x="16" y="12" width="88" height="52" rx="4"/><rect x="128" y="10" width="96" height="56" rx="4"/>
+            <rect x="250" y="14" width="92" height="50" rx="4"/><rect x="18" y="92" width="84" height="54" rx="4"/>
+            <rect x="250" y="92" width="92" height="56" rx="4"/><rect x="18" y="172" width="84" height="52" rx="4"/>
+            <rect x="128" y="176" width="96" height="48" rx="4"/><rect x="250" y="172" width="92" height="52" rx="4"/>
+          </g>
+          <g stroke="#2C303C" stroke-width="3" fill="none">
+            <path d="M0 78 H358"/><path d="M0 158 H358"/><path d="M116 0 V240"/><path d="M236 0 V240"/>
+          </g>
+          <g stroke="#3C4150" stroke-width="6" fill="none">
+            <path d="M0 118 H358"/><path d="M176 0 V240"/><path d="M0 198 H358"/>
+          </g>
+          <path class="route" d="M70 200 C 110 170, 130 130, 180 105 S 260 70, 296 52"/>
+        </svg>
+        <img class="carMarker" src="../../assets/images/car_suv.png" style="top:74%;left:26%" alt="car">
+        <svg class="pinP" style="top:83%;left:19.5%" viewBox="0 0 24 24"><path d="M12 2a7 7 0 0 1 7 7c0 5-7 13-7 13S5 14 5 9a7 7 0 0 1 7-7z" fill="#E8C547"/><circle cx="12" cy="9" r="2.6" fill="#14141A"/></svg>
+        <svg class="pinD" style="top:22%;left:82.7%" viewBox="0 0 24 24"><path d="M12 2a7 7 0 0 1 7 7c0 5-7 13-7 13S5 14 5 9a7 7 0 0 1 7-7z" fill="#fff"/><circle cx="12" cy="9" r="2.6" fill="#14141A"/></svg>
+        <div class="chipCol">
+          <div class="mchip">14 min trip</div>
+          <div class="mchip"><svg viewBox="0 0 24 24"><path d="M12 2 4 5v6c0 5 3.4 9.4 8 11 4.6-1.6 8-6 8-11V5z"/></svg>0.2 mi to pickup</div>
+        </div>
+        <div class="mbAttr">Mapbox</div>
+      </div>
+
+      <div class="addrCard">
+        <div class="pinIc"><svg viewBox="0 0 24 24"><path d="M12 2a7 7 0 0 1 7 7c0 5-7 13-7 13S5 14 5 9a7 7 0 0 1 7-7z"/><circle cx="12" cy="9" r="2.6" fill="#14141A"/></svg></div>
+        <div><div class="aLbl">Pickup</div><div class="aVal">JFK Airport — Terminal 4</div></div>
+        <div class="chev">›</div>
+      </div>
+
+      <!-- NUEVO: tarjeta PIN -->
+      <div class="pinCard">
+        <div><div class="pLbl">Pickup code</div><div class="pSub">Ask the rider</div></div>
+        <div class="pinBoxes" id="pinBoxes">
+          <span class="cursor" data-i="0"></span><span data-i="1"></span><span data-i="2"></span><span data-i="3"></span>
+        </div>
+      </div>
+
+      <div class="bottomZone">
+        <div class="waitPill shine"><span class="t">Waiting for your rider</span></div>
+        <div class="startRide"><svg viewBox="0 0 24 24"><path d="M9.5 16.2 5.3 12l-1.4 1.4 5.6 5.6 12-12-1.4-1.4z"/></svg>Start ride</div>
+      </div>
+
+      <div class="homeBar"></div>
+    </div>
+  </div>
+</div>
+
+<div class="demoCtl">
+  <button id="pinBtn">▶ Simular PIN correcto</button>
+  <span>En la propuesta: el driver escribe los 4 dígitos que le dice el rider → el pill "Waiting for your rider" se convierte en <b>Start ride</b> dorado. (Si el rider se acerca solo — proximidad ~2 m — el Start ride aparece igual sin pedir PIN.)</span>
+</div>
+
+<script>
+  function fit(){
+    const compact = new URLSearchParams(location.search).has('compact');
+    const st = document.getElementById('stage').style;
+    if (compact){
+      // zoom sí encoge el layout (transform solo lo visual) — el botón de
+      // simulación queda visible dentro del iframe.
+      st.zoom = Math.min(1, (window.innerHeight - 130) / 950, (window.innerWidth - 30) / 900);
+    } else {
+      st.transform = 'scale(' + Math.min(1, (window.innerHeight - 110) / 920, (window.innerWidth - 60) / 880) + ')';
+    }
+  }
+  window.addEventListener('resize', fit); fit();
+
+  const PIN = ['4','2','7','9'];
+  let running = false;
+  document.getElementById('pinBtn').addEventListener('click', () => {
+    if (running) return; running = true;
+    const phone = document.getElementById('phoneB');
+    const boxes = document.querySelectorAll('#pinBoxes span');
+    boxes.forEach(b => { b.textContent = ''; b.classList.remove('cursor'); });
+    phone.classList.remove('pinOk');
+    let i = 0;
+    boxes[0].classList.add('cursor');
+    const t = setInterval(() => {
+      boxes[i].textContent = PIN[i];
+      boxes[i].classList.remove('cursor');
+      i++;
+      if (i < 4) { boxes[i].classList.add('cursor'); }
+      else {
+        clearInterval(t);
+        setTimeout(() => {
+          phone.classList.add('pinOk');   // pill → Start ride
+          setTimeout(() => {
+            phone.classList.remove('pinOk');
+            boxes.forEach(b => b.textContent = '');
+            boxes[0].classList.add('cursor');
+            running = false;
+          }, 3200);
+        }, 420);
+      }
+    }, 380);
+  });
+</script>
+</body>
+</html>

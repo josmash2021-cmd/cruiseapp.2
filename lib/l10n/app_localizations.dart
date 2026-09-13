@@ -5401,6 +5401,7 @@ class S {
   String get isWaiting => _es ? 'está esperando' : 'is waiting';
   String get driverDetected => _es ? 'Driver detectado' : 'Driver detected';
   String get finding => _es ? 'BUSCANDO' : 'FINDING';
+  String get found => _es ? 'ENCONTRADO' : 'FOUND';
   String get followArrowToDriver => _es
       ? 'Sigue la flecha para\nencontrar a tu driver'
       : 'Follow the arrow to\nfind your driver';
@@ -5410,6 +5411,28 @@ class S {
       : 'The ride will start automatically if you forgot to confirm';
   String get yourTripConfirmed =>
       _es ? 'Tu viaje\nconfirmado' : 'Your trip\nconfirmed';
+
+  // ── Find-My pickup redesign (2026-09-12) ──
+  String get toYourDriver => _es ? 'a tu driver' : 'to your driver';
+  String get pickupCodeTitle => _es ? 'CÓDIGO DE PICKUP' : 'PICKUP CODE';
+  String get pickupCodeTellDriver =>
+      _es ? 'Díselo a tu driver' : 'Tell it to your driver';
+  String get supportAction => _es ? 'Soporte' : 'Support';
+  String get driverConfirmedStarting => _es
+      ? 'Driver confirmó · Iniciando tu viaje…'
+      : 'Driver confirmed · Starting your ride…';
+
+  // Driver side: the PIN card that unlocks Start Ride (2026-09-12).
+  String get pickupCodeAskRider =>
+      _es ? 'Pregúntale al rider' : 'Ask the rider';
+  String get pickupCodeInvalid =>
+      _es ? 'Código incorrecto — intenta de nuevo' : 'Invalid code — try again';
+  String get pickupCodeTooManyAttempts => _es
+      ? 'Demasiados intentos — intenta más tarde'
+      : 'Too many attempts — try again later';
+  String get pickupCodeMatched => _es
+      ? 'Código confirmado — ya puedes iniciar'
+      : 'Code confirmed — you can start now';
 
   // ── Driver offer card badges (2026-04-11 stack-of-badges policy) ─
   // Each badge is a single short label that can stack with the others

@@ -2331,6 +2331,24 @@ class ApiService {
     return _parse(res);
   }
 
+  /// Confirm the rider's 4-digit pickup PIN (driver arrived stage).
+  /// 200 = correct code (trip unlocked; body may carry "already": true when
+  /// the trip is already in_trip — still a success). Non-2xx surfaces as
+  /// [ApiException.statusCode]: 403 invalid code, 409 not confirmable,
+  /// 422 bad format, 429 locked out, 503 retryable write failure.
+  static Future<Map<String, dynamic>> confirmPickupPin(
+      int tripId, String pin) async {
+    final h = await _authHeaders();
+    final res = await _client
+        .post(
+          Uri.parse('$_baseUrl/trips/$tripId/pickup-pin/confirm'),
+          headers: h,
+          body: jsonEncode({'pin': pin}),
+        )
+        .timeout(const Duration(seconds: 8));
+    return _parse(res);
+  }
+
   /// Update driver's location and online status.
   static Future<Map<String, dynamic>> updateDriverLocation({
     required int driverId,

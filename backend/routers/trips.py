@@ -11,11 +11,11 @@ from models.database import (
     ActionRequest, SupportChat,
 )
 from models.schemas import CreateTripIn, AcceptTripIn
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from utils.security import (
     _get_current_user, _verify_api_key, _security_audit_log,
 )
-from utils.helpers import utc_now, _haversine, _trip_dict, _abs_photo_url, _resolve_rider_display, _safe_create_task, _compute_user_rating, MAX_DISPATCH_RADIUS_KM
+from utils.helpers import utc_now, _haversine, _trip_dict, _abs_photo_url, _resolve_rider_display, _safe_create_task, _compute_user_rating, _gen_pickup_pin, MAX_DISPATCH_RADIUS_KM
 from services.fcm_service import _send_fcm_push_async, send_to_topic_async
 from services import rating_actions, vehicle_tiers
 from services.sms_service import (
@@ -215,6 +215,9 @@ def _driver_visible_trip_dict(trip: Trip) -> dict:
     data["driver_earnings"] = visible_fare
     # Never expose platform_fee to drivers
     data.pop("platform_fee", None)
+    # The pickup PIN is the rider's to read out — the driver must TYPE it,
+    # never read it off their own payload.
+    data.pop("pickup_pin", None)
     # Guest-booking override for driver-facing rider name/phone so the
     # driver app shows the real guest name instead of "Web Booking" / "W".
     # Must fire even when rider_id is set — web/Shopify trips point
@@ -499,6 +502,8 @@ async def create_trip(body: CreateTripIn, user: User = Depends(_get_current_user
         "fare", "vehicle_type", "scheduled_at", "airport_code", "terminal",
         "pickup_zone", "notes", "stripe_payment_intent_id",
     )}
+    # 4-digit pickup handshake for the rider's Find-My screen (2026-09-12)
+    data["pickup_pin"] = _gen_pickup_pin()
     try:
         trip = Trip(**data)
         db.add(trip)
@@ -1556,6 +1561,107 @@ async def get_fare_breakdown(trip_id: int, user: User = Depends(_get_current_use
     }
 
 
+# ── Pickup PIN handshake (2026-09-12) ────────────────────────────────────
+# The rider's Find-My screen shows a 4-digit code (pickup_pin). When the
+# ~2 m proximity handshake can't fire (dead GPS, parking garage), the rider
+# reads it out and the DRIVER types it in — a correct code writes the same
+# rider_confirmed_pickup flag the proximity path writes, unlocking Start Ride.
+
+class PickupPinIn(BaseModel):
+    pin: str
+
+    @field_validator("pin")
+    @classmethod
+    def _four_digits(cls, v: str) -> str:
+        v = (v or "").strip()
+        if not re.fullmatch(r"\d{4}", v):
+            raise ValueError("pin must be exactly 4 digits")
+        return v
+
+
+_PIN_CONFIRM_STATUSES = (
+    "accepted", "driver_assigned", "driver_en_route", "driver_enroute",
+    "arrived", "arrived_at_pickup", "arrived_pickup", "driver_arrived",
+)
+
+# Brute-force guard: 4 digits = 10k combos, so wrong attempts per trip are
+# capped — after _PIN_MAX_ATTEMPTS inside the window the trip locks out and
+# the proximity path (or a fresh window) is the way in.
+_PIN_MAX_ATTEMPTS = 5
+_PIN_WINDOW_SECONDS = 600
+_pin_attempts: dict[int, tuple[int, float]] = {}  # trip_id -> (wrong, window_start)
+
+
+@router.post("/trips/{trip_id}/pickup-pin/confirm", dependencies=[Depends(_verify_api_key)])
+async def confirm_pickup_pin(trip_id: int, body: PickupPinIn,
+                             user: User = Depends(_get_current_user),
+                             db: AsyncSession = Depends(get_db)):
+    """Driver submits the 4-digit pickup code the rider read out."""
+    result = await db.execute(select(Trip).where(Trip.id == trip_id))
+    trip = result.scalar_one_or_none()
+    if not trip:
+        raise HTTPException(404, "Trip not found")
+    if user.role != "driver" or trip.driver_id != user.id:
+        raise HTTPException(403, "Only the assigned driver can confirm the pickup code")
+
+    raw = (trip.status or "").lower()
+    if raw in ("in_trip", "on_trip", "in_progress", "trip_started", "rider_onboard"):
+        return {"status": "ok", "already": True}
+    if raw not in _PIN_CONFIRM_STATUSES:
+        raise HTTPException(409, f"Trip cannot be confirmed from status {trip.status}")
+
+    if not trip.pickup_pin:
+        # Trips created before the column existed get their code here; the
+        # rider sees it on the next trip-doc mirror / payload refresh.
+        trip.pickup_pin = _gen_pickup_pin()
+        await db.commit()
+        if _HAS_FIRESTORE and firestore_sync:
+            try:
+                firestore_sync.sync_pickup_pin(trip.id, trip.pickup_pin)
+            except Exception as e:
+                logging.warning("[PickupPin] lazy mirror failed for trip %s: %s", trip.id, e)
+
+    now = time.time()
+    wrong, window_start = _pin_attempts.get(trip_id, (0, now))
+    if now - window_start > _PIN_WINDOW_SECONDS:
+        wrong, window_start = 0, now
+    if wrong >= _PIN_MAX_ATTEMPTS:
+        _security_audit_log("PICKUP_PIN_LOCKOUT", "pin_confirm", f"trip_id={trip_id}")
+        raise HTTPException(429, "Too many attempts — try again later")
+
+    if body.pin != trip.pickup_pin:
+        _pin_attempts[trip_id] = (wrong + 1, window_start)
+        _security_audit_log("PICKUP_PIN_WRONG", "pin_confirm",
+                            f"trip_id={trip_id} driver_id={user.id}")
+        raise HTTPException(403, "Invalid pickup code")
+    _pin_attempts.pop(trip_id, None)
+
+    # Same flag the rider's own proximity write sets — the driver's listener
+    # morphs "Waiting for your rider" into Start Ride the moment it lands.
+    synced = False
+    if _HAS_FIRESTORE and firestore_sync:
+        try:
+            synced = bool(firestore_sync.sync_rider_confirmed_pickup(trip.id))
+        except Exception as e:
+            logging.error("[PickupPin] Firestore sync failed for %s: %s", trip.id, e)
+    if not synced:
+        raise HTTPException(503, "Could not notify the driver app")
+
+    try:
+        if user.fcm_token:
+            await _send_fcm_push_async(
+                user.fcm_token,
+                title="Your rider is with you",
+                body="The pickup code matched — you can start the trip.",
+                data={"type": "rider_confirmed_pickup", "trip_id": str(trip.id)},
+            )
+    except Exception as _fcm_err:
+        logging.warning("[PickupPin] FCM failed for trip %d: %s", trip.id, _fcm_err)
+
+    logging.info("[PickupPin] Trip %s confirmed by driver %s via PIN", trip.id, user.id)
+    return {"status": "ok", "synced": True}
+
+
 @router.patch("/trips/{trip_id}/status", dependencies=[Depends(_verify_api_key)])
 async def update_trip_status(trip_id: int, request: Request, status: str = Query(...), user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
     # ── Idempotency pre-check: if the same (trip, status) pair arrived in
@@ -1711,6 +1817,16 @@ async def update_trip_status(trip_id: int, request: Request, status: str = Query
     # status again) shouldn't reset the timer.
     if canonical_new == "arrived" and not trip.arrived_at:
         trip.arrived_at = datetime.now(timezone.utc)
+        # The rider's Find-My screen appears now and needs the 4-digit
+        # handshake code on the Firestore doc it already listens to. Lazy
+        # seed covers trips created before the column existed.
+        if not trip.pickup_pin:
+            trip.pickup_pin = _gen_pickup_pin()
+        if _HAS_FIRESTORE and firestore_sync:
+            try:
+                firestore_sync.sync_pickup_pin(trip.id, trip.pickup_pin)
+            except Exception as e:
+                logging.warning("[PickupPin] mirror failed for trip %s: %s", trip.id, e)
     # Record ride start/end timestamps for duration calculation
     if canonical_new == "in_trip" and not trip.started_at:
         trip.started_at = datetime.now(timezone.utc)

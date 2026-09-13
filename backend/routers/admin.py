@@ -31,7 +31,7 @@ from utils.security import (
 from utils.helpers import (
     utc_now, utc_today_start, utc_month_start,
     _user_dict, _trip_dict, _doc_dict, _vehicle_dict, _haversine, _resolve_rider_display, _safe_create_task,
-    _abs_photo_url,
+    _abs_photo_url, _gen_pickup_pin,
     SETTABLE_ACCOUNT_STATUSES, ACTIVE_ACCOUNT_STATUSES, normalise_account_status,
 )
 from utils.ssn_encryption import is_ssn_provided, decrypt_ssn, get_ssn_masked, format_ssn_for_display
@@ -200,6 +200,7 @@ async def admin_create_trip(body: CreateTripIn, db: AsyncSession = Depends(get_d
         status="requested",
         scheduled_at=datetime.fromisoformat(body.scheduled_at) if body.scheduled_at else None,
         notes=body.notes,
+        pickup_pin=_gen_pickup_pin(),
     )
     db.add(trip)
     await db.commit()

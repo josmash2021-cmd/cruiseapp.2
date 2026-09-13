@@ -228,6 +228,11 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
       owner: _mapSurfaceOwner,
       onRevoke: () async {
         if (!mounted || !_mapMounted) return;
+        // Null the controller so every `_map == null` guard across the
+        // screen stops writes into the surface being torn down — the
+        // Find-My pickup overlay holds it while it is up (its mini map is
+        // the same one surface, handed over through the coordinator).
+        _map = null;
         _setState(() => _mapMounted = false);
         await surfaceRemoved();
       },
@@ -1008,6 +1013,12 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
                 await _pickupOverlayCtrl.reverse();
                 if (!mounted) return;
                 setState(() => _showPickupOverlay = false);
+                // The Find-My overlay owned the one map surface while it
+                // was up; claim it back so the tracking map remounts before
+                // the pin/route work below (their guards no-op safely on a
+                // still-dead map, and the remount redraws from the flags
+                // they set).
+                unawaited(_acquireMapSurface());
                 // Pop out the pickup pin and reveal the illuminated route
                 _popOutPickupPin();
                 _restartRouteAnimation();

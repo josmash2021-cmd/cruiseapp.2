@@ -17,7 +17,7 @@ from utils.security import (
     _dispatch_sessions, _security_audit_log,
     JWT_SECRET, JWT_ALGORITHM,
 )
-from utils.helpers import _safe_create_task, utc_now, _haversine, _trip_dict, _user_dict, _abs_photo_url, _resolve_rider_display, MAX_DISPATCH_RADIUS_KM, ACTIVE_ACCOUNT_STATUSES, _active_destination
+from utils.helpers import _safe_create_task, utc_now, _haversine, _trip_dict, _user_dict, _abs_photo_url, _resolve_rider_display, _gen_pickup_pin, MAX_DISPATCH_RADIUS_KM, ACTIVE_ACCOUNT_STATUSES, _active_destination
 from services.fcm_service import _send_fcm_push, _send_fcm_push_async
 from services.sms_service import notify_guest_driver_assigned
 from services.email_service import email_guest_driver_assigned
@@ -1715,6 +1715,9 @@ async def dispatch_request(body: DispatchRequestIn, user: User = Depends(_get_cu
             except Exception as e:
                 logging.warning(
                     "[Dispatch] increment_authorization failed for %s: %s", pi_id, e)
+
+    # 4-digit pickup handshake for the rider's Find-My screen (2026-09-12)
+    data["pickup_pin"] = _gen_pickup_pin()
 
     trip = Trip(**data)
     db.add(trip)

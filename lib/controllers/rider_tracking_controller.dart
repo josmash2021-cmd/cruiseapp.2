@@ -1533,10 +1533,15 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
             _pickupOverlayCtrl.status == AnimationStatus.forward) {
           _pickupOverlayCtrl.reverse().then((_) {
             if (mounted) _setState(() => _showPickupOverlay = false);
+            // The Find-My overlay owned the one map surface while it was
+            // up; claim it back so the tracking map remounts.
+            unawaited(_acquireMapSurface());
           });
         } else {
           // Already dismissed or reversing — just hide immediately
           _setState(() => _showPickupOverlay = false);
+          // Same surface hand-back as the reverse() branch above.
+          unawaited(_acquireMapSurface());
         }
       });
     }

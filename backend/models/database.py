@@ -376,6 +376,12 @@ class Trip(Base):
     wheelchair_accessible = Column(Boolean, default=False)
     arrived_at = Column(DateTime(timezone=True), nullable=True)  # when driver reached pickup spot (for wait time fee)
     driver_assigned_at = Column(DateTime(timezone=True), nullable=True)
+    # 4-digit pickup handshake (2026-09-12): shown on the rider's Find-My
+    # screen; the driver hears it from the rider and enters it to unlock
+    # Start Ride when the ~2 m proximity handshake can't fire. Rider-facing
+    # only — the driver trip dict strips it. Migration: ensure-column lists
+    # below ("trips", "pickup_pin", "VARCHAR(4)").
+    pickup_pin = Column(String(4), nullable=True)
     # Reserved-ride "go online" reminder (2026-08-23): set once by the
     # scheduled dispatcher when it pushes the 30-min reminder to the
     # reserving driver — survives restarts, unlike the in-memory reminder
@@ -1028,6 +1034,7 @@ async def migrate_add_columns(conn):
         ("trips", "driver_earnings", "FLOAT"),
         ("trips", "platform_fee", "FLOAT"),
         ("trips", "updated_at", "DATETIME"),
+        ("trips", "pickup_pin", "VARCHAR(4)"),
         ("ratings", "tip_amount", "FLOAT DEFAULT 0.0"),
         ("vehicles", "vin", "VARCHAR(50)"),
         ("vehicles", "inspection_valid", "BOOLEAN DEFAULT 0"),
@@ -1231,6 +1238,7 @@ async def migrate_postgres(conn):
         ("trips", "per_minute_rate", "FLOAT"),
         ("trips", "share_token", "VARCHAR(100)"),
         ("trips", "share_expires_at", "TIMESTAMP WITH TIME ZONE"),
+        ("trips", "pickup_pin", "VARCHAR(4)"),
         ("trips", "waypoints", "TEXT"),
         # Multi-stop v1 (2026-08-05). NOTE: BOOT runs THIS list — a column
         # added only to migrate.py's MIGRATIONS never reaches production

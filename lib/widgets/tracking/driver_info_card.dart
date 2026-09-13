@@ -247,65 +247,65 @@ extension _RiderTrackingDriverInfoCard on _RiderTrackingScreenState {
             ],
           ),
           SizedBox(height: Responsive.h(10)),
-          // Action row: chat + call + more
+          // Action row: four equal round buttons, centered (2026-09-12).
+          // Chat is one of them — a circle like call/share/support, not a
+          // wide pill. Unread messages flip it to gold with a red count
+          // badge: the same attention signal the old shimmering pill had.
           Row(
+            mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Expanded(
-                child: GestureDetector(
-                  onTap: () async {
-                    HapticService.selectionClick();
-                    // Push FIRST, resolve the id after. Awaiting
-                    // getCurrentUserId here meant the chat only started
-                    // opening once an HTTP call came back — the tap felt
-                    // dead for as long as the network took. ChatScreen
-                    // resolves the id itself when it is not supplied.
-                    if (!mounted) return;
-                    final nav = _nav;
-                    if (nav == null) return;
-                    final userIdFuture = ApiService.getCurrentUserId();
-                    nav.push(
-                      chatOpenRoute(
-                        ChatScreen(
-                          // Full name, not just the first word — the header
-                          // showed "Jhon" where the driver is "Jhon
-                          // martinez".
-                          recipientName: widget.driverName,
-                          recipientPhotoUrl: _driverPhotoUrl,
-                          recipientId: widget.driverId,
-                          recipientRole: 'driver',
-                          avatarInitial: widget.driverName.isNotEmpty
-                              ? widget.driverName[0].toUpperCase()
-                              : 'D',
-                          tripId: widget.tripId,
-                          currentRole: 'rider',
-                          currentUserId: null,
-                        ),
+              GestureDetector(
+                onTap: () async {
+                  HapticService.selectionClick();
+                  // Push FIRST, resolve the id after. Awaiting
+                  // getCurrentUserId here meant the chat only started
+                  // opening once an HTTP call came back — the tap felt
+                  // dead for as long as the network took. ChatScreen
+                  // resolves the id itself when it is not supplied.
+                  if (!mounted) return;
+                  final nav = _nav;
+                  if (nav == null) return;
+                  final userIdFuture = ApiService.getCurrentUserId();
+                  nav.push(
+                    chatOpenRoute(
+                      ChatScreen(
+                        // Full name, not just the first word — the header
+                        // showed "Jhon" where the driver is "Jhon
+                        // martinez".
+                        recipientName: widget.driverName,
+                        recipientPhotoUrl: _driverPhotoUrl,
+                        recipientId: widget.driverId,
+                        recipientRole: 'driver',
+                        avatarInitial: widget.driverName.isNotEmpty
+                            ? widget.driverName[0].toUpperCase()
+                            : 'D',
+                        tripId: widget.tripId,
+                        currentRole: 'rider',
+                        currentUserId: null,
                       ),
-                    );
-                    unawaited(userIdFuture);
-                  },
-                  child: widget.tripId != null
-                      ? StreamBuilder<int>(
-                          stream: ChatService().unreadCountStream(
-                            rideId: widget.tripId.toString(),
-                            readerRole: 'rider',
-                          ),
-                          builder: (context, snap) {
-                            final count = snap.data ?? 0;
-                            return _ChatPromptPill(count: count);
-                          },
-                        )
-                      : const _ChatPromptPill(count: 0),
-                ),
+                    ),
+                  );
+                  unawaited(userIdFuture);
+                },
+                child: widget.tripId != null
+                    ? StreamBuilder<int>(
+                        stream: ChatService().unreadCountStream(
+                          rideId: widget.tripId.toString(),
+                          readerRole: 'rider',
+                        ),
+                        builder: (context, snap) =>
+                            _buildChatCircleBtn(snap.data ?? 0),
+                      )
+                    : _buildChatCircleBtn(0),
               ),
-              SizedBox(width: Responsive.w(8)),
+              SizedBox(width: Responsive.w(20)),
               _buildCardIconBtn(icon: Icons.phone_rounded, onTap: _handleCallDriver),
-              SizedBox(width: Responsive.w(8)),
+              SizedBox(width: Responsive.w(20)),
               _buildCardIconBtn(
                 icon: Icons.share_rounded,
                 onTap: _handleShareTrip,
               ),
-              SizedBox(width: Responsive.w(8)),
+              SizedBox(width: Responsive.w(20)),
               _buildMoreMenuButton(),
             ],
           ),
@@ -328,6 +328,70 @@ extension _RiderTrackingDriverInfoCard on _RiderTrackingScreenState {
           borderColor: AppColors.kGold.withValues(alpha: 0.35),
         ),
         child: Icon(icon, color: AppColors.kGold, size: Responsive.sp(18)),
+      ),
+    );
+  }
+
+  /// Chat as a round button matching its row-mates (2026-09-12): a sunken
+  /// well with a gold bubble when idle; filled gold with the unread count as
+  /// a red badge when the driver has written — the same attention signal the
+  /// old shimmering pill carried, in the row's circle idiom.
+  Widget _buildChatCircleBtn(int count) {
+    final d = Responsive.w(40);
+    final hasUnread = count > 0;
+    return Container(
+      width: d, height: d,
+      decoration: hasUnread
+          ? BoxDecoration(
+              color: AppColors.kGold,
+              shape: BoxShape.circle,
+              boxShadow: [
+                BoxShadow(
+                  color: AppColors.kGold.withValues(alpha: 0.35),
+                  blurRadius: 14,
+                  spreadRadius: 1,
+                ),
+              ],
+            )
+          : neuBox(
+              radius: d / 2,
+              pressed: true,
+              borderColor: AppColors.kGold.withValues(alpha: 0.35),
+            ),
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Center(
+            child: Icon(
+              Icons.chat_bubble_rounded,
+              color: hasUnread ? Colors.black : AppColors.kGold,
+              size: Responsive.sp(18),
+            ),
+          ),
+          if (hasUnread)
+            Positioned(
+              top: -4,
+              right: -4,
+              child: Container(
+                constraints: const BoxConstraints(minWidth: 16),
+                height: 16,
+                padding: const EdgeInsets.symmetric(horizontal: 4),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEF4444),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                alignment: Alignment.center,
+                child: Text(
+                  '$count',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }
@@ -1518,147 +1582,4 @@ extension _RiderTrackingDriverInfoCard on _RiderTrackingScreenState {
 /// - Unread > 0: turns gold, shows "X new message(s) from driver" with
 ///   a shimmer sweep that loops every 1.8s to draw the eye, plus a
 ///   small unread counter on the right.
-class _ChatPromptPill extends StatefulWidget {
-  final int count;
-  const _ChatPromptPill({required this.count});
 
-  @override
-  State<_ChatPromptPill> createState() => _ChatPromptPillState();
-}
-
-class _ChatPromptPillState extends State<_ChatPromptPill>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _shimmer;
-
-  @override
-  void initState() {
-    super.initState();
-    _shimmer = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1800),
-    );
-    if (widget.count > 0) _shimmer.repeat();
-  }
-
-  @override
-  void didUpdateWidget(covariant _ChatPromptPill old) {
-    super.didUpdateWidget(old);
-    if (widget.count > 0 && !_shimmer.isAnimating) {
-      _shimmer.repeat();
-    } else if (widget.count == 0 && _shimmer.isAnimating) {
-      _shimmer.stop();
-      _shimmer.reset();
-    }
-  }
-
-  @override
-  void dispose() {
-    _shimmer.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final hasUnread = widget.count > 0;
-    final s = S.of(context);
-
-    if (!hasUnread) {
-      // Idle: a sunken well, like a real text input carved into the card.
-      return Container(
-        width: double.infinity,
-        padding: EdgeInsets.symmetric(
-            horizontal: Responsive.w(14), vertical: Responsive.h(10)),
-        decoration: neuBox(
-          radius: 24,
-          pressed: true,
-          borderColor: AppColors.kGold.withValues(alpha: 0.35),
-        ),
-        child: Text(
-          s.typeMessage,
-          style: TextStyle(color: Colors.white30, fontSize: Responsive.sp(13)),
-        ),
-      );
-    }
-
-    return AnimatedBuilder(
-      animation: _shimmer,
-      builder: (context, _) {
-        final t = _shimmer.value;
-        return Container(
-          width: double.infinity,
-          padding: EdgeInsets.symmetric(
-              horizontal: Responsive.w(14), vertical: Responsive.h(10)),
-          decoration: BoxDecoration(
-            gradient: const LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [Color(0xFFE8C547), Color(0xFFD4A574)],
-            ),
-            borderRadius: BorderRadius.circular(24),
-            border: Border.all(
-                color: AppColors.kGold.withValues(alpha: 0.9), width: 1.2),
-            boxShadow: [
-              BoxShadow(
-                color: AppColors.kGold.withValues(alpha: 0.35),
-                blurRadius: 14,
-                spreadRadius: 1,
-              ),
-            ],
-          ),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(24),
-            child: Stack(
-              alignment: Alignment.center,
-              children: [
-                // Shimmer sweep overlay — bright streak slides L -> R.
-                Positioned.fill(
-                  child: IgnorePointer(
-                    child: Transform.translate(
-                      offset: Offset(380 * (t * 1.4 - 0.4), 0),
-                      child: Transform.rotate(
-                        angle: 0.25,
-                        child: Container(
-                          width: 60,
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              colors: [
-                                Colors.transparent,
-                                Colors.white.withValues(alpha: 0.55),
-                                Colors.transparent,
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.chat_bubble_rounded,
-                        color: Colors.black, size: Responsive.sp(14)),
-                    SizedBox(width: Responsive.w(8)),
-                    Flexible(
-                      child: Text(
-                        s.newMessagesFromDriver(widget.count),
-                        style: TextStyle(
-                          color: Colors.black,
-                          fontSize: Responsive.sp(13),
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: 0.2,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-}

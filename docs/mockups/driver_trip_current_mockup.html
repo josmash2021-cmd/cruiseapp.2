@@ -49,10 +49,14 @@
   .rbadge{position:absolute;top:-3px;right:-3px;width:17px;height:17px;border-radius:50%;background:#EF4444;
           color:#fff;font-size:9.5px;font-weight:800;display:flex;align-items:center;justify-content:center}
 
-  /* ── mapa preview (card neu, borde 18 — como hoy) ── */
-  .mapCard{position:absolute;top:268px;left:16px;right:16px;height:240px;border-radius:18px;overflow:hidden;z-index:3;
-           background:var(--surface);border:1px solid rgba(255,255,255,.04);
-           box-shadow:4px 4px 16px rgba(0,0,0,.32),-3px -3px 12px rgba(255,255,255,.04)}
+  /* ── mapa preview SIN marco: los bordes se desvanecen hacia el fondo ── */
+  .mapCard{position:absolute;top:342px;left:16px;right:16px;height:240px;border-radius:18px;overflow:hidden;z-index:3}
+  .mapFade{position:absolute;inset:0;z-index:3;pointer-events:none;
+    background:
+      linear-gradient(to bottom, var(--bg) 0%, rgba(20,20,26,.85) 5%, rgba(20,20,26,.35) 11%, transparent 22%, transparent 78%, rgba(20,20,26,.35) 89%, rgba(20,20,26,.85) 95%, var(--bg) 100%),
+      linear-gradient(to right,  var(--bg) 0%, rgba(20,20,26,.8) 4%, rgba(20,20,26,.3) 9%, transparent 18%, transparent 82%, rgba(20,20,26,.3) 91%, rgba(20,20,26,.8) 96%, var(--bg) 100%),
+      radial-gradient(ellipse 86% 82% at 50% 50%, transparent 48%, rgba(20,20,26,.42) 76%, var(--bg) 100%);
+  }
   .mapCard svg.mapTiles{position:absolute;inset:0;width:100%;height:100%}
   .mapCard .route{stroke:rgba(232,197,71,.85);stroke-width:4;stroke-linecap:round;fill:none}
   .chipCol{position:absolute;top:10px;right:10px;display:flex;flex-direction:column;gap:6px;align-items:flex-end;z-index:4}
@@ -61,11 +65,22 @@
   .mchip svg{width:12px;height:12px;fill:var(--gold)}
   .carMarker{position:absolute;z-index:2;width:46px;transform:translate(-50%,-50%) rotate(22deg);
              filter:drop-shadow(0 4px 8px rgba(0,0,0,.6))}
+  .tripActions{display:flex;justify-content:center;gap:26px;margin-top:16px}
+  .tact{display:flex;flex-direction:column;align-items:center;gap:5px}
+  .tdisc{position:relative;width:52px;height:52px;border-radius:50%;background:var(--surface);border:1px solid rgba(255,255,255,.07);
+         display:flex;align-items:center;justify-content:center;
+         box-shadow:4px 4px 14px rgba(0,0,0,.45),-3px -3px 10px rgba(255,255,255,.04)}
+  .tdisc svg{width:21px;height:21px;fill:#fff}
+  .tact.gold .tdisc{background:var(--gold);border-color:var(--gold);box-shadow:0 6px 20px rgba(232,197,71,.35)}
+  .tact.gold .tdisc svg{fill:#14141A}
+  .tlb{color:var(--txt2);font-size:9.5px;font-weight:600;letter-spacing:.4px}
+  .tbadge{position:absolute;top:-4px;right:-4px;min-width:17px;height:17px;border-radius:9px;background:#EF4444;border:2px solid #14141A;
+          color:#fff;font-size:9.5px;font-weight:800;display:flex;align-items:center;justify-content:center;padding:0 3px}
   .pinP,.pinD{position:absolute;z-index:2;width:26px;height:26px;transform:translate(-50%,-100%)}
   .mbAttr{position:absolute;bottom:5px;left:8px;color:rgba(255,255,255,.45);font-size:9px;z-index:4}
 
   /* ── tarjeta dirección pickup ── */
-  .addrCard{position:absolute;top:522px;left:16px;right:16px;z-index:3;display:flex;align-items:center;gap:12px;
+  .addrCard{position:absolute;top:596px;left:16px;right:16px;z-index:3;display:flex;align-items:center;gap:12px;
             background:var(--surface);border-radius:18px;padding:13px 14px;border:1px solid rgba(255,255,255,.04);
             box-shadow:4px 4px 16px rgba(0,0,0,.32),-3px -3px 12px rgba(255,255,255,.04)}
   .addrCard .pinIc{width:38px;height:38px;border-radius:12px;background:rgba(232,197,71,.12);display:flex;align-items:center;justify-content:center}
@@ -75,7 +90,7 @@
   .addrCard .chev{margin-left:auto;color:var(--txt3);font-size:18px;font-weight:600}
 
   /* ── tarjeta PIN (SOLO propuesta) ── */
-  .pinCard{position:absolute;top:594px;left:16px;right:16px;z-index:3;display:flex;align-items:center;gap:12px;
+  .pinCard{position:absolute;top:668px;left:16px;right:16px;z-index:3;display:flex;align-items:center;gap:12px;
             background:var(--surface);border-radius:18px;padding:13px 14px;border:1px solid rgba(232,197,71,.22);
             box-shadow:4px 4px 16px rgba(0,0,0,.32),-3px -3px 12px rgba(255,255,255,.04)}
   .pinCard .pLbl{color:var(--txt3);font-size:9.5px;font-weight:600;letter-spacing:1.4px;text-transform:uppercase}
@@ -137,8 +152,11 @@
             <div class="nm">Marlin Weber</div>
             <div class="sub"><svg viewBox="0 0 24 24"><path d="M12 2l2.9 6.3 6.9.8-5.1 4.7 1.4 6.8L12 17.2 5.9 20.6l1.4-6.8L2.2 9.1l6.9-.8z"/></svg>4.8</div>
           </div>
-          <div class="rbtn"><svg viewBox="0 0 24 24"><path d="M6.6 10.8a15 15 0 0 0 6.6 6.6l2.2-2.2a1 1 0 0 1 1-.25 11.4 11.4 0 0 0 3.6.58 1 1 0 0 1 1 1V20a1 1 0 0 1-1 1A17 17 0 0 1 3 4a1 1 0 0 1 1-1h3.5a1 1 0 0 1 1 1 11.4 11.4 0 0 0 .57 3.6 1 1 0 0 1-.25 1z"/></svg></div>
-          <div class="rbtn"><svg viewBox="0 0 24 24"><path d="M4 3h16a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H8l-5 4V5a2 2 0 0 1 2-2z"/></svg><div class="rbadge">1</div></div>
+        </div>
+        <div class="tripActions">
+          <div class="tact"><div class="tdisc"><svg viewBox="0 0 24 24"><path d="M4 3h16a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H8l-5 4V5a2 2 0 0 1 2-2z"/></svg><div class="tbadge">1</div></div><div class="tlb">Chat</div></div>
+          <div class="tact gold"><div class="tdisc"><svg viewBox="0 0 24 24"><path d="M6.6 10.8a15 15 0 0 0 6.6 6.6l2.2-2.2a1 1 0 0 1 1-.25 11.4 11.4 0 0 0 3.6.58 1 1 0 0 1 1 1V20a1 1 0 0 1-1 1A17 17 0 0 1 3 4a1 1 0 0 1 1-1h3.5a1 1 0 0 1 1 1 11.4 11.4 0 0 0 .57 3.6 1 1 0 0 1-.25 1z"/></svg></div><div class="tlb">Call</div></div>
+          <div class="tact"><div class="tdisc"><svg viewBox="0 0 24 24"><path d="M12 3a8 8 0 0 0-8 8v5a3 3 0 0 0 3 3h1a1 1 0 0 0 1-1v-6a1 1 0 0 0-1-1H6v-1a6 6 0 0 1 12 0v1h-2a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h1a3 3 0 0 0 3-3v-5a8 8 0 0 0-8-8z"/></svg></div><div class="tlb">Support</div></div>
         </div>
       </div>
 
@@ -162,6 +180,7 @@
         <img class="carMarker" src="../../assets/images/car_suv.png" style="top:74%;left:26%" alt="car">
         <svg class="pinP" style="top:83%;left:19.5%" viewBox="0 0 24 24"><path d="M12 2a7 7 0 0 1 7 7c0 5-7 13-7 13S5 14 5 9a7 7 0 0 1 7-7z" fill="#E8C547"/><circle cx="12" cy="9" r="2.6" fill="#14141A"/></svg>
         <svg class="pinD" style="top:22%;left:82.7%" viewBox="0 0 24 24"><path d="M12 2a7 7 0 0 1 7 7c0 5-7 13-7 13S5 14 5 9a7 7 0 0 1 7-7z" fill="#fff"/><circle cx="12" cy="9" r="2.6" fill="#14141A"/></svg>
+        <div class="mapFade"></div>
         <div class="chipCol">
           <div class="mchip">14 min trip</div>
           <div class="mchip"><svg viewBox="0 0 24 24"><path d="M12 2 4 5v6c0 5 3.4 9.4 8 11 4.6-1.6 8-6 8-11V5z"/></svg>0.2 mi to pickup</div>
@@ -209,8 +228,11 @@
             <div class="nm">Marlin Weber</div>
             <div class="sub"><svg viewBox="0 0 24 24"><path d="M12 2l2.9 6.3 6.9.8-5.1 4.7 1.4 6.8L12 17.2 5.9 20.6l1.4-6.8L2.2 9.1l6.9-.8z"/></svg>4.8</div>
           </div>
-          <div class="rbtn"><svg viewBox="0 0 24 24"><path d="M6.6 10.8a15 15 0 0 0 6.6 6.6l2.2-2.2a1 1 0 0 1 1-.25 11.4 11.4 0 0 0 3.6.58 1 1 0 0 1 1 1V20a1 1 0 0 1-1 1A17 17 0 0 1 3 4a1 1 0 0 1 1-1h3.5a1 1 0 0 1 1 1 11.4 11.4 0 0 0 .57 3.6 1 1 0 0 1-.25 1z"/></svg></div>
-          <div class="rbtn"><svg viewBox="0 0 24 24"><path d="M4 3h16a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H8l-5 4V5a2 2 0 0 1 2-2z"/></svg><div class="rbadge">1</div></div>
+        </div>
+        <div class="tripActions">
+          <div class="tact"><div class="tdisc"><svg viewBox="0 0 24 24"><path d="M4 3h16a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H8l-5 4V5a2 2 0 0 1 2-2z"/></svg><div class="tbadge">1</div></div><div class="tlb">Chat</div></div>
+          <div class="tact gold"><div class="tdisc"><svg viewBox="0 0 24 24"><path d="M6.6 10.8a15 15 0 0 0 6.6 6.6l2.2-2.2a1 1 0 0 1 1-.25 11.4 11.4 0 0 0 3.6.58 1 1 0 0 1 1 1V20a1 1 0 0 1-1 1A17 17 0 0 1 3 4a1 1 0 0 1 1-1h3.5a1 1 0 0 1 1 1 11.4 11.4 0 0 0 .57 3.6 1 1 0 0 1-.25 1z"/></svg></div><div class="tlb">Call</div></div>
+          <div class="tact"><div class="tdisc"><svg viewBox="0 0 24 24"><path d="M12 3a8 8 0 0 0-8 8v5a3 3 0 0 0 3 3h1a1 1 0 0 0 1-1v-6a1 1 0 0 0-1-1H6v-1a6 6 0 0 1 12 0v1h-2a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h1a3 3 0 0 0 3-3v-5a8 8 0 0 0-8-8z"/></svg></div><div class="tlb">Support</div></div>
         </div>
       </div>
 
@@ -234,6 +256,7 @@
         <img class="carMarker" src="../../assets/images/car_suv.png" style="top:74%;left:26%" alt="car">
         <svg class="pinP" style="top:83%;left:19.5%" viewBox="0 0 24 24"><path d="M12 2a7 7 0 0 1 7 7c0 5-7 13-7 13S5 14 5 9a7 7 0 0 1 7-7z" fill="#E8C547"/><circle cx="12" cy="9" r="2.6" fill="#14141A"/></svg>
         <svg class="pinD" style="top:22%;left:82.7%" viewBox="0 0 24 24"><path d="M12 2a7 7 0 0 1 7 7c0 5-7 13-7 13S5 14 5 9a7 7 0 0 1 7-7z" fill="#fff"/><circle cx="12" cy="9" r="2.6" fill="#14141A"/></svg>
+        <div class="mapFade"></div>
         <div class="chipCol">
           <div class="mchip">14 min trip</div>
           <div class="mchip"><svg viewBox="0 0 24 24"><path d="M12 2 4 5v6c0 5 3.4 9.4 8 11 4.6-1.6 8-6 8-11V5z"/></svg>0.2 mi to pickup</div>

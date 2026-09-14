@@ -2250,25 +2250,6 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     );
   }
 
-  Widget _actionBtn(IconData icon, String label, VoidCallback onTap) =>
-      GestureDetector(
-        onTap: onTap,
-        child: Container(
-          width: 40,
-          height: 40,
-          // Raised disc with a gold edge instead of a hollow gold ring. On a
-          // neumorphic surface a transparent outline reads as a hole, and the
-          // two most-used buttons on the screen should read as buttons.
-          decoration: neuBox(
-            radius: 20,
-            borderColor: _gold.withValues(alpha: 0.55),
-            borderWidth: 1.2,
-          ),
-          // White icons on the gold-ringed discs (user spec 2026-08-05).
-          child: Icon(icon, color: Colors.white, size: 18),
-        ),
-      );
-
   Widget _complimentaryDrinkCard() {
     final drink = _complimentaryDrink ?? '';
     return Container(
@@ -2464,61 +2445,102 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   }
 
   /// Message button with real-time unread badge + bounce animation from Firebase RTDB.
-  Widget _msgBtnWithBadge() {
-    return Stack(
-      clipBehavior: Clip.none,
-      children: [
-        _actionBtn(Icons.message_rounded, S.of(context).messageAction, _openChat),
-        Positioned(
-          right: -4, top: -4,
-          child: StreamBuilder<int>(
-            stream: ChatService().unreadCountStream(
-              rideId: widget.tripId.toString(),
-              readerRole: 'driver',
-            ),
-            builder: (context, snap) {
-              final count = snap.data ?? 0;
-              if (count == 0) return const SizedBox.shrink();
-              // Keyed on the count, so every new message replays the pop
-              // rather than silently swapping the digit.
-              return TweenAnimationBuilder<double>(
-                key: ValueKey(count),
-                tween: Tween(begin: 0.0, end: 1.0),
-                duration: const Duration(milliseconds: 500),
-                curve: Curves.elasticOut,
-                builder: (_, scale, child) => Transform.scale(scale: scale, child: child),
-                child: Container(
-                  padding: const EdgeInsets.all(3),
-                  constraints: const BoxConstraints(minWidth: 19, minHeight: 19),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFEF4444),
-                    shape: BoxShape.circle,
-                    // Ring in the sheet colour so the badge separates from
-                    // the raised disc underneath instead of merging into its
-                    // highlight, plus its own lift so it reads as sitting on
-                    // top of the button rather than punched into it.
-                    border: Border.all(color: neuBase, width: 2),
-                    boxShadow: [
-                      BoxShadow(
-                        color: const Color(0xFFEF4444).withValues(alpha: 0.45),
-                        blurRadius: 8,
-                        spreadRadius: -1,
-                      ),
-                    ],
-                  ),
-                  child: Text(
-                    count > 9 ? '9+' : '$count',
-                    style: const TextStyle(
-                      color: Colors.white, fontSize: 10, fontWeight: FontWeight.w800,
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
+  /// Find-My style round action with its label underneath (user spec
+  /// 2026-09-14): chat / call / support as one centered row — the call disc
+  /// is the only gold-filled one, and chat can carry the unread badge.
+  Widget _tripActionBtn({
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+    bool filled = false,
+    Stream<int>? badge,
+  }) {
+    const d = 52.0;
+    final disc = Container(
+      width: d,
+      height: d,
+      decoration: filled
+          ? BoxDecoration(
+              color: _gold,
+              shape: BoxShape.circle,
+              boxShadow: [
+                BoxShadow(
+                  color: _gold.withValues(alpha: 0.35),
+                  blurRadius: 18,
+                  offset: const Offset(0, 6),
                 ),
-              );
-            },
+              ],
+            )
+          : neuBox(radius: d / 2),
+      child: Icon(icon, color: filled ? neuBase : _gold, size: 21),
+    );
+    return GestureDetector(
+      onTap: () {
+        HapticService.lightImpact();
+        onTap();
+      },
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (badge != null)
+            StreamBuilder<int>(
+              stream: badge,
+              builder: (context, snap) {
+                final count = snap.data ?? 0;
+                return Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    disc,
+                    if (count > 0)
+                      Positioned(
+                        right: -4,
+                        top: -4,
+                        child: TweenAnimationBuilder<double>(
+                          key: ValueKey(count),
+                          tween: Tween(begin: 0.0, end: 1.0),
+                          duration: const Duration(milliseconds: 500),
+                          curve: Curves.elasticOut,
+                          builder: (_, scale, child) =>
+                              Transform.scale(scale: scale, child: child),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 4),
+                            constraints: const BoxConstraints(
+                                minWidth: 18, minHeight: 18),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFEF4444),
+                              borderRadius: BorderRadius.circular(9),
+                              border: Border.all(color: neuBase, width: 2),
+                            ),
+                            child: Text(
+                              count > 9 ? '9+' : '$count',
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 10,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                );
+              },
+            )
+          else
+            disc,
+          const SizedBox(height: 6),
+          Text(
+            label,
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.55),
+              fontSize: Responsive.sp(9.5),
+              fontWeight: FontWeight.w600,
+              letterSpacing: 0.4,
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
@@ -4546,9 +4568,37 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
                         ),
                       ),
                       SizedBox(width: Responsive.w(10)),
-                      _actionBtn(Icons.phone_rounded, S.of(context).callAction, _call),
-                      SizedBox(width: Responsive.w(8)),
-                      _msgBtnWithBadge(),
+                    ],
+                  ),
+                  SizedBox(height: Responsive.h(16)),
+                  // Chat / Call / Support — one labeled Find-My row (user spec
+                  // 2026-09-14): the call disc is the only gold-filled one,
+                  // and the unread count rides the chat disc.
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      _tripActionBtn(
+                        icon: Icons.chat_bubble_rounded,
+                        label: S.of(context).chat,
+                        onTap: _openChat,
+                        badge: ChatService().unreadCountStream(
+                          rideId: widget.tripId.toString(),
+                          readerRole: 'driver',
+                        ),
+                      ),
+                      SizedBox(width: Responsive.w(28)),
+                      _tripActionBtn(
+                        icon: Icons.call_rounded,
+                        label: S.of(context).callAction,
+                        onTap: _call,
+                        filled: true,
+                      ),
+                      SizedBox(width: Responsive.w(28)),
+                      _tripActionBtn(
+                        icon: Icons.support_agent_rounded,
+                        label: S.of(context).supportAction,
+                        onTap: _openSupportChat,
+                      ),
                     ],
                   ),
                   if (_complimentaryDrink != null) ...[
@@ -4560,7 +4610,12 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
             ),
 
             // ── Map preview (tilt animation on enter) ─────────────────
-            Padding(
+            // Loose so a short screen (the action row added ~74 px below the
+            // rider row, 2026-09-14) shrinks the map instead of overflowing
+            // the Column; tall screens still get the full 240.
+            Flexible(
+              fit: FlexFit.loose,
+              child: Padding(
               padding: EdgeInsets.fromLTRB(Responsive.w(16), 0, Responsive.w(16), Responsive.h(12)),
               child: ClipRRect(
                 // Frameless (user spec 2026-09-13): the map no longer sits in
@@ -4701,6 +4756,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
                     ),
                   ),
               ),
+            ),
             ),
 
             // ── Passenger instructions, straight under the map ────────────

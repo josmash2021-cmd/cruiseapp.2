@@ -130,33 +130,98 @@ extension _RiderTrackingPhaseIndicator on _RiderTrackingScreenState {
       content = _buildOnTripContent(dotColor);
     }
 
-    return Container(
-      // Edges dissolve into the map instead of a hard card border (user spec
-      // 2026-09-13): solid at the centre where the text sits, feathering to
-      // transparent on every side.
-      decoration: BoxDecoration(
-        gradient: RadialGradient(
-          center: Alignment.center,
-          radius: 1.35,
-          colors: [
-            neuSurface,
-            neuSurface.withValues(alpha: .96),
-            neuSurface.withValues(alpha: .70),
-            neuSurface.withValues(alpha: 0),
-          ],
-          stops: const [0, .52, .78, 1],
+    return ClipRRect(
+      // Edges dissolve into the map on ALL four sides (user spec 2026-09-13).
+      // A single RadialGradient can't do it: it is CIRCULAR (its radius is a
+      // fraction of the shortest side — 66 px here), so it faded left/right
+      // but left the top and bottom edges nearly solid. This layered bg is
+      // the deterministic version of the mockup's dissolve: solid core under
+      // the text, every edge feathering to transparent.
+      borderRadius: BorderRadius.circular(22),
+      child: Stack(
+        children: [
+          Positioned.fill(child: _buildCardDissolveBg()),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 500),
+              switchInCurve: Curves.easeOutCubic,
+              switchOutCurve: Curves.easeInCubic,
+              transitionBuilder: (child, anim) =>
+                  FadeTransition(opacity: anim, child: child),
+              child: content,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// The destination box's dissolving background: a solid core behind the
+  /// text with every edge feathering to transparent (2026-09-13).
+  Widget _buildCardDissolveBg() {
+    final transparent = neuSurface.withValues(alpha: 0);
+    final solid = neuSurface.withValues(alpha: .96);
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        Center(
+          child: FractionallySizedBox(
+            widthFactor: .72,
+            child: Container(color: solid),
+          ),
         ),
-        borderRadius: BorderRadius.circular(22),
-      ),
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      child: AnimatedSwitcher(
-        duration: const Duration(milliseconds: 500),
-        switchInCurve: Curves.easeOutCubic,
-        switchOutCurve: Curves.easeInCubic,
-        transitionBuilder: (child, anim) =>
-            FadeTransition(opacity: anim, child: child),
-        child: content,
-      ),
+        Row(
+          children: [
+            Container(
+              width: 52,
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.centerLeft,
+                  end: Alignment.centerRight,
+                  colors: [transparent, solid],
+                ),
+              ),
+            ),
+            const Expanded(child: SizedBox()),
+            Container(
+              width: 52,
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.centerRight,
+                  end: Alignment.centerLeft,
+                  colors: [transparent, solid],
+                ),
+              ),
+            ),
+          ],
+        ),
+        Column(
+          children: [
+            Container(
+              height: 14,
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [transparent, solid],
+                ),
+              ),
+            ),
+            const Expanded(child: SizedBox()),
+            Container(
+              height: 14,
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.bottomCenter,
+                  end: Alignment.topCenter,
+                  colors: [transparent, solid],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ],
     );
   }
 

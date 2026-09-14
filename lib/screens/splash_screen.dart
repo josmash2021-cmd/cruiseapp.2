@@ -28,15 +28,17 @@ class _SplashScreenState extends State<SplashScreen>
     with TickerProviderStateMixin {
   static const _bg = Color(0xFF000000);
   static const _gold = Color(0xFFE8C547);
-  static const _goldBright = Color(0xFFFFF1C1);
 
   static const _letters = ['C', 'R', 'U', 'I', 'S', 'E'];
 
-  // ── Phase 1: Staggered letter entrance (1200ms total) ──
+  // ── Phase 1: Logo bloom, then staggered letter entrance (1400ms total) ──
   late AnimationController _entranceCtrl;
   late List<Animation<double>> _letterSlide; // Y offset: 60→0
   late List<Animation<double>> _letterFade; // opacity: 0→1
   late List<Animation<double>> _letterScale; // scale: 0.3→1
+  // The car-in-circle logo blooms first; the letters cascade a beat after.
+  late Animation<double> _logoFade;
+  late Animation<double> _logoScale;
 
   // ── Phase 2: Glow shimmer pulse after all letters land ──
   late AnimationController _glowCtrl;
@@ -76,22 +78,32 @@ class _SplashScreenState extends State<SplashScreen>
   void _setupEntranceAnimations() {
     _entranceCtrl = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1200),
+      duration: const Duration(milliseconds: 1400),
     );
+
+    // Logo bloom: gentle fade + overshoot scale, the first thing you see.
+    _logoFade = Tween<double>(begin: 0.0, end: 1.0).animate(CurvedAnimation(
+      parent: _entranceCtrl,
+      curve: const Interval(0.0, 0.30, curve: Curves.easeOut),
+    ));
+    _logoScale = Tween<double>(begin: 0.45, end: 1.0).animate(CurvedAnimation(
+      parent: _entranceCtrl,
+      curve: const Interval(0.0, 0.45, curve: Curves.easeOutBack),
+    ));
 
     _letterSlide = [];
     _letterFade = [];
     _letterScale = [];
 
     for (int i = 0; i < _letters.length; i++) {
-      // Each letter is staggered by ~100ms, spans ~500ms
-      final start = (i * 0.12).clamp(0.0, 1.0);
-      final end = (start + 0.45).clamp(0.0, 1.0);
+      // Each letter is staggered by ~140ms behind the logo, spans ~560ms
+      final start = (0.12 + i * 0.10).clamp(0.0, 1.0);
+      final end = (start + 0.40).clamp(0.0, 1.0);
 
       final curveInterval = Interval(start, end, curve: Curves.elasticOut);
       final fadeInterval = Interval(
         start,
-        (start + 0.25).clamp(0.0, 1.0),
+        (start + 0.22).clamp(0.0, 1.0),
         curve: Curves.easeOut,
       );
 
@@ -695,21 +707,9 @@ class _SplashScreenState extends State<SplashScreen>
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        // Decorative top line
-                        Opacity(
-                          opacity: glow * _decoExitFade.value,
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              _buildDecoLine(60),
-                              const SizedBox(width: 10),
-                              _buildDiamond(),
-                              const SizedBox(width: 10),
-                              _buildDecoLine(60),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 14),
+                        // Logo bloom — the car-in-circle badge opens the show
+                        _buildLogo(),
+                        const SizedBox(height: 22),
                         // CRUISE letters
                         Row(
                           mainAxisSize: MainAxisSize.min,
@@ -727,18 +727,35 @@ class _SplashScreenState extends State<SplashScreen>
                             );
                           }),
                         ),
-                        const SizedBox(height: 8),
-                        // IN RIDE tagline
+                        const SizedBox(height: 20),
+                        // IN RIDE tagline — two centered lines, white over gold
                         Opacity(
                           opacity: ((glow * 1.5).clamp(0.0, 1.0)) * _taglineExitFade.value,
-                          child: Text(
-                            'PREMIUM  RIDE  EXPERIENCE',
-                            style: GoogleFonts.cinzel(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w400,
-                              color: _gold.withValues(alpha: 0.7),
-                              letterSpacing: 6,
-                            ),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                'IN  RIDE,',
+                                textAlign: TextAlign.center,
+                                style: GoogleFonts.cinzel(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w400,
+                                  color: Colors.white,
+                                  letterSpacing: 6,
+                                ),
+                              ),
+                              const SizedBox(height: 12),
+                              Text(
+                                'PREMIUM  EXPERIENCE',
+                                textAlign: TextAlign.center,
+                                style: GoogleFonts.cinzel(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w400,
+                                  color: _gold.withValues(alpha: 0.7),
+                                  letterSpacing: 6,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                         const SizedBox(height: 14),
@@ -764,6 +781,46 @@ class _SplashScreenState extends State<SplashScreen>
             ),
           );
         },
+      ),
+    );
+  }
+
+  Widget _buildLogo() {
+    final glow = _glowCtrl.value;
+    return Opacity(
+      opacity: _logoFade.value,
+      child: Transform.scale(
+        scale: _logoScale.value,
+        child: SizedBox(
+          width: 150,
+          height: 150,
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              // Halo behind the badge — swells with the shimmer phase.
+              Container(
+                width: 150,
+                height: 150,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: RadialGradient(
+                    colors: [
+                      _gold.withValues(alpha: 0.26 + glow * 0.26),
+                      _gold.withValues(alpha: 0.09 + glow * 0.09),
+                      Colors.transparent,
+                    ],
+                    stops: const [0.0, 0.55, 1.0],
+                  ),
+                ),
+              ),
+              Image.asset(
+                'assets/images/cruise_logo.png',
+                width: 118,
+                height: 118,
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -799,41 +856,23 @@ class _SplashScreenState extends State<SplashScreen>
 
   Widget _buildLetter(String letter, int index) {
     final glowIntensity = _glowCtrl.value;
-    final glowColor = Color.lerp(_gold, _goldBright, glowIntensity)!;
 
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 1.5),
-      child: ShaderMask(
-        shaderCallback: (bounds) {
-          return LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [
-              _goldBright,
-              glowColor,
-              _gold,
-            ],
-            stops: const [0.0, 0.4, 1.0],
-          ).createShader(bounds);
-        },
-        child: Text(
-          letter,
-          style: GoogleFonts.cinzel(
-            fontSize: 46,
-            fontWeight: FontWeight.w900,
-            color: Colors.white,
-            letterSpacing: 6,
-            shadows: [
-              Shadow(
-                color: _gold.withValues(alpha: 0.5 + glowIntensity * 0.5),
-                blurRadius: 20 + glowIntensity * 40,
-              ),
-              Shadow(
-                color: _goldBright.withValues(alpha: glowIntensity * 0.4),
-                blurRadius: 50,
-              ),
-            ],
-          ),
+      child: Text(
+        letter,
+        style: GoogleFonts.cinzel(
+          fontSize: 46,
+          fontWeight: FontWeight.w900,
+          color: Colors.white,
+          letterSpacing: 6,
+          shadows: [
+            Shadow(
+              color: Colors.white.withValues(
+                  alpha: 0.22 + glowIntensity * 0.38),
+              blurRadius: 18 + glowIntensity * 34,
+            ),
+          ],
         ),
       ),
     );

@@ -24,6 +24,7 @@ import '../../utils/mapbox_safe.dart';
 import '../../utils/route_splice.dart';
 import '../../utils/smooth_motion.dart';
 import '../../widgets/gold_location_dot.dart';
+import '../../widgets/map/circular_pin_renderer.dart';
 import '../../widgets/neu_style.dart';
 import '../../widgets/verified_avatar.dart';
 
@@ -308,6 +309,10 @@ class DriverNavViewState extends State<DriverNavView>
   String _waitClock = '5:00';
   static const _waitTotalSecs = 300;
   static const _stageControlHeight = 62.0;
+
+  /// Secondary "End Route" button under the stage control at arrival —
+  /// closes navigation only, never a trip-state transition.
+  static const _endRouteHeight = 44.0;
 
   ResilientPositionStream? _gps;
   StreamSubscription? _riderLocSub;
@@ -989,13 +994,19 @@ class DriverNavViewState extends State<DriverNavView>
       } catch (_) {}
     }
     try {
+      // The same golden teardrop every other map draws: person at the
+      // pickup, flag at the dropoff.
+      final bytes = await renderCircularPinBytes(
+        icon: widget.toPickup ? CircularPinIcon.person : CircularPinIcon.flag,
+        isPickup: widget.toPickup,
+        radius: 32,
+      );
+      if (!mounted) return;
       _destAnnot = await mgr.create(mapbox.PointAnnotationOptions(
         geometry: point,
-        textField: '★',
-        textSize: 22,
-        textColor: _gold.toARGB32(),
-        textHaloColor: _navyBar.toARGB32(),
-        textHaloWidth: 1.5,
+        image: bytes,
+        iconSize: 0.62,
+        iconAnchor: mapbox.IconAnchor.BOTTOM,
       ));
     } catch (_) {}
   }
@@ -1625,11 +1636,14 @@ class DriverNavViewState extends State<DriverNavView>
             final lift = media.size.height * extent + 16;
             return Stack(
               children: [
-                Positioned(
-                  left: 16,
-                  bottom: lift,
-                  child: _buildSpeedBox(),
-                ),
+                // The speed box yields to the arrival button stack — it has
+                // nothing to say while parked at the destination.
+                if (!_phaseArrived)
+                  Positioned(
+                    left: 16,
+                    bottom: lift,
+                    child: _buildSpeedBox(),
+                  ),
                 Positioned(
                   right: 14,
                   bottom: lift,
@@ -1661,14 +1675,21 @@ class DriverNavViewState extends State<DriverNavView>
                   Positioned(
                     left: 16,
                     right: 16,
-                    bottom:
-                        lift + (_stageControlVisible ? _stageControlHeight + 10 : 0),
+                    bottom: lift +
+                        (_stageControlVisible
+                            ? _stageControlHeight + 10
+                            : 0) +
+                        (_phaseArrived ? _endRouteHeight + 10 : 0),
                     child: _buildWaitBar(s),
                   ),
+                // Arrival lifts the stage control and parks the secondary
+                // End Route under it — the business action stays on top,
+                // the navigation action below it, both at the sheet.
                 Positioned(
                   left: 16,
                   right: 16,
-                  bottom: lift,
+                  bottom:
+                      lift + (_phaseArrived ? _endRouteHeight + 10 : 0),
                   child: AnimatedSwitcher(
                     duration: const Duration(milliseconds: 420),
                     switchInCurve: Curves.easeOutCubic,
@@ -1687,6 +1708,13 @@ class DriverNavViewState extends State<DriverNavView>
                     ),
                   ),
                 ),
+                if (_phaseArrived)
+                  Positioned(
+                    left: 16,
+                    right: 16,
+                    bottom: lift,
+                    child: _buildEndRouteButton(s),
+                  ),
               ],
             );
           },
@@ -1818,35 +1846,8 @@ class DriverNavViewState extends State<DriverNavView>
             ),
           ),
           // Way back to the trip sheet — navigation never traps the driver.
-          // Arrival swaps the quiet X for the explicit End Route: closing
-          // navigation is always the driver's decision, and arrival never
-          // fires a trip-state transition by itself.
-          if (_phaseArrived)
-            GestureDetector(
-              onTap: () {
-                HapticService.lightImpact();
-                widget.onExit();
-              },
-              child: Container(
-                height: 40,
-                padding: const EdgeInsets.symmetric(horizontal: 14),
-                decoration: BoxDecoration(
-                  color: _gold,
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                alignment: Alignment.center,
-                child: Text(
-                  s.navEndRoute,
-                  maxLines: 1,
-                  style: const TextStyle(
-                    color: Colors.black,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-              ),
-            )
-          else
+          // The arrival close action lives at the bottom, under the stage
+          // control (_buildEndRouteButton); the bar keeps the quiet X.
           Tooltip(
             message: s.navExit,
             child: GestureDetector(
@@ -2155,6 +2156,35 @@ class DriverNavViewState extends State<DriverNavView>
     );
   }
 
+  /// Secondary arrival action under the stage control: closes navigation
+  /// (reverse morph back to the sheet) without touching trip state. The
+  /// business action — Arrived / slide to pick up / slide to finish — stays
+  /// the gold primary on top of it.
+  Widget _buildEndRouteButton(S s) {
+    return SizedBox(
+      width: double.infinity,
+      height: _endRouteHeight,
+      child: OutlinedButton.icon(
+        onPressed: () {
+          HapticService.lightImpact();
+          widget.onExit();
+        },
+        icon: const Icon(Icons.flag_rounded, color: _gold, size: 18),
+        label: Text(
+          s.navEndRoute,
+          style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
+        ),
+        style: OutlinedButton.styleFrom(
+          foregroundColor: Colors.white,
+          backgroundColor: _navyBar.withValues(alpha: 0.88),
+          side: BorderSide(color: _gold.withValues(alpha: 0.45), width: 1.2),
+          shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(22)),
+        ),
+      ),
+    );
+  }
+
   Widget _buildStageControl(S s) {
     switch (widget.stage) {
       case 'arrived':
@@ -2434,7 +2464,10 @@ class DriverNavViewState extends State<DriverNavView>
           ),
         ),
         // Room for the stage control floating over the sheet's top edge.
-        const SizedBox(height: _stageControlHeight + 76),
+        SizedBox(
+            height: _stageControlHeight +
+                76 +
+                (_phaseArrived ? _endRouteHeight + 10 : 0)),
       ],
     );
   }

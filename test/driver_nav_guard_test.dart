@@ -306,14 +306,39 @@ void main() {
               'stage controls');
     });
 
-    test('arrival shows End Route and never auto-closes navigation', () {
-      expect(nav, contains('s.navEndRoute'),
-          reason: 'the explicit close action at arrival');
-      final bar = bodyOf(nav, 'Widget _buildManeuverBar(S s) {', maxLen: 3400);
-      expect(bar, contains('_phaseArrived'));
-      expect(bar, contains('widget.onExit();'),
+    test('arrival shows End Route under the stage control, never auto-closes',
+        () {
+      expect(nav, contains('_buildEndRouteButton(s)'),
+          reason: 'the explicit close action lives at the bottom sheet, '
+              'under the gold business action');
+      expect(nav, contains('if (_phaseArrived)'),
+          reason: 'it appears only in the arrival state');
+      expect(nav, contains('_endRouteHeight + 10'),
+          reason: 'the stage control rides up above it');
+      final btn =
+          bodyOf(nav, 'Widget _buildEndRouteButton(S s) {', maxLen: 900);
+      expect(btn, contains('widget.onExit();'),
           reason: 'End Route closes navigation only — it never fires a '
               'trip-state transition');
+      expect(btn, contains('s.navEndRoute'));
+      final bar = bodyOf(nav, 'Widget _buildManeuverBar(S s) {', maxLen: 3400);
+      expect(bar, contains('s.navExit'),
+          reason: 'the top bar keeps the quiet X — End Route is below');
+      expect(bar, isNot(contains('navEndRoute')));
+    });
+
+    test('the destination pin is the shared golden teardrop', () {
+      final body =
+          bodyOf(nav, 'Future<void> _drawDestPin() async {', maxLen: 1000);
+      expect(body, contains('renderCircularPinBytes('),
+          reason: 'the same pin the mini-map and every other map draws');
+      expect(body, contains('CircularPinIcon.person'),
+          reason: 'person pin on the pickup leg');
+      expect(body, contains('CircularPinIcon.flag'),
+          reason: 'flag pin on the dropoff leg');
+      expect(body, contains('iconAnchor: mapbox.IconAnchor.BOTTOM'),
+          reason: 'the teardrop tip lands on the coordinate');
+      expect(body, isNot(contains("'★'")), reason: 'the star glyph is gone');
     });
 
     test('prefetched geometry draws at mount behind a 150 m destination gate',

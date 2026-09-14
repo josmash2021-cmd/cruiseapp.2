@@ -3580,18 +3580,20 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     _map = ctrl;
     // Cache controller for reuse across driver screens
     MapControllerCache.instance.cache(ctrl);
-    // Disable all interaction — this is a read-only preview map. The whole
-    // block in try/catch: updateSettings are pigeon calls that reject with
+    // Interactive preview (user spec 2026-09-15): the driver can pan and
+    // zoom the mini map to inspect the route. Rotate and pitch stay off —
+    // it is a flat top-down preview. The whole block in try/catch:
+    // updateSettings are pigeon calls that reject with
     // PlatformException(channel-error) if the surface dies under us.
     try {
       ctrl.gestures.updateSettings(mapbox.GesturesSettings(
-        scrollEnabled: false,
+        scrollEnabled: true,
         rotateEnabled: false,
-        pinchToZoomEnabled: false,
-        doubleTapToZoomInEnabled: false,
-        doubleTouchToZoomOutEnabled: false,
+        pinchToZoomEnabled: true,
+        doubleTapToZoomInEnabled: true,
+        doubleTouchToZoomOutEnabled: true,
         pitchEnabled: false,
-        quickZoomEnabled: false,
+        quickZoomEnabled: true,
         simultaneousRotateAndPinchToZoomEnabled: false,
       ));
       // Hide compass + attribution for clean preview.
@@ -4871,8 +4873,9 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
                         // scheduled-ride screens.
                         else if (kIsWeb)
                           IgnorePointer(
-                            // Read-only preview, like the native gestures
-                            // settings in _onMapReady.
+                            // Web stays a read-only stand-in; the native
+                            // preview is the interactive one (pan + zoom in
+                            // _onMapReady).
                             child: WebMapView(
                               key: const ValueKey('trip_accept_preview_web'),
                               initialLng: widget.pickupLatLng.longitude,
@@ -5443,20 +5446,22 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   /// radial vignette for the corners, all in the page's _bg color — the same
   /// treatment as the rider's Find-My mini map.
   Widget _buildMapEdgeFade() {
+    // Only kisses the very edges (user spec 2026-09-15): before, the fade
+    // reached 22% in from every side and read as a heavy blur over the map.
     LinearGradient edge(Alignment begin, Alignment end) => LinearGradient(
           begin: begin,
           end: end,
           colors: [
             _bg,
-            _bg.withValues(alpha: .85),
-            _bg.withValues(alpha: .35),
+            _bg.withValues(alpha: .55),
+            _bg.withValues(alpha: .18),
             Colors.transparent,
             Colors.transparent,
-            _bg.withValues(alpha: .35),
-            _bg.withValues(alpha: .85),
+            _bg.withValues(alpha: .18),
+            _bg.withValues(alpha: .55),
             _bg,
           ],
-          stops: const [0, .05, .11, .22, .78, .89, .95, 1],
+          stops: const [0, .03, .07, .13, .87, .93, .97, 1],
         );
     return Stack(
       fit: StackFit.expand,
@@ -5479,10 +5484,10 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
               colors: [
                 Colors.transparent,
                 Colors.transparent,
-                _bg.withValues(alpha: .42),
+                _bg.withValues(alpha: .22),
                 _bg,
               ],
-              stops: const [0, .48, .76, 1],
+              stops: const [0, .66, .88, 1],
             ),
           ),
         ),

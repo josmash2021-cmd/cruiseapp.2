@@ -206,6 +206,11 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
   Duration _mapLastTick = Duration.zero;
   bool _markersSyncing = false;
 
+  /// Throttle for the distance/bearing refresh that rides the map ticker —
+  /// the rider's own GPS can go quiet while the driver walks the last
+  /// metres over, and the readout + arrow must not freeze on the last fix.
+  Duration _lastDistTick = Duration.zero;
+
   /// driverPosOf is a pull callback, not a stream — sampled at 1 Hz.
   Timer? _driverSampleTimer;
   LatLng? _prevDriverFix;
@@ -650,7 +655,9 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
   /// The two centered spec blocks: LICENSE PLATE and VEHICLE.
   Widget _buildSpecRow() {
     final plate = widget.vehiclePlate;
+    final (vehicleColor, vehicleName) = _parseVehicleColor(widget.vehicleDesc);
     return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Expanded(
           child: _spec(
@@ -661,13 +668,55 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
         const SizedBox(width: 24),
         Expanded(
           child: _spec(
-              S.of(context).vehicleLabel.toUpperCase(), widget.vehicleDesc),
+            S.of(context).vehicleLabel.toUpperCase(),
+            vehicleName,
+            dot: vehicleColor,
+            maxLines: 2,
+          ),
         ),
       ],
     );
   }
 
-  Widget _spec(String label, String value) {
+  /// Leading color words a vehicle description may carry ("Black Chevrolet
+  /// Camaro") mapped to the dot shown instead of the word.
+  static const Map<String, Color> _vehicleColors = {
+    'black': Color(0xFF101013),
+    'white': Color(0xFFF5F5F5),
+    'silver': Color(0xFFC0C0C8),
+    'gray': Color(0xFF8A8A92),
+    'grey': Color(0xFF8A8A92),
+    'red': Color(0xFFDC2626),
+    'blue': Color(0xFF3B82F6),
+    'dark blue': Color(0xFF1E3A8A),
+    'green': Color(0xFF16A34A),
+    'brown': Color(0xFF8B5A2B),
+    'beige': Color(0xFFD8C9A8),
+    'gold': _gold,
+    'yellow': Color(0xFFFACC15),
+    'orange': Color(0xFFF59E0B),
+    'purple': Color(0xFFA855F7),
+  };
+
+  /// Split a leading color word off a vehicle description:
+  /// ("Black Chevrolet Camaro" → (black, "Chevrolet Camaro")). An unknown
+  /// first word keeps the full text and no dot.
+  (Color?, String) _parseVehicleColor(String desc) {
+    final trimmed = desc.trim();
+    if (trimmed.isEmpty) return (null, trimmed);
+    final lower = trimmed.toLowerCase();
+    String? hit;
+    for (final name in _vehicleColors.keys) {
+      if (lower.startsWith('$name ') &&
+          (hit == null || name.length > hit.length)) {
+        hit = name;
+      }
+    }
+    if (hit == null) return (null, trimmed);
+    return (_vehicleColors[hit], trimmed.substring(hit.length).trim());
+  }
+
+  Widget _spec(String label, String value, {Color? dot, int maxLines = 1}) {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -682,17 +731,42 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
           ),
         ),
         const SizedBox(height: 3),
-        Text(
-          value,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          textAlign: TextAlign.center,
-          style: const TextStyle(
-            fontFamily: 'Poppins',
-            color: Colors.white,
-            fontSize: 15,
-            fontWeight: FontWeight.w700,
-          ),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (dot != null) ...[
+              Container(
+                width: 10.5,
+                height: 10.5,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: dot,
+                  // The thin light ring is what keeps black and other dark
+                  // paints readable on the dark page.
+                  border: Border.all(
+                    color: Colors.white.withValues(alpha: 0.45),
+                    width: 1,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 6),
+            ],
+            Flexible(
+              child: Text(
+                value,
+                maxLines: maxLines,
+                overflow: maxLines > 1 ? null : TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontFamily: 'Poppins',
+                  color: Colors.white,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ],
         ),
       ],
     );
@@ -947,6 +1021,7 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
     _mapTicker ??= createTicker(_onMapTick);
     if (!_mapTicker!.isActive) {
       _mapLastTick = Duration.zero;
+      _lastDistTick = Duration.zero;
       _mapTicker!.start();
     }
   }
@@ -963,13 +1038,57 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
         : (elapsed - _mapLastTick).inMicroseconds / 1e6;
     _mapLastTick = elapsed;
     final moved = _riderMotion.tick(dt) | _driverMotion.tick(dt);
-    if (moved && !_markersSyncing) {
+    // Two people standing at a pickup never make tick() report movement —
+    // a marker that has a position but no annotation yet (the surface was
+    // granted before the first fix, or every fix since landed inside the
+    // standstill hold) still has to be drawn, or the strip shows the walk
+    // line with no dot and no car.
+    final uncreated = (_riderDotMgr != null &&
+            _riderDotAnnot == null &&
+            _riderMotion.hasPosition) ||
+        (_carMgr != null &&
+            _carBytes != null &&
+            _carAnnot == null &&
+            _driverMotion.hasPosition);
+    if ((moved || uncreated) && !_markersSyncing) {
       _markersSyncing = true;
       _syncMiniMapMarkers().whenComplete(() => _markersSyncing = false);
     }
+    // Distance + bearing recompute off the SMOOTHED positions at ~300 ms,
+    // not just on rider GPS fixes — the readout and arrow stay live while
+    // the driver approaches even if the rider's own stream goes quiet.
+    if (elapsed - _lastDistTick >= const Duration(milliseconds: 300)) {
+      _lastDistTick = elapsed;
+      _refreshDistanceBearing();
+    }
     // Park the ticker when both markers have nothing left to animate — the
     // next fix wakes it again via _ensureMapTicker().
-    if (_riderMotion.isAtTarget && _driverMotion.isAtTarget) _stopMapTicker();
+    if (!uncreated && _riderMotion.isAtTarget && _driverMotion.isAtTarget) {
+      _stopMapTicker();
+    }
+  }
+
+  /// Recompute "N ft" and the arrow bearing from the smoothed rider and
+  /// driver positions. Only rebuilds when the change is visible (>0.5 m or
+  /// >2°) so a 60 fps ticker never becomes a 60 fps setState.
+  void _refreshDistanceBearing() {
+    if (_driverStarted) return;
+    final rLat = _riderMotion.lat, rLng = _riderMotion.lng;
+    final dLat = _driverMotion.lat ?? _lastDriverPos?.latitude;
+    final dLng = _driverMotion.lng ?? _lastDriverPos?.longitude;
+    if (rLat == null || rLng == null || dLat == null || dLng == null) return;
+    if (dLat == 0 && dLng == 0) return;
+    final meters = Geolocator.distanceBetween(rLat, rLng, dLat, dLng);
+    final bearing =
+        (Geolocator.bearingBetween(rLat, rLng, dLat, dLng) + 360) % 360;
+    var gap = (bearing - _bearingToDriver).abs() % 360;
+    if (gap > 180) gap = 360 - gap;
+    if (_distanceM < 0 || (meters - _distanceM).abs() > 0.5 || gap > 2) {
+      setState(() {
+        _distanceM = meters;
+        _bearingToDriver = bearing;
+      });
+    }
   }
 
   Future<void> _onMiniMapCreated(mapbox.MapboxMap ctrl) async {
@@ -1151,8 +1270,8 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
   }
 
   /// Refetch the walking guide only when an anchor moved enough to matter
-  /// (20 m) and never more often than every 15 s — the strip shows a couple
-  /// of hundred metres at most.
+  /// (10 m — walking speeds) and never more often than every 15 s — the
+  /// strip shows a couple of hundred metres at most.
   void _maybeFetchWalkRoute(LatLng rider, LatLng driver) {
     if (_walkFetching) return;
     final rA = _walkAnchorRider, dA = _walkAnchorDriver;
@@ -1161,7 +1280,7 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
           rider.latitude, rider.longitude, rA.latitude, rA.longitude);
       final dMoved = Geolocator.distanceBetween(
           driver.latitude, driver.longitude, dA.latitude, dA.longitude);
-      if (rMoved < 20 && dMoved < 20) return;
+      if (rMoved < 10 && dMoved < 10) return;
     }
     if (DateTime.now().difference(_lastWalkFetchAt).inSeconds < 15) return;
     unawaited(_fetchWalkRoute(rider, driver));
@@ -1171,18 +1290,18 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
     _walkFetching = true;
     _lastWalkFetchAt = DateTime.now();
     try {
-      // DirectionsService only speaks the driving profile — at these
-      // distances (the driver has arrived) the difference is cosmetic.
+      // A pedestrian guide, not the driving route — the rider walks this
+      // strip. Walking returning nothing usable keeps the direct line.
       final result = await DirectionsService(ApiKeys.webServices)
-          .getRoute(origin: rider, destination: driver);
+          .getRoute(origin: rider, destination: driver, profile: 'walking');
       if (!mounted) return;
-      if (result != null && result.points.length >= 2) {
-        _walkRoute = result.points;
-        _walkAnchorRider = rider;
-        _walkAnchorDriver = driver;
-        setState(() {}); // refresh the stand-in image if it is still up
-        await _drawWalkRoute();
-      }
+      _walkRoute = (result != null && result.points.length >= 2)
+          ? result.points
+          : [rider, driver];
+      _walkAnchorRider = rider;
+      _walkAnchorDriver = driver;
+      setState(() {}); // refresh the stand-in image if it is still up
+      await _drawWalkRoute();
     } catch (e) {
       debugPrint('[ConfirmPickup] walk route fetch failed: $e');
     } finally {
@@ -1201,8 +1320,10 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
       if (_walkAnnot == null) {
         _walkAnnot = await mgr.create(mapbox.PolylineAnnotationOptions(
           geometry: mapbox.LineString(coordinates: coords),
-          lineColor: _gold.withValues(alpha: 0.6).toARGB32(),
-          lineWidth: 3.5,
+          // A guide, not the trip route: thinner and more transparent than
+          // the width-5 solid gold the navigation route draws.
+          lineColor: _gold.withValues(alpha: 0.55).toARGB32(),
+          lineWidth: 2.5,
           lineJoin: mapbox.LineJoin.ROUND,
         ));
       } else {
@@ -1766,19 +1887,20 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
                     key: ValueKey('c_check'),
                     Icons.check_circle_outline_rounded,
                     color: _green,
-                    size: 110,
+                    size: 128,
                   )
                 : AnimatedRotation(
                     key: const ValueKey('c_arrow'),
                     // Compass needle: bearing to the driver minus device
-                    // heading, short-arc sweep — silky.
+                    // heading, short-arc sweep — silky. Mockup proportion:
+                    // the arrow spans ~55% of the ring's diameter.
                     turns: (_bearingToDriver - _heading) / 360.0,
                     duration: const Duration(milliseconds: 250),
                     curve: Curves.easeOutCubic,
                     child: const Icon(
                       Icons.arrow_upward_rounded,
                       color: Colors.white,
-                      size: 104,
+                      size: 160,
                     ),
                   ),
           ),
@@ -1846,7 +1968,7 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
                     // background color (never a SafeArea floating outside a
                     // colored container — that leaves a transparent strip).
                     child: Padding(
-                      padding: EdgeInsets.only(bottom: pad.bottom + 12),
+                      padding: EdgeInsets.only(bottom: pad.bottom + 2),
                       child: Column(
                         children: [
                           const SizedBox(height: 6),
@@ -1863,7 +1985,7 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
                           // Ring + distance, the flexible block: the ring is
                           // the only piece that gives on short screens. It is
                           // drawn at 320 and scaled down to the mockup's
-                          // ~190 by the FittedBox.
+                          // ~260 by the FittedBox.
                           Flexible(
                             child: Column(
                               mainAxisSize: MainAxisSize.min,
@@ -1871,7 +1993,7 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
                                 Flexible(
                                   child: ConstrainedBox(
                                     constraints: const BoxConstraints(
-                                        maxWidth: 190, maxHeight: 190),
+                                        maxWidth: 260, maxHeight: 260),
                                     child: FittedBox(
                                       fit: BoxFit.scaleDown,
                                       child: _buildParticleRing(isFound),
@@ -1906,7 +2028,7 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
                               child: _buildPinRow(),
                             ),
                           ],
-                          const SizedBox(height: 14),
+                          const SizedBox(height: 26),
 
                           _buildMiniMap(),
                           const Spacer(),

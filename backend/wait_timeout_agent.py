@@ -37,13 +37,32 @@ SCAN_INTERVAL_SECONDS = 45  # How often to scan for wait timeouts
 # Auto-cancel thresholds by vehicle type (minutes)
 # Mirrors the wait fee policy in trips.py but with max wait times
 _AUTO_CANCEL_MINUTES_BY_TYPE = {
-    "sedan": 5,      # Standard tier
-    "comfort": 5,    # Standard tier
+    "sedan": 7,      # Standard tier (was 5 — curbside reality: elevators,
+    "comfort": 7,    # luggage, kids. Fewer accidental no-shows, still bounded.)
     "premium": 10,   # Premium tier
     "vip": 15,       # VIP tier
 }
-_DEFAULT_AUTO_CANCEL_MINUTES = 5  # Fallback for unknown types
+_DEFAULT_AUTO_CANCEL_MINUTES = 7  # Fallback for unknown types (was 5)
 _AIRPORT_AUTO_CANCEL_MINUTES = 20  # Airport rides get longer wait
+
+# No-show minimum fee by tier (2026-09-13). The no-show fee is
+# max(accrued wait fee, this minimum): the accrued wait fee alone paid the
+# driver ~$0.84 for a 5-minute wait — not worth anyone's time. The
+# rider-facing terms text (terms_of_service_screen + app_localizations)
+# advertises these same numbers; the compliance test pins them together.
+_NO_SHOW_MIN_FEE_BY_TYPE = {
+    "sedan": 5.0,
+    "comfort": 5.0,
+    "premium": 8.0,
+    "vip": 10.0,
+}
+_DEFAULT_NO_SHOW_MIN_FEE = 5.0
+_NO_SHOW_MIN_FEE_AIRPORT = 10.0
+
+# One "leaving soon" warning per trip, pushed to the rider ~2 minutes
+# before the auto-cancel fires (2026-09-13). In-memory like
+# _cancelled_trips_cache: a redeploy may re-push a warning once — harmless.
+_warned_trips: Dict[int, float] = {}  # trip_id -> warned_at timestamp
 
 # ── State ─────────────────────────────────────────────────────────────
 _cancelled_trips_cache: Dict[int, float] = {}  # trip_id -> cancellation timestamp
@@ -152,6 +171,16 @@ class WaitTimeoutAgent:
                 auto_cancel_minutes = self._get_auto_cancel_minutes(trip)
                 timeout_threshold = now - timedelta(minutes=auto_cancel_minutes)
 
+                # "Leaving soon" warning ~2 minutes before the auto-cancel
+                # fires (2026-09-13): exactly one push per trip, and never
+                # for a trip that is already past the threshold (that one
+                # goes straight to cancel below).
+                if trip.id not in _warned_trips and arrived_at >= timeout_threshold:
+                    warn_threshold = timeout_threshold + timedelta(minutes=2)
+                    if arrived_at < warn_threshold:
+                        _warned_trips[trip.id] = time.time()
+                        await self._notify_rider_leaving_soon(db, trip)
+
                 # Check if wait time exceeded threshold
                 if arrived_at < timeout_threshold:
                     # Cancel the trip
@@ -188,6 +217,12 @@ class WaitTimeoutAgent:
                 stale = [k for k, v in _cancelled_trips_cache.items() if v < cutoff]
                 for k in stale:
                     del _cancelled_trips_cache[k]
+            # Same for the leaving-soon warning set — day-old entries are junk.
+            if len(_warned_trips) > _MAX_CACHE_SIZE:
+                cutoff = time.time() - 86400
+                stale = [k for k, v in _warned_trips.items() if v < cutoff]
+                for k in stale:
+                    del _warned_trips[k]
 
             if cancelled_count:
                 logger.info(
@@ -219,8 +254,13 @@ class WaitTimeoutAgent:
         trip.updated_at = datetime.now(timezone.utc)
 
         # Calculate and set cancellation fee if applicable
-        # For no-show, we charge the wait time fee that accumulated
+        # For no-show, we charge the wait time fee that accumulated — with a
+        # per-tier minimum (2026-09-13): max(accrued wait fee, minimum), so a
+        # driver who lost 7 minutes to a no-show is paid for their time.
         wait_fee = self._calculate_wait_fee(trip, waited_minutes)
+        min_fee = self._get_no_show_min_fee(trip)
+        if wait_fee < min_fee:
+            wait_fee = min_fee
         if wait_fee > 0:
             trip.cancellation_fee = wait_fee
             trip.wait_time_charge = wait_fee
@@ -277,6 +317,50 @@ class WaitTimeoutAgent:
 
         chargeable_minutes = max(0, waited_minutes - free_minutes)
         return round(chargeable_minutes * fee_per_minute, 2)
+
+    def _get_no_show_min_fee(self, trip) -> float:
+        """The per-tier no-show fee floor (2026-09-13): the no-show fee is
+        max(accrued wait fee, this minimum)."""
+        if trip.is_airport:
+            return _NO_SHOW_MIN_FEE_AIRPORT
+        return _NO_SHOW_MIN_FEE_BY_TYPE.get(
+            (trip.vehicle_type or "comfort").lower(), _DEFAULT_NO_SHOW_MIN_FEE)
+
+    async def _notify_rider_leaving_soon(self, db, trip) -> bool:
+        """Warn the rider the auto-cancel is ~2 minutes out (2026-09-13)."""
+        from models.database import User
+        from services.fcm_service import _send_fcm_push
+
+        try:
+            if not trip.rider_id:
+                return False
+
+            result = await db.execute(select(User).where(User.id == trip.rider_id))
+            rider = result.scalar_one_or_none()
+
+            if not rider or not rider.fcm_token:
+                return False
+
+            _send_fcm_push(
+                rider.fcm_token,
+                title="Tu driver puede irse en 2 min / Driver leaving in 2 min",
+                body=(
+                    "Llevas mucho tiempo sin llegar al pickup. En 2 minutos el viaje "
+                    "se cancela y aplica el cargo de no-show. "
+                    "You have 2 minutes before the trip auto-cancels and the "
+                    "no-show fee applies."
+                ),
+                data={
+                    "type": "wait_timeout_warning",
+                    "trip_id": str(trip.id),
+                    "minutes_left": "2",
+                },
+            )
+            return True
+
+        except Exception as e:
+            logger.warning("[WaitTimeout] Leaving-soon warn failed for trip #%d: %s", trip.id, e)
+            return False
 
     async def _notify_driver_no_show(self, db, trip) -> bool:
         """Notify driver that trip was cancelled due to passenger no-show."""

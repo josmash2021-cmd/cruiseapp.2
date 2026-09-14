@@ -172,8 +172,8 @@ class DirectionsService {
     _cacheAccessTimes.clear();
   }
 
-  String _cacheKey(LatLng a, LatLng b) =>
-      '${a.latitude.toStringAsFixed(3)},${a.longitude.toStringAsFixed(3)}_'
+  String _cacheKey(LatLng a, LatLng b, String profile) =>
+      '${profile}_${a.latitude.toStringAsFixed(3)},${a.longitude.toStringAsFixed(3)}_'
       '${b.latitude.toStringAsFixed(3)},${b.longitude.toStringAsFixed(3)}';
 
   bool _isCacheValid(String key) {
@@ -288,12 +288,16 @@ class DirectionsService {
     }
   }
 
+  /// [profile] is the Mapbox/Google travel mode ('driving', 'walking', …).
+  /// It is part of the cache key — a walking guide must never be served a
+  /// cached driving route.
   Future<RouteResult?> getRoute({
     required LatLng origin,
     required LatLng destination,
+    String profile = 'driving',
   }) async {
     // Check route cache first (instant return)
-    final key = _cacheKey(origin, destination);
+    final key = _cacheKey(origin, destination, profile);
     if (_routeCache.containsKey(key) && _isCacheValid(key)) {
       debugPrint('[Route] Cache hit for $key');
       _cacheAccessTimes[key] = DateTime.now(); // LRU: mark as recently used
@@ -320,15 +324,18 @@ class DirectionsService {
       final googleFuture = _requestDirectionsWithFallbacks(
         origin: origin,
         destination: destination,
+        profile: profile,
       ).then((data) {
         if (data == null) return null;
         return _parseGoogleRoute(data, origin, destination);
       }).timeout(const Duration(seconds: 6), onTimeout: () => null);
 
-      final osrmFuture = _requestOsrmRoute(origin: origin, destination: destination)
+      final osrmFuture = _requestOsrmRoute(
+              origin: origin, destination: destination, profile: profile)
           .timeout(const Duration(seconds: 6), onTimeout: () => null);
 
-      final mapboxFuture = _requestMapboxRoute(origin: origin, destination: destination)
+      final mapboxFuture = _requestMapboxRoute(
+              origin: origin, destination: destination, profile: profile)
           .timeout(const Duration(seconds: 8), onTimeout: () => null);
 
       // Wait for all, take the first non-null result (prefer Mapbox > Google > OSRM)
@@ -473,10 +480,15 @@ class DirectionsService {
   Future<RouteResult?> _requestOsrmRoute({
     required LatLng origin,
     required LatLng destination,
+    String profile = 'driving',
   }) async {
     try {
+      // OSRM names its profiles car/bike/foot (the public demo server only
+      // serves car data — a foot request simply fails and the other
+      // providers answer instead).
+      final osrmProfile = profile == 'walking' ? 'foot' : 'driving';
       final path =
-          '/route/v1/driving/${origin.longitude},${origin.latitude};${destination.longitude},${destination.latitude}';
+          '/route/v1/$osrmProfile/${origin.longitude},${origin.latitude};${destination.longitude},${destination.latitude}';
       final uri = Uri.https('router.project-osrm.org', path, {
         'overview': 'full',
         'alternatives': 'true',
@@ -550,13 +562,16 @@ class DirectionsService {
   Future<RouteResult?> _requestMapboxRoute({
     required LatLng origin,
     required LatLng destination,
+    String profile = 'driving',
   }) async {
     try {
-      // Mapbox expects coordinates as longitude,latitude
+      // Mapbox expects coordinates as longitude,latitude. maxspeed is a
+      // driving-only annotation — the walking profile rejects it.
       final url = Uri.parse(
-        'https://api.mapbox.com/directions/v5/mapbox/driving/'
+        'https://api.mapbox.com/directions/v5/mapbox/$profile/'
         '${origin.longitude},${origin.latitude};${destination.longitude},${destination.latitude}'
-        '?geometries=geojson&overview=full&steps=true&annotations=maxspeed'
+        '?geometries=geojson&overview=full&steps=true'
+        '${profile == 'driving' ? '&annotations=maxspeed' : ''}'
         '&access_token=${MapboxConfig.accessToken}',
       );
       debugPrint('[Route] Mapbox request URL: $url');
@@ -789,29 +804,34 @@ class DirectionsService {
   Future<Map<String, dynamic>?> _requestDirectionsWithFallbacks({
     required LatLng origin,
     required LatLng destination,
+    String profile = 'driving',
   }) async {
     final variants = <Map<String, String>>[
+      // departure_time + traffic_model are driving/transit only — Google
+      // rejects them on a walking request, so the traffic variant exists
+      // just for driving and the plain ones serve every profile.
+      if (profile == 'driving')
+        {
+          'origin': '${origin.latitude},${origin.longitude}',
+          'destination': '${destination.latitude},${destination.longitude}',
+          'key': apiKey,
+          'mode': 'driving',
+          'departure_time': 'now',
+          'traffic_model': 'best_guess',
+          'alternatives': 'true',
+        },
       {
         'origin': '${origin.latitude},${origin.longitude}',
         'destination': '${destination.latitude},${destination.longitude}',
         'key': apiKey,
-        'mode': 'driving',
-        'departure_time': 'now',
-        'traffic_model': 'best_guess',
+        'mode': profile,
         'alternatives': 'true',
       },
       {
         'origin': '${origin.latitude},${origin.longitude}',
         'destination': '${destination.latitude},${destination.longitude}',
         'key': apiKey,
-        'mode': 'driving',
-        'alternatives': 'true',
-      },
-      {
-        'origin': '${origin.latitude},${origin.longitude}',
-        'destination': '${destination.latitude},${destination.longitude}',
-        'key': apiKey,
-        'mode': 'driving',
+        'mode': profile,
       },
     ];
 

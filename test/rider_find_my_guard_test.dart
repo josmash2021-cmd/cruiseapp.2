@@ -20,6 +20,12 @@ import 'package:flutter_test/flutter_test.dart';
 ///      'RiderFindMyPickup' with a StaticRoutePreview stand-in, and the
 ///      tracking screen re-claims the surface when the overlay closes.
 ///   6. The rider dot glides through SmoothMotion (no fix-to-fix hops).
+///   7. The guide is a WALKING route (DirectionsService profile param,
+///      driving by default) with a straight-line fallback, and the dot/car
+///      annotations are created even when nothing moves (parked at pickup).
+///   8. Distance + bearing recompute on the map ticker, not only on rider
+///      GPS fixes; the hero ring runs at 260; the vehicle color shows as a
+///      dot with the full name wrapping to 2 lines.
 ///
 /// The map needs a live Mapbox surface, so this pins the source discipline.
 void main() {
@@ -175,6 +181,66 @@ void main() {
     test('never on web (mapbox_maps_flutter does not run there)', () {
       expect(src.contains('if (!kIsWeb) {'), isTrue,
           reason: 'the surface acquire must stay behind the kIsWeb guard');
+    });
+  });
+
+  group('walking guide + live mini-map markers (refinements)', () {
+    final directions =
+        File('lib/services/directions_service.dart').readAsStringSync();
+
+    test('getRoute takes an optional profile defaulting to driving', () {
+      expect(directions.contains("String profile = 'driving'"), isTrue,
+          reason: 'every existing caller keeps driving by default');
+      expect(
+          directions.contains('_cacheKey(origin, destination, profile)'),
+          isTrue,
+          reason: 'a walking route must never hit the driving cache');
+      expect(directions.contains('directions/v5/mapbox/\$profile/'), isTrue);
+    });
+    test('the Find-My guide fetches walking with a straight-line fallback',
+        () {
+      expect(src.contains("profile: 'walking'"), isTrue);
+      expect(src.contains(': [rider, driver];'), isTrue,
+          reason: 'walking returning nothing keeps the direct line');
+      expect(src.contains('if (rMoved < 10 && dMoved < 10) return;'), isTrue,
+          reason: 'refetch threshold tightened to walking speeds (10 m)');
+    });
+    test('markers are created even when nothing moves (parked at pickup)',
+        () {
+      final body = bodyOf('void _onMapTick(Duration elapsed) {');
+      expect(body.contains('_riderDotAnnot == null'), isTrue);
+      expect(body.contains('_carAnnot == null'), isTrue,
+          reason: 'tick() reports false for two stationary targets — '
+              'creation cannot wait for movement');
+    });
+  });
+
+  group('bigger hero ring and needle', () {
+    test('the ring constraint is 260', () {
+      expect(src.contains('maxWidth: 260, maxHeight: 260'), isTrue);
+    });
+  });
+
+  group('distance and bearing stay live on the map ticker', () {
+    test('the tick recomputes both from the smoothed positions', () {
+      final body = bodyOf('void _onMapTick(Duration elapsed) {');
+      expect(body.contains('_refreshDistanceBearing()'), isTrue,
+          reason: 'the GPS listener alone froze "N ft" when the rider\'s '
+              'stream went quiet');
+      final refresh = bodyOf('void _refreshDistanceBearing() {');
+      expect(refresh.contains('_riderMotion.lat'), isTrue);
+      expect(refresh.contains('_driverMotion.lat'), isTrue);
+    });
+  });
+
+  group('vehicle color becomes a dot', () {
+    test('the leading color word is parsed off the description', () {
+      expect(src.contains('_parseVehicleColor('), isTrue);
+      expect(src.contains("'dark blue'"), isTrue);
+      final body = bodyOf('Widget _buildSpecRow() {');
+      expect(body.contains('_parseVehicleColor'), isTrue);
+      expect(body.contains('maxLines: 2'), isTrue,
+          reason: 'the full vehicle name wraps instead of ellipsizing');
     });
   });
 

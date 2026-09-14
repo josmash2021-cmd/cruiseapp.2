@@ -116,12 +116,31 @@ def test_wait_fee_schedule_consistent_between_ui_and_backend():
     ):
         assert re.search(pattern, backend), f"backend wait policy missing: {pattern}"
 
-    # The in-app terms text must mirror the same per-minute figures and
-    # must NOT advertise a flat $10.00 no-show fee (it does not exist).
+    # The in-app terms text must mirror the same per-minute figures.
     for frag in (r"\$0.40 per minute", r"\$0.60 per minute", r"\$1.00 per minute"):
         assert frag in l10n, f"l10n missing wait-fee figure: {frag}"
-    assert "No-show fee" not in l10n
-    assert r"\$10.00" not in l10n
+
+    # No-show fee minimum (2026-09-13): the no-show fee is max(accrued wait
+    # fee, a per-tier minimum). The backend constants in
+    # backend/wait_timeout_agent.py and the rider-facing text must advertise
+    # the SAME figures — drift here means the app promises one fee and the
+    # backend captures another.
+    agent_src = _read(os.path.join(REPO_ROOT, "backend", "wait_timeout_agent.py"))
+    for pattern in (
+        r'"sedan":\s+5\.0',
+        r'"comfort":\s+5\.0',
+        r'"premium":\s+8\.0',
+        r'"vip":\s+10\.0',
+        r"_NO_SHOW_MIN_FEE_AIRPORT = 10\.0",
+    ):
+        assert re.search(pattern, agent_src), \
+            f"backend no-show minimum missing: {pattern}"
+    for frag in (
+        r"\$5.00 Standard/Compact",
+        r"\$8.00 Premium",
+        r"\$10.00 Black/SUV XL",
+    ):
+        assert frag in l10n, f"l10n missing no-show minimum figure: {frag}"
 
 
 # ── 4. Support email is support@cruiseinride.com everywhere ──────────────────

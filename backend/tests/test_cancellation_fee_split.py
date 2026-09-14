@@ -170,9 +170,10 @@ async def test_no_show_wait_fee_split_70_30(db, test_rider, test_driver):
     await db.commit()
     await db.refresh(trip)
 
-    # comfort policy: (2 free min, $0.40/min) → waited 12 min → fee $4.00.
-    # The agent partial-captures the fee from the hold (mocked) → "paid" →
-    # the real-money gate lets the split through.
+    # comfort policy: (2 free min, $0.40/min) → waited 12 min → accrued
+    # $4.00, but the 2026-09-13 no-show floor for comfort is $5.00 — the
+    # minimum wins. The agent partial-captures the fee from the hold
+    # (mocked) → "paid" → the real-money gate lets the split through.
     mock_retrieve, mock_capture = _patch_hold_capture()
     agent = WaitTimeoutAgent()
     with mock_retrieve, mock_capture:
@@ -180,15 +181,15 @@ async def test_no_show_wait_fee_split_70_30(db, test_rider, test_driver):
     await db.commit()
     await db.refresh(trip)
 
-    assert trip.cancellation_fee == 4.00
-    assert trip.driver_earnings == 2.80
-    assert trip.platform_fee == 1.20
+    assert trip.cancellation_fee == 5.00
+    assert trip.driver_earnings == 3.50
+    assert trip.platform_fee == 1.50
 
     drv = (
         await db.execute(select(User).where(User.id == driver.id))
     ).scalar_one()
-    assert drv.pending_balance == 2.80
-    assert drv.total_earnings == 2.80
+    assert drv.pending_balance == 3.50
+    assert drv.total_earnings == 3.50
 
 
 async def test_no_cancellation_fee_no_credit(

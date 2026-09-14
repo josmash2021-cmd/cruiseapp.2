@@ -18,6 +18,7 @@ import '../map/map_surface_coordinator.dart';
 import '../models/lat_lng.dart';
 import '../services/directions_service.dart';
 import '../services/haptic_service.dart';
+import '../services/socket_service.dart';
 import '../utils/mapbox_safe.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../utils/smooth_motion.dart';
@@ -213,6 +214,8 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
 
   /// driverPosOf is a pull callback, not a stream — sampled at 1 Hz.
   Timer? _driverSampleTimer;
+  StreamSubscription<Map<String, dynamic>>? _driverLocSub;
+  double? _lastDriverFixAtMs, _lastDriverFixLat, _lastDriverFixLng;
   LatLng? _prevDriverFix;
   LatLng? _lastDriverPos;
 
@@ -309,6 +312,11 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
         _driverSampleTimer = Timer.periodic(
             const Duration(seconds: 1), (_) => _sampleDriverPosition());
       }
+      // The live relay is the primary driver feed (2026-09-14): the socket
+      // pushes every fix at the driver's own 250–400 ms cadence, so the car
+      // glides with the same freshness as the tracking map. The 1 Hz pull
+      // sample above stays only as a fallback for quiet-relay paths.
+      _startDriverRelayWatch();
     }
   }
 
@@ -988,33 +996,92 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
 
   // ── Mini map ─────────────────────────────────────────────────────────
 
-  /// Sample the pull-based driver position callback at 1 Hz: feed the car's
-  /// SmoothMotion, wake the map ticker, and drive the throttled camera
-  /// refit + walking-route refetch.
-  void _sampleDriverPosition() {
-    if (!mounted || _driverStarted) return;
-    final d = widget.driverPosOf?.call();
-    if (d == null || (d.latitude == 0 && d.longitude == 0)) return;
+  /// The driver car's live feed: every socket relay packet lands here at the
+  /// driver's own cadence (250–400 ms moving, carrying `captured_at` from
+  /// the driver's GPS), so the mini-map car is as fresh and precise as the
+  /// tracking map's — no 1 Hz quantization.
+  void _startDriverRelayWatch() {
+    _driverLocSub = SocketService.driverLocationStream.listen((data) {
+      if (!mounted || _driverStarted) return;
+      final lat = (data['lat'] as num?)?.toDouble();
+      final lng = (data['lng'] as num?)?.toDouble();
+      if (lat == null || lng == null || (lat == 0 && lng == 0)) return;
+      final heading = (data['heading'] as num?)?.toDouble();
+      _acceptDriverFix(
+        LatLng(lat, lng),
+        bearing: (heading != null && heading.isFinite) ? heading : null,
+        timestampMs: _fixTsMs(data['captured_at'] ?? data['timestamp']),
+      );
+    });
+  }
+
+  static double? _fixTsMs(dynamic raw) {
+    if (raw is num) return raw.toDouble();
+    if (raw is String) return double.tryParse(raw);
+    return null;
+  }
+
+  /// One dedup discipline for BOTH driver feeds (relay + pull sample): an
+  /// out-of-order fix is dropped, and the same fix re-sent (same capture
+  /// timestamp or same position) carries no new information — feeding it
+  /// twice measured 0 m/s between identical points and dragged the glide
+  /// velocity to the floor (the tracking map's old pulse-stop bug).
+  void _acceptDriverFix(LatLng d, {double? bearing, double? timestampMs}) {
+    final last = _lastDriverFixAtMs;
+    if (timestampMs != null && last != null) {
+      if (timestampMs < last) return;
+      if (timestampMs == last &&
+          _lastDriverFixLat != null &&
+          (d.latitude - _lastDriverFixLat!).abs() < 1e-6 &&
+          (d.longitude - _lastDriverFixLng!).abs() < 1e-6) {
+        return;
+      }
+    }
+    if (timestampMs == null &&
+        _lastDriverFixLat != null &&
+        (d.latitude - _lastDriverFixLat!).abs() < 1e-6 &&
+        (d.longitude - _lastDriverFixLng!).abs() < 1e-6) {
+      return;
+    }
+    _lastDriverFixAtMs =
+        timestampMs ?? DateTime.now().millisecondsSinceEpoch.toDouble();
+    _lastDriverFixLat = d.latitude;
+    _lastDriverFixLng = d.longitude;
     _lastDriverPos = d;
-    // Bearing from the delta between fixes — a parked car's raw heading is
-    // noise, so only a real move (>2 m) is allowed to aim the marker.
+
+    // Bearing only when the fix actually moved — a parked car's raw GPS
+    // heading is noise and would spin the marker in place.
     double? brg;
     final prev = _prevDriverFix;
-    if (prev != null &&
-        Geolocator.distanceBetween(
-                prev.latitude, prev.longitude, d.latitude, d.longitude) >
-            2) {
-      brg = Geolocator.bearingBetween(
-          prev.latitude, prev.longitude, d.latitude, d.longitude);
+    final movedM = prev == null
+        ? double.infinity
+        : Geolocator.distanceBetween(
+            prev.latitude, prev.longitude, d.latitude, d.longitude);
+    if (movedM > 2) {
+      brg = bearing ??
+          Geolocator.bearingBetween(
+              prev!.latitude, prev.longitude, d.latitude, d.longitude);
     }
     _prevDriverFix = d;
-    _driverMotion.setTarget(d.latitude, d.longitude, bearing: brg);
+
+    _driverMotion.setTarget(d.latitude, d.longitude,
+        bearing: brg, timestampMs: timestampMs);
     _ensureMapTicker();
     _maybeRefitMiniMap();
     final rLat = _riderMotion.lat, rLng = _riderMotion.lng;
     if (rLat != null && rLng != null) {
       _maybeFetchWalkRoute(LatLng(rLat, rLng), d);
     }
+  }
+
+  /// Fallback for paths where the relay is quiet: sample the pull-based
+  /// driver position callback at 1 Hz (same dedup as the relay inside
+  /// [_acceptDriverFix], so a re-sent fix never double-feeds).
+  void _sampleDriverPosition() {
+    if (!mounted || _driverStarted) return;
+    final d = widget.driverPosOf?.call();
+    if (d == null || (d.latitude == 0 && d.longitude == 0)) return;
+    _acceptDriverFix(d);
   }
 
   void _ensureMapTicker() {
@@ -1738,6 +1805,7 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
     _riderGpsSub?.cancel();
     _compassSub?.cancel();
     _driverSampleTimer?.cancel();
+    _driverLocSub?.cancel();
     _mapTicker?.stop();
     _mapTicker?.dispose();
     _particleCtrl.dispose();

@@ -284,4 +284,26 @@ void main() {
               'the overlay — each must hand the surface back');
     });
   });
+
+  group('the mini-map car feeds on the direct socket relay (2026-09-14)', () {
+    test('the relay stream feeds the car, not only the 1 Hz sample', () {
+      expect(src.contains('SocketService.driverLocationStream.listen'), isTrue,
+          reason: 'the Find-My must hear every relay packet at the '
+              'driver cadence, not a 1 Hz pull');
+      expect(src.contains('_startDriverRelayWatch()'), isTrue);
+      expect(src.contains("_driverLocSub?.cancel()"), isTrue,
+          reason: 'the relay subscription must be disposed with the screen');
+    });
+
+    test('one dedup discipline covers both feeds', () {
+      expect(src.contains('void _acceptDriverFix('), isTrue);
+      final fn = src.indexOf('void _acceptDriverFix(');
+      final body = src.substring(fn, fn + 1600);
+      expect(body.contains('timestampMs < last'), isTrue,
+          reason: 'out-of-order fixes are dropped');
+      expect(body.contains('timestampMs == last'), isTrue,
+          reason: 'the same fix re-sent carries no new information');
+      expect(body.contains('_driverMotion.setTarget('), isTrue);
+    });
+  });
 }

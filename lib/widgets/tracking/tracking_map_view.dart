@@ -966,6 +966,11 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
               _kResumeFollowAfterPanMs) {
         _userControllingCamera = false;
         _lastUserCameraInteraction = null;
+        // The full-route frame comes back too (2026-09-13): resume used to
+        // leave the camera wherever the rider abandoned it, and since the
+        // route signature hadn't changed the fit never re-ran — the dropoff
+        // pin could sit off-screen for the rest of the trip.
+        _needsTripReframe = true;
         // Re-seed from the live fit: the framer's smoothed centre/zoom are
         // from before the rider moved the map, so writing them straight out
         // would snap the view instead of gliding back.
@@ -1015,8 +1020,12 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
       // changes (late route seed, restore, a real reroute of the trip
       // polyline) — never because the car moved.
       final sig = _tripFitSignature();
-      if (sig != 0 && sig != _lastTripFitSig) {
+      // _needsTripReframe forces the fit without a content change: the
+      // rider panned (auto-resume above) or a reroute replaced the drawn leg
+      // — the full route and the dropoff pin always come back on screen.
+      if (sig != 0 && (sig != _lastTripFitSig || _needsTripReframe)) {
         _lastTripFitSig = sig;
+        _needsTripReframe = false;
         unawaited(_mapCamera!.fitBounds(
           points: _tripFramePoints(),
           topPadding: topPad + 10 + _topCardHeight + 32,
@@ -1087,6 +1096,12 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     // stays as the fallback for paths where the trip route never seeded.
     if (_tripRoutePts.length >= 2) {
       pts.addAll(_tripRoutePts);
+      // Cover the CURRENT drawn leg too (2026-09-13): an off-route reroute
+      // splices new streets outside the original trip geometry, and a frame
+      // that only holds the original lets the rerouted line — and with it
+      // the dropoff pin — leave the screen. Erasing shrinks this list into
+      // the trip bbox, so it costs nothing on-route.
+      pts.addAll(_routePts);
     } else {
       pts.addAll(_routePts);
     }
@@ -2214,6 +2229,10 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     // full pickup→dropoff polyline, and both endpoints are fixed, so framing
     // with the slightly stale trip geometry is fine — replacing it with this
     // car→dropoff splice would collapse the frame to the remaining leg.
+    // But the NEW drawn leg can wander outside the frame the original route
+    // was fit to — force ONE re-fit so the rerouted line and the dropoff
+    // pin come back on screen (2026-09-13).
+    _needsTripReframe = true;
     _buildSegDist();
     // resetDraw:false — the line is already on screen. Re-arming the
     // progressive draw would replay the whole "water flowing" reveal from

@@ -31,7 +31,7 @@ void main() {
     test('uses _tripRoutePts with _routePts only as fallback', () {
       final fn = RegExp(r'List<LatLng> _tripFramePoints\(\) \{');
       final start = fn.firstMatch(view)!.end;
-      final body = view.substring(start, start + 900);
+      final body = view.substring(start, start + 1500);
       final trip = body.indexOf('_tripRoutePts');
       final fallback = body.indexOf('pts.addAll(_routePts)');
       expect(trip, isNonNegative,
@@ -170,6 +170,46 @@ void main() {
               'that IS the auto-recenter');
       expect(body.contains('_tripRoutePts'), isTrue,
           reason: 'the signature must track the full-trip polyline');
+    });
+  });
+  // Session 2026-09-13: a manual pan parked the camera for the rest of the
+  // trip (the fit only re-ran on content change) and a real off-route
+  // reroute drew new streets outside the original frame — the dropoff pin
+  // left the screen. The re-fit now fires on demand too.
+  group('the trip frame always comes back (2026-09-13)', () {
+    test('a re-fit flag fires the fit beyond content changes', () {
+      expect(view.contains('_needsTripReframe'), isTrue,
+          reason: 'the flag exists to force the fit');
+      final tick = view.indexOf('final sig = _tripFitSignature();');
+      expect(tick, isNonNegative);
+      final body = view.substring(tick, tick + 320);
+      expect(body.contains('_needsTripReframe'), isTrue,
+          reason: 'the fit must also fire when the flag is set, not only '
+              'when the route signature changes');
+    });
+
+    test('the auto-resume after a manual pan requests the re-fit', () {
+      final resume = view.indexOf('difference(last).inMilliseconds');
+      expect(resume, isNonNegative);
+      final body = view.substring(resume, resume + 1000);
+      expect(body.contains('_needsTripReframe = true'), isTrue,
+          reason: 'after the rider pans, the full-route frame must come '
+              'back instead of parking where the pan left it');
+    });
+
+    test('a real reroute requests the re-fit and the frame covers the splice', () {
+      final fn = RegExp(
+          r'Future<void> _applyReroutedPolyline\(List<LatLng> spliced\) async \{');
+      final start = fn.firstMatch(view)!.end;
+      final body = view.substring(start, start + 1400);
+      expect(body.contains('_needsTripReframe = true'), isTrue,
+          reason: 'a rerouted line outside the original frame must trigger '
+              'one re-fit');
+      final frame = view.indexOf('List<LatLng> _tripFramePoints()');
+      final frameBody = view.substring(frame, frame + 1600);
+      expect(frameBody.contains('pts.addAll(_routePts)'), isTrue,
+          reason: 'the frame includes the CURRENT drawn leg too, or the '
+              'rerouted streets leave the screen');
     });
   });
 }

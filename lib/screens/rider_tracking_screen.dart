@@ -717,7 +717,11 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
 
   double get _bottomCardHeight {
     final box = _bottomCardKey.currentContext?.findRenderObject() as RenderBox?;
-    return box?.size.height ?? 80.0;
+    // Fallback is deliberately generous (2026-09-13): before the first
+    // layout (restore path) the real card is ~200 tall, and an 80-px guess
+    // slid the fitted route UNDER the bottom sheet. Too much padding costs
+    // a hair of zoom; too little hides the route.
+    return box?.size.height ?? 220.0;
   }
 
   // ══════════════════════════════════════════════════════════════════════════
@@ -767,6 +771,12 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   /// [_tripFitSignature]). 0 = never fit. The trip camera fits ONCE per
   /// content change and then holds — user spec 2026-08-09, no auto-recenter.
   int _lastTripFitSig = 0;
+
+  /// Forces the next onTrip fit even when the route content didn't change
+  /// (user spec 2026-09-13 — the whole route and the dropoff pin must NEVER
+  /// stay off-screen): set when the rider's manual pan auto-resume fires,
+  /// and when a real off-route reroute replaces the drawn leg.
+  bool _needsTripReframe = false;
 
   // No camera Ticker of its own: the chase camera runs on _interpTicker,
   // the same frame that moves the car. Two tickers writing to one platform

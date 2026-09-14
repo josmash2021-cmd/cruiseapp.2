@@ -24,8 +24,9 @@ import 'package:flutter_test/flutter_test.dart';
 ///      driving by default) with a straight-line fallback, and the dot/car
 ///      annotations are created even when nothing moves (parked at pickup).
 ///   8. Distance + bearing recompute on the map ticker, not only on rider
-///      GPS fixes; the hero ring runs at 260; the vehicle color shows as a
-///      dot with the full name wrapping to 2 lines.
+///      GPS fixes; the hero ring runs at 300 with its geometry at 44% of
+///      the canvas; the vehicle color shows as a dot with the full name
+///      wrapping to 2 lines.
 ///
 /// The map needs a live Mapbox surface, so this pins the source discipline.
 void main() {
@@ -216,8 +217,12 @@ void main() {
   });
 
   group('bigger hero ring and needle', () {
-    test('the ring constraint is 260', () {
-      expect(src.contains('maxWidth: 260, maxHeight: 260'), isTrue);
+    test('the ring constraint is 300', () {
+      expect(src.contains('maxWidth: 300, maxHeight: 300'), isTrue);
+    });
+
+    test('the ring geometry uses 44% of the canvas', () {
+      expect(src.contains('size.width * 0.44'), isTrue);
     });
   });
 

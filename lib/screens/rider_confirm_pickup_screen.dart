@@ -1955,7 +1955,7 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
                     key: ValueKey('c_check'),
                     Icons.check_circle_outline_rounded,
                     color: _green,
-                    size: 128,
+                    size: 156,
                   )
                 : AnimatedRotation(
                     key: const ValueKey('c_arrow'),
@@ -2052,8 +2052,8 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
 
                           // Ring + distance, the flexible block: the ring is
                           // the only piece that gives on short screens. It is
-                          // drawn at 320 and scaled down to the mockup's
-                          // ~260 by the FittedBox.
+                          // drawn at 320 and scaled down to ~300 by the
+                          // FittedBox.
                           Flexible(
                             child: Column(
                               mainAxisSize: MainAxisSize.min,
@@ -2061,7 +2061,7 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
                                 Flexible(
                                   child: ConstrainedBox(
                                     constraints: const BoxConstraints(
-                                        maxWidth: 260, maxHeight: 260),
+                                        maxWidth: 300, maxHeight: 300),
                                     child: FittedBox(
                                       fit: BoxFit.scaleDown,
                                       child: _buildParticleRing(isFound),
@@ -2181,7 +2181,9 @@ class _ParticleRingPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final c = Offset(size.width / 2, size.height / 2);
-    final baseR = size.width * 0.36;
+    // Ring at 44% of the canvas (was 36% — read too small on phone
+    // screens); the band narrows to keep the outer edge inside 320/2.
+    final baseR = size.width * 0.44;
     final paintDot = Paint();
     final phase = t * 2 * math.pi;
 
@@ -2200,7 +2202,7 @@ class _ParticleRingPainter extends CustomPainter {
       // Radius: gaussian-ish band plus a moderate two-frequency weave —
       // particles thread in and out between each other, milling about
       // rather than holding formation.
-      final band = ((h2 + h3) - 1.0) * 26.0;
+      final band = ((h2 + h3) - 1.0) * 13.0;
       final w1 = 2 + (h2 * 2).floor(); // 2..3 cycles per loop
       final w2 = 3 + (h3 * 3).floor(); // 3..5 cycles per loop
       final weave = math.sin(phase * w1 + h2 * 6.283) * 3.5 +

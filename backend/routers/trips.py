@@ -390,12 +390,28 @@ async def get_active_trip(user: User = Depends(_get_current_user), db: AsyncSess
         data["driver_photo_url"] = (_abs_photo_url(driver.photo_url) or "") if driver else ""
         _avg = getattr(driver, "average_rating", None)
         data["driver_rating"] = round(float(_avg), 1) if (_avg is not None and driver) else None
-        # Vehicle info for rider tracking screen
-        data["vehicle_make"] = getattr(driver, "vehicle_make", "") or "" if driver else ""
-        data["vehicle_model"] = getattr(driver, "vehicle_model", "") or "" if driver else ""
-        data["vehicle_color"] = getattr(driver, "vehicle_color", "") or "" if driver else ""
-        data["vehicle_plate"] = getattr(driver, "license_plate", "") or "" if driver else ""
-        data["vehicle_year"] = getattr(driver, "vehicle_year", "") or "" if driver else ""
+        # Vehicle info for rider tracking screen: the driver's ACTIVE row
+        # from the vehicles table (multi-vehicle) — the legacy
+        # users.vehicle_* columns no longer exist, so getattr() on the
+        # driver always returned "" here and the rider saw "—" for plate
+        # and an empty vehicle line on auto-resume.
+        _veh = None
+        if driver:
+            try:
+                _veh_r = await db.execute(
+                    select(Vehicle).where(
+                        Vehicle.user_id == driver.id,
+                        Vehicle.is_active == True,
+                    ).limit(1)
+                )
+                _veh = _veh_r.scalar_one_or_none()
+            except Exception as _veh_err:
+                logging.warning("[ActiveTrip] vehicle load failed: %s", _veh_err)
+        data["vehicle_make"] = (_veh.make or "") if _veh else ""
+        data["vehicle_model"] = (_veh.model or "") if _veh else ""
+        data["vehicle_color"] = (_veh.color or "") if _veh else ""
+        data["vehicle_plate"] = (_veh.plate or "") if _veh else ""
+        data["vehicle_year"] = (str(_veh.year) if _veh.year else "") if _veh else ""
         data["driver_id"] = str(driver.id) if driver else ""
         return data
 
@@ -624,7 +640,41 @@ async def get_trip(trip_id: int, user: User = Depends(_get_current_user), db: As
     # Ownership check: only rider, driver, or admin can view
     if user.id not in (trip.rider_id, trip.driver_id) and user.role != "admin":
         raise HTTPException(403, "Not authorized to view this trip")
-    return _trip_dict_for_user(trip, user)
+    d = _trip_dict_for_user(trip, user)
+    # Enrich with driver + active-vehicle info so a RESUMED rider screen
+    # (tracking / Find-My) shows the same data as the live flow — _trip_dict
+    # carries no driver/vehicle columns, and the legacy users.vehicle_*
+    # columns are gone (multi-vehicle). Mirrors GET /trips/active.
+    if trip.driver_id:
+        try:
+            _dr = await db.execute(select(User).where(User.id == trip.driver_id))
+            _drv = _dr.scalar_one_or_none()
+        except Exception as _derr:
+            logging.warning("[GetTrip] driver load failed: %s", _derr)
+            _drv = None
+        if _drv:
+            d["driver_name"] = f"{_drv.first_name or ''} {_drv.last_name or ''}".strip()
+            d["driver_phone"] = _drv.phone or ""
+            d["driver_photo_url"] = _abs_photo_url(_drv.photo_url) or ""
+            _avg = getattr(_drv, "average_rating", None)
+            d["driver_rating"] = round(float(_avg), 1) if _avg is not None else None
+            _veh = None
+            try:
+                _vr = await db.execute(
+                    select(Vehicle).where(
+                        Vehicle.user_id == _drv.id,
+                        Vehicle.is_active == True,
+                    ).limit(1)
+                )
+                _veh = _vr.scalar_one_or_none()
+            except Exception as _verr:
+                logging.warning("[GetTrip] vehicle load failed: %s", _verr)
+            d["vehicle_make"] = (_veh.make or "") if _veh else ""
+            d["vehicle_model"] = (_veh.model or "") if _veh else ""
+            d["vehicle_color"] = (_veh.color or "") if _veh else ""
+            d["vehicle_plate"] = (_veh.plate or "") if _veh else ""
+            d["vehicle_year"] = (str(_veh.year) if _veh.year else "") if _veh else ""
+    return d
 
 @router.get("/trips/available", dependencies=[Depends(_verify_api_key)])
 async def get_available_trips(

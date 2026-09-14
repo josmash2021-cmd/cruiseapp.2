@@ -1,6 +1,5 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 import '../l10n/app_localizations.dart';
 import 'package:video_player/video_player.dart';
 import '../config/page_transitions.dart';
@@ -20,11 +19,7 @@ class _WelcomeScreenState extends State<WelcomeScreen>
   static const _gold = Color(0xFFE8C547);
 
   late AnimationController _ctrl;
-  late Animation<double> _logoFade;
-  late Animation<double> _textFade;
   late Animation<double> _btnFade;
-  late Animation<Offset> _logoSlide;
-  late Animation<Offset> _textSlide;
   late Animation<Offset> _btnSlide;
 
   late VideoPlayerController _videoCtrl;
@@ -39,32 +34,10 @@ class _WelcomeScreenState extends State<WelcomeScreen>
       vsync: this,
       duration: const Duration(milliseconds: 1800),
     );
-    _logoFade = CurvedAnimation(
-      parent: _ctrl,
-      curve: const Interval(0.0, 0.4, curve: Curves.easeOut),
-    );
-    _textFade = CurvedAnimation(
-      parent: _ctrl,
-      curve: const Interval(0.3, 0.65, curve: Curves.easeOut),
-    );
     _btnFade = CurvedAnimation(
       parent: _ctrl,
       curve: const Interval(0.55, 1.0, curve: Curves.easeOut),
     );
-    _logoSlide = Tween<Offset>(begin: const Offset(0, 0.15), end: Offset.zero)
-        .animate(
-          CurvedAnimation(
-            parent: _ctrl,
-            curve: const Interval(0.0, 0.45, curve: Curves.easeOutCubic),
-          ),
-        );
-    _textSlide = Tween<Offset>(begin: const Offset(0, 0.2), end: Offset.zero)
-        .animate(
-          CurvedAnimation(
-            parent: _ctrl,
-            curve: const Interval(0.3, 0.65, curve: Curves.easeOutCubic),
-          ),
-        );
     _btnSlide = Tween<Offset>(begin: const Offset(0, 0.3), end: Offset.zero)
         .animate(
           CurvedAnimation(
@@ -81,7 +54,7 @@ class _WelcomeScreenState extends State<WelcomeScreen>
             'assets/images/welcome_bg.mp4',
             videoPlayerOptions: VideoPlayerOptions(mixWithOthers: true),
           )
-          ..setLooping(true)
+          ..setLooping(false)
           ..setVolume(0)
           ..initialize().then((_) {
             if (mounted) {
@@ -124,16 +97,18 @@ class _WelcomeScreenState extends State<WelcomeScreen>
             // Fallback while video loads
             Container(color: const Color(0xFF0A0B10)),
 
-          // ── Subtle dark overlay so text is readable ──
+          // ── Subtle dark overlay so the bottom controls stay readable ──
+          // The lockup and headline are baked into the video itself, so the
+          // middle barely dims; the floor area gets the real veil.
           Container(
             decoration: BoxDecoration(
               gradient: LinearGradient(
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
                 colors: [
-                  Colors.black.withValues(alpha: 0.15),
-                  Colors.black.withValues(alpha: 0.30),
-                  Colors.black.withValues(alpha: 0.65),
+                  Colors.black.withValues(alpha: 0.10),
+                  Colors.black.withValues(alpha: 0.22),
+                  Colors.black.withValues(alpha: 0.70),
                 ],
                 stops: const [0.0, 0.5, 1.0],
               ),
@@ -146,78 +121,7 @@ class _WelcomeScreenState extends State<WelcomeScreen>
               padding: const EdgeInsets.symmetric(horizontal: 28),
               child: Column(
                 children: [
-                  const SizedBox(height: 36),
-
-                  // ── CRUISE title (centered) ──
-                  SlideTransition(
-                    position: _logoSlide,
-                    child: FadeTransition(
-                      opacity: _logoFade,
-                      child: Text(
-                        'CRUISE',
-                        style: GoogleFonts.cinzel(
-                          fontSize: 28,
-                          fontWeight: FontWeight.w900,
-                          color: _gold,
-                          letterSpacing: 8,
-                        ),
-                      ),
-                    ),
-                  ),
-
-                  const SizedBox(height: 12),
-
-                  // ── Gold diamond separator (centered) ──
-                  FadeTransition(
-                    opacity: _logoFade,
-                    child: SizedBox(
-                      width: 200,
-                      height: 14,
-                      child: CustomPaint(painter: _DiamondSeparatorPainter()),
-                    ),
-                  ),
-
-                  const Spacer(flex: 2),
-
-                  // ── Headline (centered) ──
-                  SlideTransition(
-                    position: _textSlide,
-                    child: FadeTransition(
-                      opacity: _textFade,
-                      child: Text(
-                        S.of(context).welcomeHeadline,
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(
-                          fontSize: 40,
-                          fontWeight: FontWeight.w800,
-                          color: Colors.white,
-                          height: 1.1,
-                          letterSpacing: -0.5,
-                        ),
-                      ),
-                    ),
-                  ),
-
-                  const SizedBox(height: 8),
-
-                  // ── Subheadline (small, centered) ──
-                  SlideTransition(
-                    position: _textSlide,
-                    child: FadeTransition(
-                      opacity: _textFade,
-                      child: Text(
-                        S.of(context).welcomeSubheadline,
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(
-                          fontSize: 14,
-                          color: Colors.white60,
-                          fontWeight: FontWeight.w400,
-                        ),
-                      ),
-                    ),
-                  ),
-
-                  const Spacer(flex: 2),
+                  const Spacer(),
 
                   // ── Get started button (gold neumorphic) ──
                   SlideTransition(
@@ -302,43 +206,6 @@ class _WelcomeScreenState extends State<WelcomeScreen>
       ),
     );
   }
-}
-
-/// Gold line with centered diamond shape — matches foto 3 separator.
-class _DiamondSeparatorPainter extends CustomPainter {
-  static const _gold = Color(0xFFE8C547);
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = _gold.withValues(alpha: 0.6)
-      ..strokeWidth = 1.0
-      ..style = PaintingStyle.stroke;
-
-    final cy = size.height / 2;
-    final cx = size.width / 2;
-    const diamondSize = 5.0;
-
-    // Left line
-    canvas.drawLine(Offset(0, cy), Offset(cx - diamondSize - 6, cy), paint);
-    // Right line
-    canvas.drawLine(Offset(cx + diamondSize + 6, cy), Offset(size.width, cy), paint);
-
-    // Diamond (filled)
-    final diamondPaint = Paint()
-      ..color = _gold
-      ..style = PaintingStyle.fill;
-    final path = Path()
-      ..moveTo(cx, cy - diamondSize)
-      ..lineTo(cx + diamondSize, cy)
-      ..lineTo(cx, cy + diamondSize)
-      ..lineTo(cx - diamondSize, cy)
-      ..close();
-    canvas.drawPath(path, diamondPaint);
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
 /// Pill button with a neumorphic press effect.

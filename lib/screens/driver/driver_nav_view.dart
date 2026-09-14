@@ -172,10 +172,12 @@ class DriverNavView extends StatefulWidget {
   final VoidCallback? onMapReady;
 
   @override
-  State<DriverNavView> createState() => _DriverNavViewState();
+  State<DriverNavView> createState() => DriverNavViewState();
 }
 
-class _DriverNavViewState extends State<DriverNavView>
+/// Public so the accept screen can hold a GlobalKey to it: the reverse morph
+/// needs a one-shot snapshot of the nav map before the view unmounts.
+class DriverNavViewState extends State<DriverNavView>
     with TickerProviderStateMixin, WidgetsBindingObserver {
   static const _gold = Color(0xFFE8C547);
   static const _navyBar = Color(0xFF0A1128);
@@ -325,6 +327,10 @@ class _DriverNavViewState extends State<DriverNavView>
   bool get _phaseArrived =>
       _navPhase == _NavPhase.arrivedPickup ||
       _navPhase == _NavPhase.arrivedDropoff;
+
+  /// The live controller, exposed to the parent for the one-shot exit-morph
+  /// snapshot (see _collapseNavMode on the accept screen).
+  mapbox.MapboxMap? get mapForSnapshot => _map;
 
   @override
   void initState() {
@@ -1812,6 +1818,35 @@ class _DriverNavViewState extends State<DriverNavView>
             ),
           ),
           // Way back to the trip sheet — navigation never traps the driver.
+          // Arrival swaps the quiet X for the explicit End Route: closing
+          // navigation is always the driver's decision, and arrival never
+          // fires a trip-state transition by itself.
+          if (_phaseArrived)
+            GestureDetector(
+              onTap: () {
+                HapticService.lightImpact();
+                widget.onExit();
+              },
+              child: Container(
+                height: 40,
+                padding: const EdgeInsets.symmetric(horizontal: 14),
+                decoration: BoxDecoration(
+                  color: _gold,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                alignment: Alignment.center,
+                child: Text(
+                  s.navEndRoute,
+                  maxLines: 1,
+                  style: const TextStyle(
+                    color: Colors.black,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+            )
+          else
           Tooltip(
             message: s.navExit,
             child: GestureDetector(

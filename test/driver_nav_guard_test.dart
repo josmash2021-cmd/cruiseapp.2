@@ -94,27 +94,44 @@ void main() {
 
     test('_enterNavMode releases the preview surface before mounting', () {
       final body =
-          bodyOf(accept, 'Future<void> _enterNavMode() async {', maxLen: 900);
+          bodyOf(accept, 'Future<void> _enterNavMode() async {', maxLen: 2200);
+      final snapshot = body.indexOf('_captureMapSnapshot(_map)');
       final unmount = body.indexOf('_previewMapMounted = false');
       final release = body.indexOf(
           'MapSurfaceCoordinator.instance.release(_mapSurfaceOwner)');
       final mount = body.indexOf('_navMode = true');
+      expect(snapshot, isNonNegative,
+          reason: 'the morph needs the preview\'s last frame');
       expect(unmount, isNonNegative,
           reason: 'the preview MapWidget must leave the tree first');
       expect(release, isNonNegative,
           reason: 'the coordinator claim must be released before the nav '
               'view acquires it');
       expect(mount, isNonNegative);
+      expect(snapshot, lessThan(unmount),
+          reason: 'snapshot BEFORE unmount — a dead surface captures nothing');
       expect(unmount, lessThan(release));
       expect(release, lessThan(mount),
           reason: 'release-before-mount — two live MapWidgets crash iOS');
     });
 
-    test('_exitNavMode drops nav mode and re-acquires the preview surface', () {
-      final body = bodyOf(accept, 'void _exitNavMode() {', maxLen: 300);
-      expect(body, contains('_navMode = false'));
-      expect(body, contains('_acquireMapSurface()'),
+    test('exit dissolves the nav map back into the mini-map card', () {
+      final wrapper = bodyOf(accept, 'void _exitNavMode() {', maxLen: 300);
+      expect(wrapper, contains('_collapseNavMode();'),
+          reason: 'exit routes through the reverse morph');
+      final body =
+          bodyOf(accept, 'Future<void> _collapseNavMode() async {', maxLen: 2000);
+      final snapshot = body.indexOf('_captureMapSnapshot(');
+      final drop = body.indexOf('_navMode = false');
+      final reacquire = body.indexOf('_acquireMapSurface()');
+      expect(snapshot, isNonNegative,
+          reason: 'the nav map\'s last frame covers the surface swap');
+      expect(drop, isNonNegative);
+      expect(reacquire, isNonNegative,
           reason: 'the preview card claims the surface back on exit');
+      expect(snapshot, lessThan(drop),
+          reason: 'snapshot BEFORE the nav view unmounts');
+      expect(drop, lessThan(reacquire));
     });
 
     test('back inside navigation leaves navigation, not the trip', () {
@@ -125,13 +142,18 @@ void main() {
       expect(block, contains('_exitNavMode();'));
     });
 
-    test('the pickup-confirmed leg keeps external maps only off the nav path',
+    test('Start Trip enters dropoff navigation in-app, only on backend success',
         () {
       final body =
-          bodyOf(accept, 'void _startRideConfirmed() {', maxLen: 700);
-      expect(body, contains('if (!_navMode) _openNativeMaps(_dropoffLL)'),
-          reason: 'in nav mode the nav view re-aims itself at the dropoff; '
-              'external maps is only the no-nav fallback');
+          bodyOf(accept, 'void _startRideConfirmed() {', maxLen: 1300);
+      expect(body, contains('await _updateTripInTrip()'),
+          reason: 'dropoff navigation waits for the confirmed in_trip '
+              'transition — navigation state never fakes trip state');
+      expect(body, contains('_enterNavMode()'),
+          reason: 'Start Trip success runs the same in-app nav entry as '
+              'Continue / Directions');
+      expect(body, isNot(contains('_openNativeMaps')),
+          reason: 'the dropoff leg no longer leaves the app');
     });
 
     test('iOS one-tap Apple Maps / Android chooser stay on the address cards',
@@ -160,6 +182,34 @@ void main() {
       expect(mount, contains('onOpenChat: _openChat'));
       expect(mount, contains('onCall: _call'));
       expect(mount, contains('onSupport: _openSupportChat'));
+      expect(mount, contains('onMapReady: _onNavMapReady'),
+          reason: 'the enter morph cross-fades its snapshot out on this '
+              'signal');
+    });
+
+    test('the morph overlay sits above nav, below the chained card', () {
+      final navMount = accept.indexOf('child: DriverNavView(');
+      final morph = accept.indexOf('child: NavMorphOverlay(');
+      final chained = accept.indexOf('child: _buildChainedOfferCard(');
+      expect(navMount, isNonNegative);
+      expect(morph, isNonNegative,
+          reason: 'NavMorphOverlay covers the map-surface swap');
+      expect(chained, isNonNegative);
+      expect(navMount, lessThan(morph));
+      expect(morph, lessThan(chained),
+          reason: 'the chained offer keeps working over the morph');
+    });
+
+    test('the morph overlay animates a snapshot, never a second surface', () {
+      final morph =
+          File('lib/widgets/nav_morph_overlay.dart').readAsStringSync();
+      expect(morph, contains('Image.memory('));
+      expect(morph, contains('NavMorphDirection'));
+      expect(morph, contains('revealRequested'),
+          reason: 'enter holds until the live nav map is ready');
+      expect(morph, contains('onFinished'));
+      expect(morph, isNot(contains('MapWidget')),
+          reason: 'two live MapWidgets are the iOS crash');
     });
   });
 
@@ -256,6 +306,16 @@ void main() {
               'stage controls');
     });
 
+    test('arrival shows End Route and never auto-closes navigation', () {
+      expect(nav, contains('s.navEndRoute'),
+          reason: 'the explicit close action at arrival');
+      final bar = bodyOf(nav, 'Widget _buildManeuverBar(S s) {', maxLen: 3400);
+      expect(bar, contains('_phaseArrived'));
+      expect(bar, contains('widget.onExit();'),
+          reason: 'End Route closes navigation only — it never fires a '
+              'trip-state transition');
+    });
+
     test('prefetched geometry draws at mount behind a 150 m destination gate',
         () {
       expect(nav, contains('prefetchedRoutePoints'));
@@ -320,6 +380,7 @@ void main() {
         'navOpenSettings',
         'navArrivedPickup',
         'navArrivedDropoff',
+        'navEndRoute',
       ]) {
         expect(l10n, contains('String get $key'),
             reason: '$key missing from app_localizations.dart');

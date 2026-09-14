@@ -26,6 +26,7 @@ import '../../config/map_theme.dart';
 import '../../config/page_transitions.dart';
 import '../../widgets/verified_avatar.dart';
 import '../../widgets/static_route_preview.dart';
+import '../../widgets/nav_morph_overlay.dart';
 import '../../widgets/map/circular_pin_renderer.dart';
 import '../../l10n/app_localizations.dart';
 import '../../models/lat_lng.dart';
@@ -362,6 +363,24 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   // ordered so they never coexist.
   bool _navMode = false;
   bool _navEntering = false;
+  bool _navExiting = false;
+
+  // ── Mini-map ⇄ navigation morph ────────────────────────────────────────
+  //
+  // A native Mapbox surface can't be resized or cross-faded mid-flight, so
+  // the morph animates a one-shot snapshot of the departing map instead
+  // (NavMorphOverlay). Enter blooms the preview's last frame out of the
+  // card rect; exit dissolves the nav map's last frame back into it. Any
+  // snapshot failure falls back to the plain fade — never a broken screen.
+  final GlobalKey _miniMapBoxKey = GlobalKey();
+  final GlobalKey<DriverNavViewState> _navViewKey =
+      GlobalKey<DriverNavViewState>();
+  Uint8List? _morphBytes;
+  Rect? _morphRect;
+  bool _morphEnter = false;
+  bool _morphReveal = false;
+  bool _morphExit = false;
+  Timer? _navReadyTimeout;
 
   /// Web only: GL JS controller for the preview (no surface limit there).
   WebMapController? _webMapCtrl;
@@ -803,8 +822,39 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     if (_navMode || _navEntering) return;
     _navEntering = true;
     HapticService.mediumImpact();
+    // Morph continuity: capture the preview's exact last frame BEFORE the
+    // surface handoff unmounts it. The overlay blooms this image out of the
+    // card rect while the nav view's own map initialises underneath.
+    final morphRect = _miniMapRect();
+    final morphBytes = await _captureMapSnapshot(_map);
+    if (!mounted) {
+      _navEntering = false;
+      return;
+    }
+    if (morphBytes != null && morphRect != null) {
+      // Decode off the morph's critical path — the first frame must paint
+      // with the image already warm.
+      try {
+        await precacheImage(MemoryImage(morphBytes), context);
+      } catch (_) {}
+      if (!mounted) {
+        _navEntering = false;
+        return;
+      }
+    }
     if (_previewMapMounted) {
-      setState(() => _previewMapMounted = false);
+      setState(() {
+        _previewMapMounted = false;
+        if (morphBytes != null && morphRect != null) {
+          _morphBytes = morphBytes;
+          _morphRect = morphRect;
+          _morphEnter = true;
+          _morphReveal = false;
+          // A re-entry during the exit dissolve supersedes it — one morph
+          // overlay at a time.
+          _morphExit = false;
+        }
+      });
       await surfaceRemoved();
       MapSurfaceCoordinator.instance.release(_mapSurfaceOwner);
     }
@@ -814,14 +864,122 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     }
     setState(() => _navMode = true);
     _navEntering = false;
+    if (_morphEnter) {
+      // Belt and suspenders: if the nav map never signals ready (revoked
+      // surface, init failure), reveal anyway — the driver is never left
+      // stuck under a frozen snapshot.
+      _navReadyTimeout?.cancel();
+      _navReadyTimeout = Timer(const Duration(seconds: 4), () {
+        if (!mounted || !_morphEnter) return;
+        setState(() => _morphReveal = true);
+      });
+    }
   }
 
   /// Back out of navigation: the nav view's dispose releases its surface
   /// claim, and the preview card claims it back through the coordinator.
   void _exitNavMode() {
-    if (!_navMode) return;
+    if (!_navMode || _navExiting) return;
+    _navExiting = true;
+    _collapseNavMode();
+  }
+
+  /// Reverse morph: capture the nav map's last frame, cover the view with
+  /// it (identical pixels — the swap is invisible), then unmount the nav
+  /// view and dissolve that frame back into the mini-map card while the
+  /// preview re-claims the surface underneath.
+  Future<void> _collapseNavMode() async {
+    final morphBytes =
+        await _captureMapSnapshot(_navViewKey.currentState?.mapForSnapshot);
+    if (!mounted) {
+      _navExiting = false;
+      return;
+    }
+    final morphRect = _miniMapRect();
+    // An in-flight enter morph is superseded — one overlay at a time.
+    _navReadyTimeout?.cancel();
+    if (morphBytes != null && morphRect != null) {
+      try {
+        await precacheImage(MemoryImage(morphBytes), context);
+      } catch (_) {}
+      if (!mounted) {
+        _navExiting = false;
+        return;
+      }
+      setState(() {
+        _morphBytes = morphBytes;
+        _morphRect = morphRect;
+        _morphEnter = false;
+        _morphReveal = false;
+        _morphExit = true;
+      });
+      // The overlay's first frame is pixel-identical to the view it covers —
+      // let it paint before the live nav map leaves the tree.
+      await surfaceRemoved();
+      if (!mounted) {
+        _navExiting = false;
+        return;
+      }
+    } else if (_morphEnter || _morphReveal) {
+      setState(() {
+        _morphEnter = false;
+        _morphReveal = false;
+        _morphBytes = null;
+        _morphRect = null;
+      });
+    }
     setState(() => _navMode = false);
     _acquireMapSurface();
+    _navExiting = false;
+  }
+
+  /// One-shot screenshot of a live Mapbox surface for the morph overlay.
+  /// Null everywhere it cannot work (web, dead controller, platform
+  /// refusal, timeout) — the caller falls back to the plain fade.
+  Future<Uint8List?> _captureMapSnapshot(mapbox.MapboxMap? m) async {
+    if (m == null || kIsWeb) return null;
+    try {
+      return await m.snapshot().timeout(const Duration(milliseconds: 500));
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Global rect of the mini-map card — where the morph blooms from and
+  /// where it lands on the way back.
+  Rect? _miniMapRect() {
+    final ro = _miniMapBoxKey.currentContext?.findRenderObject();
+    if (ro is RenderBox && ro.hasSize) {
+      return ro.localToGlobal(Offset.zero) & ro.size;
+    }
+    return null;
+  }
+
+  /// The nav map has its first controller and route drawn — cross-fade the
+  /// expansion snapshot out over it.
+  void _onNavMapReady() {
+    if (!mounted || !_morphEnter) return;
+    _navReadyTimeout?.cancel();
+    setState(() => _morphReveal = true);
+  }
+
+  void _onEnterMorphFinished() {
+    if (!mounted) return;
+    setState(() {
+      _morphEnter = false;
+      _morphReveal = false;
+      _morphBytes = null;
+      _morphRect = null;
+    });
+  }
+
+  void _onExitMorphFinished() {
+    if (!mounted) return;
+    setState(() {
+      _morphExit = false;
+      _morphBytes = null;
+      _morphRect = null;
+    });
   }
 
   /// Fetch the driving route for the preview card.
@@ -925,6 +1083,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     _riderConfirmSub?.cancel();
     _statusPollTimer?.cancel();
     _finishNavTimer?.cancel();
+    _navReadyTimeout?.cancel();
     _camCycleTimer?.cancel();
     _camCycleCtrl?.dispose();
     _fadeCtrl.dispose();
@@ -1555,7 +1714,11 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   }
 
   // ── Update trip status to in_trip when Start Ride is pressed ────────
-  Future<void> _updateTripInTrip() async {
+  //
+  // Returns whether the backend confirmed the transition — Start Ride only
+  // opens dropoff navigation on success, so navigation state can never run
+  // ahead of the trip's real state.
+  Future<bool> _updateTripInTrip() async {
     // Tell the rider FIRST, for the same reason as _confirmArrival — this
     // path had the identical defect and it was never fixed here.
     //
@@ -1589,6 +1752,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
       debugPrint('[Driver] in_trip API FAILED after 3 attempts');
     }
     // Firestore already went out at the top of this method.
+    return apiOk;
   }
 
   // ── Complete trip (API + Firestore + navigate to online) ────────────────
@@ -4674,6 +4838,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
                 // map. The ClipRRect keeps the rounded-18 corners.
                 borderRadius: BorderRadius.circular(18),
                   child: SizedBox(
+                    key: _miniMapBoxKey,
                     // Taller (was 190) — more of the trip in view (user
                     // spec 2026-08-04).
                     height: Responsive.h(240),
@@ -5008,8 +5173,8 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
       // Full-screen; owns the one native map surface while it is up (the
       // preview let go of it in _enterNavMode). The chained-offer card and
       // the finish overlay sit ABOVE it in this Stack, so they keep working
-      // over navigation untouched. The fade is the whole transition — the
-      // live map surface is never resized or moved mid-flight.
+      // over navigation untouched. The morph overlay covers the surface
+      // swap — the live map itself is never resized or moved mid-flight.
       if (_navMode)
         Positioned.fill(
           child: TweenAnimationBuilder<double>(
@@ -5017,6 +5182,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
             duration: const Duration(milliseconds: 250),
             builder: (ctx, t, child) => Opacity(opacity: t, child: child),
             child: DriverNavView(
+              key: _navViewKey,
               tripId: widget.tripId,
               riderName: widget.riderName,
               riderPhotoUrl: _riderPhotoUrl ?? widget.riderPhotoUrl,
@@ -5044,7 +5210,28 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
               onOpenChat: _openChat,
               onCall: _call,
               onSupport: _openSupportChat,
+              onMapReady: _onNavMapReady,
             ),
+          ),
+        ),
+
+      // ── Mini-map ⇄ navigation morph ─────────────────────────────────
+      // One-shot snapshot of the departing map, blooming out of / collapsing
+      // into the preview card. Sits above the nav view (it covers the
+      // surface swap) but below the chained-offer card and the finish
+      // overlay, which keep working over it untouched.
+      if (_morphEnter || _morphExit)
+        Positioned.fill(
+          child: NavMorphOverlay(
+            key: ValueKey(_morphExit ? 'exit' : 'enter'),
+            direction:
+                _morphExit ? NavMorphDirection.exit : NavMorphDirection.enter,
+            imageBytes: _morphBytes!,
+            sourceRect: _morphRect!,
+            backgroundColor: _bg,
+            revealRequested: _morphReveal,
+            onFinished:
+                _morphExit ? _onExitMorphFinished : _onEnterMorphFinished,
           ),
         ),
 
@@ -5512,16 +5699,31 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   //
   /// The pickup-confirmation flow behind the on-sheet Start Ride button.
   void _startRideConfirmed() {
-    Future.delayed(const Duration(milliseconds: 300), () {
+    Future.delayed(const Duration(milliseconds: 300), () async {
       if (!mounted) return;
       setState(() => _rideStarted = true);
       _onRideStartedMiniMap();
       _startDropoffProximityDetection();
-      _updateTripInTrip();
+      // Dropoff navigation opens only once the backend confirms in_trip —
+      // navigation state never fakes trip state.
+      final ok = await _updateTripInTrip();
+      if (!mounted) return;
       // In nav mode the nav view re-aims itself at the dropoff (its
-      // toPickup param flips with _rideStarted). The external maps app is
-      // only the fallback for a trip that never entered navigation.
-      if (!_navMode) _openNativeMaps(_dropoffLL);
+      // toPickup param flips with _rideStarted). From the sheet, Start Trip
+      // runs the same mini-map morph entry as Continue / Directions.
+      if (_navMode) return;
+      if (ok) {
+        _enterNavMode();
+      } else {
+        // No fake success: the sheet stays put and the driver retries with
+        // Continue / Directions once the connection is back.
+        ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+          SnackBar(
+            content: Text(S.of(context).connectionError),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
     });
   }
 

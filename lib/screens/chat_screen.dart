@@ -610,7 +610,7 @@ class _ChatScreenState extends State<ChatScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(S.of(context).driverContacted),
+          content: Text(S.of(context).phoneNotAvailable),
           behavior: SnackBarBehavior.floating,
           duration: const Duration(milliseconds: 1200),
         ),
@@ -622,7 +622,7 @@ class _ChatScreenState extends State<ChatScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
-          ok ? S.of(context).callingYouBack : S.of(context).driverContacted,
+          ok ? S.of(context).callingYouBack : S.of(context).connectionError,
         ),
         behavior: SnackBarBehavior.floating,
         duration: const Duration(milliseconds: 1200),

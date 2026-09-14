@@ -2445,7 +2445,7 @@ class S {
       _es ? 'Dejando a $name' : 'Dropping off $name';
   String get arrivedAtPickup =>
       _es ? 'LLEGUÉ AL PUNTO DE RECOGIDA' : 'ARRIVED AT PICKUP';
-  String get arrived => _es ? 'LLEGADO' : 'ARRIVED';
+  String get arrived => _es ? 'Llegué' : 'Arrived';
   String get waitingForRider =>
       _es ? 'ESPERANDO AL PASAJERO' : 'WAITING FOR RIDER';
   String get startTrip => _es ? 'INICIAR VIAJE' : 'START TRIP';

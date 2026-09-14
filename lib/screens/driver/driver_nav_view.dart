@@ -21,10 +21,46 @@ import '../../services/resilient_position_stream.dart';
 import '../../services/socket_service.dart';
 import '../../utils/driver_location_settings.dart';
 import '../../utils/mapbox_safe.dart';
+import '../../utils/route_splice.dart';
 import '../../utils/smooth_motion.dart';
 import '../../widgets/gold_location_dot.dart';
 import '../../widgets/neu_style.dart';
 import '../../widgets/verified_avatar.dart';
+
+/// Who owns the navigation camera.
+///
+///  * [following]  — the per-frame chase writes the camera (the car stays
+///    pinned at ~60% of the screen height).
+///  * [freeLook]   — the driver dragged / pinched / rotated the map; the
+///    chase never writes, and the Recenter control is up.
+///  * [recentering] — a smooth flyTo is returning the camera to the chase
+///    target; it flips to [following] when the flight completes, or to
+///    [freeLook] if the driver grabs the map mid-flight.
+enum _CamState { following, freeLook, recentering }
+
+/// What the navigation layer is doing, derived — never set directly.
+///
+/// Precedence: internal arrival > GPS health > route-error > in-flight
+/// reroute > still-initialising > approaching (>200 m gate) > plain leg.
+/// The pickup and dropoff legs each carry their own arriving/arrived pair,
+/// so a pickup arrival can never paint while the dropoff leg is active.
+enum _NavPhase {
+  initializing,
+  toPickup,
+  approachingPickup,
+  arrivedPickup,
+  toDropoff,
+  approachingDropoff,
+  arrivedDropoff,
+  rerouting,
+  gpsUnavailable,
+  routeError,
+}
+
+/// Why a route request is on the wire. Initial/retry may show the error
+/// card; a background fill only swaps geometry when it truly differs; a
+/// reroute keeps the old line until the new one replaces it atomically.
+enum _RouteFetchKind { initial, backgroundFill, reroute, retry }
 
 /// Full-screen in-app turn-by-turn navigation, Google Maps-style in navy/gold:
 /// maneuver bar on top, live mph box, a draggable rider sheet at the bottom,
@@ -38,6 +74,25 @@ import '../../widgets/verified_avatar.dart';
 /// are driven by [stage], computed by the parent from its own trip state, and
 /// every action calls back into the parent's existing handlers — this view
 /// never talks to the backend itself.
+///
+/// Production systems layered over the archived view:
+///  * **Prefetched route** — the accept screen hands over the geometry its
+///    mini map already drew ([prefetchedRoutePoints]); when it still serves
+///    this leg's destination the line is on the map the instant the surface
+///    is ready, and the network is only asked for what is missing.
+///  * **Off-route rerouting** — >40 m from the polyline for 4 straight
+///    seconds arms one reroute (15 s cooldown, `_rerouteSeq` staleness
+///    token, one request in flight ever); the old line stays until the new
+///    one replaces it in the same annotation update.
+///  * **Camera state machine** ([_CamState]) and **navigation state
+///    machine** ([_NavPhase]) — the banner, pills and recovery cards are
+///    pure functions of the derived phase.
+///  * **Internal arrival** — approaching under 200 m, arrived after
+///    consecutive close-and-accurate fixes. Arrival only changes this
+///    view's UI; the parent's sliders stay the trip-flow authority.
+///  * **Failure handling** — a dead network keeps the drawn route (offline
+///    pill + 5/15/30 s backoff) or shows a retry card when nothing is
+///    drawn; a dead GPS shows a recovery card instead of a blank page.
 class DriverNavView extends StatefulWidget {
   const DriverNavView({
     super.key,
@@ -63,6 +118,8 @@ class DriverNavView extends StatefulWidget {
     required this.onOpenChat,
     required this.onCall,
     required this.onSupport,
+    this.prefetchedRoutePoints,
+    this.prefetchedSteps = const [],
     this.onMapReady,
   });
 
@@ -100,6 +157,16 @@ class DriverNavView extends StatefulWidget {
   final VoidCallback onCall;
   final VoidCallback onSupport;
 
+  /// Geometry the parent's mini map already drew. When its last point lands
+  /// within ~150 m of this leg's destination it is drawn at mount with no
+  /// fetch; anything missing (steps → maneuvers/ETA) is filled by a
+  /// background request that never wipes the already-drawn line.
+  final List<LatLng>? prefetchedRoutePoints;
+
+  /// Steps for [prefetchedRoutePoints], when the parent has them. With both
+  /// present the view is complete without touching the network.
+  final List<NavStep> prefetchedSteps;
+
   /// Fired when the native map has its first controller — the parent
   /// cross-fades its expansion snapshot out on this signal.
   final VoidCallback? onMapReady;
@@ -128,6 +195,11 @@ class _DriverNavViewState extends State<DriverNavView>
   mapbox.PointAnnotation? _driverAnnot;
   mapbox.PointAnnotation? _destAnnot;
   bool _annotWriteBusy = false;
+  // Last values actually sent to the native annotation — a parked car pays
+  // zero channel writes (same discipline as the accept screen's mini car).
+  double? _lastSentLat;
+  double? _lastSentLng;
+  double? _lastSentBearing;
 
   // ── Driver marker: the same GoldLocationDot + SmoothMotion as the online
   //    map. onTick (throttled) writes the annotation; onFrame chases. ──
@@ -144,14 +216,26 @@ class _DriverNavViewState extends State<DriverNavView>
   Offset? _riderLabelPos;
   int _riderStaleSecs = 0;
 
-  // ── Camera ──
-  bool _follow = true;
+  // ── Camera state machine ──
+  _CamState _camState = _CamState.following;
   bool _overview = false;
+  int _mapPointers = 0;
   mapbox.CameraOptions? _pendingCamWrite;
   bool _camWriteBusy = false;
 
+  // Dynamic chase zoom: 17.5 at city pace, 17.0 past 20 m/s, 18.0 with a
+  // maneuver under 150 m — lerped at ≤0.5 zoom/sec, never a step.
+  double _chaseZoom = 17.5;
+  DateTime? _lastChaseFrameAt;
+  static const _chaseZoomDefault = 17.5;
+  static const _chaseZoomFast = 17.0;
+  static const _chaseZoomManeuver = 18.0;
+  static const _zoomLerpPerSec = 0.5;
+  static const _chasePitch = 55.0;
+
   // ── Route + maneuvers ──
   List<LatLng> _routePts = [];
+  double _routeLenM = 0;
   NavProgress? _navProgress;
   bool _routeFetching = false;
   String _streetLabel = '';
@@ -163,6 +247,54 @@ class _DriverNavViewState extends State<DriverNavView>
   int _lastMphShown = -1;
   int _remainSecs = 0;
   double _remainMeters = 0;
+
+  // ── Navigation state machine ──
+  _NavPhase _navPhase = _NavPhase.initializing;
+
+  // Off-route: >40 m from the line held for 4 s of fixes arms a reroute;
+  // back within 25 m resets the clock. One request in flight, 15 s cooldown,
+  // and a sequence token so a stale response can never replace a newer plan.
+  DateTime? _offRouteSince;
+  int _rerouteSeq = 0;
+  DateTime? _lastRerouteAt;
+  bool _rerouting = false;
+  static const _offRouteM = 40.0;
+  static const _offRouteResetM = 25.0;
+  static const _offRouteHoldSecs = 4;
+  static const _rerouteCooldownSecs = 15;
+  static const _prefetchDestMaxM = 150.0;
+
+  // Internal arrival: approaching under 200 m; arrived after 2 consecutive
+  // fixes under 30 m with accuracy better than 25 m (3 fixes on distance
+  // alone when the fix carries no accuracy). UI state only — the parent's
+  // sliders stay the trip-flow authority.
+  int _arriveHits = 0;
+  bool _navArrived = false;
+  bool _navApproaching = false;
+  static const _arriveRadiusM = 30.0;
+  static const _arriveAccuracyM = 25.0;
+  static const _approachRadiusM = 200.0;
+
+  // GPS health: no valid fix for >6 s (stream error / permission / service
+  // off all present as silence) flips the phase to gpsUnavailable.
+  DateTime? _lastGpsFixAt;
+  bool _firstGpsFix = false;
+  bool _gpsDown = false;
+  Timer? _gpsWatchdog;
+  static const _gpsStaleSecs = 6;
+
+  // Network health: a failed fetch with a line on the map keeps everything
+  // and retries quietly (5/15/30 s, capped); with nothing drawn it is a
+  // routeError card with a retry button.
+  bool _routeError = false;
+  bool _offlineKeepRoute = false;
+  Timer? _offlineRetryTimer;
+  int _offlineRetryAttempt = 0;
+  static const _offlineBackoff = <Duration>[
+    Duration(seconds: 5),
+    Duration(seconds: 15),
+    Duration(seconds: 30),
+  ];
 
   // ── Stage controls ──
   double _slideVal = 0;
@@ -190,11 +322,19 @@ class _DriverNavViewState extends State<DriverNavView>
       widget.stage == 'start_ride' ||
       widget.stage == 'finish';
 
+  bool get _phaseArrived =>
+      _navPhase == _NavPhase.arrivedPickup ||
+      _navPhase == _NavPhase.arrivedDropoff;
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _acquireMapSurface();
+    // Prefetched geometry goes into state BEFORE the first frame, so
+    // _onMapCreated draws it the instant the surface is ready.
+    _seedPrefetchedRoute();
+    _navPhase = _derivePhase();
     // Drives the marker and hands the per-frame callbacks: onTick writes the
     // annotation (throttled by GoldLocationDot), onFrame chases the camera.
     _dot.build(this, _onDotTick, onFrame: _onDotFrame);
@@ -215,10 +355,9 @@ class _DriverNavViewState extends State<DriverNavView>
     if (oldWidget.stage != widget.stage) {
       _syncStageControls(widget.stage);
     }
-    // Leg flip (pickup → dropoff): re-aim the route and drop the rider
-    // figure — after the slide to pick up there is nobody left to show.
     if (oldWidget.toPickup != widget.toPickup) {
-      _navProgress = null;
+      // Leg flip (pickup → dropoff): re-aim the route and drop the rider
+      // figure — after the slide to pick up there is nobody left to show.
       _riderFixAt = null;
       if (_riderLabelPos != null) setState(() => _riderLabelPos = null);
       final annot = _riderAnnot;
@@ -227,7 +366,12 @@ class _DriverNavViewState extends State<DriverNavView>
       if (annot != null && mgr != null) {
         mgr.delete(annot).catchError((Object _) {});
       }
-      _loadRoute();
+      _onDestinationChanged();
+    } else if (!widget.toPickup &&
+        oldWidget.dropoffLatLng != widget.dropoffLatLng) {
+      // The rider moved the destination mid-trip — the leg is the same,
+      // the target is not.
+      _onDestinationChanged();
     }
   }
 
@@ -237,6 +381,8 @@ class _DriverNavViewState extends State<DriverNavView>
     MapSurfaceCoordinator.instance.release(_mapSurfaceOwner);
     _sheetCtrl.dispose();
     unawaited(_gps?.stop());
+    _gpsWatchdog?.cancel();
+    _offlineRetryTimer?.cancel();
     _riderLocSub?.cancel();
     _riderStaleTimer?.cancel();
     _waitTicker?.cancel();
@@ -250,9 +396,46 @@ class _DriverNavViewState extends State<DriverNavView>
     if (state != AppLifecycleState.resumed) return;
     _gps?.onAppResumed();
     _dot.ensureRunning();
+    // Grace: a suspended stream needs a beat to come back before the
+    // watchdog is allowed to call it dead again.
+    _lastGpsFixAt = DateTime.now();
+    if (_gpsDown) {
+      _gpsDown = false;
+      _recomputeNavPhase();
+    }
     // The surface may have been revoked (or Android destroyed the
     // PlatformView) while away — claim it back.
     if (!_mapMounted) _acquireMapSurface();
+  }
+
+  // ─────────────────────────────────────────────
+  //  Navigation state machine
+  // ─────────────────────────────────────────────
+
+  /// The one place the phase comes from. Everything that can change an
+  /// input calls this; the phase itself is never assigned ad hoc.
+  _NavPhase _derivePhase() {
+    if (_navArrived) {
+      return widget.toPickup
+          ? _NavPhase.arrivedPickup
+          : _NavPhase.arrivedDropoff;
+    }
+    if (_gpsDown) return _NavPhase.gpsUnavailable;
+    if (_routeError) return _NavPhase.routeError;
+    if (_rerouting) return _NavPhase.rerouting;
+    if (_routePts.length < 2) return _NavPhase.initializing;
+    if (_navApproaching) {
+      return widget.toPickup
+          ? _NavPhase.approachingPickup
+          : _NavPhase.approachingDropoff;
+    }
+    return widget.toPickup ? _NavPhase.toPickup : _NavPhase.toDropoff;
+  }
+
+  void _recomputeNavPhase() {
+    final next = _derivePhase();
+    if (next == _navPhase) return;
+    setState(() => _navPhase = next);
   }
 
   // ─────────────────────────────────────────────
@@ -273,6 +456,9 @@ class _DriverNavViewState extends State<DriverNavView>
         _driverAnnot = null;
         _destAnnot = null;
         _riderAnnot = null;
+        _lastSentLat = null;
+        _lastSentLng = null;
+        _lastSentBearing = null;
         setState(() => _mapMounted = false);
         await surfaceRemoved();
       },
@@ -310,11 +496,14 @@ class _DriverNavViewState extends State<DriverNavView>
     // redraw the route and destination pin from the State that survived.
     await _drawRoute();
     await _drawDestPin();
+    // The chase self-heals on the next frame when driving; before the first
+    // fix (or in overview) the fresh surface needs its frame set explicitly.
+    if (!_firstGpsFix || _overview) await _fitRouteOnce();
     widget.onMapReady?.call();
   }
 
   // ─────────────────────────────────────────────
-  //  GPS → marker + maneuvers
+  //  GPS → marker + maneuvers + arrival + off-route
   // ─────────────────────────────────────────────
 
   void _startGps() {
@@ -327,7 +516,9 @@ class _DriverNavViewState extends State<DriverNavView>
       label: 'DriverNavGps',
       settings: driverLocationSettings(
         background: false,
-        distanceFilter: 1,
+        // 0 m: the 6 s GPS-down watchdog is only meaningful when a healthy
+        // stream keeps emitting while the car stands still.
+        distanceFilter: 0,
         notificationTitle: s.driverLocationNotifTitle,
         notificationText: s.driverLocationNotifOnTrip,
       ),
@@ -335,15 +526,45 @@ class _DriverNavViewState extends State<DriverNavView>
     )..start();
     // Seed the marker where the accept screen last had the driver, so the
     // arrow never slides in from (0,0) while the first fix is in flight.
-    _dot.setTarget(
-      widget.initialDriverPos.latitude,
-      widget.initialDriverPos.longitude,
-      timestampMs: DateTime.now().millisecondsSinceEpoch.toDouble(),
-    );
+    // A restart keeps the position the dot already has.
+    if (_dot.lat == null) {
+      _dot.setTarget(
+        widget.initialDriverPos.latitude,
+        widget.initialDriverPos.longitude,
+        timestampMs: DateTime.now().millisecondsSinceEpoch.toDouble(),
+      );
+    }
+    _lastGpsFixAt = DateTime.now(); // warm-up grace for the first fix
+    _armGpsWatchdog();
+  }
+
+  /// The GPS-down detector. ResilientPositionStream resubscribes on its own,
+  /// so every failure mode (stream error, permission revoked, location
+  /// service off, a manager the OS tore down) presents here as the same
+  /// thing: silence. 6 s of it flips the phase — and the first fix flips
+  /// it back.
+  void _armGpsWatchdog() {
+    _gpsWatchdog?.cancel();
+    _gpsWatchdog = Timer.periodic(const Duration(seconds: 2), (_) {
+      if (!mounted) return;
+      final last = _lastGpsFixAt;
+      final down = last == null ||
+          DateTime.now().difference(last).inSeconds > _gpsStaleSecs;
+      if (down != _gpsDown) {
+        _gpsDown = down;
+        _recomputeNavPhase();
+      }
+    });
   }
 
   void _onGpsFix(Position pos) {
     if (!mounted) return;
+    _lastGpsFixAt = DateTime.now();
+    _firstGpsFix = true;
+    if (_gpsDown) {
+      _gpsDown = false;
+      _recomputeNavPhase();
+    }
     _dot.setTarget(
       pos.latitude,
       pos.longitude,
@@ -357,7 +578,61 @@ class _DriverNavViewState extends State<DriverNavView>
       _lastMphShown = mph;
       setState(() {}); // the mph box is the only reader
     }
-    _updateManeuvers(LatLng(pos.latitude, pos.longitude));
+    final fixLL = LatLng(pos.latitude, pos.longitude);
+    _updateManeuvers(fixLL);
+    _checkArrival(pos);
+    _checkOffRoute(fixLL);
+  }
+
+  /// Approaching under 200 m; arrived after consecutive close fixes — with
+  /// real accuracy (2 fixes, accuracy < 25 m) or without it (3 fixes on
+  /// distance alone). Fires NO backend transition: it only moves the nav UI
+  /// to its arrived banner; the parent's sliders stay the authority.
+  void _checkArrival(Position pos) {
+    if (_navArrived) return;
+    final d = RouteSplice.haversineM(
+        LatLng(pos.latitude, pos.longitude), _dest);
+    final approaching = d < _approachRadiusM;
+    if (approaching != _navApproaching) {
+      _navApproaching = approaching;
+      _recomputeNavPhase();
+    }
+    final accKnown = pos.accuracy.isFinite && pos.accuracy > 0;
+    final qualifies =
+        d < _arriveRadiusM && (!accKnown || pos.accuracy < _arriveAccuracyM);
+    if (!qualifies) {
+      _arriveHits = 0;
+      return;
+    }
+    _arriveHits++;
+    final needed = accKnown ? 2 : 3;
+    if (_arriveHits >= needed) {
+      _navArrived = true;
+      HapticService.mediumImpact();
+      _recomputeNavPhase();
+    }
+  }
+
+  /// GPS noise never reroutes: the driver must sit more than 40 m off the
+  /// polyline for 4 straight seconds of fixes (sampled per fix, reset the
+  /// moment a fix lands back within 25 m) before a reroute is even asked
+  /// for. Inside the approach radius there is nothing to reroute to — the
+  /// line already ends at the pin.
+  void _checkOffRoute(LatLng pos) {
+    if (_routePts.length < 2 || _navArrived || _routeFetching) return;
+    if (RouteSplice.haversineM(pos, _dest) < _approachRadiusM) return;
+    final d = RouteSplice.distanceToPolylineM(_routePts, pos);
+    if (d <= _offRouteResetM) {
+      _offRouteSince = null;
+      return;
+    }
+    if (d <= _offRouteM) return; // hysteresis band: neither arm nor reset
+    final now = DateTime.now();
+    _offRouteSince ??= now;
+    if (now.difference(_offRouteSince!).inSeconds >= _offRouteHoldSecs) {
+      _offRouteSince = null;
+      unawaited(_fetchRoute(kind: _RouteFetchKind.reroute, origin: pos));
+    }
   }
 
   /// Advance the step tracker and repaint the bar — only when what the bar
@@ -424,34 +699,257 @@ class _DriverNavViewState extends State<DriverNavView>
   //  Route
   // ─────────────────────────────────────────────
 
+  LatLng _driverLatLng() => LatLng(
+        _dot.lat ?? widget.initialDriverPos.latitude,
+        _dot.lng ?? widget.initialDriverPos.longitude,
+      );
+
+  static double _polylineLenM(List<LatLng> pts) {
+    var m = 0.0;
+    for (var i = 0; i + 1 < pts.length; i++) {
+      m += RouteSplice.haversineM(pts[i], pts[i + 1]);
+    }
+    return m;
+  }
+
+  /// The accept screen hands over the route its mini map already drew. When
+  /// that geometry still serves THIS leg's destination it goes on the map
+  /// with no fetch — and the network is only asked for what is missing.
+  void _seedPrefetchedRoute() {
+    final pre = widget.prefetchedRoutePoints ?? const <LatLng>[];
+    if (pre.length < 2) return;
+    if (RouteSplice.haversineM(pre.last, _dest) > _prefetchDestMaxM) return;
+    _routePts = List.of(pre);
+    _routeLenM = _polylineLenM(_routePts);
+    if (widget.prefetchedSteps.isNotEmpty) {
+      _navProgress = NavProgress(widget.prefetchedSteps);
+    }
+  }
+
   Future<void> _loadRoute() async {
+    if (_routePts.length >= 2) {
+      if (_navProgress != null) {
+        // Geometry + steps: complete without touching the network.
+        await _drawRoute();
+        await _drawDestPin();
+        _updateManeuvers(_driverLatLng());
+        _recomputeNavPhase();
+        return;
+      }
+      // Geometry only: fill NavProgress/ETA in the background. The drawn
+      // line is replaced inside the fetch only when the fresh geometry
+      // really differs.
+      unawaited(_fetchRoute(kind: _RouteFetchKind.backgroundFill));
+      return;
+    }
+    await _fetchRoute(kind: _RouteFetchKind.initial);
+  }
+
+  /// The single route-request entry. One in flight ever ([_routeFetching]);
+  /// reroutes additionally respect the 15 s cooldown and every response is
+  /// checked against the [_rerouteSeq] it was launched with, so a stale
+  /// answer can never overwrite a newer plan (a leg flip invalidates the
+  /// request that was on the wire for the old destination).
+  Future<void> _fetchRoute({
+    required _RouteFetchKind kind,
+    LatLng? origin,
+  }) async {
     if (_routeFetching) return;
+    if (kind == _RouteFetchKind.reroute) {
+      final now = DateTime.now();
+      final last = _lastRerouteAt;
+      if (last != null &&
+          now.difference(last).inSeconds < _rerouteCooldownSecs) {
+        return;
+      }
+      _lastRerouteAt = now;
+    }
+    final seq = ++_rerouteSeq;
     _routeFetching = true;
+    if (kind == _RouteFetchKind.reroute) {
+      _rerouting = true;
+      _recomputeNavPhase();
+    }
     try {
-      final originLat = _dot.lat ?? widget.initialDriverPos.latitude;
-      final originLng = _dot.lng ?? widget.initialDriverPos.longitude;
+      final o = origin ?? _driverLatLng();
       final result = await DirectionsService(ApiKeys.webServices).getRoute(
-        origin: LatLng(originLat, originLng),
+        origin: o,
         destination: _dest,
       );
-      if (!mounted || result == null || result.points.length < 2) return;
-      _routePts = result.points;
-      _navProgress = NavProgress(result.steps);
-      await _drawRoute();
-      await _drawDestPin();
-      await _fitRouteOnce();
-      // Paint the first maneuver right away instead of waiting for a fix.
-      if (mounted) {
-        _updateManeuvers(LatLng(originLat, originLng));
+      if (!mounted || seq != _rerouteSeq) return;
+      if (result == null || result.points.length < 2) {
+        _onRouteFetchFailed();
+        return;
       }
+      await _onRouteFetchSucceeded(kind, result, o);
     } catch (e) {
       debugPrint('[Nav] route fetch failed: $e');
+      if (!mounted || seq != _rerouteSeq) return;
+      _onRouteFetchFailed();
     } finally {
-      _routeFetching = false;
+      // A destination change bumped the seq and owns the flags now — a
+      // stale fetch must not clear the guard of its successor.
+      if (seq == _rerouteSeq) {
+        _routeFetching = false;
+        if (mounted && _rerouting) {
+          _rerouting = false;
+          _recomputeNavPhase();
+        }
+      }
+    }
+  }
+
+  Future<void> _onRouteFetchSucceeded(
+      _RouteFetchKind kind, RouteResult result, LatLng origin) async {
+    _offlineRetryTimer?.cancel();
+    _offlineRetryAttempt = 0;
+    _routeError = false;
+    switch (kind) {
+      case _RouteFetchKind.backgroundFill:
+        // The prefetched line stays unless the fresh geometry differs by
+        // more than 5% — the driver never watches the route redraw itself
+        // for no reason. Steps always land: they are what the fetch was for.
+        _navProgress = NavProgress(result.steps);
+        final newLen = _polylineLenM(result.points);
+        if (_routeLenM <= 0 ||
+            (newLen - _routeLenM).abs() > _routeLenM * 0.05) {
+          _routePts = result.points;
+          _routeLenM = newLen;
+          await _drawRoute();
+        }
+        break;
+      case _RouteFetchKind.reroute:
+        // Atomic: state first, then ONE annotation update — the old line is
+        // replaced, never doubled, and it stays up for the whole fetch.
+        _routePts = result.points;
+        _routeLenM = _polylineLenM(result.points);
+        _navProgress = NavProgress(result.steps);
+        await _drawRoute();
+        await _drawDestPin();
+        break;
+      case _RouteFetchKind.initial:
+      case _RouteFetchKind.retry:
+        _routePts = result.points;
+        _routeLenM = _polylineLenM(result.points);
+        _navProgress = NavProgress(result.steps);
+        await _drawRoute();
+        await _drawDestPin();
+        break;
+    }
+    if (!mounted) return;
+    _offlineKeepRoute = false;
+    _updateManeuvers(origin);
+    _recomputeNavPhase();
+    // The chase owns the camera the moment fixes are coming in; before that
+    // (and in overview) the route gets its one bounds fit.
+    if (_overview || !_firstGpsFix) await _fitRouteOnce();
+  }
+
+  /// A dead network is two different problems: with a line on the map the
+  /// driver keeps navigating on it (offline pill, quiet 5/15/30 s retries);
+  /// with nothing drawn there is no navigation without it — routeError.
+  void _onRouteFetchFailed() {
+    if (_routePts.length >= 2) {
+      _offlineKeepRoute = true;
+      _recomputeNavPhase();
+      _armOfflineRetry();
+    } else {
+      _routeError = true;
+      _recomputeNavPhase();
+    }
+  }
+
+  void _armOfflineRetry() {
+    _offlineRetryTimer?.cancel();
+    final idx =
+        _offlineRetryAttempt.clamp(0, _offlineBackoff.length - 1);
+    _offlineRetryAttempt++;
+    _offlineRetryTimer = Timer(_offlineBackoff[idx], () {
+      if (!mounted) return;
+      unawaited(_fetchRoute(kind: _RouteFetchKind.retry));
+    });
+  }
+
+  void _retryRouteFetch() {
+    HapticService.lightImpact();
+    _routeError = false;
+    _recomputeNavPhase(); // back to initializing while the request flies
+    unawaited(_fetchRoute(kind: _RouteFetchKind.retry));
+  }
+
+  void _retryGps() {
+    HapticService.lightImpact();
+    unawaited(_gps?.stop());
+    _gps = null;
+    _gpsDown = false;
+    _recomputeNavPhase();
+    _startGps(); // fresh stream, fresh 6 s grace window
+  }
+
+  Future<void> _openLocationSettings() async {
+    HapticService.lightImpact();
+    try {
+      await Geolocator.openLocationSettings();
+    } catch (e) {
+      debugPrint('[Nav] openLocationSettings failed: $e');
+    }
+  }
+
+  /// The destination moved (leg flip or a mid-trip change): every product
+  /// of the old plan is invalidated, the in-flight request is orphaned via
+  /// the seq token, and the line comes off the map until the new one lands.
+  /// A prefetch that still ends at the NEW destination is reused — the leg
+  /// flip is exactly that case (the parent's pickup→dropoff geometry).
+  void _onDestinationChanged() {
+    _rerouteSeq++;
+    _routeFetching = false;
+    _rerouting = false;
+    _lastRerouteAt = null;
+    _offRouteSince = null;
+    _navProgress = null;
+    _navArrived = false;
+    _navApproaching = false;
+    _arriveHits = 0;
+    _offlineRetryTimer?.cancel();
+    _offlineRetryAttempt = 0;
+    _offlineKeepRoute = false;
+    _routeError = false;
+    _routePts = [];
+    _routeLenM = 0;
+    unawaited(_clearRouteAnnotation());
+    unawaited(_drawDestPin());
+    _recomputeNavPhase();
+    _seedPrefetchedRoute();
+    unawaited(_loadRoute());
+  }
+
+  Future<void> _clearRouteAnnotation() async {
+    final annot = _routeAnnot;
+    _routeAnnot = null;
+    final mgr = _polyMgr;
+    if (annot != null && mgr != null) {
+      try {
+        await mgr.delete(annot);
+      } catch (_) {}
     }
   }
 
   Future<void> _drawRoute() async {
+    if (kIsWeb) {
+      final web = _webMap;
+      if (web != null && _routePts.length >= 2) {
+        web.setPolyline(
+          'navRoute',
+          [
+            for (final p in _routePts)
+              (lng: p.longitude, lat: p.latitude)
+          ],
+          color: '#E8C547',
+          width: 5,
+        );
+      }
+      return;
+    }
     final mgr = _polyMgr;
     if (mgr == null) return;
     final geom = safeLineString(_routePts);
@@ -498,8 +996,22 @@ class _DriverNavViewState extends State<DriverNavView>
 
   /// One bounds fit when the route arrives, then the chase owns the camera.
   Future<void> _fitRouteOnce() async {
+    if (_routePts.length < 2) return;
+    if (kIsWeb) {
+      _webMap?.fitBounds(
+        [
+          for (final p in _routePts)
+            (lng: p.longitude, lat: p.latitude)
+        ],
+        paddingTop: 120,
+        paddingLeft: 48,
+        paddingBottom: 220,
+        paddingRight: 48,
+      );
+      return;
+    }
     final map = _map;
-    if (map == null || _routePts.isEmpty) return;
+    if (map == null) return;
     final media = MediaQuery.of(context);
     final coords = _routePts
         .where((p) => isValidLatLng(p.latitude, p.longitude))
@@ -537,23 +1049,55 @@ class _DriverNavViewState extends State<DriverNavView>
     _updateDriverAnnotation();
   }
 
+  /// Where the chase zoom wants to be: tighter (18.0) with a maneuver under
+  /// 150 m ahead, looser (17.0) past 20 m/s, 17.5 the rest of the time.
+  double _zoomTarget() {
+    final nav = _navProgress;
+    final lat = _dot.lat;
+    final lng = _dot.lng;
+    if (nav != null && nav.hasSteps && lat != null && lng != null) {
+      final dManeuver = nav.distanceToCurrentMeters(LatLng(lat, lng));
+      if (dManeuver > 0 && dManeuver < 150) return _chaseZoomManeuver;
+    }
+    if (_speedMps > 20) return _chaseZoomFast;
+    return _chaseZoomDefault;
+  }
+
   /// GoldLocationDot onFrame — unthrottled, repaint-rate. While following,
   /// the marker never moves on screen — the map slides under it — so the
-  /// camera is the only thing to write per frame.
+  /// camera is the only thing to write per frame. In freeLook / recentering
+  /// / overview the chase writes nothing at all.
   void _onDotFrame() {
-    if (!_follow || _overview || !_mapMounted) return;
+    if (_camState != _CamState.following || _overview || !_mapMounted) {
+      return;
+    }
     final lat = _dot.lat;
     final lng = _dot.lng;
     if (lat == null || lng == null) return;
+    // Zoom lerps toward its target at ≤0.5/sec — a speed or maneuver change
+    // is felt as a glide, never as a cut.
+    final now = DateTime.now();
+    var dt = _lastChaseFrameAt == null
+        ? 0.0
+        : now.difference(_lastChaseFrameAt!).inMilliseconds / 1000.0;
+    _lastChaseFrameAt = now;
+    if (dt > 0.1) dt = 0.1; // long frame (resume): no catch-up jump
+    final target = _zoomTarget();
+    final maxStep = _zoomLerpPerSec * dt;
+    if ((_chaseZoom - target).abs() <= maxStep) {
+      _chaseZoom = target;
+    } else {
+      _chaseZoom += _chaseZoom < target ? maxStep : -maxStep;
+    }
     // Top padding pushes the focal point below centre (the car sits at
     // ~60% of the screen height, Google-Maps style) and keeps the arrow
     // clear of the maneuver bar.
     final topPad = (MediaQuery.maybeOf(context)?.padding.top ?? 0) + 130;
     _writeCamera(mapbox.CameraOptions(
       center: mapbox.Point(coordinates: mapbox.Position(lng, lat)),
-      zoom: 17.5,
+      zoom: _chaseZoom,
       bearing: _dot.bearing,
-      pitch: 55,
+      pitch: _chasePitch,
       padding: mapbox.MbxEdgeInsets(top: topPad, left: 0, right: 0, bottom: 0),
     ));
   }
@@ -610,6 +1154,18 @@ class _DriverNavViewState extends State<DriverNavView>
     if (!isValidLatLng(lat, lng)) return;
     final img = _dot.currentBytesHiRes ?? _dot.currentBytes;
     if (img == null) return;
+    final bearing = _dot.bearing;
+    // Sub-threshold gate: a parked car must not pay a native write per tick
+    // (~0.1 m / 0.5°). The arrow keeps its last reliable bearing instead of
+    // trembling with GPS noise — SmoothMotion already refuses GPS headings
+    // under 1 m/s, so what reaches here is worth writing.
+    if (_driverAnnot != null &&
+        _lastSentLat != null &&
+        (lat - _lastSentLat!).abs() < 1e-6 &&
+        (lng - _lastSentLng!).abs() < 1e-6 &&
+        (bearing - _lastSentBearing!).abs() < 0.5) {
+      return;
+    }
     _annotWriteBusy = true;
     try {
       if (_driverAnnot == null) {
@@ -622,7 +1178,7 @@ class _DriverNavViewState extends State<DriverNavView>
                   ? GoldLocationDot.rasterScale
                   : 1.0),
           iconAnchor: mapbox.IconAnchor.CENTER,
-          iconRotate: _dot.bearing,
+          iconRotate: bearing,
         ));
         try {
           await _map?.style.setStyleLayerProperty(
@@ -631,13 +1187,19 @@ class _DriverNavViewState extends State<DriverNavView>
       } else {
         _driverAnnot!.geometry =
             mapbox.Point(coordinates: mapbox.Position(lng, lat));
-        _driverAnnot!.iconRotate = _dot.bearing;
+        _driverAnnot!.iconRotate = bearing;
         await mgr.update(_driverAnnot!);
       }
+      _lastSentLat = lat;
+      _lastSentLng = lng;
+      _lastSentBearing = bearing;
     } catch (_) {
       // Annotation died with its surface — null it so the next tick
       // recreates it on the fresh map.
       _driverAnnot = null;
+      _lastSentLat = null;
+      _lastSentLng = null;
+      _lastSentBearing = null;
     } finally {
       _annotWriteBusy = false;
     }
@@ -846,22 +1408,73 @@ class _DriverNavViewState extends State<DriverNavView>
     HapticService.lightImpact();
     setState(() {
       _overview = !_overview;
-      _follow = !_overview;
+      _camState = _overview ? _CamState.freeLook : _CamState.following;
     });
-    if (_overview) _fitRouteOnce();
+    if (_overview) unawaited(_fitRouteOnce());
   }
 
-  void _recenter() {
+  /// Recenter → recentering: a smooth flyTo back to the chase target, then
+  /// following. A drag mid-flight moves the state to freeLook instead.
+  Future<void> _recenter() async {
     HapticService.lightImpact();
+    final lat = _dot.lat;
+    final lng = _dot.lng;
     setState(() {
-      _follow = true;
       _overview = false;
+      _camState = _CamState.recentering;
     });
+    if (lat == null || lng == null) {
+      setState(() => _camState = _CamState.following);
+      return;
+    }
+    if (kIsWeb) {
+      _webMap?.flyTo(
+        lng: lng,
+        lat: lat,
+        zoom: _chaseZoom,
+        bearing: _dot.bearing,
+        pitch: _chasePitch,
+        durationMs: 1200,
+      );
+      if (!mounted) return;
+      setState(() => _camState = _CamState.following);
+      return;
+    }
+    final map = _map;
+    if (map == null) {
+      setState(() => _camState = _CamState.following);
+      return;
+    }
+    final topPad = (MediaQuery.maybeOf(context)?.padding.top ?? 0) + 130;
+    try {
+      await map.flyTo(
+        mapbox.CameraOptions(
+          center: mapbox.Point(coordinates: mapbox.Position(lng, lat)),
+          zoom: _chaseZoom,
+          bearing: _dot.bearing,
+          pitch: _chasePitch,
+          padding:
+              mapbox.MbxEdgeInsets(top: topPad, left: 0, right: 0, bottom: 0),
+        ),
+        mapbox.MapAnimationOptions(duration: 1200),
+      );
+    } catch (_) {}
+    if (!mounted) return;
+    // Only close the maneuver if the recenter still owns the camera.
+    if (_camState == _CamState.recentering) {
+      setState(() => _camState = _CamState.following);
+    }
   }
 
+  /// Drag / pinch / rotate → freeLook. The map's own gesture callbacks cover
+  /// drag and pinch; a second finger down (pinch or rotate — rotate has no
+  /// widget-level listener in this SDK) is caught by the pointer Listener
+  /// wrapping the MapWidget. onCameraChangeListener is never usable here:
+  /// it fires for the chase's own writes and would unlatch follow on them.
   void _onUserGesture() {
-    if (!_follow) return;
-    setState(() => _follow = false);
+    if (_overview) return;
+    if (_camState == _CamState.freeLook) return;
+    setState(() => _camState = _CamState.freeLook);
   }
 
   // ─────────────────────────────────────────────
@@ -878,26 +1491,42 @@ class _DriverNavViewState extends State<DriverNavView>
         Positioned.fill(
           child: _mapMounted && !kIsWeb
               ? RepaintBoundary(
-                  child: mapbox.MapWidget(
-                    textureView: true,
-                    styleUri: MapboxConfig.styleDark,
-                    cameraOptions: mapbox.CameraOptions(
-                      center: mapbox.Point(
-                          coordinates: mapbox.Position(
-                              widget.initialDriverPos.longitude,
-                              widget.initialDriverPos.latitude)),
-                      zoom: 15.0,
-                    ),
-                    onMapCreated: _onMapCreated,
-                    onStyleLoadedListener: (_) async {
-                      final m = _map;
-                      if (m != null) await MapTheme.applyNavyGold(m);
+                  // Pointer Listener, not a GestureDetector: it observes the
+                  // hit stream without entering the gesture arena, so the map
+                  // keeps every one of its own gestures. A second finger is
+                  // pinch or rotate — both mean the driver took the camera.
+                  child: Listener(
+                    onPointerDown: (_) {
+                      _mapPointers++;
+                      if (_mapPointers >= 2) _onUserGesture();
                     },
-                    // Gesture callbacks, not onCameraChangeListener: that one
-                    // also fires for the per-frame chase and would unlatch
-                    // follow on the very writes the chase performs.
-                    onScrollListener: (_) => _onUserGesture(),
-                    onZoomListener: (_) => _onUserGesture(),
+                    onPointerUp: (_) {
+                      if (_mapPointers > 0) _mapPointers--;
+                    },
+                    onPointerCancel: (_) {
+                      if (_mapPointers > 0) _mapPointers--;
+                    },
+                    child: mapbox.MapWidget(
+                      textureView: true,
+                      styleUri: MapboxConfig.styleDark,
+                      cameraOptions: mapbox.CameraOptions(
+                        center: mapbox.Point(
+                            coordinates: mapbox.Position(
+                                widget.initialDriverPos.longitude,
+                                widget.initialDriverPos.latitude)),
+                        zoom: 15.0,
+                      ),
+                      onMapCreated: _onMapCreated,
+                      onStyleLoadedListener: (_) async {
+                        final m = _map;
+                        if (m != null) await MapTheme.applyNavyGold(m);
+                      },
+                      // Gesture callbacks, not onCameraChangeListener: that
+                      // one also fires for the per-frame chase and would
+                      // unlatch follow on the very writes the chase performs.
+                      onScrollListener: (_) => _onUserGesture(),
+                      onZoomListener: (_) => _onUserGesture(),
+                    ),
                   ),
                 )
               : kIsWeb
@@ -909,6 +1538,7 @@ class _DriverNavViewState extends State<DriverNavView>
                       onControllerCreated: (c) {
                         _webMap = c;
                         c.applyNavyGoldTheme();
+                        c.onUserGesture = _onUserGesture;
                         if (_routePts.length >= 2) {
                           c.setPolyline(
                             'navRoute',
@@ -925,13 +1555,58 @@ class _DriverNavViewState extends State<DriverNavView>
                   : const NeuDotsBackdrop(),
         ),
 
-        // ── Maneuver bar ──
+        // ── Maneuver bar + status pills (rerouting / offline) ──
         Positioned(
           top: media.padding.top + 10,
           left: 14,
           right: 14,
-          child: _buildManeuverBar(s),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _buildManeuverBar(s),
+              if (_navPhase == _NavPhase.rerouting)
+                _buildNavPill(s.navRerouting, spinner: true),
+              if (_offlineKeepRoute)
+                _buildNavPill(s.navOfflineKeepRoute,
+                    icon: Icons.wifi_off_rounded),
+            ],
+          ),
         ),
+
+        // ── Failure cards: never a blank page ──
+        if (_navPhase == _NavPhase.gpsUnavailable)
+          Positioned(
+            left: 24,
+            right: 24,
+            top: media.size.height * 0.30,
+            child: _buildNavCard(
+              icon: Icons.gps_off_rounded,
+              title: s.navGpsUnavailableTitle,
+              body: s.navGpsUnavailableBody,
+              buttons: [
+                (
+                  label: s.navOpenSettings,
+                  filled: true,
+                  onTap: _openLocationSettings,
+                ),
+                (label: s.navRetry, filled: false, onTap: _retryGps),
+              ],
+            ),
+          ),
+        if (_navPhase == _NavPhase.routeError)
+          Positioned(
+            left: 24,
+            right: 24,
+            top: media.size.height * 0.30,
+            child: _buildNavCard(
+              icon: Icons.cloud_off_rounded,
+              title: s.connectionError,
+              buttons: [
+                (label: s.navRetry, filled: true, onTap: _retryRouteFetch),
+              ],
+            ),
+          ),
 
         // ── Sheet-anchored overlays: mph, camera buttons, wait bar and the
         //    stage control all ride the sheet's top edge, so they rebuild
@@ -964,7 +1639,7 @@ class _DriverNavViewState extends State<DriverNavView>
                       ),
                       // Recenter appears only once the driver has taken
                       // the camera.
-                      if (!_follow && !_overview) ...[
+                      if (_camState == _CamState.freeLook && !_overview) ...[
                         const SizedBox(height: 10),
                         _roundMapBtn(
                           icon: Icons.my_location_rounded,
@@ -1064,6 +1739,14 @@ class _DriverNavViewState extends State<DriverNavView>
   }
 
   Widget _buildManeuverBar(S s) {
+    final destName =
+        widget.toPickup ? widget.pickupAddress : widget.dropoffAddress;
+    final title = _phaseArrived
+        ? (widget.toPickup ? s.navArrivedPickup : s.navArrivedDropoff)
+        : (_streetLabel.isEmpty ? s.navFollowRoute : _streetLabel);
+    final subtitle = _phaseArrived
+        ? destName
+        : (_maneuverDistLabel.isEmpty ? s.navFollowRoute : _maneuverDistLabel);
     return Container(
       padding: const EdgeInsets.fromLTRB(14, 12, 8, 12),
       decoration: BoxDecoration(
@@ -1080,8 +1763,12 @@ class _DriverNavViewState extends State<DriverNavView>
       ),
       child: Row(
         children: [
-          Icon(_maneuverIcon(_maneuverType, _maneuverModifier),
-              color: Colors.white, size: 34),
+          Icon(
+              _phaseArrived
+                  ? Icons.flag_rounded
+                  : _maneuverIcon(_maneuverType, _maneuverModifier),
+              color: Colors.white,
+              size: 34),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
@@ -1089,7 +1776,7 @@ class _DriverNavViewState extends State<DriverNavView>
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
-                  _streetLabel.isEmpty ? s.navFollowRoute : _streetLabel,
+                  title,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
@@ -1101,16 +1788,16 @@ class _DriverNavViewState extends State<DriverNavView>
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  _maneuverDistLabel.isEmpty
-                      ? s.navFollowRoute
-                      : _maneuverDistLabel,
+                  subtitle,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
                     color: _gold,
                     fontSize: 13,
                     fontWeight: FontWeight.w700,
                   ),
                 ),
-                if (_thenLabel.isNotEmpty)
+                if (!_phaseArrived && _thenLabel.isNotEmpty)
                   Text(
                     _thenLabel,
                     maxLines: 1,
@@ -1145,6 +1832,155 @@ class _DriverNavViewState extends State<DriverNavView>
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  /// Small status pill under the maneuver bar (Rerouting… / offline).
+  Widget _buildNavPill(String label,
+      {bool spinner = false, IconData? icon}) {
+    return Container(
+      margin: const EdgeInsets.only(top: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+      decoration: BoxDecoration(
+        color: _navyBar.withValues(alpha: 0.95),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: _gold.withValues(alpha: 0.35)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.4),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (spinner) ...[
+            const SizedBox(
+              width: 12,
+              height: 12,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: _gold,
+              ),
+            ),
+            const SizedBox(width: 8),
+          ] else if (icon != null) ...[
+            Icon(icon, color: _gold, size: 13),
+            const SizedBox(width: 6),
+          ],
+          Flexible(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: _gold,
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Centered recovery card (GPS down / route error) — the honest face of a
+  /// failure, with the way out on it, instead of a blank page.
+  Widget _buildNavCard({
+    required IconData icon,
+    required String title,
+    String? body,
+    required List<({String label, bool filled, VoidCallback onTap})> buttons,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: _navyBar.withValues(alpha: 0.97),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: _gold.withValues(alpha: 0.3)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.5),
+            blurRadius: 24,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: _gold, size: 34),
+          const SizedBox(height: 10),
+          Text(
+            title,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 16,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          if (body != null) ...[
+            const SizedBox(height: 6),
+            Text(
+              body,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.6),
+                fontSize: 12.5,
+                height: 1.4,
+              ),
+            ),
+          ],
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              for (var i = 0; i < buttons.length; i++) ...[
+                if (i > 0) const SizedBox(width: 10),
+                Expanded(child: _navCardButton(buttons[i])),
+              ],
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _navCardButton(
+      ({String label, bool filled, VoidCallback onTap}) b) {
+    if (b.filled) {
+      return ElevatedButton(
+        onPressed: b.onTap,
+        style: ElevatedButton.styleFrom(
+          backgroundColor: _gold,
+          foregroundColor: Colors.black,
+          shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(14)),
+          elevation: 0,
+          padding: const EdgeInsets.symmetric(vertical: 12),
+        ),
+        child: Text(
+          b.label,
+          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800),
+        ),
+      );
+    }
+    return OutlinedButton(
+      onPressed: b.onTap,
+      style: OutlinedButton.styleFrom(
+        side: const BorderSide(color: Colors.white24),
+        shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14)),
+        foregroundColor: Colors.white,
+        padding: const EdgeInsets.symmetric(vertical: 12),
+      ),
+      child: Text(
+        b.label,
+        style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
       ),
     );
   }
@@ -1428,7 +2264,7 @@ class _DriverNavViewState extends State<DriverNavView>
 
   Widget _buildSheet(S s, ScrollController scrollCtrl) {
     final mins = (_remainSecs / 60).ceil();
-    final distLabel = _fmtDist(_remainMeters, s);
+    final distLabel = _remainMeters > 0 ? _fmtDist(_remainMeters, s) : '';
     final destName =
         widget.toPickup ? widget.pickupAddress : widget.dropoffAddress;
     return ListView(
@@ -1463,7 +2299,9 @@ class _DriverNavViewState extends State<DriverNavView>
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    _remainSecs > 0 ? '$mins min · $distLabel' : distLabel,
+                    _remainSecs > 0 && distLabel.isNotEmpty
+                        ? '$mins min · $distLabel'
+                        : (distLabel.isNotEmpty ? distLabel : '—'),
                     style: const TextStyle(
                       color: Colors.white,
                       fontSize: 15,

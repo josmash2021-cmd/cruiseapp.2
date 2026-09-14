@@ -5058,6 +5058,21 @@ class S {
   String navRiderLocationStale(int seconds) =>
       _es ? 'hace ${seconds}s' : '${seconds}s ago';
   String get navExit => _es ? 'Salir de navegación' : 'Exit navigation';
+  String get navRerouting => _es ? 'Recalculando ruta…' : 'Rerouting…';
+  String get navOfflineKeepRoute => _es
+      ? 'Sin conexión — siguiendo la última ruta'
+      : 'Offline — keeping the last route';
+  String get navRetry => _es ? 'Reintentar' : 'Retry';
+  String get navGpsUnavailableTitle =>
+      _es ? 'Sin señal GPS' : 'No GPS signal';
+  String get navGpsUnavailableBody => _es
+      ? 'Revisa el GPS o los permisos de ubicación para seguir navegando.'
+      : 'Check GPS or location permissions to keep navigating.';
+  String get navOpenSettings => _es ? 'Abrir ajustes' : 'Open settings';
+  String get navArrivedPickup =>
+      _es ? 'Llegaste al pickup' : "You've arrived at the pickup";
+  String get navArrivedDropoff =>
+      _es ? 'Llegaste al destino' : "You've arrived at the destination";
   String get fetchingAddress =>
       _es ? 'Obteniendo dirección...' : 'Getting address...';
   String get passengerConfirmedOnboard => _es

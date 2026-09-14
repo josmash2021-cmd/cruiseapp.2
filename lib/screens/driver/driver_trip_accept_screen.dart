@@ -43,6 +43,7 @@ import '../help_screen.dart';
 import '../../services/chat_service.dart';
 import '../../services/socket_service.dart';
 import 'driver_home_screen.dart';
+import 'driver_nav_view.dart';
 import 'driver_online_screen.dart';
 import '../../services/user_session.dart';
 import '../home_screen.dart';
@@ -352,6 +353,15 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   /// holder's surface is gone. Until then the StaticRoutePreview image
   /// stands in, so the card is never blank.
   bool _previewMapMounted = false;
+
+  // ── In-app navigation mode (DriverNavView) ─────────────────────────────
+  //
+  // Continue / Directions no longer leave the app: the preview releases the
+  // one native surface, the nav view claims it full-screen, and Exit hands
+  // it back. Two live MapWidgets are the iOS crash — the handoff below is
+  // ordered so they never coexist.
+  bool _navMode = false;
+  bool _navEntering = false;
 
   /// Web only: GL JS controller for the preview (no surface limit there).
   WebMapController? _webMapCtrl;
@@ -768,6 +778,52 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     setState(() => _previewMapMounted = true);
   }
 
+  // ── In-app navigation mode ─────────────────────────────────────────────
+
+  /// The backend appends `Wait started: <iso>` to the trip notes when the
+  /// pickup wait timer opens; the nav view's wait divider drains from it so
+  /// a reopened screen shows the real remaining time, not a fresh 5:00.
+  DateTime? get _waitStartedAt {
+    for (final line in widget.pickupInstructions.split('\n')) {
+      final t = line.trim();
+      if (t.startsWith('Wait started:')) {
+        return DateTime.tryParse(
+            t.substring('Wait started:'.length).trim());
+      }
+    }
+    return null;
+  }
+
+  /// Continue / Directions → in-app turn-by-turn navigation.
+  ///
+  /// Hand the surface over BEFORE the nav view mounts: two live MapWidgets
+  /// are the iOS crash, and the coordinator only revokes politely — the
+  /// preview lets go voluntarily here.
+  Future<void> _enterNavMode() async {
+    if (_navMode || _navEntering) return;
+    _navEntering = true;
+    HapticService.mediumImpact();
+    if (_previewMapMounted) {
+      setState(() => _previewMapMounted = false);
+      await surfaceRemoved();
+      MapSurfaceCoordinator.instance.release(_mapSurfaceOwner);
+    }
+    if (!mounted) {
+      _navEntering = false;
+      return;
+    }
+    setState(() => _navMode = true);
+    _navEntering = false;
+  }
+
+  /// Back out of navigation: the nav view's dispose releases its surface
+  /// claim, and the preview card claims it back through the coordinator.
+  void _exitNavMode() {
+    if (!_navMode) return;
+    setState(() => _navMode = false);
+    _acquireMapSurface();
+  }
+
   /// Fetch the driving route for the preview card.
   ///
   /// Cheap to be wrong about — the card shows the two pins either way, and
@@ -1103,12 +1159,6 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
         math.cos(b.latitude * math.pi / 180) *
         math.sin(dLng / 2) * math.sin(dLng / 2);
     return r * 2 * math.atan2(math.sqrt(s), math.sqrt(1 - s));
-  }
-
-  // ── Navigate to dropoff (ride started) ─────────────────────────────────
-  void _goNavigateDropoff({bool overview = false}) {
-    HapticService.mediumImpact();
-    _openNativeMaps(_dropoffLL);
   }
 
   // ── GPS proximity detection for DROPOFF ─────────────────────────────────
@@ -1621,11 +1671,6 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   }
 
   // ── Navigation ────────────────────────────────────────────────────────────
-  void _goNavigate({bool overview = false}) {
-    HapticService.mediumImpact();
-    _openNativeMaps(widget.pickupLatLng);
-  }
-
   Future<void> _openNativeMaps(LatLng dest) async {
     final lat = dest.latitude;
     final lng = dest.longitude;
@@ -4451,6 +4496,11 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
       canPop: false,
       onPopInvokedWithResult: (didPop, _) {
         if (didPop) return;
+        // Inside navigation, back leaves NAVIGATION — not the trip.
+        if (_navMode) {
+          _exitNavMode();
+          return;
+        }
         _returnToDriverHome();
       },
       child: Scaffold(
@@ -4954,6 +5004,50 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
       ),
       ),
 
+      // ── In-app turn-by-turn navigation (Continue / Directions) ────────
+      // Full-screen; owns the one native map surface while it is up (the
+      // preview let go of it in _enterNavMode). The chained-offer card and
+      // the finish overlay sit ABOVE it in this Stack, so they keep working
+      // over navigation untouched. The fade is the whole transition — the
+      // live map surface is never resized or moved mid-flight.
+      if (_navMode)
+        Positioned.fill(
+          child: TweenAnimationBuilder<double>(
+            tween: Tween(begin: 0.0, end: 1.0),
+            duration: const Duration(milliseconds: 250),
+            builder: (ctx, t, child) => Opacity(opacity: t, child: child),
+            child: DriverNavView(
+              tripId: widget.tripId,
+              riderName: widget.riderName,
+              riderPhotoUrl: _riderPhotoUrl ?? widget.riderPhotoUrl,
+              riderId: widget.riderId,
+              pickupLatLng: widget.pickupLatLng,
+              dropoffLatLng: _dropoffLL,
+              pickupAddress: _pickupAddr.isEmpty
+                  ? widget.pickupAddress
+                  : _pickupAddr,
+              dropoffAddress: _dropoffAddr.isEmpty
+                  ? widget.dropoffAddress
+                  : _dropoffAddr,
+              fare: widget.fare,
+              initialDriverPos: _lastDriverPos ?? widget.driverPos,
+              toPickup: !_rideStarted,
+              stage: _actionStageKey(),
+              passengerInstructions: _passengerInstructions,
+              dropoffInstructions: widget.dropoffInstructions,
+              waitStartedAt: _waitStartedAt,
+              prefetchedRoutePoints: _routePoints,
+              onExit: _exitNavMode,
+              onArrived: _confirmArrival,
+              onSlidePickUp: _startRideConfirmed,
+              onSlideFinish: _finishTrip,
+              onOpenChat: _openChat,
+              onCall: _call,
+              onSupport: _openSupportChat,
+            ),
+          ),
+        ),
+
       // ── Chained (next-ride) offer over the live trip ─────────────────
       // Floating card, hidden once the completion overlay owns the screen.
       // It never touches the map, the camera or the route — the trip being
@@ -5254,7 +5348,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
           width: double.infinity,
           height: 56,
           child: ElevatedButton(
-            onPressed: () => _goNavigate(overview: false),
+            onPressed: _enterNavMode,
             style: ElevatedButton.styleFrom(
               backgroundColor: _gold,
               foregroundColor: Colors.black,
@@ -5273,7 +5367,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
           width: double.infinity,
           height: 56,
           child: OutlinedButton(
-            onPressed: () => _goNavigate(overview: true),
+            onPressed: _enterNavMode,
             style: OutlinedButton.styleFrom(
               side: const BorderSide(color: Colors.white24, width: 1.5),
               shape: RoundedRectangleBorder(
@@ -5424,8 +5518,10 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
       _onRideStartedMiniMap();
       _startDropoffProximityDetection();
       _updateTripInTrip();
-      // Navigate immediately — route fetch runs in background
-      _openNativeMaps(_dropoffLL);
+      // In nav mode the nav view re-aims itself at the dropoff (its
+      // toPickup param flips with _rideStarted). The external maps app is
+      // only the fallback for a trip that never entered navigation.
+      if (!_navMode) _openNativeMaps(_dropoffLL);
     });
   }
 
@@ -5635,7 +5731,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
           width: double.infinity,
           height: 56,
           child: ElevatedButton(
-            onPressed: () => _goNavigateDropoff(overview: false),
+            onPressed: _enterNavMode,
             style: ElevatedButton.styleFrom(
               backgroundColor: _gold,
               foregroundColor: Colors.black,
@@ -5653,7 +5749,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
           width: double.infinity,
           height: 56,
           child: OutlinedButton(
-            onPressed: () => _goNavigateDropoff(overview: true),
+            onPressed: _enterNavMode,
             style: OutlinedButton.styleFrom(
               side: const BorderSide(color: Colors.white24, width: 1.5),
               shape: RoundedRectangleBorder(

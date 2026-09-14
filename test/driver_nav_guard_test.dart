@@ -9,21 +9,33 @@ import 'package:flutter_test/flutter_test.dart';
 /// CAN pin is that the load-bearing pieces are wired where they belong:
 ///   1. Web-booking bookkeeping lines never reach the driver as
 ///      "passenger instructions".
-///   2. Start Trip (and the pickup-confirmed leg to the dropoff) opens an
-///      EXTERNAL maps app — the in-app DriverNavView experiment is archived
-///      (lib/screens/driver/driver_nav_view.dart is kept but unwired), and
-///      nothing on this screen may import or mount it again.
-///   3. The external launch respects the driver's Settings → Navigation
-///      preference (MapLauncherService) before falling back to the
-///      Apple/Google/Waze chain.
+///   2. Continue AND Directions (both legs) open the in-app DriverNavView
+///      (`_enterNavMode`); phase-1 Start Trip and the address cards stay on
+///      external maps. The surface handoff is ordered: preview unmounts →
+///      coordinator release → nav mounts (two live MapWidgets crash iOS).
+///   3. The nav view is production-grade: off-route rerouting (40 m / 4 s /
+///      15 s cooldown / stale-seq guard), _CamState + _NavPhase state
+///      machines, internal arrival that never fires backend transitions,
+///      GPS/network failure cards, prefetched route on open.
 ///   4. A rider with Location Sharing off (privacy_location == false)
 ///      publishes nothing.
 void main() {
   final accept =
       File('lib/screens/driver/driver_trip_accept_screen.dart')
           .readAsStringSync();
+  final nav =
+      File('lib/screens/driver/driver_nav_view.dart').readAsStringSync();
   final riderMap =
       File('lib/widgets/tracking/tracking_map_view.dart').readAsStringSync();
+  final l10n =
+      File('lib/l10n/app_localizations.dart').readAsStringSync();
+
+  /// Extracts [maxLen] chars of [src] starting at [signature].
+  String bodyOf(String src, String signature, {int maxLen = 1600}) {
+    final start = src.indexOf(signature);
+    expect(start, isNonNegative, reason: '$signature not found');
+    return src.substring(start, start + maxLen);
+  }
 
   group('web booking filter', () {
     final start = accept.indexOf('String get _passengerInstructions');
@@ -45,36 +57,81 @@ void main() {
     });
   });
 
-  group('external maps navigation', () {
-    test('the in-app nav mode is gone from the trip-accept screen', () {
-      expect(accept, isNot(contains('_enterNavMode')),
-          reason: 'Start Trip must open external maps, not the in-app nav');
-      expect(accept, isNot(contains('DriverNavView')));
-      expect(accept, isNot(contains("import 'driver_nav_view.dart'")));
+  group('nav mode entry', () {
+    test('Continue and Directions both enter nav mode on the pickup leg', () {
+      final body =
+          bodyOf(accept, 'Widget _buildContinueDirections() {', maxLen: 2400);
+      expect('_enterNavMode'.allMatches(body).length, greaterThanOrEqualTo(2),
+          reason: 'the gold Continue AND the outlined Directions must both '
+              'call _enterNavMode()');
+      expect(body, isNot(contains('_openNativeMaps')),
+          reason: 'Continue/Directions no longer leave the app');
     });
 
-    test('Start Trip opens external maps to the pickup', () {
-      final start = accept.indexOf('Widget _buildSlideStartTrip()');
-      final block =
-          start >= 0 ? accept.substring(start, start + 1200) : '';
-      expect(block, isNotEmpty, reason: '_buildSlideStartTrip not found');
-      expect(block, contains('_openNativeMaps(widget.pickupLatLng)'));
+    test('Continue and Directions both enter nav mode on the dropoff leg', () {
+      final body = bodyOf(accept, 'Widget _buildContinueDirectionsDropoff() {',
+          maxLen: 2400);
+      expect('_enterNavMode'.allMatches(body).length, greaterThanOrEqualTo(2),
+          reason: 'the gold Continue AND the outlined Directions must both '
+              'call _enterNavMode()');
+      expect(body, isNot(contains('_openNativeMaps')),
+          reason: 'Continue/Directions no longer leave the app');
     });
 
-    test('the pickup-confirmed leg opens external maps to the dropoff', () {
-      final start = accept.indexOf('void _startRideConfirmed()');
-      final block =
-          start >= 0 ? accept.substring(start, start + 900) : '';
-      expect(block, isNotEmpty, reason: '_startRideConfirmed not found');
-      expect(block, contains('_openNativeMaps(_dropoffLL)'));
+    test('phase-1 Start Trip stays on external maps', () {
+      final body =
+          bodyOf(accept, 'Widget _buildSlideStartTrip() {', maxLen: 1300);
+      expect(body, contains('_openNativeMaps(widget.pickupLatLng)'));
+      expect(body, isNot(contains('_enterNavMode')),
+          reason: 'Start Trip is the phase-1 button — it keeps opening '
+              'external maps');
     });
 
-    test('the Settings → Navigation preference is consulted first', () {
-      final start = accept.indexOf('Future<void> _openNativeMaps');
-      final block =
-          start >= 0 ? accept.substring(start, start + 1400) : '';
-      expect(block, isNotEmpty, reason: '_openNativeMaps not found');
-      expect(block, contains('MapLauncherService.navigate('));
+    test('the old _goNavigate launchers are gone', () {
+      expect(accept, isNot(contains('_goNavigate(')));
+      expect(accept, isNot(contains('_goNavigateDropoff(')));
+    });
+
+    test('_enterNavMode releases the preview surface before mounting', () {
+      final body =
+          bodyOf(accept, 'Future<void> _enterNavMode() async {', maxLen: 900);
+      final unmount = body.indexOf('_previewMapMounted = false');
+      final release = body.indexOf(
+          'MapSurfaceCoordinator.instance.release(_mapSurfaceOwner)');
+      final mount = body.indexOf('_navMode = true');
+      expect(unmount, isNonNegative,
+          reason: 'the preview MapWidget must leave the tree first');
+      expect(release, isNonNegative,
+          reason: 'the coordinator claim must be released before the nav '
+              'view acquires it');
+      expect(mount, isNonNegative);
+      expect(unmount, lessThan(release));
+      expect(release, lessThan(mount),
+          reason: 'release-before-mount — two live MapWidgets crash iOS');
+    });
+
+    test('_exitNavMode drops nav mode and re-acquires the preview surface', () {
+      final body = bodyOf(accept, 'void _exitNavMode() {', maxLen: 300);
+      expect(body, contains('_navMode = false'));
+      expect(body, contains('_acquireMapSurface()'),
+          reason: 'the preview card claims the surface back on exit');
+    });
+
+    test('back inside navigation leaves navigation, not the trip', () {
+      final start = accept.indexOf('onPopInvokedWithResult: (didPop, _) {');
+      expect(start, isNonNegative);
+      final block = accept.substring(start, start + 400);
+      expect(block, contains('if (_navMode)'));
+      expect(block, contains('_exitNavMode();'));
+    });
+
+    test('the pickup-confirmed leg keeps external maps only off the nav path',
+        () {
+      final body =
+          bodyOf(accept, 'void _startRideConfirmed() {', maxLen: 700);
+      expect(body, contains('if (!_navMode) _openNativeMaps(_dropoffLL)'),
+          reason: 'in nav mode the nav view re-aims itself at the dropoff; '
+              'external maps is only the no-nav fallback');
     });
 
     test('iOS one-tap Apple Maps / Android chooser stay on the address cards',
@@ -83,6 +140,190 @@ void main() {
       expect(accept, contains('_showNavigationSheet(isPickup: true)'));
       expect(accept, contains('_openAppleMaps(_dropoffLL)'));
       expect(accept, contains('_showNavigationSheet(isPickup: false)'));
+    });
+
+    test('the mount passes the prefetched route and every trip callback', () {
+      expect(accept, contains("import 'driver_nav_view.dart'"));
+      final start = accept.indexOf('child: DriverNavView(');
+      expect(start, isNonNegative, reason: 'DriverNavView mount not found');
+      final mount = accept.substring(start, start + 2200);
+      expect(mount, contains('prefetchedRoutePoints: _routePoints'),
+          reason: 'the mini map\'s already-drawn route must seed the nav '
+              'view — no fetch, no blank map on open');
+      expect(mount, contains('toPickup: !_rideStarted'));
+      expect(mount, contains('stage: _actionStageKey()'));
+      expect(mount, contains('waitStartedAt: _waitStartedAt'));
+      expect(mount, contains('onExit: _exitNavMode'));
+      expect(mount, contains('onArrived: _confirmArrival'));
+      expect(mount, contains('onSlidePickUp: _startRideConfirmed'));
+      expect(mount, contains('onSlideFinish: _finishTrip'));
+      expect(mount, contains('onOpenChat: _openChat'));
+      expect(mount, contains('onCall: _call'));
+      expect(mount, contains('onSupport: _openSupportChat'));
+    });
+  });
+
+  group('nav view: off-route rerouting', () {
+    test('40 m threshold held for 4 s of fixes, 25 m reset', () {
+      expect(nav, contains('_offRouteM = 40.0'));
+      expect(nav, contains('_offRouteResetM = 25.0'));
+      expect(nav, contains('_offRouteHoldSecs = 4'));
+      expect(nav, contains('RouteSplice.distanceToPolylineM(_routePts, pos)'));
+    });
+
+    test('one fetch in flight, 15 s cooldown, stale responses dropped by seq',
+        () {
+      expect(nav, contains('_rerouteCooldownSecs = 15'));
+      expect(nav, contains('int _rerouteSeq = 0'));
+      expect(nav, contains('if (_routeFetching) return;'),
+          reason: 'never two route fetches at once');
+      expect(nav, contains('seq != _rerouteSeq'),
+          reason: 'a stale response must never replace a newer plan');
+    });
+
+    test('the old line is kept until the new one replaces it atomically', () {
+      final body = bodyOf(nav, 'case _RouteFetchKind.reroute:', maxLen: 700);
+      expect(body, contains('_routePts = result.points'));
+      expect(body, contains('_navProgress = NavProgress(result.steps)'));
+      expect(body, contains('await _drawRoute();'),
+          reason: 'same-annotation update — never two lines on the map');
+      expect(nav, contains('s.navRerouting'),
+          reason: 'the gold Rerouting… pill rides the fetch');
+    });
+  });
+
+  group('nav view: state machines', () {
+    test('camera state machine: following / freeLook / recentering', () {
+      expect(nav,
+          contains('enum _CamState { following, freeLook, recentering }'));
+      expect(nav, contains('_camState = _CamState.freeLook'));
+      expect(nav, contains('_camState = _CamState.recentering'));
+      expect(nav, contains('_camState = _CamState.following'));
+    });
+
+    test('navigation state machine carries every phase', () {
+      final start = nav.indexOf('enum _NavPhase {');
+      expect(start, isNonNegative);
+      final body = nav.substring(start, start + 300);
+      for (final phase in [
+        'initializing',
+        'toPickup',
+        'approachingPickup',
+        'arrivedPickup',
+        'toDropoff',
+        'approachingDropoff',
+        'arrivedDropoff',
+        'rerouting',
+        'gpsUnavailable',
+        'routeError',
+      ]) {
+        expect(body, contains(phase), reason: '_NavPhase.$phase missing');
+      }
+    });
+
+    test('gestures unlatch to freeLook; the chase never writes there', () {
+      expect(nav, contains('onScrollListener: (_) => _onUserGesture()'));
+      expect(nav, contains('onZoomListener: (_) => _onUserGesture()'));
+      expect(nav, contains('_camState != _CamState.following'),
+          reason: 'the per-frame chase must be gated on the camera state');
+    });
+
+    test('dynamic chase zoom 17.5 / 17.0 / 18.0, lerped never stepped', () {
+      expect(nav, contains('_chaseZoomDefault = 17.5'));
+      expect(nav, contains('_chaseZoomFast = 17.0'));
+      expect(nav, contains('_chaseZoomManeuver = 18.0'));
+      expect(nav, contains('_zoomLerpPerSec = 0.5'));
+    });
+  });
+
+  group('nav view: arrival + prefetch', () {
+    test('approach at 200 m, arrival at 30 m with 25 m accuracy', () {
+      expect(nav, contains('_approachRadiusM = 200.0'));
+      expect(nav, contains('_arriveRadiusM = 30.0'));
+      expect(nav, contains('_arriveAccuracyM = 25.0'));
+      expect(nav, contains('s.navArrivedPickup'));
+      expect(nav, contains('s.navArrivedDropoff'));
+    });
+
+    test('arrival fires no backend transition — sliders stay the authority',
+        () {
+      final body = bodyOf(
+          nav, 'void _onSlideUpdate(double delta, double maxDrag) {',
+          maxLen: 600);
+      expect(body, contains('widget.onSlidePickUp();'));
+      expect(body, contains('widget.onSlideFinish();'),
+          reason: 'onSlidePickUp/onSlideFinish are only called from the '
+              'stage controls');
+    });
+
+    test('prefetched geometry draws at mount behind a 150 m destination gate',
+        () {
+      expect(nav, contains('prefetchedRoutePoints'));
+      expect(nav, contains('_prefetchDestMaxM = 150.0'));
+      expect(nav, contains('_seedPrefetchedRoute();'));
+      expect(nav, contains('_RouteFetchKind.backgroundFill'),
+          reason: 'geometry-only prefetch fetches steps in the background '
+              'without wiping the drawn line');
+    });
+  });
+
+  group('nav view: failure handling', () {
+    test('gpsUnavailable: 6 s watchdog + settings/retry recovery card', () {
+      expect(nav, contains('_gpsStaleSecs = 6'));
+      expect(nav, contains('_gpsWatchdog'));
+      expect(nav, contains('Geolocator.openLocationSettings()'));
+      expect(nav, contains('s.navGpsUnavailableTitle'));
+      expect(nav, contains('s.navGpsUnavailableBody'));
+      expect(nav, contains('s.navOpenSettings'));
+      expect(nav, contains('s.navRetry'));
+    });
+
+    test('network down: keep the drawn route (5/15/30 s backoff) or retry',
+        () {
+      expect(nav, contains('_offlineKeepRoute'));
+      expect(nav, contains('s.navOfflineKeepRoute'));
+      expect(nav, contains('Duration(seconds: 5)'));
+      expect(nav, contains('Duration(seconds: 15)'));
+      expect(nav, contains('Duration(seconds: 30)'));
+      expect(nav, contains('_routeError'),
+          reason: 'with nothing drawn there is no navigation — routeError '
+              'card with a retry button');
+    });
+  });
+
+  group('nav view: lifecycle', () {
+    test('dispose cancels every timer/sub and releases the coordinator', () {
+      final body = bodyOf(nav, 'void dispose() {', maxLen: 700);
+      expect(
+          body, contains('MapSurfaceCoordinator.instance.release(_mapSurfaceOwner)'));
+      expect(body, contains('_gpsWatchdog?.cancel()'));
+      expect(body, contains('_offlineRetryTimer?.cancel()'));
+      expect(body, contains('_riderLocSub?.cancel()'));
+      expect(body, contains('_riderStaleTimer?.cancel()'));
+      expect(body, contains('_waitTicker?.cancel()'));
+    });
+
+    test('one native surface, claimed under a per-instance owner', () {
+      expect(nav, contains("'DriverTripNav-"));
+      expect(nav, contains('MapSurfaceCoordinator.instance.acquire('));
+    });
+  });
+
+  group('l10n', () {
+    test('the new nav keys exist', () {
+      for (final key in [
+        'navRerouting',
+        'navOfflineKeepRoute',
+        'navRetry',
+        'navGpsUnavailableTitle',
+        'navGpsUnavailableBody',
+        'navOpenSettings',
+        'navArrivedPickup',
+        'navArrivedDropoff',
+      ]) {
+        expect(l10n, contains('String get $key'),
+            reason: '$key missing from app_localizations.dart');
+      }
     });
   });
 

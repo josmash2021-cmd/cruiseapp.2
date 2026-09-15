@@ -21,8 +21,6 @@ class _WelcomeScreenState extends State<WelcomeScreen>
   static const _gold = Color(0xFFE8C547);
 
   late AnimationController _ctrl;
-  late Animation<double> _btnFade;
-  late Animation<Offset> _btnSlide;
   late Animation<double> _introFade;
   late Animation<Offset> _introSlide;
   late Animation<double> _headFade;
@@ -39,17 +37,6 @@ class _WelcomeScreenState extends State<WelcomeScreen>
       vsync: this,
       duration: const Duration(milliseconds: 1800),
     );
-    _btnFade = CurvedAnimation(
-      parent: _ctrl,
-      curve: const Interval(0.55, 1.0, curve: Curves.easeOut),
-    );
-    _btnSlide = Tween<Offset>(begin: const Offset(0, 0.3), end: Offset.zero)
-        .animate(
-          CurvedAnimation(
-            parent: _ctrl,
-            curve: const Interval(0.55, 1.0, curve: Curves.easeOutCubic),
-          ),
-        );
     _introFade = CurvedAnimation(
       parent: _ctrl,
       curve: const Interval(0.0, 0.55, curve: Curves.easeOut),
@@ -332,46 +319,34 @@ class _WelcomeScreenState extends State<WelcomeScreen>
                   const Spacer(),
 
                   // ── Get started button (gold neumorphic) ──
-                  SlideTransition(
-                    position: _btnSlide,
-                    child: FadeTransition(
-                      opacity: _btnFade,
-                      child: _NeuPressButton(
-                        label: S.of(context).getStarted,
-                        gold: true,
-                        onTap: () {
-                          Navigator.of(context)
-                              .push(slideUpFadeRoute(const RiderWelcomeScreen()));
-                        },
-                      ),
-                    ),
+                  // The bottom controls render static — no entrance
+                  // animation (user spec 2026-09-16).
+                  _NeuPressButton(
+                    label: S.of(context).getStarted,
+                    gold: true,
+                    onTap: () {
+                      Navigator.of(context)
+                          .push(slideUpFadeRoute(const RiderWelcomeScreen()));
+                    },
                   ),
 
                   const SizedBox(height: 12),
 
                   // ── Already have account? button (dark neumorphic) ──
-                  SlideTransition(
-                    position: _btnSlide,
-                    child: FadeTransition(
-                      opacity: _btnFade,
-                      child: _NeuPressButton(
-                        label: S.of(context).alreadyHaveAccount,
-                        gold: false,
-                        onTap: () {
-                          Navigator.of(context).push(
-                              slideUpFadeRoute(const RiderWelcomeScreen()));
-                        },
-                      ),
-                    ),
+                  _NeuPressButton(
+                    label: S.of(context).alreadyHaveAccount,
+                    gold: false,
+                    onTap: () {
+                      Navigator.of(context).push(
+                          slideUpFadeRoute(const RiderWelcomeScreen()));
+                    },
                   ),
 
                   const SizedBox(height: 20),
 
                   // ── Want to drive? Sign up to drive (text link) ──
-                  FadeTransition(
-                    opacity: _btnFade,
-                    child: GestureDetector(
-                      child: RichText(
+                  GestureDetector(
+                    child: RichText(
                         text: TextSpan(
                           style: const TextStyle(fontSize: 14, color: Colors.white54),
                           children: [
@@ -403,7 +378,6 @@ class _WelcomeScreenState extends State<WelcomeScreen>
                         ),
                       ),
                     ),
-                  ),
 
                   const SizedBox(height: 28),
                 ],

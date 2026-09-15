@@ -1,5 +1,6 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 import '../l10n/app_localizations.dart';
 import '../config/page_transitions.dart';
 import '../widgets/neu_style.dart';
@@ -20,6 +21,8 @@ class _WelcomeScreenState extends State<WelcomeScreen>
   late AnimationController _ctrl;
   late Animation<double> _btnFade;
   late Animation<Offset> _btnSlide;
+  late Animation<double> _introFade;
+  late Animation<Offset> _introSlide;
 
   @override
   void initState() {
@@ -39,6 +42,17 @@ class _WelcomeScreenState extends State<WelcomeScreen>
             curve: const Interval(0.55, 1.0, curve: Curves.easeOutCubic),
           ),
         );
+    _introFade = CurvedAnimation(
+      parent: _ctrl,
+      curve: const Interval(0.0, 0.55, curve: Curves.easeOut),
+    );
+    _introSlide = Tween<Offset>(begin: const Offset(0, 0.12), end: Offset.zero)
+        .animate(
+          CurvedAnimation(
+            parent: _ctrl,
+            curve: const Interval(0.0, 0.55, curve: Curves.easeOutCubic),
+          ),
+        );
 
     _ctrl.forward();
   }
@@ -49,8 +63,39 @@ class _WelcomeScreenState extends State<WelcomeScreen>
     super.dispose();
   }
 
+  Widget _decoLine(double width) {
+    return Container(
+      width: width,
+      height: 0.8,
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            Colors.transparent,
+            _gold.withValues(alpha: 0.7),
+            Colors.transparent,
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _diamond() {
+    return Transform.rotate(
+      angle: 0.785398,
+      child: Container(
+        width: 5,
+        height: 5,
+        decoration: BoxDecoration(
+          color: _gold.withValues(alpha: 0.8),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final s = S.of(context);
+    final media = MediaQuery.of(context);
     return Scaffold(
       body: Stack(
         fit: StackFit.expand,
@@ -85,6 +130,86 @@ class _WelcomeScreenState extends State<WelcomeScreen>
               padding: const EdgeInsets.symmetric(horizontal: 28),
               child: Column(
                 children: [
+                  const SizedBox(height: 14),
+
+                  // ── Lockup: badge + CRUISE, línea-diamante-línea ──
+                  FadeTransition(
+                    opacity: _introFade,
+                    child: SlideTransition(
+                      position: _introSlide,
+                      child: Column(
+                        children: [
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Image.asset(
+                                'assets/images/cruise_logo.png',
+                                width: 42,
+                                height: 42,
+                              ),
+                              const SizedBox(width: 12),
+                              Text(
+                                'CRUISE',
+                                style: GoogleFonts.cinzel(
+                                  fontSize: 30,
+                                  fontWeight: FontWeight.w700,
+                                  color: Colors.white,
+                                  letterSpacing: 6,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 14),
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              _decoLine(60),
+                              const SizedBox(width: 10),
+                              _diamond(),
+                              const SizedBox(width: 10),
+                              _decoLine(60),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+
+                  SizedBox(height: media.size.height * 0.15),
+
+                  // ── Headline + tagline (dark over the golden glow) ──
+                  FadeTransition(
+                    opacity: _introFade,
+                    child: SlideTransition(
+                      position: _introSlide,
+                      child: Column(
+                        children: [
+                          Text(
+                            s.welcomeHeadline,
+                            textAlign: TextAlign.center,
+                            style: GoogleFonts.playfairDisplay(
+                              fontSize: 34,
+                              fontWeight: FontWeight.w600,
+                              color: const Color(0xFF1A1400),
+                              height: 1.15,
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          Text(
+                            s.welcomeSubheadline,
+                            textAlign: TextAlign.center,
+                            style: GoogleFonts.playfairDisplay(
+                              fontSize: 15,
+                              fontStyle: FontStyle.italic,
+                              fontWeight: FontWeight.w500,
+                              color: const Color(0xFF1A1400),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+
                   const Spacer(),
 
                   // ── Get started button (gold neumorphic) ──

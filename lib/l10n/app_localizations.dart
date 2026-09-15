@@ -46,10 +46,10 @@ class S {
 
   // ── Welcome / Splash ──────────────────────────────────────────────────────
   String get welcomeHeadline =>
-      _es ? 'Déjanos\nllevarte' : "Let's get\nyou there";
+      _es ? 'Déjanos\nllevarte' : "Let's Get\nYou There";
   String get welcomeSubheadline => _es
       ? 'Viajes premium al alcance de tu mano.'
-      : 'Premium rides at your fingertips.';
+      : 'Premium Rides At Your Fingertips.';
   String get getStarted => _es ? 'Comenzar' : 'Get started';
 
   // ── Login ─────────────────────────────────────────────────────────────────

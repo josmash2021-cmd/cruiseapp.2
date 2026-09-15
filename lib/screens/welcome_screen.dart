@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -23,6 +25,12 @@ class _WelcomeScreenState extends State<WelcomeScreen>
   late Animation<Offset> _btnSlide;
   late Animation<double> _introFade;
   late Animation<Offset> _introSlide;
+  late Animation<double> _headFade;
+  late Animation<Offset> _headSlide;
+  late Animation<double> _tagFade;
+  late Animation<Offset> _tagSlide;
+  // Looping shine on the logo badge — independent, never stops.
+  late AnimationController _logoCtrl;
 
   @override
   void initState() {
@@ -53,6 +61,33 @@ class _WelcomeScreenState extends State<WelcomeScreen>
             curve: const Interval(0.0, 0.55, curve: Curves.easeOutCubic),
           ),
         );
+    // Headline rises in a beat after the lockup; the tagline floats in last.
+    _headFade = CurvedAnimation(
+      parent: _ctrl,
+      curve: const Interval(0.22, 0.72, curve: Curves.easeOut),
+    );
+    _headSlide = Tween<Offset>(begin: const Offset(0, 0.22), end: Offset.zero)
+        .animate(
+          CurvedAnimation(
+            parent: _ctrl,
+            curve: const Interval(0.22, 0.72, curve: Curves.easeOutCubic),
+          ),
+        );
+    _tagFade = CurvedAnimation(
+      parent: _ctrl,
+      curve: const Interval(0.42, 0.9, curve: Curves.easeOut),
+    );
+    _tagSlide = Tween<Offset>(begin: const Offset(0, 0.16), end: Offset.zero)
+        .animate(
+          CurvedAnimation(
+            parent: _ctrl,
+            curve: const Interval(0.42, 0.9, curve: Curves.easeOutCubic),
+          ),
+        );
+    _logoCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 3200),
+    )..repeat();
 
     _ctrl.forward();
   }
@@ -60,6 +95,7 @@ class _WelcomeScreenState extends State<WelcomeScreen>
   @override
   void dispose() {
     _ctrl.dispose();
+    _logoCtrl.dispose();
     super.dispose();
   }
 
@@ -89,6 +125,79 @@ class _WelcomeScreenState extends State<WelcomeScreen>
           color: _gold.withValues(alpha: 0.8),
         ),
       ),
+    );
+  }
+
+  /// The badge with its looping shine (user spec): a gold halo that
+  /// breathes (sin pulse, seamless loop) plus a light band that sweeps
+  /// across the circle once per 3.2 s cycle.
+  Widget _buildLogoBadge() {
+    return AnimatedBuilder(
+      animation: _logoCtrl,
+      builder: (context, child) {
+        final t = _logoCtrl.value;
+        final pulse = (math.sin(t * 2 * math.pi) + 1) / 2;
+        final sweepOn = t < 0.45;
+        final sweepT = sweepOn ? t / 0.45 : 1.0;
+        return SizedBox(
+          width: 64,
+          height: 64,
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              Container(
+                width: 64,
+                height: 64,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: RadialGradient(
+                    colors: [
+                      _gold.withValues(alpha: 0.16 + 0.20 * pulse),
+                      _gold.withValues(alpha: 0.05 + 0.07 * pulse),
+                      Colors.transparent,
+                    ],
+                    stops: const [0.0, 0.55, 1.0],
+                  ),
+                ),
+              ),
+              ClipOval(
+                child: SizedBox(
+                  width: 42,
+                  height: 42,
+                  child: Stack(
+                    children: [
+                      Positioned.fill(
+                        child: Image.asset('assets/images/cruise_logo.png'),
+                      ),
+                      if (sweepOn)
+                        Positioned(
+                          left: -20 + 80 * sweepT,
+                          top: -24,
+                          child: Transform.rotate(
+                            angle: -0.5,
+                            child: Container(
+                              width: 14,
+                              height: 90,
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                  colors: [
+                                    Colors.white.withValues(alpha: 0),
+                                    Colors.white.withValues(alpha: 0.38),
+                                    Colors.white.withValues(alpha: 0),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 
@@ -154,11 +263,7 @@ class _WelcomeScreenState extends State<WelcomeScreen>
                           Row(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              Image.asset(
-                                'assets/images/cruise_logo.png',
-                                width: 42,
-                                height: 42,
-                              ),
+                              _buildLogoBadge(),
                               const SizedBox(width: 12),
                               Text(
                                 'CRUISE',
@@ -191,33 +296,35 @@ class _WelcomeScreenState extends State<WelcomeScreen>
 
                   // ── Headline + tagline (dark over the golden glow) ──
                   FadeTransition(
-                    opacity: _introFade,
+                    opacity: _headFade,
                     child: SlideTransition(
-                      position: _introSlide,
-                      child: Column(
-                        children: [
-                          Text(
-                            s.welcomeHeadline,
-                            textAlign: TextAlign.center,
-                            style: GoogleFonts.playfairDisplay(
-                              fontSize: 34,
-                              fontWeight: FontWeight.w600,
-                              color: const Color(0xFF1A1400),
-                              height: 1.15,
-                            ),
-                          ),
-                          const SizedBox(height: 12),
-                          Text(
-                            s.welcomeSubheadline,
-                            textAlign: TextAlign.center,
-                            style: GoogleFonts.playfairDisplay(
-                              fontSize: 15,
-                              fontStyle: FontStyle.italic,
-                              fontWeight: FontWeight.w500,
-                              color: const Color(0xFF1A1400),
-                            ),
-                          ),
-                        ],
+                      position: _headSlide,
+                      child: Text(
+                        s.welcomeHeadline,
+                        textAlign: TextAlign.center,
+                        style: GoogleFonts.playfairDisplay(
+                          fontSize: 34,
+                          fontWeight: FontWeight.w600,
+                          color: const Color(0xFF1A1400),
+                          height: 1.15,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  FadeTransition(
+                    opacity: _tagFade,
+                    child: SlideTransition(
+                      position: _tagSlide,
+                      child: Text(
+                        s.welcomeSubheadline,
+                        textAlign: TextAlign.center,
+                        style: GoogleFonts.playfairDisplay(
+                          fontSize: 15,
+                          fontStyle: FontStyle.italic,
+                          fontWeight: FontWeight.w500,
+                          color: const Color(0xFF1A1400),
+                        ),
                       ),
                     ),
                   ),

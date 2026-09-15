@@ -2648,8 +2648,9 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     required VoidCallback onTap,
     bool filled = false,
     Stream<int>? badge,
+    double d = 52.0,
+    bool showLabel = true,
   }) {
-    const d = 52.0;
     final disc = Container(
       width: d,
       height: d,
@@ -2666,7 +2667,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
               ],
             )
           : neuBox(radius: d / 2),
-      child: Icon(icon, color: filled ? neuBase : _gold, size: 21),
+      child: Icon(icon, color: filled ? neuBase : _gold, size: d * 0.4),
     );
     return GestureDetector(
       onTap: () {
@@ -2723,16 +2724,18 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
             )
           else
             disc,
-          const SizedBox(height: 6),
-          Text(
-            label,
-            style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.55),
-              fontSize: Responsive.sp(9.5),
-              fontWeight: FontWeight.w600,
-              letterSpacing: 0.4,
+          if (showLabel) ...[
+            const SizedBox(height: 6),
+            Text(
+              label,
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.55),
+                fontSize: Responsive.sp(9.5),
+                fontWeight: FontWeight.w600,
+                letterSpacing: 0.4,
+              ),
             ),
-          ),
+          ],
         ],
       ),
     );
@@ -4769,15 +4772,11 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
                         ),
                       ),
                       SizedBox(width: Responsive.w(10)),
-                    ],
-                  ),
-                  SizedBox(height: Responsive.h(16)),
-                  // Chat / Call / Support — one labeled Find-My row (user spec
-                  // 2026-09-14): the call disc is the only gold-filled one,
-                  // and the unread count rides the chat disc.
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
+                      // Chat / Call / Support ride at the right end of the
+                      // rider row (user spec 2026-09-15): compact discs with
+                      // no labels so profile and actions share one line. The
+                      // call disc is the only gold-filled one, and the unread
+                      // count rides the chat disc.
                       _tripActionBtn(
                         icon: Icons.chat_bubble_rounded,
                         label: S.of(context).chat,
@@ -4786,19 +4785,25 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
                           rideId: widget.tripId.toString(),
                           readerRole: 'driver',
                         ),
+                        d: 44,
+                        showLabel: false,
                       ),
-                      SizedBox(width: Responsive.w(28)),
+                      SizedBox(width: Responsive.w(10)),
                       _tripActionBtn(
                         icon: Icons.call_rounded,
                         label: S.of(context).callAction,
                         onTap: _call,
                         filled: true,
+                        d: 44,
+                        showLabel: false,
                       ),
-                      SizedBox(width: Responsive.w(28)),
+                      SizedBox(width: Responsive.w(10)),
                       _tripActionBtn(
                         icon: Icons.support_agent_rounded,
                         label: S.of(context).supportAction,
                         onTap: _openSupportChat,
+                        d: 44,
+                        showLabel: false,
                       ),
                     ],
                   ),
@@ -4811,8 +4816,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
             ),
 
             // ── Map preview (tilt animation on enter) ─────────────────
-            // Loose so a short screen (the action row added ~74 px below the
-            // rider row, 2026-09-14) shrinks the map instead of overflowing
+            // Loose so a short screen shrinks the map instead of overflowing
             // the Column; tall screens still get the full 240.
             Flexible(
               fit: FlexFit.loose,
@@ -4889,8 +4893,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
                           ),
                         // Edges dissolve into the page background (user spec
                         // 2026-09-13) — the frame is this fade, not a card.
-                        // Above the map, below the chips and the Mapbox
-                        // attribution.
+                        // Above the map, below the chips.
                         Positioned.fill(
                           child: IgnorePointer(child: _buildMapEdgeFade()),
                         ),
@@ -4943,16 +4946,6 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
                                 )),
                               ],
                             ],
-                          ),
-                        ),
-                        // Mapbox attribution — plain text, no box
-                        Positioned(
-                          bottom: 5, left: 8,
-                          child: Text(' Mapbox',
-                            style: TextStyle(
-                              color: Colors.white.withValues(alpha: 0.45),
-                              fontSize: 9,
-                            ),
                           ),
                         ),
                       ],
@@ -5429,8 +5422,9 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   /// radial vignette for the corners, all in the page's _bg color — the same
   /// treatment as the rider's Find-My mini map.
   Widget _buildMapEdgeFade() {
-    // Only kisses the very edges (user spec 2026-09-15): before, the fade
-    // reached 22% in from every side and read as a heavy blur over the map.
+    // Only kisses the outermost rim (user spec 2026-09-15): the fade must
+    // read as a soft border, not as a blur over the whole map — transparent
+    // by ~7% in from every side.
     LinearGradient edge(Alignment begin, Alignment end) => LinearGradient(
           begin: begin,
           end: end,
@@ -5444,7 +5438,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
             _bg.withValues(alpha: .55),
             _bg,
           ],
-          stops: const [0, .03, .07, .13, .87, .93, .97, 1],
+          stops: const [0, .015, .04, .075, .925, .96, .985, 1],
         );
     return Stack(
       fit: StackFit.expand,
@@ -5470,7 +5464,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
                 _bg.withValues(alpha: .22),
                 _bg,
               ],
-              stops: const [0, .66, .88, 1],
+              stops: const [0, .86, .96, 1],
             ),
           ),
         ),

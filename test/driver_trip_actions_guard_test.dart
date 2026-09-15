@@ -2,17 +2,18 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-/// Guard for the driver trip screen's action row (user spec 2026-09-14):
-/// chat / call / support as one centered, labeled Find-My row — the call
-/// disc the only gold-filled one, the unread badge on chat — replacing the
-/// old icon-only discs that sat beside the avatar.
+/// Guard for the driver trip screen's action buttons (user spec 2026-09-15):
+/// chat / call / support as compact, label-free discs at the RIGHT end of
+/// the rider profile row — the call disc the only gold-filled one, the
+/// unread badge on chat. (This supersedes the 2026-09-14 centered labeled
+/// row, which pushed the mini map ~74 px down.)
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   final src = File('lib/screens/driver/driver_trip_accept_screen.dart')
       .readAsStringSync();
 
-  test('the row is chat / call / support with labels, call filled gold', () {
+  test('the row is chat / call / support, compact and label-free', () {
     expect(src.contains('_tripActionBtn('), isTrue);
     expect(src.contains('icon: Icons.chat_bubble_rounded'), isTrue);
     expect(src.contains('icon: Icons.call_rounded'), isTrue);
@@ -22,6 +23,9 @@ void main() {
     expect(src.contains('label: S.of(context).chat'), isTrue);
     expect(src.contains('label: S.of(context).callAction'), isTrue);
     expect(src.contains('label: S.of(context).supportAction'), isTrue);
+    expect(src.contains('showLabel: false,'), isTrue,
+        reason: 'the discs ride the profile row compact — no labels under '
+            'them (user spec 2026-09-15)');
   });
 
   test('chat keeps the unread badge and support opens the support chat', () {

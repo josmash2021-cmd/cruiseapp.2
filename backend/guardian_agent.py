@@ -1001,7 +1001,12 @@ class DriverLocationStaleDetector:
         if not self._db_session_maker:
             return
 
-        now = time.time()
+        # Same clock as the writer: routers/drivers.py stamps every location
+        # with time.monotonic(). Comparing that stamp against time.time()
+        # (epoch) made the age ~1.7e9s forever, so EVERY online driver was
+        # marked offline on every pass and flipped back by their next
+        # heartbeat — a constant offline/online flap that suppressed offers.
+        now = time.monotonic()
         stale_ids = [
             did for did, loc in list(_driver_locations.items())
             if loc.get("is_online") and (now - loc.get("ts", 0)) > self.STALE_SECS

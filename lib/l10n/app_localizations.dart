@@ -1270,6 +1270,9 @@ class S {
   String get callingYouBack => _es
       ? 'Te estamos llamando para conectarte…'
       : "We're calling you to connect you…";
+  String get callUnavailable => _es
+      ? 'No se pudo iniciar la llamada — inténtalo de nuevo'
+      : 'Could not place the call — please try again';
   String get enterCustomAmount =>
       _es ? 'Ingresar monto personalizado' : 'Enter custom amount';
   String get cancelCustomTip =>

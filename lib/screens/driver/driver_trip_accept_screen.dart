@@ -1891,7 +1891,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     ScaffoldMessenger.maybeOf(context)?.showSnackBar(
       SnackBar(
         content: Text(
-          ok ? S.of(context).callingYouBack : S.of(context).connectionError,
+          ok ? S.of(context).callingYouBack : S.of(context).callUnavailable,
         ),
         behavior: SnackBarBehavior.floating,
       ),
@@ -4853,9 +4853,9 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
                 borderRadius: BorderRadius.circular(18),
                   child: SizedBox(
                     key: _miniMapBoxKey,
-                    // Bigger again (190 → 240 → 300): more of the trip in
-                    // view (user spec 2026-09-16).
-                    height: Responsive.h(300),
+                    // Longer downward (190 → 240 → 300 → 340): more of the
+                    // trip in view (user spec 2026-09-17).
+                    height: Responsive.h(340),
                     width: double.infinity,
                     // expand: every child fills the card edge to edge —
                     // the map can never letterbox inside its box (user
@@ -5445,23 +5445,23 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   /// radial vignette for the corners, all in the page's _bg color — the same
   /// treatment as the rider's Find-My mini map.
   Widget _buildMapEdgeFade() {
-    // A soft rim hugging the border only (user spec 2026-09-16): the fade
-    // must read as the edges dissolving into the page, never as a blur
-    // reaching inward — fully transparent by ~5% from every side.
+    // An even thinner, softer rim (user spec 2026-09-17): the fade hugs the
+    // outer border only — fully transparent by ~3.5% from every side, so
+    // nothing reads as a blur reaching inward over the map.
     LinearGradient edge(Alignment begin, Alignment end) => LinearGradient(
           begin: begin,
           end: end,
           colors: [
             _bg,
-            _bg.withValues(alpha: .55),
-            _bg.withValues(alpha: .18),
+            _bg.withValues(alpha: .45),
+            _bg.withValues(alpha: .12),
             Colors.transparent,
             Colors.transparent,
-            _bg.withValues(alpha: .18),
-            _bg.withValues(alpha: .55),
+            _bg.withValues(alpha: .12),
+            _bg.withValues(alpha: .45),
             _bg,
           ],
-          stops: const [0, .01, .028, .05, .95, .972, .99, 1],
+          stops: const [0, .008, .02, .035, .965, .98, .992, 1],
         );
     return Stack(
       fit: StackFit.expand,
@@ -5486,10 +5486,10 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
               colors: [
                 Colors.transparent,
                 Colors.transparent,
-                _bg.withValues(alpha: .18),
+                _bg.withValues(alpha: .12),
                 _bg,
               ],
-              stops: const [0, .85, .95, 1],
+              stops: const [0, .88, .96, 1],
             ),
           ),
         ),

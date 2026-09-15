@@ -531,7 +531,7 @@ class _ScheduledRideDetailsScreenState extends State<ScheduledRideDetailsScreen>
                                       SnackBar(
                                         content: Text(ok
                                             ? S.of(context).callingYouBack
-                                            : S.of(context).connectionError),
+                                            : S.of(context).callUnavailable),
                                         behavior: SnackBarBehavior.floating,
                                       ),
                                     );

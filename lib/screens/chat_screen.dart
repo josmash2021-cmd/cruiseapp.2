@@ -622,7 +622,7 @@ class _ChatScreenState extends State<ChatScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
-          ok ? S.of(context).callingYouBack : S.of(context).connectionError,
+          ok ? S.of(context).callingYouBack : S.of(context).callUnavailable,
         ),
         behavior: SnackBarBehavior.floating,
         duration: const Duration(milliseconds: 1200),

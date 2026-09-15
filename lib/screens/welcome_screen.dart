@@ -166,7 +166,7 @@ class _WelcomeScreenState extends State<WelcomeScreen>
                                   fontSize: 30,
                                   fontWeight: FontWeight.w700,
                                   color: Colors.white,
-                                  letterSpacing: 6,
+                                  letterSpacing: 2,
                                 ),
                               ),
                             ],

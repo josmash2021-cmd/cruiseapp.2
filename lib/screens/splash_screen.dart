@@ -863,7 +863,7 @@ class _SplashScreenState extends State<SplashScreen>
         letter,
         style: GoogleFonts.cinzel(
           fontSize: 38,
-          fontWeight: FontWeight.w700,
+          fontWeight: FontWeight.w900,
           color: Colors.white,
           letterSpacing: 6,
           shadows: [

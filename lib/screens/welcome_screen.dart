@@ -101,9 +101,21 @@ class _WelcomeScreenState extends State<WelcomeScreen>
         fit: StackFit.expand,
         children: [
           // ── Background image (black SUV on golden backlight) ──
-          Image.asset(
-            'assets/images/welcome_bg_suv.png',
-            fit: BoxFit.cover,
+          // fitWidth, top-aligned — never cover: the render keeps its whole
+          // frame (no side crop/zoom), the SUV ends above the buttons, and
+          // the strip below continues the image's own dark floor tone.
+          Positioned.fill(
+            child: ColoredBox(
+              color: const Color(0xFF33261A),
+              child: Align(
+                alignment: Alignment.topCenter,
+                child: Image.asset(
+                  'assets/images/welcome_bg_suv.png',
+                  width: double.infinity,
+                  fit: BoxFit.fitWidth,
+                ),
+              ),
+            ),
           ),
 
           // ── Subtle dark overlay so the bottom controls stay readable ──
@@ -152,7 +164,7 @@ class _WelcomeScreenState extends State<WelcomeScreen>
                                 'CRUISE',
                                 style: GoogleFonts.cinzel(
                                   fontSize: 30,
-                                  fontWeight: FontWeight.w700,
+                                  fontWeight: FontWeight.w900,
                                   color: Colors.white,
                                   letterSpacing: 6,
                                 ),

@@ -226,6 +226,10 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
   LatLng? _walkAnchorDriver;
   bool _walkFetching = false;
   DateTime _lastWalkFetchAt = DateTime(2000);
+  /// The ends the drawn guide currently has — the tick glues them back to
+  /// the live dot/car when they drift ≥2 m between route refetches.
+  LatLng? _walkLineRiderEnd;
+  LatLng? _walkLineDriverEnd;
 
   // Camera fit throttle state.
   DateTime _lastFitAt = DateTime(2000);
@@ -1127,6 +1131,7 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
       _markersSyncing = true;
       _syncMiniMapMarkers().whenComplete(() => _markersSyncing = false);
     }
+    _attachWalkLineEnds();
     // Distance + bearing recompute off the SMOOTHED positions at ~300 ms,
     // not just on rider GPS fixes — the readout and arrow stay live while
     // the driver approaches even if the rider's own stream goes quiet.
@@ -1401,9 +1406,15 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
       final result = await DirectionsService(ApiKeys.webServices)
           .getRoute(origin: rider, destination: driver, profile: 'walking');
       if (!mounted) return;
-      _walkRoute = (result != null && result.points.length >= 2)
-          ? result.points
+      final List<LatLng> pts = (result != null && result.points.length >= 2)
+          ? List<LatLng>.from(result.points)
           : [rider, driver];
+      // The router snaps its ends to the road network — snap them back to
+      // the exact anchor positions: the guide starts ON the rider's dot
+      // and finishes ON the car (same discipline as the trip route line).
+      pts[0] = rider;
+      pts[pts.length - 1] = driver;
+      _walkRoute = pts;
       _walkAnchorRider = rider;
       _walkAnchorDriver = driver;
       setState(() {}); // refresh the stand-in image if it is still up
@@ -1436,8 +1447,53 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
         _walkAnnot!.geometry = mapbox.LineString(coordinates: coords);
         await mgr.update(_walkAnnot!);
       }
+      _walkLineRiderEnd = _walkRoute.first;
+      _walkLineDriverEnd = _walkRoute.last;
     } catch (e) {
       debugPrint('[ConfirmPickup] walk route draw failed: $e');
+    }
+  }
+
+  /// Glue the guide's ends to the live positions between refetches: the
+  /// road geometry only re-asks the router every 10 m, but the line must
+  /// always start exactly where the rider's dot is and end exactly on the
+  /// car — a guide that lags behind the dot guides nobody.
+  void _attachWalkLineEnds() {
+    final mgr = _walkRouteMgr;
+    final annot = _walkAnnot;
+    if (mgr == null || annot == null || !mounted || _walkRoute.length < 2) {
+      return;
+    }
+    final rLat = _riderMotion.lat, rLng = _riderMotion.lng;
+    final dLat = _driverMotion.lat ?? _lastDriverPos?.latitude;
+    final dLng = _driverMotion.lng ?? _lastDriverPos?.longitude;
+    if (rLat == null || rLng == null || dLat == null || dLng == null) return;
+    final rider = LatLng(rLat, rLng);
+    final driver = LatLng(dLat, dLng);
+    bool drifted(LatLng live, LatLng? drawn) =>
+        drawn == null ||
+        Geolocator.distanceBetween(live.latitude, live.longitude,
+                drawn.latitude, drawn.longitude) >=
+            2;
+    if (!drifted(rider, _walkLineRiderEnd) &&
+        !drifted(driver, _walkLineDriverEnd)) {
+      return;
+    }
+    _walkRoute[0] = rider;
+    _walkRoute[_walkRoute.length - 1] = driver;
+    _walkLineRiderEnd = rider;
+    _walkLineDriverEnd = driver;
+    final coords = _walkRoute
+        .map((p) => mapbox.Position(p.longitude, p.latitude))
+        .toList();
+    if (coords.any((c) => !c.lat.isFinite || !c.lng.isFinite)) return;
+    try {
+      annot.geometry = mapbox.LineString(coordinates: coords);
+      mgr.update(annot).catchError((Object _) {
+        debugPrint('[ConfirmPickup] walk line re-attach failed');
+      });
+    } catch (e) {
+      debugPrint('[ConfirmPickup] walk line re-attach failed: $e');
     }
   }
 

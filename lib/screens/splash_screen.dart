@@ -861,9 +861,9 @@ class _SplashScreenState extends State<SplashScreen>
       margin: const EdgeInsets.symmetric(horizontal: 1.5),
       child: Text(
         letter,
-        style: GoogleFonts.cinzel(
+        style: GoogleFonts.playfairDisplay(
           fontSize: 38,
-          fontWeight: FontWeight.w900,
+          fontWeight: FontWeight.w700,
           color: Colors.white,
           letterSpacing: 6,
           shadows: [

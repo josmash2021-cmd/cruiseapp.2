@@ -162,9 +162,9 @@ class _WelcomeScreenState extends State<WelcomeScreen>
                               const SizedBox(width: 12),
                               Text(
                                 'CRUISE',
-                                style: GoogleFonts.cinzel(
+                                style: GoogleFonts.playfairDisplay(
                                   fontSize: 30,
-                                  fontWeight: FontWeight.w900,
+                                  fontWeight: FontWeight.w700,
                                   color: Colors.white,
                                   letterSpacing: 6,
                                 ),

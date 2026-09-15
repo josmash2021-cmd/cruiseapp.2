@@ -434,4 +434,41 @@ void main() {
       expect(riderMap, contains('_TrackPhase.arrived'));
     });
   });
+
+  group('user spec 2026-09-16: chase opening, arrow always on, route bearing',
+      () {
+    test('the driver arrow is created eagerly at map ready', () {
+      final body = bodyOf(nav, 'Future<void> _onMapCreated', maxLen: 1900);
+      expect(body, contains('_updateDriverAnnotation()'),
+          reason: 'the dot ticker only fires on movement — without the '
+              'eager create a parked driver never sees the arrow');
+    });
+
+    test('opening and route updates snap to the chase pose, never top-down',
+        () {
+      final created = bodyOf(nav, 'Future<void> _onMapCreated', maxLen: 1900);
+      expect(created, contains('_snapToChasePose();'));
+      expect(created, isNot(contains('!_firstGpsFix || _overview')),
+          reason: 'the top-down fit on open is gone — it belongs to the '
+              'overview toggle only');
+      final succeeded =
+          bodyOf(nav, 'Future<void> _onRouteFetchSucceeded', maxLen: 2800);
+      expect(succeeded, contains('_snapToChasePose();'));
+    });
+
+    test('the very first native frame is already tilted down-route', () {
+      final body =
+          bodyOf(nav, 'cameraOptions: mapbox.CameraOptions(', maxLen: 700);
+      expect(body, contains('zoom: _chaseZoomDefault'));
+      expect(body, contains('pitch: _chasePitch'));
+      expect(body, contains('_routeHeadingFor(widget.initialDriverPos)'));
+    });
+
+    test('a parked/crawling driver aims by route tangent, not GPS noise', () {
+      expect(nav, contains('double? _routeHeadingFor(LatLng pos)'));
+      expect(nav, contains('_speedMps < 1.0'));
+      expect(nav, contains('_dot.setBearing(h)'));
+      expect(nav, contains('RouteSplice.closestSegmentIndex(pts, pos)'));
+    });
+  });
 }

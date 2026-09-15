@@ -281,7 +281,6 @@ class DriverNavViewState extends State<DriverNavView>
   // GPS health: no valid fix for >6 s (stream error / permission / service
   // off all present as silence) flips the phase to gpsUnavailable.
   DateTime? _lastGpsFixAt;
-  bool _firstGpsFix = false;
   bool _gpsDown = false;
   Timer? _gpsWatchdog;
   static const _gpsStaleSecs = 6;
@@ -507,9 +506,19 @@ class DriverNavViewState extends State<DriverNavView>
     // redraw the route and destination pin from the State that survived.
     await _drawRoute();
     await _drawDestPin();
-    // The chase self-heals on the next frame when driving; before the first
-    // fix (or in overview) the fresh surface needs its frame set explicitly.
-    if (!_firstGpsFix || _overview) await _fitRouteOnce();
+    // The driver arrow is created EAGERLY (user spec 2026-09-16): the dot's
+    // ticker only fires while the car moves, so a parked driver used to get
+    // no annotation at all — the arrow simply never appeared.
+    unawaited(_updateDriverAnnotation());
+    // The opening camera is the chase pose (tilted, down-route), never a
+    // top-down overview (user spec 2026-09-16): the per-frame chase sleeps
+    // while the car is parked, so the pose is written explicitly here. The
+    // full-route fit stays for the overview toggle.
+    if (_overview) {
+      await _fitRouteOnce();
+    } else {
+      _snapToChasePose();
+    }
     widget.onMapReady?.call();
   }
 
@@ -545,6 +554,11 @@ class DriverNavViewState extends State<DriverNavView>
         timestampMs: DateTime.now().millisecondsSinceEpoch.toDouble(),
       );
     }
+    // Aim down-route from the very first frame: the GPS heading at 0 mph is
+    // noise, so the opening arrow (and chase camera) takes the route
+    // tangent instead (user spec 2026-09-16).
+    final h = _routeHeadingFor(widget.initialDriverPos);
+    if (h != null) _dot.setBearing(h);
     _lastGpsFixAt = DateTime.now(); // warm-up grace for the first fix
     _armGpsWatchdog();
   }
@@ -571,7 +585,6 @@ class DriverNavViewState extends State<DriverNavView>
   void _onGpsFix(Position pos) {
     if (!mounted) return;
     _lastGpsFixAt = DateTime.now();
-    _firstGpsFix = true;
     if (_gpsDown) {
       _gpsDown = false;
       _recomputeNavPhase();
@@ -591,8 +604,43 @@ class DriverNavViewState extends State<DriverNavView>
     }
     final fixLL = LatLng(pos.latitude, pos.longitude);
     _updateManeuvers(fixLL);
+    // Parked or crawling, the GPS heading is noise (or stale from the last
+    // drive): the arrow — and with it the chase camera — aims down-route,
+    // where the driver has to GO (user spec 2026-09-16).
+    if (_speedMps < 1.0) {
+      final h = _routeHeadingFor(fixLL);
+      if (h != null) _dot.setBearing(h);
+    }
     _checkArrival(pos);
     _checkOffRoute(fixLL);
+  }
+
+  /// Where the arrow should point when the GPS has nothing to say: along
+  /// the route, from the driver's projection toward a look-ahead point
+  /// ~30 m on — the same tangent trick the rider's tracking map steers its
+  /// car by.
+  double? _routeHeadingFor(LatLng pos) {
+    final pts = _routePts;
+    if (pts.length < 2) return null;
+    final seg = RouteSplice.closestSegmentIndex(pts, pos);
+    var from = RouteSplice.projectOnSegment(pos, pts[seg], pts[seg + 1]);
+    var remaining = 30.0;
+    for (var i = seg + 1; i < pts.length; i++) {
+      final d = RouteSplice.haversineM(from, pts[i]);
+      if (d >= remaining && d > 1e-3) {
+        final b = Geolocator.bearingBetween(
+            from.latitude, from.longitude, pts[i].latitude, pts[i].longitude);
+        return (b + 360) % 360;
+      }
+      remaining -= d;
+      from = pts[i];
+    }
+    // Closer to the destination than the look-ahead: aim at the pin — unless
+    // we are already on top of it, where a bearing means nothing.
+    if (RouteSplice.haversineM(pos, pts.last) < 1.0) return null;
+    final b = Geolocator.bearingBetween(
+        pos.latitude, pos.longitude, pts.last.latitude, pts.last.longitude);
+    return (b + 360) % 360;
   }
 
   /// Approaching under 200 m; arrived after consecutive close fixes — with
@@ -851,9 +899,19 @@ class DriverNavViewState extends State<DriverNavView>
     _offlineKeepRoute = false;
     _updateManeuvers(origin);
     _recomputeNavPhase();
-    // The chase owns the camera the moment fixes are coming in; before that
-    // (and in overview) the route gets its one bounds fit.
-    if (_overview || !_firstGpsFix) await _fitRouteOnce();
+    // A parked driver re-aims at the fresh geometry too — the tangent of a
+    // rerouted line can point somewhere new entirely.
+    if (_speedMps < 1.0) {
+      final h = _routeHeadingFor(origin);
+      if (h != null) _dot.setBearing(h);
+    }
+    // Same rule as _onMapCreated: chase pose, never a top-down fit — the
+    // bounds fit belongs to the overview toggle (user spec 2026-09-16).
+    if (_overview) {
+      await _fitRouteOnce();
+    } else {
+      _snapToChasePose();
+    }
   }
 
   /// A dead network is two different problems: with a line on the map the
@@ -1011,7 +1069,8 @@ class DriverNavViewState extends State<DriverNavView>
     } catch (_) {}
   }
 
-  /// One bounds fit when the route arrives, then the chase owns the camera.
+  /// The overview-toggle bounds fit (the only top-down view left, user spec
+  /// 2026-09-16 — opening and route updates use _snapToChasePose instead).
   Future<void> _fitRouteOnce() async {
     if (_routePts.length < 2) return;
     if (kIsWeb) {
@@ -1109,6 +1168,28 @@ class DriverNavViewState extends State<DriverNavView>
     // Top padding pushes the focal point below centre (the car sits at
     // ~60% of the screen height, Google-Maps style) and keeps the arrow
     // clear of the maneuver bar.
+    final topPad = (MediaQuery.maybeOf(context)?.padding.top ?? 0) + 130;
+    _writeCamera(mapbox.CameraOptions(
+      center: mapbox.Point(coordinates: mapbox.Position(lng, lat)),
+      zoom: _chaseZoom,
+      bearing: _dot.bearing,
+      pitch: _chasePitch,
+      padding: mapbox.MbxEdgeInsets(top: topPad, left: 0, right: 0, bottom: 0),
+    ));
+  }
+
+  /// One explicit chase-pose write, for the moments the per-frame chase is
+  /// asleep: the dot's ticker only fires on movement, so a parked driver
+  /// gets no frames — and without this the camera stayed wherever a
+  /// top-down bounds fit had left it (user spec 2026-09-16). Writes nothing
+  /// in freeLook / recentering / overview, exactly like the per-frame chase.
+  void _snapToChasePose() {
+    if (_camState != _CamState.following || _overview || !_mapMounted) {
+      return;
+    }
+    final lat = _dot.lat;
+    final lng = _dot.lng;
+    if (lat == null || lng == null) return;
     final topPad = (MediaQuery.maybeOf(context)?.padding.top ?? 0) + 130;
     _writeCamera(mapbox.CameraOptions(
       center: mapbox.Point(coordinates: mapbox.Position(lng, lat)),
@@ -1526,12 +1607,24 @@ class DriverNavViewState extends State<DriverNavView>
                     child: mapbox.MapWidget(
                       textureView: true,
                       styleUri: MapboxConfig.styleDark,
+                      // The very first native frame is already the chase
+                      // pose (user spec 2026-09-16): tilted, aimed down-
+                      // route — never a flat overview that a later write
+                      // has to correct in front of the driver.
                       cameraOptions: mapbox.CameraOptions(
                         center: mapbox.Point(
                             coordinates: mapbox.Position(
                                 widget.initialDriverPos.longitude,
                                 widget.initialDriverPos.latitude)),
-                        zoom: 15.0,
+                        zoom: _chaseZoomDefault,
+                        pitch: _chasePitch,
+                        bearing:
+                            _routeHeadingFor(widget.initialDriverPos) ?? 0.0,
+                        padding: mapbox.MbxEdgeInsets(
+                            top: media.padding.top + 130,
+                            left: 0,
+                            right: 0,
+                            bottom: 0),
                       ),
                       onMapCreated: _onMapCreated,
                       onStyleLoadedListener: (_) async {

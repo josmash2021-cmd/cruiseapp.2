@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:convert';
-import '../../services/map_launcher_service.dart';
 import '../../utils/app_platform.dart';
 import '../../widgets/neu_style.dart';
 import 'driver_earnings_screen.dart';
@@ -1824,62 +1823,6 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
         (route) => false,
       );
     });
-  }
-
-  // ── Navigation ────────────────────────────────────────────────────────────
-  Future<void> _openNativeMaps(LatLng dest) async {
-    final lat = dest.latitude;
-    final lng = dest.longitude;
-
-    // Ask Settings → Navigation first.
-    //
-    // This screen is where a driver actually presses Navigate, and it
-    // used to ignore every one of those settings: it opened Google Maps,
-    // then Waze, then Apple Maps, in that fixed order, with no avoid
-    // parameters. A driver who chose Waze and turned on Avoid Tolls got
-    // Google Maps and a route through the toll booth.
-    //
-    // False means either they prefer in-app navigation or their chosen
-    // app would not open — both fall through to the chain below, which
-    // is the behaviour this button has always had.
-    if (await MapLauncherService.navigate(destLat: lat, destLng: lng)) {
-      return;
-    }
-    if (!mounted) return;
-
-    if (AppPlatform.isIOS) {
-      final gMapsUrl = Uri.parse(
-        'comgooglemaps://?daddr=$lat,$lng&directionsmode=driving',
-      );
-      if (await canLaunchUrl(gMapsUrl)) {
-        await launchUrl(gMapsUrl, mode: LaunchMode.externalApplication);
-        return;
-      }
-      final wazeUrl = Uri.parse('waze://?ll=$lat,$lng&navigate=yes');
-      if (await canLaunchUrl(wazeUrl)) {
-        await launchUrl(wazeUrl, mode: LaunchMode.externalApplication);
-        return;
-      }
-      await launchUrl(
-        Uri.parse('https://maps.apple.com/?daddr=$lat,$lng&dirflg=d&t=m'),
-        mode: LaunchMode.externalApplication,
-      );
-    } else {
-      final gMapsUrl = Uri.parse('google.navigation:q=$lat,$lng&mode=d');
-      if (await canLaunchUrl(gMapsUrl)) {
-        await launchUrl(gMapsUrl, mode: LaunchMode.externalApplication);
-        return;
-      }
-      final wazeUrl = Uri.parse('waze://?ll=$lat,$lng&navigate=yes');
-      if (await canLaunchUrl(wazeUrl)) {
-        await launchUrl(wazeUrl, mode: LaunchMode.externalApplication);
-        return;
-      }
-      await launchUrl(
-        Uri.parse('https://www.google.com/maps/dir/?api=1&destination=$lat,$lng&travelmode=driving'),
-        mode: LaunchMode.externalApplication,
-      );
-    }
   }
 
   // ── Phone / Message ───────────────────────────────────────────────────────
@@ -5507,11 +5450,15 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
         onPressed: _slid ? null : () {
           setState(() => _slid = true);
           HapticService.heavyImpact();
-          // Navigate immediately — don't wait for route animation
+          // Navigate immediately — don't wait for route animation.
+          // Start Trip opens the IN-APP navigation (user spec 2026-09-17):
+          // the mini map blooms into the nav surface through the morph
+          // overlay, chase camera already engaged — never a hard app
+          // switch to external maps.
           Future.delayed(const Duration(milliseconds: 400), () {
             if (!mounted) return;
             setState(() => _tripStarted = true);
-            _openNativeMaps(widget.pickupLatLng);
+            _enterNavMode();
           });
         },
         style: ElevatedButton.styleFrom(

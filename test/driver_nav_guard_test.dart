@@ -9,10 +9,11 @@ import 'package:flutter_test/flutter_test.dart';
 /// CAN pin is that the load-bearing pieces are wired where they belong:
 ///   1. Web-booking bookkeeping lines never reach the driver as
 ///      "passenger instructions".
-///   2. Continue AND Directions (both legs) open the in-app DriverNavView
-///      (`_enterNavMode`); phase-1 Start Trip and the address cards stay on
-///      external maps. The surface handoff is ordered: preview unmounts →
-///      coordinator release → nav mounts (two live MapWidgets crash iOS).
+///   2. Continue AND Directions (both legs) AND phase-1 Start Trip open the
+///      in-app DriverNavView (`_enterNavMode`, user spec 2026-09-17); the
+///      address cards stay on external maps. The surface handoff is
+///      ordered: preview unmounts → coordinator release → nav mounts (two
+///      live MapWidgets crash iOS).
 ///   3. The nav view is production-grade: off-route rerouting (40 m / 4 s /
 ///      15 s cooldown / stale-seq guard), _CamState + _NavPhase state
 ///      machines, internal arrival that never fires backend transitions,
@@ -78,13 +79,14 @@ void main() {
           reason: 'Continue/Directions no longer leave the app');
     });
 
-    test('phase-1 Start Trip stays on external maps', () {
+    test('phase-1 Start Trip enters in-app nav with the morph', () {
       final body =
           bodyOf(accept, 'Widget _buildSlideStartTrip() {', maxLen: 1300);
-      expect(body, contains('_openNativeMaps(widget.pickupLatLng)'));
-      expect(body, isNot(contains('_enterNavMode')),
-          reason: 'Start Trip is the phase-1 button — it keeps opening '
-              'external maps');
+      expect(body, contains('_enterNavMode()'),
+          reason: 'user spec 2026-09-17: Start Trip opens the in-app '
+              'navigation through the mini-map morph, chase camera ready');
+      expect(body, isNot(contains('_openNativeMaps')),
+          reason: 'Start Trip no longer leaves the app for external maps');
     });
 
     test('the old _goNavigate launchers are gone', () {

@@ -609,7 +609,16 @@ class DriverNavViewState extends State<DriverNavView>
     // where the driver has to GO (user spec 2026-09-16).
     if (_speedMps < 1.0) {
       final h = _routeHeadingFor(fixLL);
-      if (h != null) _dot.setBearing(h);
+      // Deadband (user spec 2026-09-17): a parked car's fix wanders metres
+      // between readings and the tangent computed off it swings with the
+      // projection — re-aiming on every fix made the arrow twitch through
+      // big arcs at stoplights. Only a meaningful change of where the route
+      // points retargets the arrow; the SmoothMotion lerp turns it there.
+      if (h != null) {
+        var diff = (h - _dot.bearing).abs() % 360;
+        if (diff > 180) diff = 360 - diff;
+        if (diff > 20) _dot.setBearing(h);
+      }
     }
     _checkArrival(pos);
     _checkOffRoute(fixLL);

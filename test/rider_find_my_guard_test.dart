@@ -8,10 +8,13 @@ import 'package:flutter_test/flutter_test.dart';
 ///   1. The 4-digit pickup PIN is read from `pickup_pin` on the Firestore
 ///      trip doc the screen already subscribes to, and the PIN block only
 ///      renders while the field is present.
-///   2. The proximity latch at 2 m writes `rider_confirmed_pickup` (the
-///      exact write that unlocks the driver's Start Ride) but NEVER calls
-///      widget.onConfirmed — the screen closes only when the driver starts
-///      the trip (green overlay + fade) or on cancel/wait-timeout.
+///   2. FOUND is pure, reversible UI (user spec 2026-09-16): the proximity
+///      radius adapts to each fix's GPS accuracy (2 m … 30 m cap), two
+///      consecutive fixes inside flip to FOUND, two outside (radius + 5 m
+///      buffer) flip back to FINDING. It writes NOTHING — the driver's PIN
+///      entry is the only thing that unlocks Start Ride — and it NEVER
+///      calls widget.onConfirmed: the screen closes only when the driver
+///      starts the trip (green overlay + fade) or on cancel/wait-timeout.
 ///   3. No press-to-confirm remnant: `_onConfirmPressed` and the
 ///      `rideAutoStartWarning` line are gone.
 ///   4. The bottom row adds Support (headset) opening
@@ -60,28 +63,44 @@ void main() {
     });
   });
 
-  group('proximity latches FOUND but never confirms', () {
-    test('the latch threshold is 2 m', () {
+  group('proximity FOUND is pure, reversible UI (user spec 2026-09-16)', () {
+    test('the radius adapts to GPS accuracy: 2 m base, 30 m cap', () {
       expect(src.contains('static const double _kDetectMeters = 2.0;'),
           isTrue,
-          reason: 'spec: FOUND latches at 2 m (was 2.5)');
+          reason: 'spec: with a fine fix the bar stays "at the car" (2 m)');
+      expect(src.contains('static const double _kDetectMaxMeters = 30.0;'),
+          isTrue,
+          reason: 'spec: never accept a fix beyond 30 m, however bad the GPS');
+      final body = bodyOf('void _startProximityWatch() {');
+      expect(body.contains('pos.accuracy'), isTrue,
+          reason: 'GPS cannot resolve 2 m on a bad-signal day — the fix\'s '
+              'own accuracy raises the bar or FOUND would never fire');
     });
-    test('the latch writes the confirm flag and never calls onConfirmed', () {
+    test('the latch writes NO remote flag and never calls onConfirmed', () {
       final body = bodyOf('void _latchFound() {');
-      expect(body.contains('_writeRiderConfirmed'), isTrue);
+      expect(body.contains('_writeRiderConfirmed'), isFalse,
+          reason: 'the PIN is the only Start Ride unlock — proximity must '
+              'not write the flag');
       expect(body.contains('onConfirmed'), isFalse,
           reason: 'FOUND must never close the screen by itself — only the '
               'driver starting the trip (or a cancel) closes it');
+      expect(src.contains('_writeRiderConfirmed'), isFalse,
+          reason: 'the proximity Firestore write is gone for good');
+      expect(src.contains('rider_confirmed_pickup'), isFalse,
+          reason: 'only the backend PIN-confirm writes that flag now');
     });
-    test('the exact Firestore write that unlocks Start Ride is kept', () {
-      final body = bodyOf('Future<void> _writeRiderConfirmed() async {');
-      expect(body.contains("'rider_confirmed_pickup': true"), isTrue);
-      expect(body.contains('confirmed_at'), isTrue);
-      expect(body.contains('FieldValue.serverTimestamp()'), isTrue);
+    test('FOUND is reversible with hysteresis: away → FINDING, back → FOUND',
+        () {
+      expect(src.contains('void _unlatchFound()'), isTrue,
+          reason: 'walking away from the car must drop back to FINDING');
+      expect(src.contains('_kExitBufferMeters'), isTrue,
+          reason: 'exit needs radius + buffer so boundary jitter never flaps');
+      final body = bodyOf('void _startProximityWatch() {');
+      expect(body.contains('_unlatchFound()'), isTrue);
     });
     test('no press-to-confirm path remains', () {
       expect(src.contains('_onConfirmPressed'), isFalse,
-          reason: 'the confirm press is gone — proximity latches FOUND and '
+          reason: 'the confirm press is gone — proximity flips FOUND and '
               'the driver starting the trip closes the page');
       expect(src.contains('rideAutoStartWarning'), isFalse,
           reason: 'spec: the auto-start warning line is removed');

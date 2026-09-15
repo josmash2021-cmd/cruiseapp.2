@@ -249,7 +249,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   /// True exactly while [_buildSlideWaitingForRider] is the active phase
   /// widget — never before arriving, never after the ride started.
   bool get _showPickupPinCard =>
-      _arrivedConfirmed && !_rideStarted && !_riderConfirmedPickup && !_waitingOverride;
+      _arrivedConfirmed && !_rideStarted && !_riderConfirmedPickup;
 
   // Safety-net: backend status poll. The Firestore listener above is the
   // primary signal but can silently miss events (auth expired, doc not
@@ -274,13 +274,6 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   // ── "Passenger confirmed" banner above the action button ──
   bool _confirmBannerShow = false;
   Timer? _confirmBannerTimer;
-
-  // Fallback for the Waiting-for-rider stage: a rider on an old build (or
-  // with dead GPS) never writes rider_confirmed_pickup, and the driver
-  // must never be locked out of starting the ride. After 90 s in the
-  // arrived state the Start button unlocks regardless.
-  bool _waitingOverride = false;
-  Timer? _waitingOverrideTimer;
 
   // ── Driver pre-pickup cancel (POST /trips/{id}/driver-cancel) ──
   bool _driverCancelling = false;
@@ -1091,7 +1084,6 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     _tiltCtrl.dispose();
     _confirmBannerTimer?.cancel();
     _routeBannerTimer?.cancel();
-    _waitingOverrideTimer?.cancel();
     _pinCtrl.dispose();
     _pinFocusNode.dispose();
     _pinShakeCtrl.dispose();
@@ -2144,12 +2136,12 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     });
   }
 
-  /// Arrived, rider not aboard yet: a calm non-tappable pill. The moment
-  /// the rider's own proximity detection writes rider_confirmed_pickup
-  /// (their Find-My screen fires at ~2.5 m), the stage key changes and
-  /// the AnimatedSwitcher morphs this into the pulsing Start Ride.
+  /// Arrived, rider not aboard yet: a calm non-tappable pill. The pickup
+  /// code is the ONLY way past it (user spec 2026-09-16): the rider reads
+  /// their 4 digits, the driver types them below, the backend writes
+  /// rider_confirmed_pickup, and the AnimatedSwitcher morphs this into the
+  /// pulsing Start Ride.
   Widget _buildSlideWaitingForRider() {
-    _armWaitingOverride();
     return Stack(
       key: const ValueKey('waiting_rider'),
       children: [
@@ -2174,13 +2166,6 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
         _buildShimmerOverlay(62),
       ],
     );
-  }
-
-  void _armWaitingOverride() {
-    if (_waitingOverride || _waitingOverrideTimer != null) return;
-    _waitingOverrideTimer = Timer(const Duration(seconds: 90), () {
-      if (mounted) setState(() => _waitingOverride = true);
-    });
   }
 
   // ── Pickup PIN ────────────────────────────────────────────────────────────
@@ -5370,9 +5355,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     if (_rideStarted && _nearDropoff) return 'finish';
     if (_rideStarted) return 'finish_locked';
     if (_arrivedConfirmed) {
-      return (_riderConfirmedPickup || _waitingOverride)
-          ? 'start_ride'
-          : 'waiting_rider';
+      return _riderConfirmedPickup ? 'start_ride' : 'waiting_rider';
     }
     if (_tripStarted && _nearPickup) return 'arrived';
     if (_tripStarted) return 'arrived_locked';
@@ -5390,10 +5373,10 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
       return _buildSlideFinishTripLocked();
     }
     // Phase 4: Arrived confirmed, ride not started. Until the rider's
-    // proximity confirmation lands (or the 90 s fallback), the button
-    // reads "Waiting for your rider" and cannot be pressed.
+    // pickup code is entered (the only unlock — user spec 2026-09-16),
+    // the button reads "Waiting for your rider" and cannot be pressed.
     if (_arrivedConfirmed && !_rideStarted) {
-      return (_riderConfirmedPickup || _waitingOverride)
+      return _riderConfirmedPickup
           ? _buildSlideStartRide()
           : _buildSlideWaitingForRider();
     }

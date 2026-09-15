@@ -16,6 +16,9 @@ import 'package:flutter_test/flutter_test.dart';
 ///      morphs into Start Ride even if the Firestore flag lands later),
 ///      403 = red shake + pickupCodeInvalid with cleared boxes, 429 =
 ///      pickupCodeTooManyAttempts with locked input.
+///   5. The PIN is MANDATORY (user spec 2026-09-16): it is the only unlock
+///      for Start Ride — the 90 s `_waitingOverride` fallback is gone and
+///      the rider's proximity FOUND no longer writes the confirm flag.
 ///
 /// The screen needs a live Mapbox surface, so this pins the source discipline.
 void main() {
@@ -44,11 +47,19 @@ void main() {
           reason: 'never show the PIN after the ride started');
       expect(cond.contains('!_riderConfirmedPickup'), isTrue,
           reason: 'once confirmed the pill is already Start Ride');
-      expect(cond.contains('!_waitingOverride'), isTrue,
-          reason: 'the 90 s fallback also morphs the pill — no PIN needed');
+      expect(cond.contains('_waitingOverride'), isFalse,
+          reason: 'user spec 2026-09-16: the PIN is mandatory — the 90 s '
+              'fallback that also unlocked Start Ride is gone');
       // Same four flags gate the phase router.
       final router = bodyOf('Widget _buildCurrentPhaseWidget()', maxLen: 900);
       expect(router.contains('_buildSlideWaitingForRider()'), isTrue);
+    });
+
+    test('the 90 s override is gone — the PIN is the only Start Ride unlock',
+        () {
+      expect(src.contains('_waitingOverride'), isFalse,
+          reason: 'user spec 2026-09-16: the rider must give the code; no '
+              'timer may morph the pill into Start Ride');
     });
 
     test('placed right after the pickup address card, before the Spacer', () {
@@ -143,9 +154,10 @@ void main() {
           reason: 'the submitting flag must reset or retry is impossible');
     });
 
-    test('the Firestore proximity listener stays untouched', () {
+    test('the Firestore flag listener stays untouched', () {
       expect(src.contains("data['rider_confirmed_pickup'] == true"), isTrue,
-          reason: 'the listener remains the cross-device source of truth');
+          reason: 'the listener remains the cross-device source of truth — '
+              'the backend PIN-confirm writes that flag');
     });
   });
 }

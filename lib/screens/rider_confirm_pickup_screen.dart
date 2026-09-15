@@ -34,13 +34,14 @@ import 'help_screen.dart';
 /// (docs/mockups/find_my_pickup_mockup.html is the approved design).
 ///
 /// Nothing here is pressed to confirm: the phone watches its own GPS against
-/// the driver's live position, points a compass arrow at them, and the moment
-/// the rider stands within 2 m for two consecutive fixes it latches FOUND —
-/// green ring, check, glow, pill — and writes `rider_confirmed_pickup` to the
-/// trip doc, which is what unlocks the driver's Start Ride. The screen NEVER
-/// closes by itself: it leaves only when the driver starts the trip (a green
-/// "starting your ride" beat, then the fade-out) or when the trip is
-/// cancelled (wait timeout).
+/// the driver's live position, points a compass arrow at them, and flips to
+/// FOUND — green ring, check, glow, pill — while the rider stands at the car
+/// (adaptive radius, two consecutive fixes; it flips back to FINDING if they
+/// walk away). FOUND writes nothing: the rider reads the 4-digit code to the
+/// driver and the driver's PIN entry is the only thing that unlocks Start
+/// Ride. The screen NEVER closes by itself: it leaves only when the driver
+/// starts the trip (a green "starting your ride" beat, then the fade-out) or
+/// when the trip is cancelled (wait timeout).
 class RiderConfirmPickupScreen extends StatefulWidget {
   /// Bumped by the tracking screen the instant the DRIVER presses Start
   /// (in_trip lands): the page flips to its green FOUND state immediately,
@@ -89,8 +90,8 @@ class RiderConfirmPickupScreen extends StatefulWidget {
   final LatLng Function()? driverPosOf;
 
   /// Called ONLY when the driver starts the trip from their side — never
-  /// from proximity. The FOUND latch writes `rider_confirmed_pickup` and
-  /// waits; this screen stays up until the trip starts or is cancelled.
+  /// from proximity. FOUND is pure UI (it writes nothing); this screen
+  /// stays up until the trip starts or is cancelled.
   final VoidCallback onConfirmed;
 
   /// Called when the trip is cancelled (e.g., auto-cancel due to wait timeout).
@@ -144,13 +145,20 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
   /// magnetometer — the arrow then points north-referenced.
   double _heading = 0;
 
-  bool _driverDetected = false; // the FOUND latch — never un-latches
-  bool _confirmedWritten = false;
+  bool _driverDetected = false; // FOUND state — reversible (unlatches when the rider walks away)
   int _closeFixes = 0;
 
-  /// Two consecutive fixes inside this radius latch FOUND. 2 m (was 2.5):
-  /// "you are at the car", not "near the car".
+  /// FOUND enters when two consecutive fixes land inside the proximity
+  /// radius. The radius is adaptive: 2 m with a fine GPS fix — "you are at
+  /// the car", not "near the car" — but GPS can't resolve 2 m on a bad
+  /// signal day, so each fix's own accuracy raises the bar, never past
+  /// [_kDetectMaxMeters] or a basement fix would mark FOUND a block away.
   static const double _kDetectMeters = 2.0;
+  static const double _kDetectMaxMeters = 30.0;
+
+  /// FOUND exits only past radius + this buffer (again two consecutive
+  /// fixes), so jitter straddling the boundary never flaps the state.
+  static const double _kExitBufferMeters = 5.0;
 
   /// Screen-space angle (radians) the particle crescent is CURRENTLY
   /// facing. Eased toward the arrow's live direction a little every frame
@@ -370,8 +378,8 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
 
   /// Watch the rider's own GPS against the driver's live position: keep the
   /// arrow pointed, the distance readout fresh, the mini map's rider dot
-  /// gliding, and latch FOUND the moment two consecutive fixes land within
-  /// [_kDetectMeters].
+  /// gliding, and flip FOUND on/off as consecutive fixes land inside/outside
+  /// the adaptive proximity radius.
   void _startProximityWatch() {
     if (kIsWeb) return; // browser GPS is too coarse to point or detect with
     if (widget.driverPosOf == null) return;
@@ -413,49 +421,55 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
         _bearingToDriver = (bearing + 360) % 360;
       });
 
-      // Detection: two consecutive fixes inside the ring, so a single GPS
-      // spike through the threshold cannot trigger it — instant in practice
-      // (fixes arrive ~1/s) without being gullible.
-      if (meters <= _kDetectMeters) {
-        _closeFixes++;
-        if (_closeFixes >= 2) _latchFound();
+      // Detection: two consecutive fixes inside the radius latch FOUND —
+      // a single GPS spike through the threshold cannot trigger it,
+      // instant in practice (fixes arrive ~1/s) without being gullible.
+      // The radius adapts to the fix's own accuracy (2 m … 30 m). FOUND is
+      // reversible: two consecutive fixes past radius + buffer drop back
+      // to FINDING — the rider walked away from the car.
+      final radius = math.max(
+          _kDetectMeters, math.min(pos.accuracy, _kDetectMaxMeters));
+      if (_driverDetected) {
+        if (meters > radius + _kExitBufferMeters) {
+          _closeFixes++;
+          if (_closeFixes >= 2) _unlatchFound();
+        } else {
+          _closeFixes = 0;
+        }
       } else {
-        _closeFixes = 0;
+        if (meters <= radius) {
+          _closeFixes++;
+          if (_closeFixes >= 2) _latchFound();
+        } else {
+          _closeFixes = 0;
+        }
       }
     }, onError: (Object e) {
       debugPrint('[ConfirmPickup] rider GPS stream error: $e');
     });
   }
 
-  /// Two consecutive fixes within [_kDetectMeters]: latch FOUND — green
-  /// ring, check, glow, pill. Writes the `rider_confirmed_pickup` flag (the
-  /// exact write the confirm press used to do) because that flag is what
-  /// unlocks the driver's Start Ride. It does NOT call widget.onConfirmed
-  /// and NEVER closes the screen: only the driver starting the trip (or a
+  /// Two consecutive fixes within the radius: FOUND — green ring, check,
+  /// glow, pill. Pure UI state (user spec 2026-09-16): it writes NOTHING —
+  /// the rider still has to read the 4-digit code to the driver, and the
+  /// driver's PIN entry is the only thing that unlocks Start Ride. It
+  /// NEVER closes the screen: only the driver starting the trip (or a
   /// cancellation) does that.
   void _latchFound() {
     if (_driverDetected || _driverStarted) return;
     _driverDetected = true;
     HapticService.heavyImpact();
     setState(() {});
-    _writeRiderConfirmed();
   }
 
-  /// The confirm write, preserved exactly: `rider_confirmed_pickup` on the
-  /// trip doc is what unlocks Start Ride on the driver's screen.
-  Future<void> _writeRiderConfirmed() async {
-    if (_confirmedWritten) return;
-    _confirmedWritten = true;
-    final fsId = widget.tripId != null ? 'sql_${widget.tripId}' : widget.firestoreTripId;
-    if (fsId == null || fsId.isEmpty) return;
-    try {
-      await FirebaseFirestore.instance.collection('trips').doc(fsId).update({
-        'rider_confirmed_pickup': true,
-        'confirmed_at': FieldValue.serverTimestamp(),
-      });
-    } catch (e) {
-      debugPrint('[ConfirmPickup] rider_confirmed_pickup write failed: $e');
-    }
+  /// Two consecutive fixes past radius + buffer: back to FINDING — white
+  /// ring, arrow, pill. The rider walked away from the car; walking back
+  /// re-latches FOUND.
+  void _unlatchFound() {
+    if (!_driverDetected || _driverStarted) return;
+    _driverDetected = false;
+    HapticService.lightImpact();
+    setState(() {});
   }
 
   /// Listen to Firestore for the pickup PIN, the trip status changing to

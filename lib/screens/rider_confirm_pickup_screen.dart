@@ -1603,80 +1603,60 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
                 },
               ),
             ),
-          // Feathered edges only (user spec 2026-09-15): IgnorePointer
-          // gradients fading to neuBase on the four borders. No radial veil
-          // over the middle — it washed the whole map out and hid the car.
+          // Edge-only feather (user spec 2026-09-16): a short _bg→transparent
+          // fade on the four borders, just deep enough to hide the hard
+          // edge line — the map itself shows through untouched.
           Positioned(
-            top: 0, left: 0, right: 0, height: 44,
+            top: 0, left: 0, right: 0, height: 18,
             child: IgnorePointer(
               child: Container(
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
                     begin: Alignment.topCenter,
                     end: Alignment.bottomCenter,
-                    colors: [
-                      _bg,
-                      _bg.withValues(alpha: 0.65),
-                      _bg.withValues(alpha: 0.0),
-                    ],
-                    stops: const [0.0, 0.35, 1.0],
+                    colors: [_bg, _bg.withValues(alpha: 0.0)],
                   ),
                 ),
               ),
             ),
           ),
           Positioned(
-            bottom: 0, left: 0, right: 0, height: 44,
+            bottom: 0, left: 0, right: 0, height: 18,
             child: IgnorePointer(
               child: Container(
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
                     begin: Alignment.bottomCenter,
                     end: Alignment.topCenter,
-                    colors: [
-                      _bg,
-                      _bg.withValues(alpha: 0.65),
-                      _bg.withValues(alpha: 0.0),
-                    ],
-                    stops: const [0.0, 0.35, 1.0],
+                    colors: [_bg, _bg.withValues(alpha: 0.0)],
                   ),
                 ),
               ),
             ),
           ),
           Positioned(
-            top: 0, bottom: 0, left: 0, width: 30,
+            top: 0, bottom: 0, left: 0, width: 14,
             child: IgnorePointer(
               child: Container(
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
                     begin: Alignment.centerLeft,
                     end: Alignment.centerRight,
-                    colors: [
-                      _bg,
-                      _bg.withValues(alpha: 0.65),
-                      _bg.withValues(alpha: 0.0),
-                    ],
-                    stops: const [0.0, 0.3, 1.0],
+                    colors: [_bg, _bg.withValues(alpha: 0.0)],
                   ),
                 ),
               ),
             ),
           ),
           Positioned(
-            top: 0, bottom: 0, right: 0, width: 30,
+            top: 0, bottom: 0, right: 0, width: 14,
             child: IgnorePointer(
               child: Container(
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
                     begin: Alignment.centerRight,
                     end: Alignment.centerLeft,
-                    colors: [
-                      _bg,
-                      _bg.withValues(alpha: 0.65),
-                      _bg.withValues(alpha: 0.0),
-                    ],
-                    stops: const [0.0, 0.3, 1.0],
+                    colors: [_bg, _bg.withValues(alpha: 0.0)],
                   ),
                 ),
               ),
@@ -2141,7 +2121,7 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
                               child: _buildPinRow(),
                             ),
                           ],
-                          const SizedBox(height: 26),
+                          const SizedBox(height: 42),
 
                           _buildMiniMap(),
                           const Spacer(),

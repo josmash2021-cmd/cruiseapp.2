@@ -234,7 +234,9 @@ class DriverNavViewState extends State<DriverNavView>
   static const _chaseZoomFast = 17.0;
   static const _chaseZoomManeuver = 18.0;
   static const _zoomLerpPerSec = 0.5;
-  static const _chasePitch = 55.0;
+  // Chase tilt: 25° (user spec 2026-09-17 — the flat, map-forward view of
+  // the reference shot; 55 read as a horizon view and hid the streets).
+  static const _chasePitch = 25.0;
 
   // ── Route + maneuvers ──
   List<LatLng> _routePts = [];
@@ -278,10 +280,12 @@ class DriverNavViewState extends State<DriverNavView>
   static const _arriveAccuracyM = 25.0;
   static const _approachRadiusM = 200.0;
 
-  // GPS health: no valid fix for >6 s (stream error / permission / service
-  // off all present as silence) flips the phase to gpsUnavailable.
+  // GPS health: no valid fix for >6 s starts a cause check — the phase only
+  // flips to gpsUnavailable when location is genuinely off for this app
+  // (service disabled or permission revoked), never on a mere signal stall.
   DateTime? _lastGpsFixAt;
   bool _gpsDown = false;
+  bool _gpsDiagnosing = false;
   Timer? _gpsWatchdog;
   static const _gpsStaleSecs = 6;
 
@@ -573,13 +577,46 @@ class DriverNavViewState extends State<DriverNavView>
     _gpsWatchdog = Timer.periodic(const Duration(seconds: 2), (_) {
       if (!mounted) return;
       final last = _lastGpsFixAt;
-      final down = last == null ||
+      final stale = last == null ||
           DateTime.now().difference(last).inSeconds > _gpsStaleSecs;
+      if (!stale) {
+        if (_gpsDown) {
+          _gpsDown = false;
+          _recomputeNavPhase();
+        }
+        return;
+      }
+      // A stall is not a cause (user spec 2026-09-17): tunnels, urban
+      // canyons and iOS pausing updates on a parked car all look like
+      // silence with every permission ON. The recovery card is ONLY for
+      // location actually disabled — service off or permission revoked —
+      // so the silence gets diagnosed before it is allowed to flip the
+      // phase. The smoother holds the car meanwhile.
+      _diagnoseGpsStall();
+    });
+  }
+
+  /// Async cause-check behind the watchdog: sets [_gpsDown] only when
+  /// location is genuinely unavailable to the app. One in flight ever.
+  Future<void> _diagnoseGpsStall() async {
+    if (_gpsDiagnosing) return;
+    _gpsDiagnosing = true;
+    try {
+      final serviceOn = await Geolocator.isLocationServiceEnabled();
+      final perm = await Geolocator.checkPermission();
+      final denied = perm == LocationPermission.denied ||
+          perm == LocationPermission.deniedForever;
+      final down = !serviceOn || denied;
+      if (!mounted) return;
       if (down != _gpsDown) {
         _gpsDown = down;
         _recomputeNavPhase();
       }
-    });
+    } catch (_) {
+      // A failed diagnosis proves nothing either way — keep the last state.
+    } finally {
+      _gpsDiagnosing = false;
+    }
   }
 
   void _onGpsFix(Position pos) {
@@ -596,7 +633,15 @@ class DriverNavViewState extends State<DriverNavView>
       accuracyM: pos.accuracy,
       timestampMs: pos.timestamp.millisecondsSinceEpoch.toDouble(),
     );
-    _speedMps = pos.speed.isFinite && pos.speed > 0 ? pos.speed : 0;
+    // Speed readout (user spec 2026-09-17 — precise, never frozen at a
+    // stale figure): the platform speed when the fix carries one; iOS
+    // reports -1 when it has none, so fall back to the smoother's own
+    // measured glide speed instead of lying with a 0. Under ~1 mph is a
+    // parked car, not a speed — the deadband kills the 0↔1 flicker.
+    final rawSpeed = pos.speed.isFinite && pos.speed >= 0
+        ? pos.speed
+        : _dot.speedMps;
+    _speedMps = rawSpeed < 0.45 ? 0.0 : rawSpeed;
     final mph = (_speedMps * 2.23694).round();
     if (mph != _lastMphShown) {
       _lastMphShown = mph;
@@ -2492,7 +2537,8 @@ class DriverNavViewState extends State<DriverNavView>
             _sheetCircleBtn(
                 Icons.message_rounded, s.messageAction, widget.onOpenChat),
             const SizedBox(width: 8),
-            _sheetCircleBtn(Icons.phone_rounded, s.callAction, widget.onCall),
+            _sheetCircleBtn(Icons.phone_rounded, s.callAction, widget.onCall,
+                filled: true),
           ],
         ),
         const SizedBox(height: 16),
@@ -2574,7 +2620,12 @@ class DriverNavViewState extends State<DriverNavView>
     );
   }
 
-  Widget _sheetCircleBtn(IconData icon, String label, VoidCallback onTap) {
+  Widget _sheetCircleBtn(IconData icon, String label, VoidCallback onTap,
+      {bool filled = false}) {
+    // Same language as the trip screen's action discs (user spec 2026-09-17):
+    // chat is the quiet dark disc, the call disc is the gold-filled one —
+    // bigger, glowing, the obvious primary action.
+    final d = filled ? 54.0 : 44.0;
     return Tooltip(
       message: label,
       child: GestureDetector(
@@ -2583,15 +2634,27 @@ class DriverNavViewState extends State<DriverNavView>
           onTap();
         },
         child: Container(
-          width: 42,
-          height: 42,
-          decoration: BoxDecoration(
-            color: neuSurface,
-            shape: BoxShape.circle,
-            border:
-                Border.all(color: _gold.withValues(alpha: 0.3), width: 1),
-          ),
-          child: Icon(icon, color: _gold, size: 19),
+          width: d,
+          height: d,
+          decoration: filled
+              ? BoxDecoration(
+                  color: _gold,
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: _gold.withValues(alpha: 0.35),
+                      blurRadius: 18,
+                      offset: const Offset(0, 6),
+                    ),
+                  ],
+                )
+              : BoxDecoration(
+                  color: neuSurface,
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                      color: Colors.white.withValues(alpha: 0.10), width: 1),
+                ),
+          child: Icon(icon, color: filled ? neuBase : _gold, size: d * 0.40),
         ),
       ),
     );

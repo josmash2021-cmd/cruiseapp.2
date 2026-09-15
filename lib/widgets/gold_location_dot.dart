@@ -233,6 +233,10 @@ class GoldLocationDot {
   /// annotation's `iconRotate` — the bitmap is drawn pointing north.
   double get bearing => _motion.bearing;
 
+  /// The smoother's own measured glide speed (m/s). Fallback for the speed
+  /// readout when the platform fix carries no speed (iOS reports -1).
+  double get speedMps => _motion.speedMps;
+
   bool get isReady => _frame != null;
 
   Uint8List? get currentBytes => _frame;

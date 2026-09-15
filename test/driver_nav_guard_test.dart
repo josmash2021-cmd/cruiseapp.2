@@ -365,6 +365,16 @@ void main() {
       expect(nav, contains('s.navRetry'));
     });
 
+    test('a stall is not a cause: the card needs location genuinely off',
+        () {
+      expect(nav, contains('_diagnoseGpsStall'));
+      expect(nav, contains('Geolocator.isLocationServiceEnabled()'));
+      expect(nav, contains('Geolocator.checkPermission()'),
+          reason: 'user spec 2026-09-17: the No-GPS card is only for '
+              'service off or permission revoked — a tunnel/parked-car '
+              'silence with permission ON must not raise it');
+    });
+
     test('network down: keep the drawn route (5/15/30 s backoff) or retry',
         () {
       expect(nav, contains('_offlineKeepRoute'));
@@ -471,6 +481,37 @@ void main() {
       expect(nav, contains('_speedMps < 1.0'));
       expect(nav, contains('_dot.setBearing(h)'));
       expect(nav, contains('RouteSplice.closestSegmentIndex(pts, pos)'));
+    });
+  });
+
+  group('user spec 2026-09-17: flat 25° chase, gold call disc, true speed',
+      () {
+    test('the chase tilt is 25°, never back at 55', () {
+      expect(nav, contains('_chasePitch = 25.0'));
+      expect(nav, isNot(contains('_chasePitch = 55.0')));
+    });
+
+    test('the sheet call disc is the gold-filled one, chat stays dark', () {
+      final call = nav.indexOf('_sheetCircleBtn(Icons.phone_rounded');
+      expect(call, isNonNegative);
+      expect(nav.substring(call, call + 140), contains('filled: true'));
+      final body = bodyOf(nav, 'Widget _sheetCircleBtn(', maxLen: 1600);
+      expect(body, contains('color: _gold,'));
+      expect(body, contains('filled ? neuBase : _gold'),
+          reason: 'the filled disc carries a dark icon on gold');
+    });
+
+    test('the speed box reads the fix, then the smoother, never a stale 0',
+        () {
+      final body = bodyOf(nav, 'void _onGpsFix(Position pos) {', maxLen: 1400);
+      expect(body, contains('_dot.speedMps'),
+          reason: 'iOS reports speed -1 when it has none — the box falls '
+              'back to the smoother’s measured glide speed');
+      expect(body, contains('rawSpeed < 0.45'),
+          reason: 'the <1 mph deadband kills the 0↔1 parked flicker');
+      final dot = File('lib/widgets/gold_location_dot.dart')
+          .readAsStringSync();
+      expect(dot, contains('double get speedMps => _motion.speedMps;'));
     });
   });
 }

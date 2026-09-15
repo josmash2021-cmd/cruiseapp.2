@@ -1887,7 +1887,7 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     // ── Draw dimmed trip route (pickup→dropoff) — visible in all phases ──
     // Use modular route component if available, fallback to legacy
     if (_mapRoute != null) {
-      await _mapRoute!.drawDimmedRoute(opacity: 0.20, width: 5.0);
+      await _mapRoute!.drawDimmedRoute(opacity: 0.20, width: 4.0);
     } else {
       final dimmedPts = _tripRoutePts.isNotEmpty ? _tripRoutePts : _routePts;
       if (dimmedPts.length >= 2) {
@@ -1897,7 +1897,7 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
             _dimmedRouteAnnot ??= await polyMgr.create(mapbox.PolylineAnnotationOptions(
               geometry: safeGeom,
               lineColor: const Color(0xFFFFD700).withValues(alpha: 0.20).toARGB32(),
-              lineWidth: 5.0,
+              lineWidth: 4.0,
               lineJoin: mapbox.LineJoin.ROUND,
             ));
           } catch (e) {
@@ -2212,7 +2212,7 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     try { _remainingRouteAnnot ??= await mgr.create(mapbox.PolylineAnnotationOptions(
       geometry: geom,
       lineColor: const Color(0xFFFFD700).toARGB32(),
-      lineWidth: 5.0, lineJoin: mapbox.LineJoin.ROUND,
+      lineWidth: 4.0, lineJoin: mapbox.LineJoin.ROUND,
     )); } catch (_) {}
   }
 
@@ -2328,7 +2328,7 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
         fresh = await mgr.create(mapbox.PolylineAnnotationOptions(
           geometry: geom,
           lineColor: const Color(0xFFFFD700).toARGB32(),
-          lineWidth: 5.0,
+          lineWidth: 4.0,
           lineJoin: mapbox.LineJoin.ROUND,
           lineOpacity: 0.0,
         ));
@@ -2518,7 +2518,7 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
       mgr.create(mapbox.PolylineAnnotationOptions(
         geometry: approachGeom,
         lineColor: const Color(0xFFFFD700).toARGB32(),
-        lineWidth: 5.0,
+        lineWidth: 4.0,
         lineJoin: mapbox.LineJoin.ROUND,
       )).then((annot) { _approachAnnot = annot; }).catchError((_) {});
     } else {
@@ -2863,7 +2863,7 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
 
   void _webDrawGoldRoute(List<LatLng> pts) {
     if (pts.length < 2) return;
-    _webMapCtrl?.setPolyline('route', _webPts(pts), color: '#FFD700', width: 5);
+    _webMapCtrl?.setPolyline('route', _webPts(pts), color: '#FFD700', width: 4);
   }
 
   void _webDrawDimmedRoute() {
@@ -2873,7 +2873,7 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
       'dimmed',
       _webPts(pts),
       color: 'rgba(255,215,0,0.20)',
-      width: 5,
+      width: 4,
     );
   }
 
@@ -3012,7 +3012,7 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
         (lng: _routePts[i].longitude, lat: _routePts[i].latitude),
     ];
     if (remaining.length < 2) return;
-    web.setPolyline('route', remaining, color: '#FFD700', width: 5);
+    web.setPolyline('route', remaining, color: '#FFD700', width: 4);
   }
 
   /// Web twin of the straight approach line (driver → pickup) shown until
@@ -3038,7 +3038,7 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     web.setPolyline('approach', [
       (lng: _animPos.longitude, lat: _animPos.latitude),
       (lng: widget.pickupLatLng.longitude, lat: widget.pickupLatLng.latitude),
-    ], color: '#FFD700', width: 5);
+    ], color: '#FFD700', width: 4);
   }
 
   /// Web twin of [_fitRouteBounds]: same point sets and card-aware padding,

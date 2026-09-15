@@ -148,7 +148,7 @@ class TrackingMapRoute {
         fresh = await mgr.create(mapbox.PolylineAnnotationOptions(
           geometry: geom,
           lineColor: const Color(0xFFFFD700).toARGB32(),
-          lineWidth: 5.0,
+          lineWidth: 4.0,
           lineJoin: mapbox.LineJoin.ROUND,
           lineOpacity: 0.0,
         ));
@@ -183,7 +183,7 @@ class TrackingMapRoute {
   }
 
   /// Dibuja la ruta completa (dimmed) como fondo
-  Future<void> drawDimmedRoute({double opacity = 0.20, double width = 5.0}) async {
+  Future<void> drawDimmedRoute({double opacity = 0.20, double width = 4.0}) async {
     final mgr = _polylineAnnotMgr;
     if (mgr == null) return;
 
@@ -234,7 +234,7 @@ class TrackingMapRoute {
         mapbox.PolylineAnnotationOptions(
           geometry: line,
           lineColor: const Color(0xFFFFD700).toARGB32(),
-          lineWidth: 5.0,
+          lineWidth: 4.0,
           lineJoin: mapbox.LineJoin.ROUND,
         ),
       );
@@ -259,7 +259,7 @@ class TrackingMapRoute {
         _approachAnnot = await mgr.create(mapbox.PolylineAnnotationOptions(
           geometry: approachGeom,
           lineColor: const Color(0xFFFFD700).toARGB32(),
-          lineWidth: 5.0,
+          lineWidth: 4.0,
           lineJoin: mapbox.LineJoin.ROUND,
         ));
       } catch (e) {
@@ -431,7 +431,7 @@ class TrackingMapRoute {
       _remainingRouteAnnot ??= await mgr.create(mapbox.PolylineAnnotationOptions(
         geometry: geom,
         lineColor: const Color(0xFFFFD700).toARGB32(),
-        lineWidth: 5.0,
+        lineWidth: 4.0,
         lineJoin: mapbox.LineJoin.ROUND,
       ));
     } catch (_) {}

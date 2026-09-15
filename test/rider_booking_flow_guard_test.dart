@@ -150,6 +150,20 @@ void main() {
       expect(pin, contains("'SetPickupLoc-"));
       expect(pin, contains('MapSurfaceCoordinator.instance.acquire('));
     });
+
+    test('boot camera events never run the snap cycle (user spec 2026-09-16)',
+        () {
+      expect(pin, contains('_bootSettled'),
+          reason: 'map creation emits scroll/idle events that are not the '
+              'rider — without the gate the pin re-anchors off the pickup '
+              'onto a nearby suggestion on entry');
+      final scroll = pin.indexOf('void _onScroll() {');
+      expect(pin.substring(scroll, scroll + 400), contains('_bootSettled'),
+          reason: '_onScroll must ignore pre-settle camera events');
+      final idle = pin.indexOf('Future<void> _onIdle() async {');
+      expect(pin.substring(idle, idle + 200), contains('_bootSettled'),
+          reason: '_onIdle must not snap until the opening camera settled');
+    });
   });
 
   group('ride request map resilience', () {

@@ -124,6 +124,14 @@ class _SetPickupLocationScreenState extends State<SetPickupLocationScreen>
   late final Animation<double> _pinDropAnim;
   bool _snappedToSuggestion = false;
 
+  /// Camera-event gate for the opening settle (user spec 2026-09-16):
+  /// creating the map applies center+padding, loads the style and lays the
+  /// PlatformView out — all of which can emit scroll/idle events that are
+  /// NOT the rider dragging. While false, neither _onScroll nor _onIdle
+  /// may run the snap cycle, or the pin re-anchors off the client's pickup
+  /// onto whatever suggestion the camera drifted past on its way in.
+  bool _bootSettled = false;
+
   bool _paying = false;
   String _note = '';
 
@@ -212,6 +220,11 @@ class _SetPickupLocationScreenState extends State<SetPickupLocationScreen>
     _droppedPoint = LatLngSafe(_pin.lat, _pin.lng);
     await _refreshSuggestions();
     unawaited(_refinePickupFromLabel());
+    // The opening camera settles within about a second of creation — every
+    // scroll/idle before that is the map initializing, not the rider.
+    Future<void>.delayed(const Duration(seconds: 1), () {
+      if (mounted) _bootSettled = true;
+    });
   }
 
   /// Bottom camera padding = the sheet's height share, so the camera focal
@@ -320,8 +333,9 @@ class _SetPickupLocationScreenState extends State<SetPickupLocationScreen>
   void _onScroll() {
     // A programmatic easeTo (the open-time refine) is not a rider drag —
     // treating it as one re-anchors the pin off the client's address and
-    // reverse-geocodes over the exact label.
-    if (_cameraAnimating) return;
+    // reverse-geocodes over the exact label. Neither is the map's opening
+    // settle: boot camera events run no snap cycle.
+    if (!_bootSettled || _cameraAnimating) return;
     _userMovedMap = true;
     _userDraggedOnce = true;
     if (_snappedToSuggestion) {
@@ -331,7 +345,7 @@ class _SetPickupLocationScreenState extends State<SetPickupLocationScreen>
   }
 
   Future<void> _onIdle() async {
-    if (_cameraAnimating) return;
+    if (!_bootSettled || _cameraAnimating) return;
     if (!_userMovedMap) return;
     _userMovedMap = false;
     final map = _map;

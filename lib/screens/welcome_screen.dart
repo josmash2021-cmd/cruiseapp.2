@@ -1,7 +1,6 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import '../l10n/app_localizations.dart';
-import 'package:video_player/video_player.dart';
 import '../config/page_transitions.dart';
 import '../widgets/neu_style.dart';
 import 'rider_welcome_screen.dart';
@@ -21,11 +20,6 @@ class _WelcomeScreenState extends State<WelcomeScreen>
   late AnimationController _ctrl;
   late Animation<double> _btnFade;
   late Animation<Offset> _btnSlide;
-
-  late VideoPlayerController _videoCtrl;
-  bool _videoReady = false;
-  double _videoW = 0;
-  double _videoH = 0;
 
   @override
   void initState() {
@@ -47,29 +41,11 @@ class _WelcomeScreenState extends State<WelcomeScreen>
         );
 
     _ctrl.forward();
-
-    // Initialise background video (lightweight, no audio track)
-    _videoCtrl =
-        VideoPlayerController.asset(
-            'assets/images/welcome_bg.mp4',
-            videoPlayerOptions: VideoPlayerOptions(mixWithOthers: true),
-          )
-          ..setLooping(false)
-          ..setVolume(0)
-          ..initialize().then((_) {
-            if (mounted) {
-              _videoW = _videoCtrl.value.size.width;
-              _videoH = _videoCtrl.value.size.height;
-              setState(() => _videoReady = true);
-              _videoCtrl.play();
-            }
-          });
   }
 
   @override
   void dispose() {
     _ctrl.dispose();
-    _videoCtrl.dispose();
     super.dispose();
   }
 
@@ -79,23 +55,11 @@ class _WelcomeScreenState extends State<WelcomeScreen>
       body: Stack(
         fit: StackFit.expand,
         children: [
-          // ── Video background ──
-          if (_videoReady)
-            RepaintBoundary(
-              child: SizedBox.expand(
-                child: FittedBox(
-                  fit: BoxFit.cover,
-                  child: SizedBox(
-                    width: _videoW,
-                    height: _videoH,
-                    child: VideoPlayer(_videoCtrl),
-                  ),
-                ),
-              ),
-            )
-          else
-            // Fallback while video loads
-            Container(color: const Color(0xFF0A0B10)),
+          // ── Background image (black SUV on golden backlight) ──
+          Image.asset(
+            'assets/images/welcome_bg_suv.png',
+            fit: BoxFit.cover,
+          ),
 
           // ── Subtle dark overlay so the bottom controls stay readable ──
           // The lockup and headline are baked into the video itself, so the

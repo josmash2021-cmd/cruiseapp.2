@@ -155,14 +155,29 @@ void main() {
       expect(src.contains('_buildMiniMapStandIn'), isTrue);
       expect(src.contains('StaticRoutePreview('), isTrue);
     });
-    test('the live map is top-down dark style with all gestures off', () {
+    test('the live map is top-down dark style, interactive pan/zoom (user spec 2026-09-15)', () {
       expect(src.contains('styleUri: MapboxConfig.styleDark'), isTrue);
       expect(src.contains('pitch: 0.0'), isTrue);
       final body = bodyOf('Future<void> _onMiniMapCreated(mapbox.MapboxMap ctrl) async {');
-      expect(body.contains('scrollEnabled: false'), isTrue);
-      expect(body.contains('pinchToZoomEnabled: false'), isTrue);
-      expect(body.contains('rotateEnabled: false'), isTrue);
+      expect(body.contains('scrollEnabled: true'), isTrue,
+          reason: 'spec: the strip pans');
+      expect(body.contains('pinchToZoomEnabled: true'), isTrue,
+          reason: 'spec: the strip zooms');
+      expect(body.contains('doubleTapToZoomInEnabled: true'), isTrue);
+      expect(body.contains('quickZoomEnabled: true'), isTrue);
+      expect(body.contains('rotateEnabled: false'), isTrue,
+          reason: 'still top-down, north-up');
       expect(body.contains('pitchEnabled: false'), isTrue);
+    });
+    test('a user pan/zoom latches the camera so auto-fit never fights it', () {
+      expect(src.contains('onScrollListener: (_) => _userTookCamera = true'),
+          isTrue);
+      expect(src.contains('onZoomListener: (_) => _userTookCamera = true'),
+          isTrue);
+      final body = bodyOf('void _maybeRefitMiniMap({bool force = false}) {');
+      expect(body.contains('_userTookCamera'), isTrue,
+          reason: 'once the rider takes the camera the periodic refit must '
+              'stop dragging it back');
     });
     test('rider dot and driver car run through SmoothMotion', () {
       expect(src.contains('final _riderMotion = SmoothMotion();'), isTrue);
@@ -170,14 +185,17 @@ void main() {
       expect(src.contains('_riderMotion.setTarget('), isTrue,
           reason: 'the rider-GPS stream feeds the smoother — the dot glides');
     });
-    test('car marker is the tier PNG, edges feather into the background', () {
+    test('car marker is the tier PNG, ONLY the edges feather into the background', () {
       expect(src.contains('assets/images/car_suv.png'), isTrue);
       expect(src.contains('assets/images/car_sedan.png'), isTrue);
       final body = bodyOf('Widget _buildMiniMap() {', maxLen: 6000);
       expect(body.contains('IgnorePointer'), isTrue,
           reason: 'the feather gradients never intercept touches');
       expect(body.contains('LinearGradient'), isTrue,
-          reason: 'mockup: all four map edges fade into neuBase');
+          reason: 'the four borders fade into neuBase');
+      expect(body.contains('RadialGradient'), isFalse,
+          reason: 'user spec 2026-09-15: only the border feathers — the '
+              'radial veil washed the whole map out and hid the car');
     });
     test('never on web (mapbox_maps_flutter does not run there)', () {
       expect(src.contains('if (!kIsWeb) {'), isTrue,
@@ -223,6 +241,11 @@ void main() {
 
     test('the ring geometry uses 44% of the canvas', () {
       expect(src.contains('size.width * 0.44'), isTrue);
+    });
+
+    test('the needle is much bigger (user spec 2026-09-15)', () {
+      expect(src.contains('size: 220'), isTrue,
+          reason: 'the arrow grew from 160 to 220 (~69% of the ring)');
     });
   });
 

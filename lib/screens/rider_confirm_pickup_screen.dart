@@ -231,6 +231,11 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
   LatLng? _fitRiderAnchor;
   LatLng? _fitDriverAnchor;
 
+  /// Set on the first user pan/zoom (the strip is interactive now): the
+  /// auto-fit must never drag the camera back once the rider takes it —
+  /// the same latch map_picker_screen uses.
+  bool _userTookCamera = false;
+
   @override
   void initState() {
     super.initState();
@@ -1161,15 +1166,17 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
   Future<void> _onMiniMapCreated(mapbox.MapboxMap ctrl) async {
     _miniMap = ctrl;
     try {
-      // Read-only strip: every gesture off, top-down, north-up.
+      // Interactive strip (user spec 2026-09-15): pan + pinch/double-tap
+      // zoom like every other map — still top-down and north-up, so
+      // rotate/pitch stay off.
       ctrl.gestures.updateSettings(mapbox.GesturesSettings(
-        scrollEnabled: false,
-        pinchToZoomEnabled: false,
-        doubleTapToZoomInEnabled: false,
-        doubleTouchToZoomOutEnabled: false,
+        scrollEnabled: true,
+        pinchToZoomEnabled: true,
+        doubleTapToZoomInEnabled: true,
+        doubleTouchToZoomOutEnabled: true,
         rotateEnabled: false,
         pitchEnabled: false,
-        quickZoomEnabled: false,
+        quickZoomEnabled: true,
       ));
       ctrl.scaleBar.updateSettings(mapbox.ScaleBarSettings(enabled: false));
       ctrl.compass.updateSettings(mapbox.CompassSettings(enabled: false));
@@ -1405,7 +1412,7 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
   /// Refit the camera when either anchor moved more than 6 m, at most once
   /// every 2.5 s — the frame should pursue the walk, not breathe with it.
   void _maybeRefitMiniMap({bool force = false}) {
-    if (!mounted || _miniMap == null) return;
+    if (!mounted || _miniMap == null || _userTookCamera) return;
     final rLat = _riderMotion.lat, rLng = _riderMotion.lng;
     final rider = (rLat != null && rLng != null) ? LatLng(rLat, rLng) : null;
     final driver = _lastDriverPos;
@@ -1513,8 +1520,8 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
   }
 
   /// The live strip (~230 px, full width) or its static stand-in while the
-  /// surface handoff completes, with every edge feathered into the page
-  /// background — stronger at top/bottom, per the mockup. No card frame.
+  /// surface handoff completes. Interactive (pan/zoom); only the four
+  /// borders feather into the page background. No card frame, no veil.
   Widget _buildMiniMap() {
     return SizedBox(
       height: 230,
@@ -1542,10 +1549,13 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
                 ),
                 textureView: true,
                 onMapCreated: _onMiniMapCreated,
+                onScrollListener: (_) => _userTookCamera = true,
+                onZoomListener: (_) => _userTookCamera = true,
               ),
             ),
-          // Feathered edges — IgnorePointer gradients fading to neuBase on
-          // all four sides, plus a soft radial vignette.
+          // Feathered edges only (user spec 2026-09-15): IgnorePointer
+          // gradients fading to neuBase on the four borders. No radial veil
+          // over the middle — it washed the whole map out and hid the car.
           Positioned(
             top: 0, left: 0, right: 0, height: 44,
             child: IgnorePointer(
@@ -1617,22 +1627,6 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
                       _bg.withValues(alpha: 0.0),
                     ],
                     stops: const [0.0, 0.3, 1.0],
-                  ),
-                ),
-              ),
-            ),
-          ),
-          Positioned.fill(
-            child: IgnorePointer(
-              child: Container(
-                decoration: BoxDecoration(
-                  gradient: RadialGradient(
-                    radius: 1.05,
-                    colors: [
-                      Colors.transparent,
-                      _bg.withValues(alpha: 0.4),
-                    ],
-                    stops: const [0.55, 1.0],
                   ),
                 ),
               ),
@@ -1960,15 +1954,16 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
                 : AnimatedRotation(
                     key: const ValueKey('c_arrow'),
                     // Compass needle: bearing to the driver minus device
-                    // heading, short-arc sweep — silky. Mockup proportion:
-                    // the arrow spans ~55% of the ring's diameter.
+                    // heading, short-arc sweep — silky. User spec
+                    // 2026-09-15: the arrow spans ~69% of the ring's
+                    // diameter (was ~55%) — it must read much bigger.
                     turns: (_bearingToDriver - _heading) / 360.0,
                     duration: const Duration(milliseconds: 250),
                     curve: Curves.easeOutCubic,
                     child: const Icon(
                       Icons.arrow_upward_rounded,
                       color: Colors.white,
-                      size: 160,
+                      size: 220,
                     ),
                   ),
           ),

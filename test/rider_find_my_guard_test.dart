@@ -244,8 +244,8 @@ void main() {
     });
 
     test('the needle is much bigger (user spec 2026-09-15)', () {
-      expect(src.contains('size: 220'), isTrue,
-          reason: 'the arrow grew from 160 to 220 (~69% of the ring)');
+      expect(src.contains('size: 260'), isTrue,
+          reason: 'the arrow grew from 220 to 260 (~81% of the ring)');
     });
   });
 

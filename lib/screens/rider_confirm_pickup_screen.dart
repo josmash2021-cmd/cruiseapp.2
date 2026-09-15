@@ -12,6 +12,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' as mapbox;
 
 import '../config/api_keys.dart';
+import '../config/map_theme.dart';
 import '../config/mapbox_config.dart';
 import '../config/page_transitions.dart';
 import '../map/map_surface_coordinator.dart';
@@ -1186,6 +1187,39 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
       // Every await here is a chance for the surface to be handed back —
       // the `_miniMap != ctrl` guard is how a stale setup stops short of a
       // destroyed native map.
+      await _applyMiniMapTheme(ctrl);
+      await _setupMiniMapLayers(ctrl);
+    } catch (e) {
+      // A dead channel here means the surface was revoked mid-setup: there
+      // is no map left to draw on, so stopping is the only correct move.
+      debugPrint('[ConfirmPickup] mini-map setup cut short: $e');
+    }
+  }
+
+  /// The mini map's navy/gold theme. Must run on style-loaded, not on
+  /// map-created: before the style finishes loading every layer property
+  /// write fails silently and the strip stays in factory dark-v11 grey.
+  Future<void> _applyMiniMapTheme(mapbox.MapboxMap ctrl) async {
+    try {
+      await MapTheme.applyNavyGold(ctrl);
+    } catch (e) {
+      debugPrint('[ConfirmPickup] mini-map theme failed: $e');
+    }
+  }
+
+  /// Rebuild everything the style load destroyed: annotation managers are
+  /// wiped when the style (re)loads, taking the rider dot, the car and the
+  /// walk line with them. Runs once from map-created and again on every
+  /// style-loaded — the only two moments a fresh manager certainly sticks.
+  Future<void> _setupMiniMapLayers(mapbox.MapboxMap ctrl) async {
+    try {
+      // A style reload killed the native side of these handles already —
+      // null them so the sync below re-creates instead of updating ghosts.
+      _riderDotAnnot = null;
+      _riderHaloAnnot = null;
+      _carAnnot = null;
+      _walkAnnot = null;
+
       final dots = await ctrl.annotations.createCircleAnnotationManager();
       if (!mounted || _miniMap != ctrl) return;
       _riderDotMgr = dots;
@@ -1214,9 +1248,7 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
       await _drawWalkRoute();
       await _fitMiniMap(instant: true);
     } catch (e) {
-      // A dead channel here means the surface was revoked mid-setup: there
-      // is no map left to draw on, so stopping is the only correct move.
-      debugPrint('[ConfirmPickup] mini-map setup cut short: $e');
+      debugPrint('[ConfirmPickup] mini-map layer setup cut short: $e');
     }
   }
 
@@ -1551,6 +1583,24 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
                 onMapCreated: _onMiniMapCreated,
                 onScrollListener: (_) => _userTookCamera = true,
                 onZoomListener: (_) => _userTookCamera = true,
+                // The style finishes loading AFTER map-created: theme and
+                // annotations only stick from here on. Without this the
+                // strip stayed factory grey and a reload wiped the markers.
+                onStyleLoadedListener: (_) async {
+                  final ctrl = _miniMap;
+                  if (ctrl == null || !mounted) return;
+                  await _applyMiniMapTheme(ctrl);
+                  if (!mounted || _miniMap != ctrl) return;
+                  await _setupMiniMapLayers(ctrl);
+                },
+                onMapLoadErrorListener: (err) {
+                  // A dead strip is worse than the static stand-in.
+                  debugPrint(
+                      '[ConfirmPickup] mini-map load error: ${err.message}');
+                  if (mounted && _miniMapMounted) {
+                    setState(() => _miniMapMounted = false);
+                  }
+                },
               ),
             ),
           // Feathered edges only (user spec 2026-09-15): IgnorePointer
@@ -1955,15 +2005,15 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
                     key: const ValueKey('c_arrow'),
                     // Compass needle: bearing to the driver minus device
                     // heading, short-arc sweep — silky. User spec
-                    // 2026-09-15: the arrow spans ~69% of the ring's
-                    // diameter (was ~55%) — it must read much bigger.
+                    // 2026-09-15: the arrow spans ~81% of the ring's
+                    // diameter (was ~69%) — it must read much bigger.
                     turns: (_bearingToDriver - _heading) / 360.0,
                     duration: const Duration(milliseconds: 250),
                     curve: Curves.easeOutCubic,
                     child: const Icon(
                       Icons.arrow_upward_rounded,
                       color: Colors.white,
-                      size: 220,
+                      size: 260,
                     ),
                   ),
           ),

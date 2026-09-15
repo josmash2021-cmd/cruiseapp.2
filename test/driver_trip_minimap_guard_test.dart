@@ -101,4 +101,36 @@ void main() {
       expect(fit.contains('pts.map'), isTrue);
     });
   });
+
+  group('user spec 2026-09-16: bigger, interactive, border-only fade', () {
+    test('the card grew to 300 and stays Flexible', () {
+      expect(src.contains('height: Responsive.h(300)'), isTrue,
+          reason: 'user spec 2026-09-16: the mini map is a bit bigger');
+      expect(src.contains('height: Responsive.h(240)'), isFalse);
+    });
+
+    test('the edge fade hugs the border (~5%), never creeps inward', () {
+      final body = bodyOf('Widget _buildMapEdgeFade()');
+      expect(
+          body.contains('stops: const [0, .01, .028, .05, .95, .972, .99, 1]'),
+          isTrue,
+          reason: 'the fade must dissolve only the rim — transparent by ~5% '
+              'in from every side (user spec 2026-09-16)');
+      expect(body.contains('.13,'), isFalse,
+          reason: 'the old fade reached 13% in and read as a blur over the '
+              'whole map');
+    });
+
+    test('pan/zoom gestures are applied twice (onMapCreated + style loaded)',
+        () {
+      final applications =
+          RegExp(r'gestures\.updateSettings').allMatches(src).length;
+      expect(applications, greaterThanOrEqualTo(2),
+          reason: 'a surface still initialising at onMapCreated can silently '
+              'drop the first call — _runStyleLoadedSetup re-applies it '
+              '(user spec 2026-09-16)');
+      expect(src.contains('scrollEnabled: true'), isTrue);
+      expect(src.contains('pinchToZoomEnabled: true'), isTrue);
+    });
+  });
 }

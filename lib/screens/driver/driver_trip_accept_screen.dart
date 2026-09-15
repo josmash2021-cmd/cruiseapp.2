@@ -3563,7 +3563,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     return _fetchRoutePoints(widget.pickupLatLng, _dropoffLL);
   }
 
-  // onMapCreated — capture controller + disable all gestures for preview perf.
+  // onMapCreated — capture controller + open pan/zoom for the preview.
   void _onMapReady(mapbox.MapboxMap ctrl) {
     _map = ctrl;
     // Cache controller for reuse across driver screens
@@ -3572,7 +3572,10 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     // zoom the mini map to inspect the route. Rotate and pitch stay off —
     // it is a flat top-down preview. The whole block in try/catch:
     // updateSettings are pigeon calls that reject with
-    // PlatformException(channel-error) if the surface dies under us.
+    // PlatformException(channel-error) if the surface dies under us. The
+    // settings are re-applied in _runStyleLoadedSetup — a surface still
+    // initialising here can silently drop this first call, and a preview
+    // that will not pan reads as broken.
     try {
       ctrl.gestures.updateSettings(mapbox.GesturesSettings(
         scrollEnabled: true,
@@ -3741,6 +3744,26 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
       await Future.wait(setupFutures);
     } on PlatformException catch (_) {
       return;
+    }
+    if (!mounted) return;
+
+    // Re-apply the interactive gestures (user spec 2026-09-16): the same
+    // settings _onMapReady asks for, repeated here because a surface still
+    // initialising at onMapCreated can silently drop that first call — and
+    // a preview that will not pan reads as broken.
+    try {
+      await ctrl.gestures.updateSettings(mapbox.GesturesSettings(
+        scrollEnabled: true,
+        rotateEnabled: false,
+        pinchToZoomEnabled: true,
+        doubleTapToZoomInEnabled: true,
+        doubleTouchToZoomOutEnabled: true,
+        pitchEnabled: false,
+        quickZoomEnabled: true,
+        simultaneousRotateAndPinchToZoomEnabled: false,
+      ));
+    } catch (e) {
+      debugPrint('[DriverTrip] gesture re-apply failed: $e');
     }
     if (!mounted) return;
 
@@ -4817,7 +4840,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
 
             // ── Map preview (tilt animation on enter) ─────────────────
             // Loose so a short screen shrinks the map instead of overflowing
-            // the Column; tall screens still get the full 240.
+            // the Column; tall screens still get the full 300.
             Flexible(
               fit: FlexFit.loose,
               child: Padding(
@@ -4830,9 +4853,9 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
                 borderRadius: BorderRadius.circular(18),
                   child: SizedBox(
                     key: _miniMapBoxKey,
-                    // Taller (was 190) — more of the trip in view (user
-                    // spec 2026-08-04).
-                    height: Responsive.h(240),
+                    // Bigger again (190 → 240 → 300): more of the trip in
+                    // view (user spec 2026-09-16).
+                    height: Responsive.h(300),
                     width: double.infinity,
                     // expand: every child fills the card edge to edge —
                     // the map can never letterbox inside its box (user
@@ -5422,9 +5445,9 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   /// radial vignette for the corners, all in the page's _bg color — the same
   /// treatment as the rider's Find-My mini map.
   Widget _buildMapEdgeFade() {
-    // Only kisses the outermost rim (user spec 2026-09-15): the fade must
-    // read as a soft border, not as a blur over the whole map — transparent
-    // by ~7% in from every side.
+    // A soft rim hugging the border only (user spec 2026-09-16): the fade
+    // must read as the edges dissolving into the page, never as a blur
+    // reaching inward — fully transparent by ~5% from every side.
     LinearGradient edge(Alignment begin, Alignment end) => LinearGradient(
           begin: begin,
           end: end,
@@ -5438,7 +5461,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
             _bg.withValues(alpha: .55),
             _bg,
           ],
-          stops: const [0, .015, .04, .075, .925, .96, .985, 1],
+          stops: const [0, .01, .028, .05, .95, .972, .99, 1],
         );
     return Stack(
       fit: StackFit.expand,
@@ -5455,16 +5478,18 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
         ),
         DecoratedBox(
           decoration: BoxDecoration(
+            // Corner caps only: the radius lands the opaque stop right at
+            // the rounded corners, so the rim never creeps in diagonally.
             gradient: RadialGradient(
               center: Alignment.center,
-              radius: 1.15,
+              radius: 0.8,
               colors: [
                 Colors.transparent,
                 Colors.transparent,
-                _bg.withValues(alpha: .22),
+                _bg.withValues(alpha: .18),
                 _bg,
               ],
-              stops: const [0, .86, .96, 1],
+              stops: const [0, .85, .95, 1],
             ),
           ),
         ),

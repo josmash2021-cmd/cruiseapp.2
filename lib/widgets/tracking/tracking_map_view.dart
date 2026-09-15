@@ -533,6 +533,7 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
             _buildSegDist();
             _syncRouteToMap();
           }
+          _updateAnnotations();
           debugPrint(
               '[RiderTracking] trip route recovered on retry $_tripRouteRetries');
           return;
@@ -623,6 +624,10 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
 
     if (!mounted) return;
     _setState(() {});
+    // The static-annotations pass is gated on route points; if it ran (and
+    // bailed) before the route landed, nothing else re-triggers it and the
+    // dropoff pin never appears. Idempotent — safe to nudge on every call.
+    _updateAnnotations();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         _fitAllPoints();
@@ -1464,10 +1469,14 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
               // when the map was not up yet — and then never retried.
               unawaited(_mapCar!.loadCarIcon(widget.rideName));
               // Load data into modular components
-              _mapAnnotations!.loadPins(
+              unawaited(_mapAnnotations!.loadPins(
                 pickupLabel: widget.pickupLabel,
                 dropoffLabel: widget.dropoffLabel,
-              );
+              ).then((_) {
+                // Pin bytes ready — the static pass below ran before they
+                // finished rendering and bailed on the pinsReady gate.
+                if (mounted) _updateAnnotations();
+              }));
               _mapCar!.loadCarIcon(widget.rideName);
               try {
                 // 'map', not 'viewport': the car lies FLAT ON THE ROAD and

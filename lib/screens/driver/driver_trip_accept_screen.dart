@@ -4797,9 +4797,9 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
                 borderRadius: BorderRadius.circular(18),
                   child: SizedBox(
                     key: _miniMapBoxKey,
-                    // Longer downward (190 → 240 → 300 → 340): more of the
-                    // trip in view (user spec 2026-09-17).
-                    height: Responsive.h(340),
+                    // Full rectangle, bigger (190 → 240 → 300 → 340 → 400):
+                    // more of the trip in view (user spec 2026-09-17).
+                    height: Responsive.h(400),
                     width: double.infinity,
                     // expand: every child fills the card edge to edge —
                     // the map can never letterbox inside its box (user
@@ -5384,14 +5384,14 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     );
   }
 
-  /// The preview map's edges dissolving into the page background (user spec
-  /// 2026-09-13): two multi-stop linear fades (vertical + horizontal) plus a
-  /// radial vignette for the corners, all in the page's _bg color — the same
-  /// treatment as the rider's Find-My mini map.
+  /// The preview map's border dissolving into the page background (user spec
+  /// 2026-09-17): two multi-stop linear fades (vertical + horizontal), all in
+  /// the page's _bg color. NO radial corner vignette — it rounded the corners
+  /// into an oval and the map read as a dissolved blob instead of a full
+  /// rectangle with a feathered border.
   Widget _buildMapEdgeFade() {
-    // An even thinner, softer rim (user spec 2026-09-17): the fade hugs the
-    // outer border only — fully transparent by ~3.5% from every side, so
-    // nothing reads as a blur reaching inward over the map.
+    // A thin rim hugging the border only — fully transparent by ~3.5% from
+    // every side, so nothing reads as a blur reaching inward over the map.
     LinearGradient edge(Alignment begin, Alignment end) => LinearGradient(
           begin: begin,
           end: end,
@@ -5418,23 +5418,6 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
         DecoratedBox(
           decoration: BoxDecoration(
             gradient: edge(Alignment.centerLeft, Alignment.centerRight),
-          ),
-        ),
-        DecoratedBox(
-          decoration: BoxDecoration(
-            // Corner caps only: the radius lands the opaque stop right at
-            // the rounded corners, so the rim never creeps in diagonally.
-            gradient: RadialGradient(
-              center: Alignment.center,
-              radius: 0.8,
-              colors: [
-                Colors.transparent,
-                Colors.transparent,
-                _bg.withValues(alpha: .12),
-                _bg,
-              ],
-              stops: const [0, .88, .96, 1],
-            ),
           ),
         ),
       ],

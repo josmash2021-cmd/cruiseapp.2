@@ -103,10 +103,10 @@ void main() {
   });
 
   group('user spec 2026-09-16/17: bigger, interactive, border-only fade', () {
-    test('the card grew to 340 and stays Flexible', () {
-      expect(src.contains('height: Responsive.h(340)'), isTrue,
-          reason: 'user spec 2026-09-17: the mini map runs longer downward');
-      expect(src.contains('height: Responsive.h(300)'), isFalse);
+    test('the card grew to 400 and stays Flexible', () {
+      expect(src.contains('height: Responsive.h(400)'), isTrue,
+          reason: 'user spec 2026-09-17: full rectangle, bigger mini map');
+      expect(src.contains('height: Responsive.h(340)'), isFalse);
     });
 
     test('the edge fade hugs the border (~3.5%), never creeps inward', () {
@@ -120,6 +120,10 @@ void main() {
       expect(body.contains('.13,'), isFalse,
           reason: 'the old fade reached 13% in and read as a blur over the '
               'whole map');
+      expect(body.contains('RadialGradient'), isFalse,
+          reason: 'user spec 2026-09-17: the radial corner vignette rounded '
+              'the rectangle into an oval — the map stays CUADRADO with only '
+              'a feathered border');
     });
 
     test('pan/zoom gestures are applied twice (onMapCreated + style loaded)',

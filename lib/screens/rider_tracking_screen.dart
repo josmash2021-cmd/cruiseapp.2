@@ -712,7 +712,13 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
 
   double get _topCardHeight {
     final box = _topCardKey.currentContext?.findRenderObject() as RenderBox?;
-    return box?.size.height ?? 140.0;
+    // A laid-out-but-not-yet-painted card reports height 0 — and 0 is not
+    // null, so it used to sail past the fallback: the one-time trip fit ran
+    // with no top padding at all and the route's end (and the dropoff pin
+    // on it) slid under the top card for the whole ride (user report
+    // 2026-09-17). Below 1 px the card is unmeasured — use the fallback.
+    final h = box?.size.height;
+    return (h == null || h < 1) ? 140.0 : h;
   }
 
   double get _bottomCardHeight {
@@ -720,8 +726,10 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
     // Fallback is deliberately generous (2026-09-13): before the first
     // layout (restore path) the real card is ~200 tall, and an 80-px guess
     // slid the fitted route UNDER the bottom sheet. Too much padding costs
-    // a hair of zoom; too little hides the route.
-    return box?.size.height ?? 220.0;
+    // a hair of zoom; too little hides the route. Same 0-height guard as
+    // the top card (2026-09-17).
+    final h = box?.size.height;
+    return (h == null || h < 1) ? 220.0 : h;
   }
 
   // ══════════════════════════════════════════════════════════════════════════

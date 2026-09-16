@@ -26,6 +26,8 @@ void main() {
       .readAsStringSync();
   final cam =
       File('lib/map/tracking_map_camera.dart').readAsStringSync();
+  final screen = File('lib/screens/rider_tracking_screen.dart')
+      .readAsStringSync();
 
   group('_tripFramePoints frames the whole trip', () {
     test('uses _tripRoutePts with _routePts only as fallback', () {
@@ -140,7 +142,7 @@ void main() {
   group('the trip camera fits once and holds', () {
     test('no per-frame updateFollowFrame during the trip', () {
       final tick = view.indexOf('void _onCameraTick(Duration elapsed)');
-      final tickEnd = tick + 4600;
+      final tickEnd = tick + 5000;
       final body = view.substring(
           tick, tickEnd > view.length ? view.length : tickEnd);
       final tripBranch = body.indexOf('if (isOnTrip) {');
@@ -170,6 +172,18 @@ void main() {
               'that IS the auto-recenter');
       expect(body.contains('_tripRoutePts'), isTrue,
           reason: 'the signature must track the full-trip polyline');
+    });
+
+    test('the trip fit clears the top card AND the pin body (2026-09-17)',
+        () {
+      expect(view.contains('_topCardHeight + 56'), isTrue,
+          reason: 'the dropoff pin tip anchors at the route end and its '
+              'body extends ~55 px up — +32 let it poke behind the top card');
+      expect(screen.contains('(h == null || h < 1) ? 140.0 : h'), isTrue,
+          reason: 'a not-yet-painted card measures height 0 — 0 is not '
+              'null, so the fallback never fired and the one-time fit ran '
+              'with no top padding at all (route end under the card)');
+      expect(screen.contains('(h == null || h < 1) ? 220.0 : h'), isTrue);
     });
   });
   // Session 2026-09-13: a manual pan parked the camera for the rest of the

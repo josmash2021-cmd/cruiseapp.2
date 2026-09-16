@@ -1033,7 +1033,11 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
         _needsTripReframe = false;
         unawaited(_mapCamera!.fitBounds(
           points: _tripFramePoints(),
-          topPadding: topPad + 10 + _topCardHeight + 32,
+          // The +56 covers the dropoff pin: its tip anchors at the route's
+          // last point and the pin body extends ~55 px UP from there — with
+          // only +32 the pin poked up behind the top card (user report
+          // 2026-09-17: "el pin del dropoff no aparece").
+          topPadding: topPad + 10 + _topCardHeight + 56,
           bottomPadding: bottomPad + 16 + _bottomCardHeight + 32,
         ));
       }

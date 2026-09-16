@@ -240,7 +240,13 @@ void main() {
           directions.contains('_cacheKey(origin, destination, profile)'),
           isTrue,
           reason: 'a walking route must never hit the driving cache');
-      expect(directions.contains('directions/v5/mapbox/\$profile/'), isTrue);
+      expect(directions.contains('directions/v5/mapbox/\$mbxProfile/'), isTrue);
+      expect(
+          directions
+              .contains("profile == 'driving' ? 'driving-traffic' : profile"),
+          isTrue,
+          reason: 'user spec 2026-09-17: driving routes must carry '
+              'traffic-aware durations — free-flow ETAs lie in real traffic');
     });
     test('no provider ever fabricates a straight origin→destination route',
         () {

@@ -570,10 +570,15 @@ class DirectionsService {
     String profile = 'driving',
   }) async {
     try {
-      // Mapbox expects coordinates as longitude,latitude. maxspeed is a
-      // driving-only annotation — the walking profile rejects it.
+      // driving-traffic (user spec 2026-09-17): the plain 'driving' profile
+      // answers free-flow durations — the ETA is a lie the moment there is
+      // real traffic. driving-traffic returns the SAME geometry with
+      // traffic-aware durations, so every ETA in the app (booking estimate,
+      // pickup approach, on-trip) is real with or without traffic. maxspeed
+      // stays a driving-only annotation — walking rejects it.
+      final mbxProfile = profile == 'driving' ? 'driving-traffic' : profile;
       final url = Uri.parse(
-        'https://api.mapbox.com/directions/v5/mapbox/$profile/'
+        'https://api.mapbox.com/directions/v5/mapbox/$mbxProfile/'
         '${origin.longitude},${origin.latitude};${destination.longitude},${destination.latitude}'
         '?geometries=geojson&overview=full&steps=true'
         '${profile == 'driving' ? '&annotations=maxspeed' : ''}'

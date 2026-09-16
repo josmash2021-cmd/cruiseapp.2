@@ -22,6 +22,7 @@ import '../services/haptic_service.dart';
 import '../services/socket_service.dart';
 import '../utils/mapbox_safe.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../utils/route_splice.dart';
 import '../utils/smooth_motion.dart';
 import '../widgets/neu_style.dart';
 import '../widgets/static_route_preview.dart';
@@ -106,7 +107,6 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
     with TickerProviderStateMixin {
   static const _gold = Color(0xFFE8C547);
   static const _green = Color(0xFF22C55E);
-  static const _riderBlue = Color(0xFF3B82F6);
   static const _red = Color(0xFFEF4444);
   // Neumorphic base, not pure black: on #000000 the soft shadows that make
   // the style read simply do not show (see neu_style.dart).
@@ -201,11 +201,9 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
   mapbox.MapboxMap? _miniMap;
   mapbox.CircleAnnotationManager? _riderDotMgr;
   mapbox.PointAnnotationManager? _carMgr;
-  mapbox.PolylineAnnotationManager? _walkRouteMgr;
   mapbox.CircleAnnotation? _riderDotAnnot;
   mapbox.CircleAnnotation? _riderHaloAnnot;
   mapbox.PointAnnotation? _carAnnot;
-  mapbox.PolylineAnnotation? _walkAnnot;
   Uint8List? _carBytes;
 
   /// Rider dot and driver car both glide through SmoothMotion (the engine
@@ -228,16 +226,14 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
   LatLng? _prevDriverFix;
   LatLng? _lastDriverPos;
 
-  // Walking guide rider→driver on the mini map.
-  List<LatLng> _walkRoute = const [];
-  LatLng? _walkAnchorRider;
-  LatLng? _walkAnchorDriver;
-  bool _walkFetching = false;
-  DateTime _lastWalkFetchAt = DateTime(2000);
-  /// The ends the drawn guide currently has — the tick glues them back to
-  /// the live dot/car when they drift ≥2 m between route refetches.
-  LatLng? _walkLineRiderEnd;
-  LatLng? _walkLineDriverEnd;
+  // Driving route rider→driver, fetched for ONE job (user spec 2026-09-17):
+  // snapping the car marker onto the road. It is never drawn — the mini map
+  // shows the gold dot and the car, no route line.
+  List<LatLng> _snapRoute = const [];
+  LatLng? _snapAnchorRider;
+  LatLng? _snapAnchorDriver;
+  bool _snapFetching = false;
+  DateTime _lastSnapFetchAt = DateTime(2000);
 
   // Camera fit throttle state.
   DateTime _lastFitAt = DateTime(2000);
@@ -369,11 +365,9 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
     _miniMap = null;
     _riderDotMgr = null;
     _carMgr = null;
-    _walkRouteMgr = null;
     _riderDotAnnot = null;
     _riderHaloAnnot = null;
     _carAnnot = null;
-    _walkAnnot = null;
   }
 
   /// Watch the rider's own GPS against the driver's live position: keep the
@@ -1091,14 +1085,32 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
     }
     _prevDriverFix = d;
 
-    _driverMotion.setTarget(d.latitude, d.longitude,
+    // Display vs measurement (user spec 2026-09-17): the MARKER snaps to the
+    // road — a car floating inside a parking-lot block while the driver is
+    // on the street reads as a lie. But everything that MEASURES — "N ft",
+    // the arrow bearing, the FOUND radius — keeps reading the PHONE's raw
+    // fix (_lastDriverPos above), never the snapped display point and never
+    // a marked-arrival point.
+    final display = _snapToRoad(d) ?? d;
+    _driverMotion.setTarget(display.latitude, display.longitude,
         bearing: brg, timestampMs: timestampMs, speedMps: speedMps);
     _ensureMapTicker();
     _maybeRefitMiniMap();
     final rLat = _riderMotion.lat, rLng = _riderMotion.lng;
     if (rLat != null && rLng != null) {
-      _maybeFetchWalkRoute(LatLng(rLat, rLng), d);
+      _maybeFetchSnapRoute(LatLng(rLat, rLng), d);
     }
+  }
+
+  /// Nearest point on the driving route between rider and driver, when the
+  /// fix sits within 80 m of it — beyond that the raw fix is the truth
+  /// (genuinely off any road we know) and snapping would teleport the car.
+  LatLng? _snapToRoad(LatLng p) {
+    final pts = _snapRoute;
+    if (pts.length < 2) return null;
+    final seg = RouteSplice.closestSegmentIndex(pts, p);
+    final proj = RouteSplice.projectOnSegment(p, pts[seg], pts[seg + 1]);
+    return RouteSplice.haversineM(p, proj) <= 80 ? proj : null;
   }
 
   /// Fallback for paths where the relay is quiet: sample the pull-based
@@ -1148,7 +1160,6 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
       _markersSyncing = true;
       _syncMiniMapMarkers().whenComplete(() => _markersSyncing = false);
     }
-    _attachWalkLineEnds();
     // Distance + bearing recompute off the SMOOTHED positions at ~300 ms,
     // not just on rider GPS fixes — the readout and arrow stay live while
     // the driver approaches even if the rider's own stream goes quiet.
@@ -1163,14 +1174,16 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
     }
   }
 
-  /// Recompute "N ft" and the arrow bearing from the smoothed rider and
-  /// driver positions. Only rebuilds when the change is visible (>0.5 m or
-  /// >2°) so a 60 fps ticker never becomes a 60 fps setState.
+  /// Recompute "N ft" and the arrow bearing from the smoothed rider position
+  /// and the driver's RAW phone fix — never the snapped display point, never
+  /// a marked-arrival spot (user spec 2026-09-17). Only rebuilds when the
+  /// change is visible (>0.5 m or >2°) so a 60 fps ticker never becomes a
+  /// 60 fps setState.
   void _refreshDistanceBearing() {
     if (_driverStarted) return;
     final rLat = _riderMotion.lat, rLng = _riderMotion.lng;
-    final dLat = _driverMotion.lat ?? _lastDriverPos?.latitude;
-    final dLng = _driverMotion.lng ?? _lastDriverPos?.longitude;
+    final dLat = _lastDriverPos?.latitude ?? _driverMotion.lat;
+    final dLng = _lastDriverPos?.longitude ?? _driverMotion.lng;
     if (rLat == null || rLng == null || dLat == null || dLng == null) return;
     if (dLat == 0 && dLng == 0) return;
     final meters = Geolocator.distanceBetween(rLat, rLng, dLat, dLng);
@@ -1230,9 +1243,9 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
   }
 
   /// Rebuild everything the style load destroyed: annotation managers are
-  /// wiped when the style (re)loads, taking the rider dot, the car and the
-  /// walk line with them. Runs once from map-created and again on every
-  /// style-loaded — the only two moments a fresh manager certainly sticks.
+  /// wiped when the style (re)loads, taking the rider dot and the car with
+  /// them. Runs once from map-created and again on every style-loaded — the
+  /// only two moments a fresh manager certainly sticks.
   Future<void> _setupMiniMapLayers(mapbox.MapboxMap ctrl) async {
     try {
       // A style reload killed the native side of these handles already —
@@ -1240,7 +1253,6 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
       _riderDotAnnot = null;
       _riderHaloAnnot = null;
       _carAnnot = null;
-      _walkAnnot = null;
 
       final dots = await ctrl.annotations.createCircleAnnotationManager();
       if (!mounted || _miniMap != ctrl) return;
@@ -1258,16 +1270,10 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
         await ctrl.style.setStyleLayerProperty(car.id, 'icon-anchor', 'center');
       } catch (_) {}
 
-      final route =
-          await ctrl.annotations.createPolylineAnnotationManager(below: 'road-label');
-      if (!mounted || _miniMap != ctrl) return;
-      _walkRouteMgr = route;
-
       await _loadCarIcon();
       if (!mounted || _miniMap != ctrl) return;
       await _syncMiniMapMarkers();
       if (!mounted || _miniMap != ctrl) return;
-      await _drawWalkRoute();
       await _fitMiniMap(instant: true);
     } catch (e) {
       debugPrint('[ConfirmPickup] mini-map layer setup cut short: $e');
@@ -1341,12 +1347,13 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
       final p = safePoint(rLng, rLat);
       if (p != null) {
         try {
-          // Halo first so the solid dot lands on top of it.
+          // Halo first so the solid dot lands on top of it. GOLD, not blue
+          // (user spec 2026-09-17): the rider dot matches the app's gold.
           if (_riderHaloAnnot == null) {
             _riderHaloAnnot = await dots.create(mapbox.CircleAnnotationOptions(
               geometry: p,
               circleRadius: 13.0,
-              circleColor: _riderBlue.withValues(alpha: 0.22).toARGB32(),
+              circleColor: _gold.withValues(alpha: 0.22).toARGB32(),
             ));
           } else {
             _riderHaloAnnot!.geometry = p;
@@ -1357,7 +1364,7 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
             _riderDotAnnot = await dots.create(mapbox.CircleAnnotationOptions(
               geometry: p,
               circleRadius: 7.0,
-              circleColor: _riderBlue.toARGB32(),
+              circleColor: _gold.toARGB32(),
               circleStrokeWidth: 2.5,
               circleStrokeColor: Colors.white.toARGB32(),
             ));
@@ -1397,12 +1404,12 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
     }
   }
 
-  /// Refetch the walking guide only when an anchor moved enough to matter
-  /// (10 m — walking speeds) and never more often than every 15 s — the
-  /// strip shows a couple of hundred metres at most.
-  void _maybeFetchWalkRoute(LatLng rider, LatLng driver) {
-    if (_walkFetching) return;
-    final rA = _walkAnchorRider, dA = _walkAnchorDriver;
+  /// Refetch the snap route only when an anchor moved enough to matter
+  /// (10 m) and never more often than every 15 s — the strip shows a couple
+  /// of hundred metres at most.
+  void _maybeFetchSnapRoute(LatLng rider, LatLng driver) {
+    if (_snapFetching) return;
+    final rA = _snapAnchorRider, dA = _snapAnchorDriver;
     if (rA != null && dA != null) {
       final rMoved = Geolocator.distanceBetween(
           rider.latitude, rider.longitude, rA.latitude, rA.longitude);
@@ -1410,114 +1417,39 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
           driver.latitude, driver.longitude, dA.latitude, dA.longitude);
       if (rMoved < 10 && dMoved < 10) return;
     }
-    if (DateTime.now().difference(_lastWalkFetchAt).inSeconds < 15) return;
-    unawaited(_fetchWalkRoute(rider, driver));
+    if (DateTime.now().difference(_lastSnapFetchAt).inSeconds < 15) return;
+    unawaited(_fetchSnapRoute(rider, driver));
   }
 
-  Future<void> _fetchWalkRoute(LatLng rider, LatLng driver) async {
-    _walkFetching = true;
-    _lastWalkFetchAt = DateTime.now();
+  Future<void> _fetchSnapRoute(LatLng rider, LatLng driver) async {
+    _snapFetching = true;
+    _lastSnapFetchAt = DateTime.now();
     try {
-      // A pedestrian guide, not the driving route — the rider walks this
-      // strip. Walking returning nothing usable draws NOTHING (user spec
-      // 2026-09-17): the old direct rider→car line cut across blocks and
-      // lied about the way. The anchors stay unset, so the next tick
-      // retries (15 s throttle) until a real guide lands.
+      // DRIVING geometry (user spec 2026-09-17): this route is never drawn
+      // — its only job is giving _snapToRoad the road line to put the car
+      // marker on. A failed fetch leaves the anchors unset, so the next
+      // tick retries (15 s throttle) and the car simply stays unsnapped.
       final result = await DirectionsService(ApiKeys.webServices)
-          .getRoute(origin: rider, destination: driver, profile: 'walking');
+          .getRoute(origin: rider, destination: driver, profile: 'driving');
       if (!mounted) return;
       if (result == null || result.points.length < 2) return;
       final pts = List<LatLng>.from(result.points);
       // The router snaps its ends to the road network — snap them back to
-      // the exact anchor positions: the guide starts ON the rider's dot
-      // and finishes ON the car (same discipline as the trip route line).
+      // the exact anchor positions so the projection reads true distances.
       pts[0] = rider;
       pts[pts.length - 1] = driver;
-      _walkRoute = pts;
-      _walkAnchorRider = rider;
-      _walkAnchorDriver = driver;
-      setState(() {}); // refresh the stand-in image if it is still up
-      await _drawWalkRoute();
+      _snapRoute = pts;
+      _snapAnchorRider = rider;
+      _snapAnchorDriver = driver;
     } catch (e) {
-      debugPrint('[ConfirmPickup] walk route fetch failed: $e');
+      debugPrint('[ConfirmPickup] snap route fetch failed: $e');
     } finally {
-      _walkFetching = false;
-    }
-  }
-
-  Future<void> _drawWalkRoute() async {
-    final mgr = _walkRouteMgr;
-    if (mgr == null || !mounted || _walkRoute.length < 2) return;
-    final coords = _walkRoute
-        .map((p) => mapbox.Position(p.longitude, p.latitude))
-        .toList();
-    if (coords.any((c) => !c.lat.isFinite || !c.lng.isFinite)) return;
-    try {
-      if (_walkAnnot == null) {
-        _walkAnnot = await mgr.create(mapbox.PolylineAnnotationOptions(
-          geometry: mapbox.LineString(coordinates: coords),
-          // A guide, not the trip route: thinner and more transparent than
-          // the width-5 solid gold the navigation route draws.
-          lineColor: _gold.withValues(alpha: 0.55).toARGB32(),
-          lineWidth: 2.5,
-          lineJoin: mapbox.LineJoin.ROUND,
-        ));
-      } else {
-        _walkAnnot!.geometry = mapbox.LineString(coordinates: coords);
-        await mgr.update(_walkAnnot!);
-      }
-      _walkLineRiderEnd = _walkRoute.first;
-      _walkLineDriverEnd = _walkRoute.last;
-    } catch (e) {
-      debugPrint('[ConfirmPickup] walk route draw failed: $e');
-    }
-  }
-
-  /// Glue the guide's ends to the live positions between refetches: the
-  /// road geometry only re-asks the router every 10 m, but the line must
-  /// always start exactly where the rider's dot is and end exactly on the
-  /// car — a guide that lags behind the dot guides nobody.
-  void _attachWalkLineEnds() {
-    final mgr = _walkRouteMgr;
-    final annot = _walkAnnot;
-    if (mgr == null || annot == null || !mounted || _walkRoute.length < 2) {
-      return;
-    }
-    final rLat = _riderMotion.lat, rLng = _riderMotion.lng;
-    final dLat = _driverMotion.lat ?? _lastDriverPos?.latitude;
-    final dLng = _driverMotion.lng ?? _lastDriverPos?.longitude;
-    if (rLat == null || rLng == null || dLat == null || dLng == null) return;
-    final rider = LatLng(rLat, rLng);
-    final driver = LatLng(dLat, dLng);
-    bool drifted(LatLng live, LatLng? drawn) =>
-        drawn == null ||
-        Geolocator.distanceBetween(live.latitude, live.longitude,
-                drawn.latitude, drawn.longitude) >=
-            2;
-    if (!drifted(rider, _walkLineRiderEnd) &&
-        !drifted(driver, _walkLineDriverEnd)) {
-      return;
-    }
-    _walkRoute[0] = rider;
-    _walkRoute[_walkRoute.length - 1] = driver;
-    _walkLineRiderEnd = rider;
-    _walkLineDriverEnd = driver;
-    final coords = _walkRoute
-        .map((p) => mapbox.Position(p.longitude, p.latitude))
-        .toList();
-    if (coords.any((c) => !c.lat.isFinite || !c.lng.isFinite)) return;
-    try {
-      annot.geometry = mapbox.LineString(coordinates: coords);
-      mgr.update(annot).catchError((Object _) {
-        debugPrint('[ConfirmPickup] walk line re-attach failed');
-      });
-    } catch (e) {
-      debugPrint('[ConfirmPickup] walk line re-attach failed: $e');
+      _snapFetching = false;
     }
   }
 
   /// Refit the camera when either anchor moved more than 6 m, at most once
-  /// every 2.5 s — the frame should pursue the walk, not breathe with it.
+  /// every 2.5 s — the frame should pursue the pair, not breathe with them.
   void _maybeRefitMiniMap({bool force = false}) {
     if (!mounted || _miniMap == null || _userTookCamera) return;
     final rLat = _riderMotion.lat, rLng = _riderMotion.lng;
@@ -1758,7 +1690,8 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
       pickupLng: anchor.longitude,
       dropoffLat: (rider != null && driver != null) ? driver.latitude : null,
       dropoffLng: (rider != null && driver != null) ? driver.longitude : null,
-      route: _walkRoute,
+      // No route line on this strip, stand-in included (user spec 2026-09-17):
+      // pins only — the live dot and the car carry the map.
     );
   }
 
@@ -2060,15 +1993,15 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
                     key: const ValueKey('c_arrow'),
                     // Compass needle: bearing to the driver minus device
                     // heading, short-arc sweep — silky. User spec
-                    // 2026-09-15: the arrow spans ~81% of the ring's
-                    // diameter (was ~69%) — it must read much bigger.
+                    // 2026-09-17: a notch bigger again (260 → 280, ~88% of
+                    // the ring) — it must read instantly at arm's length.
                     turns: (_bearingToDriver - _heading) / 360.0,
                     duration: const Duration(milliseconds: 250),
                     curve: Curves.easeOutCubic,
                     child: const Icon(
                       Icons.arrow_upward_rounded,
                       color: Colors.white,
-                      size: 260,
+                      size: 280,
                     ),
                   ),
           ),

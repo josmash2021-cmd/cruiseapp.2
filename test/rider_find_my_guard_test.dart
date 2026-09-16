@@ -222,7 +222,7 @@ void main() {
     });
   });
 
-  group('walking guide + live mini-map markers (refinements)', () {
+  group('snap route + live mini-map markers (refinements)', () {
     final directions =
         File('lib/services/directions_service.dart').readAsStringSync();
 
@@ -244,18 +244,34 @@ void main() {
           reason: 'an empty-geometry answer fails the provider instead of '
               'winning over a real route from the next one');
     });
-    test('the Find-My guide fetches walking and never fakes a beeline', () {
-      expect(src.contains("profile: 'walking'"), isTrue);
-      expect(src.contains(': [rider, driver];'), isFalse,
-          reason: 'user spec 2026-09-17: walking returning nothing draws '
-              'NOTHING — the direct rider→car line cut across blocks and '
-              'lied about the way');
-      expect(src.contains('if (result == null || result.points.length < 2) return;'),
-          isTrue,
-          reason: 'a failed walking fetch leaves the anchors unset so the '
-              'next tick retries');
+    test('the snap route fetches driving and is NEVER drawn', () {
+      expect(src.contains("profile: 'driving'"), isTrue,
+          reason: 'user spec 2026-09-17: the route exists only to snap the '
+              'car onto the road — driving geometry, not walking');
+      expect(src.contains('_snapToRoad('), isTrue);
+      expect(src.contains('RouteSplice.closestSegmentIndex(pts, p)'), isTrue);
+      expect(src.contains('_drawWalkRoute'), isFalse,
+          reason: 'no route line on this mini map — dot and car only');
+      expect(src.contains('_walkAnnot'), isFalse);
       expect(src.contains('if (rMoved < 10 && dMoved < 10) return;'), isTrue,
-          reason: 'refetch threshold tightened to walking speeds (10 m)');
+          reason: 'refetch threshold stays at 10 m');
+    });
+    test('the rider dot is gold, never blue', () {
+      expect(src.contains('_riderBlue'), isFalse,
+          reason: 'user spec 2026-09-17: gold dot, blue is gone');
+      expect(src.contains('circleColor: _gold.toARGB32(),'), isTrue);
+      expect(
+          src.contains('circleColor: _gold.withValues(alpha: 0.22).toARGB32(),'),
+          isTrue,
+          reason: 'the halo follows in the same gold at 0.22');
+    });
+    test('distance and bearing read the PHONE, not the snapped marker', () {
+      final body = bodyOf('void _refreshDistanceBearing() {');
+      expect(body.contains('_lastDriverPos?.latitude ?? _driverMotion.lat'),
+          isTrue,
+          reason: 'user spec 2026-09-17: "N ft" and the arrow measure to the '
+              'driver\'s raw phone fix — never the snapped display point, '
+              'never a marked-arrival spot');
     });
     test('markers are created even when nothing moves (parked at pickup)',
         () {
@@ -276,9 +292,9 @@ void main() {
       expect(src.contains('size.width * 0.44'), isTrue);
     });
 
-    test('the needle is much bigger (user spec 2026-09-15)', () {
-      expect(src.contains('size: 260'), isTrue,
-          reason: 'the arrow grew from 220 to 260 (~81% of the ring)');
+    test('the needle is much bigger (user spec 2026-09-17)', () {
+      expect(src.contains('size: 280'), isTrue,
+          reason: 'the arrow grew 220 → 260 → 280 (~88% of the ring)');
     });
   });
 
@@ -359,7 +375,7 @@ void main() {
     test('one dedup discipline covers both feeds', () {
       expect(src.contains('void _acceptDriverFix('), isTrue);
       final fn = src.indexOf('void _acceptDriverFix(');
-      final body = src.substring(fn, fn + 1600);
+      final body = src.substring(fn, fn + 2100);
       expect(body.contains('timestampMs < last'), isTrue,
           reason: 'out-of-order fixes are dropped');
       expect(body.contains('timestampMs == last'), isTrue,

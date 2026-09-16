@@ -22,10 +22,12 @@ import 'package:flutter_test/flutter_test.dart';
 ///   5. The live mini map mounts through MapSurfaceCoordinator as owner
 ///      'RiderFindMyPickup' with a StaticRoutePreview stand-in, and the
 ///      tracking screen re-claims the surface when the overlay closes.
-///   6. The rider dot glides through SmoothMotion (no fix-to-fix hops).
-///   7. The guide is a WALKING route (DirectionsService profile param,
-///      driving by default) with a straight-line fallback, and the dot/car
-///      annotations are created even when nothing moves (parked at pickup).
+///   6. The rider dot IS the phone's exact fix (no smoother trailing a
+///      walking rider); only the relayed car glides through SmoothMotion.
+///   7. No route line on the mini map (gold dot + car only); the driving
+///      route fetch exists only to snap the car onto the road, and the
+///      dot/car annotations are created even when nothing moves (parked at
+///      pickup).
 ///   8. Distance + bearing recompute on the map ticker, not only on rider
 ///      GPS fixes; the hero ring runs at 300 with its geometry at 44% of
 ///      the canvas; the vehicle color shows as a dot with the full name
@@ -198,11 +200,16 @@ void main() {
           reason: 'once the rider takes the camera the periodic refit must '
               'stop dragging it back');
     });
-    test('rider dot and driver car run through SmoothMotion', () {
-      expect(src.contains('final _riderMotion = SmoothMotion();'), isTrue);
+    test('the rider dot is the exact phone fix, only the car is smoothed',
+        () {
       expect(src.contains('final _driverMotion = SmoothMotion();'), isTrue);
-      expect(src.contains('_riderMotion.setTarget('), isTrue,
-          reason: 'the rider-GPS stream feeds the smoother — the dot glides');
+      expect(src.contains('LatLng? _riderRaw;'), isTrue,
+          reason: 'user spec 2026-09-17: the rider dot is the phone\'s own '
+              'exact fix — a smoother trailed a metre behind a walking rider');
+      expect(src.contains('_riderMotion'), isFalse,
+          reason: 'the rider side of the motor is gone from this screen');
+      expect(src.contains('spd >= 0.6'), isTrue,
+          reason: 'parked wander is held; the first walking step lands');
     });
     test('car marker is the tier PNG, ONLY the edges feather into the background', () {
       expect(src.contains('assets/images/car_suv.png'), isTrue);
@@ -305,8 +312,11 @@ void main() {
           reason: 'the GPS listener alone froze "N ft" when the rider\'s '
               'stream went quiet');
       final refresh = bodyOf('void _refreshDistanceBearing() {');
-      expect(refresh.contains('_riderMotion.lat'), isTrue);
-      expect(refresh.contains('_driverMotion.lat'), isTrue);
+      expect(refresh.contains('_riderRaw?.latitude'), isTrue,
+          reason: 'phone-to-phone: the rider side is the exact own fix');
+      expect(refresh.contains('_driverMotion.lat'), isTrue,
+          reason: 'the smoothed car position stays as the bootstrap '
+              'fallback only');
     });
 
     test('the GPS handler also prefers the raw phone fix (single source)',
@@ -318,9 +328,12 @@ void main() {
               '— two sources tugging "N ft" back and forth');
       final handler = bodyOf(
           '_riderGpsSub = Geolocator.getPositionStream(', maxLen: 1800);
-      expect(handler.contains('speedMps:'), isTrue,
-          reason: 'the rider dot freezes against wander when parked and '
-              'releases the instant the rider walks — precision without lag');
+      expect(handler.contains('spd >= 0.6'), isTrue,
+          reason: 'the rider dot IS the exact fix: held only while the fix '
+              'reports ~no speed (parked wander), written the instant the '
+              'rider walks — precision without lag');
+      expect(handler.contains('_riderRaw = LatLng(pos.latitude, pos.longitude)'),
+          isTrue);
     });
   });
 

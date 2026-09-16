@@ -206,9 +206,14 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
   mapbox.PointAnnotation? _carAnnot;
   Uint8List? _carBytes;
 
-  /// Rider dot and driver car both glide through SmoothMotion (the engine
-  /// every other map in the app uses) — never hopping fix to fix.
-  final _riderMotion = SmoothMotion();
+  /// The DRIVER car glides through SmoothMotion (a relayed feed arrives in
+  /// bursts — the engine paces it). The RIDER dot does NOT (user spec
+  /// 2026-09-17): this screen reads the phone's OWN GPS stream, which is
+  /// already the exact, current position — smoothing it made the dot sit
+  /// ~a metre behind the walking rider. `_riderRaw` is the last accepted
+  /// fix, held only while the fix reports ~no speed (parked wander is
+  /// noise); the moment the rider walks, the dot is on them.
+  LatLng? _riderRaw;
   final _driverMotion = SmoothMotion();
   Ticker? _mapTicker;
   Duration _mapLastTick = Duration.zero;
@@ -396,15 +401,19 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
     ).listen((pos) {
       if (!mounted || _driverStarted) return;
 
-      // The mini map's gold dot rides the same fix, smoothed. The fix's own
-      // speed parks it against GPS wander when the rider stands still and
-      // releases the instant they walk (≥1.2 m/s) — precision without lag
-      // (user spec 2026-09-17).
-      _riderMotion.setTarget(pos.latitude, pos.longitude,
-          accuracyM: pos.accuracy,
-          timestampMs: pos.timestamp.millisecondsSinceEpoch.toDouble(),
-          speedMps: pos.speed.isFinite && pos.speed >= 0 ? pos.speed : null);
+      // The mini map's gold dot IS the phone's exact fix (user spec
+      // 2026-09-17) — no smoother trailing a metre behind a walking rider.
+      // Held only while the fix reports ~no speed (<0.6 m/s): parked wander
+      // is noise; the instant the rider walks, the dot is on them.
+      final spd = pos.speed.isFinite && pos.speed >= 0 ? pos.speed : null;
+      if (_riderRaw == null || spd == null || spd >= 0.6) {
+        _riderRaw = LatLng(pos.latitude, pos.longitude);
+      }
       _ensureMapTicker();
+      if (!_markersSyncing) {
+        _markersSyncing = true;
+        _syncMiniMapMarkers().whenComplete(() => _markersSyncing = false);
+      }
 
       // Distance, arrow and FOUND detection all read the driver's PHONE —
       // the last raw fix from the relay (_lastDriverPos), never the snapped
@@ -1104,9 +1113,9 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
         bearing: brg, timestampMs: timestampMs, speedMps: speedMps);
     _ensureMapTicker();
     _maybeRefitMiniMap();
-    final rLat = _riderMotion.lat, rLng = _riderMotion.lng;
-    if (rLat != null && rLng != null) {
-      _maybeFetchSnapRoute(LatLng(rLat, rLng), d);
+    final r = _riderRaw;
+    if (r != null) {
+      _maybeFetchSnapRoute(r, d);
     }
   }
 
@@ -1151,15 +1160,16 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
         ? 0.016
         : (elapsed - _mapLastTick).inMicroseconds / 1e6;
     _mapLastTick = elapsed;
-    final moved = _riderMotion.tick(dt) | _driverMotion.tick(dt);
+    // Only the car runs through the engine — the rider dot is the phone's
+    // exact fix, written by the GPS handler the moment it lands.
+    final moved = _driverMotion.tick(dt);
     // Two people standing at a pickup never make tick() report movement —
     // a marker that has a position but no annotation yet (the surface was
-    // granted before the first fix, or every fix since landed inside the
-    // standstill hold) still has to be drawn, or the strip shows the walk
-    // line with no dot and no car.
+    // granted before the first fix) still has to be drawn, or the strip
+    // shows no dot and no car.
     final uncreated = (_riderDotMgr != null &&
             _riderDotAnnot == null &&
-            _riderMotion.hasPosition) ||
+            _riderRaw != null) ||
         (_carMgr != null &&
             _carBytes != null &&
             _carAnnot == null &&
@@ -1168,28 +1178,28 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
       _markersSyncing = true;
       _syncMiniMapMarkers().whenComplete(() => _markersSyncing = false);
     }
-    // Distance + bearing recompute off the SMOOTHED positions at ~300 ms,
+    // Distance + bearing recompute off the LIVE positions at ~300 ms,
     // not just on rider GPS fixes — the readout and arrow stay live while
     // the driver approaches even if the rider's own stream goes quiet.
     if (elapsed - _lastDistTick >= const Duration(milliseconds: 300)) {
       _lastDistTick = elapsed;
       _refreshDistanceBearing();
     }
-    // Park the ticker when both markers have nothing left to animate — the
-    // next fix wakes it again via _ensureMapTicker().
-    if (!uncreated && _riderMotion.isAtTarget && _driverMotion.isAtTarget) {
+    // Park the ticker when the car has nothing left to animate — the
+    // next fix (either side) wakes it again via _ensureMapTicker().
+    if (!uncreated && _driverMotion.isAtTarget) {
       _stopMapTicker();
     }
   }
 
-  /// Recompute "N ft" and the arrow bearing from the smoothed rider position
-  /// and the driver's RAW phone fix — never the snapped display point, never
-  /// a marked-arrival spot (user spec 2026-09-17). Only rebuilds when the
-  /// change is visible (>0.3 m ≈ 1 ft, or >2°) so a 60 fps ticker never
+  /// Recompute "N ft" and the arrow bearing from the rider's exact phone
+  /// fix and the driver's RAW phone fix — never the snapped display point,
+  /// never a marked-arrival spot (user spec 2026-09-17). Only rebuilds when
+  /// the change is visible (>0.3 m ≈ 1 ft, or >2°) so a 60 fps ticker never
   /// becomes a 60 fps setState.
   void _refreshDistanceBearing() {
     if (_driverStarted) return;
-    final rLat = _riderMotion.lat, rLng = _riderMotion.lng;
+    final rLat = _riderRaw?.latitude, rLng = _riderRaw?.longitude;
     final dLat = _lastDriverPos?.latitude ?? _driverMotion.lat;
     final dLng = _lastDriverPos?.longitude ?? _driverMotion.lng;
     if (rLat == null || rLng == null || dLat == null || dLng == null) return;
@@ -1346,11 +1356,12 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
     return byteData!.buffer.asUint8List();
   }
 
-  /// Create/move the rider dot (+ halo) and the driver car to the smoothed
-  /// positions. Called on the map tick and once after the map sets up.
+  /// Create/move the rider dot (+ halo) to the phone's exact fix and the
+  /// driver car to its smoothed position. Called on the map tick, on every
+  /// accepted rider fix, and once after the map sets up.
   Future<void> _syncMiniMapMarkers() async {
     final dots = _riderDotMgr;
-    final rLat = _riderMotion.lat, rLng = _riderMotion.lng;
+    final rLat = _riderRaw?.latitude, rLng = _riderRaw?.longitude;
     if (dots != null && rLat != null && rLng != null) {
       final p = safePoint(rLng, rLat);
       if (p != null) {
@@ -1460,8 +1471,7 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
   /// every 2.5 s — the frame should pursue the pair, not breathe with them.
   void _maybeRefitMiniMap({bool force = false}) {
     if (!mounted || _miniMap == null || _userTookCamera) return;
-    final rLat = _riderMotion.lat, rLng = _riderMotion.lng;
-    final rider = (rLat != null && rLng != null) ? LatLng(rLat, rLng) : null;
+    final rider = _riderRaw;
     final driver = _lastDriverPos;
     if (rider == null && driver == null) return;
 
@@ -1493,8 +1503,7 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
     final ctrl = _miniMap;
     if (ctrl == null || !mounted) return;
     final pts = <LatLng>[
-      if (_riderMotion.lat != null)
-        LatLng(_riderMotion.lat!, _riderMotion.lng!),
+      if (_riderRaw != null) _riderRaw!,
       if (_lastDriverPos != null) _lastDriverPos!,
     ].where((p) => p.latitude.isFinite && p.longitude.isFinite).toList();
     if (pts.isEmpty) return;
@@ -1684,10 +1693,9 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
 
   /// The stand-in drawn until the coordinator grants the surface (and for
   /// the page's whole life on web): the same static Mapbox image every
-  /// preview in the app uses, framed on rider→driver with the walk route.
+  /// preview in the app uses, framed on rider→driver, pins only.
   Widget _buildMiniMapStandIn() {
-    final rLat = _riderMotion.lat, rLng = _riderMotion.lng;
-    final rider = (rLat != null && rLng != null) ? LatLng(rLat, rLng) : null;
+    final rider = _riderRaw;
     final driver = _lastDriverPos;
     final anchor = rider ?? driver;
     if (anchor == null) {

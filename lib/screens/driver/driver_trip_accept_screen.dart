@@ -4019,7 +4019,8 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
         _carMotion.setTarget(pos.latitude, pos.longitude,
             bearing: brg,
             accuracyM: pos.accuracy,
-            timestampMs: pos.timestamp.millisecondsSinceEpoch.toDouble());
+            timestampMs: pos.timestamp.millisecondsSinceEpoch.toDouble(),
+            speedMps: pos.speed.isFinite && pos.speed >= 0 ? pos.speed : null);
         _ensureCarTicker();
       }, onError: (Object e) {
         debugPrint('[DriverTrip] mini-map car stream error: $e');

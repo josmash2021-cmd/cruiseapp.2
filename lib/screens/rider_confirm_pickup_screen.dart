@@ -1031,10 +1031,12 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
       final lng = (data['lng'] as num?)?.toDouble();
       if (lat == null || lng == null || (lat == 0 && lng == 0)) return;
       final heading = (data['heading'] as num?)?.toDouble();
+      final speed = (data['speed'] as num?)?.toDouble();
       _acceptDriverFix(
         LatLng(lat, lng),
         bearing: (heading != null && heading.isFinite) ? heading : null,
         timestampMs: _fixTsMs(data['captured_at'] ?? data['timestamp']),
+        speedMps: (speed != null && speed.isFinite && speed >= 0) ? speed : null,
       );
     });
   }
@@ -1050,7 +1052,8 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
   /// timestamp or same position) carries no new information — feeding it
   /// twice measured 0 m/s between identical points and dragged the glide
   /// velocity to the floor (the tracking map's old pulse-stop bug).
-  void _acceptDriverFix(LatLng d, {double? bearing, double? timestampMs}) {
+  void _acceptDriverFix(LatLng d,
+      {double? bearing, double? timestampMs, double? speedMps}) {
     final last = _lastDriverFixAtMs;
     if (timestampMs != null && last != null) {
       if (timestampMs < last) return;
@@ -1089,7 +1092,7 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
     _prevDriverFix = d;
 
     _driverMotion.setTarget(d.latitude, d.longitude,
-        bearing: brg, timestampMs: timestampMs);
+        bearing: brg, timestampMs: timestampMs, speedMps: speedMps);
     _ensureMapTicker();
     _maybeRefitMiniMap();
     final rLat = _riderMotion.lat, rLng = _riderMotion.lng;

@@ -552,7 +552,12 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     // capture time: arrival spacing on a relayed feed comes in bursts, and
     // pacing velocity by bursts reads as accelerate-brake pulsing.
     _carMotion.setTarget(ll.latitude, ll.longitude,
-        bearing: bearing, accuracyM: 8.0, timestampMs: timestampMs);
+        bearing: bearing,
+        accuracyM: 8.0,
+        timestampMs: timestampMs,
+        // The driver's own reported speed travels on the relay — ~0 while
+        // parked, so the rider's car freezes against relayed GPS wander.
+        speedMps: speed);
     // 2026-04-27 diagnostic: log every incoming GPS so we can see in
     // device logs whether the rider is even RECEIVING the driver
     // updates. If this never prints while the car sits frozen, the

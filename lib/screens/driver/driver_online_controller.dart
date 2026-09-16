@@ -1267,7 +1267,8 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
         final snappedLL = _snapToRoute(newLL);
         _smoothMoveTo(snappedLL, _smoothedBearing,
             accuracyM: pos.accuracy,
-            timestampMs: pos.timestamp.millisecondsSinceEpoch.toDouble());
+            timestampMs: pos.timestamp.millisecondsSinceEpoch.toDouble(),
+            speedMps: pos.speed.isFinite && pos.speed >= 0 ? pos.speed : null);
 
         // Feed GpsService for RTDB upload (800ms throttled)
         _gpsService.updatePosition(newLL, pos.heading, pos.speed,
@@ -1584,12 +1585,16 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
   }
 
   void _smoothMoveTo(LatLng target, double heading,
-      {double? accuracyM, double? timestampMs}) {
+      {double? accuracyM, double? timestampMs, double? speedMps}) {
     // accuracyM sizes the standstill jitter hold — see SmoothMotion. Without
     // it the hold falls back to a flat 15 m, which is wider than a road, and
-    // a parked driver gets drawn on the pavement and left there.
+    // a parked driver gets drawn on the pavement and left there. speedMps is
+    // the fix's own reading: ~0 parks the marker against GPS wander.
     _motion.setTarget(target.latitude, target.longitude,
-        bearing: heading, accuracyM: accuracyM, timestampMs: timestampMs);
+        bearing: heading,
+        accuracyM: accuracyM,
+        timestampMs: timestampMs,
+        speedMps: speedMps);
     // Seed _pos on the very first fix so the first render doesn't start
     // from (0, 0) — the ticker fills it in subsequent frames.
     if (_pos == null && _motion.hasPosition) {

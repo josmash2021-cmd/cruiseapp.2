@@ -632,6 +632,9 @@ class DriverNavViewState extends State<DriverNavView>
       bearing: pos.heading >= 0 ? pos.heading : null,
       accuracyM: pos.accuracy,
       timestampMs: pos.timestamp.millisecondsSinceEpoch.toDouble(),
+      // The fix's own speed reading parks the arrow against GPS wander —
+      // a parked driver's position jumps but his speed keeps reading ~0.
+      speedMps: pos.speed.isFinite && pos.speed >= 0 ? pos.speed : null,
     );
     // Speed readout (user spec 2026-09-17 — precise, never frozen at a
     // stale figure): the platform speed when the fix carries one; iOS

@@ -134,6 +134,14 @@ class SmoothMotion {
   /// through before the stall is felt.
   static const int _maxConsecutiveHolds = 2;
 
+  /// Stationary freeze thresholds (m/s) — see [setTarget]. A fix whose own
+  /// speed reading is below enter parks the marker; at or above exit the
+  /// marker follows again. The gap between them stops a borderline crawl
+  /// from flapping the hold on and off.
+  static const double _stationaryEnterMps = 0.9;
+  static const double _stationaryExitMps = 1.2;
+  bool _stationary = false;
+
   /// Provide a new GPS target. Measures velocity from the delta to the
   /// previous target.
   ///
@@ -149,12 +157,17 @@ class SmoothMotion {
   /// is the accelerate-brake pulsing the old feed showed. When both the
   /// last and current fix carry a sane timestamp, the delta between them
   /// is what paces the glide.
+  ///
+  /// [speedMps] is the fix's OWN speed reading (`Position.speed`), not the
+  /// measured glide speed. A valid reading ~0 means the device is parked:
+  /// the marker freezes instead of chasing GPS wander.
   void setTarget(
     double lat,
     double lng, {
     double? bearing,
     double? accuracyM,
     double? timestampMs,
+    double? speedMps,
   }) {
     // The busiest entry point, and the one that was not checking.
     //
@@ -175,6 +188,42 @@ class SmoothMotion {
         (timestampMs != null && timestampMs.isFinite && timestampMs > 0)
             ? timestampMs
             : null;
+    // Stationary freeze (user report 2026-09-17): a parked car's fixes can
+    // jump 20-60 m on bad signal while the platform's own speed reading
+    // keeps saying ~0. A jump that big with speed ~0 is GPS wander, not
+    // movement — but the old path measured 20-60 m/s of implied speed off
+    // it and glided the marker after the jump, and the hold's agreement
+    // rule force-accepted every 3rd wandering fix, so the marker ratcheted
+    // away from the parked car ("se aleja, se acerca"). When the fix
+    // carries a real speed reading, ~0 means parked: hold the target where
+    // it is, kill the velocity and skip the fix. The instant a fix reports
+    // real movement the hold releases. Enter <0.9, exit ≥1.2 m/s — a
+    // borderline crawl does not flap. Needs an existing position to hold,
+    // so the first fix of a session always lands.
+    if (speedMps != null &&
+        speedMps.isFinite &&
+        speedMps >= 0 &&
+        _targetLat != null) {
+      if (_stationary) {
+        if (speedMps < _stationaryExitMps) {
+          _vLat = 0;
+          _vLng = 0;
+          _consecutiveHolds = 0;
+          _lastTargetAt = now;
+          if (fixTsMs != null) _lastTargetTsMs = fixTsMs;
+          return;
+        }
+        _stationary = false; // real movement reported — release the hold
+      } else if (speedMps < _stationaryEnterMps) {
+        _stationary = true;
+        _vLat = 0;
+        _vLng = 0;
+        _consecutiveHolds = 0;
+        _lastTargetAt = now;
+        if (fixTsMs != null) _lastTargetTsMs = fixTsMs;
+        return;
+      }
+    }
     if (_targetLat != null && _lastTargetAt != null) {
       var dtSec =
           now.difference(_lastTargetAt!).inMilliseconds / 1000.0;
@@ -509,6 +558,7 @@ class SmoothMotion {
     _vLat = 0;
     _vLng = 0;
     _consecutiveHolds = 0;
+    _stationary = false;
     _lastTargetAt = DateTime.now();
     _lastTargetTsMs = null;
   }
@@ -524,6 +574,7 @@ class SmoothMotion {
     _bearing = 0;
     _targetBearing = 0;
     _consecutiveHolds = 0;
+    _stationary = false;
     _lastTargetAt = null;
     _lastTargetTsMs = null;
   }

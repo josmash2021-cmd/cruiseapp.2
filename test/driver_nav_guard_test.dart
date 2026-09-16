@@ -458,7 +458,7 @@ void main() {
 
     test('opening and route updates snap to the chase pose, never top-down',
         () {
-      final created = bodyOf(nav, 'Future<void> _onMapCreated', maxLen: 1900);
+      final created = bodyOf(nav, 'Future<void> _onMapCreated', maxLen: 2300);
       expect(created, contains('_snapToChasePose();'));
       expect(created, isNot(contains('!_firstGpsFix || _overview')),
           reason: 'the top-down fit on open is gone — it belongs to the '
@@ -512,6 +512,20 @@ void main() {
       final dot = File('lib/widgets/gold_location_dot.dart')
           .readAsStringSync();
       expect(dot, contains('double get speedMps => _motion.speedMps;'));
+    });
+
+    test('the arrow lives in its own manager so pins never lie down', () {
+      expect(nav, contains('mapbox.PointAnnotationManager? _carMgr'));
+      final arrow =
+          bodyOf(nav, 'Future<void> _updateDriverAnnotation() async {', maxLen: 800);
+      expect(arrow, contains('final mgr = _carMgr;'),
+          reason: 'icon-rotation-alignment map is set per manager — on the '
+              'shared pins manager it laid the destination pin on its side '
+              'every time the chase camera turned (user report 2026-09-17)');
+      final pin = bodyOf(nav, 'Future<void> _drawDestPin() async {', maxLen: 400);
+      expect(pin, contains('final mgr = _pointMgr'),
+          reason: 'the pins manager keeps the default viewport alignment — '
+              'the teardrop stands upright at any camera bearing');
     });
   });
 }

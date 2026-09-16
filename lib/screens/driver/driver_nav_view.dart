@@ -194,6 +194,13 @@ class DriverNavViewState extends State<DriverNavView>
   mapbox.MapboxMap? _map;
   mapbox.PolylineAnnotationManager? _polyMgr;
   mapbox.PointAnnotationManager? _pointMgr;
+  // The driver arrow gets its OWN manager (user report 2026-09-17): the
+  // arrow needs icon-rotation-alignment 'map' so it stays pointing up while
+  // the chase camera rotates the map — but that layer property is set per
+  // MANAGER, and sharing it laid the destination pin and the rider figure
+  // down on their side every time the camera turned. _pointMgr keeps the
+  // default viewport alignment, so pins stand upright at any bearing.
+  mapbox.PointAnnotationManager? _carMgr;
   mapbox.PolylineAnnotation? _routeAnnot;
   mapbox.PointAnnotation? _driverAnnot;
   mapbox.PointAnnotation? _destAnnot;
@@ -466,6 +473,7 @@ class DriverNavViewState extends State<DriverNavView>
         _map = null;
         _polyMgr = null;
         _pointMgr = null;
+        _carMgr = null;
         _routeAnnot = null;
         _driverAnnot = null;
         _destAnnot = null;
@@ -502,8 +510,13 @@ class DriverNavViewState extends State<DriverNavView>
     }
     _polyMgr = await ctrl.annotations.createPolylineAnnotationManager();
     _pointMgr = await ctrl.annotations.createPointAnnotationManager();
+    _carMgr = await ctrl.annotations.createPointAnnotationManager();
     try {
       final lid = _pointMgr!.id;
+      await ctrl.style.setStyleLayerProperty(lid, 'icon-allow-overlap', true);
+    } catch (_) {}
+    try {
+      final lid = _carMgr!.id;
       await ctrl.style.setStyleLayerProperty(lid, 'icon-allow-overlap', true);
     } catch (_) {}
     // A recreated surface (app backgrounded on Android) loses everything —
@@ -1302,7 +1315,11 @@ class DriverNavViewState extends State<DriverNavView>
 
   Future<void> _updateDriverAnnotation() async {
     if (!mounted || _annotWriteBusy) return;
-    final mgr = _pointMgr;
+    // The arrow's own manager: icon-rotation-alignment 'map' is set per
+    // manager — on the shared pins manager it laid the destination pin and
+    // the rider figure down whenever the chase camera rotated (user report
+    // 2026-09-17, the "pin acostado").
+    final mgr = _carMgr;
     final lat = _dot.lat;
     final lng = _dot.lng;
     if (mgr == null || lat == null || lng == null) return;

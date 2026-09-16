@@ -9,7 +9,7 @@ import ActivityKit
 //  right, and the car sliding along the route bar).
 //
 //  The bar is time-driven: startedAt → dropoffAt with a TimelineView
-//  repaint every 30 s, so the car keeps moving between server/app updates
+//  repaint every 1 s, so the car glides between server/app updates
 //  without a single push spent on it.
 // ═══════════════════════════════════════════════════════════════════
 
@@ -87,18 +87,23 @@ private struct RideDriverPhoto: View {
   }
 }
 
-/// Car ─── gold fill ─── destination ring. The car PNG is the same
-/// top-down art the in-app map markers use (assets/markers → CarSedan /
-/// CarSuv / CarEconomy in the extension's asset catalog).
+/// Car disc ─── gold fill ─── destination pin. The car is a glyph on a gold
+/// disc (user spec 2026-09-17): the top-down PNG art rendered as an unreadable
+/// pale box at bar size — a black car on gold reads as a car at any size and
+/// can never fail to render (no asset-catalog dependency). The destination end
+/// is the dropoff pin glyph, not a ring.
 private struct RideRouteBar: View {
   var state: CruiseRideActivityAttributes.ContentState
   var compact: Bool = false
 
-  private var carW: CGFloat { compact ? 30 : 40 }
+  private var carW: CGFloat { compact ? 26 : 34 }
   private var line: CGFloat { compact ? 3 : 4 }
+  private var pinW: CGFloat { compact ? 16 : 20 }
 
   var body: some View {
-    TimelineView(.periodic(from: .now, by: 30)) { ctx in
+    // 1 s repaint (was 30 s): the car GLIDES with the clock between content
+    // updates instead of jumping twice a minute.
+    TimelineView(.periodic(from: .now, by: 1)) { ctx in
       let f = rideFraction(state, now: ctx.date)
       GeometryReader { geo in
         let w = geo.size.width
@@ -114,18 +119,20 @@ private struct RideRouteBar: View {
             .fill(rideGold)
             .frame(width: carX + carW / 2, height: line)
             .padding(.leading, carW / 2)
-          // Destination: hollow ring on the line's end
-          Circle()
-            .strokeBorder(rideGold, lineWidth: line * 0.6)
-            .background(Circle().fill(Color.black.opacity(0.9)))
-            .frame(width: line * 3.2, height: line * 3.2)
-            .offset(x: w - line * 1.6)
-          // The car
-          Image(state.carImage.isEmpty ? "CarSedan" : state.carImage)
-            .resizable()
-            .scaledToFit()
-            .frame(width: carW, height: carW)
-            .offset(x: carX)
+          // Destination: the dropoff pin glyph on the line's end
+          Image(systemName: "mappin.circle.fill")
+            .font(.system(size: pinW, weight: .bold))
+            .foregroundColor(rideGold)
+            .offset(x: w - pinW)
+          // The car: gold disc, black glyph
+          ZStack {
+            Circle().fill(rideGold)
+            Image(systemName: "car.fill")
+              .font(.system(size: carW * 0.5, weight: .bold))
+              .foregroundColor(.black)
+          }
+          .frame(width: carW, height: carW)
+          .offset(x: carX)
         }
       }
       .frame(height: carW)
@@ -185,13 +192,15 @@ private struct RideCard: View {
   }
 }
 
-/// Compact trailing: the minutes left, recomputed on the same 30 s tick
-/// as the bar. The slot is a few characters wide, so it may shrink.
+/// Compact trailing: the minutes left, recomputed on the same 1 s tick
+/// as the bar. Ceil-rounded like the in-app ETA (a 1.2-min wait reads
+/// "2 min" on both), never floored to a lie. The slot is a few characters
+/// wide, so it may shrink.
 private struct RideEtaMinutes: View {
   var state: CruiseRideActivityAttributes.ContentState
   var body: some View {
-    TimelineView(.periodic(from: .now, by: 30)) { ctx in
-      let mins = max(0, Int(state.dropoffAt.timeIntervalSince(ctx.date) / 60))
+    TimelineView(.periodic(from: .now, by: 1)) { ctx in
+      let mins = max(0, Int((state.dropoffAt.timeIntervalSince(ctx.date) / 60).rounded(.up)))
       Text("\(mins) min")
         .font(.system(size: 14, weight: .heavy))
         .foregroundColor(rideGold)

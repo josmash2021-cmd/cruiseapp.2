@@ -310,18 +310,19 @@ class DriverNavViewState extends State<DriverNavView>
   ];
 
   // ── Stage controls ──
-  double _slideVal = 0;
-  bool _slideDone = false;
+  // NONE (user spec 2026-09-17): the nav view is navigation-only — no
+  // Arrived button, no slide to pick up / finish in here. When the driver
+  // arrives, the sheet zone shows only End Route, which hands them back to
+  // the trip page whose own buttons/sliders are the flow's authority.
   String _lastStageSynced = '';
   Timer? _waitTicker;
   DateTime? _waitStartLocal; // fallback clock when notes carry no timestamp
   double _waitRemainFrac = 1.0;
   String _waitClock = '5:00';
   static const _waitTotalSecs = 300;
-  static const _stageControlHeight = 62.0;
 
-  /// Secondary "End Route" button under the stage control at arrival —
-  /// closes navigation only, never a trip-state transition.
+  /// The only bottom action the nav view ever shows: closes navigation
+  /// (reverse morph back to the sheet), never a trip-state transition.
   static const _endRouteHeight = 44.0;
 
   ResilientPositionStream? _gps;
@@ -334,8 +335,13 @@ class DriverNavViewState extends State<DriverNavView>
   LatLng get _dest =>
       widget.toPickup ? widget.pickupLatLng : widget.dropoffLatLng;
 
-  bool get _stageControlVisible =>
+  /// End Route appears once the driver has arrived — by the nav view's own
+  /// arrival latch or by any post-arrival stage the parent reports. Never
+  /// mid-drive (the old early "Desliza para terminar" at 58 m).
+  bool get _endRouteVisible =>
+      _phaseArrived ||
       widget.stage == 'arrived' ||
+      widget.stage == 'waiting_rider' ||
       widget.stage == 'start_ride' ||
       widget.stage == 'finish';
 
@@ -1537,11 +1543,6 @@ class DriverNavViewState extends State<DriverNavView>
       _waitTicker?.cancel();
       _waitTicker = null;
     }
-    // A new slide stage gets a fresh thumb.
-    if (stage == 'start_ride' || stage == 'finish') {
-      _slideVal = 0;
-      _slideDone = false;
-    }
   }
 
   void _tickWait() {
@@ -1554,22 +1555,6 @@ class DriverNavViewState extends State<DriverNavView>
       _waitClock =
           '${remain ~/ 60}:${(remain % 60).toString().padLeft(2, '0')}';
     });
-  }
-
-  void _onSlideUpdate(double delta, double maxDrag) {
-    if (_slideDone) return;
-    setState(() {
-      _slideVal = (_slideVal + delta / maxDrag).clamp(0.0, 1.0);
-    });
-    if (_slideVal >= 0.88) {
-      setState(() => _slideDone = true);
-      HapticService.heavyImpact();
-      if (widget.stage == 'start_ride') {
-        widget.onSlidePickUp();
-      } else {
-        widget.onSlideFinish();
-      }
-    }
   }
 
   // ─────────────────────────────────────────────
@@ -1843,39 +1828,14 @@ class DriverNavViewState extends State<DriverNavView>
                     left: 16,
                     right: 16,
                     bottom: lift +
-                        (_stageControlVisible
-                            ? _stageControlHeight + 10
-                            : 0) +
-                        (_phaseArrived ? _endRouteHeight + 10 : 0),
+                        (_endRouteVisible ? _endRouteHeight + 10 : 0),
                     child: _buildWaitBar(s),
                   ),
-                // Arrival lifts the stage control and parks the secondary
-                // End Route under it — the business action stays on top,
-                // the navigation action below it, both at the sheet.
-                Positioned(
-                  left: 16,
-                  right: 16,
-                  bottom:
-                      lift + (_phaseArrived ? _endRouteHeight + 10 : 0),
-                  child: AnimatedSwitcher(
-                    duration: const Duration(milliseconds: 420),
-                    switchInCurve: Curves.easeOutCubic,
-                    switchOutCurve: Curves.easeInCubic,
-                    transitionBuilder: (child, anim) => FadeTransition(
-                      opacity: anim,
-                      child: ScaleTransition(
-                        scale: Tween<double>(begin: 0.92, end: 1.0)
-                            .animate(anim),
-                        child: child,
-                      ),
-                    ),
-                    child: KeyedSubtree(
-                      key: ValueKey('nav-stage-${widget.stage}'),
-                      child: _buildStageControl(s),
-                    ),
-                  ),
-                ),
-                if (_phaseArrived)
+                // The ONLY bottom action the nav view shows (user spec
+                // 2026-09-17): on arrival, End Route hands the driver back
+                // to the trip page — no Arrived button, no finish slider
+                // inside navigation.
+                if (_endRouteVisible)
                   Positioned(
                     left: 16,
                     right: 16,
@@ -2352,144 +2312,6 @@ class DriverNavViewState extends State<DriverNavView>
     );
   }
 
-  Widget _buildStageControl(S s) {
-    switch (widget.stage) {
-      case 'arrived':
-        return SizedBox(
-          width: double.infinity,
-          height: 62,
-          child: ElevatedButton(
-            onPressed: () {
-              HapticService.heavyImpact();
-              widget.onArrived();
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: _gold,
-              foregroundColor: Colors.black,
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(31)),
-              elevation: 0,
-            ),
-            child: Text(
-              s.arrived,
-              style:
-                  const TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
-            ),
-          ),
-        );
-      case 'start_ride':
-        return _buildSlideBar(s.navSlideToPickUp);
-      case 'finish':
-        return _buildSlideBar(s.navSlideToFinish);
-      default:
-        // arrived_locked / finish_locked / driving stages: nothing to press.
-        return const SizedBox.shrink();
-    }
-  }
-
-  /// Same slide mechanic as the accept screen's `_buildSlideArrived`: fill,
-  /// label that fades under the thumb, gold thumb that commits at 88%.
-  Widget _buildSlideBar(String label) {
-    const height = 62.0;
-    const thumbW = 62.0;
-    return Container(
-      decoration: BoxDecoration(
-        color: const Color(0xFF111318),
-        borderRadius: BorderRadius.circular(height / 2),
-        border: Border.all(color: _gold.withValues(alpha: 0.25)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.6),
-            blurRadius: 16,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: LayoutBuilder(
-        builder: (ctx, constraints) {
-          final trackW = constraints.maxWidth;
-          final maxDrag = trackW - thumbW - 4;
-          return SizedBox(
-            height: height,
-            child: Stack(
-              children: [
-                Positioned(
-                  left: 0,
-                  top: 0,
-                  bottom: 0,
-                  width: (_slideVal * maxDrag + thumbW)
-                      .clamp(thumbW.toDouble(), trackW),
-                  child: Container(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [
-                          _gold.withValues(alpha: 0.45),
-                          _gold.withValues(alpha: 0.10),
-                        ],
-                      ),
-                      borderRadius: BorderRadius.circular(height / 2),
-                    ),
-                  ),
-                ),
-                Center(
-                  child: AnimatedOpacity(
-                    opacity: 1.0 - _slideVal,
-                    duration: const Duration(milliseconds: 100),
-                    child: Text(
-                      label,
-                      style: const TextStyle(
-                        color: Colors.white70,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ),
-                ),
-                Positioned(
-                  left: 2 + _slideVal * maxDrag,
-                  top: 3,
-                  bottom: 3,
-                  child: GestureDetector(
-                    onHorizontalDragUpdate: (d) =>
-                        _onSlideUpdate(d.delta.dx, maxDrag),
-                    onHorizontalDragEnd: (_) {
-                      if (!_slideDone) setState(() => _slideVal = 0);
-                    },
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 80),
-                      width: thumbW - 4,
-                      decoration: BoxDecoration(
-                        color: _slideDone
-                            ? _gold.withValues(alpha: 0.8)
-                            : _gold,
-                        shape: BoxShape.circle,
-                        boxShadow: [
-                          BoxShadow(
-                            color: _gold.withValues(alpha: 0.5),
-                            blurRadius: 12,
-                            offset: const Offset(0, 3),
-                          ),
-                        ],
-                      ),
-                      // The thumb's arrow points the way the slide goes.
-                      child: Icon(
-                        _slideDone
-                            ? Icons.check_rounded
-                            : Icons.chevron_right_rounded,
-                        color: Colors.black,
-                        size: 28,
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          );
-        },
-      ),
-    );
-  }
-
   // ─────────────────────────────────────────────
   //  Sheet
   // ─────────────────────────────────────────────
@@ -2631,11 +2453,10 @@ class DriverNavViewState extends State<DriverNavView>
             ),
           ),
         ),
-        // Room for the stage control floating over the sheet's top edge.
+        // Room for the End Route button floating over the sheet's top edge
+        // when it is visible; a small fixed gap when it is not.
         SizedBox(
-            height: _stageControlHeight +
-                76 +
-                (_phaseArrived ? _endRouteHeight + 10 : 0)),
+            height: (_endRouteVisible ? _endRouteHeight + 10 : 0) + 76),
       ],
     );
   }

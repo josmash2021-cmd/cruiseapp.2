@@ -297,26 +297,30 @@ void main() {
       expect(nav, contains('s.navArrivedDropoff'));
     });
 
-    test('arrival fires no backend transition — sliders stay the authority',
+    test('arrival fires no backend transition — the trip page rules the flow',
         () {
-      final body = bodyOf(
-          nav, 'void _onSlideUpdate(double delta, double maxDrag) {',
-          maxLen: 600);
-      expect(body, contains('widget.onSlidePickUp();'));
-      expect(body, contains('widget.onSlideFinish();'),
-          reason: 'onSlidePickUp/onSlideFinish are only called from the '
-              'stage controls');
+      // User spec 2026-09-17: the nav view is navigation-only. No Arrived
+      // button, no slide to pick up / finish in here — those live on the
+      // trip page (the accept screen's own controls), which stays the flow
+      // authority exactly like before.
+      expect(nav, isNot(contains('_buildStageControl')),
+          reason: 'the arrived/start_ride/finish controls are gone from nav');
+      expect(nav, isNot(contains('_buildSlideBar')),
+          reason: 'no slide-to-finish inside navigation');
+      expect(nav, isNot(contains('widget.onSlidePickUp();')));
+      expect(nav, isNot(contains('widget.onSlideFinish();')));
+      expect(nav, isNot(contains('widget.onArrived();')),
+          reason: 'nav never fires a trip-state transition');
     });
 
-    test('arrival shows End Route under the stage control, never auto-closes',
-        () {
+    test('arrival shows only End Route at the sheet, never auto-closes', () {
       expect(nav, contains('_buildEndRouteButton(s)'),
-          reason: 'the explicit close action lives at the bottom sheet, '
-              'under the gold business action');
-      expect(nav, contains('if (_phaseArrived)'),
-          reason: 'it appears only in the arrival state');
+          reason: 'the explicit close action lives at the bottom sheet');
+      expect(nav, contains('if (_endRouteVisible)'),
+          reason: 'it appears once arrived — by the internal latch or any '
+              'post-arrival stage from the parent');
       expect(nav, contains('_endRouteHeight + 10'),
-          reason: 'the stage control rides up above it');
+          reason: 'the wait bar rides up above it');
       final btn =
           bodyOf(nav, 'Widget _buildEndRouteButton(S s) {', maxLen: 900);
       expect(btn, contains('widget.onExit();'),

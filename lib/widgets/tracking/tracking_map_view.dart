@@ -2465,8 +2465,11 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
       _webUpdateApproachLine();
       return;
     }
-    // When approach route is fetched (road-following), the main route polyline
-    // IS the approach — no need for an extra straight line.
+    // NO straight driver→pickup stand-in, ever (user spec 2026-09-17): a
+    // line cutting across blocks lies about where the driver is coming
+    // from. While the road route is in flight the dimmed trip route, the
+    // pins and the live car carry the screen — this method now only
+    // removes a stopgap drawn before the road route lands.
     if (_approachRouteFetched) return;
 
     // Throttle: update every 500ms
@@ -2474,55 +2477,15 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     if (now.difference(_lastApproachUpdate).inMilliseconds < 500) return;
     _lastApproachUpdate = now;
 
-    // Only show during arriving phase — and never as a FINAL state. This
-    // straight driver→pickup line is a stopgap while the road route is in
-    // flight; once the fetch has failed for good (_approachRouteFailed) it
-    // would be all the rider ever sees, and a line cutting across blocks
-    // lies about where the driver is coming from. Pull it and leave the
-    // dimmed trip route and the pins to carry the screen.
-    final shouldShow = _phase == _TrackPhase.arriving && !_approachRouteFailed;
-
-    if (!shouldShow) {
-      // Remove existing approach line
-      if (_mapRoute != null) {
-        _mapRoute!.removeApproach();
-      } else {
-        final mgr = _polylineAnnotMgr;
-        if (mgr != null && _approachAnnot != null && !_approachLineRemoved) {
-          _approachLineRemoved = true;
-          try { mgr.delete(_approachAnnot!); } catch (_) {}
-          _approachAnnot = null;
-        }
-      }
-      return;
-    }
-
-    // Use modular route component if available
     if (_mapRoute != null) {
-      _mapRoute!.drawApproach(_animPos, widget.pickupLatLng);
-      return;
-    }
-
-    // Legacy fallback
-    final mgr = _polylineAnnotMgr;
-    if (mgr == null) return;
-
-    final approachGeom = safeLineString([
-      _animPos,
-      widget.pickupLatLng,
-    ]);
-    if (approachGeom == null) return;
-
-    if (_approachAnnot == null) {
-      // Gloss gold line (matches main route style) from driver → pickup
-      mgr.create(mapbox.PolylineAnnotationOptions(
-        geometry: approachGeom,
-        lineColor: const Color(0xFFFFD700).toARGB32(),
-        lineWidth: 4.0,
-        lineJoin: mapbox.LineJoin.ROUND,
-      )).then((annot) { _approachAnnot = annot; }).catchError((_) {});
+      _mapRoute!.removeApproach();
     } else {
-      try { mgr.update(_approachAnnot!..geometry = approachGeom); } catch (_) {}
+      final mgr = _polylineAnnotMgr;
+      if (mgr != null && _approachAnnot != null && !_approachLineRemoved) {
+        _approachLineRemoved = true;
+        try { mgr.delete(_approachAnnot!); } catch (_) {}
+        _approachAnnot = null;
+      }
     }
   }
 
@@ -3015,30 +2978,12 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     web.setPolyline('route', remaining, color: '#FFD700', width: 4);
   }
 
-  /// Web twin of the straight approach line (driver → pickup) shown until
-  /// the road-following approach route arrives.
+  /// Web twin of [_updateApproachLine]: remove-only too — no straight
+  /// driver→pickup stand-in on any platform (user spec 2026-09-17).
   void _webUpdateApproachLine() {
     final web = _webMapCtrl;
     if (web == null) return;
-    // Main route polyline IS the approach once the fetched route lands.
-    if (_approachRouteFetched) return;
-
-    final now = DateTime.now();
-    if (now.difference(_lastApproachUpdate).inMilliseconds < 500) return;
-    _lastApproachUpdate = now;
-
-    // _approachRouteFailed: same rule as native — the straight stopgap is
-    // never the final answer, no line beats a line that lies.
-    if (_phase != _TrackPhase.arriving ||
-        _approachRouteFailed ||
-        (_animPos.latitude == 0 && _animPos.longitude == 0)) {
-      web.removePolyline('approach');
-      return;
-    }
-    web.setPolyline('approach', [
-      (lng: _animPos.longitude, lat: _animPos.latitude),
-      (lng: widget.pickupLatLng.longitude, lat: widget.pickupLatLng.latitude),
-    ], color: '#FFD700', width: 4);
+    web.removePolyline('approach');
   }
 
   /// Web twin of [_fitRouteBounds]: same point sets and card-aware padding,

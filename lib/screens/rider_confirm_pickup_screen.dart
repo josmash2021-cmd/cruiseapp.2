@@ -1416,13 +1416,15 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
     _lastWalkFetchAt = DateTime.now();
     try {
       // A pedestrian guide, not the driving route — the rider walks this
-      // strip. Walking returning nothing usable keeps the direct line.
+      // strip. Walking returning nothing usable draws NOTHING (user spec
+      // 2026-09-17): the old direct rider→car line cut across blocks and
+      // lied about the way. The anchors stay unset, so the next tick
+      // retries (15 s throttle) until a real guide lands.
       final result = await DirectionsService(ApiKeys.webServices)
           .getRoute(origin: rider, destination: driver, profile: 'walking');
       if (!mounted) return;
-      final List<LatLng> pts = (result != null && result.points.length >= 2)
-          ? List<LatLng>.from(result.points)
-          : [rider, driver];
+      if (result == null || result.points.length < 2) return;
+      final pts = List<LatLng>.from(result.points);
       // The router snaps its ends to the road network — snap them back to
       // the exact anchor positions: the guide starts ON the rider's dot
       // and finishes ON the car (same discipline as the trip route line).

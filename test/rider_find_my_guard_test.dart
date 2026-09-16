@@ -235,11 +235,25 @@ void main() {
           reason: 'a walking route must never hit the driving cache');
       expect(directions.contains('directions/v5/mapbox/\$profile/'), isTrue);
     });
-    test('the Find-My guide fetches walking with a straight-line fallback',
+    test('no provider ever fabricates a straight origin→destination route',
         () {
+      expect(directions.contains('return [origin, destination];'), isFalse,
+          reason: 'user report 2026-09-17: an empty parse was "rescued" as '
+              'a 2-point beeline that every screen drew as the REAL route');
+      expect(directions.contains('mapbox.points.isEmpty'), isTrue,
+          reason: 'an empty-geometry answer fails the provider instead of '
+              'winning over a real route from the next one');
+    });
+    test('the Find-My guide fetches walking and never fakes a beeline', () {
       expect(src.contains("profile: 'walking'"), isTrue);
-      expect(src.contains(': [rider, driver];'), isTrue,
-          reason: 'walking returning nothing keeps the direct line');
+      expect(src.contains(': [rider, driver];'), isFalse,
+          reason: 'user spec 2026-09-17: walking returning nothing draws '
+              'NOTHING — the direct rider→car line cut across blocks and '
+              'lied about the way');
+      expect(src.contains('if (result == null || result.points.length < 2) return;'),
+          isTrue,
+          reason: 'a failed walking fetch leaves the anchors unset so the '
+              'next tick retries');
       expect(src.contains('if (rMoved < 10 && dMoved < 10) return;'), isTrue,
           reason: 'refetch threshold tightened to walking speeds (10 m)');
     });

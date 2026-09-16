@@ -341,9 +341,14 @@ class DirectionsService {
       // Wait for all, take the first non-null result (prefer Mapbox > Google > OSRM)
       // Mapbox route aligns best with Mapbox map tiles for accurate road overlay
       final results = await Future.wait([googleFuture, osrmFuture, mapboxFuture]);
-      final mapbox = results[2];
-      final google = results[0];
-      final osrm = results[1];
+      var mapbox = results[2];
+      var google = results[0];
+      var osrm = results[1];
+      // A provider that answered with no usable geometry FAILED — it must
+      // not "win" over a real route from the next provider.
+      if (mapbox != null && mapbox.points.isEmpty) mapbox = null;
+      if (google != null && google.points.isEmpty) google = null;
+      if (osrm != null && osrm.points.isEmpty) osrm = null;
       if (mapbox != null) {
         debugPrint('[Route] Using Mapbox provider (${mapbox.points.length} points)');
         result = mapbox;
@@ -713,13 +718,16 @@ class DirectionsService {
 
   /// Return the route points as-is from the directions API.
   /// APIs already snap start/end to the nearest road — adding raw user
-  /// coordinates would create off-road straight-line segments.
+  /// coordinates would create off-road straight-line segments. An empty
+  /// result stays empty (user report 2026-09-17): it used to be "rescued"
+  /// as `[origin, destination]` — a straight line cutting across blocks
+  /// that every screen then drew as the REAL route. No geometry is a
+  /// failed provider answer, never a beeline.
   List<LatLng> _anchorRoutePoints(
     List<LatLng> input,
     LatLng origin,
     LatLng destination,
   ) {
-    if (input.isEmpty) return [origin, destination];
     return input;
   }
 

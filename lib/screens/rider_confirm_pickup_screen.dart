@@ -396,13 +396,21 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
     ).listen((pos) {
       if (!mounted || _driverStarted) return;
 
-      // The mini map's blue dot rides the same fix, smoothed.
+      // The mini map's gold dot rides the same fix, smoothed. The fix's own
+      // speed parks it against GPS wander when the rider stands still and
+      // releases the instant they walk (≥1.2 m/s) — precision without lag
+      // (user spec 2026-09-17).
       _riderMotion.setTarget(pos.latitude, pos.longitude,
           accuracyM: pos.accuracy,
-          timestampMs: pos.timestamp.millisecondsSinceEpoch.toDouble());
+          timestampMs: pos.timestamp.millisecondsSinceEpoch.toDouble(),
+          speedMps: pos.speed.isFinite && pos.speed >= 0 ? pos.speed : null);
       _ensureMapTicker();
 
-      final driver = widget.driverPosOf!();
+      // Distance, arrow and FOUND detection all read the driver's PHONE —
+      // the last raw fix from the relay (_lastDriverPos), never the snapped
+      // map marker and never a marked-arrival point. The pull callback is
+      // only the bootstrap before the first relay packet lands.
+      final driver = _lastDriverPos ?? widget.driverPosOf!();
       if (driver.latitude == 0 && driver.longitude == 0) return;
 
       final meters = Geolocator.distanceBetween(
@@ -1177,8 +1185,8 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
   /// Recompute "N ft" and the arrow bearing from the smoothed rider position
   /// and the driver's RAW phone fix — never the snapped display point, never
   /// a marked-arrival spot (user spec 2026-09-17). Only rebuilds when the
-  /// change is visible (>0.5 m or >2°) so a 60 fps ticker never becomes a
-  /// 60 fps setState.
+  /// change is visible (>0.3 m ≈ 1 ft, or >2°) so a 60 fps ticker never
+  /// becomes a 60 fps setState.
   void _refreshDistanceBearing() {
     if (_driverStarted) return;
     final rLat = _riderMotion.lat, rLng = _riderMotion.lng;
@@ -1191,7 +1199,7 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
         (Geolocator.bearingBetween(rLat, rLng, dLat, dLng) + 360) % 360;
     var gap = (bearing - _bearingToDriver).abs() % 360;
     if (gap > 180) gap = 360 - gap;
-    if (_distanceM < 0 || (meters - _distanceM).abs() > 0.5 || gap > 2) {
+    if (_distanceM < 0 || (meters - _distanceM).abs() > 0.3 || gap > 2) {
       setState(() {
         _distanceM = meters;
         _bearingToDriver = bearing;

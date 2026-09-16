@@ -308,6 +308,20 @@ void main() {
       expect(refresh.contains('_riderMotion.lat'), isTrue);
       expect(refresh.contains('_driverMotion.lat'), isTrue);
     });
+
+    test('the GPS handler also prefers the raw phone fix (single source)',
+        () {
+      expect(src.contains('final driver = _lastDriverPos ?? widget.driverPosOf!();'),
+          isTrue,
+          reason: 'user spec 2026-09-17: without this, the GPS handler wrote '
+              'the smoothed pull position while the ticker wrote the raw fix '
+              '— two sources tugging "N ft" back and forth');
+      final handler = bodyOf(
+          '_riderGpsSub = Geolocator.getPositionStream(', maxLen: 1800);
+      expect(handler.contains('speedMps:'), isTrue,
+          reason: 'the rider dot freezes against wander when parked and '
+              'releases the instant the rider walks — precision without lag');
+    });
   });
 
   group('vehicle color becomes a dot', () {

@@ -531,5 +531,15 @@ void main() {
           reason: 'the pins manager keeps the default viewport alignment — '
               'the teardrop stands upright at any camera bearing');
     });
+
+    test('the rider live location is the blue puck, never an icon', () {
+      expect(nav, contains('mapbox.CircleAnnotation? _riderHaloAnnot'));
+      expect(nav, contains('mapbox.CircleAnnotation? _riderDotAnnot'));
+      expect(nav, contains('_riderBlue = Color(0xFF3B82F6)'),
+          reason: 'the same blue the rider side draws for the live dot');
+      expect(nav, isNot(contains('_renderRiderFigure')),
+          reason: 'user spec 2026-09-17: the gold person icon is gone — the '
+              'driver sees the rider as the blue location dot');
+    });
   });
 }

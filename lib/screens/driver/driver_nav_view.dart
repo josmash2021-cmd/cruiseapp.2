@@ -1,6 +1,4 @@
 import 'dart:async';
-import 'dart:typed_data';
-import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
@@ -215,12 +213,17 @@ class DriverNavViewState extends State<DriverNavView>
   //    map. onTick (throttled) writes the annotation; onFrame chases. ──
   final GoldLocationDot _dot = GoldLocationDot(heading: true);
 
-  // ── Rider figure (pickup leg only) ──
+  // ── Rider live location (pickup leg only) ──
   final SmoothMotion _riderMotion = SmoothMotion();
   Ticker? _riderTicker;
   Duration _riderLastTick = Duration.zero;
-  mapbox.PointAnnotation? _riderAnnot;
-  Uint8List? _riderFigureBytes;
+  // The blue location puck (user spec 2026-09-17 — the same blue dot the
+  // rider side draws), never an icon: halo circle + blue dot with a white
+  // ring, native CircleAnnotations so they scale with the map zoom.
+  mapbox.CircleAnnotationManager? _circleMgr;
+  mapbox.CircleAnnotation? _riderHaloAnnot;
+  mapbox.CircleAnnotation? _riderDotAnnot;
+  static const _riderBlue = Color(0xFF3B82F6);
   DateTime? _riderFixAt;
   Timer? _riderStaleTimer;
   Offset? _riderLabelPos;
@@ -384,14 +387,17 @@ class DriverNavViewState extends State<DriverNavView>
     }
     if (oldWidget.toPickup != widget.toPickup) {
       // Leg flip (pickup → dropoff): re-aim the route and drop the rider
-      // figure — after the slide to pick up there is nobody left to show.
+      // dot — after the slide to pick up there is nobody left to show.
       _riderFixAt = null;
       if (_riderLabelPos != null) setState(() => _riderLabelPos = null);
-      final annot = _riderAnnot;
-      _riderAnnot = null;
-      final mgr = _pointMgr;
-      if (annot != null && mgr != null) {
-        mgr.delete(annot).catchError((Object _) {});
+      final halo = _riderHaloAnnot;
+      final dot = _riderDotAnnot;
+      _riderHaloAnnot = null;
+      _riderDotAnnot = null;
+      final mgr = _circleMgr;
+      if (mgr != null) {
+        if (halo != null) mgr.delete(halo).catchError((Object _) {});
+        if (dot != null) mgr.delete(dot).catchError((Object _) {});
       }
       _onDestinationChanged();
     } else if (!widget.toPickup &&
@@ -480,10 +486,12 @@ class DriverNavViewState extends State<DriverNavView>
         _polyMgr = null;
         _pointMgr = null;
         _carMgr = null;
+        _circleMgr = null;
         _routeAnnot = null;
         _driverAnnot = null;
         _destAnnot = null;
-        _riderAnnot = null;
+        _riderHaloAnnot = null;
+        _riderDotAnnot = null;
         _lastSentLat = null;
         _lastSentLng = null;
         _lastSentBearing = null;
@@ -517,6 +525,7 @@ class DriverNavViewState extends State<DriverNavView>
     _polyMgr = await ctrl.annotations.createPolylineAnnotationManager();
     _pointMgr = await ctrl.annotations.createPointAnnotationManager();
     _carMgr = await ctrl.annotations.createPointAnnotationManager();
+    _circleMgr = await ctrl.annotations.createCircleAnnotationManager();
     try {
       final lid = _pointMgr!.id;
       await ctrl.style.setStyleLayerProperty(lid, 'icon-allow-overlap', true);
@@ -1417,76 +1426,44 @@ class DriverNavViewState extends State<DriverNavView>
   Future<void> _updateRiderAnnotation() async {
     if (!mounted) return;
     // Pickup leg only: once the rider is aboard (slide to pick up done)
-    // the figure hides with the leg flip.
+    // the dot hides with the leg flip.
     if (!widget.toPickup) return;
-    final mgr = _pointMgr;
+    final mgr = _circleMgr;
     final lat = _riderMotion.lat;
     final lng = _riderMotion.lng;
     if (mgr == null || lat == null || lng == null) return;
     if (!isValidLatLng(lat, lng)) return;
-    final bytes = _riderFigureBytes ??= await _renderRiderFigure();
-    if (bytes == null || !mounted) return;
+    final p = mapbox.Point(coordinates: mapbox.Position(lng, lat));
     try {
-      if (_riderAnnot == null) {
-        _riderAnnot = await mgr.create(mapbox.PointAnnotationOptions(
-          geometry: mapbox.Point(coordinates: mapbox.Position(lng, lat)),
-          image: bytes,
-          iconSize: 1 / 3.0, // rendered at 3× density
-          iconAnchor: mapbox.IconAnchor.CENTER,
+      // The blue location puck (user spec 2026-09-17): translucent halo +
+      // blue dot with a white ring — the same marker the rider side draws,
+      // never an icon.
+      if (_riderHaloAnnot == null) {
+        _riderHaloAnnot = await mgr.create(mapbox.CircleAnnotationOptions(
+          geometry: p,
+          circleRadius: 13.0,
+          circleColor: _riderBlue.withValues(alpha: 0.22).toARGB32(),
         ));
       } else {
-        _riderAnnot!.geometry =
-            mapbox.Point(coordinates: mapbox.Position(lng, lat));
-        await mgr.update(_riderAnnot!);
+        _riderHaloAnnot!.geometry = p;
+        await mgr.update(_riderHaloAnnot!);
+      }
+      if (!mounted) return;
+      if (_riderDotAnnot == null) {
+        _riderDotAnnot = await mgr.create(mapbox.CircleAnnotationOptions(
+          geometry: p,
+          circleRadius: 7.0,
+          circleColor: _riderBlue.toARGB32(),
+          circleStrokeWidth: 2.5,
+          circleStrokeColor: Colors.white.toARGB32(),
+        ));
+      } else {
+        _riderDotAnnot!.geometry = p;
+        await mgr.update(_riderDotAnnot!);
       }
     } catch (_) {
-      _riderAnnot = null;
-    }
-  }
-
-  /// Gold person over a translucent navy halo, rasterised once.
-  Future<Uint8List?> _renderRiderFigure() async {
-    const scale = 3.0, size = 46.0;
-    final recorder = ui.PictureRecorder();
-    final canvas = Canvas(recorder)..scale(scale);
-    const center = Offset(size / 2, size / 2);
-    canvas.drawCircle(
-      center,
-      size / 2,
-      Paint()..color = _navyBar.withValues(alpha: 0.55),
-    );
-    canvas.drawCircle(
-      center,
-      size / 2 - 1,
-      Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 1.5
-        ..color = _gold.withValues(alpha: 0.7),
-    );
-    final tp = TextPainter(
-      text: TextSpan(
-        text: String.fromCharCode(Icons.person_rounded.codePoint),
-        style: TextStyle(
-          fontFamily: Icons.person_rounded.fontFamily,
-          package: Icons.person_rounded.fontPackage,
-          fontSize: 27,
-          color: _gold,
-        ),
-      ),
-      textDirection: TextDirection.ltr,
-    )..layout();
-    tp.paint(
-        canvas, Offset(center.dx - tp.width / 2, center.dy - tp.height / 2));
-    try {
-      final img = await recorder
-          .endRecording()
-          .toImage((size * scale).round(), (size * scale).round());
-      final data = await img.toByteData(format: ui.ImageByteFormat.png);
-      img.dispose();
-      return data?.buffer.asUint8List();
-    } catch (e) {
-      debugPrint('[Nav] rider figure render failed: $e');
-      return null;
+      _riderHaloAnnot = null;
+      _riderDotAnnot = null;
     }
   }
 

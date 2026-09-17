@@ -3,6 +3,7 @@ import 'dart:convert';
 import '../utils/app_platform.dart';
 import '../config/route_observers.dart';
 import '../map/map_surface_coordinator.dart';
+import '../map/flat_map_projection.dart';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart' show kDebugMode, kIsWeb, defaultTargetPlatform, TargetPlatform;
@@ -1539,18 +1540,24 @@ class _RideRequestScreenState extends State<RideRequestScreen>
                     _lastCamZoom = cam.cameraState.zoom;
                     _lastCamPitch = cam.cameraState.pitch;
                     _lastCamBearing = cam.cameraState.bearing;
-                    // Throttled: this fires per camera frame, and each sync
-                    // is two awaited pixelForCoordinate IPCs. Unthrottled it
-                    // pushed ~120 round-trips/s into the channel DURING the
-                    // cinematic (whose own setCamera writes share it) —
-                    // visible stutter on iOS ProMotion. 66 ms ≈ 15 fps is
-                    // plenty for label glue, and while no label is revealed
-                    // there is nothing to glue at all.
                     if (_pickupLabelRevealed || _dropoffLabelRevealed) {
-                      final now = DateTime.now();
-                      if (now.difference(_lastLabelSync).inMilliseconds >= 66) {
-                        _lastLabelSync = now;
-                        _syncLabelOffsets();
+                      // Flat camera (this whole flow is top-down/north-up):
+                      // the label pixel is pure Web-Mercator arithmetic —
+                      // glued EVERY camera frame at zero IPC cost (user spec
+                      // 2026-09-17). The 66 ms-throttled pixelForCoordinate
+                      // path stays for any tilted/rotated camera, where the
+                      // flat projection does not hold.
+                      final flat = cam.cameraState;
+                      if (flat.pitch.abs() < 0.01 &&
+                          flat.bearing.abs() < 0.01) {
+                        _glueLabelsFlat(flat);
+                      } else {
+                        final now = DateTime.now();
+                        if (now.difference(_lastLabelSync).inMilliseconds >=
+                            66) {
+                          _lastLabelSync = now;
+                          _syncLabelOffsets();
+                        }
                       }
                     }
                     if (_ctrl.state.phase == RiderPhase.pickingLocation) {

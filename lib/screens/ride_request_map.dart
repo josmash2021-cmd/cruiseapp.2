@@ -838,11 +838,14 @@ extension _RideRequestMap on _RideRequestScreenState {
 
     // ── UNIFIED tilt + zoom + center animation ──
     // One controller drives ALL camera axes so nothing fights.
+    // 1400 ms easeOutCubic (was 2200 easeInOutCubic, user spec 2026-09-17):
+    // the slow-accelerating start of easeInOut read as "relentizado" — a
+    // prompt start with a soft landing is the fluid feel.
     _tiltAnim?.removeListener(_applyMapCamera);
     _tiltCtrl?.dispose();
     _tiltCtrl = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 2200),
+      duration: const Duration(milliseconds: 1400),
     );
 
     final endLat = targetCenterLat;
@@ -867,7 +870,7 @@ extension _RideRequestMap on _RideRequestScreenState {
     void onUnifiedTick() {
       final mc = _mapCtrl;
       if (mc == null || !mounted) return;
-      final t = Curves.easeInOutCubic.transform(_tiltCtrl!.value);
+      final t = Curves.easeOutCubic.transform(_tiltCtrl!.value);
       _pushCamera(mc, mapbox.CameraOptions(
         center: mapbox.Point(
           coordinates: mapbox.Position(
@@ -1369,6 +1372,43 @@ extension _RideRequestMap on _RideRequestScreenState {
   /// Reproject pickup/dropoff pin positions to screen pixels so the
   /// overlay labels follow the map while it tilts, pans or zooms.
   /// Called on every camera change event and at the end of the cinematic.
+  /// Glue the floating labels to their pins on EVERY camera frame, computed
+  /// locally (flat cameras only — this flow is top-down/north-up). Pure
+  /// Web-Mercator arithmetic: no IPC, no throttle, no stepping behind the
+  /// pins mid-cinematic (user spec 2026-09-17 — "los labels se mueven
+  /// relentizados"). Tilted/rotated cameras keep the throttled
+  /// pixelForCoordinate path in `_syncLabelOffsets`.
+  void _glueLabelsFlat(mapbox.CameraState cam) {
+    final mq = MediaQuery.maybeOf(context);
+    if (mq == null) return;
+    final center = LatLng(cam.center.coordinates.lat.toDouble(),
+        cam.center.coordinates.lng.toDouble());
+
+    Offset? forPoint(PlaceDetails? d) {
+      if (d == null) return null;
+      return FlatMapProjection.screenOffsetFlat(
+        target: LatLng(d.lat, d.lng),
+        cameraCenter: center,
+        zoom: cam.zoom,
+        bearingDeg: cam.bearing,
+        pitchDeg: cam.pitch,
+        viewport: mq.size,
+      );
+    }
+
+    final p = forPoint(_ctrl.state.pickup);
+    final d = forPoint(_ctrl.state.dropoff);
+    // Only rebuild when a pixel actually moved — sub-pixel jitter is noise.
+    bool moved(Offset? a, Offset? b) =>
+        a != b && (a == null || b == null || (a - b).distance >= 0.5);
+    if (moved(_pickupScreenOffset, p) || moved(_dropoffScreenOffset, d)) {
+      _setState(() {
+        if (p != null) _pickupScreenOffset = p;
+        if (d != null) _dropoffScreenOffset = d;
+      });
+    }
+  }
+
   Future<void> _syncLabelOffsets() async {
     final pickup = _ctrl.state.pickup;
     final dropoff = _ctrl.state.dropoff;

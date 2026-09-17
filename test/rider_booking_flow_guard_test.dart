@@ -192,9 +192,34 @@ void main() {
       // User spec 2026-08-29: the choose-a-ride sheet always reads as
       // skeleton rows for the first 4 seconds, even when fares are ready.
       expect(screen, contains('_skeletonForced = true'));
+
       expect(screen, contains('Duration(seconds: 4)'));
       expect(widgets, contains('_skeletonForced || !faresReady'),
           reason: 'the AnimatedSwitcher must honour the forced window');
+    });
+
+    test('pin labels glue to the map EVERY camera frame, zero IPC '
+        '(user spec 2026-09-17)', () {
+      final map = File('lib/screens/ride_request_map.dart')
+          .readAsStringSync();
+      expect(screen.contains("import '../map/flat_map_projection.dart'"),
+          isTrue);
+      expect(screen.contains('_glueLabelsFlat(flat);'), isTrue,
+          reason: 'flat cameras (this flow is top-down/north-up) glue the '
+              'labels locally per frame — the 66 ms-throttled '
+              'pixelForCoordinate path stepped them behind the pins '
+              'mid-cinematic');
+      expect(map.contains('void _glueLabelsFlat(mapbox.CameraState cam)'),
+          isTrue);
+      expect(map.contains('FlatMapProjection.screenOffsetFlat('), isTrue);
+      expect(map.contains('duration: const Duration(milliseconds: 1400)'),
+          isTrue,
+          reason: 'the cinematic eased in too slowly at 2200 ms — '
+              '"relentizado"');
+      expect(map.contains('Curves.easeOutCubic.transform(_tiltCtrl!.value)'),
+          isTrue,
+          reason: 'easeOutCubic: prompt start, soft landing — fluid, not '
+              'slow-motion');
     });
   });
 }

@@ -164,6 +164,16 @@ void main() {
       expect(pin.substring(idle, idle + 200), contains('_bootSettled'),
           reason: '_onIdle must not snap until the opening camera settled');
     });
+
+    test('the pin never re-geocodes at open (user spec 2026-09-17)', () {
+      expect(pin, isNot(contains('_refinePickupFromLabel')),
+          reason: 'the search page already hands exact Places-details '
+              'coordinates — forward-geocoding the label on open dragged '
+              'the pin tens of metres off the client\'s spot ("el pin se '
+              'mueve para otro lado")');
+      expect(pin, contains('unawaited(_sharpenCityLevelLabel())'),
+          reason: 'city-level TEXT still sharpens — coordinates never move');
+    });
   });
 
   group('ride request map resilience', () {

@@ -97,13 +97,6 @@ class _SetPickupLocationScreenState extends State<SetPickupLocationScreen>
 
   late PlaceDetails _pin;
   bool _userMovedMap = false;
-  // True while the open-time refine easeTo runs — its scroll/idle events
-  // must not count as a rider drag (they would re-anchor the pin onto a
-  // road vertex and reverse-geocode over the client's exact address).
-  bool _cameraAnimating = false;
-  // Once the rider grabs the map, the open-time refine never moves the
-  // camera out from under their drop.
-  bool _userDraggedOnce = false;
   Timer? _geocodeDebounce;
   bool _geocoding = false;
 
@@ -219,7 +212,10 @@ class _SetPickupLocationScreenState extends State<SetPickupLocationScreen>
     // (≤25 m) re-anchor to the client's spot instead of wandering.
     _droppedPoint = LatLngSafe(_pin.lat, _pin.lng);
     await _refreshSuggestions();
-    unawaited(_refinePickupFromLabel());
+    // NOTE: the pin NEVER re-geocodes at open (user spec 2026-09-17) — the
+    // search page already hands exact Places-details coordinates; a forward
+    // geocode of the label dragged the pin tens of metres off the client's
+    // spot. City-level TEXT still sharpens (initState), coordinates never.
     // The opening camera settles within about a second of creation — every
     // scroll/idle before that is the map initializing, not the rider.
     Future<void>.delayed(const Duration(seconds: 1), () {
@@ -234,64 +230,6 @@ class _SetPickupLocationScreenState extends State<SetPickupLocationScreen>
   mapbox.MbxEdgeInsets _cameraPadding() {
     final h = MediaQuery.of(context).size.height;
     return mapbox.MbxEdgeInsets(top: 0, left: 0, bottom: h * 0.34, right: 0);
-  }
-
-  /// Sharpen the opening pin to the exact pickup address (user spec
-  /// 2026-08-25): a pickup chosen from a city-level prediction ("Pelham,
-  /// AL 35124") seeds the pin at the city centroid, not at the house. A
-  /// label that carries a street number is forward-geocoded on open and,
-  /// when the rooftop answer sits meaningfully away from the seed, the
-  /// pin + camera move there and the field shows the real address.
-  Future<void> _refinePickupFromLabel() async {
-    final label = widget.pickupLabel.trim();
-    // Only a label that STARTS with a street number ("2600 Pelham Pkwy …")
-    // can sharpen the pin. A city/ZIP label ("Pelham, AL 35124") passes a
-    // bare "\d" test through its ZIP and geocodes right back to the city
-    // centroid — refining on it DRAGGED the pin off the client's exact
-    // spot (GPS fix / picked address) onto the centroid instead.
-    if (!RegExp(r'^\d+\s').hasMatch(label)) return;
-    try {
-      final exact = await _places
-          .geocodeAddress(label)
-          .timeout(const Duration(seconds: 6));
-      if (!mounted || exact == null) return;
-      // A rider who already grabbed the map keeps their drop — the
-      // opening refine must never yank the camera out from under them.
-      if (_userDraggedOnce) return;
-      final d = _meters(
-          LatLngSafe(_pin.lat, _pin.lng), LatLngSafe(exact.lat, exact.lng));
-      if (d < 40) return; // the seed was already on the doorstep
-      setState(() {
-        _pin = PlaceDetails(address: label, lat: exact.lat, lng: exact.lng);
-      });
-      // The anchor follows the sharpened doorstep — the open-time circle
-      // still sits on the coarse seed.
-      _droppedPoint = LatLngSafe(exact.lat, exact.lng);
-      final map = _map;
-      if (map != null) {
-        // Programmatic move: without the flag its scroll/idle events trip
-        // the snap cycle — the pin re-anchors onto a road vertex and the
-        // reverse geocoder stomps the client's exact address with
-        // whatever coarse string it returns (city-level text).
-        _cameraAnimating = true;
-        try {
-          await map.easeTo(
-            mapbox.CameraOptions(
-              center: mapbox.Point(
-                  coordinates: mapbox.Position(exact.lng, exact.lat)),
-              padding: _cameraPadding(),
-            ),
-            mapbox.MapAnimationOptions(duration: 500),
-          );
-        } catch (_) {}
-        // Drain this animation's trailing onMapIdle before rider drags
-        // count as moves again.
-        await Future<void>.delayed(const Duration(milliseconds: 150));
-        _cameraAnimating = false;
-      }
-      if (!mounted) return;
-      _refreshSuggestions();
-    } catch (_) {}
   }
 
   /// True for a city-level label — "Pelham, AL 35124" / "Pelham, AL" —
@@ -331,13 +269,11 @@ class _SetPickupLocationScreenState extends State<SetPickupLocationScreen>
   // ─────────────────────────────────────────────
 
   void _onScroll() {
-    // A programmatic easeTo (the open-time refine) is not a rider drag —
-    // treating it as one re-anchors the pin off the client's address and
-    // reverse-geocodes over the exact label. Neither is the map's opening
-    // settle: boot camera events run no snap cycle.
-    if (!_bootSettled || _cameraAnimating) return;
+    // The map's opening settle is not the rider dragging: boot camera
+    // events run no snap cycle — the pin re-anchors onto a road vertex and
+    // reverse-geocodes over the exact label.
+    if (!_bootSettled) return;
     _userMovedMap = true;
-    _userDraggedOnce = true;
     if (_snappedToSuggestion) {
       // Dragging away from a suggestion turns the pill back into a pin.
       setState(() => _snappedToSuggestion = false);
@@ -345,7 +281,7 @@ class _SetPickupLocationScreenState extends State<SetPickupLocationScreen>
   }
 
   Future<void> _onIdle() async {
-    if (!_bootSettled || _cameraAnimating) return;
+    if (!_bootSettled) return;
     if (!_userMovedMap) return;
     _userMovedMap = false;
     final map = _map;

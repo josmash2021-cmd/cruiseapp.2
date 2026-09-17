@@ -137,6 +137,30 @@ void main() {
       expect(src.contains('_HeroGlowPainter('), isTrue,
           reason: 'the hero glow chases the arrow and goes green in FOUND');
     });
+
+    test('the FOUND check is a big FILLED disc, not a tiny outline '
+        '(user spec 2026-09-17)', () {
+      expect(src.contains('Icons.check_circle_rounded'), isTrue);
+      expect(src.contains('size: 240'), isTrue,
+          reason: 'the 156 outline read as "diminuto" — the check must be '
+              'visible across the car');
+      expect(src.contains('Icons.check_circle_outline_rounded'), isFalse);
+      final dist = bodyOf('Widget _buildDistanceLine()');
+      expect(dist.contains('duration: const Duration(milliseconds: 300)'),
+          isTrue,
+          reason: 'the ft readout trails reality at 600 ms — 300 keeps it '
+              'on the live phone fixes');
+    });
+
+    test('boot camera events cannot park the strip on the (0,0) ocean', () {
+      expect(src.contains('_bootFitted'), isTrue,
+          reason: 'scroll/zoom events before the first real fit are the map '
+              'initializing — latching _userTookCamera off them blocked '
+              'every refit and the mini map showed blank navy forever '
+              '(user report 2026-09-17)');
+      expect(src.contains('if (_bootFitted) _userTookCamera = true;'),
+          isTrue);
+    });
   });
 
   group('bottom action row adds Support', () {
@@ -191,10 +215,11 @@ void main() {
       expect(body.contains('pitchEnabled: false'), isTrue);
     });
     test('a user pan/zoom latches the camera so auto-fit never fights it', () {
-      expect(src.contains('onScrollListener: (_) => _userTookCamera = true'),
-          isTrue);
-      expect(src.contains('onZoomListener: (_) => _userTookCamera = true'),
-          isTrue);
+      expect(src.contains('if (_bootFitted) _userTookCamera = true;'),
+          isTrue,
+          reason: 'the latch is gated on the first real fit — boot-time '
+              'camera events are the map initializing, not the rider '
+              '(2026-09-17)');
       final body = bodyOf('void _maybeRefitMiniMap({bool force = false}) {');
       expect(body.contains('_userTookCamera'), isTrue,
           reason: 'once the rider takes the camera the periodic refit must '

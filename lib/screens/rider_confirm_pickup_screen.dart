@@ -250,6 +250,12 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
   /// the same latch map_picker_screen uses.
   bool _userTookCamera = false;
 
+  /// False until the first REAL fit lands. Scroll/zoom events before that
+  /// are the map initializing, not the rider — latching _userTookCamera off
+  /// them blocked every refit and the strip stayed on the (0,0) ocean:
+  /// "el mini mapa se queda asi, no carga nada" (user report 2026-09-17).
+  bool _bootFitted = false;
+
   @override
   void initState() {
     super.initState();
@@ -609,7 +615,10 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
     }
     return TweenAnimationBuilder<double>(
       tween: Tween(end: _distanceM),
-      duration: const Duration(milliseconds: 600),
+      // 300 ms (was 600): the readout recomputes every ~300 ms off live
+      // phone fixes — a long ease made the number trail reality, which
+      // reads as "not real-time" (user report 2026-09-17).
+      duration: const Duration(milliseconds: 300),
       curve: Curves.easeOutCubic,
       builder: (context, m, _) {
         final es = S.of(context).isSpanish;
@@ -1470,7 +1479,11 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
   /// Refit the camera when either anchor moved more than 6 m, at most once
   /// every 2.5 s — the frame should pursue the pair, not breathe with them.
   void _maybeRefitMiniMap({bool force = false}) {
-    if (!mounted || _miniMap == null || _userTookCamera) return;
+    // A rider who grabbed the camera keeps it — but only after the first
+    // real fit landed (boot events must not lock the strip out).
+    if (!mounted || _miniMap == null || (_userTookCamera && _bootFitted)) {
+      return;
+    }
     final rider = _riderRaw;
     final driver = _lastDriverPos;
     if (rider == null && driver == null) return;
@@ -1523,6 +1536,11 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
         } else {
           await ctrl.easeTo(cam, mapbox.MapAnimationOptions(duration: 500));
         }
+        // The first real fit happened — from here a drag is the RIDER's
+        // (boot-time camera events before this are the map initializing,
+        // and they used to latch _userTookCamera, parking the strip on the
+        // (0,0) ocean forever — the "mini map no carga nada" report).
+        _bootFitted = true;
         return;
       }
 
@@ -1570,17 +1588,18 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
       } else {
         await ctrl.easeTo(target, mapbox.MapAnimationOptions(duration: 500));
       }
+      _bootFitted = true;
     } catch (e) {
       debugPrint('[ConfirmPickup] mini-map fit failed: $e');
     }
   }
 
-  /// The live strip (~230 px, full width) or its static stand-in while the
+  /// The live strip (200 px, full width) or its static stand-in while the
   /// surface handoff completes. Interactive (pan/zoom); only the four
   /// borders feather into the page background. No card frame, no veil.
   Widget _buildMiniMap() {
     return SizedBox(
-      height: 230,
+      height: 200,
       width: double.infinity,
       child: Stack(
         fit: StackFit.expand,
@@ -1605,8 +1624,12 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
                 ),
                 textureView: true,
                 onMapCreated: _onMiniMapCreated,
-                onScrollListener: (_) => _userTookCamera = true,
-                onZoomListener: (_) => _userTookCamera = true,
+                onScrollListener: (_) {
+                  if (_bootFitted) _userTookCamera = true;
+                },
+                onZoomListener: (_) {
+                  if (_bootFitted) _userTookCamera = true;
+                },
                 // The style finishes loading AFTER map-created: theme and
                 // annotations only stick from here on. Without this the
                 // strip stayed factory grey and a reload wiped the markers.
@@ -2001,9 +2024,12 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
             child: isFound
                 ? const Icon(
                     key: ValueKey('c_check'),
-                    Icons.check_circle_outline_rounded,
+                    // Filled, and arrow-sized (user spec 2026-09-17): the
+                    // 156 outline read as "diminuto" — a green disc with
+                    // the cut-out check is visible across the car.
+                    Icons.check_circle_rounded,
                     color: _green,
-                    size: 156,
+                    size: 240,
                   )
                 : AnimatedRotation(
                     key: const ValueKey('c_arrow'),
@@ -2145,7 +2171,9 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
                               child: _buildPinRow(),
                             ),
                           ],
-                          const SizedBox(height: 42),
+                          // Slim gap (was 42): the FOUND hero ring needs the
+                          // vertical room — the check must read BIG.
+                          const SizedBox(height: 16),
 
                           _buildMiniMap(),
                           const Spacer(),

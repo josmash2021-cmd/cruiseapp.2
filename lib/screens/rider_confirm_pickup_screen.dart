@@ -149,11 +149,13 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
   int _closeFixes = 0;
 
   /// FOUND enters when two consecutive fixes land inside the proximity
-  /// radius. The radius is adaptive: 2 m with a fine GPS fix — "you are at
-  /// the car", not "near the car" — but GPS can't resolve 2 m on a bad
-  /// signal day, so each fix's own accuracy raises the bar, never past
-  /// [_kDetectMaxMeters] or a basement fix would mark FOUND a block away.
-  static const double _kDetectMeters = 2.0;
+  /// radius. The radius models the COMBINED noise of two phones (user
+  /// report 2026-09-17): the rider fix's accuracy plus a flat 8 m for the
+  /// driver's fix (the relay carries no accuracy), floored at 12 m — ~40 ft
+  /// is "at the car" — and never past [_kDetectMaxMeters], or a basement
+  /// fix would mark FOUND a block away.
+  static const double _kDetectFloorMeters = 12.0;
+  static const double _kDriverNoiseMeters = 8.0;
   static const double _kDetectMaxMeters = 30.0;
 
   /// FOUND exits only past radius + this buffer (again two consecutive
@@ -441,11 +443,15 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
       // Detection: two consecutive fixes inside the radius latch FOUND —
       // a single GPS spike through the threshold cannot trigger it,
       // instant in practice (fixes arrive ~1/s) without being gullible.
-      // The radius adapts to the fix's own accuracy (2 m … 30 m). FOUND is
-      // reversible: two consecutive fixes past radius + buffer drop back
-      // to FINDING — the rider walked away from the car.
-      final radius = math.max(
-          _kDetectMeters, math.min(pos.accuracy, _kDetectMaxMeters));
+      // The radius models the COMBINED noise of two phones (user report
+      // 2026-09-17: side-by-side phones read 15-20 ft apart from pure GPS
+      // noise and never latched): the rider fix's own accuracy plus a flat
+      // 8 m for the driver's fix (the relay carries no accuracy), floored
+      // at 12 m — ~40 ft IS "at the car". FOUND is reversible: two
+      // consecutive fixes past radius + buffer drop back to FINDING.
+      final radius = math.min(
+          math.max(pos.accuracy + _kDriverNoiseMeters, _kDetectFloorMeters),
+          _kDetectMaxMeters);
       if (_driverDetected) {
         if (meters > radius + _kExitBufferMeters) {
           _closeFixes++;

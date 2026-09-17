@@ -66,17 +66,25 @@ void main() {
   });
 
   group('proximity FOUND is pure, reversible UI (user spec 2026-09-16)', () {
-    test('the radius adapts to GPS accuracy: 2 m base, 30 m cap', () {
-      expect(src.contains('static const double _kDetectMeters = 2.0;'),
+    test('the radius models TWO phones: accuracy + 8 m, 12 m floor, 30 m cap',
+        () {
+      expect(
+          src.contains(
+              'static const double _kDetectFloorMeters = 12.0;'),
           isTrue,
-          reason: 'spec: with a fine fix the bar stays "at the car" (2 m)');
+          reason: 'user report 2026-09-17: side-by-side phones read 15-20 ft '
+              'apart from pure GPS noise — a 2 m base never latched');
+      expect(
+          src.contains('static const double _kDriverNoiseMeters = 8.0;'),
+          isTrue,
+          reason: 'the relay carries no accuracy for the driver fix');
       expect(src.contains('static const double _kDetectMaxMeters = 30.0;'),
           isTrue,
           reason: 'spec: never accept a fix beyond 30 m, however bad the GPS');
       final body = bodyOf('void _startProximityWatch() {');
-      expect(body.contains('pos.accuracy'), isTrue,
-          reason: 'GPS cannot resolve 2 m on a bad-signal day — the fix\'s '
-              'own accuracy raises the bar or FOUND would never fire');
+      expect(body.contains('pos.accuracy + _kDriverNoiseMeters'), isTrue,
+          reason: 'the fix\'s own accuracy still raises the bar on a '
+              'bad-signal day');
     });
     test('the latch writes NO remote flag and never calls onConfirmed', () {
       final body = bodyOf('void _latchFound() {');

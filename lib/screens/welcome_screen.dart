@@ -1,6 +1,5 @@
 import 'dart:math' as math;
 
-import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../l10n/app_localizations.dart';
@@ -318,12 +317,14 @@ class _WelcomeScreenState extends State<WelcomeScreen>
 
                   const Spacer(),
 
-                  // ── Get started button (gold neumorphic) ──
+                  // ── Role buttons (user spec 2026-09-17): Rider (person,
+                  // gold) and Driver (car, dark) — one clear tap per role.
                   // The bottom controls render static — no entrance
                   // animation (user spec 2026-09-16).
                   _NeuPressButton(
-                    label: S.of(context).getStarted,
+                    label: S.of(context).rider,
                     gold: true,
+                    icon: Icons.person_rounded,
                     onTap: () {
                       Navigator.of(context)
                           .push(slideUpFadeRoute(const RiderWelcomeScreen()));
@@ -332,52 +333,15 @@ class _WelcomeScreenState extends State<WelcomeScreen>
 
                   const SizedBox(height: 12),
 
-                  // ── Already have account? button (dark neumorphic) ──
                   _NeuPressButton(
-                    label: S.of(context).alreadyHaveAccount,
+                    label: S.of(context).driver,
                     gold: false,
+                    icon: Icons.directions_car_rounded,
                     onTap: () {
                       Navigator.of(context).push(
-                          slideUpFadeRoute(const RiderWelcomeScreen()));
+                          onboardingFadeSlideRoute(const DriverWelcomeScreen()));
                     },
                   ),
-
-                  const SizedBox(height: 20),
-
-                  // ── Want to drive? Sign up to drive (text link) ──
-                  GestureDetector(
-                    child: RichText(
-                        text: TextSpan(
-                          style: const TextStyle(fontSize: 14, color: Colors.white54),
-                          children: [
-                            const TextSpan(text: 'Want to drive? '),
-                            TextSpan(
-                              text: 'Sign up to drive',
-                              style: TextStyle(
-                                color: _gold,
-                                fontWeight: FontWeight.w700,
-                              ),
-                              recognizer: TapGestureRecognizer()
-                                ..onTap = () => Navigator.of(context).push(
-                                      onboardingFadeSlideRoute(const DriverWelcomeScreen()),
-                                    ),
-                            ),
-                            const TextSpan(text: ' or '),
-                            TextSpan(
-                              text: 'Sign in',
-                              style: TextStyle(
-                                color: _gold,
-                                fontWeight: FontWeight.w700,
-                              ),
-                              recognizer: TapGestureRecognizer()
-                                ..onTap = () => Navigator.of(context).push(
-                                      onboardingFadeSlideRoute(const DriverWelcomeScreen()),
-                                    ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
 
                   const SizedBox(height: 28),
                 ],
@@ -393,16 +357,19 @@ class _WelcomeScreenState extends State<WelcomeScreen>
 /// Pill button with a neumorphic press effect.
 /// [gold] = raised gold gradient (dark text); otherwise raised dark
 /// neumorphic surface (white text). Pressing scales down and softens
-/// the shadow (sunken feel).
+/// the shadow (sunken feel). [icon] rides ahead of the label — the role
+/// buttons read at a glance (person = rider, car = driver).
 class _NeuPressButton extends StatefulWidget {
   final String label;
   final bool gold;
   final VoidCallback onTap;
+  final IconData? icon;
 
   const _NeuPressButton({
     required this.label,
     required this.gold,
     required this.onTap,
+    this.icon,
   });
 
   @override
@@ -464,16 +431,31 @@ class _NeuPressButtonState extends State<_NeuPressButton> {
           height: 56,
           decoration: decoration,
           alignment: Alignment.center,
-          child: Text(
-            widget.label,
-            style: TextStyle(
-              fontSize: widget.gold ? 17 : 16,
-              fontWeight: widget.gold ? FontWeight.w700 : FontWeight.w600,
-              letterSpacing: 0.2,
-              color: widget.gold
-                  ? const Color(0xFF1A1400)
-                  : Colors.white.withValues(alpha: 0.85),
-            ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              if (widget.icon != null) ...[
+                Icon(
+                  widget.icon,
+                  size: 21,
+                  color: widget.gold
+                      ? const Color(0xFF1A1400)
+                      : _gold,
+                ),
+                const SizedBox(width: 10),
+              ],
+              Text(
+                widget.label,
+                style: TextStyle(
+                  fontSize: widget.gold ? 17 : 16,
+                  fontWeight: widget.gold ? FontWeight.w700 : FontWeight.w600,
+                  letterSpacing: 0.2,
+                  color: widget.gold
+                      ? const Color(0xFF1A1400)
+                      : Colors.white.withValues(alpha: 0.85),
+                ),
+              ),
+            ],
           ),
         ),
       ),

@@ -3269,6 +3269,7 @@ class S {
 
   // ── Driver Home ──
   String get rider => _es ? 'Pasajero' : 'Rider';
+  String get driver => _es ? 'Conductor' : 'Driver';
   String get goodMorning => _es ? 'Buenos días' : 'Good morning';
   String get goodAfternoon => _es ? 'Buenas tardes' : 'Good afternoon';
   String get goodEvening => _es ? 'Buenas noches' : 'Good evening';

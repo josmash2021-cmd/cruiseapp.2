@@ -2,7 +2,7 @@ name: cruise_app
 description: "Cruise — Premium ride-sharing app connecting riders with professional drivers."
 publish_to: 'none'
 
-version: 1.1.2+646
+version: 1.1.2+647
 
 environment:
   sdk: ">=3.0.0 <4.0.0"
@@ -134,7 +134,7 @@ flutter:
     - assets/images/
     - assets/images/onboarding/
     - assets/images/welcome_bg.mp4
-    - assets/videos/airport_bg.mp4
+    - assets/videos/
     - assets/markers/
     - assets/google_fonts/
     - assets/fonts/

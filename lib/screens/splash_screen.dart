@@ -3,8 +3,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:video_player/video_player.dart';
 import 'welcome_screen.dart';
 import 'home_screen.dart';
 import 'driver/driver_home_screen.dart';
@@ -24,32 +24,16 @@ class SplashScreen extends StatefulWidget {
   State<SplashScreen> createState() => _SplashScreenState();
 }
 
-class _SplashScreenState extends State<SplashScreen>
-    with TickerProviderStateMixin {
+class _SplashScreenState extends State<SplashScreen> {
   static const _bg = Color(0xFF000000);
-  static const _gold = Color(0xFFE8C547);
 
-  static const _letters = ['C', 'R', 'U', 'I', 'S', 'E'];
-
-  // ── Phase 1: Logo bloom, then staggered letter entrance (1400ms total) ──
-  late AnimationController _entranceCtrl;
-  late List<Animation<double>> _letterSlide; // Y offset: 60→0
-  late List<Animation<double>> _letterFade; // opacity: 0→1
-  late List<Animation<double>> _letterScale; // scale: 0.3→1
-  // The car-in-circle logo blooms first; the letters cascade a beat after.
-  late Animation<double> _logoFade;
-  late Animation<double> _logoScale;
-
-  // ── Phase 2: Glow shimmer pulse after all letters land ──
-  late AnimationController _glowCtrl;
-
-  // ── Phase 3: Scale up slightly + fade out ──
-  late AnimationController _exitCtrl;
-  late Animation<double> _exitFade;
-  late Animation<double> _exitScale;
-  late List<Animation<double>> _letterExitFade;
-  late Animation<double> _taglineExitFade;
-  late Animation<double> _decoExitFade;
+  // ── Intro video "Let's Get You There" (user spec 2026-09-19) ──
+  // Replaces the CRUISE letter animation. Plays one full pass minimum and
+  // loops, so a slow destination resolve never freezes on the last frame.
+  // The logged-in fast path skips it entirely (unchanged discipline).
+  VideoPlayerController? _video;
+  bool _videoReady = false;
+  final Completer<void> _firstLoopDone = Completer<void>();
 
   bool _disposed = false;
 
@@ -65,120 +49,39 @@ class _SplashScreenState extends State<SplashScreen>
       ),
     );
 
-    _setupEntranceAnimations();
-    _setupGlowAnimation();
-    _setupExitAnimation();
+    unawaited(_initVideo());
     _runSequence();
   }
 
-  // ═══════════════════════════════════════════════════════
-  //  ANIMATION SETUP
-  // ═══════════════════════════════════════════════════════
-
-  void _setupEntranceAnimations() {
-    _entranceCtrl = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1400),
-    );
-
-    // Logo bloom: gentle fade + overshoot scale, the first thing you see.
-    _logoFade = Tween<double>(begin: 0.0, end: 1.0).animate(CurvedAnimation(
-      parent: _entranceCtrl,
-      curve: const Interval(0.0, 0.30, curve: Curves.easeOut),
-    ));
-    _logoScale = Tween<double>(begin: 0.45, end: 1.0).animate(CurvedAnimation(
-      parent: _entranceCtrl,
-      curve: const Interval(0.0, 0.45, curve: Curves.easeOutBack),
-    ));
-
-    _letterSlide = [];
-    _letterFade = [];
-    _letterScale = [];
-
-    for (int i = 0; i < _letters.length; i++) {
-      // Each letter is staggered by ~140ms behind the logo, spans ~560ms
-      final start = (0.12 + i * 0.10).clamp(0.0, 1.0);
-      final end = (start + 0.40).clamp(0.0, 1.0);
-
-      final curveInterval = Interval(start, end, curve: Curves.elasticOut);
-      final fadeInterval = Interval(
-        start,
-        (start + 0.22).clamp(0.0, 1.0),
-        curve: Curves.easeOut,
-      );
-
-      _letterSlide.add(
-        Tween<double>(
-          begin: 60.0,
-          end: 0.0,
-        ).animate(CurvedAnimation(parent: _entranceCtrl, curve: curveInterval)),
-      );
-
-      _letterFade.add(
-        Tween<double>(
-          begin: 0.0,
-          end: 1.0,
-        ).animate(CurvedAnimation(parent: _entranceCtrl, curve: fadeInterval)),
-      );
-
-      _letterScale.add(
-        Tween<double>(
-          begin: 0.3,
-          end: 1.0,
-        ).animate(CurvedAnimation(parent: _entranceCtrl, curve: curveInterval)),
-      );
+  Future<void> _initVideo() async {
+    try {
+      final c =
+          VideoPlayerController.asset('assets/videos/splash_intro.mp4');
+      _video = c;
+      await c.initialize();
+      await c.setVolume(0);
+      await c.setLooping(true);
+      c.addListener(_onVideoTick);
+      if (_disposed) return;
+      setState(() => _videoReady = true);
+      unawaited(c.play());
+    } catch (e) {
+      debugPrint('[Splash] intro video failed: $e');
+      // No clip — don't hold the splash hostage on the fallback badge.
+      if (!_firstLoopDone.isCompleted) _firstLoopDone.complete();
     }
   }
 
-  void _setupGlowAnimation() {
-    _glowCtrl = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 900),
-    );
-  }
-
-  void _setupExitAnimation() {
-    _exitCtrl = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 800),
-    );
-    _exitFade = Tween<double>(
-      begin: 1.0,
-      end: 0.0,
-    ).animate(CurvedAnimation(
-      parent: _exitCtrl,
-      curve: const Interval(0.5, 1.0, curve: Curves.easeInQuart),
-    ));
-    _exitScale = Tween<double>(
-      begin: 1.0,
-      end: 1.2,
-    ).animate(CurvedAnimation(parent: _exitCtrl, curve: Curves.easeIn));
-
-    // Staggered per-letter fade-out: C fades first, E fades last
-    _letterExitFade = List.generate(_letters.length, (i) {
-      final start = (i * 0.10).clamp(0.0, 1.0);
-      final end = (start + 0.35).clamp(0.0, 1.0);
-      return Tween<double>(begin: 1.0, end: 0.0).animate(
-        CurvedAnimation(
-          parent: _exitCtrl,
-          curve: Interval(start, end, curve: Curves.easeIn),
-        ),
-      );
-    });
-    // Tagline fades out early (before letters finish)
-    _taglineExitFade = Tween<double>(begin: 1.0, end: 0.0).animate(
-      CurvedAnimation(
-        parent: _exitCtrl,
-        curve: const Interval(0.0, 0.35, curve: Curves.easeIn),
-      ),
-    );
-    // Decorative lines fade out alongside tagline
-    _decoExitFade = Tween<double>(begin: 1.0, end: 0.0).animate(
-      CurvedAnimation(
-        parent: _exitCtrl,
-        curve: const Interval(0.0, 0.30, curve: Curves.easeIn),
-      ),
-    );
+  void _onVideoTick() {
+    final c = _video;
+    if (c == null || !c.value.isInitialized || _firstLoopDone.isCompleted) {
+      return;
+    }
+    final d = c.value.duration;
+    if (d > Duration.zero &&
+        c.value.position >= d - const Duration(milliseconds: 100)) {
+      _firstLoopDone.complete();
+    }
   }
 
   // ═══════════════════════════════════════════════════════
@@ -247,7 +150,7 @@ class _SplashScreenState extends State<SplashScreen>
       return;
     }
 
-    // ── Not logged in: show full CRUISE splash animation ──
+    // ── Not logged in: play the intro video ("Let's Get You There") ──
 
     // Pre-load GPS, user data, map tiles, images — ALL in parallel
     final preloadFuture = PreloadService.preloadAll(context).timeout(
@@ -260,38 +163,29 @@ class _SplashScreenState extends State<SplashScreen>
     });
 
     // ── Start destination computation IMMEDIATELY at the very beginning ──
-    // This gives it the full animation duration (~3.7 s) to resolve instead
-    // of only the 800 ms exit animation, eliminating the black-screen gap.
+    // This gives it the full clip duration to resolve in parallel with the
+    // video, eliminating the black-screen gap.
     final destinationFuture = _computeDestination(initFuture).catchError((e) {
       debugPrint('[SplashScreen] destination error: $e');
       return const WelcomeScreen() as Widget;
     });
 
-    // Phase 1 — letters bounce in (no artificial pre-delay)
-    await _entranceCtrl.forward().orCancel.catchError((_) {});
-    if (_disposed) return;
-
-    // Phase 2 — shimmer glow pulse
-    await _glowCtrl.forward().orCancel.catchError((_) {});
-    if (_disposed) return;
-
-    // ── Wait for destination + preload to be ready BEFORE starting exit ──
-    // This guarantees zero black-screen gap: destination is pre-resolved
-    // and all data is pre-loaded, so the next screen renders instantly.
+    // ── Wait for one full video playthrough (hard-capped at 8 s so a
+    // missing/corrupt clip can never hold the app hostage) AND for
+    // destination + preload — the next screen renders instantly.
+    final firstLoop = _firstLoopDone.future.timeout(
+      const Duration(seconds: 8),
+      onTimeout: () {},
+    );
     final results = await Future.wait([
       destinationFuture,
       preloadFuture,
+      firstLoop,
     ]);
     final destination = results[0] as Widget;
     if (_disposed || !mounted) return;
 
-    // Phase 3 — scale up + fade out
-    _exitCtrl.forward().orCancel.catchError((_) {});
-
-    // Navigate immediately — the incoming screen fades IN while
-    // the splash fades OUT, overlapping perfectly with no black gap.
-    if (_disposed || !mounted) return;
-
+    // Navigate — the incoming screen fades IN over the looping clip.
     nav.pushReplacement(
       PageRouteBuilder(
         pageBuilder: (_, __, ___) => destination,
@@ -659,9 +553,8 @@ class _SplashScreenState extends State<SplashScreen>
   @override
   void dispose() {
     _disposed = true;
-    _entranceCtrl.dispose();
-    _glowCtrl.dispose();
-    _exitCtrl.dispose();
+    _video?.removeListener(_onVideoTick);
+    _video?.dispose();
     super.dispose();
   }
 
@@ -673,207 +566,31 @@ class _SplashScreenState extends State<SplashScreen>
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: _bg,
-      body: AnimatedBuilder(
-        animation: Listenable.merge([_entranceCtrl, _glowCtrl, _exitCtrl]),
-        builder: (context, _) {
-          final glow = _glowCtrl.value;
-          return Opacity(
-            opacity: _exitFade.value,
-            child: Transform.scale(
-              scale: _exitScale.value,
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  // ── Background radial glow ──
-                  Container(
-                    decoration: BoxDecoration(
-                      gradient: RadialGradient(
-                        center: Alignment.center,
-                        radius: 0.75,
-                        colors: [
-                          Color.lerp(
-                            const Color(0xFF1A1500),
-                            const Color(0xFF0A0900),
-                            1 - glow * 0.6,
-                          )!,
-                          _bg,
-                        ],
-                        stops: const [0.0, 1.0],
-                      ),
-                    ),
-                  ),
-                  // ── Center content ──
-                  Center(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        // Logo bloom — the car-in-circle badge opens the show
-                        _buildLogo(),
-                        const SizedBox(height: 22),
-                        // CRUISE letters
-                        Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: List.generate(_letters.length, (i) {
-                            return Transform.translate(
-                              offset: Offset(0, _letterSlide[i].value),
-                              child: Transform.scale(
-                                scale: _letterScale[i].value,
-                                child: Opacity(
-                                  opacity: _letterFade[i].value *
-                                      _letterExitFade[i].value,
-                                  child: _buildLetter(_letters[i], i),
-                                ),
-                              ),
-                            );
-                          }),
-                        ),
-                        const SizedBox(height: 20),
-                        // IN RIDE tagline — two centered lines, white over gold
-                        Opacity(
-                          opacity: ((glow * 1.5).clamp(0.0, 1.0)) * _taglineExitFade.value,
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text(
-                                'IN  RIDE,',
-                                textAlign: TextAlign.center,
-                                style: GoogleFonts.cinzel(
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w400,
-                                  color: Colors.white,
-                                  letterSpacing: 6,
-                                ),
-                              ),
-                              const SizedBox(height: 12),
-                              Text(
-                                'PREMIUM  EXPERIENCE',
-                                textAlign: TextAlign.center,
-                                style: GoogleFonts.cinzel(
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w400,
-                                  color: _gold.withValues(alpha: 0.7),
-                                  letterSpacing: 6,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 14),
-                        // Decorative bottom line
-                        Opacity(
-                          opacity: glow * _decoExitFade.value,
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              _buildDecoLine(60),
-                              const SizedBox(width: 10),
-                              _buildDiamond(),
-                              const SizedBox(width: 10),
-                              _buildDecoLine(60),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
+      body: Stack(
+        fit: StackFit.expand,
+        children: [
+          // Fallback under the clip: brand badge on black, visible only in
+          // the brief boot window before the first frame (or if the asset
+          // ever fails to decode).
+          Center(
+            child: Image.asset(
+              'assets/images/cruise_logo.png',
+              width: 118,
+              height: 118,
             ),
-          );
-        },
-      ),
-    );
-  }
-
-  Widget _buildLogo() {
-    final glow = _glowCtrl.value;
-    return Opacity(
-      opacity: _logoFade.value,
-      child: Transform.scale(
-        scale: _logoScale.value,
-        child: SizedBox(
-          width: 150,
-          height: 150,
-          child: Stack(
-            alignment: Alignment.center,
-            children: [
-              // Halo behind the badge — swells with the shimmer phase.
-              Container(
-                width: 150,
-                height: 150,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  gradient: RadialGradient(
-                    colors: [
-                      _gold.withValues(alpha: 0.26 + glow * 0.26),
-                      _gold.withValues(alpha: 0.09 + glow * 0.09),
-                      Colors.transparent,
-                    ],
-                    stops: const [0.0, 0.55, 1.0],
-                  ),
+          ),
+          if (_videoReady && _video != null)
+            SizedBox.expand(
+              child: FittedBox(
+                fit: BoxFit.cover,
+                child: SizedBox(
+                  width: _video!.value.size.width,
+                  height: _video!.value.size.height,
+                  child: VideoPlayer(_video!),
                 ),
               ),
-              Image.asset(
-                'assets/images/cruise_logo.png',
-                width: 118,
-                height: 118,
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildDecoLine(double width) {
-    return Container(
-      width: width,
-      height: 0.8,
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [
-            Colors.transparent,
-            _gold.withValues(alpha: 0.7),
-            Colors.transparent,
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildDiamond() {
-    return Transform.rotate(
-      angle: 0.785398,
-      child: Container(
-        width: 5,
-        height: 5,
-        decoration: BoxDecoration(
-          color: _gold.withValues(alpha: 0.8),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildLetter(String letter, int index) {
-    final glowIntensity = _glowCtrl.value;
-
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 1.5),
-      child: Text(
-        letter,
-        style: GoogleFonts.playfairDisplay(
-          fontSize: 38,
-          fontWeight: FontWeight.w700,
-          color: Colors.white,
-          letterSpacing: 2,
-          shadows: [
-            Shadow(
-              color: Colors.white.withValues(
-                  alpha: 0.22 + glowIntensity * 0.38),
-              blurRadius: 18 + glowIntensity * 34,
             ),
-          ],
-        ),
+        ],
       ),
     );
   }

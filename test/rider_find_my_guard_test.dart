@@ -149,9 +149,9 @@ void main() {
     test('the FOUND check is a big FILLED disc, not a tiny outline '
         '(user spec 2026-09-17)', () {
       expect(src.contains('Icons.check_circle_rounded'), isTrue);
-      expect(src.contains('size: 240'), isTrue,
-          reason: 'the 156 outline read as "diminuto" — the check must be '
-              'visible across the car');
+      expect(src.contains('size: 264'), isTrue,
+          reason: 'the check must be visible across the car — same weight '
+              'as the 296 arrow');
       expect(src.contains('Icons.check_circle_outline_rounded'), isFalse);
       final dist = bodyOf('Widget _buildDistanceLine()');
       expect(dist.contains('duration: const Duration(milliseconds: 300)'),
@@ -339,8 +339,23 @@ void main() {
     });
 
     test('the needle is much bigger (user spec 2026-09-17)', () {
-      expect(src.contains('size: 280'), isTrue,
-          reason: 'the arrow grew 220 → 260 → 280 (~88% of the ring)');
+      expect(src.contains('size: 296'), isTrue,
+          reason: 'the arrow grew 220 → 260 → 280 → 296');
+    });
+
+    test('the strip is preloaded before the rider lands (initialDriverPos)',
+        () {
+      expect(src.contains('this.initialDriverPos'), isTrue);
+      expect(src.contains('_driverMotion.snapTo(d0.latitude, d0.longitude)'),
+          isTrue,
+          reason: 'the boot camera centers on the real driver spot from '
+              'frame one — never the (0,0) ocean');
+      expect(src.contains('Geolocator.getLastKnownPosition()'), isTrue,
+          reason: 'the rider dot seeds from the OS last-known fix — free '
+              'and instant');
+      final tracking =
+          File('lib/screens/rider_tracking_screen.dart').readAsStringSync();
+      expect(tracking.contains('initialDriverPos: _driverPos'), isTrue);
     });
   });
 

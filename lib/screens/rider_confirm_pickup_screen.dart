@@ -66,7 +66,15 @@ class RiderConfirmPickupScreen extends StatefulWidget {
     this.isAirportTrip = false,
     this.driverPosOf,
     this.driverPhone,
+    this.initialDriverPos,
   });
+
+  /// The driver's live position at push time (user spec 2026-09-17): the
+  /// mini map must be ALREADY LOADED when the rider lands on this page —
+  /// seeded into `_lastDriverPos` + the car's smoother in initState, so the
+  /// boot camera centers on the real spot (never the (0,0) ocean) and the
+  /// stand-in has an anchor from frame one.
+  final LatLng? initialDriverPos;
 
   /// For the Call round button (Find-My style bottom row).
   final String? driverPhone;
@@ -262,6 +270,23 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
   void initState() {
     super.initState();
     RiderConfirmPickupScreen.externalStartPulse.addListener(_onExternalStart);
+
+    // Preloaded positions (user spec 2026-09-17): the strip must be already
+    // loaded when the rider lands — the driver's spot comes in from the
+    // tracking screen, the rider's own from the OS's last-known fix (free,
+    // no wait). The live feeds overwrite both within a second.
+    final d0 = widget.initialDriverPos;
+    if (d0 != null &&
+        isValidLatLng(d0.latitude, d0.longitude) &&
+        !(d0.latitude == 0 && d0.longitude == 0)) {
+      _lastDriverPos = d0;
+      _driverMotion.snapTo(d0.latitude, d0.longitude);
+    }
+    Geolocator.getLastKnownPosition().then((pos) {
+      if (!mounted || pos == null || _riderRaw != null) return;
+      _riderRaw = LatLng(pos.latitude, pos.longitude);
+      _refreshDistanceBearing();
+    }).catchError((_) {});
 
     // ── Wait time policy per tier (Uber/Lyft inspired) ──
     //
@@ -795,8 +820,9 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
           children: [
             if (dot != null) ...[
               Container(
-                width: 10.5,
-                height: 10.5,
+                // Bigger and closer to the name (user spec 2026-09-17).
+                width: 14,
+                height: 14,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   color: dot,
@@ -808,7 +834,7 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
                   ),
                 ),
               ),
-              const SizedBox(width: 6),
+              const SizedBox(width: 4),
             ],
             Flexible(
               child: Text(
@@ -2031,25 +2057,26 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
                 ? const Icon(
                     key: ValueKey('c_check'),
                     // Filled, and arrow-sized (user spec 2026-09-17): the
-                    // 156 outline read as "diminuto" — a green disc with
-                    // the cut-out check is visible across the car.
+                    // outline read as "diminuto" — a green disc with the
+                    // cut-out check is visible across the car (240 → 264,
+                    // same weight as the 296 arrow).
                     Icons.check_circle_rounded,
                     color: _green,
-                    size: 240,
+                    size: 264,
                   )
                 : AnimatedRotation(
                     key: const ValueKey('c_arrow'),
                     // Compass needle: bearing to the driver minus device
                     // heading, short-arc sweep — silky. User spec
-                    // 2026-09-17: a notch bigger again (260 → 280, ~88% of
-                    // the ring) — it must read instantly at arm's length.
+                    // 2026-09-17: bigger again (280 → 296) — it must read
+                    // instantly at arm's length.
                     turns: (_bearingToDriver - _heading) / 360.0,
                     duration: const Duration(milliseconds: 250),
                     curve: Curves.easeOutCubic,
                     child: const Icon(
                       Icons.arrow_upward_rounded,
                       color: Colors.white,
-                      size: 280,
+                      size: 296,
                     ),
                   ),
           ),
@@ -2181,8 +2208,12 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
                           // vertical room — the check must read BIG.
                           const SizedBox(height: 16),
 
-                          _buildMiniMap(),
+                          // The strip rides the bottom, just above the action
+                          // row (user spec 2026-09-17: "colócalo más abajo") —
+                          // the Spacer above it hands its room to the hero.
                           const Spacer(),
+                          _buildMiniMap(),
+                          const SizedBox(height: 10),
 
                           // Chat / Call / Support
                           Row(

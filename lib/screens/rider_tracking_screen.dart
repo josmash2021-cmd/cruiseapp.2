@@ -1017,8 +1017,10 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
             // Suburban on a standard trip).
             rideTier: widget.rideName,
             // Live driver position for the compass arrow, the distance
-            // readout and the proximity auto-detect.
+            // readout and the proximity auto-detect — plus the seed that
+            // has the mini map already drawn when the rider lands.
             driverPosOf: () => _driverPos,
+            initialDriverPos: _driverPos,
             driverPhone: widget.driverPhone,
             onConfirmed: () async {
               // NOTE: keep _confirmPickupShown = true so a late status=arrived

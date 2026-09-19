@@ -10,7 +10,7 @@ const RESOURCES = {"assets/AssetManifest.bin": "c28f38da81fa1c82656a14f810e110cc
 "assets/assets/launcher_icon_foreground.png": "f7fe1e0582618b1c062d3fa4d3bf917a",
 "assets/assets/launcher_icon_white.png": "da25201f29e40093735daa51497c7b91",
 "assets/FontManifest.json": "dc3d03800ccca4601324923c0b1d6d57",
-"assets/fonts/MaterialIcons-Regular.otf": "9609c9e001a442ba265ea9ccd54d2bb8",
+"assets/fonts/MaterialIcons-Regular.otf": "e7069dfd19b331be16bed984668fe080",
 "assets/NOTICES": "33f2410e658d56ac2244fef350ad914d",
 "assets/packages/cupertino_icons/assets/CupertinoIcons.ttf": "d7d83bd9ee909f8a9b348f56ca7b68c6",
 "assets/packages/wakelock_plus/assets/no_sleep.js": "74499cf34f37daae14b51e3a23cd9f7a",

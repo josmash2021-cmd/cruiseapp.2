@@ -119,6 +119,17 @@ import ActivityKit
     willPresent notification: UNNotification,
     withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
   ) {
+    // User spec 2026-09-17: a ride OFFER while the driver is inside the app
+    // must NOT banner — the in-app offer card owns the screen (and plays its
+    // own sound). The phone notification is the BACKGROUND path only. This
+    // delegate beats FCM's setForegroundNotificationPresentationOptions, so
+    // the suppression has to live here.
+    let type = notification.request.content.userInfo["type"] as? String ?? ""
+    let offerTypes: Set<String> = ["trip_offer", "new_offer", "ride_offer", "offer"]
+    if offerTypes.contains(type) {
+      completionHandler([])
+      return
+    }
     if #available(iOS 14.0, *) {
       completionHandler([.banner, .sound, .badge])
     } else {

@@ -281,3 +281,34 @@ class TestRideTokenRegistration:
             headers=self._headers(token),
             json={"kind": "nope", "token": "x"})
         assert resp.status_code == 400
+
+    async def test_a_token_is_claimed_by_its_latest_account(
+            self, client, db, test_rider, test_driver):
+        """Two accounts on one phone share one device token (user report
+        2026-09-17 — a rider's trip card landing on the phone while the
+        DRIVER account was signed in). Registering it for the second
+        account must strip it from the first — same claim discipline as
+        /auth/fcm-token."""
+        rider, rider_tok = test_rider
+        driver, driver_tok = test_driver
+
+        resp = await client.post(
+            "/drivers/live-activity-token",
+            headers=self._headers(rider_tok),
+            json={"kind": "ride_activity", "token": "shared-tok-1"})
+        assert resp.status_code == 200, resp.text
+        await db.refresh(rider)
+        assert rider.apns_la_ride_token == "shared-tok-1"
+
+        resp = await client.post(
+            "/drivers/live-activity-token",
+            headers=self._headers(driver_tok),
+            json={"kind": "ride_activity", "token": "shared-tok-1"})
+        assert resp.status_code == 200, resp.text
+        await db.refresh(driver)
+        await db.refresh(rider)
+        assert driver.apns_la_ride_token == "shared-tok-1"
+        assert rider.apns_la_ride_token is None, (
+            "the token stayed on both rows — pushes for the rider's trip "
+            "keep landing on the shared phone under the driver account")
+

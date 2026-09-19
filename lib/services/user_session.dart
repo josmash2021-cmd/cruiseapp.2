@@ -13,6 +13,7 @@ import 'cache_service.dart';
 import 'firebase_storage_service.dart';
 import 'prefs_cache.dart';
 import 'notification_service.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 
 /// Stores and retrieves the logged-in user's session.
 ///
@@ -355,6 +356,18 @@ class UserSession {
     // from someone else's shift: DriverHomeScreen opened straight into trip
     // polling and the button said RESUME, without them ever pressing GO.
     await prefs.remove('driver_was_online');
+
+    // Topic subscriptions are the DEVICE's, not the account's (user report
+    // 2026-09-17): a phone that ever went online as a driver stays
+    // subscribed to 'drivers_available' across logout — and the scheduled-
+    // ride marketplace broadcasts (with riders' addresses!) kept landing on
+    // whatever account signed in next, rider included. Release it here.
+    if (!kIsWeb) {
+      try {
+        await FirebaseMessaging.instance
+            .unsubscribeFromTopic('drivers_available');
+      } catch (_) {}
+    }
 
     // Clear local file path keys — the file is deleted below.
     // KEEP the photo URL keys so the photo loads instantly on next sign-in

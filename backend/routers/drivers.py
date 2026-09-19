@@ -2809,6 +2809,21 @@ async def register_live_activity_token(
         raise HTTPException(400, "kind must be push_to_start, activity or ride_activity")
     if len(token) > 128:
         raise HTTPException(400, "token too long")
+    # An APNs Live Activity token names a DEVICE (+activity), not an account.
+    # Two accounts on one phone (rider + driver is the normal test/demo case)
+    # used to keep the same token on both rows — and the previous account's
+    # trip card / offer island kept landing on the shared phone while the
+    # OTHER account was signed in (user report 2026-09-17: a rider's trip
+    # card reaching drivers/riders). Same claim discipline as
+    # /auth/fcm-token: the token lives on exactly one row.
+    if token:
+        col = (User.apns_la_start_token if kind == "push_to_start"
+               else User.apns_la_ride_token if kind == "ride_activity"
+               else User.apns_la_activity_token)
+        await db.execute(
+            update(User).where(col == token, User.id != user.id)
+            .values(**{col.key: None})
+        )
     if kind == "push_to_start":
         user.apns_la_start_token = token or None
     elif kind == "ride_activity":

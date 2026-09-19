@@ -160,4 +160,22 @@ void main() {
               'the backend PIN-confirm writes that flag');
     });
   });
+
+  group('keyboard dismissal (fix 2026-09-19)', () {
+    test('tap on any empty area unfocuses the PIN field', () {
+      // The iOS number pad has no dismiss key — without this wrapper the
+      // keyboard stayed up until the 4th digit landed.
+      final m = RegExp(
+              r'child: GestureDetector\(\s*behavior: HitTestBehavior\.translucent,\s*onTap: \(\) \{\s*if \(_pinFocusNode\.hasFocus\) _pinFocusNode\.unfocus\(\);')
+          .firstMatch(src);
+      expect(m, isNotNull,
+          reason: 'tap-outside-to-dismiss wrapper around the Scaffold is '
+              'missing — the numeric pad cannot be closed on iOS');
+    });
+
+    test('4-digit auto-submit still unfocuses', () {
+      final body = bodyOf('void _onPinChanged(String value)', maxLen: 500);
+      expect(body.contains('_pinFocusNode.unfocus()'), isTrue);
+    });
+  });
 }

@@ -4624,7 +4624,15 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
         }
         _returnToDriverHome();
       },
-      child: Scaffold(
+      // Tap on any empty area collapses the PIN numeric pad — the iOS
+      // number pad has no dismiss key, so the keyboard otherwise stayed
+      // up until the 4th digit landed.
+      child: GestureDetector(
+        behavior: HitTestBehavior.translucent,
+        onTap: () {
+          if (_pinFocusNode.hasFocus) _pinFocusNode.unfocus();
+        },
+        child: Scaffold(
       backgroundColor: _bg,
       body: Stack(
         children: [
@@ -5306,6 +5314,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
         ),
       ],
       ),
+    ),
     ));
   }
 

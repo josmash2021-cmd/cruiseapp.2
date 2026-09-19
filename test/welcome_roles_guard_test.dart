@@ -17,14 +17,17 @@ void main() {
   final src = File('lib/screens/welcome_screen.dart').readAsStringSync();
 
   group('video background (user spec 2026-09-19)', () {
-    test('CRUISE car clip loops muted over the static fallback frame', () {
+    test('CRUISE car clip loops muted over its own first frame', () {
       expect(src.contains('assets/videos/welcome_bg.mp4'), isTrue);
       expect(src.contains('setLooping(true)'), isTrue,
           reason: 'the welcome clip loops forever behind the buttons');
       expect(src.contains('setVolume(0)'), isTrue,
           reason: 'background clips are always muted');
-      expect(src.contains('welcome_bg_suv.png'), isTrue,
-          reason: 'the static frame stays under the video as boot/fallback');
+      expect(src.contains('welcome_bg_poster.png'), isTrue,
+          reason: 'the boot frame is the clip own first frame — the video '
+              'fades in from exactly what is on screen, no jump');
+      expect(src.contains('AnimatedOpacity('), isTrue,
+          reason: 'the clip fades IN over the poster — a settle, not a cut');
     });
 
     test('no in-app lockup/headline — the text is baked into the clip', () {

@@ -51,4 +51,14 @@ void main() {
     expect(src.contains('_requestFirstRunPermissions'), isTrue);
     expect(src.contains('UserSession.isLoggedInLocal()'), isTrue);
   });
+
+  test('the hand-off to the next screen is a 700 ms crossfade', () {
+    expect(
+        src.contains(
+            'transitionDuration: const Duration(milliseconds: 700)'),
+        isTrue,
+        reason: 'the clip ends fading to black and the next screen fades '
+            'IN over it — one continuous reveal, no cut');
+    expect(src.contains('Curves.easeInOut'), isTrue);
+  });
 }

@@ -185,14 +185,16 @@ class _SplashScreenState extends State<SplashScreen> {
     final destination = results[0] as Widget;
     if (_disposed || !mounted) return;
 
-    // Navigate — the incoming screen fades IN over the looping clip.
+    // Navigate — the clip ends fading to black and the incoming screen
+    // (welcome opens on its video's own first frame) fades IN over it:
+    // one continuous reveal, no cut between splash and welcome.
     nav.pushReplacement(
       PageRouteBuilder(
         pageBuilder: (_, __, ___) => destination,
-        transitionDuration: const Duration(milliseconds: 600),
+        transitionDuration: const Duration(milliseconds: 700),
         reverseTransitionDuration: Duration.zero,
         transitionsBuilder: (_, anim, __, child) => FadeTransition(
-          opacity: CurvedAnimation(parent: anim, curve: Curves.easeIn),
+          opacity: CurvedAnimation(parent: anim, curve: Curves.easeInOut),
           child: child,
         ),
       ),

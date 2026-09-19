@@ -20,8 +20,10 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
 
   // CRUISE car clip, looping muted behind the controls (user spec
   // 2026-09-19). The lockup and headline are baked into the video itself —
-  // the only overlay UI is the two role buttons. The static SUV frame stays
-  // underneath as the boot frame and fallback if the clip ever fails.
+  // the only overlay UI is the two role buttons. The boot frame underneath
+  // is the clip's OWN first frame, so the video fades in from exactly what
+  // is already on screen and the splash → welcome hand-off reads as one
+  // continuous shot.
   VideoPlayerController? _video;
   bool _videoReady = false;
 
@@ -58,33 +60,36 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
       body: Stack(
         fit: StackFit.expand,
         children: [
-          // ── Background frame (static, instant) — the video covers it as
-          // soon as the first frame decodes. fitWidth, top-aligned — never
-          // cover: the render keeps its whole frame (no side crop/zoom).
+          // ── Boot frame = the clip's own first frame (extracted PNG) —
+          // instant paint that exactly matches the cover crop below, so
+          // when the video fades in there is no jump at all.
           Positioned.fill(
             child: ColoredBox(
               color: const Color(0xFF33261A),
-              child: Align(
-                alignment: Alignment.topCenter,
-                child: Image.asset(
-                  'assets/images/welcome_bg_suv.png',
-                  width: double.infinity,
-                  fit: BoxFit.fitWidth,
-                ),
+              child: Image.asset(
+                'assets/images/welcome_bg_poster.png',
+                fit: BoxFit.cover,
               ),
             ),
           ),
-          if (_videoReady && _video != null)
-            SizedBox.expand(
-              child: FittedBox(
-                fit: BoxFit.cover,
-                child: SizedBox(
-                  width: _video!.value.size.width,
-                  height: _video!.value.size.height,
-                  child: VideoPlayer(_video!),
-                ),
-              ),
-            ),
+          // ── The clip fades IN over its own first frame — a settle, not
+          // a cut. Loops forever (user spec 2026-09-19).
+          AnimatedOpacity(
+            opacity: _videoReady ? 1.0 : 0.0,
+            duration: const Duration(milliseconds: 450),
+            child: _videoReady && _video != null
+                ? SizedBox.expand(
+                    child: FittedBox(
+                      fit: BoxFit.cover,
+                      child: SizedBox(
+                        width: _video!.value.size.width,
+                        height: _video!.value.size.height,
+                        child: VideoPlayer(_video!),
+                      ),
+                    ),
+                  )
+                : const SizedBox.shrink(),
+          ),
 
           // ── Subtle dark overlay so the bottom controls stay readable ──
           // The lockup and headline are baked into the video itself, so the

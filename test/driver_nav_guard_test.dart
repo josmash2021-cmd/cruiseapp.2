@@ -45,16 +45,16 @@ void main() {
     test('_passengerInstructions drops "Web booking" lines', () {
       expect(block, isNotEmpty,
           reason: '_passengerInstructions getter not found');
-      expect(block, contains("startsWith('web booking')"));
+      expect(block.contains("startsWith('web booking')"), isTrue);
     });
 
     test('the filter is case-insensitive', () {
-      expect(block, contains('.toLowerCase()'));
+      expect(block.contains('.toLowerCase()'), isTrue);
     });
 
     test('real passenger instructions still pass', () {
       // The Wait started: filter predates this feature — both must stay.
-      expect(block, contains("startsWith('Wait started:')"));
+      expect(block.contains("startsWith('Wait started:')"), isTrue);
     });
   });
 
@@ -82,7 +82,7 @@ void main() {
     test('phase-1 Start Trip enters in-app nav with the morph', () {
       final body =
           bodyOf(accept, 'Widget _buildSlideStartTrip() {', maxLen: 1300);
-      expect(body, contains('_enterNavMode()'),
+      expect(body.contains('_enterNavMode()'), isTrue,
           reason: 'user spec 2026-09-17: Start Trip opens the in-app '
               'navigation through the mini-map morph, chase camera ready');
       expect(body, isNot(contains('_openNativeMaps')),
@@ -119,7 +119,7 @@ void main() {
 
     test('exit dissolves the nav map back into the mini-map card', () {
       final wrapper = bodyOf(accept, 'void _exitNavMode() {', maxLen: 300);
-      expect(wrapper, contains('_collapseNavMode();'),
+      expect(wrapper.contains('_collapseNavMode();'), isTrue,
           reason: 'exit routes through the reverse morph');
       final body =
           bodyOf(accept, 'Future<void> _collapseNavMode() async {', maxLen: 2000);
@@ -140,18 +140,18 @@ void main() {
       final start = accept.indexOf('onPopInvokedWithResult: (didPop, _) {');
       expect(start, isNonNegative);
       final block = accept.substring(start, start + 400);
-      expect(block, contains('if (_navMode)'));
-      expect(block, contains('_exitNavMode();'));
+      expect(block.contains('if (_navMode)'), isTrue);
+      expect(block.contains('_exitNavMode();'), isTrue);
     });
 
     test('Start Trip enters dropoff navigation in-app, only on backend success',
         () {
       final body =
           bodyOf(accept, 'void _startRideConfirmed() {', maxLen: 1300);
-      expect(body, contains('await _updateTripInTrip()'),
+      expect(body.contains('await _updateTripInTrip()'), isTrue,
           reason: 'dropoff navigation waits for the confirmed in_trip '
               'transition — navigation state never fakes trip state');
-      expect(body, contains('_enterNavMode()'),
+      expect(body.contains('_enterNavMode()'), isTrue,
           reason: 'Start Trip success runs the same in-app nav entry as '
               'Continue / Directions');
       expect(body, isNot(contains('_openNativeMaps')),
@@ -160,31 +160,31 @@ void main() {
 
     test('iOS one-tap Apple Maps / Android chooser stay on the address cards',
         () {
-      expect(accept, contains('_openAppleMaps(widget.pickupLatLng)'));
-      expect(accept, contains('_showNavigationSheet(isPickup: true)'));
-      expect(accept, contains('_openAppleMaps(_dropoffLL)'));
-      expect(accept, contains('_showNavigationSheet(isPickup: false)'));
+      expect(accept.contains('_openAppleMaps(widget.pickupLatLng)'), isTrue);
+      expect(accept.contains('_showNavigationSheet(isPickup: true)'), isTrue);
+      expect(accept.contains('_openAppleMaps(_dropoffLL)'), isTrue);
+      expect(accept.contains('_showNavigationSheet(isPickup: false)'), isTrue);
     });
 
     test('the mount passes the prefetched route and every trip callback', () {
-      expect(accept, contains("import 'driver_nav_view.dart'"));
+      expect(accept.contains("import 'driver_nav_view.dart'"), isTrue);
       final start = accept.indexOf('child: DriverNavView(');
       expect(start, isNonNegative, reason: 'DriverNavView mount not found');
       final mount = accept.substring(start, start + 2200);
-      expect(mount, contains('prefetchedRoutePoints: _routePoints'),
+      expect(mount.contains('prefetchedRoutePoints: _routePoints'), isTrue,
           reason: 'the mini map\'s already-drawn route must seed the nav '
               'view — no fetch, no blank map on open');
-      expect(mount, contains('toPickup: !_rideStarted'));
-      expect(mount, contains('stage: _actionStageKey()'));
-      expect(mount, contains('waitStartedAt: _waitStartedAt'));
-      expect(mount, contains('onExit: _exitNavMode'));
-      expect(mount, contains('onArrived: _confirmArrival'));
-      expect(mount, contains('onSlidePickUp: _startRideConfirmed'));
-      expect(mount, contains('onSlideFinish: _finishTrip'));
-      expect(mount, contains('onOpenChat: _openChat'));
-      expect(mount, contains('onCall: _call'));
-      expect(mount, contains('onSupport: _openSupportChat'));
-      expect(mount, contains('onMapReady: _onNavMapReady'),
+      expect(mount.contains('toPickup: !_rideStarted'), isTrue);
+      expect(mount.contains('stage: _actionStageKey()'), isTrue);
+      expect(mount.contains('waitStartedAt: _waitStartedAt'), isTrue);
+      expect(mount.contains('onExit: _exitNavMode'), isTrue);
+      expect(mount.contains('onArrived: _confirmArrival'), isTrue);
+      expect(mount.contains('onSlidePickUp: _startRideConfirmed'), isTrue);
+      expect(mount.contains('onSlideFinish: _finishTrip'), isTrue);
+      expect(mount.contains('onOpenChat: _openChat'), isTrue);
+      expect(mount.contains('onCall: _call'), isTrue);
+      expect(mount.contains('onSupport: _openSupportChat'), isTrue);
+      expect(mount.contains('onMapReady: _onNavMapReady'), isTrue,
           reason: 'the enter morph cross-fades its snapshot out on this '
               'signal');
     });
@@ -205,11 +205,11 @@ void main() {
     test('the morph overlay animates a snapshot, never a second surface', () {
       final morph =
           File('lib/widgets/nav_morph_overlay.dart').readAsStringSync();
-      expect(morph, contains('Image.memory('));
-      expect(morph, contains('NavMorphDirection'));
-      expect(morph, contains('revealRequested'),
+      expect(morph.contains('Image.memory('), isTrue);
+      expect(morph.contains('NavMorphDirection'), isTrue);
+      expect(morph.contains('revealRequested'), isTrue,
           reason: 'enter holds until the live nav map is ready');
-      expect(morph, contains('onFinished'));
+      expect(morph.contains('onFinished'), isTrue);
       expect(morph, isNot(contains('MapWidget')),
           reason: 'two live MapWidgets are the iOS crash');
     });
@@ -217,40 +217,39 @@ void main() {
 
   group('nav view: off-route rerouting', () {
     test('40 m threshold held for 4 s of fixes, 25 m reset', () {
-      expect(nav, contains('_offRouteM = 40.0'));
-      expect(nav, contains('_offRouteResetM = 25.0'));
-      expect(nav, contains('_offRouteHoldSecs = 4'));
-      expect(nav, contains('RouteSplice.distanceToPolylineM(_routePts, pos)'));
+      expect(nav.contains('_offRouteM = 40.0'), isTrue);
+      expect(nav.contains('_offRouteResetM = 25.0'), isTrue);
+      expect(nav.contains('_offRouteHoldSecs = 4'), isTrue);
+      expect(nav.contains('RouteSplice.distanceToPolylineM(_routePts, pos)'), isTrue);
     });
 
     test('one fetch in flight, 15 s cooldown, stale responses dropped by seq',
         () {
-      expect(nav, contains('_rerouteCooldownSecs = 15'));
-      expect(nav, contains('int _rerouteSeq = 0'));
-      expect(nav, contains('if (_routeFetching) return;'),
+      expect(nav.contains('_rerouteCooldownSecs = 15'), isTrue);
+      expect(nav.contains('int _rerouteSeq = 0'), isTrue);
+      expect(nav.contains('if (_routeFetching) return;'), isTrue,
           reason: 'never two route fetches at once');
-      expect(nav, contains('seq != _rerouteSeq'),
+      expect(nav.contains('seq != _rerouteSeq'), isTrue,
           reason: 'a stale response must never replace a newer plan');
     });
 
     test('the old line is kept until the new one replaces it atomically', () {
       final body = bodyOf(nav, 'case _RouteFetchKind.reroute:', maxLen: 700);
-      expect(body, contains('_routePts = result.points'));
-      expect(body, contains('_navProgress = NavProgress(result.steps)'));
-      expect(body, contains('await _drawRoute();'),
+      expect(body.contains('_routePts = result.points'), isTrue);
+      expect(body.contains('_navProgress = NavProgress(result.steps)'), isTrue);
+      expect(body.contains('await _drawRoute();'), isTrue,
           reason: 'same-annotation update — never two lines on the map');
-      expect(nav, contains('s.navRerouting'),
+      expect(nav.contains('s.navRerouting'), isTrue,
           reason: 'the gold Rerouting… pill rides the fetch');
     });
   });
 
   group('nav view: state machines', () {
     test('camera state machine: following / freeLook / recentering', () {
-      expect(nav,
-          contains('enum _CamState { following, freeLook, recentering }'));
-      expect(nav, contains('_camState = _CamState.freeLook'));
-      expect(nav, contains('_camState = _CamState.recentering'));
-      expect(nav, contains('_camState = _CamState.following'));
+      expect(nav.contains('enum _CamState { following, freeLook, recentering }'), isTrue);
+      expect(nav.contains('_camState = _CamState.freeLook'), isTrue);
+      expect(nav.contains('_camState = _CamState.recentering'), isTrue);
+      expect(nav.contains('_camState = _CamState.following'), isTrue);
     });
 
     test('navigation state machine carries every phase', () {
@@ -269,32 +268,32 @@ void main() {
         'gpsUnavailable',
         'routeError',
       ]) {
-        expect(body, contains(phase), reason: '_NavPhase.$phase missing');
+        expect(body.contains(phase), isTrue, reason: '_NavPhase.$phase missing');
       }
     });
 
     test('gestures unlatch to freeLook; the chase never writes there', () {
-      expect(nav, contains('onScrollListener: (_) => _onUserGesture()'));
-      expect(nav, contains('onZoomListener: (_) => _onUserGesture()'));
-      expect(nav, contains('_camState != _CamState.following'),
+      expect(nav.contains('onScrollListener: (_) => _onUserGesture()'), isTrue);
+      expect(nav.contains('onZoomListener: (_) => _onUserGesture()'), isTrue);
+      expect(nav.contains('_camState != _CamState.following'), isTrue,
           reason: 'the per-frame chase must be gated on the camera state');
     });
 
     test('dynamic chase zoom 17.5 / 17.0 / 18.0, lerped never stepped', () {
-      expect(nav, contains('_chaseZoomDefault = 17.5'));
-      expect(nav, contains('_chaseZoomFast = 17.0'));
-      expect(nav, contains('_chaseZoomManeuver = 18.0'));
-      expect(nav, contains('_zoomLerpPerSec = 0.5'));
+      expect(nav.contains('_chaseZoomDefault = 17.5'), isTrue);
+      expect(nav.contains('_chaseZoomFast = 17.0'), isTrue);
+      expect(nav.contains('_chaseZoomManeuver = 18.0'), isTrue);
+      expect(nav.contains('_zoomLerpPerSec = 0.5'), isTrue);
     });
   });
 
   group('nav view: arrival + prefetch', () {
     test('approach at 200 m, arrival at 30 m with 25 m accuracy', () {
-      expect(nav, contains('_approachRadiusM = 200.0'));
-      expect(nav, contains('_arriveRadiusM = 30.0'));
-      expect(nav, contains('_arriveAccuracyM = 25.0'));
-      expect(nav, contains('s.navArrivedPickup'));
-      expect(nav, contains('s.navArrivedDropoff'));
+      expect(nav.contains('_approachRadiusM = 200.0'), isTrue);
+      expect(nav.contains('_arriveRadiusM = 30.0'), isTrue);
+      expect(nav.contains('_arriveAccuracyM = 25.0'), isTrue);
+      expect(nav.contains('s.navArrivedPickup'), isTrue);
+      expect(nav.contains('s.navArrivedDropoff'), isTrue);
     });
 
     test('arrival fires no backend transition — the trip page rules the flow',
@@ -313,22 +312,28 @@ void main() {
           reason: 'nav never fires a trip-state transition');
     });
 
-    test('arrival shows only End Route at the sheet, never auto-closes', () {
-      expect(nav, contains('_buildEndRouteButton(s)'),
-          reason: 'the explicit close action lives at the bottom sheet');
-      expect(nav, contains('if (_endRouteVisible)'),
-          reason: 'it appears once arrived — by the internal latch or any '
-              'post-arrival stage from the parent');
-      expect(nav, contains('_endRouteHeight + 10'),
-          reason: 'the wait bar rides up above it');
+    test('arrival shows End Route INSIDE the sheet, gold, swapped in', () {
+      expect(nav.contains('_buildEndRouteButton(s)'), isTrue,
+          reason: 'the explicit close action lives in the bottom sheet');
+      expect(nav.contains("ValueKey('end-route')"), isTrue,
+          reason: 'user spec 2026-09-17: on arrival the addresses swap out '
+              'and the gold button fades in — inside the sheet');
+      expect(nav.contains("ValueKey('trip-details')"), isTrue,
+          reason: 'the swap is one AnimatedSwitcher slot');
+      expect(nav.contains('child: _endRouteVisible'), isTrue);
       final btn =
           bodyOf(nav, 'Widget _buildEndRouteButton(S s) {', maxLen: 900);
-      expect(btn, contains('widget.onExit();'),
+      expect(btn.contains('widget.onExit();'), isTrue,
           reason: 'End Route closes navigation only — it never fires a '
               'trip-state transition');
-      expect(btn, contains('s.navEndRoute'));
-      final bar = bodyOf(nav, 'Widget _buildManeuverBar(S s) {', maxLen: 3400);
-      expect(bar, contains('s.navExit'),
+      expect(btn.contains('s.navEndRoute'), isTrue);
+      expect(btn.contains('backgroundColor: _gold'), isTrue,
+          reason: 'gold FILLED — never the outlined navy floater again');
+      expect(nav.contains('_endRouteRaised'), isTrue,
+          reason: 'the sheet auto-raises once on arrival so the button is '
+              'actually visible');
+      final bar = bodyOf(nav, 'Widget _buildManeuverBar(S s) {', maxLen: 3600);
+      expect(bar.contains('s.navExit'), isTrue,
           reason: 'the top bar keeps the quiet X — End Route is below');
       expect(bar, isNot(contains('navEndRoute')));
     });
@@ -336,23 +341,23 @@ void main() {
     test('the destination pin is the shared golden teardrop', () {
       final body =
           bodyOf(nav, 'Future<void> _drawDestPin() async {', maxLen: 1000);
-      expect(body, contains('renderCircularPinBytes('),
+      expect(body.contains('renderCircularPinBytes('), isTrue,
           reason: 'the same pin the mini-map and every other map draws');
-      expect(body, contains('CircularPinIcon.person'),
+      expect(body.contains('CircularPinIcon.person'), isTrue,
           reason: 'person pin on the pickup leg');
-      expect(body, contains('CircularPinIcon.flag'),
+      expect(body.contains('CircularPinIcon.flag'), isTrue,
           reason: 'flag pin on the dropoff leg');
-      expect(body, contains('iconAnchor: mapbox.IconAnchor.BOTTOM'),
+      expect(body.contains('iconAnchor: mapbox.IconAnchor.BOTTOM'), isTrue,
           reason: 'the teardrop tip lands on the coordinate');
       expect(body, isNot(contains("'★'")), reason: 'the star glyph is gone');
     });
 
     test('prefetched geometry draws at mount behind a 150 m destination gate',
         () {
-      expect(nav, contains('prefetchedRoutePoints'));
-      expect(nav, contains('_prefetchDestMaxM = 150.0'));
-      expect(nav, contains('_seedPrefetchedRoute();'));
-      expect(nav, contains('_RouteFetchKind.backgroundFill'),
+      expect(nav.contains('prefetchedRoutePoints'), isTrue);
+      expect(nav.contains('_prefetchDestMaxM = 150.0'), isTrue);
+      expect(nav.contains('_seedPrefetchedRoute();'), isTrue);
+      expect(nav.contains('_RouteFetchKind.backgroundFill'), isTrue,
           reason: 'geometry-only prefetch fetches steps in the background '
               'without wiping the drawn line');
     });
@@ -360,20 +365,20 @@ void main() {
 
   group('nav view: failure handling', () {
     test('gpsUnavailable: 6 s watchdog + settings/retry recovery card', () {
-      expect(nav, contains('_gpsStaleSecs = 6'));
-      expect(nav, contains('_gpsWatchdog'));
-      expect(nav, contains('Geolocator.openLocationSettings()'));
-      expect(nav, contains('s.navGpsUnavailableTitle'));
-      expect(nav, contains('s.navGpsUnavailableBody'));
-      expect(nav, contains('s.navOpenSettings'));
-      expect(nav, contains('s.navRetry'));
+      expect(nav.contains('_gpsStaleSecs = 6'), isTrue);
+      expect(nav.contains('_gpsWatchdog'), isTrue);
+      expect(nav.contains('Geolocator.openLocationSettings()'), isTrue);
+      expect(nav.contains('s.navGpsUnavailableTitle'), isTrue);
+      expect(nav.contains('s.navGpsUnavailableBody'), isTrue);
+      expect(nav.contains('s.navOpenSettings'), isTrue);
+      expect(nav.contains('s.navRetry'), isTrue);
     });
 
     test('a stall is not a cause: the card needs location genuinely off',
         () {
-      expect(nav, contains('_diagnoseGpsStall'));
-      expect(nav, contains('Geolocator.isLocationServiceEnabled()'));
-      expect(nav, contains('Geolocator.checkPermission()'),
+      expect(nav.contains('_diagnoseGpsStall'), isTrue);
+      expect(nav.contains('Geolocator.isLocationServiceEnabled()'), isTrue);
+      expect(nav.contains('Geolocator.checkPermission()'), isTrue,
           reason: 'user spec 2026-09-17: the No-GPS card is only for '
               'service off or permission revoked — a tunnel/parked-car '
               'silence with permission ON must not raise it');
@@ -381,12 +386,12 @@ void main() {
 
     test('network down: keep the drawn route (5/15/30 s backoff) or retry',
         () {
-      expect(nav, contains('_offlineKeepRoute'));
-      expect(nav, contains('s.navOfflineKeepRoute'));
-      expect(nav, contains('Duration(seconds: 5)'));
-      expect(nav, contains('Duration(seconds: 15)'));
-      expect(nav, contains('Duration(seconds: 30)'));
-      expect(nav, contains('_routeError'),
+      expect(nav.contains('_offlineKeepRoute'), isTrue);
+      expect(nav.contains('s.navOfflineKeepRoute'), isTrue);
+      expect(nav.contains('Duration(seconds: 5)'), isTrue);
+      expect(nav.contains('Duration(seconds: 15)'), isTrue);
+      expect(nav.contains('Duration(seconds: 30)'), isTrue);
+      expect(nav.contains('_routeError'), isTrue,
           reason: 'with nothing drawn there is no navigation — routeError '
               'card with a retry button');
     });
@@ -397,16 +402,16 @@ void main() {
       final body = bodyOf(nav, 'void dispose() {', maxLen: 700);
       expect(
           body, contains('MapSurfaceCoordinator.instance.release(_mapSurfaceOwner)'));
-      expect(body, contains('_gpsWatchdog?.cancel()'));
-      expect(body, contains('_offlineRetryTimer?.cancel()'));
-      expect(body, contains('_riderLocSub?.cancel()'));
-      expect(body, contains('_riderStaleTimer?.cancel()'));
-      expect(body, contains('_waitTicker?.cancel()'));
+      expect(body.contains('_gpsWatchdog?.cancel()'), isTrue);
+      expect(body.contains('_offlineRetryTimer?.cancel()'), isTrue);
+      expect(body.contains('_riderLocSub?.cancel()'), isTrue);
+      expect(body.contains('_riderStaleTimer?.cancel()'), isTrue);
+      expect(body.contains('_waitTicker?.cancel()'), isTrue);
     });
 
     test('one native surface, claimed under a per-instance owner', () {
-      expect(nav, contains("'DriverTripNav-"));
-      expect(nav, contains('MapSurfaceCoordinator.instance.acquire('));
+      expect(nav.contains("'DriverTripNav-"), isTrue);
+      expect(nav.contains('MapSurfaceCoordinator.instance.acquire('), isTrue);
     });
   });
 
@@ -423,7 +428,7 @@ void main() {
         'navArrivedDropoff',
         'navEndRoute',
       ]) {
-        expect(l10n, contains('String get $key'),
+        expect(l10n.contains('String get $key'), isTrue,
             reason: '$key missing from app_localizations.dart');
       }
     });
@@ -436,18 +441,18 @@ void main() {
           start >= 0 ? riderMap.substring(start, start + 1400) : '';
       expect(block, isNotEmpty,
           reason: '_startRiderLocationSharing not found');
-      expect(block, contains("getBool('privacy_location')"));
+      expect(block.contains("getBool('privacy_location')"), isTrue);
     });
 
     test('publishes through the socket relay with the fix capture time', () {
-      expect(riderMap, contains('SocketService.sendRiderLocation('));
-      expect(riderMap, contains('capturedAtMs'));
+      expect(riderMap.contains('SocketService.sendRiderLocation('), isTrue);
+      expect(riderMap.contains('capturedAtMs'), isTrue);
     });
 
     test('stops publishing once the pickup window closes', () {
-      expect(riderMap, contains('_stopRiderLocationSharing()'));
-      expect(riderMap, contains('_TrackPhase.arriving'));
-      expect(riderMap, contains('_TrackPhase.arrived'));
+      expect(riderMap.contains('_stopRiderLocationSharing()'), isTrue);
+      expect(riderMap.contains('_TrackPhase.arriving'), isTrue);
+      expect(riderMap.contains('_TrackPhase.arrived'), isTrue);
     });
   });
 
@@ -455,7 +460,7 @@ void main() {
       () {
     test('the driver arrow is created eagerly at map ready', () {
       final body = bodyOf(nav, 'Future<void> _onMapCreated', maxLen: 1900);
-      expect(body, contains('_updateDriverAnnotation()'),
+      expect(body.contains('_updateDriverAnnotation()'), isTrue,
           reason: 'the dot ticker only fires on movement — without the '
               'eager create a parked driver never sees the arrow');
     });
@@ -463,35 +468,35 @@ void main() {
     test('opening and route updates snap to the chase pose, never top-down',
         () {
       final created = bodyOf(nav, 'Future<void> _onMapCreated', maxLen: 2300);
-      expect(created, contains('_snapToChasePose();'));
+      expect(created.contains('_snapToChasePose();'), isTrue);
       expect(created, isNot(contains('!_firstGpsFix || _overview')),
           reason: 'the top-down fit on open is gone — it belongs to the '
               'overview toggle only');
       final succeeded =
           bodyOf(nav, 'Future<void> _onRouteFetchSucceeded', maxLen: 2800);
-      expect(succeeded, contains('_snapToChasePose();'));
+      expect(succeeded.contains('_snapToChasePose();'), isTrue);
     });
 
     test('the very first native frame is already tilted down-route', () {
       final body =
           bodyOf(nav, 'cameraOptions: mapbox.CameraOptions(', maxLen: 700);
-      expect(body, contains('zoom: _chaseZoomDefault'));
-      expect(body, contains('pitch: _chasePitch'));
-      expect(body, contains('_routeHeadingFor(widget.initialDriverPos)'));
+      expect(body.contains('zoom: _chaseZoomDefault'), isTrue);
+      expect(body.contains('pitch: _chasePitch'), isTrue);
+      expect(body.contains('_routeHeadingFor(widget.initialDriverPos)'), isTrue);
     });
 
     test('a parked/crawling driver aims by route tangent, not GPS noise', () {
-      expect(nav, contains('double? _routeHeadingFor(LatLng pos)'));
-      expect(nav, contains('_speedMps < 1.0'));
-      expect(nav, contains('_dot.setBearing(h)'));
-      expect(nav, contains('RouteSplice.closestSegmentIndex(pts, pos)'));
+      expect(nav.contains('double? _routeHeadingFor(LatLng pos)'), isTrue);
+      expect(nav.contains('_speedMps < 1.0'), isTrue);
+      expect(nav.contains('_dot.setBearing(h)'), isTrue);
+      expect(nav.contains('RouteSplice.closestSegmentIndex(pts, pos)'), isTrue);
     });
   });
 
   group('user spec 2026-09-17: flat 25° chase, gold call disc, true speed',
       () {
     test('the chase tilt is 25°, never back at 55', () {
-      expect(nav, contains('_chasePitch = 25.0'));
+      expect(nav.contains('_chasePitch = 25.0'), isTrue);
       expect(nav, isNot(contains('_chasePitch = 55.0')));
     });
 
@@ -500,46 +505,81 @@ void main() {
       expect(call, isNonNegative);
       expect(nav.substring(call, call + 140), contains('filled: true'));
       final body = bodyOf(nav, 'Widget _sheetCircleBtn(', maxLen: 1600);
-      expect(body, contains('color: _gold,'));
-      expect(body, contains('filled ? neuBase : _gold'),
+      expect(body.contains('color: _gold,'), isTrue);
+      expect(body.contains('filled ? neuBase : _gold'), isTrue,
           reason: 'the filled disc carries a dark icon on gold');
     });
 
     test('the speed box reads the fix, then the smoother, never a stale 0',
         () {
       final body = bodyOf(nav, 'void _onGpsFix(Position pos) {', maxLen: 1400);
-      expect(body, contains('_dot.speedMps'),
+      expect(body.contains('_dot.speedMps'), isTrue,
           reason: 'iOS reports speed -1 when it has none — the box falls '
               'back to the smoother’s measured glide speed');
-      expect(body, contains('rawSpeed < 0.45'),
+      expect(body.contains('rawSpeed < 0.45'), isTrue,
           reason: 'the <1 mph deadband kills the 0↔1 parked flicker');
       final dot = File('lib/widgets/gold_location_dot.dart')
           .readAsStringSync();
-      expect(dot, contains('double get speedMps => _motion.speedMps;'));
+      expect(dot.contains('double get speedMps => _motion.speedMps;'), isTrue);
     });
 
     test('the arrow lives in its own manager so pins never lie down', () {
-      expect(nav, contains('mapbox.PointAnnotationManager? _carMgr'));
+      expect(nav.contains('mapbox.PointAnnotationManager? _carMgr'), isTrue);
       final arrow =
           bodyOf(nav, 'Future<void> _updateDriverAnnotation() async {', maxLen: 800);
-      expect(arrow, contains('final mgr = _carMgr;'),
+      expect(arrow.contains('final mgr = _carMgr;'), isTrue,
           reason: 'icon-rotation-alignment map is set per manager — on the '
               'shared pins manager it laid the destination pin on its side '
               'every time the chase camera turned (user report 2026-09-17)');
       final pin = bodyOf(nav, 'Future<void> _drawDestPin() async {', maxLen: 400);
-      expect(pin, contains('final mgr = _pointMgr'),
+      expect(pin.contains('final mgr = _pointMgr'), isTrue,
           reason: 'the pins manager keeps the default viewport alignment — '
               'the teardrop stands upright at any camera bearing');
     });
 
     test('the rider live location is the blue puck, never an icon', () {
-      expect(nav, contains('mapbox.CircleAnnotation? _riderHaloAnnot'));
-      expect(nav, contains('mapbox.CircleAnnotation? _riderDotAnnot'));
-      expect(nav, contains('_riderBlue = Color(0xFF3B82F6)'),
+      expect(nav.contains('mapbox.CircleAnnotation? _riderHaloAnnot'), isTrue);
+      expect(nav.contains('mapbox.CircleAnnotation? _riderDotAnnot'), isTrue);
+      expect(nav.contains('_riderBlue = Color(0xFF3B82F6)'), isTrue,
           reason: 'the same blue the rider side draws for the live dot');
       expect(nav, isNot(contains('_renderRiderFigure')),
           reason: 'user spec 2026-09-17: the gold person icon is gone — the '
               'driver sees the rider as the blue location dot');
+    });
+
+    test('the bar always carries a real distance + big soft-swap icon', () {
+      final svc = File('lib/services/directions_service.dart')
+          .readAsStringSync();
+      expect(svc.contains('Future<List<NavStep>?> getSteps('), isTrue,
+          reason: 'a race won by Google/OSRM arrives with empty steps — '
+              'the bar fell back to a bare "Follow the route" forever '
+              '(user report 2026-09-17); Mapbox fills the maneuvers');
+      expect(nav.contains('unawaited(_fillSteps(origin))'), isTrue);
+      expect(nav.contains('_destDistLabel(s)'), isTrue,
+          reason: 'the steps-less fallback shows distance-to-destination, '
+              'never the title twice');
+      final bar = bodyOf(nav, 'Widget _buildManeuverBar(S s) {', maxLen: 3600);
+      expect(bar.contains('size: 44'), isTrue,
+          reason: 'bigger indication icon (was 34)');
+      expect(bar.contains('AnimatedSwitcher('), isTrue,
+          reason: 'indications crossfade, never snap');
+    });
+
+    test('leaving overview hands the camera back the SMOOTH way', () {
+      final body =
+          bodyOf(nav, 'void _toggleOverview() {', maxLen: 950);
+      expect(body.contains('unawaited(_recenter());'), isTrue,
+          reason: 'user spec 2026-09-17: the arrow button restores the chase '
+              'with the same flyTo the recenter button uses — not a state '
+              'flip that lets the next chase frame snap');
+    });
+
+    test('the sheet face carries the rider name next to min/mi', () {
+      final body = bodyOf(nav, 'Widget _buildSheet(S s, ScrollController scrollCtrl) {', maxLen: 1200);
+      expect(body.contains('firstName'), isTrue);
+      expect(body.contains(".join(' · ')"), isTrue,
+          reason: '"2 min · 0.3 mi · Jhon" — miles, minutes AND the rider '
+              'name in the collapsed face');
     });
   });
 }

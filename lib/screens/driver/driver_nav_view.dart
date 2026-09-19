@@ -285,6 +285,8 @@ class DriverNavViewState extends State<DriverNavView>
   // sliders stay the trip-flow authority.
   int _arriveHits = 0;
   bool _navArrived = false;
+  // One auto-raise per arrival (see _recomputeNavPhase) — reset on leg flip.
+  bool _endRouteRaised = false;
   bool _navApproaching = false;
   static const _arriveRadiusM = 30.0;
   static const _arriveAccuracyM = 25.0;
@@ -469,6 +471,20 @@ class DriverNavViewState extends State<DriverNavView>
     final next = _derivePhase();
     if (next == _navPhase) return;
     setState(() => _navPhase = next);
+    // Arrival raises the sheet ONCE so the in-sheet End Route is actually
+    // visible (user spec 2026-09-17) — a driver who dragged it back down
+    // keeps it there; a leg flip re-arms the raise.
+    final arrivedNow =
+        next == _NavPhase.arrivedPickup || next == _NavPhase.arrivedDropoff;
+    if (arrivedNow && !_endRouteRaised) {
+      _endRouteRaised = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || !_sheetCtrl.isAttached) return;
+        _sheetCtrl.animateTo(0.42,
+            duration: const Duration(milliseconds: 450),
+            curve: Curves.easeOutCubic);
+      });
+    }
   }
 
   // ─────────────────────────────────────────────
@@ -779,6 +795,26 @@ class DriverNavViewState extends State<DriverNavView>
     }
   }
 
+  /// One-shot steps fill (user report 2026-09-17): a route the parallel
+  /// race drew from Google/OSRM carries no maneuvers — the bar fell back to
+  /// a bare "Follow the route" with no distance to the next turn. Ask
+  /// Mapbox for just the steps and swap them in; failures keep the bar on
+  /// the distance-to-destination fallback.
+  bool _stepsFilling = false;
+  Future<void> _fillSteps(LatLng origin) async {
+    if (_stepsFilling) return;
+    _stepsFilling = true;
+    try {
+      final steps = await DirectionsService(ApiKeys.webServices)
+          .getSteps(origin: origin, destination: _dest);
+      if (!mounted || steps == null || steps.length < 2) return;
+      _navProgress = NavProgress(steps);
+      _updateManeuvers(_driverLatLng());
+    } finally {
+      _stepsFilling = false;
+    }
+  }
+
   /// Advance the step tracker and repaint the bar — only when what the bar
   /// SAYS changed, so a driver sitting at a light causes no rebuilds.
   void _updateManeuvers(LatLng driverPos) {
@@ -982,6 +1018,12 @@ class DriverNavViewState extends State<DriverNavView>
     }
     if (!mounted) return;
     _offlineKeepRoute = false;
+    // A race won by Google/OSRM arrives with EMPTY steps — the bar would
+    // read "Follow the route" forever (user report 2026-09-17). Fill the
+    // maneuvers from Mapbox in the background, once per plan.
+    if (_navProgress == null || !_navProgress!.hasSteps) {
+      unawaited(_fillSteps(origin));
+    }
     _updateManeuvers(origin);
     _recomputeNavPhase();
     // A parked driver re-aims at the fresh geometry too — the tangent of a
@@ -1064,6 +1106,7 @@ class DriverNavViewState extends State<DriverNavView>
     _navArrived = false;
     _navApproaching = false;
     _arriveHits = 0;
+    _endRouteRaised = false;
     _offlineRetryTimer?.cancel();
     _offlineRetryAttempt = 0;
     _offlineKeepRoute = false;
@@ -1540,6 +1583,13 @@ class DriverNavViewState extends State<DriverNavView>
 
   void _toggleOverview() {
     HapticService.lightImpact();
+    if (_overview) {
+      // Leaving overview (user spec 2026-09-17): hand the camera back to the
+      // chase the SMOOTH way — the same flyTo the recenter button uses, not
+      // a state flip that lets the next chase frame snap the camera.
+      unawaited(_recenter());
+      return;
+    }
     setState(() {
       _overview = !_overview;
       _camState = _overview ? _CamState.freeLook : _CamState.following;
@@ -1804,21 +1854,12 @@ class DriverNavViewState extends State<DriverNavView>
                   Positioned(
                     left: 16,
                     right: 16,
-                    bottom: lift +
-                        (_endRouteVisible ? _endRouteHeight + 10 : 0),
+                    bottom: lift,
                     child: _buildWaitBar(s),
                   ),
-                // The ONLY bottom action the nav view shows (user spec
-                // 2026-09-17): on arrival, End Route hands the driver back
-                // to the trip page — no Arrived button, no finish slider
-                // inside navigation.
-                if (_endRouteVisible)
-                  Positioned(
-                    left: 16,
-                    right: 16,
-                    bottom: lift,
-                    child: _buildEndRouteButton(s),
-                  ),
+                // End Route lives IN the sheet now (user spec 2026-09-17):
+                // on arrival the addresses swap out and the gold button
+                // fades in below the face — never floating above the sheet.
               ],
             );
           },
@@ -1876,6 +1917,14 @@ class DriverNavViewState extends State<DriverNavView>
     );
   }
 
+  /// Fallback for a steps-less route: the distance left to the destination
+  /// — real information instead of repeating the title (user report
+  /// 2026-09-17: the bar read "Follow the route / Follow the route").
+  String _destDistLabel(S s) {
+    final d = RouteSplice.haversineM(_driverLatLng(), _dest);
+    return '${s.navFollowRoute} · ${_fmtDist(d, s)}';
+  }
+
   Widget _buildManeuverBar(S s) {
     final destName =
         widget.toPickup ? widget.pickupAddress : widget.dropoffAddress;
@@ -1884,7 +1933,9 @@ class DriverNavViewState extends State<DriverNavView>
         : (_streetLabel.isEmpty ? s.navFollowRoute : _streetLabel);
     final subtitle = _phaseArrived
         ? destName
-        : (_maneuverDistLabel.isEmpty ? s.navFollowRoute : _maneuverDistLabel);
+        : (_maneuverDistLabel.isNotEmpty
+            ? _maneuverDistLabel
+            : _destDistLabel(s));
     return Container(
       padding: const EdgeInsets.fromLTRB(14, 12, 8, 12),
       decoration: BoxDecoration(
@@ -1901,12 +1952,23 @@ class DriverNavViewState extends State<DriverNavView>
       ),
       child: Row(
         children: [
-          Icon(
-              _phaseArrived
-                  ? Icons.flag_rounded
-                  : _maneuverIcon(_maneuverType, _maneuverModifier),
-              color: Colors.white,
-              size: 34),
+          // Bigger (34 → 44, user spec 2026-09-17) and the indication swaps
+          // crossfade — a turn icon never snaps.
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 220),
+            transitionBuilder: (child, anim) => FadeTransition(
+              opacity: anim,
+              child: ScaleTransition(scale: anim, child: child),
+            ),
+            child: Icon(
+                _phaseArrived
+                    ? Icons.flag_rounded
+                    : _maneuverIcon(_maneuverType, _maneuverModifier),
+                key: ValueKey(
+                    '${_phaseArrived}_${_maneuverType}_$_maneuverModifier'),
+                color: Colors.white,
+                size: 44),
+          ),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
@@ -2260,30 +2322,29 @@ class DriverNavViewState extends State<DriverNavView>
     );
   }
 
-  /// Secondary arrival action under the stage control: closes navigation
-  /// (reverse morph back to the sheet) without touching trip state. The
-  /// business action — Arrived / slide to pick up / slide to finish — stays
-  /// the gold primary on top of it.
+  /// The arrival action inside the sheet (user spec 2026-09-17): gold
+  /// FILLED, where the addresses were. Closes navigation (reverse morph back
+  /// to the trip page) without touching trip state.
   Widget _buildEndRouteButton(S s) {
     return SizedBox(
       width: double.infinity,
-      height: _endRouteHeight,
-      child: OutlinedButton.icon(
+      height: _endRouteHeight + 8,
+      child: ElevatedButton.icon(
         onPressed: () {
           HapticService.lightImpact();
           widget.onExit();
         },
-        icon: const Icon(Icons.flag_rounded, color: _gold, size: 18),
+        icon: const Icon(Icons.flag_rounded, color: Colors.black, size: 20),
         label: Text(
           s.navEndRoute,
-          style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
+          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
         ),
-        style: OutlinedButton.styleFrom(
-          foregroundColor: Colors.white,
-          backgroundColor: _navyBar.withValues(alpha: 0.88),
-          side: BorderSide(color: _gold.withValues(alpha: 0.45), width: 1.2),
+        style: ElevatedButton.styleFrom(
+          backgroundColor: _gold,
+          foregroundColor: Colors.black,
+          elevation: 0,
           shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(22)),
+              borderRadius: BorderRadius.circular(26)),
         ),
       ),
     );
@@ -2298,6 +2359,14 @@ class DriverNavViewState extends State<DriverNavView>
     final distLabel = _remainMeters > 0 ? _fmtDist(_remainMeters, s) : '';
     final destName =
         widget.toPickup ? widget.pickupAddress : widget.dropoffAddress;
+    // The rider's first name rides WITH the miles/minutes (user spec
+    // 2026-09-17) — never a bare "—" while we know who this is.
+    final firstName = widget.riderName.trim().split(' ').first;
+    final etaLabel = _remainSecs > 0 && distLabel.isNotEmpty
+        ? '$mins min · $distLabel'
+        : distLabel;
+    final faceTitle =
+        [etaLabel, firstName].where((e) => e.isNotEmpty).join(' · ');
     return ListView(
       controller: scrollCtrl,
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
@@ -2313,7 +2382,8 @@ class DriverNavViewState extends State<DriverNavView>
             ),
           ),
         ),
-        // Collapsed face: rider, "9 min · 4.1 mi", destination, chat/call.
+        // Collapsed face: rider, "9 min · 4.1 mi · Jhon", destination,
+        // chat/call.
         Row(
           children: [
             VerifiedAvatar(
@@ -2330,9 +2400,7 @@ class DriverNavViewState extends State<DriverNavView>
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    _remainSecs > 0 && distLabel.isNotEmpty
-                        ? '$mins min · $distLabel'
-                        : (distLabel.isNotEmpty ? distLabel : '—'),
+                    faceTitle.isEmpty ? '—' : faceTitle,
                     style: const TextStyle(
                       color: Colors.white,
                       fontSize: 15,
@@ -2361,79 +2429,96 @@ class DriverNavViewState extends State<DriverNavView>
           ],
         ),
         const SizedBox(height: 16),
-        // Expanded content (visible once the sheet is dragged up).
-        _sheetAddressRow(
-            Icons.place_rounded, s.pickupLabel, widget.pickupAddress),
-        const SizedBox(height: 10),
-        _sheetAddressRow(
-            Icons.flag_rounded, s.dropOffLabel, widget.dropoffAddress),
-        if (widget.passengerInstructions.isNotEmpty) ...[
-          const SizedBox(height: 14),
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(12),
-            decoration: neuBox(radius: 14),
-            child: Text(
-              widget.passengerInstructions,
-              style: const TextStyle(
-                  color: Colors.white70, fontSize: 13, height: 1.4),
-            ),
-          ),
-        ],
-        const SizedBox(height: 14),
-        Row(
-          children: [
-            Text(
-              s.navEstimatedEarnings,
-              style: const TextStyle(color: Colors.white54, fontSize: 13),
-            ),
-            const Spacer(),
-            Text(
-              '\$${widget.fare.toStringAsFixed(2)}',
-              style: const TextStyle(
-                color: _gold,
-                fontSize: 16,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 16),
-        GestureDetector(
-          onTap: () {
-            HapticService.lightImpact();
-            widget.onSupport();
-          },
-          child: Container(
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(vertical: 13),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(14),
-              border:
-                  Border.all(color: Colors.white.withValues(alpha: 0.12)),
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const Icon(Icons.report_problem_rounded,
-                    color: Colors.white54, size: 17),
-                const SizedBox(width: 8),
-                Text(
-                  s.navReportProblem,
-                  style: const TextStyle(
-                    color: Colors.white70,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                  ),
+        // On arrival the expanded content hands its slot to End Route (user
+        // spec 2026-09-17): addresses, instructions, earnings and report fade
+        // out, the gold button fades in — same slot, one motion, and the
+        // sheet auto-raises once so the driver actually sees it.
+        AnimatedSwitcher(
+          duration: const Duration(milliseconds: 320),
+          switchInCurve: Curves.easeOutCubic,
+          switchOutCurve: Curves.easeInCubic,
+          child: _endRouteVisible
+              ? Padding(
+                  key: const ValueKey('end-route'),
+                  padding: const EdgeInsets.only(bottom: 4),
+                  child: _buildEndRouteButton(s),
+                )
+              : Column(
+                  key: const ValueKey('trip-details'),
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _sheetAddressRow(
+                        Icons.place_rounded, s.pickupLabel, widget.pickupAddress),
+                    const SizedBox(height: 10),
+                    _sheetAddressRow(
+                        Icons.flag_rounded, s.dropOffLabel, widget.dropoffAddress),
+                    if (widget.passengerInstructions.isNotEmpty) ...[
+                      const SizedBox(height: 14),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(12),
+                        decoration: neuBox(radius: 14),
+                        child: Text(
+                          widget.passengerInstructions,
+                          style: const TextStyle(
+                              color: Colors.white70, fontSize: 13, height: 1.4),
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 14),
+                    Row(
+                      children: [
+                        Text(
+                          s.navEstimatedEarnings,
+                          style: const TextStyle(color: Colors.white54, fontSize: 13),
+                        ),
+                        const Spacer(),
+                        Text(
+                          '\$${widget.fare.toStringAsFixed(2)}',
+                          style: const TextStyle(
+                            color: _gold,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    GestureDetector(
+                      onTap: () {
+                        HapticService.lightImpact();
+                        widget.onSupport();
+                      },
+                      child: Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(vertical: 13),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(14),
+                          border:
+                              Border.all(color: Colors.white.withValues(alpha: 0.12)),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const Icon(Icons.report_problem_rounded,
+                                color: Colors.white54, size: 17),
+                            const SizedBox(width: 8),
+                            Text(
+                              s.navReportProblem,
+                              style: const TextStyle(
+                                color: Colors.white70,
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
-              ],
-            ),
-          ),
         ),
-        // Room for the End Route button floating over the sheet's top edge
-        // when it is visible; a small fixed gap when it is not.
-        SizedBox(
-            height: (_endRouteVisible ? _endRouteHeight + 10 : 0) + 76),
+        const SizedBox(height: 24),
       ],
     );
   }

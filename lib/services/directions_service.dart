@@ -288,6 +288,22 @@ class DirectionsService {
     }
   }
 
+  /// Mapbox-only maneuvers for a route the parallel race already drew from
+  /// another provider (user report 2026-09-17): Google/OSRM wins arrive with
+  /// EMPTY steps and the nav bar falls back to a bare "Follow the route"
+  /// forever. This fills just the steps. Null on any failure — the caller
+  /// keeps navigating with no steps.
+  Future<List<NavStep>?> getSteps({
+    required LatLng origin,
+    required LatLng destination,
+  }) async {
+    final data = await getRawMapboxResponse(origin: origin, destination: destination);
+    if (data == null) return null;
+    final routes = data['routes'] as List?;
+    if (routes == null || routes.isEmpty) return null;
+    return _parseMapboxSteps(routes[0] as Map<String, dynamic>);
+  }
+
   /// [profile] is the Mapbox/Google travel mode ('driving', 'walking', …).
   /// It is part of the cache key — a walking guide must never be served a
   /// cached driving route.

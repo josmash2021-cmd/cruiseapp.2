@@ -63,7 +63,7 @@ enum _RouteFetchKind { initial, backgroundFill, reroute, retry }
 
 /// Full-screen in-app turn-by-turn navigation, Google Maps-style in navy/gold:
 /// maneuver bar on top, live mph box, a draggable rider sheet at the bottom,
-/// and the driver's gold arrow chased by a 17.5/55° camera.
+/// and the driver's gold arrow chased by a 17.5/35° camera.
 ///
 /// It mounts the app's ONE native Mapbox surface, claimed from
 /// [MapSurfaceCoordinator] under an owner id unique per instance — the
@@ -244,12 +244,19 @@ class DriverNavViewState extends State<DriverNavView>
   static const _chaseZoomFast = 17.0;
   static const _chaseZoomManeuver = 18.0;
   static const _zoomLerpPerSec = 0.5;
-  // Chase tilt: 25° (user spec 2026-09-17 — the flat, map-forward view of
-  // the reference shot; 55 read as a horizon view and hid the streets).
-  static const _chasePitch = 25.0;
+  // Chase tilt: 35° (user spec 2026-09-19 — "un poquitico mas inclinado",
+  // the reference nav view; 55 read as a horizon view and hid the streets).
+  static const _chasePitch = 35.0;
 
   // ── Route + maneuvers ──
   List<LatLng> _routePts = [];
+
+  // ── Route erase (user spec 2026-09-19): the line is eaten behind the car
+  // as the driver advances — monotonic forward only, so a jittery fix can
+  // never regrow it. Trimmed off the dot's ANIMATED position (throttled to
+  // ~2.5 writes/s) so the erase rides the glide with no steps and no delay.
+  double _trimS = 0;
+  DateTime _lastTrimAt = DateTime(2000);
   double _routeLenM = 0;
   NavProgress? _navProgress;
   bool _routeFetching = false;
@@ -522,6 +529,49 @@ class DriverNavViewState extends State<DriverNavView>
     setState(() => _mapMounted = true);
   }
 
+  /// Nav-view road furniture (user spec 2026-09-19): street names big
+  /// enough to READ at speed — Google-style size + halo — and any
+  /// traffic-light / stop-sign layers the Studio style ships switched on.
+  /// The probe only touches layers that actually exist — a style without
+  /// them just logs and moves on.
+  Future<void> _applyNavRoadFurniture(mapbox.MapboxMap m) async {
+    for (final l in const [
+      'road-label',
+      'road-label-navigation',
+      'road-label-simple',
+    ]) {
+      try {
+        await m.style.setStyleLayerProperty(l, 'text-size', 15.0);
+        await m.style.setStyleLayerProperty(l, 'text-color', '#C9D2E8');
+        await m.style.setStyleLayerProperty(l, 'text-halo-color', '#0A1128');
+        await m.style.setStyleLayerProperty(l, 'text-halo-width', 1.2);
+      } catch (_) {}
+    }
+    try {
+      final layers = await m.style.getStyleLayers();
+      for (final l in layers) {
+        if (l == null) continue;
+        final id = l.id.toLowerCase();
+        // Precise match only: bare 'traffic' is the congestion layer
+        // MapTheme hides on purpose — furniture means lights and signs.
+        if (id.contains('signal') ||
+            id.contains('traffic-light') ||
+            id.contains('traffic_light') ||
+            id.contains('stop-sign') ||
+            id.contains('stop_sign') ||
+            id.contains('road-sign') ||
+            id.contains('signpost')) {
+          debugPrint('[Nav] road furniture layer enabled: ${l.id}');
+          try {
+            await m.style.setStyleLayerProperty(l.id, 'visibility', 'visible');
+          } catch (_) {}
+        }
+      }
+    } catch (e) {
+      debugPrint('[Nav] road furniture probe failed: $e');
+    }
+  }
+
   Future<void> _onMapCreated(mapbox.MapboxMap ctrl) async {
     _map = ctrl;
     // Each call stands alone so one refusal does not skip the rest.
@@ -670,10 +720,19 @@ class DriverNavViewState extends State<DriverNavView>
       _gpsDown = false;
       _recomputeNavPhase();
     }
+    final fixLL = LatLng(pos.latitude, pos.longitude);
+    // On the route, the tangent below is the arrow's ONLY compass (user
+    // spec 2026-09-19, "que gire fluido, no de golpe"): GPS headings arrive
+    // once a second and the lerp chased them in steps through every curve —
+    // the tangent is continuous geometry, so the arrow and with it the
+    // chase camera sweep with the road itself. The fix's own heading only
+    // speaks off-route, where a tangent means nothing.
+    final onRoute = _routePts.length >= 2 &&
+        RouteSplice.distanceToPolylineM(_routePts, fixLL) <= 40;
     _dot.setTarget(
       pos.latitude,
       pos.longitude,
-      bearing: pos.heading >= 0 ? pos.heading : null,
+      bearing: onRoute ? null : (pos.heading >= 0 ? pos.heading : null),
       accuracyM: pos.accuracy,
       timestampMs: pos.timestamp.millisecondsSinceEpoch.toDouble(),
       // The fix's own speed reading parks the arrow against GPS wander —
@@ -694,22 +753,24 @@ class DriverNavViewState extends State<DriverNavView>
       _lastMphShown = mph;
       setState(() {}); // the mph box is the only reader
     }
-    final fixLL = LatLng(pos.latitude, pos.longitude);
     _updateManeuvers(fixLL);
-    // Parked or crawling, the GPS heading is noise (or stale from the last
-    // drive): the arrow — and with it the chase camera — aims down-route,
-    // where the driver has to GO (user spec 2026-09-16).
-    if (_speedMps < 1.0) {
+    // Route-tangent heading at EVERY speed while on-route (see above).
+    if (onRoute) {
       final h = _routeHeadingFor(fixLL);
-      // Deadband (user spec 2026-09-17): a parked car's fix wanders metres
-      // between readings and the tangent computed off it swings with the
-      // projection — re-aiming on every fix made the arrow twitch through
-      // big arcs at stoplights. Only a meaningful change of where the route
-      // points retargets the arrow; the SmoothMotion lerp turns it there.
       if (h != null) {
-        var diff = (h - _dot.bearing).abs() % 360;
-        if (diff > 180) diff = 360 - diff;
-        if (diff > 20) _dot.setBearing(h);
+        if (_speedMps < 1.0) {
+          // Deadband (user spec 2026-09-17): a parked car's fix wanders
+          // metres between readings and the tangent computed off it swings
+          // with the projection — re-aiming on every fix made the arrow
+          // twitch through big arcs at stoplights. Only a meaningful change
+          // of where the route points retargets the arrow; the SmoothMotion
+          // lerp turns it there.
+          var diff = (h - _dot.bearing).abs() % 360;
+          if (diff > 180) diff = 360 - diff;
+          if (diff > 20) _dot.setBearing(h);
+        } else {
+          _dot.setBearing(h);
+        }
       }
     }
     _checkArrival(pos);
@@ -864,12 +925,9 @@ class DriverNavViewState extends State<DriverNavView>
     });
   }
 
-  /// Bilingual maneuver distance: EN feet/mi, ES m/km.
+  /// Maneuver distance — imperial ALWAYS (user spec 2026-09-19, "en vez de
+  /// metros sean millas asi tal cual"): feet under 0.1 mi, miles past it.
   String _fmtDist(double meters, S s) {
-    if (s.isSpanish) {
-      if (meters < 950) return '${meters.round()} m';
-      return '${(meters / 1000).toStringAsFixed(1)} km';
-    }
     final mi = meters / 1609.34;
     if (mi < 0.1) return '${(meters * 3.28084).round()} ft';
     return '${mi.toStringAsFixed(1)} mi';
@@ -900,6 +958,7 @@ class DriverNavViewState extends State<DriverNavView>
     if (pre.length < 2) return;
     if (RouteSplice.haversineM(pre.last, _dest) > _prefetchDestMaxM) return;
     _routePts = List.of(pre);
+    _trimS = 0; // fresh geometry restarts the erase cursor
     _routeLenM = _polylineLenM(_routePts);
     if (widget.prefetchedSteps.isNotEmpty) {
       _navProgress = NavProgress(widget.prefetchedSteps);
@@ -994,6 +1053,7 @@ class DriverNavViewState extends State<DriverNavView>
         if (_routeLenM <= 0 ||
             (newLen - _routeLenM).abs() > _routeLenM * 0.05) {
           _routePts = result.points;
+          _trimS = 0; // fresh geometry restarts the erase cursor
           _routeLenM = newLen;
           await _drawRoute();
         }
@@ -1002,6 +1062,7 @@ class DriverNavViewState extends State<DriverNavView>
         // Atomic: state first, then ONE annotation update — the old line is
         // replaced, never doubled, and it stays up for the whole fetch.
         _routePts = result.points;
+        _trimS = 0; // fresh geometry restarts the erase cursor
         _routeLenM = _polylineLenM(result.points);
         _navProgress = NavProgress(result.steps);
         await _drawRoute();
@@ -1010,6 +1071,7 @@ class DriverNavViewState extends State<DriverNavView>
       case _RouteFetchKind.initial:
       case _RouteFetchKind.retry:
         _routePts = result.points;
+        _trimS = 0; // fresh geometry restarts the erase cursor
         _routeLenM = _polylineLenM(result.points);
         _navProgress = NavProgress(result.steps);
         await _drawRoute();
@@ -1112,12 +1174,71 @@ class DriverNavViewState extends State<DriverNavView>
     _offlineKeepRoute = false;
     _routeError = false;
     _routePts = [];
+    _trimS = 0; // leg flip: the erase cursor starts over with the new plan
     _routeLenM = 0;
     unawaited(_clearRouteAnnotation());
     unawaited(_drawDestPin());
     _recomputeNavPhase();
     _seedPrefetchedRoute();
     unawaited(_loadRoute());
+  }
+
+  /// Arc-length of [proj] (projected on segment [seg]) along [pts] from the
+  /// route start — the coordinate the trim cursor is measured in.
+  double _routeSOf(List<LatLng> pts, int seg, LatLng proj) {
+    var s = 0.0;
+    for (var i = 0; i < seg; i++) {
+      s += RouteSplice.haversineM(pts[i], pts[i + 1]);
+    }
+    return s + RouteSplice.haversineM(pts[seg], proj);
+  }
+
+  /// Eats the route line behind [pos]: splices the polyline from the
+  /// driver's projection forward and rewrites only the remainder.
+  /// Forward-only — the cursor never steps back, so GPS noise never
+  /// regrows the line ("se va borrando al mismo tiempo, sin errores").
+  void _trimRouteTo(LatLng pos) {
+    final pts = _routePts;
+    if (pts.length < 2 || _overview) return;
+    if (!kIsWeb && _routeAnnot == null) return;
+    final now = DateTime.now();
+    if (now.difference(_lastTrimAt).inMilliseconds < 400) return;
+    final seg = RouteSplice.closestSegmentIndex(pts, pos);
+    final proj = RouteSplice.projectOnSegment(pos, pts[seg], pts[seg + 1]);
+    final s = _routeSOf(pts, seg, proj);
+    if (s < _trimS - 2) return; // backward jitter: keep the longer line
+    if (s - _trimS < 1.0) return; // sub-metre forward: not worth a write
+    _trimS = s;
+    _lastTrimAt = now;
+    unawaited(_replaceRouteGeometry([proj, ...pts.sublist(seg + 1)]));
+  }
+
+  /// Geometry-only rewrite of the drawn line (native annotation or web).
+  /// Route REPLACEMENTS (load/reroute/leg-flip) go through _drawRoute and
+  /// reset the trim cursor; this is only the erase.
+  Future<void> _replaceRouteGeometry(List<LatLng> pts) async {
+    if (kIsWeb) {
+      _webMap?.setPolyline(
+        'navRoute',
+        [for (final p in pts) (lng: p.longitude, lat: p.latitude)],
+        color: '#E8C547',
+        width: 5,
+      );
+      return;
+    }
+    final mgr = _polyMgr;
+    final annot = _routeAnnot;
+    if (mgr == null || annot == null) return;
+    if (pts.length < 2) {
+      await _clearRouteAnnotation();
+      return;
+    }
+    final geom = safeLineString(pts);
+    if (geom == null) return;
+    annot.geometry = geom;
+    try {
+      await mgr.update(annot);
+    } catch (_) {}
   }
 
   Future<void> _clearRouteAnnotation() async {
@@ -1251,6 +1372,11 @@ class DriverNavViewState extends State<DriverNavView>
   /// GoldLocationDot onTick — throttled (~30 fps), position changed.
   void _onDotTick() {
     _updateDriverAnnotation();
+    // The route erase rides the dot's animated position — the line is
+    // eaten under the car exactly as it glides, not once a GPS second.
+    final lat = _dot.lat;
+    final lng = _dot.lng;
+    if (lat != null && lng != null) _trimRouteTo(LatLng(lat, lng));
   }
 
   /// Where the chase zoom wants to be: tighter (18.0) with a maneuver under
@@ -1716,6 +1842,9 @@ class DriverNavViewState extends State<DriverNavView>
                       onStyleLoadedListener: (_) async {
                         final m = _map;
                         if (m != null) await MapTheme.applyNavyGold(m);
+                        if (m != null && mounted && _map == m) {
+                          await _applyNavRoadFurniture(m);
+                        }
                       },
                       // Gesture callbacks, not onCameraChangeListener: that
                       // one also fires for the per-frame chase and would
@@ -1937,7 +2066,7 @@ class DriverNavViewState extends State<DriverNavView>
             ? _maneuverDistLabel
             : _destDistLabel(s));
     return Container(
-      padding: const EdgeInsets.fromLTRB(14, 12, 8, 12),
+      padding: const EdgeInsets.fromLTRB(16, 14, 10, 14),
       decoration: BoxDecoration(
         color: _navyBar.withValues(alpha: 0.95),
         borderRadius: BorderRadius.circular(18),
@@ -1952,8 +2081,9 @@ class DriverNavViewState extends State<DriverNavView>
       ),
       child: Row(
         children: [
-          // Bigger (34 → 44, user spec 2026-09-17) and the indication swaps
-          // crossfade — a turn icon never snaps.
+          // Bigger (44 → 48, user spec 2026-09-19 — the big reference
+          // card) and the indication swaps crossfade — a turn icon never
+          // snaps.
           AnimatedSwitcher(
             duration: const Duration(milliseconds: 220),
             transitionBuilder: (child, anim) => FadeTransition(
@@ -1967,7 +2097,7 @@ class DriverNavViewState extends State<DriverNavView>
                 key: ValueKey(
                     '${_phaseArrived}_${_maneuverType}_$_maneuverModifier'),
                 color: Colors.white,
-                size: 44),
+                size: 48),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -1981,7 +2111,7 @@ class DriverNavViewState extends State<DriverNavView>
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
                     color: Colors.white,
-                    fontSize: 17,
+                    fontSize: 20,
                     fontWeight: FontWeight.w800,
                     letterSpacing: -0.2,
                   ),
@@ -1993,7 +2123,7 @@ class DriverNavViewState extends State<DriverNavView>
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
                     color: _gold,
-                    fontSize: 13,
+                    fontSize: 15,
                     fontWeight: FontWeight.w700,
                   ),
                 ),

@@ -456,6 +456,70 @@ void main() {
     });
   });
 
+  group('user spec 2026-09-19: tangent steering, route erase, imperial bar, '
+      'road furniture', () {
+    test('the route tangent steers the arrow at EVERY speed on-route', () {
+      final body = bodyOf(nav, 'void _onGpsFix(Position pos) {', maxLen: 3400);
+      expect(body.contains('bearing: onRoute ? null'), isTrue,
+          reason: 'user report: GPS headings arrive once a second and the '
+              'arrow turned in steps — on-route only the continuous route '
+              'tangent speaks');
+      expect(body.contains('_dot.setBearing(h)'), isTrue);
+      expect(body.contains('_speedMps < 1.0'), isTrue,
+          reason: 'the parked 20° anti-twitch deadband stays (2026-09-17)');
+      expect(body.contains('RouteSplice.distanceToPolylineM(_routePts, fixLL)'),
+          isTrue);
+    });
+
+    test('the line is eaten forward-only, off the dot glide, cursor reset '
+        'with fresh geometry', () {
+      expect(nav.contains('void _trimRouteTo(LatLng pos)'), isTrue);
+      final body = bodyOf(nav, 'void _trimRouteTo(LatLng pos) {', maxLen: 900);
+      expect(body.contains('s < _trimS - 2'), isTrue,
+          reason: 'monotonic forward — a jittery fix must never regrow the '
+              'eaten line');
+      expect(body.contains('inMilliseconds < 400'), isTrue,
+          reason: 'native writes throttled (~2.5/s) — no per-frame churn');
+      final tick = bodyOf(nav, 'void _onDotTick() {', maxLen: 500);
+      expect(tick.contains('_trimRouteTo('), isTrue,
+          reason: 'the erase rides the dot\'s animated position, not the '
+              '1 Hz GPS fix — sin retrasos');
+      final resets =
+          RegExp(r'_trimS = 0;').allMatches(nav).length;
+      expect(resets, greaterThanOrEqualTo(4),
+          reason: 'prefetch / backgroundFill / reroute / initial+retry / '
+              'leg-flip all restart the erase cursor');
+    });
+
+    test('maneuver distances are imperial ALWAYS (feet under 0.1 mi)', () {
+      final body = bodyOf(nav, 'String _fmtDist(double meters, S s) {',
+          maxLen: 400);
+      expect(body.contains('isSpanish'), isFalse,
+          reason: 'user spec 2026-09-19: "en vez de metros sean millas asi '
+              'tal cual" — no metric branch anywhere');
+      expect(body.contains('meters / 1609.34'), isTrue);
+      expect(body.contains('meters * 3.28084'), isTrue);
+    });
+
+    test('street labels read at speed + traffic-light/stop layers probed', () {
+      expect(nav.contains('_applyNavRoadFurniture('), isTrue);
+      final body =
+          bodyOf(nav, 'Future<void> _applyNavRoadFurniture(', maxLen: 1800);
+      expect(body.contains("'text-size', 15.0"), isTrue,
+          reason: 'street names big enough to read at a glance');
+      expect(body.contains('getStyleLayers()'), isTrue,
+          reason: 'the probe only enables layers the Studio style actually '
+              'ships — no blind furniture');
+      expect(body.contains("'signal'"), isTrue);
+      expect(body.contains('stop-sign'), isTrue);
+      final style =
+          bodyOf(nav, 'onStyleLoadedListener: (_) async {', maxLen: 400);
+      expect(style.contains('_applyNavRoadFurniture(m)'), isTrue,
+          reason: 'furniture applies on style-load, after the navy/gold '
+              'theme — layer writes before that fail silently');
+    });
+  });
+
   group('user spec 2026-09-16: chase opening, arrow always on, route bearing',
       () {
     test('the driver arrow is created eagerly at map ready', () {
@@ -495,8 +559,11 @@ void main() {
 
   group('user spec 2026-09-17: flat 25° chase, gold call disc, true speed',
       () {
-    test('the chase tilt is 25°, never back at 55', () {
-      expect(nav.contains('_chasePitch = 25.0'), isTrue);
+    test('the chase tilt is 35° (user spec 2026-09-19), never back at 55', () {
+      expect(nav.contains('_chasePitch = 35.0'), isTrue,
+          reason: 'user spec 2026-09-19: "un poquitico mas inclinado", the '
+              'reference nav view');
+      expect(nav, isNot(contains('_chasePitch = 25.0')));
       expect(nav, isNot(contains('_chasePitch = 55.0')));
     });
 
@@ -512,7 +579,7 @@ void main() {
 
     test('the speed box reads the fix, then the smoother, never a stale 0',
         () {
-      final body = bodyOf(nav, 'void _onGpsFix(Position pos) {', maxLen: 1400);
+      final body = bodyOf(nav, 'void _onGpsFix(Position pos) {', maxLen: 2400);
       expect(body.contains('_dot.speedMps'), isTrue,
           reason: 'iOS reports speed -1 when it has none — the box falls '
               'back to the smoother’s measured glide speed');
@@ -559,8 +626,8 @@ void main() {
           reason: 'the steps-less fallback shows distance-to-destination, '
               'never the title twice');
       final bar = bodyOf(nav, 'Widget _buildManeuverBar(S s) {', maxLen: 3600);
-      expect(bar.contains('size: 44'), isTrue,
-          reason: 'bigger indication icon (was 34)');
+      expect(bar.contains('size: 48'), isTrue,
+          reason: 'the big reference card (user spec 2026-09-19)');
       expect(bar.contains('AnimatedSwitcher('), isTrue,
           reason: 'indications crossfade, never snap');
     });

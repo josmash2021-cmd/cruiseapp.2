@@ -1,4 +1,7 @@
 import 'dart:async';
+import 'dart:math' as math;
+import 'dart:typed_data';
+import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
@@ -257,6 +260,15 @@ class DriverNavViewState extends State<DriverNavView>
   // ~2.5 writes/s) so the erase rides the glide with no steps and no delay.
   double _trimS = 0;
   DateTime _lastTrimAt = DateTime(2000);
+
+  // ── Traffic lights / stop signs (user spec 2026-09-19): parsed off the
+  // Mapbox intersections, drawn as upright icons on the shared pins manager
+  // (viewport-aligned — they never lie down with the chase), and eaten by
+  // the same trim cursor as the line — a sign the driver passed disappears
+  // with the stretch of road behind him.
+  List<_NavSign> _furniture = [];
+  Uint8List? _signalBytes;
+  Uint8List? _stopBytes;
   double _routeLenM = 0;
   NavProgress? _navProgress;
   bool _routeFetching = false;
@@ -866,10 +878,11 @@ class DriverNavViewState extends State<DriverNavView>
     if (_stepsFilling) return;
     _stepsFilling = true;
     try {
-      final steps = await DirectionsService(ApiKeys.webServices)
+      final res = await DirectionsService(ApiKeys.webServices)
           .getSteps(origin: origin, destination: _dest);
-      if (!mounted || steps == null || steps.length < 2) return;
-      _navProgress = NavProgress(steps);
+      if (!mounted || res == null || res.steps.length < 2) return;
+      _navProgress = NavProgress(res.steps);
+      _setRouteFurniture(res.furniture);
       _updateManeuvers(_driverLatLng());
     } finally {
       _stepsFilling = false;
@@ -1056,6 +1069,7 @@ class DriverNavViewState extends State<DriverNavView>
           _trimS = 0; // fresh geometry restarts the erase cursor
           _routeLenM = newLen;
           await _drawRoute();
+          _setRouteFurniture(result.furniture);
         }
         break;
       case _RouteFetchKind.reroute:
@@ -1067,6 +1081,7 @@ class DriverNavViewState extends State<DriverNavView>
         _navProgress = NavProgress(result.steps);
         await _drawRoute();
         await _drawDestPin();
+        _setRouteFurniture(result.furniture);
         break;
       case _RouteFetchKind.initial:
       case _RouteFetchKind.retry:
@@ -1076,6 +1091,7 @@ class DriverNavViewState extends State<DriverNavView>
         _navProgress = NavProgress(result.steps);
         await _drawRoute();
         await _drawDestPin();
+        _setRouteFurniture(result.furniture);
         break;
     }
     if (!mounted) return;
@@ -1176,6 +1192,7 @@ class DriverNavViewState extends State<DriverNavView>
     _routePts = [];
     _trimS = 0; // leg flip: the erase cursor starts over with the new plan
     _routeLenM = 0;
+    unawaited(_clearFurniture()); // and the signs of the old leg go with it
     unawaited(_clearRouteAnnotation());
     unawaited(_drawDestPin());
     _recomputeNavPhase();
@@ -1211,6 +1228,20 @@ class DriverNavViewState extends State<DriverNavView>
     _trimS = s;
     _lastTrimAt = now;
     unawaited(_replaceRouteGeometry([proj, ...pts.sublist(seg + 1)]));
+    // The signs are eaten with the line: what the driver already passed
+    // disappears with the stretch of road behind him.
+    final passed = _furniture.where((e) => e.s < _trimS - 5).toList();
+    if (passed.isNotEmpty) {
+      _furniture.removeWhere((e) => e.s < _trimS - 5);
+      final mgr = _pointMgr;
+      for (final sign in passed) {
+        final a = sign.annot;
+        sign.annot = null;
+        if (a != null && mgr != null) {
+          unawaited(mgr.delete(a).catchError((Object _) {}));
+        }
+      }
+    }
   }
 
   /// Geometry-only rewrite of the drawn line (native annotation or web).
@@ -1239,6 +1270,126 @@ class DriverNavViewState extends State<DriverNavView>
     try {
       await mgr.update(annot);
     } catch (_) {}
+  }
+
+  /// Swap the traffic-light / stop-sign set for the current route: each
+  /// sign's arc-length is measured once so the trim cursor can eat the ones
+  /// the driver passes, exactly like the line behind him.
+  void _setRouteFurniture(List<NavFurniture> furniture) {
+    unawaited(_clearFurniture());
+    _furniture = [
+      if (_routePts.length >= 2)
+        for (final f in furniture)
+          _NavSign(s: _sAlongRoute(f.at), f: f),
+    ];
+    unawaited(_drawFurniture());
+  }
+
+  double _sAlongRoute(LatLng p) {
+    final pts = _routePts;
+    final seg = RouteSplice.closestSegmentIndex(pts, p);
+    final proj = RouteSplice.projectOnSegment(p, pts[seg], pts[seg + 1]);
+    return _routeSOf(pts, seg, proj);
+  }
+
+  Future<void> _clearFurniture() async {
+    final mgr = _pointMgr;
+    for (final sign in _furniture) {
+      final a = sign.annot;
+      if (a != null && mgr != null) {
+        try {
+          await mgr.delete(a);
+        } catch (_) {}
+      }
+      sign.annot = null;
+    }
+    _furniture = [];
+  }
+
+  Future<void> _drawFurniture() async {
+    if (kIsWeb) return;
+    final mgr = _pointMgr;
+    if (mgr == null || !mounted) return;
+    for (final sign in _furniture) {
+      if (sign.annot != null) continue;
+      final bytes = sign.f.isStopSign
+          ? (_stopBytes ??= await _renderStopSignBytes())
+          : (_signalBytes ??= await _renderTrafficLightBytes());
+      if (!mounted || _pointMgr != mgr) return;
+      try {
+        sign.annot = await mgr.create(mapbox.PointAnnotationOptions(
+          geometry: mapbox.Point(
+              coordinates: mapbox.Position(
+                  sign.f.at.longitude, sign.f.at.latitude)),
+          image: bytes,
+          iconSize: 0.9,
+          iconAnchor: mapbox.IconAnchor.CENTER,
+        ));
+      } catch (_) {
+        return; // surface died mid-draw — the next setup recreates
+      }
+    }
+  }
+
+  /// Mini traffic light, reference-nav style: dark rounded head with the
+  /// three lamps and a white casing so it reads on the navy tiles.
+  Future<Uint8List> _renderTrafficLightBytes() async {
+    const double w = 36, h = 60;
+    final recorder = ui.PictureRecorder();
+    final canvas = Canvas(recorder, const Rect.fromLTWH(0, 0, w, h));
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+          const Rect.fromLTWH(2, 2, w - 4, h - 4), const Radius.circular(9)),
+      Paint()..color = Colors.white,
+    );
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+          const Rect.fromLTWH(4, 4, w - 8, h - 8), const Radius.circular(7)),
+      Paint()..color = const Color(0xFF1A1A1A),
+    );
+    const lamps = [Color(0xFFE5484D), Color(0xFFF5A524), Color(0xFF30A46C)];
+    for (var i = 0; i < 3; i++) {
+      canvas.drawCircle(
+          Offset(w / 2, 14.0 + i * 16), 6.5, Paint()..color = lamps[i]);
+    }
+    final img = await recorder.endRecording().toImage(w.toInt(), h.toInt());
+    final data = await img.toByteData(format: ui.ImageByteFormat.png);
+    return data!.buffer.asUint8List();
+  }
+
+  /// Mini stop sign: red octagon, white border and inset ring.
+  Future<Uint8List> _renderStopSignBytes() async {
+    const double w = 56, h = 56;
+    final recorder = ui.PictureRecorder();
+    final canvas = Canvas(recorder, const Rect.fromLTWH(0, 0, w, h));
+    Path octagon(double inset) {
+      final c = const Offset(w / 2, h / 2);
+      final r = w / 2 - inset;
+      final path = Path();
+      for (var i = 0; i < 8; i++) {
+        final a = math.pi / 8 + i * math.pi / 4;
+        final p = c + Offset(math.cos(a), math.sin(a)) * r;
+        if (i == 0) {
+          path.moveTo(p.dx, p.dy);
+        } else {
+          path.lineTo(p.dx, p.dy);
+        }
+      }
+      return path..close();
+    }
+
+    canvas.drawPath(octagon(2), Paint()..color = Colors.white);
+    canvas.drawPath(octagon(5), Paint()..color = const Color(0xFFC81E1E));
+    canvas.drawPath(
+      octagon(9),
+      Paint()
+        ..color = Colors.white
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.6,
+    );
+    final img = await recorder.endRecording().toImage(w.toInt(), h.toInt());
+    final data = await img.toByteData(format: ui.ImageByteFormat.png);
+    return data!.buffer.asUint8List();
   }
 
   Future<void> _clearRouteAnnotation() async {
@@ -2728,4 +2879,15 @@ class DriverNavViewState extends State<DriverNavView>
       ],
     );
   }
+}
+
+/// One traffic light / stop sign on the route: its parsed location and kind
+/// plus the arc-length where it sits, so the trim cursor can eat it the
+/// moment the driver passes — the annotation handle rides along.
+class _NavSign {
+  _NavSign({required this.s, required this.f});
+
+  final double s;
+  final NavFurniture f;
+  mapbox.PointAnnotation? annot;
 }

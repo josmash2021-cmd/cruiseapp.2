@@ -32,8 +32,18 @@ class RouteResult {
     required this.endAddress,
     this.durationSeconds,
     this.steps = const [],
+    this.furniture = const [],
   });
+
+  /// Traffic lights / stop signs along the route, parsed from the Mapbox
+  /// Directions intersections (the same data the Navigation SDK uses for
+  /// its on-map icons). Google/OSRM routes carry none — an empty list.
+  final List<NavFurniture> furniture;
 }
+
+/// A traffic signal or stop sign on the route. [isStopSign] false = traffic
+/// light, true = stop sign (when both flags come set, the light wins).
+typedef NavFurniture = ({LatLng at, bool isStopSign});
 
 /// One turn-by-turn maneuver from a Mapbox Directions step.
 ///
@@ -291,9 +301,10 @@ class DirectionsService {
   /// Mapbox-only maneuvers for a route the parallel race already drew from
   /// another provider (user report 2026-09-17): Google/OSRM wins arrive with
   /// EMPTY steps and the nav bar falls back to a bare "Follow the route"
-  /// forever. This fills just the steps. Null on any failure — the caller
-  /// keeps navigating with no steps.
-  Future<List<NavStep>?> getSteps({
+  /// forever. This fills just the steps — and the traffic-light/stop-sign
+  /// furniture riding the same intersections (2026-09-19). Null on any
+  /// failure — the caller keeps navigating with no steps.
+  Future<({List<NavStep> steps, List<NavFurniture> furniture})?> getSteps({
     required LatLng origin,
     required LatLng destination,
   }) async {
@@ -301,7 +312,11 @@ class DirectionsService {
     if (data == null) return null;
     final routes = data['routes'] as List?;
     if (routes == null || routes.isEmpty) return null;
-    return _parseMapboxSteps(routes[0] as Map<String, dynamic>);
+    final route = routes[0] as Map<String, dynamic>;
+    return (
+      steps: _parseMapboxSteps(route),
+      furniture: _parseMapboxFurniture(route),
+    );
   }
 
   /// [profile] is the Mapbox/Google travel mode ('driving', 'walking', …).
@@ -653,10 +668,39 @@ class DirectionsService {
         endAddress: '',
         durationSeconds: durationSeconds > 0 ? durationSeconds : null,
         steps: _parseMapboxSteps(route),
+        furniture: _parseMapboxFurniture(route),
       );
     } catch (_) {
       return null;
     }
+  }
+
+  /// Traffic lights / stop signs from every leg's intersections — the flags
+  /// ride the Mapbox Directions response when steps=true (Google/OSRM have
+  /// none). A light and a sign on the same corner keeps only the light.
+  List<NavFurniture> _parseMapboxFurniture(Map<String, dynamic> route) {
+    final out = <NavFurniture>[];
+    final legs = route['legs'] as List? ?? [];
+    for (final leg in legs) {
+      final rawSteps = (leg as Map?)?['steps'] as List? ?? [];
+      for (final s in rawSteps) {
+        if (s is! Map<String, dynamic>) continue;
+        final intersections = s['intersections'] as List? ?? [];
+        for (final i in intersections) {
+          if (i is! Map<String, dynamic>) continue;
+          final signal = i['traffic_signal'] == true;
+          final stop = i['stop_sign'] == true;
+          if (!signal && !stop) continue;
+          final loc = i['location'] as List?;
+          if (loc == null || loc.length < 2) continue;
+          out.add((
+            at: LatLng((loc[1] as num).toDouble(), (loc[0] as num).toDouble()),
+            isStopSign: stop && !signal,
+          ));
+        }
+      }
+    }
+    return out;
   }
 
   /// steps[] from every leg of a Mapbox route, as [NavStep]s. A step without

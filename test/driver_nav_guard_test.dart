@@ -520,6 +520,55 @@ void main() {
     });
   });
 
+  group('user spec 2026-09-19: traffic lights + stop signs from Mapbox '
+      'intersections', () {
+    test('the directions parser reads traffic_signal and stop_sign', () {
+      final svc = File('lib/services/directions_service.dart')
+          .readAsStringSync();
+      expect(svc.contains("i['traffic_signal'] == true"), isTrue,
+          reason: 'the flags ride the Directions response when steps=true — '
+              'the same data the Navigation SDK uses for its icons');
+      expect(svc.contains("i['stop_sign'] == true"), isTrue);
+      expect(
+          svc.contains('List<NavFurniture> _parseMapboxFurniture('), isTrue);
+      expect(svc.contains('this.furniture = const []'), isTrue,
+          reason: 'Google/OSRM routes carry none — default empty');
+    });
+
+    test('signs are drawn as upright icons and eaten with the route line', () {
+      expect(
+          nav.contains('void _setRouteFurniture(List<NavFurniture>'), isTrue);
+      expect(nav.contains('_renderTrafficLightBytes('), isTrue);
+      expect(nav.contains('_renderStopSignBytes('), isTrue);
+      final trim = bodyOf(nav, 'void _trimRouteTo(LatLng pos) {', maxLen: 1500);
+      expect(trim.contains('e.s < _trimS - 5'), isTrue,
+          reason: 'a sign the driver passed disappears with the stretch of '
+              'road behind him');
+      final draw = bodyOf(nav, 'Future<void> _drawFurniture() async {',
+          maxLen: 1200);
+      expect(draw.contains('_pointMgr'), isTrue,
+          reason: 'the shared pins manager — viewport-aligned, signs never '
+              'lie down with the chase camera');
+      expect(draw.contains('iconAnchor: mapbox.IconAnchor.CENTER'), isTrue);
+    });
+
+    test('furniture rides every route fill path', () {
+      final succeeded =
+          bodyOf(nav, 'Future<void> _onRouteFetchSucceeded', maxLen: 2400);
+      expect(
+          RegExp(r'_setRouteFurniture\(result\.furniture\)')
+              .allMatches(succeeded)
+              .length,
+          greaterThanOrEqualTo(3),
+          reason: 'backgroundFill(replaced) / reroute / initial+retry all '
+              'refresh the signs with the fresh geometry');
+      final fill = bodyOf(nav, 'Future<void> _fillSteps(LatLng origin) async {',
+          maxLen: 700);
+      expect(fill.contains('_setRouteFurniture(res.furniture)'), isTrue,
+          reason: 'the Mapbox steps fill carries the signs too');
+    });
+  });
+
   group('user spec 2026-09-16: chase opening, arrow always on, route bearing',
       () {
     test('the driver arrow is created eagerly at map ready', () {
@@ -617,10 +666,14 @@ void main() {
     test('the bar always carries a real distance + big soft-swap icon', () {
       final svc = File('lib/services/directions_service.dart')
           .readAsStringSync();
-      expect(svc.contains('Future<List<NavStep>?> getSteps('), isTrue,
+      expect(
+          svc.contains(
+              'Future<({List<NavStep> steps, List<NavFurniture> furniture})?> getSteps('),
+          isTrue,
           reason: 'a race won by Google/OSRM arrives with empty steps — '
               'the bar fell back to a bare "Follow the route" forever '
-              '(user report 2026-09-17); Mapbox fills the maneuvers');
+              '(user report 2026-09-17); Mapbox fills the maneuvers — and '
+              'the traffic-light/stop furniture rides the same call');
       expect(nav.contains('unawaited(_fillSteps(origin))'), isTrue);
       expect(nav.contains('_destDistLabel(s)'), isTrue,
           reason: 'the steps-less fallback shows distance-to-destination, '

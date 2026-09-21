@@ -443,6 +443,37 @@ void main() {
     });
   });
 
+  group('far-driver fit, bigger strip, human distance units (2026-09-19)',
+      () {
+    test('fit zoom floor is 3.5 — never zoom into the ocean midpoint', () {
+      final body =
+          bodyOf('Future<void> _fitMiniMap({bool instant = false}) async {');
+      expect(body.contains('.clamp(3.5, 17.0)'), isTrue,
+          reason: 'a driver hundreds of miles away clamped the fit at 12 and '
+              'the strip zoomed INTO the Gulf — flat blue (user report '
+              '2026-09-19, "el mini mapa se queda azul")');
+    });
+
+    test('the strip grew 200 → 280', () {
+      final body = bodyOf('Widget _buildMiniMap() {', maxLen: 6000);
+      expect(body.contains('height: 280'), isTrue,
+          reason: 'user spec 2026-09-19: mini mapa mas grande');
+    });
+
+    test('Ft close by, miles when far (km in Spanish)', () {
+      final body = bodyOf('Widget _buildDistanceLine()');
+      expect(body.contains('ft < 528'), isTrue,
+          reason: 'past 0.1 mi the readout flips to miles — "3009004 ft" '
+              'read as noise');
+      expect(body.contains('m / 1609.34'), isTrue);
+      expect(body.contains("unit = 'Ft'"), isTrue,
+          reason: 'user spec: the unit reads Ft');
+      expect(body.contains('m < 1000'), isTrue,
+          reason: 'ES flips to km past 1000 m');
+      expect(body.contains("unit = 'km'"), isTrue);
+    });
+  });
+
   group('the mini-map car feeds on the direct socket relay (2026-09-14)', () {
     test('the relay stream feeds the car, not only the 1 Hz sample', () {
       expect(src.contains('SocketService.driverLocationStream.listen'), isTrue,

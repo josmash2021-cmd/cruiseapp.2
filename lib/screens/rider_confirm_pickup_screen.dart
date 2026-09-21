@@ -633,9 +633,10 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
     if (mounted) widget.onConfirmed();
   }
 
-  /// How far the driver still is, in the rider's own units — feet in
-  /// English, meters in Spanish. Tweens between GPS readings so the number
-  /// counts toward the new value instead of jumping.
+  /// How far the driver still is, in the rider's own units — Ft close by
+  /// and miles when far in English, meters/km in Spanish. Tweens between
+  /// GPS readings so the number counts toward the new value instead of
+  /// jumping.
   ///
   /// Nothing is drawn until both fixes exist: "0 ft" while the driver's
   /// position is still unknown would be a lie pointing at your own feet.
@@ -653,7 +654,31 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
       curve: Curves.easeOutCubic,
       builder: (context, m, _) {
         final es = S.of(context).isSpanish;
-        final v = es ? m : m * 3.28084;
+        // Ft when the driver is close, miles when genuinely far (user spec
+        // 2026-09-19): "3009004 ft" read as noise — past 0.1 mi the number
+        // flips to miles (km in Spanish) and the digits stay human.
+        final String num;
+        final String unit;
+        if (es) {
+          if (m < 1000) {
+            num = '${m.round()}';
+            unit = 'm';
+          } else {
+            final km = m / 1000;
+            num = km < 10 ? km.toStringAsFixed(1) : '${km.round()}';
+            unit = 'km';
+          }
+        } else {
+          final ft = m * 3.28084;
+          if (ft < 528) {
+            num = '${ft.round()}';
+            unit = 'Ft';
+          } else {
+            final mi = m / 1609.34;
+            num = mi < 10 ? mi.toStringAsFixed(1) : '${mi.round()}';
+            unit = 'mi';
+          }
+        }
         final small = TextStyle(
           fontFamily: 'Poppins',
           color: Colors.white.withValues(alpha: 0.55),
@@ -665,7 +690,7 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
           child: Text.rich(
             TextSpan(children: [
               TextSpan(
-                text: '${v.round()}',
+                text: num,
                 style: const TextStyle(
                   fontFamily: 'Poppins',
                   color: Colors.white,
@@ -674,7 +699,7 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
                   letterSpacing: -0.5,
                 ),
               ),
-              TextSpan(text: ' ${es ? 'm' : 'ft'}', style: small),
+              TextSpan(text: ' $unit', style: small),
               TextSpan(text: '  ${S.of(context).toYourDriver}', style: small),
             ]),
           ),
@@ -1597,7 +1622,12 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
       // A NaN zoom comes back out of .clamp() still NaN — the check has to
       // come first (same discipline as TrackingMapCamera.fitBounds).
       final rawZoom = cam.zoom ?? 16.0;
-      final zoom = (rawZoom.isFinite ? rawZoom : 16.0).clamp(12.0, 17.0);
+      // Floor 3.5, was 12 (user report 2026-09-19, "mini mapa se queda
+      // azul"): a driver hundreds of miles away put the fit's midpoint in
+      // the Gulf and the 12.0 floor zoomed INTO it — flat ocean. Far apart
+      // now gets a wide truthful frame with both markers; the usual close
+      // pickup still lands at the 14-16 street level it always did.
+      final zoom = (rawZoom.isFinite ? rawZoom : 16.0).clamp(3.5, 17.0);
       final center = cam.center;
       final centerOk = center != null &&
           center.coordinates.lat.isFinite &&
@@ -1626,12 +1656,12 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
     }
   }
 
-  /// The live strip (200 px, full width) or its static stand-in while the
+  /// The live strip (280 px, full width) or its static stand-in while the
   /// surface handoff completes. Interactive (pan/zoom); only the four
   /// borders feather into the page background. No card frame, no veil.
   Widget _buildMiniMap() {
     return SizedBox(
-      height: 200,
+      height: 280,
       width: double.infinity,
       child: Stack(
         fit: StackFit.expand,

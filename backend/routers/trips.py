@@ -1612,7 +1612,7 @@ async def get_fare_breakdown(trip_id: int, user: User = Depends(_get_current_use
 
 
 # ── Pickup PIN handshake (2026-09-12) ────────────────────────────────────
-# The rider's Find-My screen shows a 4-digit code (pickup_pin). When the
+# The rider's Find-My screen shows a 4-letter code (pickup_pin). When the
 # ~2 m proximity handshake can't fire (dead GPS, parking garage), the rider
 # reads it out and the DRIVER types it in — a correct code writes the same
 # rider_confirmed_pickup flag the proximity path writes, unlocking Start Ride.
@@ -1622,10 +1622,12 @@ class PickupPinIn(BaseModel):
 
     @field_validator("pin")
     @classmethod
-    def _four_digits(cls, v: str) -> str:
-        v = (v or "").strip()
-        if not re.fullmatch(r"\d{4}", v):
-            raise ValueError("pin must be exactly 4 digits")
+    def _four_chars(cls, v: str) -> str:
+        v = (v or "").strip().upper()
+        # New trips generate 4 LETTERS (2026-09-19); digits stay accepted so
+        # codes issued before the letters cutover can still be confirmed.
+        if not re.fullmatch(r"[A-Z0-9]{4}", v):
+            raise ValueError("pin must be exactly 4 letters")
         return v
 
 
@@ -1634,9 +1636,9 @@ _PIN_CONFIRM_STATUSES = (
     "arrived", "arrived_at_pickup", "arrived_pickup", "driver_arrived",
 )
 
-# Brute-force guard: 4 digits = 10k combos, so wrong attempts per trip are
-# capped — after _PIN_MAX_ATTEMPTS inside the window the trip locks out and
-# the proximity path (or a fresh window) is the way in.
+# Brute-force guard: 4 letters from a 23-letter set ≈ 280k combos, so wrong
+# attempts per trip are capped — after _PIN_MAX_ATTEMPTS inside the window
+# the trip locks out and the proximity path (or a fresh window) is the way in.
 _PIN_MAX_ATTEMPTS = 5
 _PIN_WINDOW_SECONDS = 600
 _pin_attempts: dict[int, tuple[int, float]] = {}  # trip_id -> (wrong, window_start)
@@ -1646,7 +1648,7 @@ _pin_attempts: dict[int, tuple[int, float]] = {}  # trip_id -> (wrong, window_st
 async def confirm_pickup_pin(trip_id: int, body: PickupPinIn,
                              user: User = Depends(_get_current_user),
                              db: AsyncSession = Depends(get_db)):
-    """Driver submits the 4-digit pickup code the rider read out."""
+    """Driver submits the 4-letter pickup code the rider read out."""
     result = await db.execute(select(Trip).where(Trip.id == trip_id))
     trip = result.scalar_one_or_none()
     if not trip:

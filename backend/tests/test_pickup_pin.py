@@ -1,7 +1,8 @@
 """Pickup PIN handshake (2026-09-12): the rider's Find-My screen shows a
-4-digit code; the driver types it to write rider_confirmed_pickup when the
-~2 m proximity handshake can't fire. Guards the endpoint, the lockout, and
-who can see the code."""
+4-character code — 4 LETTERS since 2026-09-19 (no O/I/L look-alikes); the
+driver types it to write rider_confirmed_pickup when the ~2 m proximity
+handshake can't fire. Guards the endpoint, the lockout, and who can see the
+code."""
 import re
 
 import pytest
@@ -40,7 +41,7 @@ def fs_fake(monkeypatch):
     return fake
 
 
-async def _make_trip(db, rider, driver, status="arrived", pin="1234"):
+async def _make_trip(db, rider, driver, status="arrived", pin="KMFE"):
     trip = Trip(
         rider_id=rider.id,
         driver_id=driver.id,
@@ -67,24 +68,26 @@ def _driver_headers(token):
 
 
 class TestPinGeneration:
-    def test_format_four_digits(self):
+    def test_format_four_letters(self):
         for _ in range(50):
-            assert re.fullmatch(r"\d{4}", _gen_pickup_pin())
+            pin = _gen_pickup_pin()
+            assert re.fullmatch(r"[A-Z]{4}", pin)
+            assert not set(pin) & set("OIL"), "no look-alike letters"
 
-    def test_leading_zeros_allowed(self):
+    def test_always_four_chars(self):
         seen = {_gen_pickup_pin() for _ in range(200)}
         assert all(len(p) == 4 for p in seen)
 
     def test_rider_payload_carries_pin(self):
         class _T:
             id = 7
-            pickup_pin = "4279"
-        assert _trip_dict(_T())["pickup_pin"] == "4279"
+            pickup_pin = "KMFE"
+        assert _trip_dict(_T())["pickup_pin"] == "KMFE"
 
     def test_driver_payload_hides_pin(self):
         class _T:
             id = 7
-            pickup_pin = "4279"
+            pickup_pin = "KMFE"
             tip_amount = 0.0
             driver_earnings = None
             status = "arrived"
@@ -106,12 +109,44 @@ async def test_confirm_happy_path(client, db, test_rider, test_driver, fs_fake):
 
     resp = await client.post(
         f"/trips/{trip.id}/pickup-pin/confirm",
-        json={"pin": "1234"},
+        json={"pin": "KMFE"},
         headers=_driver_headers(dtoken),
     )
     assert resp.status_code == 200, resp.text
     assert resp.json()["status"] == "ok"
     # The same flag the proximity write sets landed on the trip doc.
+    assert fs_fake.confirmed == [trip.id]
+
+
+@pytest.mark.asyncio
+async def test_confirm_lowercase_normalized(client, db, test_rider, test_driver, fs_fake):
+    """The driver app uppercases as you type; a lowercase submit still matches."""
+    rider, _ = test_rider
+    driver, dtoken = test_driver
+    trip = await _make_trip(db, rider, driver)
+
+    resp = await client.post(
+        f"/trips/{trip.id}/pickup-pin/confirm",
+        json={"pin": "kmfe"},
+        headers=_driver_headers(dtoken),
+    )
+    assert resp.status_code == 200, resp.text
+    assert fs_fake.confirmed == [trip.id]
+
+
+@pytest.mark.asyncio
+async def test_confirm_legacy_digit_pin_still_works(client, db, test_rider, test_driver, fs_fake):
+    """Codes issued before the letters cutover (2026-09-19) stay confirmable."""
+    rider, _ = test_rider
+    driver, dtoken = test_driver
+    trip = await _make_trip(db, rider, driver, pin="1234")
+
+    resp = await client.post(
+        f"/trips/{trip.id}/pickup-pin/confirm",
+        json={"pin": "1234"},
+        headers=_driver_headers(dtoken),
+    )
+    assert resp.status_code == 200, resp.text
     assert fs_fake.confirmed == [trip.id]
 
 
@@ -123,7 +158,7 @@ async def test_confirm_wrong_pin_403(client, db, test_rider, test_driver, fs_fak
 
     resp = await client.post(
         f"/trips/{trip.id}/pickup-pin/confirm",
-        json={"pin": "9999"},
+        json={"pin": "ZZZZ"},
         headers=_driver_headers(dtoken),
     )
     assert resp.status_code == 403
@@ -138,7 +173,7 @@ async def test_confirm_rider_forbidden(client, db, test_rider, test_driver, fs_f
 
     resp = await client.post(
         f"/trips/{trip.id}/pickup-pin/confirm",
-        json={"pin": "1234"},
+        json={"pin": "KMFE"},
         headers=_driver_headers(rtoken),
     )
     assert resp.status_code == 403
@@ -154,14 +189,14 @@ async def test_confirm_lockout_after_max_attempts(client, db, test_rider, test_d
     for _ in range(trips_router._PIN_MAX_ATTEMPTS):
         resp = await client.post(
             f"/trips/{trip.id}/pickup-pin/confirm",
-            json={"pin": "9999"},
+            json={"pin": "ZZZZ"},
             headers=_driver_headers(dtoken),
         )
         assert resp.status_code == 403
 
     resp = await client.post(
         f"/trips/{trip.id}/pickup-pin/confirm",
-        json={"pin": "1234"},  # even the RIGHT pin is locked out now
+        json={"pin": "KMFE"},  # even the RIGHT pin is locked out now
         headers=_driver_headers(dtoken),
     )
     assert resp.status_code == 429
@@ -177,13 +212,13 @@ async def test_confirm_seeds_pin_lazily(client, db, test_rider, test_driver, fs_
 
     resp = await client.post(
         f"/trips/{trip.id}/pickup-pin/confirm",
-        json={"pin": "0000"},
+        json={"pin": "AAAA"},
         headers=_driver_headers(dtoken),
     )
     assert resp.status_code == 403  # seeded a random one, can't guess it
 
     await db.refresh(trip)
-    assert re.fullmatch(r"\d{4}", trip.pickup_pin or "")
+    assert re.fullmatch(r"[A-Z]{4}", trip.pickup_pin or "")
 
     # ...and the freshly seeded code works on the next attempt
     resp = await client.post(
@@ -203,7 +238,7 @@ async def test_confirm_bad_format_422(client, db, test_rider, test_driver, fs_fa
 
     resp = await client.post(
         f"/trips/{trip.id}/pickup-pin/confirm",
-        json={"pin": "12AB"},
+        json={"pin": "AB"},  # too short — must be exactly 4
         headers=_driver_headers(dtoken),
     )
     assert resp.status_code == 422

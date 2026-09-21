@@ -2186,9 +2186,9 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     }
   }
 
-  /// "PICKUP CODE · Ask the rider" card with the 4 digit boxes. The boxes
-  /// are paint; a zero-sized TextField inside owns the numeric keyboard,
-  /// backspace and paste (OTP autofill included).
+  /// "PICKUP CODE · Ask the rider" card with the 4 letter boxes. The boxes
+  /// are paint; a zero-sized TextField inside owns the letters keyboard,
+  /// backspace and paste (uppercase enforced as you type).
   Widget _buildPickupPinCard() {
     final s = S.of(context);
     const pinGold = Color(0xFFE8C547);
@@ -2275,10 +2275,19 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
                   controller: _pinCtrl,
                   focusNode: _pinFocusNode,
                   enabled: !_pinLocked,
-                  keyboardType: TextInputType.number,
+                  // Letters keyboard (user spec 2026-09-19): the code is
+                  // 4 LETTERS now. visiblePassword keeps suggestions off;
+                  // digits still pass so pre-cutover numeric codes can be
+                  // typed during the overlap.
+                  keyboardType: TextInputType.visiblePassword,
+                  autocorrect: false,
+                  enableSuggestions: false,
                   autofillHints: const [AutofillHints.oneTimeCode],
                   inputFormatters: [
-                    FilteringTextInputFormatter.digitsOnly,
+                    FilteringTextInputFormatter.allow(RegExp(r'[a-zA-Z0-9]')),
+                    TextInputFormatter.withFunction(
+                      (_, next) => next.copyWith(text: next.text.toUpperCase()),
+                    ),
                     LengthLimitingTextInputFormatter(4),
                   ],
                   onChanged: _onPinChanged,

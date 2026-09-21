@@ -9,8 +9,9 @@ import 'package:flutter_test/flutter_test.dart';
 ///      same phase condition that routes `_buildCurrentPhaseWidget` to
 ///      `_buildSlideWaitingForRider()` — and sits right after the pickup
 ///      address card, before the Spacer.
-///   2. 4 digit boxes on a numeric keyboard, 4-digit cap, auto-submit when
-///      the 4th digit lands.
+///   2. 4 letter boxes on a letters keyboard (user spec 2026-09-19 — the
+///      code went from 4 digits to 4 letters), 4-char cap, uppercase as you
+///      type, auto-submit when the 4th char lands.
 ///   3. ApiService.confirmPickupPin posts {pin} to /trips/{id}/pickup-pin/confirm.
 ///   4. Result handling: 200 sets `_riderConfirmedPickup` locally (the pill
 ///      morphs into Start Ride even if the Firestore flag lands later),
@@ -75,21 +76,33 @@ void main() {
     });
   });
 
-  group('4 boxes, numeric keyboard, auto-submit at 4 digits', () {
-    test('onChanged submits when the 4th digit lands', () {
+  group('4 boxes, letters keyboard, auto-submit at 4 chars', () {
+    test('onChanged submits when the 4th char lands', () {
       final body = bodyOf('void _onPinChanged(String value)', maxLen: 500);
       expect(body.contains('value.length == 4'), isTrue,
           reason: 'auto-submit trigger missing');
       expect(body.contains('_submitPickupPin()'), isTrue);
     });
 
-    test('field is numeric, digits-only, capped at 4', () {
+    test('field takes LETTERS (digits allowed for the cutover), capped at 4, '
+        'uppercase as you type (user spec 2026-09-19)', () {
       final body = bodyOf('Widget _buildPickupPinCard()');
-      expect(body.contains('TextInputType.number'), isTrue);
-      expect(body.contains('FilteringTextInputFormatter.digitsOnly'), isTrue);
+      expect(body.contains('TextInputType.number'), isFalse,
+          reason: 'the code is 4 letters now — the numeric pad is gone');
+      expect(body.contains('FilteringTextInputFormatter.digitsOnly'), isFalse);
+      expect(body.contains('TextInputType.visiblePassword'), isTrue,
+          reason: 'letters keyboard without suggestions/autocorrect');
+      expect(
+          body.contains(
+              "FilteringTextInputFormatter.allow(RegExp(r'[a-zA-Z0-9]'))"),
+          isTrue,
+          reason: 'letters; digits still pass so pre-cutover numeric codes '
+              'can be typed during the overlap');
+      expect(body.contains('next.text.toUpperCase()'), isTrue,
+          reason: 'backend stores A-Z only — uppercase as you type');
       expect(body.contains('LengthLimitingTextInputFormatter(4)'), isTrue);
       expect(body.contains('List.generate(4,'), isTrue,
-          reason: 'exactly 4 digit boxes');
+          reason: 'exactly 4 code boxes');
       expect(body.contains('0xFFE8C547'), isTrue,
           reason: 'mockup gold accent #E8C547');
       expect(body.contains('s.pickupCodeTitle'), isTrue);

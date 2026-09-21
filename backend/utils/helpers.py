@@ -165,11 +165,17 @@ def _haversine(lat1, lng1, lat2, lng2):
 #  Pickup handshake PIN (2026-09-12)
 # ═══════════════════════════════════════════════════════
 
+# Letters only (user spec 2026-09-19): A-Z minus the look-alikes O, I, L —
+# the same no-look-alike discipline the referral codes use.
+_PICKUP_PIN_LETTERS = "ABCDEFGHJKMNPQRSTUVWXYZ"
+
+
 def _gen_pickup_pin() -> str:
-    """4-digit code shown on the rider's Find-My pickup screen. The rider
+    """4-letter code shown on the rider's Find-My pickup screen. The rider
     reads it out to the driver, who enters it to unlock Start Ride when the
-    proximity handshake (~2 m) can't fire. Leading zeros allowed."""
-    return f"{secrets.randbelow(10000):04d}"
+    proximity handshake (~2 m) can't fire. Letters only, no O/I/L
+    look-alikes, so the code is unambiguous read aloud."""
+    return "".join(secrets.choice(_PICKUP_PIN_LETTERS) for _ in range(4))
 
 
 

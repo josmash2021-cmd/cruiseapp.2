@@ -1476,10 +1476,22 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
               unawaited(_mapAnnotations!.loadPins(
                 pickupLabel: widget.pickupLabel,
                 dropoffLabel: widget.dropoffLabel,
-              ).then((_) {
+              ).then((_) async {
                 // Pin bytes ready — the static pass below ran before they
                 // finished rendering and bailed on the pinsReady gate.
-                if (mounted) _updateAnnotations();
+                if (!mounted) return;
+                await _updateAnnotations();
+                // Trip already started when this surface (re)mounted (user
+                // spec 2026-09-19): the Find-My owned the map at trip start,
+                // so the pickup pin's pop-out fired into the void — and a
+                // fresh annotations instance just RECREATED the pin
+                // (retirement doesn't cross instances). Pop it here, where
+                // the rider actually sees it leave.
+                if (_phase == _TrackPhase.onTrip ||
+                    _phase == _TrackPhase.nearDestination ||
+                    _phase == _TrackPhase.completed) {
+                  unawaited(_mapAnnotations!.popOutPickupPin());
+                }
               }));
               _mapCar!.loadCarIcon(widget.rideName);
               try {
@@ -1880,9 +1892,11 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     final polyMgr = _polylineAnnotMgr;
     if (pointMgr == null || polyMgr == null) return;
     // When using modular annotations, check modular state; otherwise check legacy state
+    // Per-pin, never both-or-nothing (user report 2026-09-19, "los pines no
+    // aparecen"): one failed render used to block BOTH pins forever.
     final pinsReady = _mapAnnotations != null
-        ? _mapAnnotations!.hasPins
-        : (_pickupPinBytes != null && _dropoffPinBytes != null);
+        ? (_mapAnnotations!.hasPickupPin || _mapAnnotations!.hasDropoffPin)
+        : (_pickupPinBytes != null || _dropoffPinBytes != null);
     if (!pinsReady) return;
     // During arriving/arrived: allow pins even when route is minimal (trip route is dimmed background)
     if (_routePts.length < 2 && _tripRoutePts.length < 2 && _phase != _TrackPhase.arriving && _phase != _TrackPhase.arrived) return;

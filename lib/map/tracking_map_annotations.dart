@@ -452,6 +452,11 @@ class TrackingMapAnnotations {
   // Getters
   bool get dropoffPinAdded => _dropoffPinAdded;
   bool get hasPins => _pickupPinBytes != null && _dropoffPinBytes != null;
+  /// Per-pin readiness (user report 2026-09-19, "los pines no aparecen"):
+  /// the both-or-nothing [hasPins] gate kept BOTH pins off the map when a
+  /// single render failed — each pin earns its own place.
+  bool get hasPickupPin => _pickupPinBytes != null;
+  bool get hasDropoffPin => _dropoffPinBytes != null;
 }
 
 enum _PinIcon { house, store, airplane, person }

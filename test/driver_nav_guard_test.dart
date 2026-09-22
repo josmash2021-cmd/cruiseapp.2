@@ -346,16 +346,38 @@ void main() {
       expect(btn.contains('widget.onExit();'), isTrue,
           reason: 'End Route closes navigation only — it never fires a '
               'trip-state transition');
-      expect(btn.contains('s.navEndRoute'), isTrue);
+      expect(btn.contains('s.navIArrived'), isTrue,
+          reason: 'user spec 2026-09-19: the button reads "He llegado" — it '
+              'only shows once the driver is AT the client\'s place');
       expect(btn.contains('backgroundColor: _gold'), isTrue,
           reason: 'gold FILLED — never the outlined navy floater again');
       expect(nav.contains('_endRouteRaised'), isTrue,
           reason: 'the sheet auto-raises once on arrival so the button is '
               'actually visible');
-      final bar = bodyOf(nav, 'Widget _buildManeuverBar(S s) {', maxLen: 3600);
+      final bar = bodyOf(nav, 'Widget _buildManeuverBar(S s) {', maxLen: 4400);
       expect(bar.contains('s.navExit'), isTrue,
           reason: 'the top bar keeps the quiet X — End Route is below');
       expect(bar, isNot(contains('navEndRoute')));
+    });
+
+    test('arrived: bar shows the CLIENT ADDRESS, arrow aims at the pin '
+        '(user spec 2026-09-19)', () {
+      final bar = bodyOf(nav, 'Widget _buildManeuverBar(S s) {', maxLen: 1200);
+      expect(
+          bar.contains('final title = _endRouteVisible\n'
+              '        ? destName'),
+          isTrue,
+          reason: 'the big text is the client address once you are there — '
+              'never "Follow the route" at 9 ft');
+      expect(bar.contains('s.navArrivedPickup'), isTrue,
+          reason: 'the "you\'ve arrived" note rides under the address');
+      final arrival = bodyOf(nav, 'void _checkArrival(Position pos) {',
+          maxLen: 1600);
+      expect(arrival.contains('_dot.setBearing('), isTrue,
+          reason: 'parked, iOS pauses GPS — without the explicit aim the '
+              'arrow freezes at the last driving heading (the "carrito" '
+              'pointing backwards)');
+      expect(arrival.contains('_dest.latitude, _dest.longitude'), isTrue);
     });
 
     test('the destination pin is the shared golden teardrop', () {
@@ -447,6 +469,7 @@ void main() {
         'navArrivedPickup',
         'navArrivedDropoff',
         'navEndRoute',
+        'navIArrived',
       ]) {
         expect(l10n.contains('String get $key'), isTrue,
             reason: '$key missing from app_localizations.dart');

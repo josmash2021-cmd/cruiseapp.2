@@ -875,6 +875,15 @@ class DriverNavViewState extends State<DriverNavView>
     final needed = accKnown ? 2 : 3;
     if (_arriveHits >= needed) {
       _navArrived = true;
+      // Aim the arrow at the client's spot, deterministically (user report
+      // 2026-09-19, "ese carrito no puede estar"): parked, iOS pauses GPS
+      // updates and the arrow froze at whatever the LAST DRIVING heading
+      // was — pointing backwards at the pin reads as a car at an angle.
+      // One explicit aim on arrival overrides the frozen compass.
+      final d = _driverLatLng();
+      final b = Geolocator.bearingBetween(
+          d.latitude, d.longitude, _dest.latitude, _dest.longitude);
+      if (b.isFinite) _dot.setBearing((b + 360) % 360);
       HapticService.mediumImpact();
       _recomputeNavPhase();
     }
@@ -2252,11 +2261,15 @@ class DriverNavViewState extends State<DriverNavView>
   Widget _buildManeuverBar(S s) {
     final destName =
         widget.toPickup ? widget.pickupAddress : widget.dropoffAddress;
-    final title = _phaseArrived
-        ? (widget.toPickup ? s.navArrivedPickup : s.navArrivedDropoff)
-        : (_streetLabel.isEmpty ? s.navFollowRoute : _streetLabel);
-    final subtitle = _phaseArrived
+    // Once End Route is showing (the nav's own latch OR a post-arrival stage
+    // from the parent — user spec 2026-09-19) the bar stops guiding and
+    // answers where you ARE: the client's address up top, the "you've
+    // arrived" note under it. Before that, maneuvers as usual.
+    final title = _endRouteVisible
         ? destName
+        : (_streetLabel.isEmpty ? s.navFollowRoute : _streetLabel);
+    final subtitle = _endRouteVisible
+        ? (widget.toPickup ? s.navArrivedPickup : s.navArrivedDropoff)
         : (_maneuverDistLabel.isNotEmpty
             ? _maneuverDistLabel
             : _destDistLabel(s));
@@ -2286,11 +2299,11 @@ class DriverNavViewState extends State<DriverNavView>
               child: ScaleTransition(scale: anim, child: child),
             ),
             child: Icon(
-                _phaseArrived
+                _endRouteVisible
                     ? Icons.flag_rounded
                     : _maneuverIcon(_maneuverType, _maneuverModifier),
                 key: ValueKey(
-                    '${_phaseArrived}_${_maneuverType}_$_maneuverModifier'),
+                    '${_endRouteVisible}_${_maneuverType}_$_maneuverModifier'),
                 color: Colors.white,
                 size: 48),
           ),
@@ -2661,7 +2674,10 @@ class DriverNavViewState extends State<DriverNavView>
         },
         icon: const Icon(Icons.flag_rounded, color: Colors.black, size: 20),
         label: Text(
-          s.navEndRoute,
+          // "He llegado" (user spec 2026-09-19): the button only shows once
+          // the driver is AT the client's place — it announces the arrival,
+          // back to the trip page whose controls rule the flow from here.
+          s.navIArrived,
           style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
         ),
         style: ElevatedButton.styleFrom(

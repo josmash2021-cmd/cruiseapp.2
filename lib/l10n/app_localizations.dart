@@ -5078,6 +5078,7 @@ class S {
   String get navArrivedDropoff =>
       _es ? 'Llegaste al destino' : "You've arrived at the destination";
   String get navEndRoute => _es ? 'Terminar ruta' : 'End Route';
+  String get navIArrived => _es ? 'He llegado' : "I've arrived";
   String get fetchingAddress =>
       _es ? 'Obteniendo dirección...' : 'Getting address...';
   String get passengerConfirmedOnboard => _es

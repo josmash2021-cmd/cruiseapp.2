@@ -150,6 +150,43 @@ void main() {
     });
   });
 
+  group('no double arrow after pinch + recenter (user report 2026-09-19)',
+      () {
+    final map =
+        File('lib/screens/driver/driver_online_map.dart').readAsStringSync();
+    final home =
+        File('lib/screens/driver/driver_home_screen.dart').readAsStringSync();
+
+    test('the online resume timer flushes the annotation to opacity 0 NOW',
+        () {
+      final body = bodyOf(map, '_followResumeTimer = Timer(', maxLen: 700);
+      expect(body.contains('_cameraFollowing = true'), isTrue);
+      expect(body.contains('_updateDriverAnnotation();'), isTrue,
+          reason: 'a parked driver produces no ticker frames — without the '
+              'explicit flush the stale visible annotation and the overlay '
+              'drew two arrows for as long as the car stood still');
+    });
+
+    test('the online unlatch hands the marker to the annotation '
+        'deterministically', () {
+      final body = bodyOf(map, 'void _onCameraMoveStarted() {', maxLen: 1300);
+      expect(body.contains('_cameraFollowing = false'), isTrue);
+      expect(body.contains('_updateDriverAnnotation();'), isTrue,
+          reason: 'no waiting for an indirect caller while parked');
+    });
+
+    test('the offline home does the same on both flips', () {
+      final body = bodyOf(home, 'void _onHomeMapPanned() {', maxLen: 800);
+      expect(
+          RegExp(r'_updateMyLocAnnotation\(\);')
+              .allMatches(body)
+              .length,
+          greaterThanOrEqualTo(2),
+          reason: 'refollow hides the annotation, unlatch shows it — both '
+              'deterministic, never via a stale opacity');
+    });
+  });
+
   group('GPS accuracy gate (user report 2026-09-19, "flecha en el mar")', () {
     test('a fix that declares itself worse than 65 m never moves the arrow',
         () {

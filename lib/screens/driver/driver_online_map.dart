@@ -1891,6 +1891,11 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     _reFollowTimer = Timer(const Duration(seconds: 10), _recenterCamera);
     if (!_cameraFollowing) return; // already paused
     _setState(() => _cameraFollowing = false);
+    // Flip the marker to the annotation deterministically (same stale-
+    // window family as the recenter double-arrow): while parked nobody
+    // else calls _updateDriverAnnotation, so the hand to the Mapbox
+    // marker could wait indefinitely for an indirect caller.
+    _updateDriverAnnotation();
   }
 
   /// Resume camera follow mode and glide back to the driver.
@@ -1946,6 +1951,13 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
       () {
         if (!mounted) return;
         _setState(() => _cameraFollowing = true);
+        // The overlay owns the marker again from this frame — flush the
+        // annotation to opacity 0 NOW (user report 2026-09-19, "se crean
+        // 2 flechas"): a parked driver produces no ticker frames, so no
+        // indirect caller was guaranteed to run this — the stale visible
+        // annotation and the overlay drew two arrows after pinch-zoom +
+        // recenter, for as long as the car stood still.
+        _updateDriverAnnotation();
       },
     );
   }

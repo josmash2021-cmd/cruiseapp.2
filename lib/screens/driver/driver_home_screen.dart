@@ -1119,9 +1119,14 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     _homeReFollowTimer = Timer(const Duration(seconds: 10), () {
       if (!mounted) return;
       setState(() => _homeCameraFollowing = true);
+      // The overlay owns again — hide the annotation NOW (same stale-
+      // window as the online double-arrow: parked driver, no tick frames,
+      // nobody else was guaranteed to flush the opacity).
+      _updateMyLocAnnotation();
     });
     if (!_homeCameraFollowing) return;
     setState(() => _homeCameraFollowing = false);
+    _updateMyLocAnnotation(); // deterministic hand to the annotation
   }
 
   /// Same detector as the online screen's [_maybeUnlatchOnManualRotate]

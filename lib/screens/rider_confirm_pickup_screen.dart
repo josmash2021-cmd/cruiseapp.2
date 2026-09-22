@@ -266,6 +266,29 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
   /// "el mini mapa se queda asi, no carga nada" (user report 2026-09-17).
   bool _bootFitted = false;
 
+  // ── Mini-map self-healing (user report 2026-09-19: the strip stayed on
+  // the static stand-in with tiny pins on an iPhone 16): a tile/style load
+  // error parked the strip on the stand-in FOREVER — nobody retried. Now
+  // each load error schedules a fresh mount (3 s backoff, 3 attempts), and
+  // a successful style-load cancels the cycle.
+  int _miniMapGen = 0;
+  int _miniMapRetries = 0;
+  Timer? _miniMapRetryTimer;
+  static const _miniMapMaxRetries = 3;
+
+  void _scheduleMiniMapRetry() {
+    if (_miniMapRetries >= _miniMapMaxRetries || _driverStarted) return;
+    _miniMapRetryTimer?.cancel();
+    final attempt = ++_miniMapRetries;
+    debugPrint(
+        '[ConfirmPickup] mini-map retry $attempt/$_miniMapMaxRetries in 3 s');
+    _miniMapRetryTimer = Timer(const Duration(seconds: 3), () {
+      if (!mounted || _miniMapMounted || _driverStarted) return;
+      _miniMapGen++; // fresh ValueKey → the MapWidget rebuilds from scratch
+      setState(() => _miniMapMounted = true);
+    });
+  }
+
   @override
   void initState() {
     super.initState();
@@ -1671,7 +1694,7 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
           else
             RepaintBoundary(
               child: mapbox.MapWidget(
-                key: const ValueKey('findmy-minimap'),
+                key: ValueKey('findmy-minimap-$_miniMapGen'),
                 styleUri: MapboxConfig.styleDark,
                 cameraOptions: mapbox.CameraOptions(
                   center: mapbox.Point(
@@ -1696,6 +1719,9 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
                 // annotations only stick from here on. Without this the
                 // strip stayed factory grey and a reload wiped the markers.
                 onStyleLoadedListener: (_) async {
+                  // A healthy style ends any retry cycle.
+                  _miniMapRetries = 0;
+                  _miniMapRetryTimer?.cancel();
                   final ctrl = _miniMap;
                   if (ctrl == null || !mounted) return;
                   await _applyMiniMapTheme(ctrl);
@@ -1703,12 +1729,14 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
                   await _setupMiniMapLayers(ctrl);
                 },
                 onMapLoadErrorListener: (err) {
-                  // A dead strip is worse than the static stand-in.
+                  // Fall back to the stand-in AND self-heal: a transient
+                  // load error used to park the strip here forever.
                   debugPrint(
                       '[ConfirmPickup] mini-map load error: ${err.message}');
                   if (mounted && _miniMapMounted) {
                     setState(() => _miniMapMounted = false);
                   }
+                  _scheduleMiniMapRetry();
                 },
               ),
             ),
@@ -1793,6 +1821,9 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
       dropoffLng: (rider != null && driver != null) ? driver.longitude : null,
       // No route line on this strip, stand-in included (user spec 2026-09-17):
       // pins only — the live dot and the car carry the map.
+      // Medium pins (2026-09-19): the small chips read tiny next to the live
+      // gold dot the stand-in replaces.
+      pinSize: 'm',
     );
   }
 
@@ -1934,6 +1965,7 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
     RiderConfirmPickupScreen.externalStartPulse
         .removeListener(_onExternalStart);
     _waitTimer?.cancel();
+    _miniMapRetryTimer?.cancel();
     _tripSub?.cancel();
     _riderGpsSub?.cancel();
     _compassSub?.cancel();

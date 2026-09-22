@@ -26,6 +26,7 @@ class StaticRoutePreview extends StatelessWidget {
     this.route = const <LatLng>[],
     this.borderRadius = 0,
     this.pins = true,
+    this.pinSize = 's',
     this.pitch = 0,
     this.bearing = 0,
   });
@@ -46,6 +47,10 @@ class StaticRoutePreview extends StatelessWidget {
   /// blur is a gold smudge nobody can read, and a smudge that looks like it
   /// was meant to say something.
   final bool pins;
+
+  /// Mapbox Static Images marker size: 's' for thumbnail chips (default) or
+  /// 'm' for fallback stand-ins, closer to the live marker's scale.
+  final String pinSize;
 
   /// Camera tilt of the still, in degrees. 0 keeps the top-down `auto`
   /// framing; anything above 0 needs an explicit viewport (the Static
@@ -168,9 +173,9 @@ class StaticRoutePreview extends StatelessWidget {
     if (pins) {
       // Lettered pins: "p" for pickup, "d" for dropoff — at thumbnail size a
       // bare dot pair is ambiguous about which end of the route is which.
-      parts.add('pin-s-p+E8C547(${f(pickupLng)},${f(pickupLat)})');
+      parts.add('pin-$pinSize-p+E8C547(${f(pickupLng)},${f(pickupLat)})');
       if (_hasDropoff) {
-        parts.add('pin-s-d+FFFFFF(${f(dropoffLng!)},${f(dropoffLat!)})');
+        parts.add('pin-$pinSize-d+FFFFFF(${f(dropoffLng!)},${f(dropoffLat!)})');
       }
     }
 

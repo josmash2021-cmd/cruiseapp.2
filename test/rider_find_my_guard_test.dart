@@ -474,6 +474,36 @@ void main() {
     });
   });
 
+  group('mini-map self-healing + stand-in pin size (2026-09-19)', () {
+    test('a load error retries the mount — cap 3, 3 s backoff, success '
+        'cancels, timer disposed', () {
+      expect(src.contains('_scheduleMiniMapRetry'), isTrue);
+      expect(src.contains('_miniMapMaxRetries = 3'), isTrue);
+      final err = src.indexOf('onMapLoadErrorListener');
+      expect(err, isNonNegative);
+      final body = src.substring(err, err + 600);
+      expect(body.contains('_scheduleMiniMapRetry()'), isTrue,
+          reason: 'a transient load error parked the strip on the static '
+              'stand-in forever — the iPhone 16 tiny-pins report');
+      expect(src.contains("ValueKey('findmy-minimap-"), isTrue,
+          reason: 'each retry rebuilds the MapWidget under a fresh key');
+      expect(src.contains('_miniMapRetryTimer?.cancel()'), isTrue);
+    });
+
+    test('the stand-in renders MEDIUM pins, close to the live marker scale', () {
+      final preview =
+          File('lib/widgets/static_route_preview.dart').readAsStringSync();
+      expect(preview.contains("this.pinSize = 's'"), isTrue,
+          reason: 'chips keep the small default');
+      final standin = src.indexOf('Widget _buildMiniMapStandIn() {');
+      expect(standin, isNonNegative);
+      final body = src.substring(standin, standin + 800);
+      expect(body.contains("pinSize: 'm'"), isTrue,
+          reason: 'the Find-My stand-in reads at the live gold-dot scale, '
+              'not the tiny pin-s chips');
+    });
+  });
+
   group('the mini-map car feeds on the direct socket relay (2026-09-14)', () {
     test('the relay stream feeds the car, not only the 1 Hz sample', () {
       expect(src.contains('SocketService.driverLocationStream.listen'), isTrue,

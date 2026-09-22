@@ -46,12 +46,14 @@ void main() {
   });
 
   group('static route preview pins and veil', () {
-    test('pickup pin is the lettered gold pin', () {
-      expect(preview, contains('pin-s-p+E8C547'));
+    test('pickup pin is the lettered gold pin (small by default for chips)', () {
+      expect(preview, contains("this.pinSize = 's'"),
+          reason: 'the scheduled cards keep the small chip pin by default');
+      expect(preview, contains('pin-\$pinSize-p+E8C547'));
     });
 
     test('dropoff pin is the lettered white pin', () {
-      expect(preview, contains('pin-s-d+FFFFFF'));
+      expect(preview, contains('pin-\$pinSize-d+FFFFFF'));
     });
 
     test('the navy veil is lightened so the white pin stays white', () {

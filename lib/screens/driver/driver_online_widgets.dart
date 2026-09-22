@@ -432,6 +432,14 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
               point.id, 'icon-pitch-alignment', 'viewport');
         } catch (_) {}
         try {
+          // 'map', not viewport (2026-09-19): with two-finger rotate enabled,
+          // a viewport-locked iconRotate counts from screen-up and the arrow
+          // points wrong on a twisted map (off-screen driver case — the
+          // overlay already compensates on-screen).
+          await ctrl.style.setStyleLayerProperty(
+              point.id, 'icon-rotation-alignment', 'map');
+        } catch (_) {}
+        try {
           await ctrl.style.setStyleLayerProperty(
               point.id, 'icon-allow-overlap', true);
         } catch (_) {}

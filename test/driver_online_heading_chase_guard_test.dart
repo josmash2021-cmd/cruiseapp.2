@@ -96,6 +96,10 @@ void main() {
           reason: 'the twist drops follow so the chase never fights it');
       expect(widgets.contains('onZoomListener: (_) {'), isTrue,
           reason: 'pinch unlatches too — same 60 fps fight otherwise');
+      expect(widgets.contains("'icon-rotation-alignment', 'map'"), isTrue,
+          reason: 'the off-screen driver annotation must rotate WITH the '
+              'map on a twisted view — viewport-locked iconRotate counts '
+              'from screen-up and points wrong (2026-09-19)');
     });
   });
 
@@ -128,6 +132,9 @@ void main() {
       expect(home.contains('onZoomListener: (_) => _onHomeMapPanned()'),
           isTrue,
           reason: 'pinch unlatches too — same 60 fps fight otherwise');
+      expect(home.contains("'icon-rotation-alignment', 'map'"), isTrue,
+          reason: 'offline home: the off-screen dot annotation rotates WITH '
+              'the map on a twisted view (2026-09-19)');
     });
 
     test('the overlay arrow compensates the camera rotation on BOTH screens',

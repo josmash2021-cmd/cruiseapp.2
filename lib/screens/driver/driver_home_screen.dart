@@ -2605,8 +2605,11 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
               try {
                 await ctrl.style.setStyleLayerProperty(
                     _pointAnnotMgr!.id, 'icon-pitch-alignment', 'viewport');
+                // 'map', not viewport (2026-09-19): with two-finger rotate
+                // enabled, a viewport-locked iconRotate counts from
+                // screen-up and the arrow points wrong on a twisted map.
                 await ctrl.style.setStyleLayerProperty(
-                    _pointAnnotMgr!.id, 'icon-rotation-alignment', 'viewport');
+                    _pointAnnotMgr!.id, 'icon-rotation-alignment', 'map');
                 await ctrl.style.setStyleLayerProperty(
                     _pointAnnotMgr!.id, 'icon-allow-overlap', true);
               } catch (_) {}

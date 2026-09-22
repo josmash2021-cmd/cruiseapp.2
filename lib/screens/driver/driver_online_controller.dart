@@ -1771,17 +1771,24 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
         zoom = 16.0 - 0.5 * e;
         if (t >= 1.0) _zoomEaseDone = true;
       }
+      // Heading-up top-down chase (user spec 2026-09-19): the map stays
+      // flat but rotates WITH the arrow — _heading is SmoothMotion's
+      // per-frame lerped bearing, so the whole view sweeps fluidly as the
+      // driver turns, exactly like the arrow itself.
+      _cameraBearing = _heading;
+      _lastCamWriteBearing = _heading;
       _writeCamera(
         mapbox.CameraOptions(
           center: mapbox.Point(
               coordinates: mapbox.Position(_pos!.longitude, _pos!.latitude)),
           zoom: zoom,
-          bearing: 0,
+          bearing: _heading,
           pitch: 0,
         ),
       );
     } else if (isNav && _cameraFollowing) {
       _cameraBearing = _heading;
+      _lastCamWriteBearing = _heading;
       _writeCamera(
         mapbox.CameraOptions(
           center: mapbox.Point(
@@ -2421,7 +2428,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
         // left staring at the expired offer's frame until the next fix.
         if (_pos != null && mounted) {
           try {
-            _animateToPosition(_pos!, zoom: 15.5, bearing: 0, tilt: 0);
+            _animateToPosition(_pos!, zoom: 15.5, bearing: _smoothedBearing, tilt: 0);
           } catch (e) {
             debugPrint('[DriverOnline] _animateToPosition failed on expire: $e');
           }
@@ -3025,7 +3032,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       }
       if (_pos != null) {
         try {
-          _animateToPosition(_pos!, zoom: 15.5, bearing: 0, tilt: 0);
+          _animateToPosition(_pos!, zoom: 15.5, bearing: _smoothedBearing, tilt: 0);
         } catch (e) {
           debugPrint(
               '[DriverOnline] _animateToPosition failed during accept: $e');
@@ -3766,7 +3773,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
 
       if (_pos != null && mounted) {
         try {
-          _animateToPosition(_pos!, zoom: 15.5, bearing: 0, tilt: 0);
+          _animateToPosition(_pos!, zoom: 15.5, bearing: _smoothedBearing, tilt: 0);
         } catch (e) {
           debugPrint('[DriverOnline] _animateToPosition failed on reject: $e');
         }
@@ -3876,7 +3883,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     _syncSearchPulse();
     _clearAllAnnotations();
     if (_pos != null) {
-      _animateToPosition(_pos!, zoom: 15.5, bearing: 0, tilt: 0);
+      _animateToPosition(_pos!, zoom: 15.5, bearing: _smoothedBearing, tilt: 0);
     }
     _startPolling();
     // Same GPS restart as _resetToSearchingOnRemoteCancel: accept stopped
@@ -3944,7 +3951,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     _syncSearchPulse();
     _clearAllAnnotations();
     if (_pos != null) {
-      _animateToPosition(_pos!, zoom: 15.5, bearing: 0, tilt: 0);
+      _animateToPosition(_pos!, zoom: 15.5, bearing: _smoothedBearing, tilt: 0);
     }
     _startPolling();
     // Refresh earnings from API so weekly total stays in sync
@@ -4232,7 +4239,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     _syncSearchPulse();
     _clearAllAnnotations();
     if (_pos != null) {
-      _animateToPosition(_pos!, zoom: 15.5, bearing: 0, tilt: 0);
+      _animateToPosition(_pos!, zoom: 15.5, bearing: _smoothedBearing, tilt: 0);
     }
     _startPolling();
     // The GPS stream stopped at accept time (STEP 4) for the trip screen.

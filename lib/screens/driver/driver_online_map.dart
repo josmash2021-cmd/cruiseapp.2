@@ -1817,7 +1817,7 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     });
     await _clearAllAnnotations();
     if (_pos != null) {
-      _animateToPosition(_pos!, zoom: 15.5, bearing: 0, tilt: 0);
+      _animateToPosition(_pos!, zoom: 15.5, bearing: _smoothedBearing, tilt: 0);
     }
   }
 
@@ -1847,6 +1847,22 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     if (isDark == _lastStyleDark) return;
     _lastStyleDark = isDark;
     _setState(() {}); // rebuild map with new style
+  }
+
+  /// The plugin exposes no onRotateListener (2.20), so a two-finger twist
+  /// is only observable as the camera's bearing diverging from the value
+  /// the follow ticker last wrote. Divergence beyond ~4° IS the driver
+  /// rotating by hand — unlatch follow (the 10 s auto-refollow returns the
+  /// heading-up chase), otherwise the chase would fight the twist 60 times
+  /// a second. Programmatic flights are suppressed by [_camFlightUntil].
+  void _maybeUnlatchOnManualRotate(mapbox.CameraState cam) {
+    if (!_cameraFollowing || _previewingOffer != null) return;
+    if (DateTime.now().isBefore(_camFlightUntil)) return;
+    final written = _lastCamWriteBearing;
+    if (written == null) return;
+    var diff = (cam.bearing - written).abs() % 360;
+    if (diff > 180) diff = 360 - diff;
+    if (diff > 4) _onCameraMoveStarted();
   }
 
   /// Called when a camera movement is initiated by user gesture.
@@ -1911,9 +1927,9 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     if (isNav) {
       _animateToPosition(_pos!, zoom: 17.5, bearing: bearing, tilt: 55);
     } else {
-      // Searching: flat and north-up, the framing this phase already uses.
-      // Recentring into a tilted nav view here would be a different screen.
-      _animateToPosition(_pos!, zoom: 15.5, bearing: 0, tilt: 0);
+      // Searching: flat but HEADING-UP (user spec 2026-09-19) — the same
+      // rotation the per-frame chase keeps writing once follow resumes.
+      _animateToPosition(_pos!, zoom: 15.5, bearing: bearing, tilt: 0);
     }
 
     // The flyTo above runs for _kRecenterFlightMs. A little past that, the

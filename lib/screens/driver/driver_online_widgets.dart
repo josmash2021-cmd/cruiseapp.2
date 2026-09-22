@@ -242,14 +242,16 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
           _mapStyleWatchdogTimer?.cancel();
           if (_map != null) {
             await MapTheme.applyNavyGold(_map!);
-            // Ensure top-down view on entry (no tilt unless actively navigating)
+            // Ensure top-down view on entry (no tilt unless actively
+            // navigating) — but keep the heading-up rotation the searching
+            // chase now carries (user spec 2026-09-19), never a north snap.
             if (_phase == _Phase.searching || _phase == _Phase.rideRequest) {
               // The only camera write on this screen still outside the
               // guarded helper, and it needed its own catch: a style reload
               // can be the last thing a surface does before it is torn down.
               try {
                 await _map!.flyTo(
-                  mapbox.CameraOptions(pitch: 0, bearing: 0),
+                  mapbox.CameraOptions(pitch: 0, bearing: _smoothedBearing),
                   mapbox.MapAnimationOptions(duration: 0),
                 );
               } catch (e) {
@@ -264,6 +266,11 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
         onScrollListener: (_) {
           _onCameraMoveStarted();
         },
+        onZoomListener: (_) {
+          // Pinch is a user gesture too: unlatch follow so the 60 fps chase
+          // never fights the fingers (10 s later it glides back by itself).
+          _onCameraMoveStarted();
+        },
         onCameraChangeListener: (data) {
           _onlineCamState = data.cameraState;
           // See the same listener on the home screen: the overlay's pixel
@@ -271,6 +278,11 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
           // driver stops, so without this the arrow would stick to a stale
           // pixel while a stationary driver drags the map.
           _markerFrame.value++;
+          // The plugin (2.20) has NO onRotateListener: a two-finger twist
+          // only surfaces as the camera bearing diverging from the follow
+          // ticker's last write. That divergence IS the manual rotate —
+          // unlatch follow here or the chase fights the twist every frame.
+          _maybeUnlatchOnManualRotate(data.cameraState);
         },
       ),
     );
@@ -382,21 +394,18 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
     Future.microtask(() async {
       bool stale() => !mounted || _mapGeneration != gen || _map == null;
       try {
-        // Pan and zoom, but the driver never turns the map by hand.
-        //
-        // The camera does still rotate on its own while navigating —
-        // that is the map facing the direction of travel, the same as
-        // every turn-by-turn app. What is gone is the two-finger twist,
-        // which could leave the map at an angle nothing would ever
-        // correct, with the arrow pointing somewhere that no longer
-        // matched the streets under it.
+        // Pan, zoom AND two-finger rotate (user spec 2026-09-19: "el driver
+        // puede girar el mapa con los dedos, no solo zoom"). A manual twist
+        // unlatches follow (_maybeUnlatchOnManualRotate) and the 10 s
+        // auto-refollow brings the map back to the heading-up chase, so a
+        // wrong angle never sticks.
         await ctrl.gestures.updateSettings(mapbox.GesturesSettings(
           scrollEnabled: true,
           pinchToZoomEnabled: true,
           doubleTapToZoomInEnabled: true,
           doubleTouchToZoomOutEnabled: true,
           quickZoomEnabled: true,
-          rotateEnabled: false,
+          rotateEnabled: true,
           pitchEnabled: false,
           simultaneousRotateAndPinchToZoomEnabled: false,
         ));

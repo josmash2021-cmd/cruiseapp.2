@@ -287,6 +287,10 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     double bearing = 0,
     double tilt = 0,
   }) {
+    // Every programmatic flight suppresses the manual-rotate unlatch for
+    // its duration — the flight's intermediate bearings are not a finger.
+    _camFlightUntil = DateTime.now()
+        .add(const Duration(milliseconds: _kRecenterFlightMs + 120));
     // Guarded, and gated on the surface still being ours.
     //
     // This was a bare `_map?.flyTo(...)`: no mounted check, no catch, and
@@ -606,6 +610,16 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   // -- Multi-angle 3D car sprites (8 directions) --
   List<Uint8List>? _navCarSprites;
   double _cameraBearing = 0;
+
+  /// The bearing the follow ticker last WROTE (user spec 2026-09-19): the
+  /// plugin exposes no onRotateListener, so a two-finger twist is only
+  /// visible as the camera's bearing diverging from this value — that
+  /// divergence is what unlatches follow instead of fighting the finger.
+  double? _lastCamWriteBearing;
+
+  /// Suppresses the manual-rotate unlatch while a programmatic flyTo runs:
+  /// its intermediate bearings legitimately differ from the follow write.
+  DateTime _camFlightUntil = DateTime(2000);
   final int _lastSpriteIdx = -1;
 
   // -- Vehicle-based markers (asset images) --

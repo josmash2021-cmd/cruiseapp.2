@@ -986,12 +986,18 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     if (lat == null || lng == null) return;
     final point = safePoint(lng, lat);
     if (point == null) return;
+    // Heading-up top-down chase (user spec 2026-09-19 — the offline map
+    // behaves exactly like the online one): the frame stays flat but
+    // rotates WITH the arrow, whose bearing SmoothMotion already lerps
+    // per frame. The overlay arrow compensates the rotation at its call
+    // site, so it keeps pointing straight up while the world turns.
+    _lastHomeCamWriteBearing = _goldDot.bearing;
     _writeHomeCamera(
       mapbox.CameraOptions(
         center: point,
         zoom: 16.0,
         pitch: 0.0,
-        bearing: 0.0,
+        bearing: _goldDot.bearing,
       ),
     );
   }
@@ -1020,6 +1026,16 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   /// The camera as Mapbox last reported it. Pushed to us by
   /// onCameraChangeListener, so reading it costs nothing per frame.
   mapbox.CameraState? _homeCamState;
+
+  /// The bearing the follow writer last WROTE (user spec 2026-09-19) — the
+  /// plugin has no onRotateListener, so a two-finger twist is only visible
+  /// as the camera diverging from this value, and that divergence unlatches
+  /// the follow.
+  double? _lastHomeCamWriteBearing;
+
+  /// Suppresses the manual-rotate unlatch while a programmatic flight runs
+  /// (its intermediate bearings are not a finger).
+  DateTime _homeCamFlightUntil = DateTime(2000);
 
   /// True while the Flutter overlay draws the marker instead of Mapbox.
   ///
@@ -1106,6 +1122,22 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     });
     if (!_homeCameraFollowing) return;
     setState(() => _homeCameraFollowing = false);
+  }
+
+  /// Same detector as the online screen's [_maybeUnlatchOnManualRotate]
+  /// (user spec 2026-09-19): the plugin exposes no onRotateListener, so a
+  /// two-finger twist only surfaces as the camera bearing diverging from
+  /// the follow writer's last write. Beyond ~4° that IS the driver's hand —
+  /// unlatch (the 10 s refollow brings the heading-up chase back) instead
+  /// of fighting the twist every frame.
+  void _maybeUnlatchHomeOnManualRotate(mapbox.CameraState cam) {
+    if (!_homeCameraFollowing) return;
+    if (DateTime.now().isBefore(_homeCamFlightUntil)) return;
+    final written = _lastHomeCamWriteBearing;
+    if (written == null) return;
+    var diff = (cam.bearing - written).abs() % 360;
+    if (diff > 180) diff = 360 - diff;
+    if (diff > 4) _onHomeMapPanned();
   }
 
   /// Update the gold dot PointAnnotation with latest interpolated position + frame.
@@ -1471,6 +1503,8 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       _headingSource.onFix(pos);
       setState(() {});
       _updateMyLocAnnotation();
+      _homeCamFlightUntil = DateTime.now()
+          .add(const Duration(milliseconds: 920)); // not a finger
       _mapController?.flyTo(
         mapbox.CameraOptions(
           center: mapbox.Point(
@@ -2464,7 +2498,13 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                 builder: (context, _) {
                   if (!_dotOverlayOwnsMarker) return const SizedBox.shrink();
                   final o = _homeDotOffset;
-                  final dot = GoldLocationDotOverlay(bearing: _goldDot.bearing);
+                  // Camera-rotation compensated (2026-09-19): the painter
+                  // rotates from screen-up, so subtract the camera bearing —
+                  // in the heading-up chase the arrow keeps pointing UP
+                  // while the world turns under it.
+                  final dot = GoldLocationDotOverlay(
+                      bearing: _goldDot.bearing -
+                          (_homeCamState?.bearing ?? 0));
                   const half = GoldLocationDot.driverOverlaySize / 2;
                   if (o == null) return Center(child: dot);
                   return Stack(children: [
@@ -2511,6 +2551,8 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
             final known = _currentLatLng;
             if (known != null) {
               try {
+                _homeCamFlightUntil = DateTime.now()
+                    .add(const Duration(milliseconds: 300)); // not a finger
                 await ctrl.setCamera(mapbox.CameraOptions(
                   center: mapbox.Point(
                     coordinates:
@@ -2524,25 +2566,21 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                 debugPrint('[DriverMap] initial camera correction failed: $e');
               }
             }
-            // Pan and zoom, but the map never turns.
+            // Pan, zoom AND two-finger rotate (user spec 2026-09-19 — the
+            // offline map behaves like the online one): the arrow is
+            // camera-compensated now, so a twisted view never leaves the
+            // arrow disagreeing with the streets; a manual twist unlatches
+            // follow and the 10 s refollow brings the heading-up chase
+            // back, so no wrong angle ever sticks.
             //
-            // Nothing set gestures here at all, so every default applied and
-            // a two-finger twist rotated the map. That is the one gesture
-            // this screen cannot afford: north stays up, so the arrow's
-            // rotation is the whole of what tells the driver which way they
-            // are pointing. Turn the map and the arrow still points north-
-            // relative while everything under it has moved, and the two
-            // disagree with no way to tell which is right.
-            //
-            // Pitch goes with it — it is the same two-finger gesture, and a
-            // tilted map has the same problem in the other axis.
+            // Pitch stays off — a tilted map is a different screen.
             await ctrl.gestures.updateSettings(mapbox.GesturesSettings(
               scrollEnabled: true,
               pinchToZoomEnabled: true,
               doubleTapToZoomInEnabled: true,
               doubleTouchToZoomOutEnabled: true,
               quickZoomEnabled: true,
-              rotateEnabled: false,
+              rotateEnabled: true,
               pitchEnabled: false,
               simultaneousRotateAndPinchToZoomEnabled: false,
             ));
@@ -2608,6 +2646,9 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
           }
         },
         onScrollListener: (_) => _onHomeMapPanned(),
+        // Pinch is a user gesture too — unlatch follow so the per-frame
+        // chase never fights the fingers (10 s later it glides back).
+        onZoomListener: (_) => _onHomeMapPanned(),
         // The camera state is pushed to us here, so the projection never has
         // to ask for it — asking would put the marker back on the channel
         // this whole approach exists to get off.
@@ -2619,6 +2660,10 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
           // otherwise leave the arrow pinned to a stale pixel while the map
           // slid out from under it.
           _markerFrame.value++;
+          // The plugin (2.20) has NO onRotateListener: a two-finger twist
+          // only surfaces as the camera bearing diverging from the follow
+          // writer's last write — that divergence IS the manual rotate.
+          _maybeUnlatchHomeOnManualRotate(data.cameraState);
         },
         // FIX: Catch map load errors
         onMapLoadErrorListener: (err) {

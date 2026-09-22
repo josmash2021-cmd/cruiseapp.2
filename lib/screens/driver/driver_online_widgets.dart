@@ -132,7 +132,12 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                 builder: (context, _) {
                   if (!_dotOverlayOwnsMarker) return const SizedBox.shrink();
                   final o = _dotScreenOffset;
-                  final dot = GoldLocationDotOverlay(bearing: _heading);
+                  // Camera-rotation compensated (2026-09-19): in the
+                  // heading-up chase the arrow keeps pointing UP while the
+                  // world turns under it.
+                  final dot = GoldLocationDotOverlay(
+                      bearing:
+                          _heading - (_onlineCamState?.bearing ?? 0));
                   const half = GoldLocationDot.driverOverlaySize / 2;
                   if (o == null) return Center(child: dot);
                   return Stack(children: [

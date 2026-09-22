@@ -99,6 +99,57 @@ void main() {
     });
   });
 
+  group('offline home parity (user spec 2026-09-19: "si esta offline debe '
+      'hacer lo mismo")', () {
+    final home =
+        File('lib/screens/driver/driver_home_screen.dart').readAsStringSync();
+
+    test('the offline follow writes the dot bearing, never north-up', () {
+      final body =
+          bodyOf(home, 'void _followHomeCameraToDriver() {', maxLen: 1200);
+      expect(body.contains('bearing: _goldDot.bearing'), isTrue,
+          reason: 'the offline chase must rotate with the arrow exactly like '
+              'the online one');
+      expect(body.contains('pitch: 0.0'), isTrue);
+      expect(body.contains('_lastHomeCamWriteBearing = _goldDot.bearing'),
+          isTrue);
+    });
+
+    test('rotate gesture on, manual twist unlatches, flights suppressed', () {
+      final gestures =
+          bodyOf(home, 'await ctrl.gestures.updateSettings(', maxLen: 700);
+      expect(gestures.contains('rotateEnabled: true'), isTrue);
+      expect(gestures.contains('pitchEnabled: false'), isTrue);
+      expect(home.contains('void _maybeUnlatchHomeOnManualRotate('), isTrue);
+      final body = bodyOf(home, 'void _maybeUnlatchHomeOnManualRotate(',
+          maxLen: 700);
+      expect(body.contains('_homeCamFlightUntil'), isTrue);
+      expect(body.contains('_onHomeMapPanned()'), isTrue);
+      expect(home.contains('onZoomListener: (_) => _onHomeMapPanned()'),
+          isTrue,
+          reason: 'pinch unlatches too — same 60 fps fight otherwise');
+    });
+
+    test('the overlay arrow compensates the camera rotation on BOTH screens',
+        () {
+      // The painter rotates from screen-up: with a rotating chase the raw
+      // dot bearing draws the arrow off-vertical — subtract the camera
+      // bearing so it keeps pointing straight UP while the world turns.
+      final homeDot = bodyOf(
+          home,
+          'if (!_dotOverlayOwnsMarker) return const SizedBox.shrink();',
+          maxLen: 700);
+      expect(homeDot.contains('_homeCamState?.bearing ?? 0'), isTrue,
+          reason: 'offline arrow must stay up in the heading-up chase');
+      final onlineDot = bodyOf(
+          widgets,
+          'if (!_dotOverlayOwnsMarker) return const SizedBox.shrink();',
+          maxLen: 700);
+      expect(onlineDot.contains('_onlineCamState?.bearing ?? 0'), isTrue,
+          reason: 'same compensation on the online screen');
+    });
+  });
+
   group('GPS accuracy gate (user report 2026-09-19, "flecha en el mar")', () {
     test('a fix that declares itself worse than 65 m never moves the arrow',
         () {

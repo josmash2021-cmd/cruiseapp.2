@@ -1122,8 +1122,13 @@ class DriverNavViewState extends State<DriverNavView>
           _trimS = 0; // fresh geometry restarts the erase cursor
           _routeLenM = newLen;
           await _drawRoute();
-          _setRouteFurniture(result.furniture);
         }
+        // Furniture lands ALWAYS (user report 2026-09-19, "me quitaste los
+        // semaforos"): the dominant path — prefetched geometry, background
+        // fill that returns the SAME route — never crossed the 5% gate, and
+        // _fillSteps stays parked because the steps already arrived, so the
+        // signs silently never drew.
+        _setRouteFurniture(result.furniture);
         break;
       case _RouteFetchKind.reroute:
         // Atomic: state first, then ONE annotation update — the old line is

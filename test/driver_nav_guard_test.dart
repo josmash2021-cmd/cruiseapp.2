@@ -634,8 +634,20 @@ void main() {
               .allMatches(succeeded)
               .length,
           greaterThanOrEqualTo(3),
-          reason: 'backgroundFill(replaced) / reroute / initial+retry all '
-              'refresh the signs with the fresh geometry');
+          reason: 'backgroundFill / reroute / initial+retry all refresh the '
+              'signs with the fresh geometry');
+      // The backgroundFill one must be OUTSIDE the 5% geometry gate — the
+      // dominant prefetched path never crosses it (user report: "me
+      // quitaste los semaforos").
+      final bgFill = succeeded.indexOf('case _RouteFetchKind.backgroundFill:');
+      final reroute = succeeded.indexOf('case _RouteFetchKind.reroute:');
+      expect(bgFill, isNonNegative);
+      expect(reroute, greaterThan(bgFill));
+      final gate = succeeded.indexOf('> _routeLenM * 0.05', bgFill);
+      final setFurniture =
+          succeeded.indexOf('_setRouteFurniture(result.furniture)', bgFill);
+      expect(setFurniture, greaterThan(gate),
+          reason: 'identical prefetched geometry must not skip the signs');
       final fill = bodyOf(nav, 'Future<void> _fillSteps(LatLng origin) async {',
           maxLen: 700);
       expect(fill.contains('_setRouteFurniture(res.furniture)'), isTrue,
@@ -660,7 +672,7 @@ void main() {
           reason: 'the top-down fit on open is gone — it belongs to the '
               'overview toggle only');
       final succeeded =
-          bodyOf(nav, 'Future<void> _onRouteFetchSucceeded', maxLen: 2800);
+          bodyOf(nav, 'Future<void> _onRouteFetchSucceeded', maxLen: 3400);
       expect(succeeded.contains('_snapToChasePose();'), isTrue);
     });
 

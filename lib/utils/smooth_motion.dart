@@ -206,6 +206,30 @@ class SmoothMotion {
         _targetLat != null) {
       if (_stationary) {
         if (speedMps < _stationaryExitMps) {
+          // Stale-hold escape (user report 2026-09-19, "la flecha aparece
+          // en el mar"): while parked every fix is skipped, so a bad seed
+          // or a pre-freeze hop would pin the marker at a wrong spot
+          // forever. Wander is 20-60 m; a fix that itself reports good
+          // accuracy and disagrees by more than 150 m is a correction, not
+          // noise — snap to it (snapTo also releases the freeze; the next
+          // parked fix re-enters it at the corrected spot). Only a fix
+          // that DECLARES itself accurate counts (iOS reports -1 when it
+          // has no accuracy reading — that is unknown, not good).
+          final acc = accuracyM;
+          if (acc != null && acc.isFinite && acc >= 0 && acc <= 65) {
+            final cosLat = math.cos(_targetLat! * math.pi / 180.0);
+            final dLat = lat - _targetLat!;
+            final dLng = lng - _targetLng!;
+            final distM = math.sqrt(
+              math.pow(dLng * 111320.0 * cosLat, 2) +
+                  math.pow(dLat * 110540.0, 2),
+            );
+            if (distM > 150) {
+              snapTo(lat, lng, bearing: bearing);
+              if (fixTsMs != null) _lastTargetTsMs = fixTsMs;
+              return;
+            }
+          }
           _vLat = 0;
           _vLng = 0;
           _consecutiveHolds = 0;

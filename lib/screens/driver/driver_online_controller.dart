@@ -493,7 +493,14 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
             ),
           );
           debugPrint('[DriverOnline] web GPS: real browser fix');
-          _setState(() => _pos = LatLng(pos.latitude, pos.longitude));
+          // Same accuracy gate as the live stream — a cold browser fix
+          // with a huge radius must not plant the arrow somewhere wrong.
+          if (pos.accuracy <= 65) {
+            _setState(() => _pos = LatLng(pos.latitude, pos.longitude));
+          } else {
+            debugPrint(
+                '[DriverOnline] web seed rejected: accuracy ${pos.accuracy} m');
+          }
         } catch (e) {
           debugPrint('[DriverOnline] web GPS unavailable ($e) — seed fallback');
           _setState(() => _pos = const LatLng(33.5186, -86.8104));
@@ -537,6 +544,14 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
         ),
       );
       if (!mounted) return;
+      // Same accuracy gate as the live stream (user report 2026-09-19):
+      // a cold fix with a worse-than-65 m radius must not plant the arrow
+      // somewhere wrong — the stream delivers a trustworthy one shortly.
+      if (pos.accuracy > 65) {
+        debugPrint(
+            '[DriverOnline] seed rejected: accuracy ${pos.accuracy} m');
+        return;
+      }
       final ll = LatLng(pos.latitude, pos.longitude);
       _setState(() => _pos = ll);
       // While the entry ease owns the camera the ticker centres on _pos
@@ -1263,31 +1278,34 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
         // the stream _startHeadingSource listens to.
         _headingSource.onFix(pos);
         _currentSpeedMph = (pos.speed * 2.23694).clamp(0.0, 200.0);
-        // Snap to route polyline — prevents GPS drift off-road
-        final snappedLL = _snapToRoute(newLL);
-        _smoothMoveTo(snappedLL, _smoothedBearing,
-            accuracyM: pos.accuracy,
-            timestampMs: pos.timestamp.millisecondsSinceEpoch.toDouble(),
-            speedMps: pos.speed.isFinite && pos.speed >= 0 ? pos.speed : null);
+        // Accuracy gate (user report 2026-09-19, "la flecha aparece en el
+        // mar"): a fix whose OWN radius of uncertainty is worse than 65 m
+        // must not move the arrow — beach multipath and cold-start hops
+        // carry exactly that radius and parked the marker hundreds of
+        // metres from the road. A negative/unknown accuracy passes (same
+        // as before); only a fix that DECLARES itself bad is blocked.
+        // Presence and RTDB keep flowing either way — the ghost agent
+        // needs them; only the display target is gated.
+        final fixUsable = pos.accuracy <= 65;
+        if (fixUsable) {
+          // Snap to route polyline — prevents GPS drift off-road
+          final snappedLL = _snapToRoute(newLL);
+          _smoothMoveTo(snappedLL, _smoothedBearing,
+              accuracyM: pos.accuracy,
+              timestampMs: pos.timestamp.millisecondsSinceEpoch.toDouble(),
+              speedMps:
+                  pos.speed.isFinite && pos.speed >= 0 ? pos.speed : null);
+          _trimRouteBehindDriver(snappedLL);
+          if (_previewingOffer != null) {
+            unawaited(_maybeRefreshOfferRoutePreview(snappedLL));
+          }
+        }
 
         // Feed GpsService for RTDB upload (800ms throttled)
         _gpsService.updatePosition(newLL, pos.heading, pos.speed,
             capturedAt: pos.timestamp);
 
-        _trimRouteBehindDriver(snappedLL);
-
-        // Auto-reroute check: reads the smoothed position, with sustained-
-        // off-route hysteresis and a fetch cooldown. No-op outside nav.
         _checkOffRouteHysteresis();
-
-        // A driver who starts rolling while an offer is up watches the
-        // preview keep up: the driver leg refetches from where they
-        // actually are, the line shortens behind them, and the card's
-        // min/miles drop — the same live behaviour the trip phases below
-        // get from their own blocks.
-        if (_previewingOffer != null) {
-          unawaited(_maybeRefreshOfferRoutePreview(snappedLL));
-        }
 
         // Phase-specific nav stats (camera handled by _onDriverAnimTick)
         if (_phase == _Phase.routeSummary) {

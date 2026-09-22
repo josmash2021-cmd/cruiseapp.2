@@ -99,6 +99,24 @@ void main() {
     });
   });
 
+  group('GPS accuracy gate (user report 2026-09-19, "flecha en el mar")', () {
+    test('a fix that declares itself worse than 65 m never moves the arrow',
+        () {
+      final body = bodyOf(ctrl, 'onPosition: (pos) {', maxLen: 2600);
+      expect(body.contains('pos.accuracy <= 65'), isTrue,
+          reason: 'beach multipath / cold-start hops carry a huge radius — '
+              'only the display target is gated, presence keeps flowing');
+      expect(body.contains('fixUsable'), isTrue);
+    });
+
+    test('both getCurrentPosition seeds pass the same gate', () {
+      final rejected = RegExp('seed rejected').allMatches(ctrl).length;
+      expect(rejected, greaterThanOrEqualTo(2),
+          reason: 'the web and native cold seeds must not plant the arrow '
+              'somewhere wrong either');
+    });
+  });
+
   group('nav phases untouched', () {
     test('the tilted nav chase keeps 17.5/55 with the same bearing source', () {
       final body = bodyOf(ctrl, 'else if (isNav && _cameraFollowing) {',

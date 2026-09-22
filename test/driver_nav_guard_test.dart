@@ -565,11 +565,14 @@ void main() {
           reason: 'a sign the driver passed disappears with the stretch of '
               'road behind him');
       final draw = bodyOf(nav, 'Future<void> _drawFurniture() async {',
-          maxLen: 1200);
+          maxLen: 1400);
       expect(draw.contains('_pointMgr'), isTrue,
           reason: 'the shared pins manager — viewport-aligned, signs never '
               'lie down with the chase camera');
       expect(draw.contains('iconAnchor: mapbox.IconAnchor.CENTER'), isTrue);
+      expect(draw.contains('iconSize: 1.35'), isTrue,
+          reason: 'user spec 2026-09-19: semaforos un poquito mas grandes — '
+              '0.9 read tiny at chase zoom');
     });
 
     test('furniture rides every route fill path', () {

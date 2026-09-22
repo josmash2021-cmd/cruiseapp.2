@@ -1339,7 +1339,10 @@ class DriverNavViewState extends State<DriverNavView>
               coordinates: mapbox.Position(
                   sign.f.at.longitude, sign.f.at.latitude)),
           image: bytes,
-          iconSize: 0.9,
+          // 0.9 → 1.35 (user spec 2026-09-19): the iOS plugin reads image
+          // bytes at the device scale (×3), so 0.9 landed at ~11×18 pt —
+          // unreadably small at chase zoom.
+          iconSize: 1.35,
           iconAnchor: mapbox.IconAnchor.CENTER,
         ));
       } catch (_) {

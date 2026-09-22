@@ -326,6 +326,12 @@ class DirectionsService {
     required LatLng origin,
     required LatLng destination,
     String profile = 'driving',
+    // Fast lane (nav reroutes, user report 2026-09-19): the normal race
+    // waits for ALL THREE providers (up to 8 s) even when one answered
+    // long ago — far too slow when the driver is already mid-turn
+    // off-route. fast=true asks Mapbox alone (5 s cap, same traffic-aware
+    // profile) and only falls back to the full race on a miss.
+    bool fast = false,
   }) async {
     // Check route cache first (instant return)
     final key = _cacheKey(origin, destination, profile);
@@ -338,6 +344,20 @@ class DirectionsService {
     // Clean up old cache entries periodically (10% chance on each call)
     if (math.Random().nextDouble() < 0.1) {
       cleanupOldCache();
+    }
+
+    if (fast) {
+      final r = await _requestMapboxRoute(
+              origin: origin, destination: destination, profile: profile)
+          .timeout(const Duration(seconds: 5), onTimeout: () => null);
+      if (r != null && r.points.length >= 2) {
+        _routeCache[key] = r;
+        _cacheTimes[key] = DateTime.now();
+        _cacheAccessTimes[key] = DateTime.now();
+        return r;
+      }
+      // A fast miss is not a dead end — fall through to the full race: a
+      // reroute that arrives late still beats none.
     }
 
     debugPrint('[Route] Fetching route: origin=${origin.latitude},${origin.longitude} → dest=${destination.latitude},${destination.longitude}');

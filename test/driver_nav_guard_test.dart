@@ -216,19 +216,39 @@ void main() {
   });
 
   group('nav view: off-route rerouting', () {
-    test('40 m threshold held for 4 s of fixes, 25 m reset', () {
-      expect(nav.contains('_offRouteM = 40.0'), isTrue);
-      expect(nav.contains('_offRouteResetM = 25.0'), isTrue);
-      expect(nav.contains('_offRouteHoldSecs = 4'), isTrue);
-      expect(nav.contains('RouteSplice.distanceToPolylineM(_routePts, pos)'), isTrue);
+    test('30 m threshold held for 2 s of fixes, 20 m reset, 8 s cooldown '
+        '(tightened 2026-09-19 under the 65 m fix gate)', () {
+      expect(nav.contains('_offRouteM = 30.0'), isTrue,
+          reason: 'user report 2026-09-19: "tarda mucho en redireccionar" — '
+              '40 m / 4 s / 15 s was too slow to redirect');
+      expect(nav.contains('_offRouteResetM = 20.0'), isTrue);
+      expect(nav.contains('_offRouteHoldSecs = 2'), isTrue);
+      expect(nav.contains('_rerouteCooldownSecs = 8'), isTrue);
+      expect(nav.contains('RouteSplice.distanceToPolylineM(_routePts, pos)'),
+          isTrue);
     });
 
-    test('one fetch in flight, 15 s cooldown, stale responses dropped by seq',
-        () {
-      expect(nav.contains('_rerouteCooldownSecs = 15'), isTrue);
+    test('nav fixes pass the 65 m accuracy gate so 30 m cannot false-arm', () {
+      final body = bodyOf(nav, 'void _onGpsFix(Position pos) {', maxLen: 500);
+      expect(body.contains('pos.accuracy > 65'), isTrue,
+          reason: 'without the gate, GPS noise at 30 m would fire false '
+              'reroutes all day');
+    });
+
+    test('reroutes fetch on the fast lane (Mapbox alone, 5 s cap)', () {
+      final svc = File('lib/services/directions_service.dart')
+          .readAsStringSync();
+      expect(svc.contains('bool fast = false'), isTrue);
+      expect(
+          nav.contains('fast: kind == _RouteFetchKind.reroute'), isTrue,
+          reason: 'the normal race waits for all three providers (up to '
+              '8 s) — a driver mid-turn cannot wait for that');
+    });
+
+    test('one fetch in flight, stale responses dropped by seq', () {
+      expect(nav.contains('if (_routeFetching) return;'),
+          reason: 'never two route fetches at once', isTrue);
       expect(nav.contains('int _rerouteSeq = 0'), isTrue);
-      expect(nav.contains('if (_routeFetching) return;'), isTrue,
-          reason: 'never two route fetches at once');
       expect(nav.contains('seq != _rerouteSeq'), isTrue,
           reason: 'a stale response must never replace a newer plan');
     });

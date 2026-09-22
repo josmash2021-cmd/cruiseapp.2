@@ -292,10 +292,15 @@ class DriverNavViewState extends State<DriverNavView>
   int _rerouteSeq = 0;
   DateTime? _lastRerouteAt;
   bool _rerouting = false;
-  static const _offRouteM = 40.0;
-  static const _offRouteResetM = 25.0;
-  static const _offRouteHoldSecs = 4;
-  static const _rerouteCooldownSecs = 15;
+  // Off-route rerouting (user spec 2026-09-19, "tarda mucho en
+  // redireccionar"): 30 m off the polyline held for 2 s of fixes arms the
+  // fetch (reset the moment a fix lands back within 20 m), 8 s between
+  // fetches — tightened from 40 m / 4 s / 15 s now that the 65 m accuracy
+  // gate keeps GPS noise from arming it.
+  static const _offRouteM = 30.0;
+  static const _offRouteResetM = 20.0;
+  static const _offRouteHoldSecs = 2;
+  static const _rerouteCooldownSecs = 8;
   static const _prefetchDestMaxM = 150.0;
 
   // Internal arrival: approaching under 200 m; arrived after 2 consecutive
@@ -732,6 +737,11 @@ class DriverNavViewState extends State<DriverNavView>
       _gpsDown = false;
       _recomputeNavPhase();
     }
+    // Same 65 m accuracy gate as the online stream (2026-09-19): a fix
+    // that declares itself worse must not steer the chase, the trim, the
+    // off-route check or the arrival latch. It is also what lets the
+    // off-route threshold tighten to 30 m without GPS noise rerouting.
+    if (pos.accuracy > 65) return;
     final fixLL = LatLng(pos.latitude, pos.longitude);
     // On the route, the tangent below is the arrow's ONLY compass (user
     // spec 2026-09-19, "que gire fluido, no de golpe"): GPS headings arrive
@@ -846,11 +856,13 @@ class DriverNavViewState extends State<DriverNavView>
     }
   }
 
-  /// GPS noise never reroutes: the driver must sit more than 40 m off the
-  /// polyline for 4 straight seconds of fixes (sampled per fix, reset the
-  /// moment a fix lands back within 25 m) before a reroute is even asked
-  /// for. Inside the approach radius there is nothing to reroute to — the
-  /// line already ends at the pin.
+  /// GPS noise never reroutes: the driver must sit more than 30 m off the
+  /// polyline for 2 straight seconds of fixes (sampled per fix, reset the
+  /// moment a fix lands back within 20 m) before a reroute is even asked
+  /// for. Tightened 2026-09-19 under the 65 m fix-accuracy gate — without
+  /// it, a bad-signal day would arm false reroutes at 30 m. Inside the
+  /// approach radius there is nothing to reroute to — the line already
+  /// ends at the pin.
   void _checkOffRoute(LatLng pos) {
     if (_routePts.length < 2 || _navArrived || _routeFetching) return;
     if (RouteSplice.haversineM(pos, _dest) < _approachRadiusM) return;
@@ -1027,6 +1039,11 @@ class DriverNavViewState extends State<DriverNavView>
       final result = await DirectionsService(ApiKeys.webServices).getRoute(
         origin: o,
         destination: _dest,
+        // Reroutes take the fast lane (user report 2026-09-19, "tarda
+        // mucho en redireccionar"): Mapbox alone, 5 s cap — the normal
+        // race waits for all three providers (up to 8 s) even when one
+        // answered long ago. Initial/retry/backgroundFill keep the race.
+        fast: kind == _RouteFetchKind.reroute,
       );
       if (!mounted || seq != _rerouteSeq) return;
       if (result == null || result.points.length < 2) {

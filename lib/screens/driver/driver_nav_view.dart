@@ -661,11 +661,15 @@ class DriverNavViewState extends State<DriverNavView>
     )..start();
     // Seed the marker where the accept screen last had the driver, so the
     // arrow never slides in from (0,0) while the first fix is in flight.
-    // A restart keeps the position the dot already has.
+    // A restart keeps the position the dot already has. Snapped onto the
+    // route like every later fix (2026-09-19) — the nav opens with the
+    // arrow ON the line, never floating in the pickup's block.
     if (_dot.lat == null) {
+      final seed =
+          _snapToNavRoute(widget.initialDriverPos) ?? widget.initialDriverPos;
       _dot.setTarget(
-        widget.initialDriverPos.latitude,
-        widget.initialDriverPos.longitude,
+        seed.latitude,
+        seed.longitude,
         timestampMs: DateTime.now().millisecondsSinceEpoch.toDouble(),
       );
     }
@@ -743,6 +747,15 @@ class DriverNavViewState extends State<DriverNavView>
     // off-route threshold tighten to 30 m without GPS noise rerouting.
     if (pos.accuracy > 65) return;
     final fixLL = LatLng(pos.latitude, pos.longitude);
+    // Display vs measurement (user report 2026-09-19, "la flecha fuera de
+    // las lineas del mapa"): the arrow rides the route LINE — a house
+    // driveway or a parking lot is genuinely off the road, and the raw fix
+    // floating in a block reads as a bug (worst at nav start, parked at
+    // the pickup address). Within 80 m the DISPLAY target snaps to the
+    // route's projection — the Find-My's discipline. Everything that
+    // MEASURES keeps the raw fix: the off-route check, the tangent, the
+    // trim cursor, the arrival latch.
+    final display = _snapToNavRoute(fixLL) ?? fixLL;
     // On the route, the tangent below is the arrow's ONLY compass (user
     // spec 2026-09-19, "que gire fluido, no de golpe"): GPS headings arrive
     // once a second and the lerp chased them in steps through every curve —
@@ -752,8 +765,8 @@ class DriverNavViewState extends State<DriverNavView>
     final onRoute = _routePts.length >= 2 &&
         RouteSplice.distanceToPolylineM(_routePts, fixLL) <= 40;
     _dot.setTarget(
-      pos.latitude,
-      pos.longitude,
+      display.latitude,
+      display.longitude,
       bearing: onRoute ? null : (pos.heading >= 0 ? pos.heading : null),
       accuracyM: pos.accuracy,
       timestampMs: pos.timestamp.millisecondsSinceEpoch.toDouble(),
@@ -797,6 +810,17 @@ class DriverNavViewState extends State<DriverNavView>
     }
     _checkArrival(pos);
     _checkOffRoute(fixLL);
+  }
+
+  /// Nearest point on the drawn route within 80 m of [p] — beyond that the
+  /// raw fix is the truth (genuinely off-route) and snapping would teleport
+  /// the car. Same threshold the Find-My's `_snapToRoad` uses.
+  LatLng? _snapToNavRoute(LatLng p) {
+    final pts = _routePts;
+    if (pts.length < 2) return null;
+    final seg = RouteSplice.closestSegmentIndex(pts, p);
+    final proj = RouteSplice.projectOnSegment(p, pts[seg], pts[seg + 1]);
+    return RouteSplice.haversineM(p, proj) <= 80 ? proj : null;
   }
 
   /// Where the arrow should point when the GPS has nothing to say: along

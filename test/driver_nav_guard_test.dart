@@ -479,7 +479,7 @@ void main() {
   group('user spec 2026-09-19: tangent steering, route erase, imperial bar, '
       'road furniture', () {
     test('the route tangent steers the arrow at EVERY speed on-route', () {
-      final body = bodyOf(nav, 'void _onGpsFix(Position pos) {', maxLen: 3400);
+      final body = bodyOf(nav, 'void _onGpsFix(Position pos) {', maxLen: 4200);
       expect(body.contains('bearing: onRoute ? null'), isTrue,
           reason: 'user report: GPS headings arrive once a second and the '
               'arrow turned in steps — on-route only the continuous route '
@@ -537,6 +537,28 @@ void main() {
       expect(style.contains('_applyNavRoadFurniture(m)'), isTrue,
           reason: 'furniture applies on style-load, after the navy/gold '
               'theme — layer writes before that fail silently');
+    });
+    test('the display arrow snaps onto the route line (80 m), measurements '
+        'stay raw (user report 2026-09-19)', () {
+      expect(nav.contains('LatLng? _snapToNavRoute(LatLng p)'), isTrue);
+      final body = bodyOf(nav, 'LatLng? _snapToNavRoute(LatLng p) {',
+          maxLen: 500);
+      expect(body.contains('<= 80'), isTrue,
+          reason: 'the Find-My threshold — beyond it the fix is genuinely '
+              'off-route and snapping would teleport the car');
+      final fix = bodyOf(nav, 'void _onGpsFix(Position pos) {', maxLen: 2600);
+      expect(fix.contains('_snapToNavRoute(fixLL) ?? fixLL'), isTrue,
+          reason: 'a house driveway is genuinely off the road — the arrow '
+              'rides the line, worst at nav start parked at the pickup');
+      expect(fix.contains('RouteSplice.distanceToPolylineM(_routePts, fixLL)'),
+          isTrue,
+          reason: 'off-route detection must read the RAW fix, never the '
+              'snapped display point');
+      final seed = bodyOf(nav, 'if (_dot.lat == null) {', maxLen: 500);
+      expect(seed.contains('_snapToNavRoute(widget.initialDriverPos)'),
+          isTrue,
+          reason: 'the nav opens with the arrow ON the line, not floating '
+              'in the pickup\'s block');
     });
   });
 
@@ -651,7 +673,7 @@ void main() {
 
     test('the speed box reads the fix, then the smoother, never a stale 0',
         () {
-      final body = bodyOf(nav, 'void _onGpsFix(Position pos) {', maxLen: 2400);
+      final body = bodyOf(nav, 'void _onGpsFix(Position pos) {', maxLen: 3400);
       expect(body.contains('_dot.speedMps'), isTrue,
           reason: 'iOS reports speed -1 when it has none — the box falls '
               'back to the smoother’s measured glide speed');

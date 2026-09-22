@@ -769,11 +769,16 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   // who is reading rather than steering, asked to see the whole route.
 
   /// Frame KIND the route framer is currently seeded for: 0 = approach
-  /// (driver→pickup), 1 = trip (either half — onTrip and nearDestination
-  /// share the same full-trip frame, so flipping between them must NOT
-  /// re-seed). A change means the frame is about to become a different one,
+  /// (driver→pickup), 1 = trip (full-route fit), 2 = near-destination
+  /// close-up (user spec 2026-09-19 — the street-level frame of the final
+  /// stretch). A change means the frame is about to become a different one,
   /// so the smoothing is dropped and re-seeded.
   int? _framedPhaseKind;
+
+  /// The car position the near-destination close-up was last fit to — the
+  /// frame re-fits only when the car advanced meaningfully past it (~40 m),
+  /// never per-frame.
+  LatLng? _nearFitAnchor;
 
   /// Content signature the trip frame was last fit to (see
   /// [_tripFitSignature]). 0 = never fit. The trip camera fits ONCE per

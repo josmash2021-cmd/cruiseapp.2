@@ -1016,6 +1016,49 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
         // so the Flutter-painted chase car stops and the annotation shows.
         _mapCamera!.stopNavigationChase();
       }
+      // Near destination (user spec 2026-09-19, foto 2 → foto 3): as the
+      // driver closes in, the wide trip frame gives way to a street-level
+      // frame of the final stretch — car, dropoff pin and the road left
+      // between them. The nearDestination phase's own hysteresis (enter
+      // ≤2, exit ≥4) is the trigger, so the frame never flaps at a light.
+      if (_phase == _TrackPhase.nearDestination) {
+        if (_framedPhaseKind != 2) {
+          _framedPhaseKind = 2;
+          _mapCamera!.resetFollowFraming();
+          _nearFitAnchor = null;
+        }
+        // Re-fit only when the car meaningfully advanced (~40 m) — a
+        // per-frame re-fit is the same auto-recenter the rider killed,
+        // just as a zoom-in.
+        final anchor = _nearFitAnchor;
+        final movedM = anchor == null
+            ? double.infinity
+            : Geolocator.distanceBetween(
+                anchor.latitude,
+                anchor.longitude,
+                _animPos.latitude,
+                _animPos.longitude);
+        if (movedM > 40 || _needsTripReframe) {
+          _nearFitAnchor = _animPos;
+          _needsTripReframe = false;
+          unawaited(_mapCamera!.fitBounds(
+            points: _nearDestFramePoints(),
+            maxZoom: 16.5,
+            // Same padding discipline as the wide fit — the pin body clears
+            // the top card (+56), the frame clears the bottom sheet.
+            topPadding: topPad + 10 + _topCardHeight + 56,
+            bottomPadding: bottomPad + 16 + _bottomCardHeight + 32,
+          ));
+        }
+        return;
+      }
+      // Leaving the close-up (ETA climbed back over the hysteresis): the
+      // trip KIND returns — re-seed and re-frame the full route once.
+      if (_framedPhaseKind == 2) {
+        _framedPhaseKind = 1;
+        _mapCamera!.resetFollowFraming();
+        _needsTripReframe = true;
+      }
       // ONE stable frame for the whole ride (user spec 2026-08-09): fit the
       // full trip route BETWEEN the top card and the bottom sheet and HOLD
       // it — a moderate zoom-out, no auto-recenter. The per-frame
@@ -1057,6 +1100,27 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
       topPadding: topPad + 10 + _topCardHeight + 32,
       bottomPadding: bottomPad + 16 + _bottomCardHeight + 32,
     );
+  }
+
+  /// The close-up frame for the final stretch (user spec 2026-09-19, foto
+  /// 3): the car, the dropoff pin and the remaining ~300 m of road between
+  /// them — nothing else. The tail keeps a curved approach on screen;
+  /// without it a U-turn into the pin clips out of frame.
+  List<LatLng> _nearDestFramePoints() {
+    final pts = <LatLng>[];
+    if (_animPos.latitude != 0) pts.add(_animPos);
+    final leg = _routePts.length >= 2 ? _routePts : _tripRoutePts;
+    if (leg.length >= 2) {
+      var acc = 0.0;
+      for (var i = leg.length - 1; i > 0; i--) {
+        pts.add(leg[i]);
+        acc += Geolocator.distanceBetween(leg[i].latitude, leg[i].longitude,
+            leg[i - 1].latitude, leg[i - 1].longitude);
+        if (acc > 300) break;
+      }
+    }
+    pts.add(widget.dropoffLatLng);
+    return pts;
   }
 
   /// Identity of the trip frame's CONTENT, not of the camera: the route

@@ -504,6 +504,39 @@ void main() {
     });
   });
 
+  group('near-destination close-up (user spec 2026-09-19, foto 2 → 3)', () {
+    final view =
+        File('lib/widgets/tracking/tracking_map_view.dart').readAsStringSync();
+    final screen =
+        File('lib/screens/rider_tracking_screen.dart').readAsStringSync();
+
+    test('the close-up is its own frame KIND with a street-level cap', () {
+      final body = view.substring(
+          view.indexOf('if (_phase == _TrackPhase.nearDestination) {'),
+          view.indexOf('if (_phase == _TrackPhase.nearDestination) {') + 2400);
+      expect(body.contains('_framedPhaseKind = 2'), isTrue,
+          reason: 'a different frame — the smoothing re-seeds, never a cut');
+      expect(body.contains('maxZoom: 16.5'), isTrue,
+          reason: 'street level like the reference, never a speck frame');
+      expect(body.contains('_nearDestFramePoints()'), isTrue,
+          reason: 'car + ~300 m of remaining road + the dropoff pin');
+      expect(body.contains('movedM > 40'), isTrue,
+          reason: 're-fit only on meaningful advance — a per-frame re-fit '
+              'is the auto-recenter the rider killed, as a zoom-in');
+      expect(screen.contains('LatLng? _nearFitAnchor'), isTrue);
+    });
+
+    test('leaving the close-up restores the full-route fit once', () {
+      final body = view.substring(
+          view.indexOf('if (_framedPhaseKind == 2) {'),
+          view.indexOf('if (_framedPhaseKind == 2) {') + 400);
+      expect(body.contains('_framedPhaseKind = 1'), isTrue);
+      expect(body.contains('_needsTripReframe = true'), isTrue,
+          reason: 'ETA climbing back over the hysteresis must bring the '
+              'wide trip frame back in one move');
+    });
+  });
+
   group('the mini-map car feeds on the direct socket relay (2026-09-14)', () {
     test('the relay stream feeds the car, not only the 1 Hz sample', () {
       expect(src.contains('SocketService.driverLocationStream.listen'), isTrue,

@@ -142,7 +142,7 @@ void main() {
   group('the trip camera fits once and holds', () {
     test('no per-frame updateFollowFrame during the trip', () {
       final tick = view.indexOf('void _onCameraTick(Duration elapsed)');
-      final tickEnd = tick + 5000;
+      final tickEnd = tick + 9500;
       final body = view.substring(
           tick, tickEnd > view.length ? view.length : tickEnd);
       final tripBranch = body.indexOf('if (isOnTrip) {');

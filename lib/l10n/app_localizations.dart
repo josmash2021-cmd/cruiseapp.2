@@ -1067,6 +1067,10 @@ class S {
       _es ? '¿Hacia dónde vas?' : 'Where are you heading?';
   String get destinationSearchHint =>
       _es ? 'Buscar destino' : 'Search destination';
+  String get destinationResolveFailed =>
+      _es ? 'No pudimos ubicar esa dirección' : "We couldn't locate that address";
+  String get destinationSetFailed =>
+      _es ? 'No se pudo guardar el destino' : "Couldn't save the destination";
   String get clearDestination =>
       _es ? 'Quitar destino' : 'Clear destination';
   String get offersLifetime =>

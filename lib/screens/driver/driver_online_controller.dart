@@ -1978,6 +1978,20 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
             }
 
             Future<void> pick(PlaceSuggestion s) async {
+              HapticService.selectionClick();
+
+              void fail(String message) {
+                // Never fail silently (user report 2026-09-19, "esa hoja no
+                // sirve"): every dead end here used to be a bare return +
+                // debugPrint, so a tap on a suggestion did nothing at all.
+                debugPrint('[DriverOnline] destination pick failed: $message');
+                if (!ctx.mounted) return;
+                ScaffoldMessenger.maybeOf(context)?.showSnackBar(SnackBar(
+                  content: Text(message),
+                  behavior: SnackBarBehavior.floating,
+                ));
+              }
+
               double? lat = s.lat;
               double? lng = s.lng;
               if (lat == null || lng == null) {
@@ -1985,7 +1999,10 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
                 lat = det?.lat;
                 lng = det?.lng;
               }
-              if (lat == null || lng == null) return;
+              if (lat == null || lng == null) {
+                fail(S.of(context).destinationResolveFailed);
+                return;
+              }
               final address = s.mainText ?? s.description.split(',').first;
               try {
                 await ApiService.setDriverDestination(
@@ -1993,8 +2010,14 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
                   lng: lng,
                   address: address,
                 );
+              } on ApiException catch (e) {
+                debugPrint(
+                    '[DriverOnline] set destination ${e.statusCode}: ${e.message}');
+                fail(S.of(context).destinationSetFailed);
+                return;
               } catch (e) {
                 debugPrint('[DriverOnline] set destination failed: $e');
+                fail(S.of(context).destinationSetFailed);
                 return;
               }
               if (!mounted) return;

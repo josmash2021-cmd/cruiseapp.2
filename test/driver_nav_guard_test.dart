@@ -96,14 +96,19 @@ void main() {
 
     test('_enterNavMode releases the preview surface before mounting', () {
       final body =
-          bodyOf(accept, 'Future<void> _enterNavMode() async {', maxLen: 2200);
+          bodyOf(accept, 'Future<void> _enterNavMode() async {', maxLen: 2600);
       final snapshot = body.indexOf('_captureMapSnapshot(_map)');
+      final sweep = body.indexOf('_sweepPreviewAnnotations()');
       final unmount = body.indexOf('_previewMapMounted = false');
       final release = body.indexOf(
           'MapSurfaceCoordinator.instance.release(_mapSurfaceOwner)');
       final mount = body.indexOf('_navMode = true');
       expect(snapshot, isNonNegative,
           reason: 'the morph needs the preview\'s last frame');
+      expect(sweep, isNonNegative,
+          reason: 'user report 2026-09-19 ("hay un carrito encima de la '
+              'flecha"): the preview\'s car annotation + its GPS stream must '
+              'die with the handoff, not follow the driver onto the nav map');
       expect(unmount, isNonNegative,
           reason: 'the preview MapWidget must leave the tree first');
       expect(release, isNonNegative,
@@ -112,9 +117,16 @@ void main() {
       expect(mount, isNonNegative);
       expect(snapshot, lessThan(unmount),
           reason: 'snapshot BEFORE unmount — a dead surface captures nothing');
+      expect(sweep, greaterThan(snapshot),
+          reason: 'sweep AFTER the snapshot — the morph keeps the last frame');
+      expect(sweep, lessThan(unmount),
+          reason: 'and BEFORE the unmount, while manager and surface live');
       expect(unmount, lessThan(release));
       expect(release, lessThan(mount),
           reason: 'release-before-mount — two live MapWidgets crash iOS');
+      expect(accept.contains('_carGpsSub?.cancel()'), isTrue,
+          reason: 'the preview car\'s own GPS stream is what kept it '
+              'following the driver over the nav\'s arrow');
     });
 
     test('exit dissolves the nav map back into the mini-map card', () {

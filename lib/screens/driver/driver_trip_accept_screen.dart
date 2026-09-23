@@ -776,6 +776,9 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
       owner: _mapSurfaceOwner,
       onRevoke: () async {
         if (!mounted || !_previewMapMounted) return;
+        // Same sweep as the nav-entry path: the preview's annotations must
+        // not outlive the handoff (the "carrito" on the nav's arrow).
+        unawaited(_sweepPreviewAnnotations());
         setState(() => _previewMapMounted = false);
         await surfaceRemoved();
       },
@@ -835,6 +838,11 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
       }
     }
     if (_previewMapMounted) {
+      // The preview's annotations must die WITH its map (user report
+      // 2026-09-19, "hay un carrito encima de la flecha"): swept AFTER the
+      // snapshot — the morph keeps the preview's exact last frame — and
+      // BEFORE the unmount, while the manager and surface are still alive.
+      unawaited(_sweepPreviewAnnotations());
       setState(() {
         _previewMapMounted = false;
         if (morphBytes != null && morphRect != null) {
@@ -866,6 +874,34 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
         setState(() => _morphReveal = true);
       });
     }
+  }
+
+  /// Sweep the preview's annotations before its map unmounts for the nav
+  /// handoff (user report 2026-09-19, "hay un carrito encima de la flecha"):
+  /// nothing deleted the preview's car before, so a native annotation that
+  /// outlives the surface handoff kept drawing on the nav's map — and its
+  /// own GPS stream + ticker kept it following the driver right on top of
+  /// the nav's arrow. The stream dies first, then every manager, then the
+  /// handles.
+  Future<void> _sweepPreviewAnnotations() async {
+    _carGpsSub?.cancel();
+    _carGpsSub = null;
+    _carTicker?.stop();
+    final car = _carMgr;
+    if (car != null) {
+      try { await car.deleteAll(); } catch (_) {}
+    }
+    _carAnnot = null;
+    final pins = _annotMgr;
+    if (pins != null) {
+      try { await pins.deleteAll(); } catch (_) {}
+    }
+    _stopPinAnnot = null;
+    final poly = _polyMgr;
+    if (poly != null) {
+      try { await poly.deleteAll(); } catch (_) {}
+    }
+    _routeAnnot = null;
   }
 
   /// Back out of navigation: the nav view's dispose releases its surface

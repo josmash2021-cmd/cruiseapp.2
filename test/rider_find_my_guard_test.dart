@@ -488,19 +488,26 @@ void main() {
       expect(src.contains("ValueKey('findmy-minimap-"), isTrue,
           reason: 'each retry rebuilds the MapWidget under a fresh key');
       expect(src.contains('_miniMapRetryTimer?.cancel()'), isTrue);
+      expect(src.contains('_miniMapSlowTimer'), isTrue,
+          reason: 'user report 2026-09-19 (small phone, "super diminuto"): '
+              'a persistent mount failure must never give up — a 30 s slow '
+              'retry keeps the page self-healing');
     });
 
-    test('the stand-in renders MEDIUM pins, close to the live marker scale', () {
+    test('the stand-in renders LARGE pins and the live car grew', () {
       final preview =
           File('lib/widgets/static_route_preview.dart').readAsStringSync();
       expect(preview.contains("this.pinSize = 's'"), isTrue,
           reason: 'chips keep the small default');
       final standin = src.indexOf('Widget _buildMiniMapStandIn() {');
       expect(standin, isNonNegative);
-      final body = src.substring(standin, standin + 800);
-      expect(body.contains("pinSize: 'm'"), isTrue,
-          reason: 'the Find-My stand-in reads at the live gold-dot scale, '
-              'not the tiny pin-s chips');
+      final body = src.substring(standin, standin + 1000);
+      expect(body.contains("pinSize: 'l'"), isTrue,
+          reason: 'the stand-in is what small phones see — pin-m still '
+              'read diminuto');
+      expect(src.contains('iconSize: 0.60'), isTrue,
+          reason: 'user spec 2026-09-19: the live car reads bigger on '
+              'small phones too');
     });
   });
 

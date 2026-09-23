@@ -270,21 +270,49 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
   // the static stand-in with tiny pins on an iPhone 16): a tile/style load
   // error parked the strip on the stand-in FOREVER — nobody retried. Now
   // each load error schedules a fresh mount (3 s backoff, 3 attempts), and
-  // a successful style-load cancels the cycle.
+  // a successful style-load cancels the cycle. If all three fail the cause
+  // is not transient (older/slower device), so a slow retry every 30 s
+  // keeps trying for the life of the page instead of giving up forever.
   int _miniMapGen = 0;
   int _miniMapRetries = 0;
   Timer? _miniMapRetryTimer;
+  Timer? _miniMapSlowTimer;
   static const _miniMapMaxRetries = 3;
 
   void _scheduleMiniMapRetry() {
-    if (_miniMapRetries >= _miniMapMaxRetries || _driverStarted) return;
+    if (_driverStarted) return;
     _miniMapRetryTimer?.cancel();
+    if (_miniMapRetries >= _miniMapMaxRetries) {
+      _armMiniMapSlowRetry();
+      return;
+    }
     final attempt = ++_miniMapRetries;
     debugPrint(
         '[ConfirmPickup] mini-map retry $attempt/$_miniMapMaxRetries in 3 s');
     _miniMapRetryTimer = Timer(const Duration(seconds: 3), () {
       if (!mounted || _miniMapMounted || _driverStarted) return;
       _miniMapGen++; // fresh ValueKey → the MapWidget rebuilds from scratch
+      setState(() => _miniMapMounted = true);
+    });
+  }
+
+  /// The quick retries are spent: keep trying slowly. Self-heals the moment
+  /// the device's map can mount again — the rider never lands on the static
+  /// stand-in for the rest of the pickup window.
+  void _armMiniMapSlowRetry() {
+    if (_miniMapSlowTimer != null || _driverStarted) return;
+    _miniMapSlowTimer = Timer.periodic(const Duration(seconds: 30), (t) {
+      if (!mounted || _driverStarted) {
+        t.cancel();
+        return;
+      }
+      if (_miniMapMounted) {
+        t.cancel();
+        _miniMapSlowTimer = null;
+        return;
+      }
+      _miniMapRetries = 0; // another quick cycle gets its shot first
+      _miniMapGen++;
       setState(() => _miniMapMounted = true);
     });
   }
@@ -1497,7 +1525,9 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
             _carAnnot = await car.create(mapbox.PointAnnotationOptions(
               geometry: p,
               image: bytes,
-              iconSize: 0.50,
+              // 0.50 → 0.60 (user spec 2026-09-19, "hazla mas grande para
+              // telefonos pequenos"): the car read diminuto on small phones.
+              iconSize: 0.60,
               iconRotate: _driverMotion.bearing,
             ));
           } else {
@@ -1719,9 +1749,11 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
                 // annotations only stick from here on. Without this the
                 // strip stayed factory grey and a reload wiped the markers.
                 onStyleLoadedListener: (_) async {
-                  // A healthy style ends any retry cycle.
+                  // A healthy style ends any retry cycle, quick or slow.
                   _miniMapRetries = 0;
                   _miniMapRetryTimer?.cancel();
+                  _miniMapSlowTimer?.cancel();
+                  _miniMapSlowTimer = null;
                   final ctrl = _miniMap;
                   if (ctrl == null || !mounted) return;
                   await _applyMiniMapTheme(ctrl);
@@ -1821,9 +1853,10 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
       dropoffLng: (rider != null && driver != null) ? driver.longitude : null,
       // No route line on this strip, stand-in included (user spec 2026-09-17):
       // pins only — the live dot and the car carry the map.
-      // Medium pins (2026-09-19): the small chips read tiny next to the live
-      // gold dot the stand-in replaces.
-      pinSize: 'm',
+      // LARGE pins (2026-09-19): the static stand-in is what small phones
+      // see while the live surface fails to mount — pin-m still read
+      // "super diminuto".
+      pinSize: 'l',
     );
   }
 
@@ -1966,6 +1999,7 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
         .removeListener(_onExternalStart);
     _waitTimer?.cancel();
     _miniMapRetryTimer?.cancel();
+    _miniMapSlowTimer?.cancel();
     _tripSub?.cancel();
     _riderGpsSub?.cancel();
     _compassSub?.cancel();

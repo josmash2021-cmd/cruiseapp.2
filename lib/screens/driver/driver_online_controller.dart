@@ -1979,13 +1979,15 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
 
             Future<void> pick(PlaceSuggestion s) async {
               HapticService.selectionClick();
+              // Captured before any await (use_build_context_synchronously).
+              final s0 = S.of(context);
 
               void fail(String message) {
                 // Never fail silently (user report 2026-09-19, "esa hoja no
                 // sirve"): every dead end here used to be a bare return +
                 // debugPrint, so a tap on a suggestion did nothing at all.
                 debugPrint('[DriverOnline] destination pick failed: $message');
-                if (!ctx.mounted) return;
+                if (!mounted) return;
                 ScaffoldMessenger.maybeOf(context)?.showSnackBar(SnackBar(
                   content: Text(message),
                   behavior: SnackBarBehavior.floating,
@@ -2000,7 +2002,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
                 lng = det?.lng;
               }
               if (lat == null || lng == null) {
-                fail(S.of(context).destinationResolveFailed);
+                fail(s0.destinationResolveFailed);
                 return;
               }
               final address = s.mainText ?? s.description.split(',').first;
@@ -2013,11 +2015,11 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
               } on ApiException catch (e) {
                 debugPrint(
                     '[DriverOnline] set destination ${e.statusCode}: ${e.message}');
-                fail(S.of(context).destinationSetFailed);
+                fail(s0.destinationSetFailed);
                 return;
               } catch (e) {
                 debugPrint('[DriverOnline] set destination failed: $e');
-                fail(S.of(context).destinationSetFailed);
+                fail(s0.destinationSetFailed);
                 return;
               }
               if (!mounted) return;

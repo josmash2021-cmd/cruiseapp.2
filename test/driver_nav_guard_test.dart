@@ -96,7 +96,7 @@ void main() {
 
     test('_enterNavMode releases the preview surface before mounting', () {
       final body =
-          bodyOf(accept, 'Future<void> _enterNavMode() async {', maxLen: 2600);
+          bodyOf(accept, 'Future<void> _enterNavMode({bool? toPickup}) async {', maxLen: 2600);
       final snapshot = body.indexOf('_captureMapSnapshot(_map)');
       final sweep = body.indexOf('_sweepPreviewAnnotations()');
       final unmount = body.indexOf('_previewMapMounted = false');
@@ -170,12 +170,31 @@ void main() {
           reason: 'the dropoff leg no longer leaves the app');
     });
 
-    test('iOS one-tap Apple Maps / Android chooser stay on the address cards',
-        () {
-      expect(accept.contains('_openAppleMaps(widget.pickupLatLng)'), isTrue);
-      expect(accept.contains('_showNavigationSheet(isPickup: true)'), isTrue);
-      expect(accept.contains('_openAppleMaps(_dropoffLL)'), isTrue);
-      expect(accept.contains('_showNavigationSheet(isPickup: false)'), isTrue);
+    test('address cards: tap opens in-app nav (card leg), long-press the '
+        'Cruise/Google/Apple chooser (user spec 2026-09-19)', () {
+      expect(accept.contains('onTap: () => _enterNavMode(),'), isTrue,
+          reason: 'pickup card tap opens the in-app turn-by-turn, no more '
+              'straight-to-Apple-Maps');
+      expect(accept.contains('_showNavigateChooser(isPickup: true)'), isTrue);
+      expect(accept.contains('onTap: () => _enterNavMode(toPickup: false)'),
+          isTrue,
+          reason: 'dropoff card tap navigates to the DROPOFF leg even '
+              'before the ride starts');
+      expect(accept.contains('_showNavigateChooser(isPickup: false)'),
+          isTrue);
+      final chooser =
+          bodyOf(accept, 'void _showNavigateChooser({required bool isPickup})',
+              maxLen: 2800);
+      expect(chooser.contains('s.navCruiseNav'), isTrue,
+          reason: 'Cruise Navigation is the first option');
+      expect(chooser.contains('_openGoogleMaps(coords)'), isTrue);
+      expect(chooser.contains('_openAppleMaps(coords)'), isTrue);
+      expect(
+          accept.contains(
+              'toPickup: _navToPickupOverride ?? !_rideStarted'),
+          isTrue,
+          reason: 'the mount honors the card-leg override, natural leg '
+              'otherwise');
     });
 
     test('the mount passes the prefetched route and every trip callback', () {
@@ -186,7 +205,8 @@ void main() {
       expect(mount.contains('prefetchedRoutePoints: _routePoints'), isTrue,
           reason: 'the mini map\'s already-drawn route must seed the nav '
               'view — no fetch, no blank map on open');
-      expect(mount.contains('toPickup: !_rideStarted'), isTrue);
+      expect(mount.contains('toPickup: _navToPickupOverride ?? !_rideStarted'),
+          isTrue);
       expect(mount.contains('stage: _actionStageKey()'), isTrue);
       expect(mount.contains('waitStartedAt: _waitStartedAt'), isTrue);
       expect(mount.contains('onExit: _exitNavMode'), isTrue);

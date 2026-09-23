@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:convert';
-import '../../utils/app_platform.dart';
 import '../../widgets/neu_style.dart';
 import 'driver_earnings_screen.dart';
 import 'driver_menu_screen.dart';
@@ -792,6 +791,81 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     setState(() => _previewMapMounted = true);
   }
 
+  /// Leg override for nav entry by address card (user spec 2026-09-19):
+  /// tapping the dropoff card navigates to the dropoff even before the ride
+  /// starts. Null = the trip's natural leg. Cleared on nav exit.
+  bool? _navToPickupOverride;
+
+  // ── Mini-map recenter (user spec 2026-09-19): a hand pan/zoom floats a
+  // recenter chip over the preview; tapping it restores the standard trip
+  // frame and hides the chip.
+  bool _miniMapPanned = false;
+
+  void _onMiniMapPanned() {
+    if (_miniMapPanned) return;
+    setState(() => _miniMapPanned = true);
+  }
+
+  /// Restore the preview's standard frame: the same bounds the style-load
+  /// fit uses — pickup + dropoff + the whole route, the driver's fix
+  /// deliberately out — with the same bearing and the [9.0, 15.5] clamp.
+  Future<void> _refitMiniMap() async {
+    final ctrl = _map;
+    if (ctrl == null || !mounted) return;
+    setState(() => _miniMapPanned = false);
+    final fitPoints = <LatLng>[
+      widget.pickupLatLng,
+      _dropoffLL,
+      ..._routePoints,
+    ]
+        .where((p) =>
+            isValidLatLng(p.latitude, p.longitude) &&
+            p.latitude.abs() <= 90 &&
+            p.longitude.abs() <= 180)
+        .toList();
+    if (fitPoints.isEmpty) return;
+    double minLat = fitPoints.first.latitude, maxLat = minLat;
+    double minLng = fitPoints.first.longitude, maxLng = minLng;
+    for (final p in fitPoints) {
+      if (p.latitude < minLat) minLat = p.latitude;
+      if (p.latitude > maxLat) maxLat = p.latitude;
+      if (p.longitude < minLng) minLng = p.longitude;
+      if (p.longitude > maxLng) maxLng = p.longitude;
+    }
+    final bounds = mapbox.CoordinateBounds(
+      southwest: mapbox.Point(coordinates: mapbox.Position(minLng, minLat)),
+      northeast: mapbox.Point(coordinates: mapbox.Position(maxLng, maxLat)),
+      infiniteBounds: false,
+    );
+    final rBearing = _routeBearing(_routePoints);
+    final prettBearing = rBearing.isFinite ? (rBearing + 15.0) % 360 : 0.0;
+    try {
+      final cam = await ctrl.cameraForCoordinateBounds(
+        bounds,
+        mapbox.MbxEdgeInsets(top: 60, left: 50, bottom: 70, right: 50),
+        prettBearing,
+        0,
+        null,
+        null,
+      );
+      if (!mounted) return;
+      final targetZoom = ((cam.zoom ?? 13) - 0.2).clamp(9.0, 15.5);
+      if (_cameraIsSane(cam.center, targetZoom)) {
+        ctrl
+            .flyTo(
+          mapbox.CameraOptions(
+            center: cam.center,
+            zoom: targetZoom,
+            bearing: prettBearing,
+            pitch: 0.0,
+          ),
+          mapbox.MapAnimationOptions(duration: 450),
+        )
+            .catchError((Object _) {});
+      }
+    } catch (_) {}
+  }
+
   // ── In-app navigation mode ─────────────────────────────────────────────
 
   /// The backend appends `Wait started: <iso>` to the trip notes when the
@@ -813,9 +887,13 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   /// Hand the surface over BEFORE the nav view mounts: two live MapWidgets
   /// are the iOS crash, and the coordinator only revokes politely — the
   /// preview lets go voluntarily here.
-  Future<void> _enterNavMode() async {
+  Future<void> _enterNavMode({bool? toPickup}) async {
     if (_navMode || _navEntering) return;
     _navEntering = true;
+    // Leg override by address card (user spec 2026-09-19): tapping the
+    // dropoff card navigates to the DROPOFF even before the ride starts —
+    // null keeps the trip's natural leg.
+    _navToPickupOverride = toPickup;
     HapticService.mediumImpact();
     // Morph continuity: capture the preview's exact last frame BEFORE the
     // surface handoff unmounts it. The overlay blooms this image out of the
@@ -909,6 +987,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   void _exitNavMode() {
     if (!_navMode || _navExiting) return;
     _navExiting = true;
+    _navToPickupOverride = null; // the card-leg override dies with the nav
     _collapseNavMode();
   }
 
@@ -2486,20 +2565,6 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     );
   }
 
-  void _copyAddress(String label, String address) {
-    final value = address.trim();
-    if (value.isEmpty) return;
-    Clipboard.setData(ClipboardData(text: value));
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('$label copied'),
-        behavior: SnackBarBehavior.floating,
-        duration: const Duration(milliseconds: 1300),
-      ),
-    );
-  }
-
   /// What the passenger typed when they booked, shown directly under the map.
   ///
   /// Titled, unlike the hanging note that dangles off the address cards: this
@@ -2730,7 +2795,12 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   }
 
   // ── Navigation app integration ───────────────────────────────────────────
-  void _showNavigationSheet({required bool isPickup}) {
+  /// Long-press on an address card (user spec 2026-09-19): who navigates
+  /// there — Cruise's in-app turn-by-turn, or hand it to an external app.
+  /// (This slot used to copy the address to the clipboard.)
+  void _showNavigateChooser({required bool isPickup}) {
+    HapticService.selectionClick();
+    final s = S.of(context);
     final coords = isPickup ? widget.pickupLatLng : _dropoffLL;
     final address = isPickup ? _pickupAddr : _dropoffAddr;
     final bot = MediaQuery.of(context).padding.bottom;
@@ -2767,20 +2837,29 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
             ]),
             const SizedBox(height: 20),
             _navOption(
-              icon: Icons.map_rounded,
-              label: S.of(context).openAppleMaps,
+              icon: Icons.navigation_rounded,
+              label: s.navCruiseNav,
               onTap: () {
                 Navigator.pop(context);
-                _openAppleMaps(coords);
+                _enterNavMode(toPickup: isPickup);
               },
             ),
             const SizedBox(height: 8),
             _navOption(
               icon: Icons.map_outlined,
-              label: S.of(context).openGoogleMaps,
+              label: s.openGoogleMaps,
               onTap: () {
                 Navigator.pop(context);
                 _openGoogleMaps(coords);
+              },
+            ),
+            const SizedBox(height: 8),
+            _navOption(
+              icon: Icons.map_rounded,
+              label: s.openAppleMaps,
+              onTap: () {
+                Navigator.pop(context);
+                _openAppleMaps(coords);
               },
             ),
           ],
@@ -4909,6 +4988,25 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
                               ),
                               onMapCreated: _onMapReady,
                               onStyleLoadedListener: _onStyleLoaded,
+                              // A hand pan/zoom floats the recenter chip
+                              // (user spec 2026-09-19).
+                              onScrollListener: (_) => _onMiniMapPanned(),
+                              onZoomListener: (_) => _onMiniMapPanned(),
+                            ),
+                          ),
+                        // Recenter chip (user spec 2026-09-19): appears only
+                        // after the driver moves the preview by hand; one tap
+                        // restores the standard trip frame and it goes away.
+                        if (_miniMapPanned)
+                          Positioned(
+                            right: 10,
+                            bottom: 10,
+                            child: GestureDetector(
+                              onTap: _refitMiniMap,
+                              child: _mapChip(const Icon(
+                                  Icons.my_location_rounded,
+                                  color: _gold,
+                                  size: 18)),
                             ),
                           ),
                         // Edges dissolve into the page background (user spec
@@ -4992,14 +5090,10 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
             Padding(
               padding: EdgeInsets.fromLTRB(Responsive.w(16), 0, Responsive.w(16), 0),
               child: GestureDetector(
-                // On iPhone this goes straight to Apple Maps — one tap,
-                // no picker sheet in between while the driver is moving.
-                // Android still gets the chooser, since there is no single
-                // obvious default there.
-                onTap: () => AppPlatform.isIOS
-                    ? _openAppleMaps(widget.pickupLatLng)
-                    : _showNavigationSheet(isPickup: true),
-                onLongPress: () => _copyAddress(S.of(context).pickupAddressLabel, _pickupAddr),
+                // Tap opens the in-app turn-by-turn (user spec 2026-09-19);
+                // long-press offers Cruise / Google / Apple instead.
+                onTap: () => _enterNavMode(),
+                onLongPress: () => _showNavigateChooser(isPickup: true),
                 child: _infoRow(
                   // Map pin for the pickup, flag pin for the dropoff —
                   // the same icon pair the rider's map labels carry
@@ -5059,10 +5153,10 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
               Padding(
                 padding: EdgeInsets.fromLTRB(Responsive.w(16), 0, Responsive.w(16), 0),
                 child: GestureDetector(
-                  onTap: () => AppPlatform.isIOS
-                      ? _openAppleMaps(_dropoffLL)
-                      : _showNavigationSheet(isPickup: false),
-                  onLongPress: () => _copyAddress(S.of(context).dropoffAddressLabel, _dropoffAddr),
+                  // Same as the pickup card: tap opens the in-app nav (to
+                  // the DROPOFF leg), long-press the app chooser.
+                  onTap: () => _enterNavMode(toPickup: false),
+                  onLongPress: () => _showNavigateChooser(isPickup: false),
                   child: _infoRow(
                     Icons.flag_rounded,
                     _gold,
@@ -5198,7 +5292,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
                   : _dropoffAddr,
               fare: widget.fare,
               initialDriverPos: _lastDriverPos ?? widget.driverPos,
-              toPickup: !_rideStarted,
+              toPickup: _navToPickupOverride ?? !_rideStarted,
               stage: _actionStageKey(),
               passengerInstructions: _passengerInstructions,
               dropoffInstructions: widget.dropoffInstructions,

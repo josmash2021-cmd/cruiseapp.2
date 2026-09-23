@@ -138,4 +138,25 @@ void main() {
       expect(src.contains('pinchToZoomEnabled: true'), isTrue);
     });
   });
+
+  group('mini-map recenter chip (user spec 2026-09-19)', () {
+    test('a hand pan/zoom floats the chip; the tap restores the standard '
+        'frame', () {
+      expect(src.contains('onScrollListener: (_) => _onMiniMapPanned()'),
+          isTrue);
+      expect(src.contains('onZoomListener: (_) => _onMiniMapPanned()'),
+          isTrue,
+          reason: 'zoom counts as moving the map too');
+      expect(src.contains('if (_miniMapPanned)'), isTrue,
+          reason: 'the chip only appears after the driver moves the map');
+      final body = bodyOf('Future<void> _refitMiniMap() async {');
+      expect(body.contains('widget.pickupLatLng'), isTrue);
+      expect(body.contains('_dropoffLL'), isTrue);
+      expect(body.contains('_routePoints'), isTrue);
+      expect(body.contains('.clamp(9.0, 15.5)'), isTrue,
+          reason: 'same clamp as the style-load fit');
+      expect(body.contains('_miniMapPanned = false'), isTrue,
+          reason: 'the chip hides once the frame is restored');
+    });
+  });
 }

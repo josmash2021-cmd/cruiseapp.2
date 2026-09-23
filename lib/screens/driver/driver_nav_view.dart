@@ -239,15 +239,15 @@ class DriverNavViewState extends State<DriverNavView>
   mapbox.CameraOptions? _pendingCamWrite;
   bool _camWriteBusy = false;
 
-  // Dynamic chase zoom: 17.3 at city pace, 16.9 past 20 m/s, 18.0 with a
+  // Dynamic chase zoom: 17.1 at city pace, 16.7 past 20 m/s, 18.0 with a
   // maneuver under 150 m — lerped at ≤0.5 zoom/sec, never a step.
-  // (17.5/17.0 → 17.3/16.9, user spec 2026-09-19: more anticipation — the
-  // next traffic light / stop / intersection must be visible BEFORE it is
-  // on top of the car. The car also rides lower on screen, see topPad.)
-  double _chaseZoom = 17.3;
+  // (17.5/17.0 → 17.3/16.9 → 17.1/16.7, user spec 2026-09-19: more
+  // anticipation — the next stop / intersection must be visible BEFORE it
+  // is on top of the car. The car also rides lower on screen, see topPad.)
+  double _chaseZoom = 17.1;
   DateTime? _lastChaseFrameAt;
-  static const _chaseZoomDefault = 17.3;
-  static const _chaseZoomFast = 16.9;
+  static const _chaseZoomDefault = 17.1;
+  static const _chaseZoomFast = 16.7;
   static const _chaseZoomManeuver = 18.0;
   static const _zoomLerpPerSec = 0.5;
   // Chase tilt: 35° (user spec 2026-09-19 — "un poquitico mas inclinado",

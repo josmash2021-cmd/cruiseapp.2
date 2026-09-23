@@ -311,12 +311,12 @@ void main() {
           reason: 'the per-frame chase must be gated on the camera state');
     });
 
-    test('dynamic chase zoom 17.3 / 16.9 / 18.0, lerped never stepped '
+    test('dynamic chase zoom 17.1 / 16.7 / 18.0, lerped never stepped '
         '(user spec 2026-09-19: more anticipation)', () {
-      expect(nav.contains('_chaseZoomDefault = 17.3'), isTrue,
-          reason: 'slight zoom-out — the next light/stop/intersection shows '
+      expect(nav.contains('_chaseZoomDefault = 17.1'), isTrue,
+          reason: 'slight zoom-out — the next stop/intersection shows '
               'BEFORE it is on top of the car');
-      expect(nav.contains('_chaseZoomFast = 16.9'), isTrue);
+      expect(nav.contains('_chaseZoomFast = 16.7'), isTrue);
       expect(nav.contains('_chaseZoomManeuver = 18.0'), isTrue);
       expect(nav.contains('_zoomLerpPerSec = 0.5'), isTrue);
       final frame = bodyOf(nav, 'void _onDotFrame() {', maxLen: 1600);

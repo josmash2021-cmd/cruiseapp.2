@@ -247,7 +247,8 @@ void main() {
     test('car marker is the tier PNG, ONLY the edges feather into the background', () {
       expect(src.contains('assets/images/car_suv.png'), isTrue);
       expect(src.contains('assets/images/car_sedan.png'), isTrue);
-      final body = bodyOf('Widget _buildMiniMap() {', maxLen: 6000);
+      final body = bodyOf('Widget _buildMiniMap({double height = 280}) {',
+          maxLen: 6000);
       expect(body.contains('IgnorePointer'), isTrue,
           reason: 'the feather gradients never intercept touches');
       expect(body.contains('LinearGradient'), isTrue,
@@ -454,10 +455,32 @@ void main() {
               '2026-09-19, "el mini mapa se queda azul")');
     });
 
-    test('the strip grew 200 → 280', () {
-      final body = bodyOf('Widget _buildMiniMap() {', maxLen: 6000);
-      expect(body.contains('height: 280'), isTrue,
-          reason: 'user spec 2026-09-19: mini mapa mas grande');
+    test('the strip grew 200 → 280 (default), shrinks only on compact screens', () {
+      final body =
+          bodyOf('Widget _buildMiniMap({double height = 280}) {', maxLen: 6000);
+      expect(body.contains('height: height'), isTrue,
+          reason: 'user spec 2026-09-19: mini mapa mas grande — the default '
+              'stays 280, the height just became a parameter');
+      expect(src.contains('_buildMiniMap(height: compact ? 176 : 280)'), isTrue,
+          reason: 'compact tier (iPhone 16/16 Pro, 2026-09-23): the 280 '
+              'strip + fixed rows left ~50 pt of slack and the hero ring '
+              'collapsed to a dot — the strip yields 104 pt there');
+    });
+
+    test('hero ring wins the slack 4:1 over the Spacer (2026-09-23)', () {
+      expect(
+          src.contains(
+              'final compact = MediaQuery.of(context).size.height < 900'),
+          isTrue,
+          reason: 'the compact tier must trigger on the small iPhones '
+              '(852/874 pt) but stay off on Plus/Max');
+      final ring = src.indexOf('flex: 4');
+      expect(ring, isNonNegative,
+          reason: 'at flex 1:1 the Spacer stole half the slack — the arrow/'
+              'check rendered tiny on iPhone 16/16 Pro');
+      expect(src.indexOf('const Spacer()'), greaterThan(ring),
+          reason: 'the Spacer (flex 1) comes after the ring block — the '
+              'ring takes 80% of the free room');
     });
 
     test('Ft close by, miles when far (km in Spanish)', () {

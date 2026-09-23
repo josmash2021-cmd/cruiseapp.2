@@ -1712,9 +1712,12 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
   /// The live strip (280 px, full width) or its static stand-in while the
   /// surface handoff completes. Interactive (pan/zoom); only the four
   /// borders feather into the page background. No card frame, no veil.
-  Widget _buildMiniMap() {
+  /// [height] defaults to the 2026-09-19 spec 280; the compact tier
+  /// (<900 pt tall, iPhone 16/16 Pro) passes 176 so the strip stops
+  /// starving the hero ring (user report 2026-09-23).
+  Widget _buildMiniMap({double height = 280}) {
     return SizedBox(
-      height: 280,
+      height: height,
       width: double.infinity,
       child: Stack(
         fit: StackFit.expand,
@@ -2213,6 +2216,14 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
   Widget build(BuildContext context) {
     final pad = MediaQuery.of(context).padding;
     final isFound = _driverDetected || _driverStarted;
+    // Compact tier (user report 2026-09-23, iPhone 16/16 Pro): the fixed
+    // rows + the 280 strip leave ~50 pt of slack there, and the old 50/50
+    // flex split handed half of it to the Spacer — the hero ring collapsed
+    // to a dot. Below 900 pt the strip shrinks (280 → 176) and the gaps
+    // tighten; the ring now wins the slack 4:1 over the Spacer on EVERY
+    // screen (that was always the intent — "the Spacer hands its room to
+    // the hero").
+    final compact = MediaQuery.of(context).size.height < 900;
 
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: SystemUiOverlayStyle.light,
@@ -2257,8 +2268,11 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
                           // Ring + distance, the flexible block: the ring is
                           // the only piece that gives on short screens. It is
                           // drawn at 320 and scaled down to ~300 by the
-                          // FittedBox.
+                          // FittedBox. flex 4: it must win the slack over the
+                          // Spacer 4:1 — at 1:1 the hero starved (the 2026-09-23
+                          // tiny-arrow/check report).
                           Flexible(
+                            flex: 4,
                             child: Column(
                               mainAxisSize: MainAxisSize.min,
                               children: [
@@ -2276,24 +2290,24 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
                               ],
                             ),
                           ),
-                          const SizedBox(height: 12),
+                          SizedBox(height: compact ? 8 : 12),
 
                           _buildDivider(),
-                          const SizedBox(height: 14),
+                          SizedBox(height: compact ? 10 : 14),
 
                           Padding(
                             padding:
                                 const EdgeInsets.symmetric(horizontal: 24),
                             child: _buildSpecRow(),
                           ),
-                          const SizedBox(height: 16),
+                          SizedBox(height: compact ? 10 : 16),
                           Padding(
                             padding:
                                 const EdgeInsets.symmetric(horizontal: 24),
                             child: _buildMetaRow(),
                           ),
                           if (_pickupPin != null) ...[
-                            const SizedBox(height: 14),
+                            SizedBox(height: compact ? 10 : 14),
                             Padding(
                               padding:
                                   const EdgeInsets.symmetric(horizontal: 24),
@@ -2302,13 +2316,13 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
                           ],
                           // Slim gap (was 42): the FOUND hero ring needs the
                           // vertical room — the check must read BIG.
-                          const SizedBox(height: 16),
+                          SizedBox(height: compact ? 10 : 16),
 
                           // The strip rides the bottom, just above the action
                           // row (user spec 2026-09-17: "colócalo más abajo") —
                           // the Spacer above it hands its room to the hero.
                           const Spacer(),
-                          _buildMiniMap(),
+                          _buildMiniMap(height: compact ? 176 : 280),
                           const SizedBox(height: 10),
 
                           // Chat / Call / Support

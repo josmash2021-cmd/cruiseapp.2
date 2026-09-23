@@ -535,6 +535,12 @@ class DriverNavViewState extends State<DriverNavView>
         _destAnnot = null;
         _riderHaloAnnot = null;
         _riderDotAnnot = null;
+        // The signs' handles died with the surface too — null them so the
+        // redraw in _onMapCreated recreates them instead of skipping the
+        // lot as "already drawn" (user report 2026-09-23, "no aparecen").
+        for (final sign in _furniture) {
+          sign.annot = null;
+        }
         _lastSentLat = null;
         _lastSentLng = null;
         _lastSentBearing = null;
@@ -624,6 +630,12 @@ class DriverNavViewState extends State<DriverNavView>
     // redraw the route and destination pin from the State that survived.
     await _drawRoute();
     await _drawDestPin();
+    // The signs as well (user report 2026-09-23, "no aparecen los stops y
+    // los semaforos"): a surface rebirth left them on dead handles, and a
+    // route/steps fetch that won the race against this setup bailed on the
+    // null manager — the list is populated either way, so draw what is
+    // missing. Signs already drawn are skipped inside.
+    unawaited(_drawFurniture());
     // The driver arrow is created EAGERLY (user spec 2026-09-16): the dot's
     // ticker only fires while the car moves, so a parked driver used to get
     // no annotation at all — the arrow simply never appeared.
@@ -1335,19 +1347,33 @@ class DriverNavViewState extends State<DriverNavView>
   /// the driver passes, exactly like the line behind him.
   void _setRouteFurniture(List<NavFurniture> furniture) {
     unawaited(_clearFurniture());
-    _furniture = [
-      if (_routePts.length >= 2)
-        for (final f in furniture)
-          _NavSign(s: _sAlongRoute(f.at), f: f),
-    ];
+    final signs = <_NavSign>[];
+    if (_routePts.length >= 2) {
+      for (final f in furniture) {
+        final snapped = _snapFurniture(f);
+        if (snapped != null) signs.add(_NavSign(s: snapped.s, f: snapped.f));
+      }
+    }
+    _furniture = signs;
     unawaited(_drawFurniture());
   }
 
-  double _sAlongRoute(LatLng p) {
+  /// Snap a sign onto the DRAWN line (user report 2026-09-23, "los
+  /// semaforos no aparecen en el lugar correcto"): the furniture coords
+  /// ride Mapbox intersections, but the drawn geometry can be the prefetch
+  /// or a Google/OSRM line (provider race) — an icon anchored to the raw
+  /// intersection sits visibly off the road at chase zoom. The projected
+  /// point lies exactly on the line the driver sees, in chase AND top-down.
+  /// Past 60 m off the line the sign belongs to a different path: dropped.
+  ({double s, NavFurniture f})? _snapFurniture(NavFurniture f) {
     final pts = _routePts;
-    final seg = RouteSplice.closestSegmentIndex(pts, p);
-    final proj = RouteSplice.projectOnSegment(p, pts[seg], pts[seg + 1]);
-    return _routeSOf(pts, seg, proj);
+    final seg = RouteSplice.closestSegmentIndex(pts, f.at);
+    final proj = RouteSplice.projectOnSegment(f.at, pts[seg], pts[seg + 1]);
+    if (RouteSplice.haversineM(proj, f.at) > 60) return null;
+    return (
+      s: _routeSOf(pts, seg, proj),
+      f: (at: proj, isStopSign: f.isStopSign),
+    );
   }
 
   Future<void> _clearFurniture() async {

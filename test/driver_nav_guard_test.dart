@@ -698,12 +698,43 @@ void main() {
       expect(fill.contains('_setRouteFurniture(res.furniture)'), isTrue,
           reason: 'the Mapbox steps fill carries the signs too');
     });
+
+    test('signs snap onto the DRAWN line, never the raw intersection '
+        '(2026-09-23, misplaced in chase AND top-down)', () {
+      expect(nav.contains('_snapFurniture(NavFurniture f)'), isTrue,
+          reason: 'Mapbox intersection coords sit visibly off the drawn line '
+              'when the line is the prefetch or a Google/OSRM geometry — the '
+              'icon must anchor at the projected point');
+      final snap = bodyOf(nav, '_snapFurniture(NavFurniture f)', maxLen: 700);
+      expect(snap.contains('RouteSplice.projectOnSegment'), isTrue);
+      expect(snap.contains('RouteSplice.haversineM(proj, f.at) > 60'), isTrue,
+          reason: 'past 60 m off the line the sign belongs to another path — '
+              'dropped, not misdrawn');
+      expect(snap.contains('at: proj'), isTrue,
+          reason: 'the annotation rides the projected point — exactly on the '
+              'line the driver sees, in every camera view');
+      final set = bodyOf(nav, 'void _setRouteFurniture(List<NavFurniture>',
+          maxLen: 800);
+      expect(set.contains('_snapFurniture(f)'), isTrue);
+    });
+
+    test('signs survive the map-surface lifecycle '
+        '(2026-09-23, "no aparecen")', () {
+      final revoke = bodyOf(nav, 'onRevoke: () async {', maxLen: 1200);
+      expect(revoke.contains('for (final sign in _furniture)'), isTrue,
+          reason: 'dead annotation handles must be nulled on revoke or the '
+              'redraw skips every sign as "already drawn"');
+      final created = bodyOf(nav, 'Future<void> _onMapCreated', maxLen: 2200);
+      expect(created.contains('_drawFurniture()'), isTrue,
+          reason: 'a surface rebirth — or a route fetch that won the race '
+              'against setup — otherwise loses the signs for the session');
+    });
   });
 
   group('user spec 2026-09-16: chase opening, arrow always on, route bearing',
       () {
     test('the driver arrow is created eagerly at map ready', () {
-      final body = bodyOf(nav, 'Future<void> _onMapCreated', maxLen: 1900);
+      final body = bodyOf(nav, 'Future<void> _onMapCreated', maxLen: 2600);
       expect(body.contains('_updateDriverAnnotation()'), isTrue,
           reason: 'the dot ticker only fires on movement — without the '
               'eager create a parked driver never sees the arrow');
@@ -711,7 +742,7 @@ void main() {
 
     test('opening and route updates snap to the chase pose, never top-down',
         () {
-      final created = bodyOf(nav, 'Future<void> _onMapCreated', maxLen: 2300);
+      final created = bodyOf(nav, 'Future<void> _onMapCreated', maxLen: 3000);
       expect(created.contains('_snapToChasePose();'), isTrue);
       expect(created, isNot(contains('!_firstGpsFix || _overview')),
           reason: 'the top-down fit on open is gone — it belongs to the '

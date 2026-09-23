@@ -5644,6 +5644,24 @@ class S {
       _es ? 'Preocupación de seguridad' : 'Safety concern';
   String get driverCancelReasonWrongPickup =>
       _es ? 'Ubicación de recogida incorrecta' : 'Wrong pickup location';
+  String get driverCancelChooseTitle =>
+      _es ? 'Elige el motivo para cancelar' : 'Choose a reason to cancel';
+  String get driverCancelNoPay => _es
+      ? 'No se te pagará por este viaje.'
+      : 'You will not be paid for this trip.';
+  String get driverCancelReasonNotDesirable =>
+      _es ? 'El viaje no es deseable' : 'Trip not desirable';
+  String get driverCancelReasonBadRoute =>
+      _es ? 'Malas condiciones de la ruta' : 'Poor route conditions';
+  String get driverCancelReasonDifficultPickup =>
+      _es ? 'Punto de partida difícil' : 'Difficult pickup point';
+  String get driverCancelReasonByAccident =>
+      _es ? 'Viaje aceptado por accidente' : 'Trip accepted by accident';
+  String get driverCancelReasonDestChanged =>
+      _es ? 'Cambio en el destino' : 'Destination changed';
+  String get driverCancelReasonPersonal =>
+      _es ? 'Problema personal' : 'Personal issue';
+  String get nextLabel => _es ? 'Siguiente' : 'Next';
   String get driverCancelConfirmTitle =>
       _es ? '¿Cancelar este viaje?' : 'Cancel this trip?';
   String get driverCancelConfirmBody => _es

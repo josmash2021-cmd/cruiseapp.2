@@ -2512,13 +2512,59 @@ async def driver_cancel_trip(
     if user.id != trip.driver_id or user.role != "driver":
         raise HTTPException(403, "Only the assigned driver can cancel this trip")
 
-    # Rider already aboard → NOT an ordinary cancellation. The driver must
-    # use the safety / end-ride flow instead.
+    # Rider already aboard → the trip ENDS here (user spec 2026-09-19: the
+    # driver may cancel at ANY stage, to-pickup or to-dropoff). NO rematch —
+    # the rider is already in the car — and no money moves either way: the
+    # hold releases in full and the driver is not paid, exactly what the
+    # sheet announces ("No se te pagará por este viaje").
     if trip.status in ("in_trip", "in_progress"):
-        raise HTTPException(
-            409,
-            "Rider is already aboard — use the safety / end-ride flow instead of cancelling.",
+        previous_status = trip.status
+        driver_lat = payload.get("lat") if isinstance(payload, dict) else None
+        driver_lng = payload.get("lng") if isinstance(payload, dict) else None
+        _security_audit_log(
+            "DRIVER_TRIP_CANCELLED",
+            request.client.host if request.client else "app",
+            (
+                f"trip_id={trip.id} driver_id={user.id} previous_status={previous_status} "
+                f"reason={reason!r} lat={driver_lat} lng={driver_lng} "
+                f"fraud_suspected=False"
+            ),
+            user_id=user.id,
         )
+        trip.status = "cancelled"
+        trip.cancel_reason = reason
+        trip.cancellation_fee = 0.0
+        trip.updated_at = datetime.now(timezone.utc)
+        trip.payment_status = await _release_or_capture_fee_on_cancel(trip)
+        await db.commit()
+        await db.refresh(trip)
+        try:
+            _safe_create_task(emit_trip_status(
+                trip_id=trip.id, status="cancelled",
+                extra={"cancelled_by": "driver", "reason": reason},
+            ))
+        except Exception as _sock_err:
+            logging.warning("[DriverCancel] in-trip emit failed for trip %d: %s", trip.id, _sock_err)
+        if _HAS_FIRESTORE:
+            try:
+                firestore_sync.sync_trip_status(
+                    trip_id=trip.id, status="cancelled", cancelled_by="driver",
+                )
+            except Exception as _fs_err:
+                logging.warning("[DriverCancel] in-trip firestore sync failed for trip %d: %s", trip.id, _fs_err)
+        try:
+            rider_res = await db.execute(select(User).where(User.id == trip.rider_id))
+            rider = rider_res.scalar_one_or_none()
+            if rider and rider.fcm_token:
+                _safe_create_task(_send_fcm_push_async(
+                    rider.fcm_token,
+                    "Trip cancelled",
+                    "Your driver cancelled the trip. You can request a new ride whenever you're ready.",
+                    data={"type": "driver_cancelled", "trip_id": str(trip.id)},
+                ))
+        except Exception as _fcm_err:
+            logging.warning("[DriverCancel] in-trip rider FCM failed for trip %d: %s", trip.id, _fcm_err)
+        return {"status": "ok", "in_trip_cancelled": True}
     if trip.status in ("completed", "canceled", "cancelled"):
         raise HTTPException(400, f"Cannot cancel trip with status '{trip.status}'")
     if trip.status not in _DRIVER_CANCELLABLE_STATUSES:

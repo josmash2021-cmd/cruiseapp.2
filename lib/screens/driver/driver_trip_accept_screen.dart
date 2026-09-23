@@ -3056,12 +3056,12 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
             () { Navigator.pop(context); _openSupportChat(); }),
         // Cancel lives here now instead of sitting exposed under the
         // slider, where it was one mis-tap away for the whole ride.
-        // Still pre-pickup only — never once the rider is aboard.
-        if (!_rideStarted)
-          _SheetItem(Icons.cancel_outlined, S.of(context).cancelTrip,
-              S.of(context).cancelTripMenuSubtitle,
-              () { Navigator.pop(context); _showDriverCancelSheet(); },
-              danger: true),
+        // Available at ANY stage (user spec 2026-09-19): to-pickup the
+        // trip rematches, in-trip it ends with the hold released.
+        _SheetItem(Icons.cancel_outlined, S.of(context).cancelTrip,
+            S.of(context).cancelTripMenuSubtitle,
+            () { Navigator.pop(context); _showDriverCancelSheet(); },
+            danger: true),
       ],
     );
   }
@@ -3162,100 +3162,140 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     }
   }
 
-  // ── Driver pre-pickup cancel ───────────────────────────────────────────
-  // Only reachable while `!_rideStarted` (en route to pickup / arrived but
-  // rider not aboard). Once the trip is in_trip the backend rejects direct
-  // cancels with 409 and the driver must use the end-ride flow.
+  // ── Driver cancel (ANY stage, user spec 2026-09-19) ────────────────────
+  // To-pickup the backend rematches another driver; in-trip it ends the
+  // trip with the hold released and nobody charged ("No se te pagará por
+  // este viaje").
 
-  /// Bottom sheet with the MANDATORY reason picker. The labels are
-  /// localized; the machine strings are what the API expects.
+  /// Bottom sheet with the MANDATORY reason picker, reference layout: X
+  /// close, big title, the no-pay note, radio reasons, and "Siguiente"
+  /// armed only once a reason is picked. The labels are localized; the
+  /// machine strings are what the API expects.
   void _showDriverCancelSheet() {
-    if (_driverCancelling || _rideStarted || _tripFinished) return;
+    if (_driverCancelling || _tripFinished) return;
     HapticService.mediumImpact();
     final s = S.of(context);
-    // (icon, localized label, machine reason for the API)
-    final reasons = <(IconData, String, String)>[
-      (Icons.directions_car_rounded, s.driverCancelReasonVehicleIssue, 'vehicle_issue'),
-      (Icons.person_off_rounded, s.driverCancelReasonRiderUnreachable, 'rider_unreachable'),
-      (Icons.shield_rounded, s.driverCancelReasonSafety, 'safety'),
-      (Icons.wrong_location_rounded, s.driverCancelReasonWrongPickup, 'wrong_pickup'),
-      (Icons.emergency_rounded, s.emergency, 'emergency'),
-      (Icons.more_horiz_rounded, s.otherLabel, 'other'),
+    // (localized label, machine reason for the API)
+    final reasons = <(String, String)>[
+      (s.driverCancelReasonNotDesirable, 'not_desirable'),
+      (s.driverCancelReasonBadRoute, 'bad_route'),
+      (s.driverCancelReasonDifficultPickup, 'difficult_pickup'),
+      (s.driverCancelReasonByAccident, 'accepted_by_accident'),
+      (s.driverCancelReasonDestChanged, 'destination_changed'),
+      (s.driverCancelReasonVehicleIssue, 'vehicle_issue'),
+      (s.driverCancelReasonPersonal, 'personal'),
     ];
     final bot = MediaQuery.of(context).padding.bottom;
+    var selected = -1;
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
-      builder: (ctx) => Container(
-        decoration: const BoxDecoration(
-          color: Color(0xFF1A1A1F),
-          borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
-        ),
-        padding: EdgeInsets.fromLTRB(20, 12, 20, bot + 24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 40, height: 4,
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.18),
-                borderRadius: BorderRadius.circular(2),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheet) => Container(
+          decoration: const BoxDecoration(
+            color: Color(0xFF141417),
+            borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+          ),
+          padding: EdgeInsets.fromLTRB(16, 12, 16, bot + 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // X close, top-left — the reference has no drag handle.
+              GestureDetector(
+                onTap: () => Navigator.pop(ctx),
+                child: const Padding(
+                  padding: EdgeInsets.all(8),
+                  child: Icon(Icons.close_rounded,
+                      color: Colors.white, size: 24),
+                ),
               ),
-            ),
-            const SizedBox(height: 20),
-            Row(children: [
-              const Icon(Icons.cancel_outlined,
-                  color: Color(0xFFEF4444), size: 22),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(s.driverCancelReasonTitle,
+              Padding(
+                padding: const EdgeInsets.only(left: 8),
+                child: Text(s.driverCancelChooseTitle,
                   style: const TextStyle(
-                      color: Colors.white, fontSize: 17,
-                      fontWeight: FontWeight.w800)),
+                      color: Colors.white, fontSize: 26,
+                      fontWeight: FontWeight.w800, height: 1.15)),
               ),
-            ]),
-            const SizedBox(height: 14),
-            ...reasons.map((r) => _driverCancelOption(ctx, r)),
-            const SizedBox(height: 10),
-            GestureDetector(
-              onTap: () => Navigator.pop(ctx),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 10),
-                child: Text(s.cancelBtn,
-                  style: TextStyle(color: Colors.white.withValues(alpha: 0.42),
-                      fontSize: 14, fontWeight: FontWeight.w600)),
+              const SizedBox(height: 6),
+              Padding(
+                padding: const EdgeInsets.only(left: 8),
+                child: Text(s.driverCancelNoPay,
+                  style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.55),
+                      fontSize: 14, fontWeight: FontWeight.w500)),
               ),
-            ),
-          ],
+              const SizedBox(height: 18),
+              ...List.generate(reasons.length, (i) {
+                final on = i == selected;
+                return GestureDetector(
+                  onTap: () => setSheet(() => selected = i),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 13),
+                    child: Row(children: [
+                      Container(
+                        width: 24, height: 24,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: on ? _gold : Colors.white.withValues(alpha: 0.45),
+                            width: 2,
+                          ),
+                        ),
+                        child: on
+                            ? Center(
+                                child: Container(
+                                  width: 12, height: 12,
+                                  decoration: const BoxDecoration(
+                                    color: _gold, shape: BoxShape.circle,
+                                  ),
+                                ),
+                              )
+                            : null,
+                      ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Text(reasons[i].$1,
+                          style: TextStyle(
+                            color: on ? Colors.white : Colors.white.withValues(alpha: 0.75),
+                            fontSize: 15.5, fontWeight: FontWeight.w600,
+                          )),
+                      ),
+                    ]),
+                  ),
+                );
+              }),
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                height: 52,
+                child: ElevatedButton(
+                  onPressed: selected < 0
+                      ? null
+                      : () {
+                          Navigator.pop(ctx);
+                          _confirmDriverCancel(reasons[selected].$2);
+                        },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: _gold,
+                    foregroundColor: Colors.black,
+                    disabledBackgroundColor:
+                        Colors.white.withValues(alpha: 0.14),
+                    disabledForegroundColor:
+                        Colors.white.withValues(alpha: 0.38),
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(26)),
+                  ),
+                  child: Text(s.nextLabel,
+                    style: const TextStyle(
+                        fontSize: 16, fontWeight: FontWeight.w800)),
+                ),
+              ),
+            ],
+          ),
         ),
-      ),
-    );
-  }
-
-  Widget _driverCancelOption(BuildContext ctx, (IconData, String, String) reason) {
-    return GestureDetector(
-      onTap: () {
-        Navigator.pop(ctx);
-        _confirmDriverCancel(reason.$3);
-      },
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 8),
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: const Color(0xFF0d0d1a),
-          borderRadius: BorderRadius.circular(12),
-          border: const Border(left: BorderSide(color: Color(0xFFc8a951), width: 2)),
-        ),
-        child: Row(children: [
-          Icon(reason.$1, color: Colors.white70, size: 18),
-          const SizedBox(width: 12),
-          Expanded(child: Text(reason.$2,
-            style: const TextStyle(color: Colors.white, fontSize: 14,
-                fontWeight: FontWeight.w700))),
-          const Icon(Icons.chevron_right_rounded,
-              color: Color(0xFFc8a951), size: 20),
-        ]),
       ),
     );
   }

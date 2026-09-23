@@ -3240,7 +3240,7 @@ void _showPaymentMethodPickerLegacy(AppColors c, RideOption? option) {
     }
   }
 
-  Future<void> _cancelSearching() async {
+  Future<void> _cancelSearching({String? reason}) async {
     _riderInitiatedCancel = true;
     _cancelDialogShown = false;
     _searchMapTimer?.cancel();
@@ -3278,7 +3278,7 @@ void _showPaymentMethodPickerLegacy(AppColors c, RideOption? option) {
     // it to reach the backend. Firing both together left the trip `requested`
     // on the server whenever the request lost the race, so the next launch
     // restored the ride the rider had just cancelled.
-    await _ctrl.cancelRide();
+    await _ctrl.cancelRide(reason: reason);
     _ctrl.reset();
     _navigatingToTracking = false;
   }
@@ -3376,8 +3376,27 @@ void _showPaymentMethodPickerLegacy(AppColors c, RideOption? option) {
     _dropoffLabelRevealed = false;
   }
 
+  /// Rider cancel entry while searching (2026-09-23): the same reference
+  /// reason sheet the driver gets, with rider options. The picked reason
+  /// threads into the confirm dialog and down to the API as `cancel_reason`.
+  /// Searching has no driver yet, so the note is the free-cancel one.
+  void _showRiderCancelSearchSheet() {
+    final s = S.of(context);
+    showCancelReasonSheet(
+      context,
+      title: s.driverCancelChooseTitle,
+      note: s.riderCancelFreeNote,
+      reasons: riderCancelReasons(s),
+      nextLabel: s.nextLabel,
+    ).then((reason) {
+      if (reason == null || !mounted) return;
+      _confirmCancelSearching(reason: reason);
+    });
+  }
+
   /// Shows a confirmation dialog before canceling the ride search.
-  void _confirmCancelSearching() {
+  /// [reason] is the machine string from the cancel-reasons sheet.
+  void _confirmCancelSearching({String? reason}) {
     const gold = Color(0xFFE8C547);
     showDialog(
       context: context,
@@ -3446,7 +3465,7 @@ void _showPaymentMethodPickerLegacy(AppColors c, RideOption? option) {
                     child: GestureDetector(
                       onTap: () {
                         Navigator.maybeOf(ctx)?.pop();
-                        _cancelSearching();
+                        _cancelSearching(reason: reason);
                         // Navigate to home screen with fade transition
                         if (mounted) {
                           _nav?.pushAndRemoveUntil(

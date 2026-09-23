@@ -2468,7 +2468,7 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                         //   padding: 12px 28px; transition: color 200ms;
                         //   :active color: rgba(255,255,255,.8);
                         InkWell(
-                          onTap: _confirmCancelSearching,
+                          onTap: _showRiderCancelSearchSheet,
                           borderRadius: BorderRadius.circular(8),
                           splashColor: Colors.transparent,
                           highlightColor: Colors.white.withValues(alpha: 0.04),

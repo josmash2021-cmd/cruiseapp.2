@@ -2200,11 +2200,19 @@ class ApiService {
     return _parse(res);
   }
 
-  /// Cancel a trip (scheduled or active).
-  static Future<Map<String, dynamic>> cancelTrip(int tripId) async {
+  /// Cancel a trip (scheduled or active). [cancelReason] is the machine
+  /// string picked in the cancel-reasons sheet (optional — stored for the
+  /// audit trail when present).
+  static Future<Map<String, dynamic>> cancelTrip(int tripId,
+      {String? cancelReason}) async {
     final h = await _authHeaders();
+    h['Content-Type'] = 'application/json';
     final res = await _client
-        .post(Uri.parse('$_baseUrl/trips/$tripId/cancel'), headers: h)
+        .post(Uri.parse('$_baseUrl/trips/$tripId/cancel'),
+            headers: h,
+            body: cancelReason == null
+                ? null
+                : jsonEncode({'cancel_reason': cancelReason}))
         .timeout(const Duration(seconds: 8));
     return _parse(res);
   }

@@ -39,30 +39,21 @@ extension _HomeScreenWidgets on _HomeScreenState {
             onTap: () async {
               final tripId = _pendingSearchTripId;
               if (tripId == null) return;
-              final confirmed = await showDialog<bool>(
-                context: context,
-                builder: (ctx) => AlertDialog(
-                  backgroundColor: const Color(0xFF2A2A2A),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                  title: Text(S.of(context).cancelRide, style: const TextStyle(color: Colors.white)),
-                  content: Text(S.of(context).cancelRideConfirm, style: const TextStyle(color: Colors.white70)),
-                  actions: [
-                    TextButton(
-                      onPressed: () => Navigator.of(ctx).pop(false),
-                      child: Text(S.of(context).cancelBtn, style: const TextStyle(color: Colors.white70)),
-                    ),
-                    ElevatedButton(
-                      onPressed: () => Navigator.of(ctx).pop(true),
-                      style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent),
-                      child: Text(S.of(context).confirm, style: const TextStyle(color: Colors.white)),
-                    ),
-                  ],
-                ),
+              // Same reference reason sheet as the tracking screen
+              // (2026-09-23) — searching phase has no driver yet, so the
+              // note is the free-cancel one.
+              final s = S.of(context);
+              final reason = await showCancelReasonSheet(
+                context,
+                title: s.driverCancelChooseTitle,
+                note: s.riderCancelFreeNote,
+                reasons: riderCancelReasons(s),
+                nextLabel: s.nextLabel,
               );
-              if (confirmed != true) return;
+              if (reason == null || !mounted) return;
               bool backendOk = false;
               try {
-                await ApiService.cancelTrip(tripId);
+                await ApiService.cancelTrip(tripId, cancelReason: reason);
                 backendOk = true;
               } catch (e) {
                 debugPrint('[HomeScreen] cancelTrip($tripId) failed: $e');

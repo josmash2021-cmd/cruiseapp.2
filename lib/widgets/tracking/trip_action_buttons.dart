@@ -9,9 +9,9 @@ extension _RiderTrackingActionButtons on _RiderTrackingScreenState {
   // ── Cancel overlay: blur → spinner "Cancelando viaje..." → checkmark "Viaje cancelado" → home ──
 
   /// Kick off the full cancel flow (overlay + API + navigate)
-  void _startCancelFlow() {
+  void _startCancelFlow({String? reason}) {
     _setState(() => _cancelOverlayPhase = 1);
-    _executeCancelAndTransition();
+    _executeCancelAndTransition(reason: reason);
   }
 
   /// Instant pre-pickup cancellation (2026-08-08): POST /trips/{id}/cancel
@@ -19,13 +19,14 @@ extension _RiderTrackingActionButtons on _RiderTrackingScreenState {
   /// when the driver has been assigned/en route for more than 2 minutes
   /// (free before that) and rejects in-trip cancels server-side. Success
   /// runs the overlay + home transition; failure surfaces as a real error
-  /// and the rider stays on the tracking screen.
-  Future<void> _cancelTripInstantly() async {
+  /// and the rider stays on the tracking screen. [reason] is the machine
+  /// string from the cancel-reasons sheet (audit trail, optional).
+  Future<void> _cancelTripInstantly({String? reason}) async {
     final tripId = widget.tripId;
     if (tripId == null) return;
     _setState(() => _cancelOverlayPhase = 1);
     try {
-      await ApiService.cancelTrip(tripId);
+      await ApiService.cancelTrip(tripId, cancelReason: reason);
     } catch (e) {
       debugPrint('[RiderTracking] cancelTrip($tripId) failed: $e');
       if (!mounted) return;
@@ -44,11 +45,11 @@ extension _RiderTrackingActionButtons on _RiderTrackingScreenState {
     await _finishCancelTransition();
   }
 
-  Future<void> _executeCancelAndTransition() async {
+  Future<void> _executeCancelAndTransition({String? reason}) async {
     bool backendOk = true;
     if (widget.tripId != null) {
       try {
-        await ApiService.cancelTrip(widget.tripId!);
+        await ApiService.cancelTrip(widget.tripId!, cancelReason: reason);
       } catch (e) {
         backendOk = false;
         debugPrint('[RiderTracking] cancelTrip(${widget.tripId}) failed: $e');
@@ -252,10 +253,22 @@ extension _RiderTrackingActionButtons on _RiderTrackingScreenState {
     // Cancel policy (2026-08-08): the backend allows instant rider
     // cancellation at any point before pickup — even with a driver
     // assigned — charging $5.00 only once the driver has been assigned /
-    // en route for more than 2 minutes (free before that). The
-    // confirmation dialog that explains the fee rule lives in
-    // driver_info_card.dart (_showCancelConfirmDialog).
-    _showCancelConfirmDialog();
+    // en route for more than 2 minutes (free before that).
+    // Reason sheet first (2026-09-23, same reference design as the
+    // driver's): the picked reason rides to the API as `cancel_reason`,
+    // then the confirm dialog that explains the fee rule (it lives in
+    // driver_info_card.dart, _showCancelConfirmDialog).
+    final s = S.of(context);
+    showCancelReasonSheet(
+      context,
+      title: s.driverCancelChooseTitle,
+      note: s.cancelFeeWarning,
+      reasons: riderCancelReasons(s),
+      nextLabel: s.nextLabel,
+    ).then((reason) {
+      if (reason == null || !mounted) return;
+      _showCancelConfirmDialog(reason: reason);
+    });
   }
 
   /// Shows a clear overlay when the driver (or backend) cancels the trip.
@@ -393,7 +406,16 @@ extension _RiderTrackingActionButtons on _RiderTrackingScreenState {
                   ),
                   onPressed: () async {
                     Navigator.pop(ctx);
-                    _startCancelFlow();
+                    final s = S.of(context);
+                    final reason = await showCancelReasonSheet(
+                      context,
+                      title: s.driverCancelChooseTitle,
+                      note: s.cancelFeeWarning,
+                      reasons: riderCancelReasons(s),
+                      nextLabel: s.nextLabel,
+                    );
+                    if (reason == null || !mounted) return;
+                    _startCancelFlow(reason: reason);
                   },
                   child: Text(
                     S.of(context).yesCancelTrip,

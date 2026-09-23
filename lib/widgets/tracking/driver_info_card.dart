@@ -1335,7 +1335,7 @@ extension _RiderTrackingDriverInfoCard on _RiderTrackingScreenState {
     );
   }
 
-  void _showCancelConfirmDialog() {
+  void _showCancelConfirmDialog({String? reason}) {
     showDialog(
       context: context,
       barrierDismissible: true,
@@ -1378,7 +1378,7 @@ extension _RiderTrackingDriverInfoCard on _RiderTrackingScreenState {
                   ),
                   onPressed: () {
                     Navigator.pop(ctx);
-                    _cancelTripInstantly();
+                    _cancelTripInstantly(reason: reason);
                   },
                   child: Text(S.of(context).yesCancelTrip, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
                 ),

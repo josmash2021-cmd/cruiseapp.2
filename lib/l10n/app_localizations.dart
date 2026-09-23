@@ -5676,6 +5676,23 @@ class S {
   String get driverCancelFailed =>
       _es ? 'No se pudo cancelar el viaje' : 'Could not cancel the trip';
 
+  // ── Rider cancel reasons (shared reference sheet, 2026-09-23) ──────
+  // Labels for the rider's reason list; the machine strings sent to the
+  // API live in lib/widgets/cancel_reason_sheet.dart (riderCancelReasons).
+  String get riderCancelReasonNotNeeded =>
+      _es ? 'Ya no necesito el viaje' : 'I no longer need the ride';
+  String get riderCancelReasonWaitLong =>
+      _es ? 'El tiempo de espera es muy largo' : 'The wait is too long';
+  String get riderCancelReasonWrongDropoff =>
+      _es ? 'Destino incorrecto' : 'Wrong destination';
+  String get riderCancelReasonByAccident =>
+      _es ? 'Pedí el viaje por accidente' : 'I booked by accident';
+  String get riderCancelReasonPrice =>
+      _es ? 'Problema con el precio' : 'Price issue';
+  String get riderCancelFreeNote => _es
+      ? 'Puedes cancelar gratis mientras buscamos tu conductor.'
+      : 'You can cancel for free while we find your driver.';
+
   // ── Cancel-code → user-friendly localized message ──────────────
   // Used by the rider UI to translate the canonical `cancelCode`
   // field on RiderTripState into a phrase the rider can read in

@@ -1228,7 +1228,7 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
   /// lost: the trip stayed `requested` on the server, and the next time the
   /// rider opened the app the active-trip restore put them straight back
   /// into "matching you with a ride" for a ride they had cancelled.
-  Future<void> cancelRide() async {
+  Future<void> cancelRide({String? reason}) async {
     // Cancel policy (2026-04-11): the rider may only directly cancel
     // a trip BEFORE a driver has been assigned. If a driver is already
     // matched, the rider must request cancellation through dispatch
@@ -1276,7 +1276,7 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
       return;
     }
     try {
-      await ApiService.cancelTrip(tripId);
+      await ApiService.cancelTrip(tripId, cancelReason: reason);
       debugPrint('[RiderTrip] trip $tripId cancelled on the backend');
     } catch (e) {
       debugPrint('[RiderTrip] cancelTrip failed: $e');

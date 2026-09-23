@@ -2838,6 +2838,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
             const SizedBox(height: 20),
             _navOption(
               icon: Icons.navigation_rounded,
+              asset: 'assets/images/cruise_logo.png',
               label: s.navCruiseNav,
               onTap: () {
                 Navigator.pop(context);
@@ -2847,6 +2848,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
             const SizedBox(height: 8),
             _navOption(
               icon: Icons.map_outlined,
+              asset: 'assets/images/google_maps_logo.png',
               label: s.openGoogleMaps,
               onTap: () {
                 Navigator.pop(context);
@@ -2856,6 +2858,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
             const SizedBox(height: 8),
             _navOption(
               icon: Icons.map_rounded,
+              asset: 'assets/images/apple_maps_logo.png',
               label: s.openAppleMaps,
               onTap: () {
                 Navigator.pop(context);
@@ -2872,6 +2875,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     required IconData icon,
     required String label,
     required VoidCallback onTap,
+    String? asset,
   }) => GestureDetector(
     onTap: onTap,
     child: Container(
@@ -2888,7 +2892,19 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
             color: Colors.white.withValues(alpha: 0.06),
             borderRadius: BorderRadius.circular(10),
           ),
-          child: Icon(icon, color: Colors.white70, size: 18),
+          clipBehavior: Clip.antiAlias,
+          padding: asset == null ? EdgeInsets.zero : const EdgeInsets.all(6),
+          child: asset == null
+              ? Icon(icon, color: Colors.white70, size: 18)
+              : Image.asset(
+                  asset,
+                  fit: BoxFit.contain,
+                  // Each app shown by its own mark, never tinted (same idiom
+                  // as the navigation settings page); the Material icon is
+                  // only the missing-file fallback.
+                  errorBuilder: (_, __, ___) =>
+                      Icon(icon, color: Colors.white70, size: 18),
+                ),
         ),
         const SizedBox(width: 12),
         Expanded(child: Text(label,

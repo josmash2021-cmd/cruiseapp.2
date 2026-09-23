@@ -189,6 +189,17 @@ void main() {
           reason: 'Cruise Navigation is the first option');
       expect(chooser.contains('_openGoogleMaps(coords)'), isTrue);
       expect(chooser.contains('_openAppleMaps(coords)'), isTrue);
+      // Brand marks (user spec 2026-09-23): "Cruise Map" carries the Cruise
+      // logo, Google/Apple their own map marks — the Material icons stay
+      // only as the missing-asset fallback, never tinted.
+      expect(chooser.contains('cruise_logo.png'), isTrue,
+          reason: 'Cruise Map shows the Cruise logo');
+      expect(chooser.contains('google_maps_logo.png'), isTrue);
+      expect(chooser.contains('apple_maps_logo.png'), isTrue);
+      expect(l10n.contains("navCruiseNav => _es ? 'Cruise Map' : 'Cruise Map'"),
+          isTrue,
+          reason: '"Cruise Navigation" was renamed "Cruise Map" (user spec '
+              '2026-09-23)');
       expect(
           accept.contains(
               'toPickup: _navToPickupOverride ?? !_rideStarted'),

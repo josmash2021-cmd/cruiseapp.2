@@ -196,9 +196,11 @@ void main() {
           reason: 'Cruise Map shows the Cruise logo');
       expect(chooser.contains('google_maps_logo.png'), isTrue);
       expect(chooser.contains('apple_maps_logo.png'), isTrue);
-      expect(l10n.contains("navCruiseNav => _es ? 'Cruise Map' : 'Cruise Map'"),
+      expect(
+          l10n.contains(
+              "navCruiseNav => _es ? 'Cruise Maps' : 'Cruise Maps'"),
           isTrue,
-          reason: '"Cruise Navigation" was renamed "Cruise Map" (user spec '
+          reason: '"Cruise Navigation" was renamed "Cruise Maps" (user spec '
               '2026-09-23)');
       expect(
           accept.contains(

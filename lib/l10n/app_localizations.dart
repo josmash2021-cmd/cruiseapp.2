@@ -5083,7 +5083,7 @@ class S {
       _es ? 'Llegaste al destino' : "You've arrived at the destination";
   String get navEndRoute => _es ? 'Terminar ruta' : 'End Route';
   String get navIArrived => _es ? 'He llegado' : "I've arrived";
-  String get navCruiseNav => _es ? 'Cruise Map' : 'Cruise Map';
+  String get navCruiseNav => _es ? 'Cruise Maps' : 'Cruise Maps';
   String get fetchingAddress =>
       _es ? 'Obteniendo dirección...' : 'Getting address...';
   String get passengerConfirmedOnboard => _es

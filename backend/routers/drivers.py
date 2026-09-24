@@ -2831,6 +2831,13 @@ async def register_live_activity_token(
     else:
         user.apns_la_activity_token = token or None
     await db.commit()
+    # Observability (user report 2026-09-23 — the island silently never
+    # deployed): without this line the only prod evidence of the whole
+    # token pipeline was the HTTP access log, which says nothing about
+    # WHICH channel landed. Kind + set/cleared, never the token itself.
+    logging.info(
+        "[LiveActivity] token register kind=%s user=%s %s",
+        kind, user.id, "set" if token else "cleared")
     return {"ok": True}
 
 

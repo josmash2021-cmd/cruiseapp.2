@@ -2537,7 +2537,12 @@ class ApiService {
       final authToken = await getToken();
       if (authToken == null) {
         debugPrint('[LiveActivity] token save SKIPPED ($kind) — no session JWT');
-        return; // no session yet — next rotation retries
+        // Retry too (2026-09-23): the token replay fires seconds after
+        // process start, often before the session restore — and LA tokens
+        // essentially never re-emit within a session, so dropping the only
+        // emission is how prod ended with every LA column NULL.
+        scheduleRetry();
+        return;
       }
       final res = await _client
           .post(

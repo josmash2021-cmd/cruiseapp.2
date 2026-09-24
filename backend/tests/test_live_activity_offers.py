@@ -292,3 +292,75 @@ class TestGetDriverPendingAuth:
             f"/dispatch/driver/pending?driver_id={driver.id}",
             headers=self._headers(rider_token))
         assert resp.status_code == 403
+
+
+class TestTheStartTokenIsSacred:
+    """User report 2026-09-23 ("la isla no se despliega sola"): production
+    had EVERY Live Activity column NULL. The kill chain: an offer EXPIRED,
+    the clear aimed its update at the push-to-start channel (which rejects
+    updates when no activity exists, HTTP 400), the refusal read as a dead
+    token, and apns_la_start_token was wiped — on every expiry, forever."""
+
+    async def test_clear_with_no_activity_never_aims_at_the_start_token(
+            self, monkeypatch, db, test_driver):
+        from routers import dispatch
+        driver, _ = test_driver
+        driver.apns_la_activity_token = None
+        driver.apns_la_start_token = "healthy-start"
+        await db.commit()
+
+        calls = []
+
+        async def _fake_clear(**kwargs):
+            calls.append(kwargs)
+            return "stale_start"
+        monkeypatch.setattr(
+            apns_liveactivity, "clear_live_activity_offer", _fake_clear)
+
+        await dispatch._clear_live_activity_offer(driver.id)
+
+        await db.refresh(driver)
+        assert not calls, "a clear with no live card must not push at all"
+        assert driver.apns_la_start_token == "healthy-start", (
+            "the start token is the seed for the NEXT offer's start push — "
+            "a card that was never up must never cost it")
+
+    async def test_stale_activity_retries_the_offer_via_the_start_token(
+            self, monkeypatch, db, test_driver):
+        """The presence activity dies mid-shift (iOS kills it in hours); the
+        push-to-start channel is the designated fallback for exactly that
+        state — the same offer must retry as a START before resigning to
+        the FCM banner."""
+        from routers import dispatch
+        driver, _ = test_driver
+        driver.apns_la_activity_token = "dead-activity"
+        driver.apns_la_start_token = "healthy-start"
+        await db.commit()
+
+        calls = []
+
+        async def _fake_send(**kwargs):
+            calls.append(kwargs)
+            return "stale_activity" if len(calls) == 1 else None
+        monkeypatch.setattr(
+            apns_liveactivity, "send_live_activity_offer", _fake_send)
+
+        fcm_calls = []
+
+        async def _fake_fcm(token, **kwargs):
+            fcm_calls.append(kwargs)
+        monkeypatch.setattr(dispatch, "_send_fcm_push_async", _fake_fcm)
+
+        await dispatch._send_live_activity_offer(
+            driver, fare="$6.14", per_hour="$33.49/hr", miles="2.4 mi",
+            minutes="9 min", fcm_data={"type": "new_offer"})
+
+        assert len(calls) == 2
+        assert calls[0]["activity_token"] == "dead-activity"
+        # The retry rides the start channel as a start event.
+        assert calls[1]["activity_token"] is None
+        assert calls[1]["start_token"] == "healthy-start"
+        await db.refresh(driver)
+        assert driver.apns_la_activity_token is None
+        assert driver.apns_la_start_token == "healthy-start"
+        assert not fcm_calls, "the island push landed on retry — no banner"

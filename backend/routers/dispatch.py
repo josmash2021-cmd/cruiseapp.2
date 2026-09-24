@@ -1009,7 +1009,16 @@ async def _clear_live_activity_offer(driver_id: int) -> None:
     try:
         async with SessionLocal() as db:
             d = await db.get(User, driver_id)
-        if d is None or not (d.apns_la_activity_token or d.apns_la_start_token):
+        if d is None:
+            return
+        if not d.apns_la_activity_token:
+            # Nothing to repaint — and the start token must not pay for it.
+            # The clear is an UPDATE to a LIVE card; aimed at the
+            # push-to-start channel (which rejects updates when no activity
+            # exists, HTTP 400) the refusal read as a dead token and the
+            # cleanup below wiped apns_la_start_token on EVERY offer expiry
+            # — production ended with every Live Activity column NULL
+            # (user report 2026-09-23: the island never auto-deploys).
             return
         from services.apns_liveactivity import clear_live_activity_offer
         outcome = await clear_live_activity_offer(
@@ -1093,6 +1102,30 @@ async def _send_live_activity_offer(driver, *, fare, per_hour, miles, minutes,
                     await db.commit()
             logging.warning(
                 "[LiveActivity] cleared %s for driver %s", outcome, driver.id)
+            if outcome == "stale_activity" and driver.apns_la_start_token:
+                # The presence activity ends mid-shift (iOS kills it in
+                # hours); the push-to-start channel is the designated
+                # fallback for exactly this state. Retry the SAME offer as
+                # a start before resigning to the FCM banner — without it a
+                # dead activity channel poisons every later offer too
+                # (user report 2026-09-23).
+                outcome = await send_live_activity_offer(
+                    start_token=driver.apns_la_start_token,
+                    activity_token=None,
+                    fare=fare,
+                    per_hour=per_hour,
+                    miles=miles,
+                    minutes=minutes,
+                )
+                if outcome == "stale_start":
+                    async with SessionLocal() as db:
+                        d = await db.get(User, driver.id)
+                        if d is not None:
+                            d.apns_la_start_token = None
+                            await db.commit()
+                    logging.warning(
+                        "[LiveActivity] cleared stale_start for driver %s",
+                        driver.id)
     except Exception as e:
         outcome = outcome or "error"
         logging.warning("[LiveActivity] offer push failed for driver %s: %s",

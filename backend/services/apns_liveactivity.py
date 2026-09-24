@@ -325,12 +325,18 @@ async def end_ride_live_activity(
 ) -> str | None:
     """Trip completed or cancelled — take the card down. APNs requires the
     final content-state on an end event; the timestamps are ignored by the
-    widget once it is gone, so stale anchors are harmless."""
+    widget once it is gone, so stale anchors are harmless.
+
+    `dismissal-date: now` (user report 2026-09-23, "la tarjeta sigue en el
+    lock screen con el viaje terminado"): without it iOS keeps the ENDED
+    activity on the lock screen for up to 4 hours showing its final state —
+    indistinguishable from the trip still being live."""
     if not ride_token:
         return None
     aps = {
         "timestamp": int(time.time()),
         "event": "end",
+        "dismissal-date": int(time.time()),
         "content-state": _ride_content_state(
             phase=phase,
             started_at=started_at or int(time.time()),

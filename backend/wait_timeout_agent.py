@@ -302,6 +302,16 @@ class WaitTimeoutAgent:
         # Sync to Firestore
         await self._sync_trip_cancelled(trip, waited_minutes)
 
+        # The rider's lock-screen trip card dies with the trip (user report
+        # 2026-09-23) — fail-soft inside the helper.
+        try:
+            from routers.trips import _push_ride_live_activity
+            asyncio.create_task(_push_ride_live_activity(trip.id, "cancelled"))
+        except Exception as e:
+            logger.warning(
+                "[WaitTimeout] ride LA end push failed for trip #%d: %s",
+                trip.id, e)
+
     def _calculate_wait_fee(self, trip, waited_minutes: int) -> float:
         """Calculate wait fee based on trip tier policy."""
         # Import wait policy from trips router to stay consistent

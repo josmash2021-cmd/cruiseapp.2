@@ -110,6 +110,12 @@ class TestTheRidePayload:
         (post,) = captured
         assert post["json"]["event"] == "end"
         assert "content-state" in post["json"]
+        # 2026-09-23 ("la tarjeta sigue en el lock screen con el viaje
+        # terminado"): without dismissal-date iOS keeps the ENDED card up
+        # to 4 h showing its final state — it must come down NOW.
+        dismissal = post["json"].get("dismissal-date")
+        assert dismissal is not None, "end without dismissal-date lingers 4h"
+        assert dismissal <= post["json"]["timestamp"]
 
     async def test_no_token_and_no_creds_are_silent_noops(self, captured):
         assert await apns_liveactivity.update_ride_live_activity(
@@ -312,3 +318,86 @@ class TestRideTokenRegistration:
             "the token stayed on both rows — pushes for the rider's trip "
             "keep landing on the shared phone under the driver account")
 
+
+
+class TestTheCancelEndpointsEndTheCard:
+    """User report 2026-09-23: "la tarjeta sigue en el lock screen con el
+    viaje terminado". Every endpoint that kills a live trip must ALSO end
+    the rider's Live Activity server-side — a killed app cannot do it."""
+
+    def _headers(self, token):
+        from tests.conftest import _make_auth_headers
+        return {**_make_auth_headers(), "Authorization": f"Bearer {token}"}
+
+    async def _capture_push(self, monkeypatch):
+        import routers.trips as trips_mod
+        calls = []
+
+        async def _rec(trip_id, new_status):
+            calls.append((trip_id, new_status))
+
+        monkeypatch.setattr(trips_mod, "_push_ride_live_activity", _rec)
+
+        async def _rel(t):
+            return "released"
+        monkeypatch.setattr(
+            trips_mod, "_release_or_capture_fee_on_cancel", _rel)
+        return calls
+
+    async def test_rider_cancel_fires_the_end_push(
+            self, client, db, test_trip, test_rider, test_driver, monkeypatch):
+        import asyncio
+        from models.database import Trip
+        rider, rtoken = test_rider
+        driver, _ = test_driver
+        test_trip.rider_id = rider.id
+        test_trip.driver_id = driver.id
+        test_trip.status = "driver_en_route"
+        await db.commit()
+        calls = await self._capture_push(monkeypatch)
+
+        resp = await client.post(
+            f"/trips/{test_trip.id}/cancel", headers=self._headers(rtoken))
+        assert resp.status_code == 200, resp.text
+        await asyncio.sleep(0.2)
+        assert (test_trip.id, "cancelled") in calls
+
+    async def test_driver_cancel_in_trip_fires_the_end_push(
+            self, client, db, test_trip, test_rider, test_driver, monkeypatch):
+        import asyncio
+        rider, _ = test_rider
+        driver, dtoken = test_driver
+        test_trip.rider_id = rider.id
+        test_trip.driver_id = driver.id
+        test_trip.status = "in_trip"
+        await db.commit()
+        calls = await self._capture_push(monkeypatch)
+
+        resp = await client.post(
+            f"/trips/{test_trip.id}/driver-cancel",
+            headers=self._headers(dtoken),
+            json={"reason": "safety_concern"})
+        assert resp.status_code == 200, resp.text
+        await asyncio.sleep(0.2)
+        assert (test_trip.id, "cancelled") in calls
+
+    async def test_driver_cancel_rematch_drops_the_card_too(
+            self, client, db, test_trip, test_rider, test_driver, monkeypatch):
+        """Pre-pickup rematch: the card was for the driver who left — it
+        comes down until the next assignment starts a fresh one."""
+        import asyncio
+        rider, _ = test_rider
+        driver, dtoken = test_driver
+        test_trip.rider_id = rider.id
+        test_trip.driver_id = driver.id
+        test_trip.status = "accepted"
+        await db.commit()
+        calls = await self._capture_push(monkeypatch)
+
+        resp = await client.post(
+            f"/trips/{test_trip.id}/driver-cancel",
+            headers=self._headers(dtoken),
+            json={"reason": "personal"})
+        assert resp.status_code == 200, resp.text
+        await asyncio.sleep(0.2)
+        assert (test_trip.id, "cancelled") in calls

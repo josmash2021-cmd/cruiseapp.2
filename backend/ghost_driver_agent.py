@@ -351,6 +351,17 @@ class GhostDriverAgent:
             self._stats["recovery_cancelled"] += 1
             _recovery_phase[driver.id] = "cancel"
 
+            # The rider's lock-screen trip card dies with the trip
+            # (2026-09-23) — fail-soft inside the helper.
+            try:
+                from routers.trips import _push_ride_live_activity
+                asyncio.create_task(
+                    _push_ride_live_activity(trip.id, "cancelled"))
+            except Exception as _la_err:
+                logger.warning(
+                    "[GhostRecovery] ride LA end push failed for trip %d: %s",
+                    trip.id, _la_err)
+
             # Notify rider
             await self._notify_rider_cancel(db, trip)
 

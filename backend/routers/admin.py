@@ -386,6 +386,12 @@ async def admin_cancel_all_active(db: AsyncSession = Depends(get_db)):
 
     # ── Real-time sync: Socket.IO + FCM per canceled trip ──
     for t in trips:
+        # The rider's lock-screen trip card dies with the trip (2026-09-23).
+        try:
+            from routers.trips import _push_ride_live_activity
+            _safe_create_task(_push_ride_live_activity(t.id, "cancelled"))
+        except Exception as _la_err:
+            logging.warning("[Admin] ride LA end push failed on bulk cancel trip %d: %s", t.id, _la_err)
         try:
             _safe_create_task(emit_trip_status(
                 trip_id=t.id,
@@ -450,6 +456,13 @@ async def admin_cancel_trip(trip_id: int, body: AdminCancelTripIn, db: AsyncSess
     trip.cancel_reason = reason or "admin_cancel"
     await db.commit()
     await db.refresh(trip)
+    # The rider's lock-screen trip card dies with the trip (2026-09-23).
+    try:
+        from routers.trips import _push_ride_live_activity
+        _safe_create_task(_push_ride_live_activity(trip.id, "cancelled"))
+    except Exception as _la_err:
+        logging.warning("[Admin] ride LA end push failed for trip %d: %s",
+                        trip.id, _la_err)
     if _HAS_FIRESTORE:
         try:
             firestore_sync.sync_trip_status(

@@ -42,4 +42,31 @@ void main() {
     expect(swift.contains('.rounded(.up)'), isTrue,
         reason: 'ceil like the in-app ETA — flooring read 1.9 min as "1 min"');
   });
+
+  group('the card dies with the trip (user report 2026-09-23)', () {
+    final ctrl = File('lib/controllers/rider_tracking_controller.dart')
+        .readAsStringSync();
+    final buttons = File('lib/widgets/tracking/trip_action_buttons.dart')
+        .readAsStringSync();
+
+    test('the end is UNCONDITIONAL — it kills cards from previous sessions', () {
+      final start = ctrl.indexOf(
+          'void _syncRideLiveActivity({bool end = false,');
+      expect(start, isNonNegative);
+      final body = ctrl.substring(start, start + 700);
+      expect(body.contains('if (_laStarted)'), isFalse,
+          reason: 'the _laStarted gate made the end a no-op for a card '
+              'started by a PREVIOUS app session — the orphaned card then '
+              'outlived the trip on the lock screen');
+      expect(body.contains('LiveActivityService.endRide()'), isTrue,
+          reason: 'the native end clears every ride activity either way');
+    });
+
+    test('the rider\'s own cancel ends the card NOW, not on the next poll', () {
+      final start = buttons.indexOf('_finishCancelTransition() async {');
+      expect(start, isNonNegative);
+      final body = buttons.substring(start, start + 500);
+      expect(body.contains('_syncRideLiveActivity(end: true)'), isTrue);
+    });
+  });
 }

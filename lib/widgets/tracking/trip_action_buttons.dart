@@ -74,6 +74,9 @@ extension _RiderTrackingActionButtons on _RiderTrackingScreenState {
   /// checkmark overlay (phase 2), then go home.
   Future<void> _finishCancelTransition() async {
     await LocalDataService.clearActiveRide();
+    // The lock-screen card comes down NOW (2026-09-23) — not whenever the
+    // next status poll happens to notice the cancel.
+    _syncRideLiveActivity(end: true);
     AnalyticsService.instance.logRideCancelled('user_cancelled', false);
     await _cleanupMapAnnotations();
     if (!mounted) return;

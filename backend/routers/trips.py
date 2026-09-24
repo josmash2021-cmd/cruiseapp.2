@@ -2491,6 +2491,11 @@ async def cancel_trip(trip_id: int, request: Request, user: User = Depends(_get_
         "dropoff_address": trip.dropoff_address or "",
     }))
 
+    # The rider's lock-screen trip card must not outlive the trip (user
+    # report 2026-09-23) — end it from the server too, so a killed app
+    # still sees it come down. Fail-soft inside.
+    _safe_create_task(_push_ride_live_activity(trip.id, "cancelled"))
+
     return {**_trip_dict_for_user(trip, user), "cancellation_fee": cancellation_fee, "payment_status": trip.payment_status}
 
 # ---====================================================
@@ -2588,6 +2593,8 @@ async def driver_cancel_trip(
                 ))
         except Exception as _fcm_err:
             logging.warning("[DriverCancel] in-trip rider FCM failed for trip %d: %s", trip.id, _fcm_err)
+        # The rider's lock-screen card dies with the trip (2026-09-23).
+        _safe_create_task(_push_ride_live_activity(trip.id, "cancelled"))
         return {"status": "ok", "in_trip_cancelled": True}
     if trip.status in ("completed", "canceled", "cancelled"):
         raise HTTPException(400, f"Cannot cancel trip with status '{trip.status}'")
@@ -2650,6 +2657,11 @@ async def driver_cancel_trip(
             ))
     except Exception as _fcm_err:
         logging.warning("[DriverCancel] rider FCM failed for trip %d: %s", trip.id, _fcm_err)
+
+    # The lock-screen card was for the driver who just left — bring it down
+    # until the rematch lands (2026-09-23; app-side the new assignment
+    # starts a fresh card).
+    _safe_create_task(_push_ride_live_activity(trip.id, "cancelled"))
 
     # ── Rematch: offer to the next nearest driver (mirrors reject_offer) ──
     rematch_offer_id = None

@@ -1091,13 +1091,15 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
   void _syncRideLiveActivity({bool end = false, Map<String, dynamic>? data}) {
     if (kIsWeb) return;
     if (end) {
-      if (_laStarted) {
-        _laStarted = false;
-        _laPhase = '';
-        _laEtaMin = -1;
-        LiveActivityService.endRide();
-        NotificationService.cancelTripProgress();
-      }
+      // Unconditional (user report 2026-09-23, "la tarjeta sigue con el
+      // viaje terminado"): the card may belong to a PREVIOUS app session —
+      // _laStarted only tracks this one. The native end clears every ride
+      // activity either way, so an orphaned card never outlives the trip.
+      _laStarted = false;
+      _laPhase = '';
+      _laEtaMin = -1;
+      LiveActivityService.endRide();
+      NotificationService.cancelTripProgress();
       return;
     }
     if (_phase == _TrackPhase.completed) return;

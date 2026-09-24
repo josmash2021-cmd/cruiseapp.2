@@ -1889,6 +1889,23 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     // first: a driver still moving the map around should not have it yanked
     // out from under them mid-gesture.
     _reFollowTimer = Timer(const Duration(seconds: 10), _recenterCamera);
+    // While the finger is on the glass the NATIVE annotation owns the arrow
+    // (user report 2026-09-23, "la flecha se mueve a otro lado cuando
+    // arrastro el mapa"): the overlay's pixel comes from camera-change
+    // events, which trail the gesture over the platform channel — a marker
+    // that lags a moving camera slides across the streets. The annotation
+    // renders inside the map's own frame, glued to the driver's lat/lng no
+    // matter how fast the drag.
+    _mapDragUntil = DateTime.now().add(const Duration(milliseconds: 300));
+    _dragSettleTimer?.cancel();
+    _dragSettleTimer = Timer(const Duration(milliseconds: 320), () {
+      if (!mounted) return;
+      // The drag parked — hand the marker back to the overlay
+      // deterministically: a stationary driver produces no ticker frames,
+      // so nobody else was guaranteed to run either side of the swap.
+      _markerFrame.value++;
+      _updateDriverAnnotation();
+    });
     if (!_cameraFollowing) return; // already paused
     _setState(() => _cameraFollowing = false);
     // Flip the marker to the annotation deterministically (same stale-
@@ -2000,6 +2017,12 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     // where the annotation was its 160-px bitmap scaled up ~2.4× — the
     // pixelated photo the driver reported.
     if (_isCardAnimating) return false;
+    // Same trade while the FINGER is moving the camera (user report
+    // 2026-09-23: the arrow slid off the driver's street mid-drag): the
+    // overlay trails the gesture, the GL-rendered annotation never does.
+    // The 300 ms latch expires the moment the drag parks and the settle
+    // timer in _onCameraMoveStarted hands it back.
+    if (DateTime.now().isBefore(_mapDragUntil)) return false;
     if (_cameraFollowing && _previewingOffer == null) return true;
     return _dotScreenOffset != null;
   }

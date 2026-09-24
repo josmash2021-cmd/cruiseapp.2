@@ -138,6 +138,11 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
   bool _homeCameraFollowing = true;
   Timer? _homeReFollowTimer;
 
+  /// While this is in the future the driver's finger is on the map — the
+  /// NATIVE annotation owns the arrow for the drag. See _onHomeMapPanned.
+  DateTime _homeDragUntil = DateTime(2000);
+  Timer? _homeDragSettleTimer;
+
   /// A camera write is crossing the platform channel. See _writeHomeCamera.
   bool _camWriteBusy = false;
 
@@ -728,6 +733,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     _goldDot.dispose();
     _dotCreateWatchdog?.cancel();
     _homeReFollowTimer?.cancel();
+    _homeDragSettleTimer?.cancel();
     _markerFrame.dispose();
     _posStream?.cancel();
     _headingSub?.cancel();
@@ -1048,6 +1054,14 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     if (_mapSuspended || _goldDot.lat == null) return false;
     if (_homeCameraFollowing) return true;
 
+    // Mid-drag the NATIVE annotation owns the arrow (user report
+    // 2026-09-23): the overlay's projected pixel trails the finger over the
+    // platform channel, so the arrow slid off the driver's street while the
+    // map was being dragged. The annotation renders inside the map's own
+    // frame. No annotation yet → the overlay keeps drawing (never nothing).
+    if (_myLocAnnot == null) return true;
+    if (DateTime.now().isBefore(_homeDragUntil)) return false;
+
     // Order matters here, and it did not before.
     //
     // This used to end at `return _homeDotOffset != null`, and that offset
@@ -1122,6 +1136,19 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       // The overlay owns again — hide the annotation NOW (same stale-
       // window as the online double-arrow: parked driver, no tick frames,
       // nobody else was guaranteed to flush the opacity).
+      _updateMyLocAnnotation();
+    });
+    // While the finger is on the glass the NATIVE annotation owns the arrow
+    // (user report 2026-09-23, online AND offline: the arrow slid off the
+    // driver's street mid-drag). The overlay's pixel comes from camera-
+    // change events, which trail the gesture over the platform channel; the
+    // annotation renders inside the map's own frame and stays glued to the
+    // driver's lat/lng. The settle timer hands it back once the drag parks.
+    _homeDragUntil = DateTime.now().add(const Duration(milliseconds: 300));
+    _homeDragSettleTimer?.cancel();
+    _homeDragSettleTimer = Timer(const Duration(milliseconds: 320), () {
+      if (!mounted) return;
+      _markerFrame.value++;
       _updateMyLocAnnotation();
     });
     if (!_homeCameraFollowing) return;

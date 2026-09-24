@@ -176,14 +176,14 @@ void main() {
 
     test('the online unlatch hands the marker to the annotation '
         'deterministically', () {
-      final body = bodyOf(map, 'void _onCameraMoveStarted() {', maxLen: 1300);
+      final body = bodyOf(map, 'void _onCameraMoveStarted() {', maxLen: 2400);
       expect(body.contains('_cameraFollowing = false'), isTrue);
       expect(body.contains('_updateDriverAnnotation();'), isTrue,
           reason: 'no waiting for an indirect caller while parked');
     });
 
     test('the offline home does the same on both flips', () {
-      final body = bodyOf(home, 'void _onHomeMapPanned() {', maxLen: 800);
+      final body = bodyOf(home, 'void _onHomeMapPanned() {', maxLen: 1500);
       expect(
           RegExp(r'_updateMyLocAnnotation\(\);')
               .allMatches(body)
@@ -191,6 +191,30 @@ void main() {
           greaterThanOrEqualTo(2),
           reason: 'refollow hides the annotation, unlatch shows it — both '
               'deterministic, never via a stale opacity');
+    });
+
+    test('mid-drag the NATIVE annotation owns the arrow on BOTH screens '
+        '(user report 2026-09-23)', () {
+      final body = bodyOf(map, 'void _onCameraMoveStarted() {', maxLen: 2400);
+      expect(body.contains('_mapDragUntil'), isTrue,
+          reason: 'every scroll/zoom event renews the drag latch');
+      expect(body.contains('_dragSettleTimer'), isTrue,
+          reason: 'the settle timer hands the marker back to the overlay '
+              'once the drag parks — a parked driver makes no ticker frames');
+      final owns = bodyOf(map, 'bool get _dotOverlayOwnsMarker', maxLen: 2200);
+      expect(owns.contains('DateTime.now().isBefore(_mapDragUntil)'), isTrue,
+          reason: 'during the drag the overlay steps aside: its projected '
+              'pixel trails the finger over the channel, the GL-rendered '
+              'annotation never does — the arrow stays on the street');
+
+      final homeBody = bodyOf(home, 'void _onHomeMapPanned() {', maxLen: 1500);
+      expect(homeBody.contains('_homeDragUntil'), isTrue);
+      expect(homeBody.contains('_homeDragSettleTimer'), isTrue);
+      final homeOwns =
+          bodyOf(home, 'bool get _dotOverlayOwnsMarker', maxLen: 1400);
+      expect(homeOwns.contains('DateTime.now().isBefore(_homeDragUntil)'),
+          isTrue,
+          reason: 'the offline home map plays by the same mid-drag rule');
     });
   });
 

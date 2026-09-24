@@ -45,6 +45,20 @@ void main() {
         reason: 'the video wait must live AFTER the logged-in early return');
   });
 
+  test('session boot never even INITIALIZES the intro clip (2026-09-23)', () {
+    final initState = src.substring(
+        src.indexOf('void initState() {'),
+        src.indexOf('Future<void> _initVideo() async {'));
+    expect(initState.contains('_initVideo('), isFalse,
+        reason: 'with an active session the splash must not even TRY to '
+            'appear — no clip init, no play glyph over home');
+    final fastReturn = src.indexOf('if (loggedIn) {');
+    final initCall = src.indexOf('unawaited(_initVideo())');
+    expect(initCall, greaterThan(fastReturn),
+        reason: 'the clip initializes strictly on the logged-out path, '
+            'after the session check');
+  });
+
   test('routing logic untouched', () {
     expect(src.contains('_computeDestination'), isTrue);
     expect(src.contains('_validateTokenInBackground'), isTrue);

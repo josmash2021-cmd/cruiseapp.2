@@ -30,7 +30,10 @@ class _SplashScreenState extends State<SplashScreen> {
   // ── Intro video "Let's Get You There" (user spec 2026-09-19) ──
   // Replaces the CRUISE letter animation. Plays one full pass minimum and
   // loops, so a slow destination resolve never freezes on the last frame.
-  // The logged-in fast path skips it entirely (unchanged discipline).
+  // It is only ever INITIALIZED on the logged-out path (user spec
+  // 2026-09-23: with an active session the splash must not even TRY to
+  // appear — no clip init, no play glyph over home). initState runs the
+  // sequence bare; the session check decides before any video exists.
   VideoPlayerController? _video;
   bool _videoReady = false;
   final Completer<void> _firstLoopDone = Completer<void>();
@@ -49,7 +52,8 @@ class _SplashScreenState extends State<SplashScreen> {
       ),
     );
 
-    unawaited(_initVideo());
+    // NO video init here — the clip only exists once the session check
+    // says logged-OUT (see _runSequence).
     _runSequence();
   }
 
@@ -151,6 +155,9 @@ class _SplashScreenState extends State<SplashScreen> {
     }
 
     // ── Not logged in: play the intro video ("Let's Get You There") ──
+    // The clip's init starts HERE, strictly on the logged-out path —
+    // session boots never create it at all (2026-09-23).
+    unawaited(_initVideo());
 
     // Pre-load GPS, user data, map tiles, images — ALL in parallel
     final preloadFuture = PreloadService.preloadAll(context).timeout(

@@ -309,6 +309,28 @@ extension _RiderTrackingDriverInfoCard on _RiderTrackingScreenState {
               _buildMoreMenuButton(),
             ],
           ),
+          // Cancel ride — VISIBLE at every phase (user spec 2026-09-23):
+          // pre-pickup the usual fee rule, in-trip the full estimate is
+          // charged. The reason sheet + phase-correct confirm live in
+          // _showCancelDialog. Hidden once the trip is over (rating next).
+          if (_phase != _TrackPhase.completed) ...[
+            SizedBox(height: Responsive.h(2)),
+            GestureDetector(
+              onTap: _showCancelDialog,
+              child: Padding(
+                padding: EdgeInsets.symmetric(
+                    horizontal: 28, vertical: Responsive.h(7)),
+                child: Text(
+                  s.cancelRide,
+                  style: TextStyle(
+                    color: const Color(0xFFEF4444).withValues(alpha: 0.75),
+                    fontSize: Responsive.sp(13),
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -1335,7 +1357,7 @@ extension _RiderTrackingDriverInfoCard on _RiderTrackingScreenState {
     );
   }
 
-  void _showCancelConfirmDialog({String? reason}) {
+  void _showCancelConfirmDialog({String? reason, bool inTrip = false}) {
     showDialog(
       context: context,
       barrierDismissible: true,
@@ -1363,7 +1385,9 @@ extension _RiderTrackingDriverInfoCard on _RiderTrackingScreenState {
               ),
               const SizedBox(height: 8),
               Text(
-                S.of(context).cancelAfterAssignBody,
+                inTrip
+                    ? S.of(context).riderCancelInTripBody
+                    : S.of(context).cancelAfterAssignBody,
                 textAlign: TextAlign.center,
                 style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 14),
               ),

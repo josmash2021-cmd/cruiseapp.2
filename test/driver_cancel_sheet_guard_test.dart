@@ -42,7 +42,7 @@ void main() {
         .indexOf('void _showDriverCancelSheet() {');
     final body = File('lib/screens/driver/driver_trip_accept_screen.dart')
         .readAsStringSync()
-        .substring(start, start + 5200);
+        .substring(start, start + 6200);
 
     test('X close, big title, no-pay note', () {
       expect(body.contains('Icons.close_rounded'), isTrue,

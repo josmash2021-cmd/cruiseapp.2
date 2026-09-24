@@ -2282,9 +2282,16 @@ async def cancel_trip(trip_id: int, request: Request, user: User = Depends(_get_
     # and the $5 fee + refund logic further down covers the en-route cases.
     # (Drivers still cannot cancel here — they use /driver-cancel, or
     # /request-cancel for dispatch review.)
-    # Terminal-state guards stay the same.
+    # Terminal-state guards stay the same — with ONE rider exception: an
+    # IN-TRIP cancel (user spec 2026-09-23). The rider may end the ride at
+    # any moment; the trip is charged the FULL estimate below (the same
+    # real-money machinery as the $5 en-route fee captures it from the hold
+    # and splits 70/30 to the driver). Everyone else keeps the 409.
+    in_trip_full_fare = False
     if trip.status in ("in_trip", "in_progress"):
-        raise HTTPException(409, "Cannot cancel a trip that is currently in progress")
+        if not is_owner_rider:
+            raise HTTPException(409, "Cannot cancel a trip that is currently in progress")
+        in_trip_full_fare = True
     if trip.status in ("completed", "canceled", "cancelled"):
         raise HTTPException(400, f"Cannot cancel trip with status '{trip.status}'")
     # Accept optional cancel_reason from body
@@ -2302,7 +2309,13 @@ async def cancel_trip(trip_id: int, request: Request, user: User = Depends(_get_
     # policy instead (see _scheduled_cancel_fee): free >60 min out or with
     # no driver found; tier fee capped by the upfront fare inside the hour.
     cancellation_fee = 0.0
-    if trip.status in ("scheduled", "scheduled_accepted"):
+    if in_trip_full_fare:
+        # Full estimate (user decision 2026-09-23): partial-capturing
+        # cancellation_fee == fare from the hold charges exactly the quoted
+        # price and releases any surcharge headroom — and the driver split
+        # below pays out the same 70% a normal completion would.
+        cancellation_fee = round(float(trip.fare or 0.0), 2)
+    elif trip.status in ("scheduled", "scheduled_accepted"):
         cancellation_fee = _scheduled_cancel_fee(trip)
     elif trip.status in ("driver_en_route", "driver_arriving", "driver_arrived", "arrived"):
         reference_time = trip.driver_assigned_at or trip.updated_at
@@ -2342,19 +2355,28 @@ async def cancel_trip(trip_id: int, request: Request, user: User = Depends(_get_
         trip.payment_status = await _release_or_capture_fee_on_cancel(trip)
     # If rider was already charged, issue refund (full or less cancellation fee)
     elif trip.payment_status == "paid" and trip.stripe_payment_intent_id and _HAS_STRIPE:
-        try:
-            # Attempt refund through Stripe API
-            refund_amount_cents = int(((trip.fare or 0) - cancellation_fee) * 100)
-            refund = _stripe_mod.Refund.create(
-                payment_intent=trip.stripe_payment_intent_id,
-                amount=refund_amount_cents if refund_amount_cents > 0 else None,
-                reason="requested_by_customer" if user.id == trip.rider_id else "requested_by_merchant"
+        refund_amount_cents = int(((trip.fare or 0) - cancellation_fee) * 100)
+        if refund_amount_cents <= 0:
+            # fee >= fare (the in-trip full-fare cancel): the charge stands
+            # as-is — refunding here would hand back the very money the
+            # rider agreed to pay (amount=None in Stripe = FULL refund).
+            logging.info(
+                "[Refund] Trip %d: no refund — cancellation fee $%.2f covers the fare $%.2f",
+                trip_id, cancellation_fee, trip.fare or 0,
             )
-            trip.payment_status = "refunded"
-            logging.info("[Refund] Trip %d refunded %.2f (fee: %.2f)", trip_id, (trip.fare or 0) - cancellation_fee, cancellation_fee)
-        except Exception as e:
-            logging.warning("[Refund] Failed to refund trip %d: %s -- marking for manual refund", trip_id, e)
-            trip.payment_status = "pending_refund"  # Manual refund needed
+        else:
+            try:
+                # Attempt refund through Stripe API
+                refund = _stripe_mod.Refund.create(
+                    payment_intent=trip.stripe_payment_intent_id,
+                    amount=refund_amount_cents,
+                    reason="requested_by_customer" if user.id == trip.rider_id else "requested_by_merchant"
+                )
+                trip.payment_status = "refunded"
+                logging.info("[Refund] Trip %d refunded %.2f (fee: %.2f)", trip_id, (trip.fare or 0) - cancellation_fee, cancellation_fee)
+            except Exception as e:
+                logging.warning("[Refund] Failed to refund trip %d: %s -- marking for manual refund", trip_id, e)
+                trip.payment_status = "pending_refund"  # Manual refund needed
     # ACH debits leave the rider's account at request time, not on completion,
     # and Stripe can neither cancel nor refund a PaymentIntent while it is
     # 'processing'. Flag it so the money is refunded once it settles instead of
@@ -2385,8 +2407,10 @@ async def cancel_trip(trip_id: int, request: Request, user: User = Depends(_get_
                 select(User).where(User.id == trip.driver_id)
             )).scalar_one_or_none()
             if _drv:
-                _title = "Ride cancelled"
-                _body = "The rider cancelled this trip. You are back online."
+                _title = "Trip ended" if in_trip_full_fare else "Ride cancelled"
+                _body = ("The rider ended the trip early — you are paid the full fare."
+                         if in_trip_full_fare else
+                         "The rider cancelled this trip. You are back online.")
                 db.add(Notification(
                     user_id=_drv.id,
                     title=_title,

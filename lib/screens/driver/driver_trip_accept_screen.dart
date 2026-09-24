@@ -3201,19 +3201,20 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
       (s.driverCancelReasonVehicleIssue, 'vehicle_issue'),
       (s.driverCancelReasonPersonal, 'personal'),
     ];
-    final bot = MediaQuery.of(context).padding.bottom;
+    final pad = MediaQuery.of(context).padding;
+    final fullHeight = MediaQuery.of(context).size.height;
     var selected = -1;
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
       builder: (ctx) => StatefulBuilder(
+        // FULL SCREEN (user spec 2026-09-23, same as the rider sheet):
+        // whole viewport, X under the status bar — not a half-sheet.
         builder: (ctx, setSheet) => Container(
-          decoration: const BoxDecoration(
-            color: Color(0xFF141417),
-            borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
-          ),
-          padding: EdgeInsets.fromLTRB(16, 12, 16, bot + 24),
+          height: fullHeight,
+          decoration: const BoxDecoration(color: Color(0xFF141417)),
+          padding: EdgeInsets.fromLTRB(16, pad.top + 8, 16, pad.bottom + 24),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,

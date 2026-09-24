@@ -5692,6 +5692,12 @@ class S {
   String get riderCancelFreeNote => _es
       ? 'Puedes cancelar gratis mientras buscamos tu conductor.'
       : 'You can cancel for free while we find your driver.';
+  String get riderCancelInTripNote => _es
+      ? 'Tu viaje está en curso — cancelar cobra el estimado completo.'
+      : 'Your trip is underway — cancelling charges the full estimate.';
+  String get riderCancelInTripBody => _es
+      ? 'El viaje ya está en curso. Si cancelas ahora, se cobrará el estimado completo del viaje y tu conductor será pagado.'
+      : 'The trip is already underway. If you cancel now, the full trip estimate will be charged and your driver will be paid.';
 
   // ── Cancel-code → user-friendly localized message ──────────────
   // Used by the rider UI to translate the canonical `cancelCode`

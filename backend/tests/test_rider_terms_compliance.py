@@ -60,8 +60,9 @@ async def test_rider_cancel_instant_pre_pickup_with_driver(
     """A rider may cancel instantly at any point before pickup, even with a
     driver assigned. The old policy sent them through /request-cancel
     (dispatch approval), which left the trip alive for the driver after the
-    rider had already walked away. The in-progress guard is the real gate,
-    and the driver is notified immediately."""
+    rider had already walked away. The driver is notified immediately.
+    In-trip the rider may cancel too (2026-09-23) — charged the full
+    estimate."""
     from sqlalchemy import select
     from models.database import Notification
     from tests.conftest import _make_auth_headers
@@ -87,13 +88,17 @@ async def test_rider_cancel_instant_pre_pickup_with_driver(
     )
     assert res.scalars().first() is not None
 
-    # A trip already in progress stays uncancellable. Fresh headers each
-    # call — the API's nonce anti-replay rejects a reused set with a 401.
+    # In-trip the rider may ALSO cancel (user spec 2026-09-23) — charged the
+    # FULL estimate: cancellation_fee == fare. Fresh headers each call —
+    # the API's nonce anti-replay rejects a reused set with a 401.
     test_trip.status = "in_trip"
+    test_trip.fare = 25.50
     await db.commit()
     fresh = {**_make_auth_headers(), "Authorization": f"Bearer {token}"}
     resp3 = await client.post(f"/trips/{test_trip.id}/cancel", headers=fresh)
-    assert resp3.status_code == 409
+    assert resp3.status_code == 200
+    assert resp3.json()["status"] == "cancelled"
+    assert resp3.json()["cancellation_fee"] == 25.50
 
 
 # ── 3. No-show / wait fee figures: UI matches backend policy ───────────────

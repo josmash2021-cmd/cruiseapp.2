@@ -250,24 +250,24 @@ extension _RiderTrackingActionButtons on _RiderTrackingScreenState {
   }
 
   void _showCancelDialog() {
-    // Cancel policy (2026-08-08): the backend allows instant rider
-    // cancellation at any point before pickup — even with a driver
-    // assigned — charging $5.00 only once the driver has been assigned /
-    // en route for more than 2 minutes (free before that).
-    // Reason sheet first (2026-09-23, same reference design as the
-    // driver's): the picked reason rides to the API as `cancel_reason`,
-    // then the confirm dialog that explains the fee rule (it lives in
-    // driver_info_card.dart, _showCancelConfirmDialog).
+    // One VISIBLE entry for every phase (user spec 2026-09-23): pre-pickup
+    // the usual fee rule applies (free <2 min after assignment, $5 after);
+    // in-trip the FULL estimate is charged (the backend captures the hold
+    // for cancellation_fee == fare and pays the driver the same 70% a
+    // completion would). Both run the reference reason sheet first, then
+    // the confirm dialog with the fee copy that matches the phase.
     final s = S.of(context);
+    final inTrip = _phase == _TrackPhase.onTrip ||
+        _phase == _TrackPhase.nearDestination;
     showCancelReasonSheet(
       context,
       title: s.driverCancelChooseTitle,
-      note: s.cancelFeeWarning,
+      note: inTrip ? s.riderCancelInTripNote : s.cancelFeeWarning,
       reasons: riderCancelReasons(s),
       nextLabel: s.nextLabel,
     ).then((reason) {
       if (reason == null || !mounted) return;
-      _showCancelConfirmDialog(reason: reason);
+      _showCancelConfirmDialog(reason: reason, inTrip: inTrip);
     });
   }
 

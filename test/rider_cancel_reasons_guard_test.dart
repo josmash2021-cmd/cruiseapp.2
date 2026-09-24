@@ -75,11 +75,52 @@ void main() {
     test('tracking pre-pickup: sheet → fee confirm dialog → cancel', () {
       final start = buttons.indexOf('void _showCancelDialog() {');
       expect(start, isNonNegative);
-      final body = buttons.substring(start, start + 900);
+      final body = buttons.substring(start, start + 1200);
       expect(body.contains('showCancelReasonSheet'), isTrue);
       expect(body.contains('riderCancelReasons(s)'), isTrue);
-      expect(body.contains('_showCancelConfirmDialog(reason: reason)'), isTrue,
-          reason: 'the picked reason threads into the confirm dialog');
+      expect(
+          body.contains(
+              '_showCancelConfirmDialog(reason: reason, inTrip: inTrip)'),
+          isTrue,
+          reason: 'the picked reason AND the phase thread into the confirm '
+              'dialog — in-trip charges the full estimate (2026-09-23)');
+    });
+
+    test('in-trip cancel: full-estimate copy + visible button on the card', () {
+      final start = buttons.indexOf('void _showCancelDialog() {');
+      final body = buttons.substring(start, start + 1200);
+      expect(body.contains('s.riderCancelInTripNote'), isTrue,
+          reason: 'the sheet note warns about the full estimate in-trip');
+      expect(
+          card.contains(
+              '_showCancelConfirmDialog({String? reason, bool inTrip = false})'),
+          isTrue);
+      expect(card.contains('.riderCancelInTripBody'), isTrue,
+          reason: 'the confirm dialog explains the full-fare charge in-trip');
+      // The VISIBLE entry (user spec 2026-09-23): a Cancel ride button on
+      // the driver card itself, shown at every phase but completed.
+      expect(card.contains('onTap: _showCancelDialog'), isTrue,
+          reason: 'the rider no longer needs to hunt for the cancel entry');
+      expect(card.contains('s.cancelRide'), isTrue);
+      expect(card.contains('if (_phase != _TrackPhase.completed)'), isTrue,
+          reason: 'the button hides once the trip is over');
+    });
+
+    test('the reason sheet is FULL SCREEN (2026-09-23, "no a mitad de '
+        'pantalla")', () {
+      expect(sheet.contains('height: fullHeight'), isTrue,
+          reason: 'the rider sheet takes the whole viewport like the '
+              'reference — not a half-sheet over the map');
+      final driver = File('lib/screens/driver/driver_trip_accept_screen.dart')
+          .readAsStringSync();
+      final dStart = driver.indexOf('void _showDriverCancelSheet() {');
+      expect(dStart, isNonNegative);
+      expect(
+          driver
+              .substring(dStart, dStart + 1800)
+              .contains('height: fullHeight'),
+          isTrue,
+          reason: 'the driver sheet gets the same full-screen treatment');
     });
 
     test('reason reaches ApiService on both cancel paths', () {
@@ -96,9 +137,11 @@ void main() {
       expect(exec, isNonNegative);
       expect(buttons.substring(exec, exec + 500).contains('cancelReason: reason'),
           isTrue);
-      expect(card.contains('_showCancelConfirmDialog({String? reason})'),
+      expect(
+          card.contains(
+              '_showCancelConfirmDialog({String? reason, bool inTrip = false})'),
           isTrue,
-          reason: 'the confirm dialog forwards the reason');
+          reason: 'the confirm dialog forwards the reason AND the phase');
       expect(card.contains('_cancelTripInstantly(reason: reason)'), isTrue);
     });
 
@@ -170,6 +213,8 @@ void main() {
         'riderCancelReasonByAccident',
         'riderCancelReasonPrice',
         'riderCancelFreeNote',
+        'riderCancelInTripNote',
+        'riderCancelInTripBody',
       ]) {
         expect(l10n.contains('String get $key'), isTrue,
             reason: '$key missing from app_localizations.dart');

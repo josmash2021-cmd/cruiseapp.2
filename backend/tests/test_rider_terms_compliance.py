@@ -16,7 +16,8 @@ pytestmark = pytest.mark.asyncio
 
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 TERMS_PATH = os.path.join(REPO_ROOT, "docs", "rider_terms_of_service.md")
-L10N_PATH = os.path.join(REPO_ROOT, "lib", "l10n", "app_localizations.dart")
+RIDER_TERMS_SCREEN_PATH = os.path.join(
+    REPO_ROOT, "lib", "screens", "terms_of_service_screen.dart")
 TRIPS_PATH = os.path.join(REPO_ROOT, "backend", "routers", "trips.py")
 
 
@@ -106,7 +107,9 @@ async def test_rider_cancel_instant_pre_pickup_with_driver(
 
 def test_wait_fee_schedule_consistent_between_ui_and_backend():
     backend = _read(TRIPS_PATH)
-    l10n = _read(L10N_PATH)
+    # Compare against the text as RENDERED: the screen marks figures bold
+    # (**$5.00**), which riders never see — strip the markers before matching.
+    screen = _read(RIDER_TERMS_SCREEN_PATH).replace("**", "")
 
     # Backend wait policy (trips.py): (free_minutes, fee_per_minute).
     for pattern in (
@@ -122,8 +125,8 @@ def test_wait_fee_schedule_consistent_between_ui_and_backend():
         assert re.search(pattern, backend), f"backend wait policy missing: {pattern}"
 
     # The in-app terms text must mirror the same per-minute figures.
-    for frag in (r"\$0.40 per minute", r"\$0.60 per minute", r"\$1.00 per minute"):
-        assert frag in l10n, f"l10n missing wait-fee figure: {frag}"
+    for frag in ("$0.40 per minute", "$0.60 per minute", "$1.00 per minute"):
+        assert frag in screen, f"terms screen missing wait-fee figure: {frag}"
 
     # No-show fee minimum (2026-09-13): the no-show fee is max(accrued wait
     # fee, a per-tier minimum). The backend constants in
@@ -144,11 +147,11 @@ def test_wait_fee_schedule_consistent_between_ui_and_backend():
         assert re.search(pattern, agent_src), \
             f"backend no-show minimum missing: {pattern}"
     for frag in (
-        r"\$5.00 Standard/Compact",
-        r"\$8.00 Premium",
-        r"\$10.00 Black/SUV XL",
+        "$5.00 Standard/Compact",
+        "$8.00 Premium",
+        "$10.00 Black/SUV XL",
     ):
-        assert frag in l10n, f"l10n missing no-show minimum figure: {frag}"
+        assert frag in screen, f"terms screen missing no-show minimum figure: {frag}"
 
 
 # ── 4. Support email is support@cruiseinride.com everywhere ──────────────────

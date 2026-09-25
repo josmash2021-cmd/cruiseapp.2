@@ -2807,7 +2807,11 @@ async def register_live_activity_token(
     token = (payload.get("token") or "").strip() if isinstance(payload, dict) else ""
     if kind not in ("push_to_start", "activity", "ride_activity"):
         raise HTTPException(400, "kind must be push_to_start, activity or ride_activity")
-    if len(token) > 128:
+    # iOS 26 emits LA tokens well past 64 bytes (~190+ hex chars) — the old
+    # 128 cap rejected every registration with a bare 400 and prod ended with
+    # every LA column NULL (user report 2026-09-25: island never deploys in
+    # background). 500 matches fcm_token.
+    if len(token) > 500:
         raise HTTPException(400, "token too long")
     # An APNs Live Activity token names a DEVICE (+activity), not an account.
     # Two accounts on one phone (rider + driver is the normal test/demo case)

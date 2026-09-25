@@ -318,6 +318,21 @@ class TestRideTokenRegistration:
             "the token stayed on both rows — pushes for the rider's trip "
             "keep landing on the shared phone under the driver account")
 
+    async def test_an_ios26_length_token_is_accepted(self, client, db, test_rider):
+        """Guard the iOS-26 rejection (user report 2026-09-25): LA tokens now
+        arrive at ~190+ hex chars — the old 128 cap 400'd every registration
+        and prod ended with every LA column NULL (island never deployed in
+        background). A long-but-legit token must round-trip."""
+        rider, token = test_rider
+        long_tok = "ab" * 96  # 192 hex chars — an iOS-26-sized LA token
+        resp = await client.post(
+            "/drivers/live-activity-token",
+            headers=self._headers(token),
+            json={"kind": "activity", "token": long_tok})
+        assert resp.status_code == 200, resp.text
+        await db.refresh(rider)
+        assert rider.apns_la_activity_token == long_tok
+
 
 
 class TestTheCancelEndpointsEndTheCard:

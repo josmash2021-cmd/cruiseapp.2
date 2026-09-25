@@ -21,7 +21,7 @@ void main() {
         ),
         findsOneWidget,
       );
-      expect(find.textContaining('Cruise in Ride LLC'), findsOneWidget);
+      expect(find.textContaining('Cruise in Ride, Inc.'), findsOneWidget);
     });
 
     testWidgets('accept button is present and disabled until consent',

@@ -34,7 +34,10 @@ Future<String> _renderAllText(WidgetTester tester) async {
 }
 
 void main() {
-  const banned = ['Alabama', 'Cruiseinride LLC', 'APSC', 'Ala. Code'];
+  // "Alabama" is NOT banned: the platform operates in Florida AND Alabama,
+  // so the current texts name it as an operating state. What stays banned
+  // is the retired Alabama-era entity/venue/statute text.
+  const banned = ['Cruiseinride LLC', 'APSC', 'Ala. Code', 'Birmingham', 'Jefferson County'];
 
   final screens = <String, Widget>{
     'TermsOfServiceScreen': const TermsOfServiceScreen(),
@@ -44,7 +47,7 @@ void main() {
 
   for (final entry in screens.entries) {
     group(entry.key, () {
-      testWidgets('renders Florida / Cruise in Ride LLC content, no Alabama-era text',
+      testWidgets('renders Florida / Cruise in Ride, Inc. content, no Alabama-era text',
           (WidgetTester tester) async {
         await tester.pumpWidget(MaterialApp(home: entry.value));
         await tester.pumpAndSettle();
@@ -55,8 +58,8 @@ void main() {
           expect(content.contains(term), isFalse,
               reason: '${entry.key} still renders banned term "$term"');
         }
-        expect(content.contains('Cruise in Ride LLC'), isTrue,
-            reason: '${entry.key} must reference Cruise in Ride LLC');
+        expect(content.contains('Cruise in Ride, Inc.'), isTrue,
+            reason: '${entry.key} must reference Cruise in Ride, Inc.');
         expect(content.contains('Florida'), isTrue,
             reason: '${entry.key} must reference Florida');
       });

@@ -9,8 +9,8 @@
 > `docs/insurance_broker_checklist.md` to collect broker confirmation; do not
 > state or imply that a policy exists until that checklist is complete.
 
-This disclosure summarizes the automobile insurance that **Cruise in Ride LLC**,
-a Florida limited liability company ("**Cruise in Ride**" or the "**Company**"),
+This disclosure summarizes the automobile insurance that **Cruise in Ride, Inc.**,
+a Florida corporation ("**Cruise in Ride**" or the "**Company**"),
 maintains for transportation network company ("**TNC**") activity on the
 **Cruiseinride** platform, as required by Fla. Stat. § 627.748(8). It is
 provided to drivers at onboarding and is available on request to riders,

@@ -3,7 +3,10 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 /// Guard tests: the in-app legal texts must reflect the Florida rider terms
-/// (Cruise in Ride LLC / Fla. Stat. § 627.748), not the retired Alabama drafts.
+/// (Cruise in Ride, Inc. / Fla. Stat. § 627.748), not the retired Alabama-era
+/// drafts (Alabama LLC, Birmingham venue, APSC). "Alabama" itself is NOT
+/// banned: the platform operates in Florida AND Alabama, so the current
+/// texts name it as an operating state.
 void main() {
   const legalScreens = [
     'lib/screens/terms_of_service_screen.dart',
@@ -12,7 +15,6 @@ void main() {
   ];
 
   const bannedTerms = [
-    'Alabama',
     'Birmingham',
     'BHM',
     'Jefferson County',
@@ -36,8 +38,8 @@ void main() {
     final content =
         File('lib/screens/terms_of_service_screen.dart').readAsStringSync();
 
-    test('references Cruise in Ride LLC', () {
-      expect(content.contains('Cruise in Ride LLC'), isTrue);
+    test('references Cruise in Ride, Inc.', () {
+      expect(content.contains('Cruise in Ride, Inc.'), isTrue);
     });
 
     test('references Florida', () {

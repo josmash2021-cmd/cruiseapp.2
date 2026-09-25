@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'legal_document_screen.dart';
 
 /// Rider Terms of Service. Source of truth: docs/rider_terms_of_service.md
-/// (Cruise in Ride LLC / Florida & Alabama, Version 1.1) — keep both in sync.
+/// (Cruise in Ride, Inc. / Florida & Alabama, Version 1.1) — keep both in sync.
 /// Rendered with the shared neumorphic legal-document widget.
 /// English-only legal content; venue is Miami-Dade County, Florida.
 class TermsOfServiceScreen extends StatelessWidget {
@@ -12,12 +12,12 @@ class TermsOfServiceScreen extends StatelessWidget {
     LegalSection(
       heading: 'Introduction',
       body: r'''
-These Rider Terms of Service (the "Rider Terms") are entered into by and between **Cruise in Ride LLC**, a Florida limited liability company ("**Cruise in Ride**" or the "**Company**"), and each individual who requests or takes rides through the Cruiseinride platform (the "**Rider**" or "**you**"). "**Cruiseinride**" means the transportation network company digital platform, mobile application, and brand owned and operated by Cruise in Ride LLC. Operations currently take place in the States of Florida and Alabama, and these Rider Terms are governed exclusively by the laws of the State of Florida.''',
+These Rider Terms of Service (the "Rider Terms") are entered into by and between **Cruise in Ride, Inc.**, a Florida corporation ("**Cruise in Ride**" or the "**Company**"), and each individual who requests or takes rides through the Cruiseinride platform (the "**Rider**" or "**you**"). "**Cruiseinride**" means the transportation network company digital platform, mobile application, and brand owned and operated by Cruise in Ride, Inc. Operations currently take place in the States of Florida and Alabama, and these Rider Terms are governed exclusively by the laws of the State of Florida.''',
     ),
     LegalSection(
       heading: '1. The Platform',
       body: r'''
-1.1. Cruiseinride is a technology platform that connects riders with independent drivers. **Cruise in Ride LLC does not provide transportation services.** Transportation is provided by independent contractor drivers.
+1.1. Cruiseinride is a technology platform that connects riders with independent drivers. **Cruise in Ride, Inc. does not provide transportation services.** Transportation is provided by independent contractor drivers.
 
 1.2. The Company operates as a transportation network company under **Fla. Stat. § 627.748**.''',
     ),

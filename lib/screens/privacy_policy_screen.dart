@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'legal_document_screen.dart';
 
 /// Privacy Policy. Source of truth: docs/privacy_policy.md
-/// (Cruise in Ride LLC / Florida & Alabama, Version 2.1) — keep both in sync.
+/// (Cruise in Ride, Inc. / Florida & Alabama, Version 2.1) — keep both in sync.
 /// Rendered with the shared neumorphic legal-document widget.
 /// English-only legal content, matching the legal docs.
 class PrivacyPolicyScreen extends StatelessWidget {
@@ -12,7 +12,7 @@ class PrivacyPolicyScreen extends StatelessWidget {
     LegalSection(
       heading: 'Introduction',
       body: r'''
-This Privacy Policy (the "Policy") explains how **Cruise in Ride LLC**, a Florida limited liability company ("**Cruise in Ride**", "**we**", "**us**", or the "**Company**"), collects, uses, shares, and protects personal information in connection with the **Cruiseinride** platform, application, and brand that the Company owns and operates (the "Platform").
+This Privacy Policy (the "Policy") explains how **Cruise in Ride, Inc.**, a Florida corporation ("**Cruise in Ride**", "**we**", "**us**", or the "**Company**"), collects, uses, shares, and protects personal information in connection with the **Cruiseinride** platform, application, and brand that the Company owns and operates (the "Platform").
 
 The Company operates as a transportation network company under Florida TNC law (**Fla. Stat. § 627.748**). Prearranged rides offered through the Platform are provided in the States of Florida and Alabama. Personal information may be processed and stored in the United States by the Company and by the service providers identified in this Policy.
 

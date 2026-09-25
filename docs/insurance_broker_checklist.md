@@ -14,7 +14,7 @@ transcribed into that document.**
 - [ ] **Insurer (legal name of the carrier):** ______________________
 - [ ] **Policy number:** ______________________
 - [ ] **Policy period (start – end dates):** ______________________
-- [ ] **Named insured** (must be Cruise in Ride LLC or otherwise cover TNC
+- [ ] **Named insured** (must be Cruise in Ride, Inc. or otherwise cover TNC
   activity on the Cruiseinride platform): ______________________
 - [ ] **Certificate of insurance (COI)** obtained and stored; link/reference
   for `[CERTIFICATE OF INSURANCE LINK/REFERENCE]`: ______________________

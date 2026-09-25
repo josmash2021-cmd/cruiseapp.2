@@ -273,7 +273,7 @@ async def test_legal_disclosure_endpoint(client: AsyncClient):
     assert resp.status_code == 200
     body = resp.json()
     assert body["document_id"] == "background_check_disclosure_authorization"
-    assert body["version"] == "1.0"
+    assert body["version"] == "1.1"
 
     static_path = os.path.join(
         os.path.dirname(__file__), "..", "static", "legal",
@@ -294,7 +294,7 @@ async def test_legal_driver_terms_endpoint(client: AsyncClient):
     assert resp.status_code == 200
     body = resp.json()
     assert body["document_id"] == "driver_terms_of_service"
-    assert body["version"] == "1.2"
+    assert body["version"] == "1.3"
 
     static_path = os.path.join(
         os.path.dirname(__file__), "..", "static", "legal",

@@ -25,12 +25,12 @@ _LEGAL_DOCUMENTS = {
     "background-check-disclosure": (
         "background_check_disclosure_authorization.md",
         "background_check_disclosure_authorization",
-        "1.0",
+        "1.1",
     ),
     "driver-terms-of-service": (
         "driver_terms_of_service.md",
         "driver_terms_of_service",
-        "1.2",
+        "1.3",
     ),
 }
 
@@ -63,7 +63,7 @@ async def get_background_check_disclosure():
 
 @router.get("/legal/driver-terms-of-service", dependencies=[Depends(_verify_api_key)])
 async def get_driver_terms_of_service():
-    """Driver Terms of Service (Cruise in Ride LLC / Florida & Alabama).
+    """Driver Terms of Service (Cruise in Ride, Inc. / Florida & Alabama).
 
     Returns the full markdown plus a sha256 content hash the client logs via
     POST /auth/consent to prove which exact text was accepted.

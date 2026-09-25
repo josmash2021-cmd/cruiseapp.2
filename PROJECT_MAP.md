@@ -50,8 +50,8 @@
 | Archivo | Estado | Descripción |
 |---------|--------|-------------|
 | `docs/privacy_policy.md` | 🔴 CRÍTICO — LEGAL | Política de privacidad (GDPR, CCPA, LGPD). Requerido por stores. Cambios requieren revisión legal. |
-| `docs/rider_terms_of_service.md` | 🔴 CRÍTICO — LEGAL | Términos de servicio del rider (Cruise in Ride LLC, Florida). Requerido por stores. |
-| `docs/driver_terms_of_service.md` | 🔴 CRÍTICO — LEGAL | Términos de servicio del driver (Cruise in Ride LLC, Florida). |
+| `docs/rider_terms_of_service.md` | 🔴 CRÍTICO — LEGAL | Términos de servicio del rider (Cruise in Ride, Inc., Florida). Requerido por stores. |
+| `docs/driver_terms_of_service.md` | 🔴 CRÍTICO — LEGAL | Términos de servicio del driver (Cruise in Ride, Inc., Florida). |
 | `docs/archive/terms_of_service_alabama_legacy.md` | 🔴 ARCHIVADO | ToS legado de Alabama (Cruiseinride LLC). Superseded — no usar ni referenciar. |
 | `docs/GAME_NAVIGATION.md` | 🟢 EDITABLE | Sistema de navegación estilo videojuego (isométrico 3D, glow routes). |
 | `docs/INFRASTRUCTURE_MIGRATION_PLAN.md` | 🟢 EDITABLE | Plan de migración de región PostgreSQL. |

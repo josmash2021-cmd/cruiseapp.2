@@ -1,6 +1,6 @@
 # Background Check Disclosure and Authorization
 
-**Version 1.0 — Effective Date: August 8, 2026**
+**Version 1.1 — Effective Date: August 8, 2026**
 
 > This document is the standalone disclosure and authorization required by
 > the Fair Credit Reporting Act ("FCRA"), 15 U.S.C. § 1681 et seq., and
@@ -9,7 +9,7 @@
 
 ## 1. Disclosure
 
-**Cruise in Ride LLC**, a Florida limited liability company (the
+**Cruise in Ride, Inc.**, a Florida corporation (the
 "**Company**"), may obtain consumer reports about you in connection with
 your application to drive, and your continued engagement as an independent
 contractor Driver, on the **Cruiseinride** platform operated by the

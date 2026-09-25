@@ -11,7 +11,7 @@
 
 ## 1. Scope
 
-This process applies to consumer reports obtained by **Cruise in Ride LLC**
+This process applies to consumer reports obtained by **Cruise in Ride, Inc.**
 (the "**Company**") in connection with an application to drive, and continued
 engagement as an independent contractor Driver, on the **Cruiseinride**
 platform.
@@ -163,7 +163,7 @@ may contact **support@cruiseinride.com** with questions before deciding.
    legal documents (Rider Terms of Service, Driver Terms of Service,
    Independent Contractor Agreement, Privacy Policy, Insurance Disclosure,
    this document, and the standalone Disclosure and Authorization) identify
-   **Cruise in Ride LLC (Florida)** under Fla. Stat. § 627.748, and the in-app
+   **Cruise in Ride, Inc. (Florida)** under Fla. Stat. § 627.748, and the in-app
    legal screens (Terms of Service, Privacy Policy, Driver Agreement) render
    those same Florida documents. The legacy Alabama document has been
    archived at `docs/archive/terms_of_service_alabama_legacy.md` and is no

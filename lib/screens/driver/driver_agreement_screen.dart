@@ -5,10 +5,10 @@ import '../legal_document_screen.dart';
 /// Version of the Independent Contractor Agreement shown to drivers.
 /// Bump this when the document changes materially — the acceptance is
 /// recorded server-side with this version (ConsentLog).
-const kDriverAgreementVersion = '2.1';
+const kDriverAgreementVersion = '2.2';
 
 /// Driver-facing Independent Contractor Agreement. Source of truth:
-/// docs/driver_agreement.md (Cruise in Ride LLC / Florida & Alabama) —
+/// docs/driver_agreement.md (Cruise in Ride, Inc. / Florida & Alabama) —
 /// keep both in sync. Venue is Miami-Dade County, Florida.
 class DriverAgreementScreen extends StatelessWidget {
   const DriverAgreementScreen({super.key, this.onAccept});
@@ -23,9 +23,9 @@ class DriverAgreementScreen extends StatelessWidget {
     LegalSection(
       heading: 'Introduction',
       body: r'''
-This Independent Contractor Agreement (the "Agreement") is entered into by and between **Cruise in Ride LLC**, a Florida limited liability company ("**Cruise in Ride**" or the "**Company**"), and the individual who accepts this Agreement electronically through the Cruiseinride application (the "**Driver**" and, together with the Company, the "**Parties**").
+This Independent Contractor Agreement (the "Agreement") is entered into by and between **Cruise in Ride, Inc.**, a Florida corporation ("**Cruise in Ride**" or the "**Company**"), and the individual who accepts this Agreement electronically through the Cruiseinride application (the "**Driver**" and, together with the Company, the "**Parties**").
 
-"**Cruiseinride**" means the transportation network company digital platform, mobile application, and brand owned and operated by Cruise in Ride LLC. This Agreement is separate from, and supplemental to, the Cruiseinride Driver Terms of Service (the "**Terms of Service**").''',
+"**Cruiseinride**" means the transportation network company digital platform, mobile application, and brand owned and operated by Cruise in Ride, Inc. This Agreement is separate from, and supplemental to, the Cruiseinride Driver Terms of Service (the "**Terms of Service**").''',
     ),
     LegalSection(
       heading: '1. Independent Contractor Relationship',
@@ -38,7 +38,7 @@ This Independent Contractor Agreement (the "Agreement") is entered into by and b
 
 1.4. **Taxes.** The Driver is solely responsible for all federal, state, and local taxes on the Driver's earnings, including self-employment tax, and for any required estimated tax payments.
 
-1.5. **Digital network only.** Cruise in Ride LLC provides a digital network and **does not provide transportation services** and does not employ any drivers, consistent with Fla. Stat. § 627.748. Transportation is provided solely by independent contractor drivers.''',
+1.5. **Digital network only.** Cruise in Ride, Inc. provides a digital network and **does not provide transportation services** and does not employ any drivers, consistent with Fla. Stat. § 627.748. Transportation is provided solely by independent contractor drivers.''',
     ),
     LegalSection(
       heading: '2. No Schedule Control',
@@ -263,7 +263,7 @@ The specific insurers, policy numbers, and any higher limits applicable to the D
     LegalSection(
       heading: 'Signatures',
       body: r'''
-**CRUISE IN RIDE LLC**
+**CRUISE IN RIDE, INC**
 Executed electronically by its authorized representative upon the Driver's acceptance; an executed copy is available upon request at **support@cruiseinride.com**.
 
 **DRIVER**
@@ -276,7 +276,7 @@ Accepted electronically pursuant to Section 22. Acceptance recorded with version
     final accept = onAccept;
     return LegalDocumentScreen(
       title: 'Contractor Agreement',
-      effectiveDate: 'Version 2.1 — Effective Date: August 8, 2026',
+      effectiveDate: 'Version 2.2 — Effective Date: August 8, 2026',
       sections: _sections,
       canPop: accept == null,
       bottomBar: accept == null ? null : _AcceptAgreementBar(onAccept: accept),

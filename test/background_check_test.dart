@@ -38,7 +38,7 @@ void main() {
         ),
         findsOneWidget,
       );
-      expect(find.textContaining('Cruise in Ride LLC'), findsOneWidget);
+      expect(find.textContaining('Cruise in Ride, Inc.'), findsOneWidget);
     });
 
     testWidgets('shows document links for disclosure and FCRA summary',

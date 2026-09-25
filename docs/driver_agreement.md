@@ -1,15 +1,15 @@
 # Cruiseinride Independent Contractor Agreement (Drivers)
 
-**Version 2.1 — Effective Date: August 8, 2026**
+**Version 2.2 — Effective Date: August 8, 2026**
 
 This Independent Contractor Agreement (the "**Agreement**") is entered into by
-and between **Cruise in Ride LLC**, a Florida limited liability company
+and between **Cruise in Ride, Inc.**, a Florida corporation
 ("**Cruise in Ride**" or the "**Company**"), and the individual who accepts
 this Agreement electronically through the Cruiseinride application (the
 "**Driver**" and, together with the Company, the "**Parties**").
 
 "**Cruiseinride**" means the transportation network company digital platform,
-mobile application, and brand owned and operated by Cruise in Ride LLC. This
+mobile application, and brand owned and operated by Cruise in Ride, Inc. This
 Agreement is separate from, and supplemental to, the Cruiseinride Driver
 Terms of Service (the "**Terms of Service**").
 
@@ -39,7 +39,7 @@ Agreement.**
 local taxes on the Driver's earnings, including self-employment tax, and for
 any required estimated tax payments.
 
-1.5. **Digital network only.** Cruise in Ride LLC provides a digital network
+1.5. **Digital network only.** Cruise in Ride, Inc. provides a digital network
 and **does not provide transportation services** and does not employ any
 drivers, consistent with Fla. Stat. § 627.748. Transportation is provided
 solely by independent contractor drivers.
@@ -518,7 +518,7 @@ survive.
 
 ---
 
-**CRUISE IN RIDE LLC**  
+**CRUISE IN RIDE, INC**  
 Executed electronically by its authorized representative upon the Driver's
 acceptance; an executed copy is available upon request at
 **support@cruiseinride.com**.

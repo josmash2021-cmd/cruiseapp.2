@@ -1,6 +1,6 @@
 # Cruiseinride Driver Terms of Service
 
-**Version 1.2 — Effective Date: August 8, 2026**
+**Version 1.3 — Effective Date: August 8, 2026**
 
 > These Driver Terms of Service (the "**Driver Terms**") govern the use of the
 > Cruiseinride platform by drivers. They are supplemented by the Independent
@@ -8,19 +8,19 @@
 > prevails over these Driver Terms in case of conflict on classification,
 > schedule freedom, exclusivity, freedom to decline trips, and compensation.
 
-These Driver Terms are entered into by and between **Cruise in Ride LLC**, a
-Florida limited liability company ("**Cruise in Ride**" or the "**Company**"),
+These Driver Terms are entered into by and between **Cruise in Ride, Inc.**, a
+Florida corporation ("**Cruise in Ride**" or the "**Company**"),
 and each individual who applies to drive or drives on the Cruiseinride
 platform (the "**Driver**"). "**Cruiseinride**" means the transportation network company
 digital platform, mobile application, and brand owned and operated by Cruise
-in Ride LLC. Operations under these Driver Terms currently take place in the
+in Ride, Inc. Operations under these Driver Terms currently take place in the
 States of Florida and Alabama, and these Driver Terms are governed
 exclusively by Florida law.
 
 ## 1. The Platform and the Relationship
 
 1.1. Cruiseinride is a technology platform that connects independent drivers
-with riders requesting transportation. Cruise in Ride LLC is a transportation
+with riders requesting transportation. Cruise in Ride, Inc. is a transportation
 network company under Fla. Stat. § 627.748 and **does not provide
 transportation services and does not employ any drivers**.
 

@@ -3,19 +3,19 @@
 **Version 1.1 — Effective Date: August 8, 2026**
 
 These Rider Terms of Service (the "**Rider Terms**") are entered into by and
-between **Cruise in Ride LLC**, a Florida limited liability company
+between **Cruise in Ride, Inc.**, a Florida corporation
 ("**Cruise in Ride**" or the "**Company**"), and each individual who requests
 or takes rides through the Cruiseinride platform (the "**Rider**" or
 "**you**"). "**Cruiseinride**"
 means the transportation network company digital platform, mobile
-application, and brand owned and operated by Cruise in Ride LLC. Operations
+application, and brand owned and operated by Cruise in Ride, Inc. Operations
 currently take place in the States of Florida and Alabama, and these Rider
 Terms are governed exclusively by the laws of the State of Florida.
 
 ## 1. The Platform
 
 1.1. Cruiseinride is a technology platform that connects riders with
-independent drivers. **Cruise in Ride LLC does not provide transportation
+independent drivers. **Cruise in Ride, Inc. does not provide transportation
 services.** Transportation is provided by independent contractor drivers.
 
 1.2. The Company operates as a transportation network company under Fla.

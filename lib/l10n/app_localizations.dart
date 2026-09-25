@@ -5876,7 +5876,7 @@ class S {
   String get obBackgroundLegal => _es
       ? 'Divulgación y Autorización de Verificación de Antecedentes\n\n'
           '1. Divulgación\n\n'
-          'Cruise in Ride LLC, una sociedad de responsabilidad limitada de Florida (la "Compañía"), puede obtener informes de consumo sobre ti en relación con tu solicitud para conducir, y tu participación continua como Conductor contratista independiente, en la plataforma Cruiseinride operada por la Compañía.\n\n'
+          'Cruise in Ride, Inc., una corporación de Florida (la "Compañía"), puede obtener informes de consumo sobre ti en relación con tu solicitud para conducir, y tu participación continua como Conductor contratista independiente, en la plataforma Cruiseinride operada por la Compañía.\n\n'
           'La Compañía obtiene estos informes de la siguiente agencia de informes del consumidor:\n\n'
           '• Proveedor: Checkr, Inc.\n'
           '• Agencia de informes del consumidor: Checkr, Inc.\n'
@@ -5895,7 +5895,7 @@ class S {
           'Firma electrónica y aceptación. La Compañía registra cada aceptación con: el ID del documento, la versión del documento, un hash del contenido aceptado, la marca de tiempo UTC de la aceptación, la dirección IP, el user agent, la información del dispositivo y el ID de la cuenta.'
       : 'Background Check Disclosure and Authorization\n\n'
           '1. Disclosure\n\n'
-          'Cruise in Ride LLC, a Florida limited liability company (the "Company"), may obtain consumer reports about you in connection with your application to drive, and your continued engagement as an independent contractor Driver, on the Cruiseinride platform operated by the Company.\n\n'
+          'Cruise in Ride, Inc., a Florida corporation (the "Company"), may obtain consumer reports about you in connection with your application to drive, and your continued engagement as an independent contractor Driver, on the Cruiseinride platform operated by the Company.\n\n'
           'The Company obtains these reports from the following consumer reporting agency:\n\n'
           '• Vendor: Checkr, Inc.\n'
           '• Consumer reporting agency: Checkr, Inc.\n'

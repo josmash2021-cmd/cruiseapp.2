@@ -2,8 +2,8 @@
 
 **Version 2.1 — Effective Date: August 8, 2026**
 
-This Privacy Policy (the "**Policy**") explains how **Cruise in Ride LLC**, a
-Florida limited liability company ("**Cruise in Ride**", "**we**", "**us**",
+This Privacy Policy (the "**Policy**") explains how **Cruise in Ride, Inc.**, a
+Florida corporation ("**Cruise in Ride**", "**we**", "**us**",
 or the "**Company**"), collects, uses, shares, and protects personal
 information in connection with the **Cruiseinride** platform, application,
 and brand that the Company owns and operates (the "**Platform**").

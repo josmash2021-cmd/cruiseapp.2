@@ -14,7 +14,7 @@ import '../services/google_auth_service.dart';
 import '../services/apple_auth_service.dart';
 import '../services/user_session.dart';
 import 'verify_code_screen.dart';
-import 'terms_conditions_screen.dart';
+import 'terms_of_service_screen.dart';
 import 'privacy_policy_screen.dart';
 import 'create_password_screen.dart';
 
@@ -568,7 +568,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 text: S.of(context).acceptTermsDocuments,
                 linkText: S.of(context).termsLink,
                 onLinkTap: () => Navigator.of(context).push(
-                  slideUpFadeRoute(const TermsConditionsScreen()),
+                  slideUpFadeRoute(const TermsOfServiceScreen()),
                 ),
               ),
               const SizedBox(height: 12),

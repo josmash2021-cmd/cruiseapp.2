@@ -294,7 +294,7 @@ async def test_legal_driver_terms_endpoint(client: AsyncClient):
     assert resp.status_code == 200
     body = resp.json()
     assert body["document_id"] == "driver_terms_of_service"
-    assert body["version"] == "1.1"
+    assert body["version"] == "1.2"
 
     static_path = os.path.join(
         os.path.dirname(__file__), "..", "static", "legal",

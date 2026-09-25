@@ -134,8 +134,11 @@ def test_wait_fee_schedule_consistent_between_ui_and_backend():
     for pattern in (
         r'"sedan":\s+5\.0',
         r'"comfort":\s+5\.0',
+        r'"standard":\s+5\.0',
         r'"premium":\s+8\.0',
+        r'"suv_xl":\s+10\.0',
         r'"vip":\s+10\.0',
+        r'"black":\s+10\.0',
         r"_NO_SHOW_MIN_FEE_AIRPORT = 10\.0",
     ):
         assert re.search(pattern, agent_src), \

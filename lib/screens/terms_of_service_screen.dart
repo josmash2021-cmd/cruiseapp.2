@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'legal_document_screen.dart';
 
 /// Rider Terms of Service. Source of truth: docs/rider_terms_of_service.md
-/// (Cruise in Ride LLC / Florida, Version 1.0) — keep both in sync.
+/// (Cruise in Ride LLC / Florida & Alabama, Version 1.1) — keep both in sync.
 /// Rendered with the shared neumorphic legal-document widget.
 /// English-only legal content; venue is Miami-Dade County, Florida.
 class TermsOfServiceScreen extends StatelessWidget {
@@ -12,7 +12,7 @@ class TermsOfServiceScreen extends StatelessWidget {
     LegalSection(
       heading: 'Introduction',
       body: r'''
-These Rider Terms of Service (the "Rider Terms") are entered into by and between **Cruise in Ride LLC**, a Florida limited liability company ("**Cruise in Ride**" or the "**Company**"), and each individual who requests or takes rides through the Cruiseinride platform (the "**Rider**" or "**you**"). "**Cruiseinride**" means the transportation network company digital platform, mobile application, and brand owned and operated by Cruise in Ride LLC. All operations take place in the State of Florida, and these Rider Terms are governed exclusively by the laws of the State of Florida.''',
+These Rider Terms of Service (the "Rider Terms") are entered into by and between **Cruise in Ride LLC**, a Florida limited liability company ("**Cruise in Ride**" or the "**Company**"), and each individual who requests or takes rides through the Cruiseinride platform (the "**Rider**" or "**you**"). "**Cruiseinride**" means the transportation network company digital platform, mobile application, and brand owned and operated by Cruise in Ride LLC. Operations currently take place in the States of Florida and Alabama, and these Rider Terms are governed exclusively by the laws of the State of Florida.''',
     ),
     LegalSection(
       heading: '1. The Platform',
@@ -54,6 +54,10 @@ These Rider Terms of Service (the "Rider Terms") are entered into by and between
 5.3. **Tips.** Tips are optional and go 100% to your driver.
 
 5.4. **Cancellation fees.** You may cancel your trip directly in the app at any time before the trip starts. Cancellation is free of charge at any time before a driver is assigned, and during the first two (2) minutes after driver assignment. After that free window, a cancellation fee of **$5.00** applies if the driver is en route to or has arrived at the pickup location. No cancellation fee applies if the Company cancels your trip or no driver is available.
+
+**Scheduled rides.** For trips booked for a future pickup time, cancellation is free while the pickup is more than sixty (60) minutes away or while no driver has been assigned. Inside the 60-minute window with a driver assigned, a per-tier cancellation fee applies, capped at the trip's upfront fare: **$10.00** Compact, **$15.00** Standard, **$25.00** Premium, **$35.00** Black.
+
+**Cancellation after the trip starts.** Once your trip has started, cancelling it will charge the **full estimated fare** quoted before the trip, as the driver has already committed the trip to you.
 
 5.5. **Wait time and no-show fees.** A free waiting period applies at pickup, after which a per-minute wait fee accrues, as displayed live in the app: Standard and Compact — 2 free minutes, then $0.40 per minute; Premium — 3 free minutes, then $0.60 per minute; Black and SUV XL — 5 free minutes, then $1.00 per minute; trips booked through the airport flow (to or from the airport) — 10 free minutes, then $0.40 per minute. Partial minutes round up. Accrued wait fees are added to your trip fare. If you do not appear within the applicable waiting period, the trip may be canceled as a no-show and the no-show fee applies: the greater of the accrued wait fees and a per-tier minimum — **$5.00** Standard/Compact, **$8.00** Premium, **$10.00** Black/SUV XL and airport trips.
 
@@ -99,7 +103,7 @@ These Rider Terms of Service (the "Rider Terms") are entered into by and between
       body: r'''
 11.1. **Unaccompanied minors.** You must be at least 18 years old to hold an account (Section 2.1). Persons under 18 may ride only when accompanied by an adult. Drivers may decline or cancel a trip involving an unaccompanied minor.
 
-11.2. **Child safety seats.** Riders are responsible for providing and installing any child restraint system required by Florida law for children riding with them. Drivers may decline a trip if a required child restraint system is not provided.
+11.2. **Child safety seats.** Riders are responsible for providing and installing any child restraint system required by applicable law for children riding with them. Drivers may decline a trip if a required child restraint system is not provided.
 
 11.3. **Pets.** Pets other than service animals may be transported only when you select the pet-friendly ride option, where that option is available in the app.
 
@@ -119,7 +123,7 @@ These Rider Terms of Service (the "Rider Terms") are entered into by and between
 
 13.2. Where practicable, the Company will state the reason. You may request an internal review by contacting **support@cruiseinride.com**.
 
-13.3. You may stop using the Platform and delete your account at any time, subject to legal record-retention obligations.''',
+13.3. You may stop using the Platform and request deletion of your account at any time. A deletion request starts a **7-day grace period** during which the account is scheduled for deletion but not yet deleted; signing in during that period cancels the request and reactivates the account. Deletion is subject to legal record-retention obligations.''',
     ),
     LegalSection(
       heading: '14. Lost Items',
@@ -186,7 +190,7 @@ These Rider Terms of Service (the "Rider Terms") are entered into by and between
 
 20.5. **Hardware and software requirements.** To receive and retain electronic records you need: a mobile device running a supported version of iOS or Android with internet access, or a current web browser for web bookings; an active email address or phone number; and sufficient storage to save records or the ability to print them.
 
-20.6. **Record of acceptance.** Your acceptance is recorded with the document version, UTC timestamp, IP address, user agent, device information, and your account ID.''',
+20.6. **Record of acceptance.** Your acceptance is recorded with the document version, UTC timestamp, IP address, user agent, and your account ID.''',
     ),
     LegalSection(
       heading: '21. Notices',
@@ -221,7 +225,7 @@ These Rider Terms of Service (the "Rider Terms") are entered into by and between
   Widget build(BuildContext context) {
     return const LegalDocumentScreen(
       title: 'Terms of Service',
-      effectiveDate: 'Version 1.0 — Effective Date: August 8, 2026',
+      effectiveDate: 'Version 1.1 — Effective Date: August 8, 2026',
       sections: _sections,
     );
   }

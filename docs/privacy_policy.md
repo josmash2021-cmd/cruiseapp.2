@@ -1,6 +1,6 @@
 # Cruiseinride Privacy Policy
 
-**Version 2.0 — Production Candidate — Effective Date: August 8, 2026**
+**Version 2.1 — Effective Date: August 8, 2026**
 
 This Privacy Policy (the "**Policy**") explains how **Cruise in Ride LLC**, a
 Florida limited liability company ("**Cruise in Ride**", "**we**", "**us**",
@@ -10,7 +10,7 @@ and brand that the Company owns and operates (the "**Platform**").
 
 The Company operates as a transportation network company under Florida TNC
 law (Fla. Stat. § 627.748). Prearranged rides offered through the Platform
-are provided only in the State of Florida. Personal information may be
+are provided in the States of Florida and Alabama. Personal information may be
 processed and stored in the United States by the Company and by the service
 providers identified in this Policy.
 
@@ -83,12 +83,11 @@ The Platform collects **precise (GPS) location**, not approximate location.
 differently for drivers and riders:
 
 - **Drivers:** Driver location is collected while the Driver is online and
-  during trips — including, on Android, when the app is in the background or
-  the screen is off — so the Platform can dispatch trips, show trip progress
-  to riders, and support safety features. Background collection runs only
-  while the Driver remains online; it stops when the Driver goes offline in
-  the app. On iOS, Driver location is currently collected while the app is
-  in use.
+  during trips — including, on Android and iOS, when the app is in the
+  background or the screen is off — so the Platform can dispatch trips, show
+  trip progress to riders, and support safety features. Background collection
+  runs only while the Driver remains online; it stops when the Driver goes
+  offline in the app.
 - **Riders:** Rider location is collected while the app is in use
   (foreground) to suggest pickups and match the rider with drivers. During
   a trip, we share the Rider's location with the driver to support
@@ -160,16 +159,21 @@ We share personal information only as follows:
   under contractual obligations, by category:
   - cloud hosting and database: **Railway** and **Supabase**;
   - mapping and location services: **Mapbox** and **Google Maps Platform**;
-  - push notifications: **Firebase Cloud Messaging (Google)**;
+  - push notifications: **Firebase Cloud Messaging (Google)** and **Apple
+    Push Notification service (APNs)**, including Live Activity trip updates
+    on iOS;
   - analytics: **Firebase Analytics (Google)**;
   - crash reporting: **Firebase Crashlytics (Google)**;
   - file and document storage: **Google Firebase / Google Cloud**;
+  - realtime trip and location synchronization during active trips and
+    dispatch: **Firebase (Firestore / Realtime Database, Google)**;
   - SMS delivery: **Twilio** (including masked/proxied calls and messages);
   - email delivery: **EmailJS**, with direct SMTP as a fallback;
-  - automated customer support processing: **OpenAI** — support chat content
-    and related trip context are processed through OpenAI's API to generate
-    support responses; under OpenAI's API data usage terms, API inputs are
-    not used to train its models.
+  - automated customer support processing: **OpenAI**, with **Kimi
+    (Moonshot AI)** as a fallback provider — support chat content
+    and related trip context are processed through their APIs to generate
+    support responses; under their API data usage terms, API inputs are
+    not used to train their models.
 - **Authorities:** when required by law, regulation, subpoena, court order,
   or to protect rights, safety, and property, including disclosures to
   regulators under Florida TNC law.
@@ -278,7 +282,10 @@ Subject to applicable law, you may:
 - access and correct your account information in the app;
 - request a copy of your personal information;
 - request deletion of your account and personal information, subject to the
-  retention obligations described in Section 11;
+  retention obligations described in Section 11. A deletion request starts a
+  **7-day grace period** during which the account is scheduled for deletion
+  but not yet deleted; signing in during that period cancels the request and
+  reactivates the account;
 - control push, SMS, and email preferences in the app settings; and
 - control location and other device permissions in your device settings.
 

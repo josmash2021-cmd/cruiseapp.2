@@ -8,10 +8,8 @@ import '../legal_document_screen.dart';
 const kDriverAgreementVersion = '2.1';
 
 /// Driver-facing Independent Contractor Agreement. Source of truth:
-/// docs/driver_agreement.md (Cruise in Ride LLC / Florida) —
-/// keep both in sync. Venue is Miami-Dade County, Florida; the remaining
-/// bracketed placeholders ([INSURANCE DISCLOSURE LINK/REFERENCE], signature
-/// block) are kept verbatim.
+/// docs/driver_agreement.md (Cruise in Ride LLC / Florida & Alabama) —
+/// keep both in sync. Venue is Miami-Dade County, Florida.
 class DriverAgreementScreen extends StatelessWidget {
   const DriverAgreementScreen({super.key, this.onAccept});
 
@@ -126,7 +124,7 @@ This Independent Contractor Agreement (the "Agreement") is entered into by and b
 (a) **While the Driver is logged on but not engaged in a prearranged ride:** at least $50,000 for death and bodily injury per person, $100,000 for death and bodily injury per incident, and $25,000 for property damage, plus the personal injury protection required by Florida law;
 (b) **During a prearranged ride (from acceptance through rider exit):** at least $1,000,000 for death, bodily injury, and property damage, plus the personal injury protection required by Florida law; and
 (c) **Uninsured and underinsured motorist coverage** as required by Fla. Stat. § 627.727 and the corresponding provisions of Fla. Stat. § 627.748(7).
-The specific insurers, policy numbers, and any higher limits applicable to the Driver are identified at **[INSURANCE DISCLOSURE LINK/REFERENCE]**. The Company will provide the Driver proof of coverage as required by Fla. Stat. § 627.748(7)(h), through the Cruiseinride Insurance Disclosure and upon request.
+The specific insurers, policy numbers, and any higher limits applicable to the Driver are identified in the **Cruiseinride Insurance Disclosure**. The Company will provide the Driver proof of coverage as required by Fla. Stat. § 627.748(7)(h), through the Cruiseinride Insurance Disclosure and upon request at **support@cruiseinride.com**.
 
 9.3. **Currency and updates.** The Driver shall keep the Driver's driver's license, vehicle registration, insurance, and all other required documents current and valid at all times, update the policy information in the app when it changes, and **immediately notify the Company of any cancellation, lapse, expiration, or reduction** of the Driver's required coverage.
 
@@ -266,10 +264,10 @@ The specific insurers, policy numbers, and any higher limits applicable to the D
       heading: 'Signatures',
       body: r'''
 **CRUISE IN RIDE LLC**
-By: ___________________________  Name: [AUTHORIZED SIGNATORY]  Title: [TITLE]  Date: [DATE]
+Executed electronically by its authorized representative upon the Driver's acceptance; an executed copy is available upon request at **support@cruiseinride.com**.
 
 **DRIVER**
-Accepted electronically pursuant to Section 22. Acceptance recorded with version, UTC timestamp, IP address, user agent, device, and Driver account ID.''',
+Accepted electronically pursuant to Section 22. Acceptance recorded with version, UTC timestamp, IP address, user agent, and Driver account ID.''',
     ),
   ];
 
@@ -278,7 +276,7 @@ Accepted electronically pursuant to Section 22. Acceptance recorded with version
     final accept = onAccept;
     return LegalDocumentScreen(
       title: 'Contractor Agreement',
-      effectiveDate: 'Version 2.1',
+      effectiveDate: 'Version 2.1 — Effective Date: August 8, 2026',
       sections: _sections,
       canPop: accept == null,
       bottomBar: accept == null ? null : _AcceptAgreementBar(onAccept: accept),

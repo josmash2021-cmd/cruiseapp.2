@@ -1,12 +1,7 @@
 # Background Check Disclosure and Authorization
 
-**Version 1.0 — PRODUCTION CANDIDATE — Effective Date: August 8, 2026**
+**Version 1.0 — Effective Date: August 8, 2026**
 
-> **PRODUCTION CANDIDATE — NOT FOR PUBLICATION until the blockers listed in
-> `docs/fcra_screening_process.md` (Appendix) are resolved:** screening
-> package confirmation, contact email, and Florida counsel review. This
-> banner is removed before publication.
->
 > This document is the standalone disclosure and authorization required by
 > the Fair Credit Reporting Act ("FCRA"), 15 U.S.C. § 1681 et seq., and
 > Fla. Stat. § 627.748(12). It is a separate, self-contained document. It is

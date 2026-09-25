@@ -1,10 +1,6 @@
 # Cruiseinride Independent Contractor Agreement (Drivers)
 
-**Version 2.1 — Draft for Florida Counsel Review**
-
-> **DRAFT — FOR REVIEW BY FLORIDA-LICENSED COUNSEL ONLY. NOT FOR PUBLICATION.**
-> Prepared as a professional working draft. All bracketed placeholders must be
-> completed and all flagged provisions verified by counsel before release.
+**Version 2.1 — Effective Date: August 8, 2026**
 
 This Independent Contractor Agreement (the "**Agreement**") is entered into by
 and between **Cruise in Ride LLC**, a Florida limited liability company
@@ -231,12 +227,10 @@ minimums:
   Stat. § 627.727 and the corresponding provisions of Fla. Stat.
   § 627.748(7).
 The specific insurers, policy numbers, and any higher limits applicable to
-the Driver are identified at **[INSURANCE DISCLOSURE LINK/REFERENCE]**. The
+the Driver are identified in the **Cruiseinride Insurance Disclosure**. The
 Company will provide the Driver proof of coverage as required by Fla. Stat.
 § 627.748(7)(h), through the Cruiseinride Insurance Disclosure and upon
-request.
-*[Company to confirm actual policy limits and insurer with its broker; do not
-publish until confirmed.]*
+request at **support@cruiseinride.com**.
 
 9.3. **Currency and updates.** The Driver shall keep the Driver's driver's
 license, vehicle registration, insurance, and all other required documents
@@ -525,8 +519,10 @@ survive.
 ---
 
 **CRUISE IN RIDE LLC**  
-By: ___________________________  Name: [AUTHORIZED SIGNATORY]  Title: [TITLE]  Date: [DATE]
+Executed electronically by its authorized representative upon the Driver's
+acceptance; an executed copy is available upon request at
+**support@cruiseinride.com**.
 
 **DRIVER**  
 Accepted electronically pursuant to Section 22. Acceptance recorded with
-version, UTC timestamp, IP address, user agent, device, and Driver account ID.
+version, UTC timestamp, IP address, user agent, and Driver account ID.

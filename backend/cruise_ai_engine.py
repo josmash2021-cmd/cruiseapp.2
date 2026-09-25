@@ -418,15 +418,15 @@ _RESPONSES: dict[str, dict[str, list[str]]] = {
     },
     "driver_earnings": {
         "first_es": [
-            "{name}, puedo ayudarle con sus ganancias. Los pagos se procesan semanalmente los martes.\n\nTiene alguna pregunta especifica sobre un deposito o su balance?",
+            "{name}, puedo ayudarle con sus ganancias. Los pagos se procesan semanalmente los lunes.\n\nTiene alguna pregunta especifica sobre un deposito o su balance?",
             "Claro, {name}. Revisare su informacion de ganancias.\n\nMe indica si es sobre un deposito pendiente, un monto incorrecto, o informacion general sobre pagos?",
         ],
         "first_en": [
-            "{name}, I can help with your earnings. Payouts are processed weekly on Tuesdays.\n\nDo you have a specific question about a deposit or your balance?",
+            "{name}, I can help with your earnings. Payouts are processed weekly on Mondays.\n\nDo you have a specific question about a deposit or your balance?",
             "Sure, {name}. I'll check your earnings information.\n\nIs it about a pending deposit, an incorrect amount, or general payment info?",
         ],
         "followup_es": [
-            "He revisado su cuenta, {name}. Sus ganancias estan actualizadas y el proximo deposito sera procesado el martes.\n\nSi hay alguna discrepancia, me avisa y lo revisamos. Necesita algo mas?",
+            "He revisado su cuenta, {name}. Sus ganancias estan actualizadas y el proximo deposito sera procesado el lunes.\n\nSi hay alguna discrepancia, me avisa y lo revisamos. Necesita algo mas?",
         ],
         "followup_en": [
             "I've reviewed your account, {name}. Your earnings are up to date and the next deposit will be processed on Tuesday.\n\nIf there's any discrepancy, let me know and we'll look into it. Need anything else?",

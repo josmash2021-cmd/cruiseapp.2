@@ -1,12 +1,7 @@
 # Cruiseinride Driver Terms of Service
 
-**Version 1.1 — PRODUCTION CANDIDATE — Effective Date: August 8, 2026**
+**Version 1.2 — Effective Date: August 8, 2026**
 
-> **PRODUCTION CANDIDATE — NOT YET READY FOR PRODUCTION.** Pending before
-> publication: (a) completion of every bracketed placeholder; (b) written
-> confirmation from the Company's broker of the insurer, policy, limits, PIP,
-> and UM/UIM coverage (Section 9); and (c) sign-off by Florida-licensed
-> counsel.
 > These Driver Terms of Service (the "**Driver Terms**") govern the use of the
 > Cruiseinride platform by drivers. They are supplemented by the Independent
 > Contractor Agreement (Drivers) (the "**Contractor Agreement**"), which
@@ -17,9 +12,10 @@ These Driver Terms are entered into by and between **Cruise in Ride LLC**, a
 Florida limited liability company ("**Cruise in Ride**" or the "**Company**"),
 and each individual who applies to drive or drives on the Cruiseinride
 platform (the "**Driver**"). "**Cruiseinride**" means the transportation network company
-digital platform, mobile application, and brand owned and operated by Royal
-Purple LLC. All operations under these Driver Terms take place in the State
-of Florida, and these Driver Terms are governed exclusively by Florida law.
+digital platform, mobile application, and brand owned and operated by Cruise
+in Ride LLC. Operations under these Driver Terms currently take place in the
+States of Florida and Alabama, and these Driver Terms are governed
+exclusively by Florida law.
 
 ## 1. The Platform and the Relationship
 
@@ -52,14 +48,18 @@ insurance required by Section 9.
 driver's license, vehicle registration, proof of insurance, and identity
 verification (including photo and liveness verification). A vehicle
 inspection is required only where the Company or applicable law requires it;
-the Company does not currently require a vehicle inspection. The Company may
+the Company currently requires a vehicle inspection for Drivers who operate
+in Alabama. The Company may
 suspend platform access when any required document expires or lapses, until
 the Driver corrects it.
 
-2.3. **One account, one vehicle profile.** The Driver shall use only the
-Driver's own approved account, documents, and approved vehicle. Accounts are
-personal and non-transferable; sharing accounts or substituting drivers or
-vehicles is prohibited.
+2.3. **One account; approved vehicles.** The Driver shall use only the
+Driver's own approved account and documents. The Driver may register and use
+more than one vehicle, provided each vehicle is individually approved and
+carries its own current registration, insurance, and (where required)
+inspection; the Driver shall provide rides only in an approved vehicle that
+is active on the Driver's account. Accounts are personal and
+non-transferable; sharing accounts or substituting drivers is prohibited.
 
 2.4. **Account security.** The Driver is responsible for safeguarding login
 credentials and for all activity under the Driver's account, and shall
@@ -110,11 +110,16 @@ deactivation; only documented fraud, safety issues, or abuse may have
 consequences, following review. Once the rider is aboard, the Driver shall
 use the in-app safety / end-ride flow instead of cancelling.
 
-5.2. **By the rider.** Where a rider cancels under the conditions described
-in the rider-facing terms, a cancellation fee of **$5.00** may apply. The
-Driver receives **70% of the cancellation fee ($3.50)** and the Company
-retains **30% ($1.50)**, allocated as displayed in the app. No
-payment-processing fee or other deduction is applied to the Driver's share.
+5.2. **By the rider.** Where a rider cancels an on-demand trip under the
+conditions described in the rider-facing terms, a cancellation fee of
+**$5.00** may apply. For scheduled rides cancelled inside the 60-minute
+pickup window with a driver assigned, the rider-facing terms instead apply a
+per-tier cancellation fee (**$10.00** Compact, **$15.00** Standard,
+**$25.00** Premium, **$35.00** Black), capped at the trip's upfront fare. In
+either case the Driver receives **70% of the cancellation fee** and the
+Company retains **30%**, allocated as displayed in the app, and only when the
+fee is actually captured from the rider. No payment-processing fee or other
+deduction is applied to the Driver's share.
 
 5.3. **No-shows.** If a rider does not appear within the waiting period
 displayed in the app, the Driver may cancel and receives the Driver's share
@@ -131,10 +136,11 @@ currently apply: (a) a score of **4.5 or below** generates a warning to the
 Driver; (b) a score **below 4.3** generates a notice that the Driver is at
 risk of deactivation; and (c) a score of **3.5 or below** results in a
 **temporary 24-hour suspension** of platform access, after which platform
-access is **automatically restored** with the score set to **4.0**. These
-thresholds apply only once the Driver has accumulated at least **5** rated
-trips; no rating-based suspension is imposed before that minimum is
-reached. The Driver may also request **manual review and early
+access is **automatically restored** with the score set to **4.0**. The
+warning and risk notices in (a) and (b) may be issued from the first rating
+received; the suspension in (c) applies only once the Driver has accumulated
+at least **5** rated trips, and no rating-based suspension is imposed before
+that minimum is reached. The Driver may also request **manual review and early
 restoration** under Section 12.4. A temporary suspension under this Section
 is not a deactivation. If the Driver repeatedly reaches the suspension
 threshold, the Company may convert the suspension into a deactivation — but
@@ -152,14 +158,15 @@ rating or rating-based action resulted from discrimination prohibited by law.
 7.1. **Driver share.** The Driver receives **70%** of the gross trip fare
 (base fare, time and distance charges, and any demand-based or surge
 pricing); the Company retains a service fee of **30%** of that fare. **No
-service fee applies to tips or to reimbursed tolls.** Cancellation fees are
+service fee applies to tips.** Cancellation fees are
 defined and allocated separately under Section 5.2.
 
 7.2. **Tips.** The Driver receives 100% of passenger tips, subject only to
 adjustments required by law or resulting from payment errors, fraud,
 chargebacks, or refunds.
 
-7.3. **Payment cadence.** Earnings are paid **weekly** by ACH to the Driver's
+7.3. **Payment cadence.** Earnings are paid **weekly (each Monday)** by ACH
+to the Driver's
 linked bank account. An optional **instant payout** is available for a fee of
 **1.5%** of the payout amount (minimum fee **$0.50**), subject to a minimum
 instant payout amount of **$50.00**.
@@ -179,7 +186,7 @@ the Driver's taxes.
 8.1. The Driver authorizes the Company to obtain (a) an **initial**
 background check report and driving history report before authorizing the
 Driver, and (b) **subsequent reports at least once every three years**
-thereafter, and as otherwise required by Florida law, consistent with Fla.
+thereafter, and as otherwise required by applicable law, consistent with Fla.
 Stat. § 627.748(12), pursuant to the separate **Background Check Disclosure
 and Authorization** and the Fair Credit Reporting Act process described in
 that separate document.
@@ -191,7 +198,8 @@ Rights Under the FCRA," and final adverse action notice, as applicable.
 ## 9. Insurance
 
 9.1. The Driver shall maintain a valid personal automobile insurance policy
-meeting Florida minimums, provide proof upon request, and immediately notify
+meeting the minimums of the state in which the Driver operates, provide proof
+upon request, and immediately notify
 the Company of any cancellation, lapse, expiration, or reduction of coverage.
 The Driver is advised that personal auto policies may not cover TNC activity.
 
@@ -199,13 +207,11 @@ The Driver is advised that personal auto policies may not cover TNC activity.
 activity at no less than the statutory minimums of Fla. Stat.
 § 627.748(7)–(8), including uninsured/underinsured motorist coverage as
 required by Fla. Stat. § 627.727, as described in the Contractor Agreement
-(Section 9) and in the separate **Cruiseinride Insurance Disclosure**
-(**[INSURANCE DISCLOSURE LINK/REFERENCE]**). The specific insurer, policy
-numbers, limits, personal injury protection (PIP), and UM/UIM coverage are
-stated in that Insurance Disclosure, and proof of coverage is available to
-the Driver as provided there. *[Do not publish until the insurer, policy,
-limits, PIP, and UM/UIM coverage are confirmed in writing with the Company's
-broker.]*
+(Section 9) and in the separate **Cruiseinride Insurance Disclosure**,
+available from the Company upon request at **support@cruiseinride.com**. The
+specific insurer, policy numbers, limits, personal injury protection (PIP),
+and UM/UIM coverage are stated in that Insurance Disclosure, and proof of
+coverage is available to the Driver as provided there.
 
 9.3. In case of an accident, the Driver shall comply with the accident duties
 of the Contractor Agreement (Section 9.4), including disclosing whether the
@@ -283,6 +289,14 @@ legal compliance, payments, insurance, and verification purposes.
 complete the trip and as otherwise permitted by law, and shall not retain,
 sell, disclose, or use rider personal information for any purpose unrelated
 to completing the trip.
+
+13.3. **Account deletion.** The Driver may request deletion of the Driver's
+account at any time through the app or by contacting
+**support@cruiseinride.com**. The request starts a **7-day grace period**
+during which the account is scheduled for deletion but not yet deleted;
+signing in during that period cancels the request and reactivates the
+account. Data retention and deletion after the account is deleted follow the
+Privacy Policy.
 
 ## 14. General Provisions
 

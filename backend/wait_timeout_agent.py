@@ -50,11 +50,17 @@ _AIRPORT_AUTO_CANCEL_MINUTES = 20  # Airport rides get longer wait
 # driver ~$0.84 for a 5-minute wait — not worth anyone's time. The
 # rider-facing terms text (terms_of_service_screen + app_localizations)
 # advertises these same numbers; the compliance test pins them together.
+# Groups mirror _WAIT_POLICY_BY_TYPE in trips.py: Black/SUV XL sit in the
+# top ($10) group — raw keys, because trip.vehicle_type stores backend
+# keys, not picker display names.
 _NO_SHOW_MIN_FEE_BY_TYPE = {
     "sedan": 5.0,
     "comfort": 5.0,
+    "standard": 5.0,
     "premium": 8.0,
+    "suv_xl": 10.0,
     "vip": 10.0,
+    "black": 10.0,
 }
 _DEFAULT_NO_SHOW_MIN_FEE = 5.0
 _NO_SHOW_MIN_FEE_AIRPORT = 10.0

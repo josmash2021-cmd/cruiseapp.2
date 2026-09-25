@@ -1,6 +1,6 @@
 # Cruiseinride Rider Terms of Service
 
-**Version 1.0 — Production Candidate — Effective Date: August 8, 2026**
+**Version 1.1 — Effective Date: August 8, 2026**
 
 These Rider Terms of Service (the "**Rider Terms**") are entered into by and
 between **Cruise in Ride LLC**, a Florida limited liability company
@@ -8,9 +8,9 @@ between **Cruise in Ride LLC**, a Florida limited liability company
 or takes rides through the Cruiseinride platform (the "**Rider**" or
 "**you**"). "**Cruiseinride**"
 means the transportation network company digital platform, mobile
-application, and brand owned and operated by Cruise in Ride LLC. All operations
-take place in the State of Florida, and these Rider Terms are governed
-exclusively by the laws of the State of Florida.
+application, and brand owned and operated by Cruise in Ride LLC. Operations
+currently take place in the States of Florida and Alabama, and these Rider
+Terms are governed exclusively by the laws of the State of Florida.
 
 ## 1. The Platform
 
@@ -78,6 +78,17 @@ applies if the driver is en route to or has arrived at the pickup location.
 No cancellation fee applies if the Company cancels your trip or no driver is
 available.
 
+**Scheduled rides.** For trips booked for a future pickup time, cancellation
+is free while the pickup is more than sixty (60) minutes away or while no
+driver has been assigned. Inside the 60-minute window with a driver
+assigned, a per-tier cancellation fee applies, capped at the trip's upfront
+fare: **$10.00** Compact, **$15.00** Standard, **$25.00** Premium,
+**$35.00** Black.
+
+**Cancellation after the trip starts.** Once your trip has started,
+cancelling it will charge the **full estimated fare** quoted before the
+trip, as the driver has already committed the trip to you.
+
 5.5. **Wait time and no-show fees.** A free waiting period applies at pickup,
 after which a per-minute wait fee accrues, as displayed live in the app:
 Standard and Compact — 2 free minutes, then $0.40 per minute; Premium — 3
@@ -86,7 +97,9 @@ $1.00 per minute; trips booked through the airport flow (to or from the
 airport) — 10 free minutes, then $0.40 per minute. Partial minutes round up.
 Accrued wait fees are added to your trip fare. If you do not appear within
 the applicable waiting period, the trip may be canceled as a no-show and the
-wait fees accrued up to cancellation apply.
+no-show fee applies: the greater of the accrued wait fees and a per-tier
+minimum — **$5.00** Standard/Compact, **$8.00** Premium, **$10.00**
+Black/SUV XL and airport trips.
 
 5.6. **Cleaning and damage fees.** The Company does not currently charge
 cleaning or damage fees. If such fees are introduced in the future, Riders
@@ -157,7 +170,7 @@ account (Section 2.1). Persons under 18 may ride only when accompanied by an
 adult. Drivers may decline or cancel a trip involving an unaccompanied minor.
 
 11.2. **Child safety seats.** Riders are responsible for providing and
-installing any child restraint system required by Florida law for children
+installing any child restraint system required by applicable law for children
 riding with them. Drivers may decline a trip if a required child restraint
 system is not provided.
 
@@ -191,7 +204,10 @@ incidents, unlawful use of the Platform, or as required by law.
 13.2. Where practicable, the Company will state the reason. You may request
 an internal review by contacting **support@cruiseinride.com**.
 
-13.3. You may stop using the Platform and delete your account at any time,
+13.3. You may stop using the Platform and request deletion of your account
+at any time. A deletion request starts a **7-day grace period** during which
+the account is scheduled for deletion but not yet deleted; signing in during
+that period cancels the request and reactivates the account. Deletion is
 subject to legal record-retention obligations.
 
 ## 14. Lost Items
@@ -333,8 +349,7 @@ bookings; an active email address or phone number; and sufficient storage to
 save records or the ability to print them.
 
 20.6. **Record of acceptance.** Your acceptance is recorded with the document
-version, UTC timestamp, IP address, user agent, device information, and your
-account ID.
+version, UTC timestamp, IP address, user agent, and your account ID.
 
 ## 21. Notices
 

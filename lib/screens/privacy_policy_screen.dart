@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'legal_document_screen.dart';
 
 /// Privacy Policy. Source of truth: docs/privacy_policy.md
-/// (Cruise in Ride LLC / Florida, Version 2.0) — keep both in sync.
+/// (Cruise in Ride LLC / Florida & Alabama, Version 2.1) — keep both in sync.
 /// Rendered with the shared neumorphic legal-document widget.
 /// English-only legal content, matching the legal docs.
 class PrivacyPolicyScreen extends StatelessWidget {
@@ -14,7 +14,7 @@ class PrivacyPolicyScreen extends StatelessWidget {
       body: r'''
 This Privacy Policy (the "Policy") explains how **Cruise in Ride LLC**, a Florida limited liability company ("**Cruise in Ride**", "**we**", "**us**", or the "**Company**"), collects, uses, shares, and protects personal information in connection with the **Cruiseinride** platform, application, and brand that the Company owns and operates (the "Platform").
 
-The Company operates as a transportation network company under Florida TNC law (**Fla. Stat. § 627.748**). Prearranged rides offered through the Platform are provided only in the State of Florida. Personal information may be processed and stored in the United States by the Company and by the service providers identified in this Policy.
+The Company operates as a transportation network company under Florida TNC law (**Fla. Stat. § 627.748**). Prearranged rides offered through the Platform are provided in the States of Florida and Alabama. Personal information may be processed and stored in the United States by the Company and by the service providers identified in this Policy.
 
 This Policy applies to riders, drivers, and visitors of the Platform (together, "Users" or "you").''',
     ),
@@ -63,7 +63,7 @@ The Platform collects **precise (GPS) location**, not approximate location.
 
 **Foreground and background collection.** Location collection works differently for drivers and riders:
 
-- **Drivers:** Driver location is collected while the Driver is online and during trips — including, on Android, when the app is in the background or the screen is off — so the Platform can dispatch trips, show trip progress to riders, and support safety features. Background collection runs only while the Driver remains online; it stops when the Driver goes offline in the app. On iOS, Driver location is currently collected while the app is in use.
+- **Drivers:** Driver location is collected while the Driver is online and during trips — including, on Android and iOS, when the app is in the background or the screen is off — so the Platform can dispatch trips, show trip progress to riders, and support safety features. Background collection runs only while the Driver remains online; it stops when the Driver goes offline in the app.
 - **Riders:** Rider location is collected while the app is in use (foreground) to suggest pickups and match the rider with drivers. During a trip, we share the Rider's location with the driver to support accurate pickups and safety features — this continues if the Rider minimizes the app, but only until the driver picks the Rider up or the trip ends or is canceled. We never collect Rider location in the background if the app is closed, or outside a trip.
 
 **Your controls.** You can disable or limit location permission at any time in your device settings (on iOS you can choose "While Using the App"; on Android, "Allow only while using the app"). If you disable location, the Platform cannot provide trips: Drivers cannot go online, and Riders cannot be matched or tracked during a trip.''',
@@ -84,7 +84,7 @@ We send different categories of messages:
     LegalSection(
       heading: '5. Calls and Messages',
       body: r'''
-- **Rider–Driver phone calls** are placed through your device's native dialer, so your phone number may be visible to the other party. We do not monitor or record these calls.
+- **Rider–Driver phone calls** are connected through a masked calling service: the app dials a Company phone number with a temporary code, the call is bridged to the other party, and neither party sees the other's real phone number. We do not monitor or record these calls.
 - **Support phone line.** Our support phone line is answered by an automated voice system. Calls are not recorded; spoken responses may be transcribed so we can operate the support service, and transcripts may be logged.
 - **In-app messages** between riders and drivers, and with support, are retained in our systems and may be reviewed and used for safety, customer support, fraud prevention, and the resolution of disputes, as permitted by law.''',
     ),
@@ -93,20 +93,21 @@ We send different categories of messages:
       body: r'''
 We share personal information only as follows:
 
-- **Between riders and drivers:** first name, photo, vehicle details, and trip-relevant contact and location information, limited to what is needed to complete the trip. Phone numbers may be visible when you call each other through your device's native dialer (see Section 5).
+- **Between riders and drivers:** first name, photo, vehicle details, and trip-relevant contact and location information, limited to what is needed to complete the trip. Calls between riders and drivers are connected through masked phone numbers (see Section 5), so neither party sees the other's real phone number.
 - **Payment processors:** **Stripe** (card payments, ACH bank payments, and driver payouts, including instant payouts) and **PayPal**, to process charges and payouts.
 - **Background check vendor:** **Checkr, Inc.**, to perform the screening described in the Background Check Disclosure and Authorization.
 - **Insurers and claims administrators:** to administer coverage and handle accidents and claims.
 - **Service providers** that process personal information on our behalf, under contractual obligations, by category:
   - cloud hosting and database: **Railway** and **Supabase**;
   - mapping and location services: **Mapbox** and **Google Maps Platform**;
-  - push notifications: **Firebase Cloud Messaging (Google)**;
+  - push notifications: **Firebase Cloud Messaging (Google)** and **Apple Push Notification service (APNs)**, including Live Activity trip updates on iOS;
   - analytics: **Firebase Analytics (Google)**;
   - crash reporting: **Firebase Crashlytics (Google)**;
   - file and document storage: **Google Firebase / Google Cloud**;
+  - realtime trip and location synchronization during active trips and dispatch: **Firebase (Firestore / Realtime Database, Google)**;
   - SMS delivery: **Twilio** (including masked/proxied calls and messages);
   - email delivery: **EmailJS**, with direct SMTP as a fallback;
-  - automated customer support processing: **OpenAI** — support chat content and related trip context are processed through OpenAI's API to generate support responses; under OpenAI's API data usage terms, API inputs are not used to train its models.
+  - automated customer support processing: **OpenAI**, with **Kimi (Moonshot AI)** as a fallback provider — support chat content and related trip context are processed through their APIs to generate support responses; under their API data usage terms, API inputs are not used to train their models.
 - **Authorities:** when required by law, regulation, subpoena, court order, or to protect rights, safety, and property, including disclosures to regulators under Florida TNC law.
 - **Corporate transactions:** in connection with a merger, reorganization, or sale of substantially all assets, with notice where required.
 
@@ -171,7 +172,7 @@ Subject to applicable law, you may:
 
 - access and correct your account information in the app;
 - request a copy of your personal information;
-- request deletion of your account and personal information, subject to the retention obligations described in Section 11;
+- request deletion of your account and personal information, subject to the retention obligations described in Section 11. A deletion request starts a **7-day grace period** during which the account is scheduled for deletion but not yet deleted; signing in during that period cancels the request and reactivates the account;
 - control push, SMS, and email preferences in the app settings; and
 - control location and other device permissions in your device settings.
 
@@ -198,7 +199,7 @@ Privacy questions and requests: by email to **support@cruiseinride.com**.''',
   Widget build(BuildContext context) {
     return const LegalDocumentScreen(
       title: 'Privacy Policy',
-      effectiveDate: 'Version 2.0 — Effective Date: August 8, 2026',
+      effectiveDate: 'Version 2.1 — Effective Date: August 8, 2026',
       sections: _sections,
     );
   }

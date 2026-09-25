@@ -69,7 +69,7 @@ minimums (Fla. Stat. § 627.748(7)):
 ## 5. Driver's Personal Insurance
 
 5.1. Drivers must maintain a valid personal automobile insurance policy
-meeting Florida minimums at all times.
+meeting the minimums of the state in which the Driver operates at all times.
 
 5.2. **Drivers are advised that personal auto policies may not cover TNC
 activity.** Each driver should confirm TNC coverage or an appropriate

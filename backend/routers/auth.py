@@ -413,9 +413,13 @@ async def login(body: LoginIn, request: Request, db: AsyncSession = Depends(get_
         raise HTTPException(
             401, "The email/phone or password you entered is incorrect"
         )
+    # Reactivate deleted accounts — same as phone/email/social login: signing
+    # in during the grace period cancels the deletion request.
+    if user.status in ("deleted", "pending_deletion"):
+        user.status = "active"
+        user.deletion_requested_at = None
+        await db.commit()
     st = user.status or "active"
-    if st == "deleted":
-        raise HTTPException(403, "Account deleted")
     if st == "blocked":
         raise HTTPException(403, "Account blocked")
     if st == "deactivated":

@@ -698,6 +698,11 @@ class DirectionsService {
   /// Traffic lights / stop signs from every leg's intersections — the flags
   /// ride the Mapbox Directions response when steps=true (Google/OSRM have
   /// none). A light and a sign on the same corner keeps only the light.
+  /// Deduped at ~30 m (user report 2026-09-25, "semaforos duplicados"):
+  /// Mapbox repeats the maneuver intersection as the last entry of step N
+  /// AND the first of step N+1, and a divided crossroads is 2-4 signalized
+  /// nodes a few meters apart — undeduped, one corner rendered as a stack
+  /// of 4-8 identical icons.
   List<NavFurniture> _parseMapboxFurniture(Map<String, dynamic> route) {
     final out = <NavFurniture>[];
     final legs = route['legs'] as List? ?? [];
@@ -713,10 +718,13 @@ class DirectionsService {
           if (!signal && !stop) continue;
           final loc = i['location'] as List?;
           if (loc == null || loc.length < 2) continue;
-          out.add((
-            at: LatLng((loc[1] as num).toDouble(), (loc[0] as num).toDouble()),
-            isStopSign: stop && !signal,
-          ));
+          final at =
+              LatLng((loc[1] as num).toDouble(), (loc[0] as num).toDouble());
+          final isStop = stop && !signal;
+          final dupe = out.any((e) =>
+              e.isStopSign == isStop && _haversineMeters(e.at, at) < 30);
+          if (dupe) continue;
+          out.add((at: at, isStopSign: isStop));
         }
       }
     }

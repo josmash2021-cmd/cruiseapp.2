@@ -555,11 +555,11 @@ class DriverNavViewState extends State<DriverNavView>
     setState(() => _mapMounted = true);
   }
 
-  /// Nav-view road furniture (user spec 2026-09-19): street names big
-  /// enough to READ at speed — Google-style size + halo — and any
-  /// traffic-light / stop-sign layers the Studio style ships switched on.
-  /// The probe only touches layers that actually exist — a style without
-  /// them just logs and moves on.
+  /// Nav-view road labels (user spec 2026-09-19): street names big enough
+  /// to READ at speed — Google-style size + halo. The map style's own
+  /// traffic-light / stop-sign layers are NOT enabled here: those render
+  /// network-wide, but the product rule is route-only signals (user report
+  /// 2026-09-25) — the parsed furniture set handles those, on the line only.
   Future<void> _applyNavRoadFurniture(mapbox.MapboxMap m) async {
     for (final l in const [
       'road-label',
@@ -572,29 +572,6 @@ class DriverNavViewState extends State<DriverNavView>
         await m.style.setStyleLayerProperty(l, 'text-halo-color', '#0A1128');
         await m.style.setStyleLayerProperty(l, 'text-halo-width', 1.2);
       } catch (_) {}
-    }
-    try {
-      final layers = await m.style.getStyleLayers();
-      for (final l in layers) {
-        if (l == null) continue;
-        final id = l.id.toLowerCase();
-        // Precise match only: bare 'traffic' is the congestion layer
-        // MapTheme hides on purpose — furniture means lights and signs.
-        if (id.contains('signal') ||
-            id.contains('traffic-light') ||
-            id.contains('traffic_light') ||
-            id.contains('stop-sign') ||
-            id.contains('stop_sign') ||
-            id.contains('road-sign') ||
-            id.contains('signpost')) {
-          debugPrint('[Nav] road furniture layer enabled: ${l.id}');
-          try {
-            await m.style.setStyleLayerProperty(l.id, 'visibility', 'visible');
-          } catch (_) {}
-        }
-      }
-    } catch (e) {
-      debugPrint('[Nav] road furniture probe failed: $e');
     }
   }
 
@@ -1293,6 +1270,14 @@ class DriverNavViewState extends State<DriverNavView>
     final seg = RouteSplice.closestSegmentIndex(pts, pos);
     final proj = RouteSplice.projectOnSegment(pos, pts[seg], pts[seg + 1]);
     final s = _routeSOf(pts, seg, proj);
+    // Gates (user report 2026-09-25, "los semaforos solo salen cerca del
+    // carro"): an off-line fix, or a self-crossing street where the car is
+    // closest to a segment far ALONG the route, used to drag the cursor
+    // hundreds of metres forward in one tick — every sign between the true
+    // position and the leap point was permanently eaten, so top-down only
+    // showed furniture right where the arrow was about to pass.
+    if (RouteSplice.haversineM(proj, pos) > 40) return; // fix off the line
+    if (s - _trimS > 150) return; // self-crossing leap: never skip ahead
     if (s < _trimS - 2) return; // backward jitter: keep the longer line
     if (s - _trimS < 1.0) return; // sub-metre forward: not worth a write
     _trimS = s;
@@ -1369,7 +1354,7 @@ class DriverNavViewState extends State<DriverNavView>
     final pts = _routePts;
     final seg = RouteSplice.closestSegmentIndex(pts, f.at);
     final proj = RouteSplice.projectOnSegment(f.at, pts[seg], pts[seg + 1]);
-    if (RouteSplice.haversineM(proj, f.at) > 60) return null;
+    if (RouteSplice.haversineM(proj, f.at) > 30) return null;
     return (
       s: _routeSOf(pts, seg, proj),
       f: (at: proj, isStopSign: f.isStopSign),
@@ -1377,17 +1362,24 @@ class DriverNavViewState extends State<DriverNavView>
   }
 
   Future<void> _clearFurniture() async {
+    // Detach the list BEFORE the first await (user report 2026-09-25,
+    // "semaforos duplicados"): the old code ended with `_furniture = []`
+    // AFTER the per-sign delete awaits — a concurrent _setRouteFurniture had
+    // already swapped the new set in by then, so the wipe clobbered the new
+    // handles, the icons stayed on the map orphaned, and every later clear
+    // iterated an empty list.
+    final old = _furniture;
+    _furniture = [];
     final mgr = _pointMgr;
-    for (final sign in _furniture) {
+    for (final sign in old) {
       final a = sign.annot;
+      sign.annot = null;
       if (a != null && mgr != null) {
         try {
           await mgr.delete(a);
         } catch (_) {}
       }
-      sign.annot = null;
     }
-    _furniture = [];
   }
 
   Future<void> _drawFurniture() async {

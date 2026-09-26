@@ -218,13 +218,15 @@ void main() {
     });
   });
 
-  group('GPS accuracy gate (user report 2026-09-19, "flecha en el mar")', () {
-    test('a fix that declares itself worse than 65 m never moves the arrow',
+  group('GPS accuracy gate (user reports 2026-09-19 "flecha en el mar" and '
+      '2026-09-25 "flecha fuera de la linea al hacer zoom")', () {
+    test('a fix that declares itself worse than 25 m never moves the arrow',
         () {
       final body = bodyOf(ctrl, 'onPosition: (pos) {', maxLen: 2600);
-      expect(body.contains('pos.accuracy <= 65'), isTrue,
-          reason: 'beach multipath / cold-start hops carry a huge radius — '
-              'only the display target is gated, presence keeps flowing');
+      expect(body.contains('pos.accuracy <= 25'), isTrue,
+          reason: '65 m killed catastrophic hops, but a ±30-65 m fix still '
+              'floated the arrow over blocks at pinch-zoom — only the '
+              'display target is gated, presence keeps flowing');
       expect(body.contains('fixUsable'), isTrue);
     });
 

@@ -568,12 +568,15 @@ void main() {
     test('the line is eaten forward-only, off the dot glide, cursor reset '
         'with fresh geometry', () {
       expect(nav.contains('void _trimRouteTo(LatLng pos)'), isTrue);
-      final body = bodyOf(nav, 'void _trimRouteTo(LatLng pos) {', maxLen: 900);
+      final body = bodyOf(nav, 'void _trimRouteTo(LatLng pos) {', maxLen: 1500);
       expect(body.contains('s < _trimS - 2'), isTrue,
           reason: 'monotonic forward — a jittery fix must never regrow the '
               'eaten line');
       expect(body.contains('inMilliseconds < 400'), isTrue,
           reason: 'native writes throttled (~2.5/s) — no per-frame churn');
+      expect(body.contains('s - _trimS > 150'), isTrue,
+          reason: 'self-crossing streets: the cursor never leaps hundreds of '
+              'metres in one tick (2026-09-25 — far-ahead signs were eaten)');
       final tick = bodyOf(nav, 'void _onDotTick() {', maxLen: 500);
       expect(tick.contains('_trimRouteTo('), isTrue,
           reason: 'the erase rides the dot\'s animated position, not the '
@@ -595,17 +598,16 @@ void main() {
       expect(body.contains('meters * 3.28084'), isTrue);
     });
 
-    test('street labels read at speed + traffic-light/stop layers probed', () {
+    test('street labels read at speed; style signal layers stay OFF', () {
       expect(nav.contains('_applyNavRoadFurniture('), isTrue);
       final body =
           bodyOf(nav, 'Future<void> _applyNavRoadFurniture(', maxLen: 1800);
       expect(body.contains("'text-size', 15.0"), isTrue,
           reason: 'street names big enough to read at a glance');
-      expect(body.contains('getStyleLayers()'), isTrue,
-          reason: 'the probe only enables layers the Studio style actually '
-              'ships — no blind furniture');
-      expect(body.contains("'signal'"), isTrue);
-      expect(body.contains('stop-sign'), isTrue);
+      expect(body.contains('getStyleLayers()'), isFalse,
+          reason: 'the style\'s own signal layers render network-wide — the '
+              'product rule is route-only signals (user report 2026-09-25), '
+              'handled by the parsed furniture set');
       final style =
           bodyOf(nav, 'onStyleLoadedListener: (_) async {', maxLen: 400);
       expect(style.contains('_applyNavRoadFurniture(m)'), isTrue,
@@ -656,7 +658,7 @@ void main() {
           nav.contains('void _setRouteFurniture(List<NavFurniture>'), isTrue);
       expect(nav.contains('_renderTrafficLightBytes('), isTrue);
       expect(nav.contains('_renderStopSignBytes('), isTrue);
-      final trim = bodyOf(nav, 'void _trimRouteTo(LatLng pos) {', maxLen: 1500);
+      final trim = bodyOf(nav, 'void _trimRouteTo(LatLng pos) {', maxLen: 2200);
       expect(trim.contains('e.s < _trimS - 5'), isTrue,
           reason: 'a sign the driver passed disappears with the stretch of '
               'road behind him');
@@ -707,9 +709,10 @@ void main() {
               'icon must anchor at the projected point');
       final snap = bodyOf(nav, '_snapFurniture(NavFurniture f)', maxLen: 700);
       expect(snap.contains('RouteSplice.projectOnSegment'), isTrue);
-      expect(snap.contains('RouteSplice.haversineM(proj, f.at) > 60'), isTrue,
-          reason: 'past 60 m off the line the sign belongs to another path — '
-              'dropped, not misdrawn');
+      expect(snap.contains('RouteSplice.haversineM(proj, f.at) > 30'), isTrue,
+          reason: 'past 30 m off the line the sign belongs to another path — '
+              'dropped, not misdrawn (tightened 2026-09-25 from 60: corner '
+              'signals of the crossing street bled onto the route)');
       expect(snap.contains('at: proj'), isTrue,
           reason: 'the annotation rides the projected point — exactly on the '
               'line the driver sees, in every camera view');

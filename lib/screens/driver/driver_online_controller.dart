@@ -1279,14 +1279,17 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
         _headingSource.onFix(pos);
         _currentSpeedMph = (pos.speed * 2.23694).clamp(0.0, 200.0);
         // Accuracy gate (user report 2026-09-19, "la flecha aparece en el
-        // mar"): a fix whose OWN radius of uncertainty is worse than 65 m
-        // must not move the arrow — beach multipath and cold-start hops
-        // carry exactly that radius and parked the marker hundreds of
-        // metres from the road. A negative/unknown accuracy passes (same
-        // as before); only a fix that DECLARES itself bad is blocked.
-        // Presence and RTDB keep flowing either way — the ghost agent
+        // mar"; tightened 2026-09-25, "la flecha se ve fuera de la linea al
+        // hacer zoom"): a fix whose OWN radius of uncertainty is worse than
+        // 25 m must not move the arrow. 65 m killed the catastrophic hops,
+        // but at pinch-zoom a fix declaring ±30-65 m still floats the arrow
+        // visibly over blocks with no route to snap to while searching. A
+        // negative/unknown accuracy passes (same as before); only a fix
+        // that DECLARES itself bad is blocked. Between good fixes
+        // SmoothMotion extrapolates ~5 s, so brief bad spells bridge;
+        // presence and RTDB keep flowing either way — the ghost agent
         // needs them; only the display target is gated.
-        final fixUsable = pos.accuracy <= 65;
+        final fixUsable = pos.accuracy <= 25;
         if (fixUsable) {
           // Snap to route polyline — prevents GPS drift off-road
           final snappedLL = _snapToRoute(newLL);

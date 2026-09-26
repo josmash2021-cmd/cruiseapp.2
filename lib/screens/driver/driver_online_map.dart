@@ -176,7 +176,6 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
       // so send one flush to hide it and then leave the channel alone — the
       // map itself is what needs that bandwidth at sixty frames a second.
       if (overlayOwns && _goldDotHidden) return;
-      _goldDotHidden = overlayOwns;
 
       // Fire update() only when previous IPC finished. If busy, the geometry
       // write above already captured the latest position — no info lost.
@@ -185,9 +184,22 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
       _diagAnnotUpdates++;
       try {
         await pointMgr.update(_goldDotAnnot!);
+        // Latch ONLY after the flush lands (user report 2026-09-25, "el
+        // botón de recentrar clona la flecha"): latching BEFORE it meant a
+        // busy channel dropped the hide but kept the latch — every later
+        // call early-returned, and the native arrow stayed visible, frozen
+        // where it was, next to the overlay's live one.
+        _goldDotHidden = overlayOwns;
       } catch (_) {
+        // Delete before nulling: a transient failure must not orphan a
+        // visible native annotation — the recreate path would stack a
+        // second one on top of it.
+        try {
+          await pointMgr.delete(_goldDotAnnot!);
+        } catch (_) {}
         _goldDotAnnot = null;
         _goldDotAnnotGen = 0;
+        _goldDotHidden = false;
       } finally {
         _annotUpdateBusy = false;
       }
@@ -253,6 +265,11 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
       try {
         await pointMgr.update(_carAnnot!);
       } catch (_) {
+        // Same discipline as the dot above: delete before nulling so a
+        // transient failure never orphans a visible native car.
+        try {
+          await pointMgr.delete(_carAnnot!);
+        } catch (_) {}
         _carAnnot = null;
         _carAnnotGen = 0;
       } finally {

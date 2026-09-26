@@ -1341,6 +1341,36 @@ class DriverNavViewState extends State<DriverNavView>
     }
     _furniture = signs;
     unawaited(_drawFurniture());
+    unawaited(_mergeOsmStops());
+  }
+
+  /// Sequence token for [_mergeOsmStops]: a slow Overpass answer must never
+  /// land on a route that has since been replaced (reroute / leg flip).
+  int _osmStopsSeq = 0;
+
+  /// OSM has the stop signs Mapbox lacks (user report 2026-09-25, "no estan
+  /// apareciendo los stops"): fetched along the drawn route, snapped onto
+  /// the line like every other sign, and deduped at ~30 m against the whole
+  /// set — Mapbox stops, lights (a light keeps the corner, same rule as the
+  /// directions parser), and the OSM stops already merged.
+  Future<void> _mergeOsmStops() async {
+    final seq = ++_osmStopsSeq;
+    final pts = _routePts;
+    if (pts.length < 2 || kIsWeb) return;
+    final stops =
+        await DirectionsService(ApiKeys.webServices).fetchOsmStops(pts);
+    if (!mounted || seq != _osmStopsSeq || stops.isEmpty) return;
+    var added = false;
+    for (final at in stops) {
+      final dup = _furniture.any(
+          (e) => RouteSplice.haversineM(e.f.at, at) < 30);
+      if (dup) continue;
+      final snapped = _snapFurniture((at: at, isStopSign: true));
+      if (snapped == null) continue;
+      _furniture.add(_NavSign(s: snapped.s, f: snapped.f));
+      added = true;
+    }
+    if (added) unawaited(_drawFurniture());
   }
 
   /// Snap a sign onto the DRAWN line (user report 2026-09-23, "los
@@ -1349,7 +1379,7 @@ class DriverNavViewState extends State<DriverNavView>
   /// or a Google/OSRM line (provider race) — an icon anchored to the raw
   /// intersection sits visibly off the road at chase zoom. The projected
   /// point lies exactly on the line the driver sees, in chase AND top-down.
-  /// Past 60 m off the line the sign belongs to a different path: dropped.
+  /// Past 30 m off the line the sign belongs to a different path: dropped.
   ({double s, NavFurniture f})? _snapFurniture(NavFurniture f) {
     final pts = _routePts;
     final seg = RouteSplice.closestSegmentIndex(pts, f.at);
@@ -1466,6 +1496,22 @@ class DriverNavViewState extends State<DriverNavView>
         ..style = PaintingStyle.stroke
         ..strokeWidth = 1.6,
     );
+    // The word, like the real sign (user reference 2026-09-25): at top-down
+    // zoom the bare octagon read as a red blob.
+    final tp = TextPainter(
+      text: const TextSpan(
+        text: 'STOP',
+        style: TextStyle(
+          color: Colors.white,
+          fontSize: 13,
+          fontWeight: FontWeight.w900,
+          letterSpacing: 0.5,
+          height: 1.0,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    tp.paint(canvas, Offset((w - tp.width) / 2, (h - tp.height) / 2));
     final img = await recorder.endRecording().toImage(w.toInt(), h.toInt());
     final data = await img.toByteData(format: ui.ImageByteFormat.png);
     return data!.buffer.asUint8List();

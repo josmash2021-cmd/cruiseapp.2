@@ -701,6 +701,28 @@ void main() {
           reason: 'the Mapbox steps fill carries the signs too');
     });
 
+    test('stop signs come from OSM, merged deduped and re-armed per route '
+        '(2026-09-25, "no estan apareciendo los stops")', () {
+      final svc = File('lib/services/directions_service.dart')
+          .readAsStringSync();
+      expect(svc.contains('fetchOsmStops('), isTrue,
+          reason: 'Mapbox stop_sign coverage is empty on US routes — the '
+              'stops come from Overpass');
+      expect(svc.contains('node["highway"="stop"]'), isTrue);
+      final set = bodyOf(nav, 'void _setRouteFurniture(List<NavFurniture>',
+          maxLen: 900);
+      expect(set.contains('_mergeOsmStops()'), isTrue,
+          reason: 'every route fill path merges the OSM stops with the plan');
+      final merge = bodyOf(nav, 'Future<void> _mergeOsmStops() async {',
+          maxLen: 1400);
+      expect(merge.contains('_osmStopsSeq'), isTrue,
+          reason: 'a slow Overpass answer must never land on a replaced '
+              'route (reroute / leg flip)');
+      expect(merge.contains('< 30'), isTrue,
+          reason: 'deduped at ~30 m — a light keeps the corner, and two '
+              'stop nodes on one crossing render once');
+    });
+
     test('signs snap onto the DRAWN line, never the raw intersection '
         '(2026-09-23, misplaced in chase AND top-down)', () {
       expect(nav.contains('_snapFurniture(NavFurniture f)'), isTrue,

@@ -731,6 +731,63 @@ class DirectionsService {
     return out;
   }
 
+  // ── OSM stop signs (user report 2026-09-25, "no estan apareciendo los
+  // stops") ─────────────────────────────────────────────────────────────
+  // Mapbox's `stop_sign` coverage rides OSM's sparse `highway=stop` tagging
+  // and in practice never fires on US routes — the stops come straight from
+  // the source instead: Overpass, nodes tagged highway=stop within 35 m of
+  // the route polyline. Fail-soft everywhere: stops are a nicety, a slow or
+  // rate-limited Overpass must never cost the navigation.
+
+  /// Evenly-spaced subsample of a route polyline, endpoints kept, so the
+  /// Overpass query stays a sane size on long trips.
+  static List<LatLng> decimatePolyline(List<LatLng> pts, {int maxPoints = 80}) {
+    if (pts.length <= maxPoints) return List.of(pts);
+    final step = (pts.length - 1) / (maxPoints - 1);
+    return [for (var i = 0; i < maxPoints; i++) pts[(i * step).round()]];
+  }
+
+  /// The Overpass QL query: highway=stop nodes within 35 m of the polyline
+  /// (around with a coordinate list is a corridor in Overpass).
+  static String buildStopSignQuery(List<LatLng> pts) {
+    final coords =
+        pts.map((p) => '${p.latitude},${p.longitude}').join(',');
+    return '[out:json][timeout:10];'
+        'node["highway"="stop"](around:35,$coords);'
+        'out body;';
+  }
+
+  /// Overpass JSON → stop coordinates, skipping anything malformed.
+  static List<LatLng> parseStopNodes(Map<String, dynamic> json) {
+    final out = <LatLng>[];
+    for (final e in (json['elements'] as List? ?? const [])) {
+      if (e is! Map) continue;
+      final lat = (e['lat'] as num?)?.toDouble();
+      final lon = (e['lon'] as num?)?.toDouble();
+      if (lat != null && lon != null) out.add(LatLng(lat, lon));
+    }
+    return out;
+  }
+
+  /// Stop signs along [pts] from OpenStreetMap. Empty on any failure.
+  Future<List<LatLng>> fetchOsmStops(List<LatLng> pts) async {
+    if (pts.length < 2) return const [];
+    try {
+      final res = await http
+          .post(
+            Uri.parse('https://overpass-api.de/api/interpreter'),
+            body: {'data': buildStopSignQuery(decimatePolyline(pts))},
+          )
+          .timeout(const Duration(seconds: 10));
+      if (res.statusCode != 200) return const [];
+      final json = jsonDecode(res.body);
+      if (json is! Map<String, dynamic>) return const [];
+      return parseStopNodes(json);
+    } catch (_) {
+      return const [];
+    }
+  }
+
   /// steps[] from every leg of a Mapbox route, as [NavStep]s. A step without
   /// a maneuver location is skipped — the nav bar cannot place it.
   List<NavStep> _parseMapboxSteps(Map<String, dynamic> route) {

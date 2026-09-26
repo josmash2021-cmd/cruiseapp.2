@@ -12509,11 +12509,11 @@ return A.o($async$rZ,r)},
 bFu(){var s,r=$.akN(),q=J.jo(16,t.S)
 for(s=0;s<16;++s)q[s]=r.ud(256)
 return new A.W(q,new A.apE(),A.a1(q).i("W<1,l>")).n2(0)},
-apG(){var s,r="application/json",q=B.j.l(B.j.aJ(Date.now(),1000)),p=A.bFu(),o=B.dV.e_("8kQ3Ouh1wwnF398fP3GtY6JW7rYhTMbo7A3CXCUVg4s="),n=B.dV.e_("8ni63svMNeTUuQ4ZTTmtuEQkPvor0EvhmVy54Supnvg:"+q+":"+p+":dispatch"),m=new Uint8Array(64)
+apG(){var s,r="application/json",q=B.j.l(B.j.aJ(Date.now(),1000)),p=A.bFu(),o=B.dV.e_("8kQ3Ouh1wwnF398fP3GtY6JW7rYhTMbo7A3CXCUVg4s="),n=B.dV.e_("570cd9eb29fb7a44ae5f5d0c935a708ca73c348f507ceb73702d494bde504:"+q+":"+p+":dispatch"),m=new Uint8Array(64)
 if(o.length>64)o=B.pS.e_(o).a
 B.aA.lI(m,0,o.length,o)
 s=t.N
-return A.ae(["Content-Type",r,"Accept",r,"User-Agent","CruiseDispatch/1.0 (Flutter; Android/iOS)","X-API-Key","8ni63svMNeTUuQ4ZTTmtuEQkPvor0EvhmVy54Supnvg","X-Timestamp",q,"X-Nonce",p,"X-Signature",A.bnI(new A.a0x(B.pS,m).e_(n).a),"X-Device-FP","dispatch-admin-app","X-Client-Version","1.0.0"],s,s)},
+return A.ae(["Content-Type",r,"Accept",r,"User-Agent","CruiseDispatch/1.0 (Flutter; Android/iOS)","X-API-Key","570cd9eb29fb7a44ae5f5d0c935a708ca73c348f507ceb73702d494bde504","X-Timestamp",q,"X-Nonce",p,"X-Signature",A.bnI(new A.a0x(B.pS,m).e_(n).a),"X-Device-FP","dispatch-admin-app","X-Client-Version","1.0.0"],s,s)},
 mH(a,b){var s=B.eF,r=3
 return A.bFv(a,b,b)},
 bFv(a7,a8,a9){var s=0,r=A.p(a9),q,p=2,o=[],n,m,l,k,j,i,h,g,f,e,d,c,b,a,a0,a1,a2,a3,a4,a5,a6

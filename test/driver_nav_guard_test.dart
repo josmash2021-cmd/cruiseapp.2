@@ -32,10 +32,15 @@ void main() {
       File('lib/l10n/app_localizations.dart').readAsStringSync();
 
   /// Extracts [maxLen] chars of [src] starting at [signature].
+  ///
+  /// CRLF-normalized: git on this machine checks out CRLF (autocrlf), and a
+  /// needle spanning a line boundary must match either ending.
   String bodyOf(String src, String signature, {int maxLen = 1600}) {
     final start = src.indexOf(signature);
     expect(start, isNonNegative, reason: '$signature not found');
-    return src.substring(start, start + maxLen);
+    return src
+        .substring(start, start + maxLen)
+        .replaceAll('\r\n', '\n');
   }
 
   group('web booking filter', () {

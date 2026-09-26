@@ -777,7 +777,8 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
         if (!mounted || !_previewMapMounted) return;
         // Same sweep as the nav-entry path: the preview's annotations must
         // not outlive the handoff (the "carrito" on the nav's arrow).
-        unawaited(_sweepPreviewAnnotations());
+        // Awaited — the deletes must land before the surface goes away.
+        await _sweepPreviewAnnotations();
         setState(() => _previewMapMounted = false);
         await surfaceRemoved();
       },
@@ -920,7 +921,9 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
       // 2026-09-19, "hay un carrito encima de la flecha"): swept AFTER the
       // snapshot — the morph keeps the preview's exact last frame — and
       // BEFORE the unmount, while the manager and surface are still alive.
-      unawaited(_sweepPreviewAnnotations());
+      // AWAITED: unawaited it raced the unmount and the deletes could land
+      // on an already-torn-down channel, leaving the car behind.
+      await _sweepPreviewAnnotations();
       setState(() {
         _previewMapMounted = false;
         if (morphBytes != null && morphRect != null) {
@@ -965,21 +968,26 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     _carGpsSub?.cancel();
     _carGpsSub = null;
     _carTicker?.stop();
+    _carTicker?.dispose();
+    _carTicker = null;
     final car = _carMgr;
     if (car != null) {
       try { await car.deleteAll(); } catch (_) {}
     }
     _carAnnot = null;
+    _carMgr = null;
     final pins = _annotMgr;
     if (pins != null) {
       try { await pins.deleteAll(); } catch (_) {}
     }
     _stopPinAnnot = null;
+    _annotMgr = null;
     final poly = _polyMgr;
     if (poly != null) {
       try { await poly.deleteAll(); } catch (_) {}
     }
     _routeAnnot = null;
+    _polyMgr = null;
   }
 
   /// Back out of navigation: the nav view's dispose releases its surface
@@ -4143,6 +4151,11 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   Future<void> _startMiniMapCar() async {
     final ctrl = _map;
     if (ctrl == null || !mounted || kIsWeb) return;
+    // Navigation owns the screen (and the one map surface): nothing from
+    // the preview — above all its car — may (re)appear while it is up
+    // (user report: "encima de la flecha aparece un carrito" on the nav
+    // page — a late style-load used to recreate it mid-navigation).
+    if (_navMode) return;
     if (_carMgr != null) return;
     try {
       _carMgr = await ctrl.annotations.createPointAnnotationManager();
@@ -4242,6 +4255,9 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   }
 
   void _ensureCarTicker() {
+    // Same gate as _startMiniMapCar: the preview car's ticker never runs
+    // while navigation owns the screen.
+    if (_navMode) return;
     _carTicker ??= createTicker(_onCarTick);
     if (!_carTicker!.isActive) {
       _carLastTick = Duration.zero;

@@ -261,22 +261,22 @@ void main() {
   });
 
   group('nav view: off-route rerouting', () {
-    test('30 m threshold held for 2 s of fixes, 20 m reset, 8 s cooldown '
-        '(tightened 2026-09-19 under the 65 m fix gate)', () {
-      expect(nav.contains('_offRouteM = 30.0'), isTrue,
-          reason: 'user report 2026-09-19: "tarda mucho en redireccionar" — '
-              '40 m / 4 s / 15 s was too slow to redirect');
+    test('25 m threshold held for 1 s of fixes, 20 m reset, 6 s cooldown '
+        '(tightened again — user spec: "redireccionando rapido")', () {
+      expect(nav.contains('_offRouteM = 25.0'), isTrue,
+          reason: 'user report: "redireccionando rapido" — 30 m / 2 s / 8 s '
+              'was still too slow to redirect');
       expect(nav.contains('_offRouteResetM = 20.0'), isTrue);
-      expect(nav.contains('_offRouteHoldSecs = 2'), isTrue);
-      expect(nav.contains('_rerouteCooldownSecs = 8'), isTrue);
+      expect(nav.contains('_offRouteHoldSecs = 1'), isTrue);
+      expect(nav.contains('_rerouteCooldownSecs = 6'), isTrue);
       expect(nav.contains('RouteSplice.distanceToPolylineM(_routePts, pos)'),
           isTrue);
     });
 
-    test('nav fixes pass the 65 m accuracy gate so 30 m cannot false-arm', () {
+    test('nav fixes pass the 65 m accuracy gate so 25 m cannot false-arm', () {
       final body = bodyOf(nav, 'void _onGpsFix(Position pos) {', maxLen: 500);
       expect(body.contains('pos.accuracy > 65'), isTrue,
-          reason: 'without the gate, GPS noise at 30 m would fire false '
+          reason: 'without the gate, GPS noise at 25 m would fire false '
               'reroutes all day');
     });
 
@@ -405,7 +405,7 @@ void main() {
       expect(nav.contains('_endRouteRaised'), isTrue,
           reason: 'the sheet auto-raises once on arrival so the button is '
               'actually visible');
-      final bar = bodyOf(nav, 'Widget _buildManeuverBar(S s) {', maxLen: 4400);
+      final bar = bodyOf(nav, 'Widget _buildManeuverBar(S s) {', maxLen: 5300);
       expect(bar.contains('s.navExit'), isTrue,
           reason: 'the top bar keeps the quiet X — End Route is below');
       expect(bar, isNot(contains('navEndRoute')));
@@ -413,7 +413,7 @@ void main() {
 
     test('arrived: bar shows the CLIENT ADDRESS, arrow aims at the pin '
         '(user spec 2026-09-19)', () {
-      final bar = bodyOf(nav, 'Widget _buildManeuverBar(S s) {', maxLen: 1200);
+      final bar = bodyOf(nav, 'Widget _buildManeuverBar(S s) {', maxLen: 1700);
       expect(
           bar.contains('final title = _endRouteVisible\n'
               '        ? destName'),
@@ -560,9 +560,51 @@ void main() {
               'tangent speaks');
       expect(body.contains('_dot.setBearing(h)'), isTrue);
       expect(body.contains('_speedMps < 1.0'), isTrue,
-          reason: 'the parked 20° anti-twitch deadband stays (2026-09-17)');
+          reason: 'the parked heading freeze gate stays');
       expect(body.contains('RouteSplice.distanceToPolylineM(_routePts, fixLL)'),
           isTrue);
+    });
+
+    test('STOPPED the tangent never re-aims the arrow — only a fix that '
+        'genuinely moved does (user report: stoplight pre-rotation)', () {
+      final body = bodyOf(nav, 'void _onGpsFix(Position pos) {', maxLen: 4200);
+      expect(body.contains('_headingSetAt'), isTrue,
+          reason: 'user report: "parado en el semaforo, sin haber girado, la '
+              'flecha ya se puso de lado y la camara giro" — the turn AHEAD '
+              'on the route is not the driver\'s turn yet');
+      expect(body.contains('RouteSplice.haversineM(anchor, fixLL) > 10'), isTrue,
+          reason: 'the only escape is genuine movement from the anchor — a '
+              'crawl the speed channel has not confirmed yet');
+    });
+
+    test('the tangent look-ahead scales with speed — no early rotation', () {
+      final body = bodyOf(nav, 'double? _routeHeadingFor(LatLng pos) {',
+          maxLen: 1400);
+      expect(body.contains('(_speedMps * 1.2).clamp(8.0, 30.0)'), isTrue,
+          reason: 'user report: "la camara y la flecha giran antes de que el '
+              'driver realmente gire" — a fixed 30 m crossed the corner up '
+              'to ~2.5 s before the car did');
+    });
+
+    test('remaining min/miles measure ALONG the route, current step prorated '
+        '(user report: "no marca los minutos y millas correctamente")', () {
+      expect(nav.contains('double _remainingRouteMeters(LatLng from)'), isTrue,
+          reason: 'the crow-fly to the next maneuver undercounts every '
+              'curve and lies on cloverleaf ramps');
+      final body =
+          bodyOf(nav, 'void _updateManeuvers(LatLng driverPos) {', maxLen: 2800);
+      expect(body.contains('_remainingRouteMeters(driverPos)'), isTrue);
+      expect(body.contains('onStep.durationSeconds * frac'), isTrue,
+          reason: 'the step being driven used to contribute NOTHING to the '
+              'ETA — on a freeway that step is the whole trip');
+    });
+
+    test('the bar announces the full maneuver instruction — freeway exits '
+        '(user report: "en el freeway no indica las salidas")', () {
+      final body = bodyOf(nav, 'Widget _buildManeuverBar(S s) {', maxLen: 1800);
+      expect(body.contains('_instructionLabel'), isTrue,
+          reason: '"Take exit 67B on the right onto I-4 W" beats the bare '
+              'street name, which says nothing about the exit to take');
     });
 
     test('the line is eaten forward-only, off the dot glide, cursor reset '
@@ -773,7 +815,7 @@ void main() {
           reason: 'the top-down fit on open is gone — it belongs to the '
               'overview toggle only');
       final succeeded =
-          bodyOf(nav, 'Future<void> _onRouteFetchSucceeded', maxLen: 3400);
+          bodyOf(nav, 'Future<void> _onRouteFetchSucceeded', maxLen: 3900);
       expect(succeeded.contains('_snapToChasePose();'), isTrue);
     });
 
@@ -793,12 +835,13 @@ void main() {
     });
   });
 
-  group('user spec 2026-09-17: flat 25° chase, gold call disc, true speed',
+  group('user spec 2026-09-17: tilted chase, gold call disc, true speed',
       () {
-    test('the chase tilt is 35° (user spec 2026-09-19), never back at 55', () {
-      expect(nav.contains('_chasePitch = 35.0'), isTrue,
-          reason: 'user spec 2026-09-19: "un poquitico mas inclinado", the '
-              'reference nav view');
+    test('the chase tilt is 45° (user spec: "inclina un poco mas el mapa"), '
+        'never back at 55 or 25', () {
+      expect(nav.contains('_chasePitch = 45.0'), isTrue,
+          reason: 'user spec: "inclina un poco mas el mapa" — 35° still read '
+              'flat at a glance mid-drive');
       expect(nav, isNot(contains('_chasePitch = 25.0')));
       expect(nav, isNot(contains('_chasePitch = 55.0')));
     });

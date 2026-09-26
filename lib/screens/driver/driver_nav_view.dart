@@ -250,9 +250,9 @@ class DriverNavViewState extends State<DriverNavView>
   static const _chaseZoomFast = 16.7;
   static const _chaseZoomManeuver = 18.0;
   static const _zoomLerpPerSec = 0.5;
-  // Chase tilt: 35° (user spec 2026-09-19 — "un poquitico mas inclinado",
-  // the reference nav view; 55 read as a horizon view and hid the streets).
-  static const _chasePitch = 35.0;
+  // Chase tilt: 45° (user spec: "inclina un poco mas el mapa" — 35° still
+  // read flat at a glance; 55° was the horizon view that hid the streets).
+  static const _chasePitch = 45.0;
 
   // ── Route + maneuvers ──
   List<LatLng> _routePts = [];
@@ -278,9 +278,13 @@ class DriverNavViewState extends State<DriverNavView>
   String _streetLabel = '';
   String _thenLabel = '';
   String _maneuverDistLabel = '';
+  String _instructionLabel = '';
   String _maneuverType = 'depart';
   String _maneuverModifier = '';
   double _speedMps = 0;
+  // Where the fix stood when the arrow's heading was last set — the anchor
+  // the stoplight heading-freeze measures genuine movement against.
+  LatLng? _headingSetAt;
   int _lastMphShown = -1;
   int _remainSecs = 0;
   double _remainMeters = 0;
@@ -288,22 +292,21 @@ class DriverNavViewState extends State<DriverNavView>
   // ── Navigation state machine ──
   _NavPhase _navPhase = _NavPhase.initializing;
 
-  // Off-route: >40 m from the line held for 4 s of fixes arms a reroute;
-  // back within 25 m resets the clock. One request in flight, 15 s cooldown,
+  // Off-route: >25 m from the line held for 1 s of fixes arms a reroute;
+  // back within 20 m resets the clock. One request in flight, 6 s cooldown,
   // and a sequence token so a stale response can never replace a newer plan.
   DateTime? _offRouteSince;
   int _rerouteSeq = 0;
   DateTime? _lastRerouteAt;
   bool _rerouting = false;
-  // Off-route rerouting (user spec 2026-09-19, "tarda mucho en
-  // redireccionar"): 30 m off the polyline held for 2 s of fixes arms the
-  // fetch (reset the moment a fix lands back within 20 m), 8 s between
-  // fetches — tightened from 40 m / 4 s / 15 s now that the 65 m accuracy
-  // gate keeps GPS noise from arming it.
-  static const _offRouteM = 30.0;
+  // Off-route rerouting: 25 m off the polyline held for 1 s of fixes arms
+  // the fetch (reset the moment a fix lands back within 20 m), 6 s between
+  // fetches — tightened again (user spec: "redireccionando rapido") now that
+  // the 65 m accuracy gate keeps GPS noise from arming it.
+  static const _offRouteM = 25.0;
   static const _offRouteResetM = 20.0;
-  static const _offRouteHoldSecs = 2;
-  static const _rerouteCooldownSecs = 8;
+  static const _offRouteHoldSecs = 1;
+  static const _rerouteCooldownSecs = 6;
   static const _prefetchDestMaxM = 150.0;
 
   // Internal arrival: approaching under 200 m; arrived after 2 consecutive
@@ -669,7 +672,10 @@ class DriverNavViewState extends State<DriverNavView>
     // noise, so the opening arrow (and chase camera) takes the route
     // tangent instead (user spec 2026-09-16).
     final h = _routeHeadingFor(widget.initialDriverPos);
-    if (h != null) _dot.setBearing(h);
+    if (h != null) {
+      _dot.setBearing(h);
+      _headingSetAt = widget.initialDriverPos;
+    }
     _lastGpsFixAt = DateTime.now(); // warm-up grace for the first fix
     _armGpsWatchdog();
   }
@@ -786,17 +792,22 @@ class DriverNavViewState extends State<DriverNavView>
       final h = _routeHeadingFor(fixLL);
       if (h != null) {
         if (_speedMps < 1.0) {
-          // Deadband (user spec 2026-09-17): a parked car's fix wanders
-          // metres between readings and the tangent computed off it swings
-          // with the projection — re-aiming on every fix made the arrow
-          // twitch through big arcs at stoplights. Only a meaningful change
-          // of where the route points retargets the arrow; the SmoothMotion
-          // lerp turns it there.
-          var diff = (h - _dot.bearing).abs() % 360;
-          if (diff > 180) diff = 360 - diff;
-          if (diff > 20) _dot.setBearing(h);
+          // Heading freeze (user report: "parado en el semaforo, sin haber
+          // girado, la flecha ya se puso de lado y la camara giro"): a
+          // parked car keeps its last moving heading — the route's next
+          // turn is not the driver's turn yet, and the tangent crosses the
+          // corner long before he does. The only escape: a fix that has
+          // genuinely MOVED from where the heading was last set — a crawl
+          // the speed channel has not confirmed yet — re-aims once and
+          // re-anchors. GPS wander rotates in place and never crosses it.
+          final anchor = _headingSetAt;
+          if (anchor != null && RouteSplice.haversineM(anchor, fixLL) > 10) {
+            _dot.setBearing(h);
+            _headingSetAt = fixLL;
+          }
         } else {
           _dot.setBearing(h);
+          _headingSetAt = fixLL;
         }
       }
     }
@@ -816,15 +827,22 @@ class DriverNavViewState extends State<DriverNavView>
   }
 
   /// Where the arrow should point when the GPS has nothing to say: along
-  /// the route, from the driver's projection toward a look-ahead point
-  /// ~30 m on — the same tangent trick the rider's tracking map steers its
-  /// car by.
+  /// the route, from the driver's projection toward a look-ahead point up
+  /// to ~30 m on — the same tangent trick the rider's tracking map steers
+  /// its car by.
   double? _routeHeadingFor(LatLng pos) {
     final pts = _routePts;
     if (pts.length < 2) return null;
     final seg = RouteSplice.closestSegmentIndex(pts, pos);
     var from = RouteSplice.projectOnSegment(pos, pts[seg], pts[seg + 1]);
-    var remaining = 30.0;
+    // Look-ahead scaled by speed (user report: "la camara y la flecha giran
+    // antes de que el driver realmente gire"): a fixed 30 m crossed the
+    // corner up to ~2.5 s before the car did, so the arrow swept onto the
+    // new street early — and at a stoplight it pointed at a turn the driver
+    // had not taken yet. ~1.2 s of travel, floored at 8 m (parked: the
+    // street the car is ON, not the turn ahead), capped at the old 30 m
+    // (highway: the anticipation is genuinely needed there).
+    var remaining = (_speedMps * 1.2).clamp(8.0, 30.0);
     for (var i = seg + 1; i < pts.length; i++) {
       final d = RouteSplice.haversineM(from, pts[i]);
       if (d >= remaining && d > 1e-3) {
@@ -881,13 +899,13 @@ class DriverNavViewState extends State<DriverNavView>
     }
   }
 
-  /// GPS noise never reroutes: the driver must sit more than 30 m off the
-  /// polyline for 2 straight seconds of fixes (sampled per fix, reset the
+  /// GPS noise never reroutes: the driver must sit more than 25 m off the
+  /// polyline for 1 straight second of fixes (sampled per fix, reset the
   /// moment a fix lands back within 20 m) before a reroute is even asked
-  /// for. Tightened 2026-09-19 under the 65 m fix-accuracy gate — without
-  /// it, a bad-signal day would arm false reroutes at 30 m. Inside the
-  /// approach radius there is nothing to reroute to — the line already
-  /// ends at the pin.
+  /// for. Possible at all under the 65 m fix-accuracy gate — without it, a
+  /// bad-signal day would arm false reroutes at 25 m. Inside the approach
+  /// radius there is nothing to reroute to — the line already ends at the
+  /// pin.
   void _checkOffRoute(LatLng pos) {
     if (_routePts.length < 2 || _navArrived || _routeFetching) return;
     if (RouteSplice.haversineM(pos, _dest) < _approachRadiusM) return;
@@ -915,8 +933,10 @@ class DriverNavViewState extends State<DriverNavView>
     if (_stepsFilling) return;
     _stepsFilling = true;
     try {
-      final res = await DirectionsService(ApiKeys.webServices)
-          .getSteps(origin: origin, destination: _dest);
+      final res = await DirectionsService(ApiKeys.webServices).getSteps(
+          origin: origin,
+          destination: _dest,
+          language: Localizations.localeOf(context).languageCode);
       if (!mounted || res == null || res.steps.length < 2) return;
       _navProgress = NavProgress(res.steps);
       _setRouteFurniture(res.furniture);
@@ -939,17 +959,45 @@ class DriverNavViewState extends State<DriverNavView>
     final dist = cur == null
         ? ''
         : _fmtDist(nav.distanceToCurrentMeters(driverPos), s);
-    final then = nav.then == null || nav.then!.name.isEmpty
+    // The full maneuver instruction ("Take exit 67B on the right onto
+    // I-4 W") — what the bar announces on the freeway, where the bare
+    // street name says nothing about the exit to take (user report).
+    final instruction = cur?.instruction ?? '';
+    final thenStep = nav.then;
+    final thenText = thenStep == null
         ? ''
-        : '${s.navThen} → ${nav.then!.name}';
+        : (thenStep.name.isNotEmpty ? thenStep.name : thenStep.instruction);
+    final then = thenText.isEmpty ? '' : '${s.navThen} → $thenText';
 
-    // Remaining trip = distance to the current maneuver plus every step
-    // after it — the "9 min · 4.1 mi" of the sheet.
-    var meters = cur == null ? 0.0 : nav.distanceToCurrentMeters(driverPos);
+    // Remaining trip — the "9 min · 4.1 mi" of the sheet (user report: "no
+    // marca los minutos y millas correctamente").
+    //
+    // Distance ALONG the route, never the crow-fly to the next maneuver —
+    // a curvy road undercounts and a cloverleaf lies outright.
+    var meters = _remainingRouteMeters(driverPos);
     var secs = 0;
     if (cur != null) {
-      for (var i = nav.steps.indexOf(cur) + 1; i < nav.steps.length; i++) {
-        meters += nav.steps[i].distanceMeters;
+      final idx = nav.steps.indexOf(cur);
+      if (meters <= 0) {
+        // No drawn route to measure along: fall back to the crow-fly sum.
+        meters = nav.distanceToCurrentMeters(driverPos);
+        for (var i = idx + 1; i < nav.steps.length; i++) {
+          meters += nav.steps[i].distanceMeters;
+        }
+      }
+      // Time: the step the driver is ON (idx-1 — steps[idx] begins AT the
+      // next maneuver) contributes its remaining fraction, prorated by the
+      // share of its road distance still ahead. It used to contribute
+      // NOTHING — on a freeway that step is the whole drive, so the ETA
+      // read minutes low for the entire trip. Steps from idx on count full.
+      final onStep = idx >= 1 ? nav.steps[idx - 1] : null;
+      if (onStep != null && onStep.distanceMeters > 1) {
+        final frac = (nav.distanceToCurrentMeters(driverPos) /
+                onStep.distanceMeters)
+            .clamp(0.0, 1.0);
+        secs += (onStep.durationSeconds * frac).round();
+      }
+      for (var i = idx; i < nav.steps.length; i++) {
         secs += nav.steps[i].durationSeconds;
       }
     }
@@ -959,6 +1007,7 @@ class DriverNavViewState extends State<DriverNavView>
     if (street == _streetLabel &&
         dist == _maneuverDistLabel &&
         then == _thenLabel &&
+        instruction == _instructionLabel &&
         type == _maneuverType &&
         modifier == _maneuverModifier &&
         (secs - _remainSecs).abs() < 15) {
@@ -968,6 +1017,7 @@ class DriverNavViewState extends State<DriverNavView>
       _streetLabel = street;
       _maneuverDistLabel = dist;
       _thenLabel = then;
+      _instructionLabel = instruction;
       _maneuverType = type;
       _maneuverModifier = modifier;
       _remainSecs = secs;
@@ -1064,6 +1114,9 @@ class DriverNavViewState extends State<DriverNavView>
       final result = await DirectionsService(ApiKeys.webServices).getRoute(
         origin: o,
         destination: _dest,
+        // The app's locale, so maneuver instructions ("Take exit 67B…")
+        // come back in the driver's language.
+        language: Localizations.localeOf(context).languageCode,
         // Reroutes take the fast lane (user report 2026-09-19, "tarda
         // mucho en redireccionar"): Mapbox alone, 5 s cap — the normal
         // race waits for all three providers (up to 8 s) even when one
@@ -1152,15 +1205,23 @@ class DriverNavViewState extends State<DriverNavView>
     _updateManeuvers(origin);
     _recomputeNavPhase();
     // A parked driver re-aims at the fresh geometry too — the tangent of a
-    // rerouted line can point somewhere new entirely.
+    // rerouted line can point somewhere new entirely (one deterministic aim
+    // when the plan changes, not the stoplight pre-rotation).
     if (_speedMps < 1.0) {
       final h = _routeHeadingFor(origin);
-      if (h != null) _dot.setBearing(h);
+      if (h != null) {
+        _dot.setBearing(h);
+        _headingSetAt = origin;
+      }
     }
     // Same rule as _onMapCreated: chase pose, never a top-down fit — the
-    // bounds fit belongs to the overview toggle (user spec 2026-09-16).
+    // bounds fit belongs to the overview toggle (user spec 2026-09-16). A
+    // reroute GLIDES into the new pose (user spec: "redireccionando rapido
+    // y fluido") — a hard camera cut mid-drive reads as the map glitching.
     if (_overview) {
       await _fitRouteOnce();
+    } else if (kind == _RouteFetchKind.reroute) {
+      unawaited(_flyToChasePose(650));
     } else {
       _snapToChasePose();
     }
@@ -1255,6 +1316,18 @@ class DriverNavViewState extends State<DriverNavView>
       s += RouteSplice.haversineM(pts[i], pts[i + 1]);
     }
     return s + RouteSplice.haversineM(pts[seg], proj);
+  }
+
+  /// Distance left to the destination measured ALONG the route polyline
+  /// (user report: "no marca los minutos y millas correctamente") — the
+  /// crow-fly to the next maneuver undercounts every curve and lies
+  /// outright on cloverleaf ramps. 0 when there is no route to measure on.
+  double _remainingRouteMeters(LatLng from) {
+    final pts = _routePts;
+    if (pts.length < 2 || _routeLenM <= 0) return 0;
+    final seg = RouteSplice.closestSegmentIndex(pts, from);
+    final proj = RouteSplice.projectOnSegment(from, pts[seg], pts[seg + 1]);
+    return (_routeLenM - _routeSOf(pts, seg, proj)).clamp(0.0, _routeLenM);
   }
 
   /// Eats the route line behind [pos]: splices the polyline from the
@@ -1731,6 +1804,45 @@ class DriverNavViewState extends State<DriverNavView>
     ));
   }
 
+  /// The chase pose as a smooth flyTo instead of a cut — for the reroute
+  /// landing, where the line (and often the whole street direction) just
+  /// changed under the driver. Same gates as the per-frame chase.
+  Future<void> _flyToChasePose(int durationMs) async {
+    if (_camState != _CamState.following || _overview || !_mapMounted) {
+      return;
+    }
+    final lat = _dot.lat;
+    final lng = _dot.lng;
+    if (lat == null || lng == null) return;
+    final topPad = (MediaQuery.maybeOf(context)?.padding.top ?? 0) + 240;
+    if (kIsWeb) {
+      _webMap?.flyTo(
+        lng: lng,
+        lat: lat,
+        zoom: _chaseZoom,
+        bearing: _dot.bearing,
+        pitch: _chasePitch,
+        durationMs: durationMs,
+      );
+      return;
+    }
+    final map = _map;
+    if (map == null) return;
+    try {
+      await map.flyTo(
+        mapbox.CameraOptions(
+          center: mapbox.Point(coordinates: mapbox.Position(lng, lat)),
+          zoom: _chaseZoom,
+          bearing: _dot.bearing,
+          pitch: _chasePitch,
+          padding:
+              mapbox.MbxEdgeInsets(top: topPad, left: 0, right: 0, bottom: 0),
+        ),
+        mapbox.MapAnimationOptions(duration: durationMs),
+      );
+    } catch (_) {}
+  }
+
   /// Coalesced per-frame camera write — one in flight, one pending, ever.
   /// Same discipline as the online screen's _writeCamera: a dropped frame
   /// carries no information, the next one is already newer.
@@ -1762,7 +1874,11 @@ class DriverNavViewState extends State<DriverNavView>
     _pendingCamWrite = null;
     _camWriteBusy = true;
     try {
-      map.setCamera(opts).timeout(const Duration(seconds: 2)).then((_) {
+      // 800 ms, not 2 s (user report: "la pantalla esta con delay"): a hung
+      // native write must stop gating fresh frames quickly — the timeout is
+      // only the Dart-side latch, the native side applies the latest camera
+      // it receives regardless.
+      map.setCamera(opts).timeout(const Duration(milliseconds: 800)).then((_) {
         _camWriteBusy = false;
         _flushCameraWrite(map);
       }).catchError((Object _) {
@@ -2327,7 +2443,10 @@ class DriverNavViewState extends State<DriverNavView>
   /// — real information instead of repeating the title (user report
   /// 2026-09-17: the bar read "Follow the route / Follow the route").
   String _destDistLabel(S s) {
-    final d = RouteSplice.haversineM(_driverLatLng(), _dest);
+    final alongRoute = _remainingRouteMeters(_driverLatLng());
+    final d = alongRoute > 0
+        ? alongRoute
+        : RouteSplice.haversineM(_driverLatLng(), _dest);
     return '${s.navFollowRoute} · ${_fmtDist(d, s)}';
   }
 
@@ -2337,10 +2456,17 @@ class DriverNavViewState extends State<DriverNavView>
     // Once End Route is showing (the nav's own latch OR a post-arrival stage
     // from the parent — user spec 2026-09-19) the bar stops guiding and
     // answers where you ARE: the client's address up top, the "you've
-    // arrived" note under it. Before that, maneuvers as usual.
+    // arrived" note under it. Before that, maneuvers as usual — and the
+    // full instruction ("Take exit 67B on the right onto I-4 W") beats the
+    // bare street name, which on a freeway says nothing about the exit the
+    // driver has to take (user report: "en el freeway no indica las
+    // salidas").
+    final useInstruction = !_endRouteVisible && _instructionLabel.isNotEmpty;
     final title = _endRouteVisible
         ? destName
-        : (_streetLabel.isEmpty ? s.navFollowRoute : _streetLabel);
+        : (useInstruction
+            ? _instructionLabel
+            : (_streetLabel.isEmpty ? s.navFollowRoute : _streetLabel));
     final subtitle = _endRouteVisible
         ? (widget.toPickup ? s.navArrivedPickup : s.navArrivedDropoff)
         : (_maneuverDistLabel.isNotEmpty
@@ -2388,11 +2514,14 @@ class DriverNavViewState extends State<DriverNavView>
               children: [
                 Text(
                   title,
-                  maxLines: 1,
+                  maxLines: useInstruction ? 2 : 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: Colors.white,
-                    fontSize: 20,
+                    // A full instruction sentence needs the second line and
+                    // a step down in size; a bare street name keeps the
+                    // big single-line treatment.
+                    fontSize: useInstruction ? 16 : 20,
                     fontWeight: FontWeight.w800,
                     letterSpacing: -0.2,
                   ),

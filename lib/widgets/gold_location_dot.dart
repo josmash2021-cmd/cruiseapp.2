@@ -59,9 +59,9 @@ class GoldLocationDot {
   /// itself fills a quarter of it — the rest is the room the halo needs to
   /// fade out in. So 1.45 drew a 64 px box with a 16 px arrow in it, which
   /// on a full-screen map the driver glances at while moving was too small
-  /// to find. At 2.90 the arrow is 32 px and the box 128 — twice the 16 px
-  /// it started at.
-  static const double driverScale = 2.90;
+  /// to find. At 3.25 the arrow is ~36 px and the box 143 (user spec: "la
+  /// flecha un poquitico mas grande" — 2.90 still read small mid-drive).
+  static const double driverScale = 3.25;
 
   /// Width of the Flutter overlay, in logical pixels.
   static const double driverOverlaySize = _driverBaseSize * driverScale;

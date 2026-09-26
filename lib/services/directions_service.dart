@@ -182,8 +182,8 @@ class DirectionsService {
     _cacheAccessTimes.clear();
   }
 
-  String _cacheKey(LatLng a, LatLng b, String profile) =>
-      '${profile}_${a.latitude.toStringAsFixed(3)},${a.longitude.toStringAsFixed(3)}_'
+  String _cacheKey(LatLng a, LatLng b, String profile, [String? language]) =>
+      '${profile}_${language ?? ''}_${a.latitude.toStringAsFixed(3)},${a.longitude.toStringAsFixed(3)}_'
       '${b.latitude.toStringAsFixed(3)},${b.longitude.toStringAsFixed(3)}';
 
   bool _isCacheValid(String key) {
@@ -280,12 +280,14 @@ class DirectionsService {
   Future<Map<String, dynamic>?> getRawMapboxResponse({
     required LatLng origin,
     required LatLng destination,
+    String? language,
   }) async {
     try {
       final url = Uri.parse(
         'https://api.mapbox.com/directions/v5/mapbox/driving/'
         '${origin.longitude},${origin.latitude};${destination.longitude},${destination.latitude}'
         '?geometries=geojson&overview=full&steps=true&annotations=maxspeed'
+        '${language != null ? '&language=$language' : ''}'
         '&access_token=${MapboxConfig.accessToken}',
       );
       final res = await http.get(url).timeout(const Duration(seconds: 5));
@@ -307,8 +309,10 @@ class DirectionsService {
   Future<({List<NavStep> steps, List<NavFurniture> furniture})?> getSteps({
     required LatLng origin,
     required LatLng destination,
+    String? language,
   }) async {
-    final data = await getRawMapboxResponse(origin: origin, destination: destination);
+    final data = await getRawMapboxResponse(
+        origin: origin, destination: destination, language: language);
     if (data == null) return null;
     final routes = data['routes'] as List?;
     if (routes == null || routes.isEmpty) return null;
@@ -332,9 +336,13 @@ class DirectionsService {
     // off-route. fast=true asks Mapbox alone (5 s cap, same traffic-aware
     // profile) and only falls back to the full race on a miss.
     bool fast = false,
+    // BCP-47 code for the maneuver instruction strings ('es', 'en'). Only
+    // the nav view passes it; part of the cache key so a cached route in
+    // one language never serves steps worded in another.
+    String? language,
   }) async {
     // Check route cache first (instant return)
-    final key = _cacheKey(origin, destination, profile);
+    final key = _cacheKey(origin, destination, profile, language);
     if (_routeCache.containsKey(key) && _isCacheValid(key)) {
       debugPrint('[Route] Cache hit for $key');
       _cacheAccessTimes[key] = DateTime.now(); // LRU: mark as recently used
@@ -348,7 +356,10 @@ class DirectionsService {
 
     if (fast) {
       final r = await _requestMapboxRoute(
-              origin: origin, destination: destination, profile: profile)
+              origin: origin,
+              destination: destination,
+              profile: profile,
+              language: language)
           .timeout(const Duration(seconds: 5), onTimeout: () => null);
       if (r != null && r.points.length >= 2) {
         _routeCache[key] = r;
@@ -386,7 +397,10 @@ class DirectionsService {
           .timeout(const Duration(seconds: 6), onTimeout: () => null);
 
       final mapboxFuture = _requestMapboxRoute(
-              origin: origin, destination: destination, profile: profile)
+              origin: origin,
+              destination: destination,
+              profile: profile,
+              language: language)
           .timeout(const Duration(seconds: 8), onTimeout: () => null);
 
       // Wait for all, take the first non-null result (prefer Mapbox > Google > OSRM)
@@ -619,6 +633,7 @@ class DirectionsService {
     required LatLng origin,
     required LatLng destination,
     String profile = 'driving',
+    String? language,
   }) async {
     try {
       // driving-traffic (user spec 2026-09-17): the plain 'driving' profile
@@ -633,6 +648,7 @@ class DirectionsService {
         '${origin.longitude},${origin.latitude};${destination.longitude},${destination.latitude}'
         '?geometries=geojson&overview=full&steps=true'
         '${profile == 'driving' ? '&annotations=maxspeed' : ''}'
+        '${language != null ? '&language=$language' : ''}'
         '&access_token=${MapboxConfig.accessToken}',
       );
       debugPrint('[Route] Mapbox request URL: $url');

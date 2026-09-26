@@ -39,6 +39,25 @@ class SmoothMotion {
   double _vLat = 0;
   double _vLng = 0;
 
+  // Turn rate in degrees/second, signed shortest-arc (user report 2026-09-25,
+  // "la flecha no gira fluido en las curvas"): the heading TARGET arrives as
+  // a ~1 Hz staircase and the low-pass just re-closed each step in ~0.3 s —
+  // burst, plateau, burst ("cuadro por cuadro"). This is the angular twin of
+  // _vLat/_vLng: [tick] glides at this rate between samples.
+  double _vBearing = 0;
+  DateTime? _lastBearingAt;
+
+  /// A city car never turns the wheel faster than this through a real curve;
+  /// the cap keeps a bogus pair of course samples from spinning the arrow.
+  static const double _maxTurnRateDps = 120.0;
+
+  /// How far ahead of the latest course sample the extrapolated aim may
+  /// lead, in seconds of turn. Shorter than the position lead: a position
+  /// overshoot reads as a metre or two on the map, but an angular overshoot
+  /// past a completed maneuver spins the arrow visibly off the road. 1 s
+  /// covers the 1 Hz course cadence exactly.
+  static const double _maxBearingLeadSec = 1.0;
+
   DateTime? _lastTargetAt;
 
   /// Capture timestamp (epoch millis) of the last accepted fix, when the
@@ -401,12 +420,32 @@ class SmoothMotion {
   /// parked driver turning the phone in their hand produces a stream of these
   /// and no position updates at all.
   ///
-  /// [tick] still does the actual turning, at the same rate and through the
-  /// same shortest-arc filter as a bearing that arrived with a fix.
+  /// [tick] still does the actual turning — now as a constant-turn glide at
+  /// the measured turn rate plus the same shortest-arc correction as before.
   void setBearing(double bearing) {
     if (bearing.isNaN || bearing.isInfinite) return;
-    _targetBearing = bearing % 360;
-    if (_targetBearing < 0) _targetBearing += 360;
+    var t = bearing % 360;
+    if (t < 0) t += 360;
+    // Measure the turn rate between consecutive samples, same discipline as
+    // the position velocity: sane spacing only, capped, blended 0.2/0.8.
+    final now = DateTime.now();
+    if (_lastBearingAt != null) {
+      final dt = now.difference(_lastBearingAt!).inMilliseconds / 1000.0;
+      if (dt > 0.05 && dt < 10.0) {
+        var d = t - _targetBearing;
+        while (d > 180) {
+          d -= 360;
+        }
+        while (d < -180) {
+          d += 360;
+        }
+        final measured =
+            (d / dt).clamp(-_maxTurnRateDps, _maxTurnRateDps).toDouble();
+        _vBearing = _vBearing * 0.2 + measured * 0.8;
+      }
+    }
+    _lastBearingAt = now;
+    _targetBearing = t;
   }
 
   /// Where the correction is aiming right now.
@@ -516,8 +555,27 @@ class SmoothMotion {
     _lat = newLat;
     _lng = newLng;
 
-    // Bearing low-pass (shortest arc).
-    double dBrg = _targetBearing - _bearing;
+    // Bearing: constant-turn glide + shortest-arc correction aimed at the
+    // EXTRAPOLATED target — the angular twin of the position glide above.
+    // Aiming at the raw staircase target was the "cuadro por cuadro" the
+    // driver saw through curves (user report 2026-09-25); aiming back at the
+    // raw target when the feed is stale would drag the arrow backwards over
+    // the lead it legitimately built, so a stale feed means "hold".
+    double vBrg = _vBearing;
+    double aimBrg = _targetBearing;
+    if (_lastBearingAt != null) {
+      final ageSec =
+          DateTime.now().difference(_lastBearingAt!).inMilliseconds / 1000.0;
+      if (ageSec > _maxExtrapolationSec) {
+        vBrg = 0;
+        aimBrg = _bearing;
+      } else {
+        final leadSec =
+            ageSec > _maxBearingLeadSec ? _maxBearingLeadSec : ageSec;
+        aimBrg = _targetBearing + vBrg * leadSec;
+      }
+    }
+    double dBrg = aimBrg - _bearing;
     while (dBrg > 180) {
       dBrg -= 360;
     }
@@ -525,7 +583,16 @@ class SmoothMotion {
       dBrg += 360;
     }
     final brgFactor = _lerpFactor(_bearingLerpPerSec, dtSec);
-    final newBearing = (_bearing + dBrg * brgFactor) % 360;
+    var stepBrg = vBrg * dtSec + dBrg * brgFactor;
+    // Never overshoot the (moving) aim — same clamp shape as position.
+    if (dBrg > 0) {
+      if (stepBrg > dBrg) stepBrg = dBrg;
+      if (stepBrg < 0) stepBrg = 0;
+    } else if (dBrg < 0) {
+      if (stepBrg < dBrg) stepBrg = dBrg;
+      if (stepBrg > 0) stepBrg = 0;
+    }
+    final newBearing = (_bearing + stepBrg) % 360;
     // Same reason as the position guard above: this goes out as iconRotate,
     // and as the camera bearing while navigating.
     if (!newBearing.isFinite) {
@@ -581,6 +648,8 @@ class SmoothMotion {
     }
     _vLat = 0;
     _vLng = 0;
+    _vBearing = 0;
+    _lastBearingAt = null;
     _consecutiveHolds = 0;
     _stationary = false;
     _lastTargetAt = DateTime.now();
@@ -595,6 +664,8 @@ class SmoothMotion {
     _targetLng = null;
     _vLat = 0;
     _vLng = 0;
+    _vBearing = 0;
+    _lastBearingAt = null;
     _bearing = 0;
     _targetBearing = 0;
     _consecutiveHolds = 0;

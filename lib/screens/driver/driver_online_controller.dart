@@ -1585,11 +1585,13 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     _headingSub?.cancel();
     _headingSub = _headingSource.stream.listen((deg) {
       if (!mounted) return;
-      // Same low-pass the GPS course got, so the arrow's feel does not
-      // change with the source. A magnetometer at rest wanders about a
-      // degree; this absorbs it before SmoothMotion's own filter sees it.
-      _smoothedBearing = _lerpAngle(_smoothedBearing, deg, 0.25);
-      _motion.setBearing(_smoothedBearing);
+      // No per-emission lerp here (user report 2026-09-25, "la flecha va
+      // recta mientras la curva ya dobló"): at ~1 Hz a 0.25-per-reading
+      // filter was ~3.5 s of extra lag, and SmoothMotion now owns the
+      // angular smoothing with its turn-rate channel — feeding it the
+      // pre-lagged value also poisoned its turn-rate measurement.
+      _smoothedBearing = deg;
+      _motion.setBearing(deg);
       // Only wake the ticker while there is a map for it to draw on.
       //
       // _releaseMapSurface stops it precisely because the surface is going

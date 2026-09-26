@@ -417,18 +417,6 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     return (math.atan2(x, y) * 180 / math.pi + 360) % 360;
   }
 
-  /// Linear interpolation for angles (handles 360° wraparound)
-  double _lerpAngle(double from, double to, double t) {
-    double diff = to - from;
-    while (diff > 180) {
-      diff -= 360;
-    }
-    while (diff < -180) {
-      diff += 360;
-    }
-    return from + diff * t;
-  }
-
   // ═══════════════════════════════════════════════════════════
   //  MAPBOX ANNOTATION HELPERS
   // ═══════════════════════════════════════════════════════════

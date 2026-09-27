@@ -1292,6 +1292,7 @@ class DriverNavViewState extends State<DriverNavView>
     _navArrived = false;
     _navApproaching = false;
     _arriveHits = 0;
+    _headingSetAt = null; // the new leg re-anchors the heading freeze
     _endRouteRaised = false;
     _offlineRetryTimer?.cancel();
     _offlineRetryAttempt = 0;
@@ -1840,7 +1841,11 @@ class DriverNavViewState extends State<DriverNavView>
         ),
         mapbox.MapAnimationOptions(duration: durationMs),
       );
-    } catch (_) {}
+    } catch (e) {
+      // Transient channel refusal — the next chase frame rewrites the
+      // camera, but never swallow it quietly.
+      debugPrint('[Nav] chase flyTo failed: $e');
+    }
   }
 
   /// Coalesced per-frame camera write — one in flight, one pending, ever.

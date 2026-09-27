@@ -238,6 +238,86 @@ void main() {
     });
   });
 
+  group('zoom/drag arrow handoff (user report 2026-09-26: "al hacer zoom '
+      'sale otra flecha / se queda en el medio")', () {
+    final map2 =
+        File('lib/screens/driver/driver_online_map.dart').readAsStringSync();
+    final home2 =
+        File('lib/screens/driver/driver_home_screen.dart').readAsStringSync();
+
+    test('the overlay hides the SAME frame on EVERY gesture event, not only '
+        'on the follow→free transition', () {
+      final body = bodyOf(map2, 'void _onCameraMoveStarted() {', maxLen: 2400);
+      final bump = body.indexOf('_markerFrame.value++;');
+      final flip = body.indexOf('_updateDriverAnnotation();');
+      final followCheck = body.indexOf('if (!_cameraFollowing) return;');
+      expect(bump, isNonNegative,
+          reason: 'without the synchronous bump the overlay hid only when '
+              'the lagging camera-change event arrived — it painted at '
+              'trailing pixels mid-gesture');
+      expect(flip, isNonNegative);
+      expect(bump, lessThan(followCheck),
+          reason: 'the hide must not wait for the follow transition');
+      expect(flip, lessThan(followCheck));
+      // Offline home plays by the same rule.
+      final homeBody =
+          bodyOf(home2, 'void _onHomeMapPanned() {', maxLen: 2100);
+      final hBump = homeBody.indexOf('_markerFrame.value++;');
+      final hCheck = homeBody.indexOf('if (!_homeCameraFollowing) return;');
+      expect(hBump, isNonNegative);
+      expect(hBump, lessThan(hCheck));
+    });
+
+    test('no centred arrow when the camera is not following — never a '
+        'mid-screen guess', () {
+      // Online: the "annotation missing" escape draws only while following.
+      final owns =
+          bodyOf(map2, 'bool get _dotOverlayOwnsMarker', maxLen: 2200);
+      expect(
+          owns.contains(
+              'if (_goldDotAnnot == null) return _cameraFollowing;'),
+          isTrue,
+          reason: 'drawing centred with the camera panned away points at a '
+              'street the driver is not on');
+      // Both builders: the Center fallback is gated on following.
+      final onlineBuilder = bodyOf(
+          widgets,
+          'if (!_dotOverlayOwnsMarker) return const SizedBox.shrink();',
+          maxLen: 1400);
+      expect(
+          onlineBuilder.indexOf('_cameraFollowing') <
+              onlineBuilder.indexOf('Center(child: dot)'),
+          isTrue,
+          reason: 'Center is by construction only while following');
+      final homeBuilder = bodyOf(
+          home2,
+          'if (!_dotOverlayOwnsMarker) return const SizedBox.shrink();',
+          maxLen: 1400);
+      expect(
+          homeBuilder.indexOf('_homeCameraFollowing') <
+              homeBuilder.indexOf('Center(child: dot)'),
+          isTrue);
+    });
+
+    test('the offline getter latches the drag BEFORE the '
+        'annotation-missing escape, and drops the centred guess', () {
+      final owns =
+          bodyOf(home2, 'bool get _dotOverlayOwnsMarker', maxLen: 2000);
+      final dragLatch =
+          owns.indexOf('DateTime.now().isBefore(_homeDragUntil)');
+      final annotMissing =
+          owns.indexOf('if (_myLocAnnot == null) return true;');
+      expect(dragLatch, isNonNegative);
+      expect(annotMissing, isNonNegative);
+      expect(dragLatch, lessThan(annotMissing),
+          reason: 'a rebuilt marker mid-drag must not put the overlay back '
+              'in front of the finger');
+      expect(owns.contains('if (!spot.known)'), isFalse,
+          reason: 'the "draw centred, never nothing" escape pinned the '
+              'arrow mid-screen over a panned map');
+    });
+  });
+
   group('nav phases untouched', () {
     test('the tilted nav chase keeps 17.5/55 with the same bearing source', () {
       final body = bodyOf(ctrl, 'else if (isNav && _cameraFollowing) {',

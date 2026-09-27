@@ -1955,13 +1955,16 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
       _markerFrame.value++;
       _updateDriverAnnotation();
     });
+    // On EVERY gesture event, not only the follow→free transition (user
+    // report 2026-09-26: "al hacer zoom sale otra flecha"): the overlay
+    // hides THIS frame and the annotation shows. Before, a gesture with
+    // follow already off returned below without rebuilding or flipping —
+    // the overlay kept painting at pixels computed from camera events that
+    // trail the finger over the channel ("la flecha sale en otro lado").
+    _markerFrame.value++;
+    _updateDriverAnnotation();
     if (!_cameraFollowing) return; // already paused
     _setState(() => _cameraFollowing = false);
-    // Flip the marker to the annotation deterministically (same stale-
-    // window family as the recenter double-arrow): while parked nobody
-    // else calls _updateDriverAnnotation, so the hand to the Mapbox
-    // marker could wait indefinitely for an indirect caller.
-    _updateDriverAnnotation();
   }
 
   /// Resume camera follow mode and glide back to the driver.
@@ -2048,15 +2051,14 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
       if (_previewingOffer != null) return _dotScreenOffset != null;
       return true;
     }
-    // Nothing else is drawing it, so we do — whatever the rules below say.
-    //
-    // Every branch here hands the marker to the Mapbox annotation, which is
-    // fine while that annotation exists. It does not exist in the window
-    // after a remount: coming back from another screen, resuming the app,
-    // going offline and online again. The annotation is destroyed with the
-    // surface and takes a moment to be rebuilt, and if the driver looked in
-    // that window the arrow was simply gone.
-    if (_goldDotAnnot == null) return true;
+    // Nothing else is drawing it, so we do — but only while following
+    // (centred is then correct by construction). Not following with no
+    // annotation and no projection means we cannot say where the driver is
+    // on screen: draw NOTHING (user report 2026-09-26: "la flecha se queda
+    // en el medio de la pantalla así se arrastre") — a centred arrow over a
+    // panned map points at a street the driver is not on. The annotation
+    // watchdog recreates the native marker within seconds.
+    if (_goldDotAnnot == null) return _cameraFollowing;
     // An offer preview flies the camera around the route, and while it is
     // flying the annotation wins: the overlay is positioned from
     // camera-change events, which arrive over the same channel we are

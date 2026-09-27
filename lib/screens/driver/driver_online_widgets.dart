@@ -139,7 +139,15 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                       bearing:
                           _heading - (_onlineCamState?.bearing ?? 0));
                   const half = GoldLocationDot.driverOverlaySize / 2;
-                  if (o == null) return Center(child: dot);
+                  // Centred is only true while the camera FOLLOWS — the
+                  // driver really is the centre then. Not following and no
+                  // projected pixel means we cannot say where they are:
+                  // draw nothing rather than pin the arrow mid-screen over
+                  // a map the driver is dragging (user report 2026-09-26).
+                  if (o == null) {
+                    if (_cameraFollowing) return Center(child: dot);
+                    return const SizedBox.shrink();
+                  }
                   return Stack(children: [
                     Positioned(left: o.dx - half, top: o.dy - half, child: dot),
                   ]);

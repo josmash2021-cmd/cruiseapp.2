@@ -1058,9 +1058,13 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     // 2026-09-23): the overlay's projected pixel trails the finger over the
     // platform channel, so the arrow slid off the driver's street while the
     // map was being dragged. The annotation renders inside the map's own
-    // frame. No annotation yet → the overlay keeps drawing (never nothing).
-    if (_myLocAnnot == null) return true;
+    // frame. This latch must come BEFORE the annotation-missing escape —
+    // otherwise a rebuilt marker had the overlay trailing the drag.
     if (DateTime.now().isBefore(_homeDragUntil)) return false;
+
+    // Camera parked: the projection is exact, so the overlay draws at the
+    // driver's real pixel even with the annotation still being rebuilt.
+    if (_myLocAnnot == null) return true;
 
     // Order matters here, and it did not before.
     //
@@ -1075,12 +1079,10 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
     // drew the arrow.
     final spot = _homeDotSpot;
     if (spot.at != null) return true; // we know the pixel — draw there
-    if (!spot.known)
-      return true; // we do not know — draw centred, never nothing
-    // Known, and outside the viewport. The driver has panned away from
-    // themselves, so there is genuinely nothing to draw. The annotation is
-    // anchored in map space and is just as absent from the view, so this is
-    // not a case of handing the marker to something that might drop it.
+    // Not following and no computable pixel: draw NOTHING (user report
+    // 2026-09-26, "la flecha se queda en el medio de la pantalla así se
+    // arrastre") — a centred arrow over a panned map points at a street the
+    // driver is not on. The annotation watchdog rebuilds within seconds.
     return false;
   }
 
@@ -1151,6 +1153,13 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
       _markerFrame.value++;
       _updateMyLocAnnotation();
     });
+    // Synchronous hand on EVERY gesture event (user report 2026-09-26, "al
+    // hacer zoom sale otra flecha" — same on the online twin): the overlay
+    // hides THIS frame and the annotation shows; before, an event with
+    // follow already off returned below without either, and the overlay
+    // kept painting pixels computed from lagging camera events.
+    _markerFrame.value++;
+    _updateMyLocAnnotation();
     if (!_homeCameraFollowing) return;
     setState(() => _homeCameraFollowing = false);
     _updateMyLocAnnotation(); // deterministic hand to the annotation
@@ -2538,7 +2547,14 @@ class _DriverHomeScreenState extends State<DriverHomeScreen>
                       bearing: _goldDot.bearing -
                           (_homeCamState?.bearing ?? 0));
                   const half = GoldLocationDot.driverOverlaySize / 2;
-                  if (o == null) return Center(child: dot);
+                  // Centred only while the camera follows (the driver really
+                  // is the centre then). Not following + no pixel = draw
+                  // nothing, never a mid-screen guess over a dragged map
+                  // (user report 2026-09-26).
+                  if (o == null) {
+                    if (_homeCameraFollowing) return Center(child: dot);
+                    return const SizedBox.shrink();
+                  }
                   return Stack(children: [
                     Positioned(left: o.dx - half, top: o.dy - half, child: dot),
                   ]);

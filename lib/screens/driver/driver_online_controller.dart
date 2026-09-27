@@ -68,44 +68,31 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     // pump frames between them — eliminates the 1s freeze on entry.
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!mounted) return;
-      _startClock();
-      await Future.microtask(() => _startPolling());
-      if (!mounted) return;
+      // Siempre, en cualquier modo: el mapa necesita el dot del driver y el
+      // panel necesita los earnings — igual en offline que en online.
       await Future.microtask(() => _startPosStream());
       if (!mounted) return;
       await Future.microtask(() => _loadAllEarnings());
       if (!mounted) return;
       await Future.microtask(() => _startEarningsRefresh());
       if (!mounted) return;
-      await Future.microtask(() => _startScheduledPoll());
-      if (!mounted) return;
       // Fire-and-forget: these must not block the UI thread
       unawaited(_locate());
-      // Coming back to a shift that never stopped: already approved, so the
-      // screen opens in the searching state instead of replaying the
-      // go-online sequence and its spinner.
-      //
-      // The backend registration still runs. It is the only caller of
-      // startOnline(), of the persistent online notification and of the
-      // scheduled-rides topic subscription, so skipping it left a resumed
-      // driver with no Live Activity to update when an offer arrived. It is
-      // also the only thing that sets _approvalGatePassed, and
-      // _goOnlineBackend bails on a false gate — so without this both
-      // recovery paths that call it (network recovery below, driver-id
-      // recovery in _poll) were dead for the rest of the session.
-      //
-      // SSE is already connected by _startPolling above; connecting again
-      // here would only tear that one down a generation later.
-      // Up front, on both paths. The driver is on the online screen, so the
-      // lock screen should say so now rather than after a network round trip
-      // that may never complete.
-      _showOnlinePresence();
-      if (widget.resuming) {
-        _approvalGatePassed = true;
-        _setState(() => _isGoingOnline = false);
-        _goOnlineBackend();
-      } else {
-        unawaited(Future.microtask(_verifyAndGoOnline));
+      // ¿Entrar online de una? Solo cuando la entrada ya era de trabajo:
+      // resume de viaje, tap de oferta push, handoff encadenado — o el
+      // pref que dice que el turno nunca se cerró (el backend nunca recibió
+      // el offline; el driver SIGUE online allá — el home lo detectaba por
+      // poll y re-empujaba la pantalla; aquí el modo entra directo). Un
+      // boot pelado abre OFFLINE: el mapa arriba, nada escuchando ofertas.
+      final wasOnline = await PrefsCache.instance
+          .then((p) => p.getBool('driver_was_online') ?? false);
+      if (!mounted) return;
+      _driverWasOnlineAtBoot = wasOnline;
+      if (widget.resuming ||
+          widget.deepLinkOffer != null ||
+          DriverOnlineScreen.chainedHandoffOffer != null ||
+          wasOnline) {
+        unawaited(_enterOnlineMode(resuming: true));
       }
     });
 
@@ -113,6 +100,9 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     // online status when connectivity returns after a drop.
     _networkListener = () {
       if (!mounted) return;
+      // Modo único (2026-09-26): offline = nada que reconectar — el SSE y el
+      // registro online solo existen en modo online.
+      if (!_driverOnline) return;
       final online = NetworkService().isOnline;
       if (online && _phase == _Phase.searching && !_sseActive) {
         debugPrint(
@@ -1072,6 +1062,181 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     // two silent entries said the same thing.
   }
 
+  // ═══════════════════════════════════════════════════════════════════
+  //  MODO ONLINE/OFFLINE — mapa único estilo Lyft (2026-09-26)
+  //
+  //  Una sola pantalla, un solo mapa: online/offline son MODOS de esta
+  //  pantalla, no dos rutas. El flip es in-place — sin push, sin handoff
+  //  de superficie, sin snapshot. `_driverOnline` es el interruptor:
+  //  true = se reciben ofertas; false = el mapa sigue vivo y nadie escucha.
+  // ═══════════════════════════════════════════════════════════════════
+
+  /// Entrar online (el GO de hoy, sin la navegación): gates ya hechos por
+  /// el caller, esto enciende los canales y el backend sobre el mismo mapa.
+  Future<void> _enterOnlineMode({bool resuming = false}) async {
+    if (_driverOnline || _enteringOnline) return;
+    _enteringOnline = true;
+    try {
+      if (!mounted) return;
+      _setState(() {
+        _driverOnline = true;
+        _isGoingOnline = !resuming;
+      });
+      // GPS pasa a background-capable — el stream se recrea (iOS solo
+      // aplica el flag en un request nuevo).
+      _syncPosStreamMode();
+      PrefsCache.instance.then((p) => p.setBool('driver_was_online', true));
+      // Chime solo en un GO fresco (los resumes ya saben) — la transición
+      // de ruta que lo congelaba murió con el push: no hay nada que esquivar.
+      if (!resuming) {
+        _onlineChimeFired = true; // el map-claim chime no lo repite
+        NotificationService.playOnlineChime();
+      }
+      HapticService.lightImpact();
+      // El token push tiene que existir desde aquí: es lo único que alcanza
+      // al driver con la app en background.
+      unawaited(_registerFcmToken(reason: 'go online').then((saved) {
+        if (!saved) _warnIfOnlineWithoutPushToken('go online');
+      }));
+      // Up front, on both paths: the driver is online, so the lock screen
+      // should say so now rather than after a network round trip that may
+      // never complete. _goOnlineBackend re-asserts it idempotently.
+      _showOnlinePresence();
+      if (resuming) {
+        // Coming back to a shift that never stopped: already approved — the
+        // screen opens in the searching state instead of replaying the
+        // go-online sequence and its spinner. The backend registration still
+        // runs: it owns startOnline(), the topic subscription and
+        // _approvalGatePassed (without it the recovery paths are dead).
+        _approvalGatePassed = true;
+        _setState(() => _isGoingOnline = false);
+        _goOnlineBackend();
+      } else {
+        unawaited(Future.microtask(_verifyAndGoOnline));
+      }
+      _startClock();
+      _startPolling();
+      _startScheduledPoll();
+    } finally {
+      _enteringOnline = false;
+    }
+  }
+
+  /// Salir offline (el _goOffline de hoy, sin el pop): se apagan los
+  /// canales, el backend queda offline y el mapa ni se entera.
+  Future<void> _exitOnlineMode() async {
+    if (!_driverOnline || !mounted) return;
+    // Silence every isOnline:true writer BEFORE the offline write leaves —
+    // the other order let a queued heartbeat flip the driver back online.
+    _wentOffline = true;
+    _stopBackgroundHeartbeat();
+    _goOfflineBackend();
+    _pollT?.cancel();
+    _offerSseSub?.cancel();
+    _sseReconnectTimer?.cancel();
+    _sseActive = false;
+    _clock?.cancel();
+    _scheduledPollTimer?.cancel();
+    _pauseTimer?.cancel();
+    _isPaused = false;
+    // Offline de verdad: este sí silencia los uploads de posición (RTDB).
+    _leavingOffline = true;
+    _gpsService.stopTracking();
+    // Drop any card already up — offline means no offers, visible or not.
+    _setState(() {
+      _driverOnline = false;
+      _pendingOffers = [];
+      _previewingOffer = null;
+      _offerRouteShown = false;
+      _fullSegOne = [];
+      _fullSegTwo = [];
+      _hideFindingBar = false;
+      _isGoingOnline = false;
+    });
+    unawaited(_clearAllAnnotations().catchError((_) {}));
+    unawaited(_sweepPreviewOrphans());
+    _syncPosStreamMode(); // foreground-only
+    PrefsCache.instance.then((p) => p.setBool('driver_was_online', false));
+    _syncOfferLiveActivity();
+  }
+
+  /// El flag de background del GPS va atado al modo (regla 2026-08-22):
+  /// online = background-capable (el driver trabaja con el teléfono
+  /// bloqueado); offline = foreground-only (nada de foreground service sin
+  /// turno). El stream se recrea en cada flip — iOS solo aplica el flag en
+  /// un request nuevo.
+  void _syncPosStreamMode() {
+    if (_posStreamIsBackground == _driverOnline) return;
+    _posStreamIsBackground = _driverOnline;
+    _startPosStream();
+  }
+
+  /// One push-registration attempt at a time (ported from the home GO
+  /// button — the merged screen owns it now).
+  Future<bool> _registerFcmToken({String reason = 'screen entry'}) async {
+    // Overlapping chains buy nothing: the retries below can run for ~18 s,
+    // and a driver switching apps can land here several times inside that.
+    // A forced re-assert must not be answered by the memo of an older
+    // attempt: going online is precisely when we stop trusting it, because
+    // the backend may have nulled the row behind our back.
+    if (_fcmRegisterInFlight && !reason.startsWith('go online')) {
+      return NotificationService.isTokenRegistered;
+    }
+    _fcmRegisterInFlight = true;
+    try {
+      final messaging = FirebaseMessaging.instance;
+
+      final settings = await messaging.requestPermission(
+        alert: true,
+        badge: true,
+        sound: true,
+      );
+      if (settings.authorizationStatus == AuthorizationStatus.denied) {
+        debugPrint('[DriverOnline] FCM: push permission DENIED by the user — '
+            'no ride offers can be delivered while the app is closed');
+        return false;
+      }
+
+      // Going online re-asserts unconditionally. The in-process memo says
+      // "already saved", but the backend clears the column by itself when a
+      // token goes stale — so believing the memo is how a driver ends up
+      // online with an empty row and no offers.
+      var saved = await NotificationService.ensureTokenRegistered(
+        reason: reason,
+        force: reason.startsWith('go online'),
+      );
+      for (var attempt = 1; !saved && attempt <= 3; attempt++) {
+        await Future.delayed(Duration(seconds: attempt * 3));
+        if (!mounted) return false;
+        debugPrint(
+            '[DriverOnline] FCM: retrying token registration ($attempt/3)');
+        saved = await NotificationService.ensureTokenRegistered(
+            reason: '$reason retry $attempt');
+      }
+      if (!saved) {
+        debugPrint('[DriverOnline] FCM: token could NOT be registered after '
+            '3 retries — this driver will not receive ride offers in '
+            'background');
+      }
+      return saved;
+    } catch (e) {
+      debugPrint('[DriverOnline] FCM registration failed: $e');
+      return false;
+    } finally {
+      _fcmRegisterInFlight = false;
+    }
+  }
+
+  /// Shout when the driver is online and the backend has no token for this
+  /// phone. That state costs them every offer that arrives while they are in
+  /// another app, and until now it left no trace anywhere.
+  void _warnIfOnlineWithoutPushToken(String where) {
+    if (NotificationService.isTokenRegistered) return;
+    debugPrint('[DriverOnline] FCM: DRIVER IS ONLINE WITH NO REGISTERED PUSH '
+        'TOKEN ($where) — push is the only channel that reaches this phone '
+        'from another app, so every offer will be missed');
+  }
+
   void _goOnlineBackend() {
     // _isGoingOnline is already set to true by _verifyAndGoOnline() before
     // calling this method. The guard below would incorrectly skip if it were
@@ -1223,14 +1388,17 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       unawaited(SocketService.init());
     }
 
-    // Start GpsService for Firebase RTDB uploads + presence
-    if (_driverId != null) {
+    // Start GpsService for Firebase RTDB uploads + presence — SOLO en modo
+    // online: offline el driver no reporta posición a nadie (regla del home:
+    // uploads solo con online o viaje activo, y el viaje tiene su propio
+    // stream).
+    if (_driverId != null && _driverOnline) {
       _gpsService.startTracking(_driverId.toString());
     }
 
-    // Background-capable, or an online driver goes silent the moment their
-    // screen locks — which is how the ghost agent ends up logging a working
-    // driver "inactive 21 min" and forcing them offline mid-shift.
+    // Background-capable SOLO en modo online (mapa único, 2026-09-26 —
+    // regla 2026-08-22): un driver online va en silencio cuando su pantalla
+    // se bloquea si no; offline, la app no rastrea en background.
     final s = S.of(context);
     _posStream = ResilientPositionStream(
       label: 'DriverOnlineGps',
@@ -1238,13 +1406,16 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
         // distanceFilter: 2 -> fixes every 2 meters.
         // SmoothMotion still glides smoothly. Balance accuracy/battery.
         distanceFilter: 2,
+        background: _driverOnline,
         notificationTitle: s.driverLocationNotifTitle,
         notificationText: s.driverLocationNotifOnline,
       ),
       // Re-announce presence the moment the stream is back: while it was
       // down the ghost agent has been counting this driver as inactive.
       onFirstFixAfterGap: () {
-        if (_driverId != null) _gpsService.startTracking(_driverId.toString());
+        if (_driverId != null && _driverOnline) {
+          _gpsService.startTracking(_driverId.toString());
+        }
       },
       onPosition: (pos) {
         if (!mounted) return;
@@ -1358,9 +1529,11 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
           }
         }
 
-        // Throttle backend location updates to max once per 5 seconds
+        // Throttle backend location updates to max once per 5 seconds —
+        // solo en modo online o con viaje activo (offline no reporta).
         final now = DateTime.now();
         if (_driverId != null &&
+            (_driverOnline || _tripId != null) &&
             now.difference(_lastBackendLocSend).inSeconds >= 5) {
           _lastBackendLocSend = now;
           ApiService.updateDriverLocation(
@@ -2301,6 +2474,9 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
 
   /// Apply incoming offers to UI (shared by SSE + polling).
   void _applyOffers(List<Map<String, dynamic>> offers) {
+    // Mapa único (2026-09-26): offline = no se procesan ofertas, ni por SSE
+    // ni por poll ni por push inyectado (el inyectado entra online antes).
+    if (!_driverOnline) return;
     // Paused means NO offers (audit #14): the dialog promises exactly that,
     // and before this gate only the backup poll was stopped — SSE kept
     // delivering cards the whole "pause".
@@ -3336,8 +3512,9 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
         _doneCtrl?.forward(from: 0);
       } else if (result == 'back_to_home') {
         // Driver pressed back to go home — trip is still active.
-        // Navigate to DriverHomeScreen with returnFromTrip so the Resume
-        // button appears.  Do NOT call _cancel() — the trip must survive.
+        // This screen IS the home now (mapa único): stay online, keep the
+        // trip alive, and let the active-trip check re-open it.
+        // Do NOT call _cancel() — the trip must survive.
         _goBackToHomeWithTrip();
       } else if (result == 'cancelled') {
         // Trip screen reports a remote cancellation (dispatch or auto-cancel).
@@ -4052,40 +4229,10 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       return;
     }
     HapticService.mediumImpact();
-    // Silence every isOnline:true writer BEFORE the offline write leaves —
-    // the other order let a queued heartbeat flip the driver back online.
-    _wentOffline = true;
-    _stopBackgroundHeartbeat();
-    _goOfflineBackend();
-
-    // Cancel all background tasks before navigating to prevent post-dispose crashes
-    _pollT?.cancel();
-    _offerSseSub?.cancel();
-    _clock?.cancel();
-    _earningsRefreshTimer?.cancel();
-
-    // Going offline for real — this is the one exit that should silence the
-    // position uploads. Every other way out of this screen leaves the driver
-    // online and must keep them reporting. See dispose().
-    _leavingOffline = true;
-
-    final result = {
-      'earnings': _earnings,
-      'trips': _trips,
-      'hours': _online.inMinutes / 60.0,
-      'stillOnline': false,
-    };
-    final nav = Navigator.of(context);
-    if (nav.canPop()) {
-      nav.pop<Map<String, dynamic>>(result);
-      return;
-    }
-    // Some flows open DriverOnlineScreen as root (pushAndRemoveUntil).
-    // In that case, popping causes a black screen. Always route to Home.
-    nav.pushAndRemoveUntil(
-      smoothFadeRoute(const DriverHomeScreen(returnFromTrip: false)),
-      (_) => false,
-    );
+    // Mapa único (2026-09-26): salir es un FLIP IN-PLACE — se apagan los
+    // canales y el backend queda offline, y el mapa ni se entera. Sin pop,
+    // sin pushAndRemoveUntil, sin snapshot.
+    unawaited(_exitOnlineMode());
   }
 
   void _pauseAvailability() {
@@ -4175,30 +4322,17 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     });
   }
 
-  /// Go back to home without going offline — driver stays connected.
+  /// Back on the merged screen (mapa único, 2026-09-26): no hay home al que
+  /// volver — esta pantalla ES la raíz del driver. Online, back no hace
+  /// nada (salir del turno es GO OFFLINE, con sus guards); offline, el OS
+  /// minimiza. El FAB de home murió con la pantalla vieja.
   void _goBack() {
-    HapticService.lightImpact();
-    final result = <String, dynamic>{
-      'earnings': _earnings,
-      'trips': _trips,
-      'hours': _online.inMinutes / 60.0,
-      'stillOnline': true,
-    };
-    final nav = Navigator.of(context);
-    if (nav.canPop()) {
-      nav.pop<Map<String, dynamic>>(result);
-      return;
-    }
-    // Some flows open DriverOnlineScreen as root (pushAndRemoveUntil after
-    // rating). In that case, popping causes a black screen. Route to Home.
-    nav.pushAndRemoveUntil(
-      smoothFadeRoute(const DriverHomeScreen(returnFromTrip: true)),
-      (_) => false,
-    );
+    if (_driverOnline) unawaited(_exitOnlineMode());
   }
 
   /// Driver pressed back from the active trip screen.
-  /// Navigate to home while keeping the trip alive so the Resume button works.
+  /// Stays on this screen (it IS the home now), keeps the shift online and
+  /// lets the active-trip check re-open the trip so Resume works.
   void _goBackToHomeWithTrip() {
     _pollT?.cancel();
     _offerSseSub?.cancel();
@@ -4211,22 +4345,12 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     _currentNavRoute = null;
     _navTimer?.cancel();
 
-    final nav = Navigator.of(context);
-    if (nav.canPop()) {
-      // Pop back to DriverHomeScreen with stillOnline = true so it shows
-      // the Resume button and keeps polling for active trip updates.
-      nav.pop<Map<String, dynamic>>(<String, dynamic>{
-        'earnings': _earnings,
-        'trips': _trips,
-        'hours': _online.inMinutes / 60.0,
-        'stillOnline': true,
-      });
-    } else {
-      nav.pushAndRemoveUntil(
-        smoothFadeRoute(const DriverHomeScreen(returnFromTrip: true)),
-        (_) => false,
-      );
+    // Merged single-map: the driver never left this screen. Restart the
+    // offer channels and let the direct-assignment check re-open the trip.
+    if (_driverOnline) {
+      _startPolling(force: true);
     }
+    unawaited(_checkDirectlyAssignedTrip());
   }
 
   /// Driver can no longer directly cancel a trip (policy 2026-04-11).

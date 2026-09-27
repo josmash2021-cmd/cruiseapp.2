@@ -3452,6 +3452,15 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
               children: [
                 const SizedBox(height: 8),
                 _handle(isDark),
+                // Mapa único (2026-09-26): el contenido del panel cambia por
+                // MODO — offline = el panel del home (status + earnings + GO
+                // flotando aparte); online = el de siempre.
+                if (!_driverOnline)
+                  Expanded(
+                    child: _buildOfflinePanelContent(
+                        textMuted, MediaQuery.of(context).padding),
+                  )
+                else ...[
                 // Arrow icon: up when collapsed, down when expanded
                 Icon(
                   t > 0.5
@@ -3691,6 +3700,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                       ],
                     ),
                   ),
+                ],
               ],
             ),
           ),

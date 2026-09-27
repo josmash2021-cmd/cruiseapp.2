@@ -5,7 +5,7 @@ import '../../../config/page_transitions.dart';
 import '../../../l10n/app_localizations.dart';
 import '../../../services/api_service.dart';
 import '../../../services/user_session.dart';
-import '../driver_home_screen.dart';
+import '../driver_online_screen.dart';
 import '../payout_methods_screen.dart';
 import 'first_trip_guide_screen.dart';
 
@@ -102,7 +102,7 @@ class _DriverApprovedCelebrationScreenState
     if (!mounted) return;
     Navigator.of(context).pushAndRemoveUntil(
       onboardingFadeSlideRoute(
-        guideSeen ? const DriverHomeScreen() : const FirstTripGuideScreen(),
+        guideSeen ? const DriverOnlineScreen() : const FirstTripGuideScreen(),
       ),
       (_) => false,
     );

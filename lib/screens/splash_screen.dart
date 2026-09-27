@@ -7,7 +7,7 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:video_player/video_player.dart';
 import 'welcome_screen.dart';
 import 'home_screen.dart';
-import 'driver/driver_home_screen.dart';
+import 'driver/driver_online_screen.dart';
 import 'driver/driver_pending_review_screen.dart';
 import 'driver/onboarding/driver_todo_screen.dart';
 import '../services/api_service.dart';
@@ -268,7 +268,7 @@ class _SplashScreenState extends State<SplashScreen> {
       if (wasEverApproved) {
         debugPrint('[SplashScreen] Driver was previously approved — going to home');
         unawaited(_refreshApprovalStatusInBackground());
-        return const DriverHomeScreen();
+        return const DriverOnlineScreen();
       }
 
       // ── Read approval status from local cache first (instant) ──
@@ -277,7 +277,7 @@ class _SplashScreenState extends State<SplashScreen> {
       if (_isApprovedStatus(cachedStatus)) {
         // Verified → go straight to DriverHomeScreen
         unawaited(_backgroundProfileSync());
-        return const DriverHomeScreen();
+        return const DriverOnlineScreen();
       }
 
       if (cachedStatus == 'pending' || cachedStatus == 'rejected') {
@@ -298,7 +298,7 @@ class _SplashScreenState extends State<SplashScreen> {
           if (_isApprovedStatus(liveStatus)) {
             await LocalDataService.setDriverApprovalStatus('approved');
             unawaited(_backgroundProfileSync());
-            return const DriverHomeScreen();
+            return const DriverOnlineScreen();
           } else if (liveStatus == 'rejected') {
             await LocalDataService.setDriverApprovalStatus('rejected');
             return const DriverPendingReviewScreen();
@@ -316,7 +316,7 @@ class _SplashScreenState extends State<SplashScreen> {
           if (fsStatus == 'approved') {
             await LocalDataService.setDriverApprovalStatus('approved');
             unawaited(_backgroundProfileSync());
-            return const DriverHomeScreen();
+            return const DriverOnlineScreen();
           }
         }
         // If API failed and we have no evidence of approval, the to-do hub
@@ -339,7 +339,7 @@ class _SplashScreenState extends State<SplashScreen> {
       if (fsStatus == 'approved') {
         await LocalDataService.setDriverApprovalStatus('approved');
         unawaited(_backgroundProfileSync());
-        return const DriverHomeScreen();
+        return const DriverOnlineScreen();
       }
       if (fsStatus == 'rejected') {
         await LocalDataService.setDriverApprovalStatus('rejected');
@@ -360,7 +360,7 @@ class _SplashScreenState extends State<SplashScreen> {
 
         if (_isApprovedStatus(status)) {
           unawaited(_backgroundProfileSync());
-          return const DriverHomeScreen();
+          return const DriverOnlineScreen();
         } else {
           return const DriverTodoScreen();
         }
@@ -375,7 +375,7 @@ class _SplashScreenState extends State<SplashScreen> {
             debugPrint('[SplashScreen] getMe fallback indicates approved — letting driver in');
             await LocalDataService.setDriverApprovalStatus('approved');
             unawaited(_backgroundProfileSync());
-            return const DriverHomeScreen();
+            return const DriverOnlineScreen();
           }
         } catch (_) {}
         // If we truly cannot determine status, show the to-do hub (it

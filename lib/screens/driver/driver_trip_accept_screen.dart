@@ -41,7 +41,7 @@ import '../chat_screen.dart';
 import '../help_screen.dart';
 import '../../services/chat_service.dart';
 import '../../services/socket_service.dart';
-import 'driver_home_screen.dart';
+import 'driver_online_screen.dart';
 import 'driver_nav_view.dart';
 import 'driver_online_screen.dart';
 import '../../services/user_session.dart';
@@ -4794,7 +4794,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     } else {
       // Fallback: if we're the root (shouldn't happen), push a fresh home
       Navigator.of(context).pushAndRemoveUntil(
-        fadeThroughRoute(const DriverHomeScreen(returnFromTrip: true)),
+        fadeThroughRoute(const DriverOnlineScreen(resuming: true)),
         (route) => false,
       );
     }

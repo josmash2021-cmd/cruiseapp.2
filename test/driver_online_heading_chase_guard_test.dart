@@ -103,57 +103,48 @@ void main() {
     });
   });
 
-  group('offline home parity (user spec 2026-09-19: "si esta offline debe '
-      'hacer lo mismo")', () {
-    final home =
-        File('lib/screens/driver/driver_home_screen.dart').readAsStringSync();
+  group('single-map parity (2026-09-26: DriverHomeScreen murió — offline es '
+      'un MODO de la misma pantalla)', () {
+    // Online y offline corren sobre el mismo mapa, la misma chase y el mismo
+    // marcador: la paridad ya no se pinea entre dos archivos — se pinea que
+    // NADA en el camino del marcador/cámara/gestos esté gateado por el modo.
+    final map2 =
+        File('lib/screens/driver/driver_online_map.dart').readAsStringSync();
 
-    test('the offline follow writes the dot bearing, never north-up', () {
+    test('the heading-up chase runs in BOTH modes (no _driverOnline gate)', () {
+      final body = bodyOf(
+          ctrl,
+          'if (_phase == _Phase.searching && !offerActive && _cameraFollowing)',
+          maxLen: 1800);
+      expect(body.contains('bearing: _heading'), isTrue,
+          reason: 'the chase rotates with the arrow online AND offline — '
+              'same map, same arrow');
+      expect(body.contains('_driverOnline'), isFalse,
+          reason: 'gating the chase on the mode would freeze the arrow for '
+              'an offline driver watching the map');
+    });
+
+    test('the gesture handoff and marker ownership have no mode gate', () {
       final body =
-          bodyOf(home, 'void _followHomeCameraToDriver() {', maxLen: 1200);
-      expect(body.contains('bearing: _goldDot.bearing'), isTrue,
-          reason: 'the offline chase must rotate with the arrow exactly like '
-              'the online one');
-      expect(body.contains('pitch: 0.0'), isTrue);
-      expect(body.contains('_lastHomeCamWriteBearing = _goldDot.bearing'),
-          isTrue);
+          bodyOf(map2, 'void _onCameraMoveStarted() {', maxLen: 2400);
+      expect(body.contains('_driverOnline'), isFalse);
+      expect(body.contains('_markerFrame.value++;'), isTrue,
+          reason: 'the overlay hides the same frame on every gesture event');
+      final owns = bodyOf(map2, 'bool get _dotOverlayOwnsMarker', maxLen: 2200);
+      expect(owns.contains('_driverOnline'), isFalse,
+          reason: 'who draws the arrow is identical in both modes');
     });
 
-    test('rotate gesture on, manual twist unlatches, flights suppressed', () {
-      final gestures =
-          bodyOf(home, 'await ctrl.gestures.updateSettings(', maxLen: 700);
-      expect(gestures.contains('rotateEnabled: true'), isTrue);
-      expect(gestures.contains('pitchEnabled: false'), isTrue);
-      expect(home.contains('void _maybeUnlatchHomeOnManualRotate('), isTrue);
-      final body = bodyOf(home, 'void _maybeUnlatchHomeOnManualRotate(',
-          maxLen: 700);
-      expect(body.contains('_homeCamFlightUntil'), isTrue);
-      expect(body.contains('_onHomeMapPanned()'), isTrue);
-      expect(home.contains('onZoomListener: (_) => _onHomeMapPanned()'),
-          isTrue,
-          reason: 'pinch unlatches too — same 60 fps fight otherwise');
-      expect(home.contains("'icon-rotation-alignment', 'map'"), isTrue,
-          reason: 'offline home: the off-screen dot annotation rotates WITH '
-              'the map on a twisted view (2026-09-19)');
-    });
-
-    test('the overlay arrow compensates the camera rotation on BOTH screens',
-        () {
+    test('the overlay arrow compensates the camera rotation', () {
       // The painter rotates from screen-up: with a rotating chase the raw
       // dot bearing draws the arrow off-vertical — subtract the camera
       // bearing so it keeps pointing straight UP while the world turns.
-      final homeDot = bodyOf(
-          home,
-          'if (!_dotOverlayOwnsMarker) return const SizedBox.shrink();',
-          maxLen: 700);
-      expect(homeDot.contains('_homeCamState?.bearing ?? 0'), isTrue,
-          reason: 'offline arrow must stay up in the heading-up chase');
       final onlineDot = bodyOf(
           widgets,
           'if (!_dotOverlayOwnsMarker) return const SizedBox.shrink();',
           maxLen: 700);
       expect(onlineDot.contains('_onlineCamState?.bearing ?? 0'), isTrue,
-          reason: 'same compensation on the online screen');
+          reason: 'the arrow stays up in the heading-up chase');
     });
   });
 
@@ -161,8 +152,6 @@ void main() {
       () {
     final map =
         File('lib/screens/driver/driver_online_map.dart').readAsStringSync();
-    final home =
-        File('lib/screens/driver/driver_home_screen.dart').readAsStringSync();
 
     test('the online resume timer flushes the annotation to opacity 0 NOW',
         () {
@@ -182,19 +171,8 @@ void main() {
           reason: 'no waiting for an indirect caller while parked');
     });
 
-    test('the offline home does the same on both flips', () {
-      final body = bodyOf(home, 'void _onHomeMapPanned() {', maxLen: 1500);
-      expect(
-          RegExp(r'_updateMyLocAnnotation\(\);')
-              .allMatches(body)
-              .length,
-          greaterThanOrEqualTo(2),
-          reason: 'refollow hides the annotation, unlatch shows it — both '
-              'deterministic, never via a stale opacity');
-    });
-
-    test('mid-drag the NATIVE annotation owns the arrow on BOTH screens '
-        '(user report 2026-09-23)', () {
+    test('mid-drag the NATIVE annotation owns the arrow (user report '
+        '2026-09-23)', () {
       final body = bodyOf(map, 'void _onCameraMoveStarted() {', maxLen: 2400);
       expect(body.contains('_mapDragUntil'), isTrue,
           reason: 'every scroll/zoom event renews the drag latch');
@@ -206,15 +184,6 @@ void main() {
           reason: 'during the drag the overlay steps aside: its projected '
               'pixel trails the finger over the channel, the GL-rendered '
               'annotation never does — the arrow stays on the street');
-
-      final homeBody = bodyOf(home, 'void _onHomeMapPanned() {', maxLen: 1500);
-      expect(homeBody.contains('_homeDragUntil'), isTrue);
-      expect(homeBody.contains('_homeDragSettleTimer'), isTrue);
-      final homeOwns =
-          bodyOf(home, 'bool get _dotOverlayOwnsMarker', maxLen: 1400);
-      expect(homeOwns.contains('DateTime.now().isBefore(_homeDragUntil)'),
-          isTrue,
-          reason: 'the offline home map plays by the same mid-drag rule');
     });
   });
 
@@ -242,8 +211,6 @@ void main() {
       'sale otra flecha / se queda en el medio")', () {
     final map2 =
         File('lib/screens/driver/driver_online_map.dart').readAsStringSync();
-    final home2 =
-        File('lib/screens/driver/driver_home_screen.dart').readAsStringSync();
 
     test('the overlay hides the SAME frame on EVERY gesture event, not only '
         'on the follow→free transition', () {
@@ -259,18 +226,14 @@ void main() {
       expect(bump, lessThan(followCheck),
           reason: 'the hide must not wait for the follow transition');
       expect(flip, lessThan(followCheck));
-      // Offline home plays by the same rule.
-      final homeBody =
-          bodyOf(home2, 'void _onHomeMapPanned() {', maxLen: 2100);
-      final hBump = homeBody.indexOf('_markerFrame.value++;');
-      final hCheck = homeBody.indexOf('if (!_homeCameraFollowing) return;');
-      expect(hBump, isNonNegative);
-      expect(hBump, lessThan(hCheck));
+      // El merged screen corre el MISMO handler en ambos modos — con el home
+      // muerto ya no hay segundo archivo que pinear (lo cubre el grupo
+      // single-map parity: nada de esto está gateado por _driverOnline).
     });
 
     test('no centred arrow when the camera is not following — never a '
         'mid-screen guess', () {
-      // Online: the "annotation missing" escape draws only while following.
+      // The "annotation missing" escape draws only while following.
       final owns =
           bodyOf(map2, 'bool get _dotOverlayOwnsMarker', maxLen: 2200);
       expect(
@@ -279,7 +242,7 @@ void main() {
           isTrue,
           reason: 'drawing centred with the camera panned away points at a '
               'street the driver is not on');
-      // Both builders: the Center fallback is gated on following.
+      // The builder: the Center fallback is gated on following.
       final onlineBuilder = bodyOf(
           widgets,
           'if (!_dotOverlayOwnsMarker) return const SizedBox.shrink();',
@@ -289,32 +252,6 @@ void main() {
               onlineBuilder.indexOf('Center(child: dot)'),
           isTrue,
           reason: 'Center is by construction only while following');
-      final homeBuilder = bodyOf(
-          home2,
-          'if (!_dotOverlayOwnsMarker) return const SizedBox.shrink();',
-          maxLen: 1400);
-      expect(
-          homeBuilder.indexOf('_homeCameraFollowing') <
-              homeBuilder.indexOf('Center(child: dot)'),
-          isTrue);
-    });
-
-    test('the offline getter latches the drag BEFORE the '
-        'annotation-missing escape, and drops the centred guess', () {
-      final owns =
-          bodyOf(home2, 'bool get _dotOverlayOwnsMarker', maxLen: 2000);
-      final dragLatch =
-          owns.indexOf('DateTime.now().isBefore(_homeDragUntil)');
-      final annotMissing =
-          owns.indexOf('if (_myLocAnnot == null) return true;');
-      expect(dragLatch, isNonNegative);
-      expect(annotMissing, isNonNegative);
-      expect(dragLatch, lessThan(annotMissing),
-          reason: 'a rebuilt marker mid-drag must not put the overlay back '
-              'in front of the finger');
-      expect(owns.contains('if (!spot.known)'), isFalse,
-          reason: 'the "draw centred, never nothing" escape pinned the '
-              'arrow mid-screen over a panned map');
     });
   });
 

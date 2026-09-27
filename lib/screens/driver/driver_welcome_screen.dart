@@ -8,7 +8,7 @@ import '../../services/sms_service.dart';
 import '../../services/user_session.dart';
 import '../../utils/phone_format.dart';
 import '../verify_code_screen.dart';
-import 'driver_home_screen.dart';
+import 'driver_online_screen.dart';
 import 'driver_name_screen.dart';
 import 'driver_pending_review_screen.dart';
 import 'onboarding/driver_todo_screen.dart';
@@ -50,7 +50,7 @@ class DriverWelcomeScreen extends StatefulWidget {
 
     if (approved) {
       Navigator.of(context).pushAndRemoveUntil(
-        slideFromRightRoute(const DriverHomeScreen()),
+        slideFromRightRoute(const DriverOnlineScreen(resuming: true)),
         (_) => false,
       );
     } else if (s == 'pending') {

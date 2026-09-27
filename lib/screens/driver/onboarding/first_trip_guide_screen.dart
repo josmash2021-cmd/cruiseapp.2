@@ -4,7 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../../config/page_transitions.dart';
 import '../../../l10n/app_localizations.dart';
 import '../../../widgets/neu_style.dart';
-import '../driver_home_screen.dart';
+import '../driver_online_screen.dart';
 
 /// First-trip guide — 4 swipeable pages shown exactly ONCE after approval
 /// (flag `first_trip_guide_seen_v1`, set by the celebration flow before
@@ -42,7 +42,7 @@ class _FirstTripGuideScreenState extends State<FirstTripGuideScreen> {
     } catch (_) {}
     if (!mounted) return;
     Navigator.of(context).pushAndRemoveUntil(
-      onboardingFadeSlideRoute(const DriverHomeScreen()),
+      onboardingFadeSlideRoute(const DriverOnlineScreen()),
       (_) => false,
     );
   }

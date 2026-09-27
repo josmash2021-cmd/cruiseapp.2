@@ -62,10 +62,16 @@ void main() {
   group('pause really pauses', () {
     test('_applyOffers is gated on _isPaused', () {
       final start = ctrl.indexOf('void _applyOffers(');
-      final body = ctrl.substring(start, start + 400);
+      // 700, no 400: the single-map merge added the `_driverOnline` gate
+      // (and its comment) ABOVE the pause gate — the window must still
+      // reach it.
+      final body = ctrl.substring(start, start + 700);
       expect(body.contains('if (_isPaused) return;'), isTrue,
           reason: 'the gate is the guarantee — SSE was never stopped by '
               'the old pause (audit #14)');
+      expect(body.contains('if (!_driverOnline) return;'), isTrue,
+          reason: 'single-map merge (2026-09-26): offline mode never '
+              'processes offers');
     });
 
     test('pause stops SSE, not only the backup poll', () {

@@ -61,7 +61,6 @@ import 'driver_promos_screen.dart';
 import 'driver_analytics_screen.dart';
 import 'driver_inbox_screen.dart';
 import '../home_screen.dart';
-import 'driver_home_screen.dart';
 import '../../services/map_launcher_service.dart';
 import '../../services/preload_service.dart';
 import '../../services/user_session.dart';
@@ -78,10 +77,26 @@ import '../../services/background_service.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import '../../widgets/tier_badge.dart';
 import '../../services/map_controller_cache.dart';
+// ── Puerto del home (merge mapa único 2026-09-26): el chrome offline vive
+// en driver_online_offline.dart y usa estas pantallas/servicios ──
+import '../../config/driver_colors.dart';
+import '../../services/local_data_service.dart';
+import '../welcome_screen.dart';
+import '../account_deactivated_screen.dart';
+import 'cruise_level_screen.dart';
+import 'driver_menu_screen.dart';
+import 'driver_documents_screen.dart';
+import 'driver_agreement_screen.dart';
+import 'onboarding/driver_notifications_screen.dart';
+import 'scheduled_rides_screen.dart';
+import 'scheduled_ride_details_screen.dart';
+import '../../utils/responsive.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 part 'driver_online_controller.dart';
 part 'driver_online_map.dart';
 part 'driver_online_widgets.dart';
+part 'driver_online_offline.dart';
 
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 //  CRUISE DRIVER — ONLINE SCREEN
@@ -1030,6 +1045,50 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                 .chain(CurveTween(curve: Curves.easeOut)),
             weight: 20),
       ]).animate(_scheduledBounceCtrl!);
+
+      // ── Relojes del GO button (puerto del home, merge 2026-09-26) ──
+      _goPulseCtrl = AnimationController(
+        vsync: this,
+        duration: const Duration(milliseconds: 2000),
+      )..repeat(reverse: true);
+      _goPulseAnim = Tween<double>(begin: 0.3, end: 1.0).animate(
+          CurvedAnimation(parent: _goPulseCtrl!, curve: Curves.easeInOut));
+      _goGlossCtrl = AnimationController(
+        vsync: this,
+        duration: const Duration(milliseconds: 2400),
+      )..repeat();
+      // El radar lleva su propio reloj, más lento que todo lo demás del
+      // botón — un radar apurado lee como spinner, no como baliza.
+      _goRadarCtrl = AnimationController(
+        vsync: this,
+        duration: const Duration(milliseconds: 4200),
+      )..repeat();
+      _goBtnColorCtrl = AnimationController(
+        vsync: this,
+        duration: const Duration(milliseconds: 1200),
+      );
+      _goBtnColorAnim = CurvedAnimation(
+          parent: _goBtnColorCtrl!, curve: Curves.easeInOut);
+      _goFabCtrl = AnimationController(
+        vsync: this,
+        duration: const Duration(milliseconds: 600),
+      );
+      _goFabScale =
+          CurvedAnimation(parent: _goFabCtrl!, curve: Curves.elasticOut);
+      _goFabCtrl!.forward();
+
+      // Guards de boot portados del home (antes vivían en
+      // driver_home_screen.dart): cuenta, acuerdo, permisos, docs, viaje
+      // activo. Corren en cualquier modo — el driver puede estar offline.
+      unawaited(_checkAccountStatus());
+      _accountStatusTimer ??= Timer.periodic(
+          const Duration(seconds: 300), (_) => _checkAccountStatus());
+      unawaited(_checkDriverAgreementConsent());
+      unawaited(_runDriverPermissionFlow());
+      unawaited(_startDocApprovalListener());
+      unawaited(_checkVehicleDocStatus());
+      unawaited(_checkBackendActiveTrip());
+      unawaited(_checkScheduledRideLockout());
     });
 
     _boot();
@@ -1107,6 +1166,46 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
 
   bool _appInForeground = true;
 
+  // ── Modo del mapa único (2026-09-26, spec usuario: "quiero que sea uno,
+  // estilo Lyft") ──
+  //
+  // Una sola pantalla, un solo mapa: ONLINE y OFFLINE son modos de esta
+  // pantalla, no dos rutas. `_driverOnline` es el único interruptor:
+  // true = se reciben ofertas (SSE + poll + heartbeat + GPS background +
+  // Live Activity); false = el mapa sigue vivo y nada escucha ofertas.
+  // El flip es in-place — sin push, sin handoff de superficie, sin snapshot.
+  bool _driverOnline = false;
+  bool _enteringOnline = false;
+  // El stream GPS se recrea en cada flip (iOS solo aplica el flag de
+  // background en un request nuevo) — este latch evita recrearlo en vano.
+  bool _posStreamIsBackground = false;
+  bool _fcmRegisterInFlight = false;
+
+  // ── Estado offline portado del home (merge 2026-09-26 — los usan los
+  // builders/gates de driver_online_offline.dart) ──
+  bool _isVerified = false;
+  bool _vehicleDocsApproved = false;
+  bool _hasExpiredDocs = false;
+  bool _plateChangePending = false;
+  bool _docStatusLoaded = false;
+  StreamSubscription? _docApprovalSub;
+  Timer? _accountStatusTimer;
+  Map<String, dynamic>? _activeTripData;
+  bool _resumingActiveTrip = false;
+  // "El turno nunca se cerró": el pref leído al boot — el GO lee RESUME.
+  bool _driverWasOnlineAtBoot = false;
+  static bool _permsScreenShownThisProcess = false;
+  // Los relojes del GO button (los nombres pelados los tiene la tarjeta de
+  // oferta). Nullables: se crean post-frame como el resto de la entrada.
+  AnimationController? _goPulseCtrl;
+  Animation<double>? _goPulseAnim;
+  AnimationController? _goBtnColorCtrl;
+  Animation<double>? _goBtnColorAnim;
+  AnimationController? _goGlossCtrl;
+  AnimationController? _goRadarCtrl;
+  AnimationController? _goFabCtrl;
+  Animation<double>? _goFabScale;
+
   // ── Defer Mapbox mount to eliminate the ~1s entry freeze ──
   // Mounting MapWidget creates a native PlatformView (SurfaceView on
   // Android, native view on iOS) synchronously, which blocks the UI
@@ -1144,6 +1243,10 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   /// by its own deadline, and the chime is one per go-online.
   void _armOnlineChime() {
     if (!mounted ||
+        // Mapa único (2026-09-26): el mapa se monta al boot en modo OFFLINE
+        // — el chime es de entrar online, no de montar el mapa. Lo dispara
+        // _enterOnlineMode directamente.
+        !_driverOnline ||
         widget.resuming ||
         // Arriving by tapping an offer notification. The driver already knows
         // they are online — they are here to answer a ride, and the offer
@@ -1180,6 +1283,10 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     if (offer == null) return;
     DriverOnlineScreen.deepLinkOfferNotifier.value = null;
     if (!mounted) return;
+    // Un tap en una oferta push ES la intención de trabajar (mapa único):
+    // si el modo offline estaba activo, entra online primero y la tarjeta
+    // cae sobre el mismo mapa.
+    if (!_driverOnline) unawaited(_enterOnlineMode(resuming: true));
     // The route preview's animation flag can be stuck true from a sequence
     // the background paused mid-stroke — and while it is true every route
     // draw is vetoed, so the injected card would come up WITHOUT its route.
@@ -1240,10 +1347,14 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
       // screen, and the magnetometer is not free. _boot's _startHeadingSource
       // runs again on resume.
       _headingSource.stop();
-      // Start background heartbeat to keep driver "online" in backend
-      _startBackgroundHeartbeat();
-      // Start Android foreground service so the OS doesn't kill us
-      DriverBackgroundService().start();
+      // Heartbeat + foreground service solo en modo online (mapa único,
+      // 2026-09-26): offline no hay turno que mantener vivo.
+      if (_driverOnline) {
+        // Start background heartbeat to keep driver "online" in backend
+        _startBackgroundHeartbeat();
+        // Start Android foreground service so the OS doesn't kill us
+        DriverBackgroundService().start();
+      }
     } else if (state == AppLifecycleState.resumed) {
       _appInForeground = true;
       // Before anything else: the location stream may not have survived the
@@ -1255,16 +1366,19 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
       DriverBackgroundService().stop();
       // Reset sound guards so offer sounds play correctly after app resumes
       NotificationService.resetSoundGuards();
-      // The offer route is redrawn AFTER the annotation wipe below, not
-      // here. Clearing the latch at this point looked right and was the
-      // reason the route vanished on every return to the app: the poll
-      // started by `_startPolling` brought the offer straight back,
-      // `_autoTriggerRoutePreview` drew the route and re-armed the latch,
-      // and 800 ms later `_clearAllAnnotations` erased it — reinstating only
-      // the driver dot. With the latch armed nothing ever drew it again, so
-      // the driver watched the route disappear seconds after coming back.
-      _startPolling(force: true); // _startPolling already calls _connectSse()
-      _startClock();
+      // El pipeline de ofertas solo renace en modo online (mapa único).
+      if (_driverOnline) {
+        // The offer route is redrawn AFTER the annotation wipe below, not
+        // here. Clearing the latch at this point looked right and was the
+        // reason the route vanished on every return to the app: the poll
+        // started by `_startPolling` brought the offer straight back,
+        // `_autoTriggerRoutePreview` drew the route and re-armed the latch,
+        // and 800 ms later `_clearAllAnnotations` erased it — reinstating only
+        // the driver dot. With the latch armed nothing ever drew it again, so
+        // the driver watched the route disappear seconds after coming back.
+        _startPolling(force: true); // _startPolling already calls _connectSse()
+        _startClock();
+      }
       _startEarningsRefresh();
       // Re-attach the compass dropped on pause, so the arrow is already
       // pointing the right way by the time the driver has looked at it.
@@ -1382,6 +1496,14 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     _offerTiltCtrl?.dispose();
     _offerBearingCtrl?.dispose();
     _pauseTimer?.cancel();
+    // Puerto del home (merge 2026-09-26):
+    _docApprovalSub?.cancel();
+    _accountStatusTimer?.cancel();
+    _goPulseCtrl?.dispose();
+    _goBtnColorCtrl?.dispose();
+    _goGlossCtrl?.dispose();
+    _goRadarCtrl?.dispose();
+    _goFabCtrl?.dispose();
     // NOTE: Intentionally do NOT dispose the map here.
     // The MapControllerCache owns the map lifecycle for reuse across screens.
     if (_map != null) MapControllerCache.instance.cache(_map!);
@@ -1772,27 +1894,16 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
 
             // â”€â”€ Top-left: Home button (hidden during nav — nav header has its own back) â”€â”€
             // Also hidden while the accepted celebration is up: with a trip
-            // taken, Home / Earnings / Notifications are three ways to walk
+            // taken, Menu / Earnings / Notifications are three ways to walk
             // away from it, same as with an offer.
             if (!isNav && !_offerOnScreen && _acceptedOverlay == null)
               Positioned(
                 top: top + 10,
                 left: 16,
-                child: _enterTopWrap(
-                  _fab(
-                    // A house, not a back arrow. The driver is not undoing a
-                    // step — they are going to look at the home screen while
-                    // staying exactly as online as they were. _goBack pops
-                    // with stillOnline: true and stops nothing: not the GPS,
-                    // not the marker, not the shift.
-                    Icons.home_rounded,
-                    48,
-                    fabBg,
-                    fabBorder,
-                    fabIcon,
-                    _goBack,
-                  ),
-                ),
+                // Mapa único (2026-09-26): el botón de Home murió con la
+                // pantalla vieja — esta pantalla ES la raíz del driver en
+                // ambos modos; el menú vive aquí ahora.
+                child: _enterTopWrap(_buildOfflineMenuButton()),
               ),
 
             // â”€â”€ Top-center: Earnings pill + TODAY (hidden during nav) â”€â”€
@@ -1982,7 +2093,9 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                 ),
               ),
 
-            if (_phase == _Phase.searching && _pendingOffers.isEmpty) ...[
+            if (_phase == _Phase.searching &&
+                _pendingOffers.isEmpty &&
+                _driverOnline) ...[
               Positioned(
                 // Just clear of the panel. The panel is 78 + inset tall now
                 // (it was 54 when this constant last moved), and 54 + 14 sat
@@ -2161,6 +2274,16 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
               ),
 
             // â”€â”€ Bottom: Phase-specific panel â”€â”€
+            // GO button (modo offline) — el hero del home sobre el mismo
+            // mapa (mapa único 2026-09-26). Online se esconde con morph;
+            // con ofertas/preview encima no existe.
+            if (_phase == _Phase.searching &&
+                _pendingOffers.isEmpty &&
+                _previewingOffer == null &&
+                _acceptedOverlay == null)
+              _buildMorphingGoButton(MediaQuery.of(context).padding,
+                  hidden: _driverOnline),
+
             if (_phase == _Phase.searching)
               Positioned.fill(
                 child: AnimatedSlide(

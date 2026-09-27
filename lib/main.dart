@@ -28,7 +28,7 @@ import 'config/route_observers.dart';
 import 'state/accessibility_notifier.dart';
 import 'screens/splash_screen.dart';
 import 'screens/driver/driver_online_screen.dart';
-import 'screens/driver/driver_home_screen.dart';
+import 'screens/driver/driver_online_screen.dart';
 import 'screens/driver/driver_pending_review_screen.dart';
 import 'screens/driver/onboarding/driver_approved_celebration_screen.dart';
 import 'screens/driver/driver_trip_accept_screen.dart';
@@ -665,7 +665,7 @@ void _handleDriverAssigned(RemoteMessage message) {
       final nav = _navigatorKey.currentState;
       if (nav == null) return;
       nav.pushAndRemoveUntil(
-        MaterialPageRoute(builder: (_) => const DriverHomeScreen()),
+        MaterialPageRoute(builder: (_) => const DriverOnlineScreen(resuming: true)),
         (r) => false,
       );
     });

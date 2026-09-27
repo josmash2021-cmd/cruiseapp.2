@@ -10,7 +10,7 @@ import '../../services/api_service.dart';
 import '../../services/firebase_storage_service.dart';
 import '../../services/photo_recovery_service.dart';
 import '../../services/user_session.dart';
-import 'driver_home_screen.dart';
+import 'driver_online_screen.dart';
 
 /// After approval, the driver must upload a profile photo before entering the app.
 class DriverProfilePhotoScreen extends StatefulWidget {
@@ -109,7 +109,7 @@ class _DriverProfilePhotoScreenState extends State<DriverProfilePhotoScreen> {
         return;
       }
       Navigator.of(context).pushAndRemoveUntil(
-        slideFromRightRoute(const DriverHomeScreen()),
+        slideFromRightRoute(const DriverOnlineScreen(resuming: true)),
         (_) => false,
       );
     } catch (e) {

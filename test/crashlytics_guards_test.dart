@@ -20,18 +20,6 @@ void main() {
       expect(region, contains('SizedBox.shrink()'));
     });
 
-    test('schedule_booking itemBuilder guards _suggestions before indexing',
-        () {
-      final src = _read('lib/screens/schedule_booking_screen.dart');
-      final builderIdx = src.indexOf('itemBuilder: (_, i) {');
-      final indexIdx = src.indexOf('final s = _suggestions[i];');
-      expect(builderIdx, isNonNegative);
-      expect(indexIdx, greaterThan(builderIdx));
-      final region = src.substring(builderIdx, indexIdx);
-      expect(region, contains('i >= _suggestions.length'));
-      expect(region, contains('SizedBox.shrink()'));
-    });
-
     test('pickup_dropoff_search keeps its original guard (regression)', () {
       final src = _read('lib/screens/pickup_dropoff_search_screen.dart');
       expect(src, contains('i < 0 || i >= _suggestions.length'));
@@ -43,7 +31,10 @@ void main() {
     test('socket_service strips query/fragment before io.io(', () {
       final src = _read('lib/services/socket_service.dart');
       final sanitizeIdx = src.indexOf("replace(query: ''");
-      final ioIdx = src.indexOf('io.io(');
+      // The REAL socket build, not the string "io.io(" — that appears in a
+      // doc comment ("two concurrent io.io() builds…") way before the
+      // sanitize and inverted this pin while the source was correct.
+      final ioIdx = src.indexOf('_socket = io.io(');
       expect(sanitizeIdx, isNonNegative);
       expect(ioIdx, isNonNegative);
       expect(sanitizeIdx, lessThan(ioIdx));

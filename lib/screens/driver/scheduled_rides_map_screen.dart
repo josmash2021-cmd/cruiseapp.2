@@ -69,6 +69,9 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
   bool _mapMounted = false;
 
   mapbox.MapboxMap? _map;
+  // True once the style finished loading — the price-bubble images attach
+  // only after that (pre-style they render as the default blue marker).
+  bool _styleReady = false;
   mapbox.PointAnnotationManager? _bubbleMgr;
   mapbox.PointAnnotationManager? _dotMgr;
   mapbox.PointAnnotation? _dotAnnot;
@@ -442,7 +445,12 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
     }
     _bubbleTap?.cancel();
     _bubbleTap = _bubbleMgr?.tapEvents(onTap: _onBubbleTap);
-    await _syncBubbles();
+    // Image-bearing annotations (the price bubbles) must NOT attach before
+    // the style is up: pre-style they render as the default blue marker
+    // (the 2026-08-08 bug this gate exists for). Geometry-only content —
+    // the driver dot, the selected route — carries no image and stays
+    // immediate.
+    if (_styleReady) await _syncBubbles();
     _syncDriverDot();
     // A revoke while the detail was open took the drawn route with the old
     // surface — redraw it on the fresh one.
@@ -978,7 +986,14 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
                       onMapCreated: _onMapCreated,
                       onStyleLoadedListener: (_) async {
                         final m = _map;
-                        if (m != null) await MapTheme.applyNavyGold(m);
+                        if (m == null) return;
+                        await MapTheme.applyNavyGold(m);
+                        // The style is up: the bubbles' image bytes can
+                        // attach now (pre-style they rendered as the default
+                        // blue marker). This is also the kick for the cold
+                        // start, where onMapCreated ran before the style.
+                        _styleReady = true;
+                        await _syncBubbles();
                       },
                       // Gesture callbacks, not onCameraChangeListener: the
                       // latter also fires for our own flyTo and would arm

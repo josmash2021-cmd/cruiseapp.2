@@ -196,7 +196,10 @@ void main() {
     test('_gpsMayMoveCamera hard-closes for picker mode before any other term', () {
       final getter = RegExp(r'bool get _gpsMayMoveCamera \{');
       final start = getter.firstMatch(ctrl)!.end;
-      final body = ctrl.substring(start, start + 500);
+      // 700, no 500: the instrumented debugPrint block grew the getter past
+      // the old window and the needle sat just outside it — the terms were
+      // never removed from the source.
+      final body = ctrl.substring(start, start + 700);
       expect(body.contains('if (widget.pickerMode)'), isTrue,
           reason: 'picker mode must short-circuit the gate so a single '
               'miss in the boolean expression cannot allow a GPS move');
@@ -232,7 +235,9 @@ void main() {
     test('_gpsMayMoveCamera closes when the surface is not ours', () {
       final getter = RegExp(r'bool get _gpsMayMoveCamera \{');
       final start = getter.firstMatch(ctrl)!.end;
-      final body = ctrl.substring(start, start + 500);
+      // 700, no 500: the instrumented debugPrint block grew the getter past
+      // the old window.
+      final body = ctrl.substring(start, start + 700);
       expect(body.contains('_mapMounted'), isTrue,
           reason: 'a booking sheet covered by the picker has no live '
               'surface; without this term its late cold-start GPS fix '
@@ -264,8 +269,10 @@ void main() {
   });
 
   group('_tryFetchRoute never leaves the picker', () {
+    // CRLF-normalized: git on Windows checks out CRLF (autocrlf) and the
+    // needle spans a line boundary.
     final state =
-        File('lib/state/rider_trip_controller.dart').readAsStringSync();
+        File('lib/state/rider_trip_controller.dart').readAsStringSync().replaceAll('\r\n', '\n');
 
     test('the phase flip keeps pickingLocation', () {
       expect(

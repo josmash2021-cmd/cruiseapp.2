@@ -32,17 +32,14 @@ void main() {
 
     // Terminal screens reached by pushReplacement/pushAndRemoveUntil, so the
     // screen they replace is torn down rather than stacked under them.
-    'lib/screens/rider_rating_screen.dart': 'pushReplacement from tracking',
+    // rider_rating_screen.dart left this list: its map is a StaticRoutePreview
+    // image now (reopen flow), it mounts no MapWidget.
     'lib/screens/ride_booking_confirmed_screen.dart':
         'pushAndRemoveUntil from the booking flow',
 
     // Not reachable: no call sites.
     'lib/screens/waiting_for_driver_screen.dart': 'route helper has no callers',
     'lib/screens/rider_map_shell_screen.dart': 'referenced only in a doc comment',
-
-    // Opened from the rider home, which claims the surface and hands it over.
-    // Mounts nothing else with a map.
-    'lib/screens/scheduled_rides_screen.dart': 'leaf screen, one map',
   };
 
   test('every screen with a MapWidget claims the map surface', () {

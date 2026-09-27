@@ -545,6 +545,21 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     // Validate bearing — NaN/Infinity would break rotation interpolation
     if (bearing != null && (bearing.isNaN || bearing.isInfinite)) bearing = null;
     if (speed != null && (speed.isNaN || speed.isInfinite || speed < 0)) speed = null;
+    // Bearing discipline (user report: "el carrito no gira fluido"): ON the
+    // route the tangent is the ONLY compass — the fix's own GPS course used
+    // to enter through setTarget too, so the engine measured its turn rate
+    // across two different sources landing a millisecond apart, and the
+    // glide between fixes swung with course noise. The tangent below (same
+    // handler, _carSnapActive branch) keeps steering as before. Off-route
+    // the course is all there is, so it keeps speaking there.
+    var onRouteForBearing = false;
+    if (_routePts.length >= 2 &&
+        _segDist.isNotEmpty &&
+        !(_phase == _TrackPhase.arriving && !_approachRouteFetched)) {
+      final probeM = _projectOntoRoute(ll).clamp(0.0, _segDist.last);
+      final probeSnapped = _posAtDistUltraSmooth(probeM).$1;
+      onRouteForBearing = _hav(ll, probeSnapped) * 1609.34 < 30;
+    }
     // Feed the motion engine first — every packet from every channel lands
     // here, and the engine decides what is movement and what is parked-car
     // GPS wander. No accuracy travels on the socket; 8 m is a fair street-
@@ -552,7 +567,7 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     // capture time: arrival spacing on a relayed feed comes in bursts, and
     // pacing velocity by bursts reads as accelerate-brake pulsing.
     _carMotion.setTarget(ll.latitude, ll.longitude,
-        bearing: bearing,
+        bearing: onRouteForBearing ? null : bearing,
         accuracyM: 8.0,
         timestampMs: timestampMs,
         // The driver's own reported speed travels on the relay — ~0 while
@@ -664,10 +679,12 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
         // Fall back to calculated velocity from GPS deltas.
         final now = DateTime.now();
         final dtSec = now.difference(_lastGpsTime).inMilliseconds / 1000.0;
-        if (speed != null && speed > 0.1) {
+        if (speed != null) {
           // Real driver speed — smooth with 30/70 blend for stability.
-          // Always honored even if delta is 0 (GPS jitter on a moving
-          // driver) so the ticker has velocity to advance with.
+          // Blend ALWAYS, including ~0 (user report: ETA "no es real" at
+          // stops): the old `speed > 0.1` gate meant a parked driver kept
+          // his last driving speed forever, and the ETA kept burning
+          // minutes at the red light as if he were still moving.
           final realVel = speed.clamp(0.0, 35.0);
           _velocityMps = _velocityMps * 0.3 + realVel * 0.7;
         } else if (dtSec > 0.05 && dtSec < 5.0) {
@@ -730,14 +747,17 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       } else {
         _distanceMiles = dist;
       }
-      // Use real driver velocity when available, then traffic-aware route duration, then distance fallback
-      if (_velocityMps > 3.0) {
-        final remainM = _distanceMiles * 1609.34;
-        _etaMinutes = (remainM / _velocityMps / 60.0).ceil().clamp(1, 999);
-      } else if (_routeDurationSec != null && _routeDurationSec! > 0 && _segDist.isNotEmpty && _segDist.last > 0) {
+      // ETA priority (user report: "no son los correctos ni reales"): 1)
+      // traffic-aware route duration scaled by the fraction of road left;
+      // 2) the driver's live speed; 3) the fixed city fallback. A stale
+      // speed used to win first place and burned minutes at red lights.
+      if (_routeDurationSec != null && _routeDurationSec! > 0 && _segDist.isNotEmpty && _segDist.last > 0) {
         // Scale route duration by fraction of distance remaining
         final fraction = ((_segDist.last - _traveledM) / _segDist.last).clamp(0.0, 1.0);
         _etaMinutes = (_routeDurationSec! * fraction / 60.0).ceil().clamp(1, 999);
+      } else if (_velocityMps > 3.0) {
+        final remainM = _distanceMiles * 1609.34;
+        _etaMinutes = (remainM / _velocityMps / 60.0).ceil().clamp(1, 999);
       } else {
         _etaMinutes = (_distanceMiles / 0.4).ceil().clamp(1, 999);
       }
@@ -753,14 +773,15 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       } else {
         _distanceMiles = dist;
       }
-      // Use real driver velocity for ETA when available (> 3 m/s ≈ walking speed),
-      // then traffic-aware route duration, then distance-based fallback
-      if (_velocityMps > 3.0) {
-        final remainM = _distanceMiles * 1609.34;
-        _etaMinutes = (remainM / _velocityMps / 60.0).ceil().clamp(1, 999);
-      } else if (_routeDurationSec != null && _routeDurationSec! > 0 && _segDist.isNotEmpty && _segDist.last > 0) {
+      // ETA priority (user report: "no son los correctos ni reales"): 1)
+      // traffic-aware route duration scaled by the fraction of road left;
+      // 2) the driver's live speed; 3) the fixed city fallback.
+      if (_routeDurationSec != null && _routeDurationSec! > 0 && _segDist.isNotEmpty && _segDist.last > 0) {
         final fraction = ((_segDist.last - _traveledM) / _segDist.last).clamp(0.0, 1.0);
         _etaMinutes = (_routeDurationSec! * fraction / 60.0).ceil().clamp(1, 999);
+      } else if (_velocityMps > 3.0) {
+        final remainM = _distanceMiles * 1609.34;
+        _etaMinutes = (remainM / _velocityMps / 60.0).ceil().clamp(1, 999);
       } else {
         // Fallback: 0.4 mi/min ≈ 24 mph average urban
         _etaMinutes = (_distanceMiles / 0.4).ceil().clamp(1, 999);
@@ -999,6 +1020,11 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       }
 
       _setState(() {});
+
+      // Traffic refresh covers the approach too (user report: "el tiempo de
+      // que el driver llegue al pickup no es real") — duration-only refreshes
+      // every 2 min from here, the geometry is never swapped mid-approach.
+      _startTrafficRefreshTimer();
 
       // The trip route (pickup→dropoff) stays as the dimmed background.
       // Draw the approach route (driver→pickup) as a second dimmed line,
@@ -1503,16 +1529,27 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       try { approachMgr.delete(_approachAnnot!); } catch (_) {}
       _approachAnnot = null;
     }
-    _routeDurationSec = null;
+    // The trip route's own traffic-aware duration (captured at fetch in
+    // _initRoute) becomes the dropoff ETA base from the very first frame —
+    // never the fixed 24 mph guess it used to open with while the first
+    // traffic refresh was still 2 minutes out (user report: "el tiempo al
+    // dropoff no es real").
+    _routeDurationSec = _tripDurationSec;
     if (_segDist.isNotEmpty) {
       final totalRouteM = _segDist.last;
       _distanceMiles = totalRouteM / 1609.34;
-      _etaMinutes = (_distanceMiles / 0.4).ceil().clamp(1, 999);
+      _etaMinutes = _routeDurationSec != null && _routeDurationSec! > 0
+          ? (_routeDurationSec! / 60.0).ceil().clamp(1, 999)
+          : (_distanceMiles / 0.4).ceil().clamp(1, 999);
     }
     _setState(() {
       _phase = _TrackPhase.onTrip;
       _tripJustStarted = true;
     });
+    // Traffic refresh NOW, not in 2 min — the opening ETA sharpens against
+    // live conditions from the first seconds of the trip. After the phase
+    // flip above: _refreshTraffic gates on the phase.
+    unawaited(_refreshTraffic());
     _shouldFollowDriver = true;
     _startCameraFollowTracking();
     _saveRideState();
@@ -1559,52 +1596,81 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
   }
 
   /// Periodic traffic-aware route refresh — fetches live traffic data
-  /// every 2 minutes to keep ETA accurate during the trip.
+  /// every 2 minutes to keep ETA accurate. Runs during onTrip AND arriving
+  /// (user report: "el tiempo de que el driver llegue al pickup no es
+  /// real") — the approach ETA used to be frozen at whatever the first
+  /// fetch saw.
   void _startTrafficRefreshTimer() {
     _trafficRefreshTimer?.cancel();
-    _trafficRefreshTimer = Timer.periodic(const Duration(minutes: 2), (_) async {
-      if (!mounted || _phase != _TrackPhase.onTrip && _phase != _TrackPhase.nearDestination) {
-        _trafficRefreshTimer?.cancel();
+    _trafficRefreshTimer =
+        Timer.periodic(const Duration(minutes: 2), (_) => _refreshTraffic());
+  }
+
+  /// One traffic-aware refresh. onTrip refreshes the remaining leg geometry
+  /// AND duration; arriving refreshes only the DURATION (driver→pickup) —
+  /// the drawn approach geometry stays untouched.
+  Future<void> _refreshTraffic() async {
+    if (!mounted) return;
+    final onTrip = _phase == _TrackPhase.onTrip ||
+        _phase == _TrackPhase.nearDestination;
+    final arriving = _phase == _TrackPhase.arriving && _approachRouteFetched;
+    if (!onTrip && !arriving) {
+      // Nothing left to refresh once the ride is over.
+      if (_phase == _TrackPhase.completed) _trafficRefreshTimer?.cancel();
+      return;
+    }
+    if (_driverPos.latitude == 0 && _driverPos.longitude == 0) return;
+    try {
+      final ds = DirectionsService(ApiKeys.webServices);
+      final result = await ds.getRoute(
+        origin: _driverPos,
+        destination: onTrip ? widget.dropoffLatLng : widget.pickupLatLng,
+      );
+      if (result == null ||
+          result.durationSeconds == null ||
+          result.durationSeconds! <= 0) {
         return;
       }
-      // Only refresh if we have driver position and haven't refreshed recently
-      if (_driverPos.latitude == 0 && _driverPos.longitude == 0) return;
-      try {
-        final ds = DirectionsService(ApiKeys.webServices);
-        final result = await ds.getRoute(
-          origin: _driverPos,
-          destination: widget.dropoffLatLng,
-        );
-        if (result != null && result.durationSeconds != null && result.durationSeconds! > 0) {
-          _routeDurationSec = result.durationSeconds;
-          // Remaining-leg geometry only: this feeds the erase-behind-the-car
-          // and the ETA projection. `_tripRoutePts` — the full pickup→dropoff
-          // polyline the camera frames against — is NOT touched, or the
-          // onTrip frame collapses to car→dropoff on every refresh.
-          _routePts = result.points;
-          _buildSegDist();
-          // resetDraw: false — the line is already on screen and being
-          // erased behind the car. This only refreshes the geometry the
-          // erase is computed against; redrawing would flash it.
-          _syncRouteToMap(resetDraw: false);
-          // The fresh route starts AT the driver, so progress along it
-          // restarts near zero. Keeping the old _traveledM (absolute along
-          // the previous, longer polyline) shrank the remaining fraction
-          // toward 0 — ETA pinned at the 1-min clamp and the phase flipped
-          // to nearDestination early — and the max() ratchet in the GPS
-          // handler then blocked any downward correction.
-          _traveledM = _startMOnCurrentRoute();
-          _tgtTraveledM = _traveledM;
-          // Recalculate ETA with fresh traffic data
-          final fraction = ((_segDist.last - _traveledM) / _segDist.last).clamp(0.0, 1.0);
-          _etaMinutes = (_routeDurationSec! * fraction / 60.0).ceil().clamp(1, 999);
+      if (arriving) {
+        _routeDurationSec = result.durationSeconds;
+        if (_segDist.isNotEmpty && _segDist.last > 0) {
+          final fraction =
+              ((_segDist.last - _traveledM) / _segDist.last).clamp(0.0, 1.0);
+          _etaMinutes =
+              (_routeDurationSec! * fraction / 60.0).ceil().clamp(1, 999);
           _setState(() {});
-          debugPrint('[RiderTracking] Traffic refresh: ETA updated to $_etaMinutes min');
+          debugPrint(
+              '[RiderTracking] Traffic refresh (arriving): ETA $_etaMinutes min');
         }
-      } catch (e) {
-        debugPrint('[RiderTracking] Traffic refresh failed: $e');
+        return;
       }
-    });
+      _routeDurationSec = result.durationSeconds;
+      // Remaining-leg geometry only: this feeds the erase-behind-the-car
+      // and the ETA projection. `_tripRoutePts` — the full pickup→dropoff
+      // polyline the camera frames against — is NOT touched, or the
+      // onTrip frame collapses to car→dropoff on every refresh.
+      _routePts = result.points;
+      _buildSegDist();
+      // resetDraw: false — the line is already on screen and being
+      // erased behind the car. This only refreshes the geometry the
+      // erase is computed against; redrawing would flash it.
+      _syncRouteToMap(resetDraw: false);
+      // The fresh route starts AT the driver, so progress along it
+      // restarts near zero. Keeping the old _traveledM (absolute along
+      // the previous, longer polyline) shrank the remaining fraction
+      // toward 0 — ETA pinned at the 1-min clamp and the phase flipped
+      // to nearDestination early — and the max() ratchet in the GPS
+      // handler then blocked any downward correction.
+      _traveledM = _startMOnCurrentRoute();
+      _tgtTraveledM = _traveledM;
+      // Recalculate ETA with fresh traffic data
+      final fraction = ((_segDist.last - _traveledM) / _segDist.last).clamp(0.0, 1.0);
+      _etaMinutes = (_routeDurationSec! * fraction / 60.0).ceil().clamp(1, 999);
+      _setState(() {});
+      debugPrint('[RiderTracking] Traffic refresh: ETA updated to $_etaMinutes min');
+    } catch (e) {
+      debugPrint('[RiderTracking] Traffic refresh failed: $e');
+    }
   }
 
   /// Show the rider confirmation pickup overlay when driver has arrived.
@@ -2213,6 +2279,10 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     _startRideAnimationDone = true;
     _startRidePhase = 5; // skip to follow mode immediately
 
+    // The dimmed full-trip route STAYS (user report: "toda la ruta completa
+    // no se ve"): the gold remaining leg draws and erases on top of it, so
+    // the whole pickup→dropoff plan is visible for the entire ride, not
+    // just whatever is left.
     _routeFadeJob?.cancel();
     _routeOpacity = 1.0;
 
@@ -2220,9 +2290,6 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
       _dropoffPinAdded = false;
       _addDropoffPin();
     }
-
-    // Remove the dimmed route — draw a bright one instead
-    _removeDimmedRoute();
 
     // Draw the remaining route (driver → dropoff) immediately
     _routeDrawDone = false;

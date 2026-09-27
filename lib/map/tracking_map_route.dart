@@ -578,4 +578,6 @@ class TrackingMapRoute {
   List<LatLng> get tripRoutePoints => _tripRoutePts;
   double get traveledMeters => _traveledM;
   bool get routeDrawDone => _routeDrawDone;
+  /// Whether the dimmed full-trip route annotation exists on the map.
+  bool get hasDimmedRoute => _dimmedRouteAnnot != null;
 }

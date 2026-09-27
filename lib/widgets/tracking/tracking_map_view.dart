@@ -8,13 +8,38 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
 
   /// Project a lat/lng onto the nearest point on the route polyline,
   /// returning the cumulative distance in meters along the route.
+  ///
+  /// Windowed (user report: "el carrito se detiene cada rato"): this runs
+  /// EVERY FRAME from `_interpolate`, and a full O(n) sweep over a long
+  /// airport route (2-3k segments of haversine × 60 fps on the UI isolate)
+  /// stalled car and camera in bursts. The car never teleports backwards
+  /// along the route, so the nearest segment is almost always right after
+  /// the last one — scan a window around the hint, and only when the
+  /// window's best is far off the line (self-crossing street, driver
+  /// genuinely off-route) fall back to the full scan and re-anchor.
   double _projectOntoRoute(LatLng p) {
     if (_routePts.length < 2) return 0;
-    
-    double bestDist = double.infinity;
-    double bestM = 0;
+    final win = _projectInSegRange(p, _projHintIdx - 4, _projHintIdx + 48);
+    if (win.$2 <= 40) {
+      _projHintIdx = win.$1;
+      return win.$3;
+    }
+    final full = _projectInSegRange(p, 0, _routePts.length - 1);
+    _projHintIdx = full.$1;
+    return full.$3;
+  }
 
-    for (int i = 0; i + 1 < _routePts.length; i++) {
+  /// Nearest segment index of [p] inside segments [from, to), its lateral
+  /// distance in meters, and the projected arc-length in meters.
+  (int, double, double) _projectInSegRange(LatLng p, int from, int to) {
+    final n = _routePts.length;
+    from = from.clamp(0, n - 1);
+    to = to.clamp(from + 1, n);
+    double bestDist = double.infinity;
+    int bestSeg = from;
+    double bestM = _segDist[from];
+
+    for (int i = from; i < to; i++) {
       final a = _routePts[i];
       final b = _routePts[i + 1];
       final segStartM = _segDist[i];
@@ -27,14 +52,14 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
       final dx = (b.longitude - a.longitude) * 111320 * math.cos(a.latitude * math.pi / 180);
       final px = (p.longitude - a.longitude) * 111320 * math.cos(a.latitude * math.pi / 180);
       final py = (p.latitude - a.latitude) * 111320;
-      
+
       var t = 0.0;
       if (dx != 0 || dy != 0) {
         final segLen2 = dx * dx + dy * dy;
         t = (px * dx + py * dy) / segLen2;
         t = t.clamp(0.0, 1.0);
       }
-      
+
       final projLat = a.latitude + (b.latitude - a.latitude) * t;
       final projLng = a.longitude + (b.longitude - a.longitude) * t;
       final proj = LatLng(projLat, projLng);
@@ -42,11 +67,12 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
       final dist = _hav(p, proj) * 1609.34; // Convert to meters
       if (dist < bestDist) {
         bestDist = dist;
+        bestSeg = i;
         bestM = segStartM + segLenM * t;
       }
     }
 
-    return bestM;
+    return (bestSeg, bestDist, bestM);
   }
 
   /// Removes all trip-related polyline and pin annotations from the map.
@@ -556,7 +582,13 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
         origin: widget.pickupLatLng,
         destination: widget.dropoffLatLng,
       );
-      if (r != null && mounted) tripRoute = r.points;
+      if (r != null && mounted) {
+        tripRoute = r.points;
+        // The traffic-aware duration rides along (user report: "el tiempo
+        // al dropoff no es real") — _transitionToOnTrip opens the trip ETA
+        // with it instead of the fixed 24 mph guess.
+        _tripDurationSec = r.durationSeconds;
+      }
     }
     if (tripRoute.isEmpty) {
       // NO straight-line stand-in (project rule — the user's "línea
@@ -1211,6 +1243,8 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
       _segDist[i] =
           _segDist[i - 1] + _hav(_routePts[i - 1], _routePts[i]) * 1609.34;
     }
+    // A rebuilt route invalidates the projection window's anchor.
+    _projHintIdx = 0;
   }
 
   /// Returns (position, bearing) at a given distance along the route (meters).
@@ -1951,55 +1985,57 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
       _webCreateStaticAnnotationsOnce();
       return;
     }
-    if (_staticAnnotsDone) return;
     final pointMgr = _pointAnnotMgr;
     final polyMgr = _polylineAnnotMgr;
     if (pointMgr == null || polyMgr == null) return;
+    // Done means DONE (everything verified on the map below) — until then
+    // this pass re-enters per tick and retries whatever is missing.
+    if (_staticAnnotsDone) return;
+    // One pass in flight, and a 500 ms back-off after a failed pass
+    // (this re-enters per tick — without both, a failing native create
+    // would be retried at frame rate and spam the channel).
+    if (_staticAnnotBusy) return;
+    if (DateTime.now().isBefore(_nextStaticRetryAt)) return;
     // When using modular annotations, check modular state; otherwise check legacy state
     // Per-pin, never both-or-nothing (user report 2026-09-19, "los pines no
     // aparecen"): one failed render used to block BOTH pins forever.
     final pinsReady = _mapAnnotations != null
         ? (_mapAnnotations!.hasPickupPin || _mapAnnotations!.hasDropoffPin)
         : (_pickupPinBytes != null || _dropoffPinBytes != null);
-    if (!pinsReady) return;
+    if (!pinsReady) {
+      // Pin bytes never rendered (a GPU-busy mount fails the raster): not
+      // permanent, not silent (user report: "no están apareciendo los
+      // pines") — retry the render instead of giving up forever.
+      _schedulePinLoadRetry();
+      return;
+    }
     // During arriving/arrived: allow pins even when route is minimal (trip route is dimmed background)
     if (_routePts.length < 2 && _tripRoutePts.length < 2 && _phase != _TrackPhase.arriving && _phase != _TrackPhase.arrived) return;
-    _staticAnnotsDone = true; // mark before await to prevent double-creation
 
-    // ── Draw dimmed trip route (pickup→dropoff) — visible in all phases ──
-    // Use modular route component if available, fallback to legacy
-    if (_mapRoute != null) {
-      await _mapRoute!.drawDimmedRoute(opacity: 0.20, width: 4.0);
-    } else {
-      final dimmedPts = _tripRoutePts.isNotEmpty ? _tripRoutePts : _routePts;
-      if (dimmedPts.length >= 2) {
-        final safeGeom = safeLineString(dimmedPts);
-        if (safeGeom != null) {
-          try {
-            _dimmedRouteAnnot ??= await polyMgr.create(mapbox.PolylineAnnotationOptions(
-              geometry: safeGeom,
-              lineColor: const Color(0xFFFFD700).withValues(alpha: 0.20).toARGB32(),
-              lineWidth: 4.0,
-              lineJoin: mapbox.LineJoin.ROUND,
-            ));
-          } catch (e) {
-            debugPrint('[TrackingMap] Failed to create dimmed route: $e');
-          }
-        }
+    // ── Creation runs until everything is actually ON the map (user
+    // report: "no están apareciendo los pines"). Every step is idempotent
+    // and internally gated, so re-entering per tick is free — a transient
+    // native failure used to be permanent: `_staticAnnotsDone = true` was
+    // marked BEFORE the awaits, so one failed create killed the pin (and
+    // the dimmed route) for the rest of the session, silently.
+    final hasTripGeom = _tripRoutePts.length >= 2 || _routePts.length >= 2;
+    _staticAnnotBusy = true;
+    try {
+      if (_mapRoute != null
+          ? !_mapRoute!.hasDimmedRoute
+          : _dimmedRouteAnnot == null) {
+        if (hasTripGeom) await _drawDimmedRoute(polyMgr);
       }
-    }
-
-    // Use modular annotations component if available
-    if (_mapAnnotations != null) {
-      await _mapAnnotations!.createAnnotations(
-        pickupLatLng: widget.pickupLatLng,
-        dropoffLatLng: widget.dropoffLatLng,
-      );
-    } else {
+      if (_mapAnnotations != null) {
+        await _mapAnnotations!.createAnnotations(
+          pickupLatLng: widget.pickupLatLng,
+          dropoffLatLng: widget.dropoffLatLng,
+        );
+      } else {
       // Pickup pin — legacy path. `_showPickupPin` was written twice and
       // read nowhere, so this recreated the pin after the rider boarded
       // and it sat on the map for the rest of the trip.
-      if (_pickupPinBytes != null && _showPickupPin) {
+      if (_pickupPinBytes != null && _showPickupPin && _pickupAnnot == null) {
         final pickupPoint = safePoint(widget.pickupLatLng.longitude, widget.pickupLatLng.latitude);
         if (pickupPoint != null) {
           try {
@@ -2014,13 +2050,36 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
             debugPrint('[TrackingMap] Failed to create pickup pin: $e');
           }
         }
-      } else {
-        debugPrint('[TrackingMap] Pickup pin bytes not ready — will retry');
       }
 
       // Dropoff pin — always show so rider can see full trip plan
       _addDropoffPin();
+      }
+    } finally {
+      _staticAnnotBusy = false;
     }
+
+    // What "present" means, per element: the annotation exists, or it can
+    // never exist (its bytes failed to render), or it is retired by the
+    // trip state. Anything short of that keeps this pass re-entering.
+    final dimmedOk = !hasTripGeom ||
+        (_mapRoute != null
+            ? _mapRoute!.hasDimmedRoute
+            : _dimmedRouteAnnot != null);
+    final pickupOk = _mapAnnotations != null
+        ? (_mapAnnotations!.hasPickupAnnot ||
+            _mapAnnotations!.pickupRetired ||
+            !_mapAnnotations!.hasPickupPin)
+        : (_pickupAnnot != null || !_showPickupPin || _pickupPinBytes == null);
+    final dropoffOk = _mapAnnotations != null
+        ? (_mapAnnotations!.hasDropoffAnnot || !_mapAnnotations!.hasDropoffPin)
+        : (_dropoffAnnot != null || _dropoffPinBytes == null);
+    if (!(dimmedOk && pickupOk && dropoffOk)) {
+      // Missing something — back off half a second before the next pass.
+      _nextStaticRetryAt = DateTime.now().add(const Duration(milliseconds: 500));
+      return;
+    }
+    _staticAnnotsDone = true;
 
     // Cinematic intro: fit camera
     _startCinematicIntro();
@@ -2046,6 +2105,46 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     }
   }
 
+  /// One retry loop for failed pin rasterization (see the pinsReady gate
+  /// above): three attempts, 3 s apart, then it really is the device's no.
+  void _schedulePinLoadRetry() {
+    if (!mounted || _pinLoadRetryArmed || _pinLoadRetries >= 3) return;
+    _pinLoadRetryArmed = true;
+    _pinLoadRetries++;
+    Timer(const Duration(seconds: 3), () {
+      _pinLoadRetryArmed = false;
+      if (!mounted) return;
+      unawaited(_loadPins());
+    });
+  }
+
+  /// The dimmed full-trip route (pickup→dropoff), both engines. Caller
+  /// checked it is missing and there is geometry to draw.
+  Future<void> _drawDimmedRoute(mapbox.PolylineAnnotationManager polyMgr) async {
+    if (_mapRoute != null) {
+      await _mapRoute!.drawDimmedRoute(opacity: 0.30, width: 4.0);
+      return;
+    }
+    final dimmedPts = _tripRoutePts.isNotEmpty ? _tripRoutePts : _routePts;
+    if (dimmedPts.length >= 2) {
+      final safeGeom = safeLineString(dimmedPts);
+      if (safeGeom != null) {
+        try {
+          _dimmedRouteAnnot ??= await polyMgr.create(mapbox.PolylineAnnotationOptions(
+            geometry: safeGeom,
+            // 0.30, not 0.20 (user report: "la ruta completa no se ve") —
+            // 0.20 over the navy style read as no line at all.
+            lineColor: const Color(0xFFFFD700).withValues(alpha: 0.30).toARGB32(),
+            lineWidth: 4.0,
+            lineJoin: mapbox.LineJoin.ROUND,
+          ));
+        } catch (e) {
+          debugPrint('[TrackingMap] Failed to create dimmed route: $e');
+        }
+      }
+    }
+  }
+
   /// Add dropoff pin (called once when phase transitions to onTrip)
   Future<void> _addDropoffPin() async {
     if (kIsWeb) {
@@ -2062,7 +2161,6 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     if (_dropoffPinAdded) return;
     final pointMgr = _pointAnnotMgr;
     if (pointMgr == null || _dropoffPinBytes == null) return;
-    _dropoffPinAdded = true;
     final dropoffPoint = safePoint(widget.dropoffLatLng.longitude, widget.dropoffLatLng.latitude);
     if (dropoffPoint == null) return;
     try {
@@ -2073,6 +2171,9 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
         iconAnchor: mapbox.IconAnchor.BOTTOM,
         iconOffset: [0, 0],
       ));
+      // Latch only once the pin exists (user report: "los pines no
+      // aparecen") — before the await it marked a failed create as done.
+      _dropoffPinAdded = true;
       // Animate pin pop: 0.01 → 0.90 → 0.72 → 0.80 over 500ms
       // (final 0.80 matches the smaller pickup-pin baseline)
       _animateDropoffPinPop();
@@ -2111,10 +2212,11 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
   }
 
   /// Called when the rider taps "Confirm" on the pickup overlay.
-  /// Removes the dimmed preview and starts the illuminated animated route draw.
+  /// Starts the illuminated animated route draw — the dimmed full-trip
+  /// route STAYS underneath it (user report: "toda la ruta completa no se
+  /// ve"), the gold remaining leg draws over it.
   void _restartRouteAnimation() {
     if (_routeDrawDone) return; // driver-starts-first path already drawing
-    _removeDimmedRoute();
     if (_routePts.length < 2 && _tripRoutePts.isNotEmpty) {
       _routePts = _tripRoutePts;
       _buildSegDist();
@@ -2917,7 +3019,8 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     _webMapCtrl?.setPolyline(
       'dimmed',
       _webPts(pts),
-      color: 'rgba(255,215,0,0.20)',
+      // 0.30 like native (user report: "la ruta completa no se ve").
+      color: 'rgba(255,215,0,0.30)',
       width: 4,
     );
   }

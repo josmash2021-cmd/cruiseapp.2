@@ -68,4 +68,54 @@ void main() {
       expect(popped, greaterThan(created));
     });
   });
+
+  group('creation retries until the pins exist (user report: "no están '
+      'apareciendo los pines" — a transient failure used to be permanent)', () {
+    test('the dropoff latch lands only AFTER a successful create', () {
+      // Modular path — measured inside the dropoff block itself (the pickup
+      // pin's create comes first in the method and would poison the order).
+      final mStart = annot.indexOf('// Dropoff pin');
+      final mBody = annot.substring(mStart, mStart + 1200);
+      final mCreate = mBody.indexOf('await mgr.create(');
+      final mLatch = mBody.indexOf('_dropoffPinAdded = true;');
+      expect(mCreate, isNonNegative);
+      expect(mLatch, greaterThan(mCreate),
+          reason: 'the latch used to flip BEFORE the await — one failed '
+              'create and the dropoff pin was marked done forever');
+      // Legacy path in the view — the native latch specifically: the web
+      // branch on top latches too, so search AFTER the native create.
+      final vStart = view.indexOf('Future<void> _addDropoffPin() async {');
+      final vBody = view.substring(vStart, vStart + 1400);
+      final vCreate = vBody.indexOf('await pointMgr.create(');
+      expect(vCreate, isNonNegative);
+      final vLatch = vBody.indexOf('_dropoffPinAdded = true;', vCreate);
+      expect(vLatch, greaterThan(vCreate));
+    });
+
+    test('the static pass re-enters until every element is on the map', () {
+      final vStart =
+          view.indexOf('Future<void> _updateStaticAnnotationsOnce() async {');
+      final body = view.substring(vStart, vStart + 5000);
+      final presence = body.indexOf('dimmedOk && pickupOk && dropoffOk');
+      final latch = body.indexOf('_staticAnnotsDone = true;');
+      expect(presence, isNonNegative,
+          reason: 'the pass must verify presence before latching done');
+      expect(latch, greaterThan(presence),
+          reason: '_staticAnnotsDone before the awaits made one failed '
+              'create permanent and silent');
+      expect(body.contains('_staticAnnotBusy'), isTrue,
+          reason: 're-entry per tick needs the in-flight guard');
+      expect(view.contains('_schedulePinLoadRetry();'), isTrue,
+          reason: 'a pin raster that failed at mount retries instead of '
+              'staying blank forever');
+    });
+
+    test('existence getters the retry reads actually exist', () {
+      expect(annot.contains('bool get hasPickupAnnot'), isTrue);
+      expect(annot.contains('bool get hasDropoffAnnot'), isTrue);
+      expect(annot.contains('bool get pickupRetired'), isTrue);
+      final route = File('lib/map/tracking_map_route.dart').readAsStringSync();
+      expect(route.contains('bool get hasDimmedRoute'), isTrue);
+    });
+  });
 }

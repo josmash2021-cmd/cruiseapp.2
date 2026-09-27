@@ -122,7 +122,6 @@ class TrackingMapAnnotations {
 
     // Dropoff pin
     if (_dropoffPinBytes != null && !_dropoffPinAdded) {
-      _dropoffPinAdded = true;
       final dropoffPoint = safePoint(dropoffLatLng.longitude, dropoffLatLng.latitude);
       if (dropoffPoint != null) {
         try {
@@ -134,6 +133,10 @@ class TrackingMapAnnotations {
             iconAnchor: mapbox.IconAnchor.BOTTOM,
             iconOffset: [0, 0],
           ));
+          // Latch ONLY on success (user report: "los pines no aparecen") —
+          // it used to flip before the await, so one transient native
+          // failure at create time killed the pin for the whole session.
+          _dropoffPinAdded = true;
           if (animateDropoff) {
             _animateDropoffPinPop(mgr);
           }
@@ -457,6 +460,14 @@ class TrackingMapAnnotations {
   /// single render failed — each pin earns its own place.
   bool get hasPickupPin => _pickupPinBytes != null;
   bool get hasDropoffPin => _dropoffPinBytes != null;
+
+  /// Whether the pin ANNOTATIONS actually exist on the map (not just their
+  /// bytes) — the static pass retries its creation until these say so.
+  bool get hasPickupAnnot => _pickupAnnot != null;
+  bool get hasDropoffAnnot => _dropoffAnnot != null;
+
+  /// True once the rider boarded: the pickup pin is retired for the trip.
+  bool get pickupRetired => _pickupRetired;
 }
 
 enum _PinIcon { house, store, airplane, person }

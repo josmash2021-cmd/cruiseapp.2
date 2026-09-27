@@ -53,10 +53,10 @@ void main() {
   });
 
   group('traffic refresh never touches the framing list', () {
-    test('_startTrafficRefreshTimer does not assign _tripRoutePts', () {
-      final fn = RegExp(r'void _startTrafficRefreshTimer\(\) \{');
+    test('_refreshTraffic does not assign _tripRoutePts', () {
+      final fn = RegExp(r'Future<void> _refreshTraffic\(\) async \{');
       final start = fn.firstMatch(ctrl)!.end;
-      // The whole timer body up to the next method declaration.
+      // The whole refresh body up to the next method declaration.
       final end = ctrl.indexOf(RegExp(r'\n  ///'), start);
       final body = ctrl.substring(start, end > start ? end : start + 2500);
       expect(body.contains('_routePts = result.points'), isTrue,
@@ -224,6 +224,89 @@ void main() {
       expect(frameBody.contains('pts.addAll(_routePts)'), isTrue,
           reason: 'the frame includes the CURRENT drawn leg too, or the '
               'rerouted streets leave the screen');
+    });
+  });
+
+  // User report (rider watching the driver navigate): the car stalled in
+  // bursts, turns came in jolts, the full route vanished at ride start, and
+  // both ETAs (driver→pickup, →dropoff) were guesses.
+  group('rider watching the driver navigate', () {
+    test('the dimmed full-trip route survives ride start', () {
+      final start = ctrl.indexOf('void _startStartRideAnimation()');
+      final body = ctrl.substring(start, start + 1200);
+      expect(body.contains('_removeDimmedRoute('), isFalse,
+          reason: 'removing it at ride start left only the remaining leg — '
+              '"toda la ruta completa no se ve"');
+      final restart = view.indexOf('void _restartRouteAnimation() {');
+      final rBody = view.substring(restart, restart + 700);
+      expect(rBody.contains('_removeDimmedRoute('), isFalse);
+      expect(view.contains('opacity: 0.30'), isTrue,
+          reason: '0.20 over the navy style read as no line at all');
+    });
+
+    test('the dropoff ETA opens real, never the fixed 24 mph guess', () {
+      final t = ctrl.indexOf('void _transitionToOnTrip()');
+      final body = ctrl.substring(t, t + 3900);
+      expect(body.contains('_routeDurationSec = _tripDurationSec;'), isTrue,
+          reason: 'the trip route carries a traffic-aware duration from its '
+              'fetch — the transition used to null it and guess 24 mph');
+      expect(body.contains('_routeDurationSec = null;'), isFalse);
+      expect(body.contains('unawaited(_refreshTraffic());'), isTrue,
+          reason: 'traffic refresh fires at trip start, not 2 min in');
+      expect(screen.contains('int? _tripDurationSec;'), isTrue);
+    });
+
+    test('ETA priority is traffic-duration first, and speed decays at stops',
+        () {
+      final fn = ctrl.indexOf('void _onRealDriverLocation(');
+      final body = ctrl.substring(fn, fn + 14200);
+      final durIdx = body.indexOf('_routeDurationSec != null && _routeDurationSec! > 0');
+      final velIdx = body.indexOf('_velocityMps > 3.0');
+      expect(durIdx, isNonNegative);
+      expect(velIdx, isNonNegative);
+      expect(durIdx, lessThan(velIdx),
+          reason: 'the traffic-aware duration must beat the velocity path — '
+              'a stale speed used to win and burned minutes at red lights');
+      expect(body.contains('if (speed != null) {'), isTrue);
+      expect(body.contains('speed != null && speed > 0.1'), isFalse,
+          reason: 'the > 0.1 gate meant a parked driver kept his last '
+              'driving speed forever');
+    });
+
+    test('the traffic refresh also covers the arriving leg (duration only)',
+        () {
+      final fn = ctrl.indexOf('Future<void> _refreshTraffic() async {');
+      final body = ctrl.substring(fn, fn + 2600);
+      expect(body.contains('_TrackPhase.arriving'), isTrue);
+      expect(body.contains('widget.pickupLatLng'), isTrue,
+          reason: 'arriving refreshes driver→pickup duration');
+      expect(body.contains('_approachRouteFetched'), isTrue,
+          reason: 'no approach route yet = nothing to refresh against');
+    });
+
+    test('route projection is windowed, not a per-frame full scan', () {
+      expect(screen.contains('int _projHintIdx = 0;'), isTrue);
+      final fn = view.indexOf('double _projectOntoRoute(LatLng p) {');
+      final body = view.substring(fn, fn + 1000);
+      expect(body.contains('_projectInSegRange('), isTrue);
+      expect(body.contains('_projHintIdx'), isTrue,
+          reason: 'a full O(n) sweep ran every frame — the window is what '
+              'makes the per-tick projection cheap');
+      final bsd = view.indexOf('void _buildSegDist() {');
+      final bsdBody = view.substring(bsd, bsd + 400);
+      expect(bsdBody.contains('_projHintIdx = 0;'), isTrue,
+          reason: 'a rebuilt route invalidates the window anchor');
+    });
+
+    test('on-route the route tangent is the ONLY bearing source', () {
+      final fn = ctrl.indexOf('void _onRealDriverLocation(');
+      final body = ctrl.substring(fn, fn + 4200);
+      expect(body.contains('onRouteForBearing'), isTrue);
+      expect(body.contains('bearing: onRouteForBearing ? null : bearing'),
+          isTrue,
+          reason: 'GPS course + tangent into one engine measured the turn '
+              'rate across two sources a millisecond apart — the car turned '
+              'in jolts');
     });
   });
 }

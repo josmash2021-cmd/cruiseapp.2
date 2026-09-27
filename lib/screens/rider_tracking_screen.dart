@@ -414,6 +414,20 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   /// Cumulative distance array — _segDist[i] = total meters from start to point i.
   List<double> _segDist = [];
 
+  /// Hint segment for the windowed `_projectOntoRoute` — reset whenever the
+  /// route (and with it `_segDist`) is rebuilt.
+  int _projHintIdx = 0;
+
+  /// Pin-raster retry bookkeeping for `_schedulePinLoadRetry` (a GPU-busy
+  /// mount used to mean no pins for the whole session).
+  int _pinLoadRetries = 0;
+  bool _pinLoadRetryArmed = false;
+
+  /// Re-entry guard + back-off for the per-tick static-annotation pass
+  /// (pins / dimmed route creation retry until they exist).
+  bool _staticAnnotBusy = false;
+  DateTime _nextStaticRetryAt = DateTime(2000);
+
   /// Current traveled distance in meters along the route.
   double _traveledM = 0;
 
@@ -450,6 +464,12 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   /// Route duration in seconds from the directions API (traffic-aware).
   /// Used for ETA when driver velocity is unavailable.
   int? _routeDurationSec;
+
+  /// Traffic-aware duration of the pickup→dropoff trip route, captured when
+  /// it is fetched in `_initRoute`. `_transitionToOnTrip` hands it to
+  /// `_routeDurationSec` so the dropoff ETA is real from the first frame of
+  /// the trip instead of the fixed 24 mph guess it used to open with.
+  int? _tripDurationSec;
 
   /// Delta-time tracking for frame-rate independent interpolation
   Duration _lastInterpElapsed = Duration.zero;

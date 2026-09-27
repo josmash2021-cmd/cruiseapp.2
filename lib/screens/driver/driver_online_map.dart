@@ -699,6 +699,34 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     }
   }
 
+  /// Self-healing sweep (user report: "queda la ruta dibujada de la oferta
+  /// pasada / cuando se rechaza queda dibujada"): every dismiss path already
+  /// funnels through [_clearAllAnnotations], but the preview is a multi-await
+  /// cinematic and a handle created mid-flight can land AFTER its clear ran.
+  /// When no preview is open, no preview annotation may exist — delete any
+  /// survivor instead of hoping every async path cleaned up. Called from the
+  /// offer heartbeat (_applyOffers) and after reject; free when clean.
+  Future<void> _sweepPreviewOrphans() async {
+    if (_isClearingAnnotations) return;
+    if (_previewingOffer != null || _isCardAnimating) return;
+    if (_routeAnnot == null &&
+        _previewPickupAnnot == null &&
+        _previewDropoffAnnot == null &&
+        _prevPickupAnnot == null &&
+        _prevDropoffAnnot == null) {
+      return;
+    }
+    debugPrint('[OfferRoute] sweep: orphan preview annotations removed '
+        '(route=${_routeAnnot != null} seg1=${_previewPickupAnnot != null} '
+        'seg2=${_previewDropoffAnnot != null} pins='
+        '${_prevPickupAnnot != null || _prevDropoffAnnot != null})');
+    try {
+      await _clearAllAnnotations();
+    } catch (e) {
+      debugPrint('[OfferRoute] sweep clear failed: $e');
+    }
+  }
+
   String _mapRideType(String raw) {
     final lower = raw.toLowerCase().trim();
     if (lower.contains('premium')) return 'Premium';
@@ -979,26 +1007,42 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
         (_previewingOffer?['offer_id'] ?? _previewingOffer?['id'] ?? '')
             .toString();
     if (currentPreviewId == oid && _previewingOffer != null) return;
-    _lastAutoTriggeredOfferId = oid;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || _pendingOffers.isEmpty || _isCardAnimating) {
+        // The latch arms only when the trigger actually RUNS (user report:
+        // "cuando recibe una oferta queda la ruta de la oferta pasada") —
+        // armed-before-the-guard meant a skipped trigger never retried, so
+        // the new offer's route never drew and the old one stayed.
         debugPrint('[OfferRoute] auto-trigger skipped for $oid — '
             'mounted=$mounted offers=${_pendingOffers.length} '
             'animating=$_isCardAnimating');
         return;
       }
+      _lastAutoTriggeredOfferId = oid;
       _onOfferCardTap(offer);
     });
   }
 
   // ── Cinematic offer card tap → full animation sequence ──
-  // Sequence: fit bounds → pins fade+pop → tilt 55° → draw seg1 (driver→pickup)
-  //   → pickup pin popup → draw seg2 (pickup→dropoff) → dropoff pin popup → refit
-  // Runs once per tap — no loops, no repeats.
   Future<void> _onOfferCardTap(Map<String, dynamic> offer) async {
     if (_isCardAnimating) return;
-    final oid = (offer['offer_id'] ?? offer['id'] ?? '').toString();
+    // The latch can never stay on (user report: "queda la ruta dibujada de
+    // la oferta pasada"): a throw mid-sequence used to leave
+    // _isCardAnimating true forever, every later offer's auto-preview was
+    // vetoed by it, and the OLD route stayed on the map under the NEW card.
     _isCardAnimating = true;
+    try {
+      await _offerCardTapSequence(offer);
+    } finally {
+      _isCardAnimating = false;
+    }
+  }
+
+  // Sequence: fit bounds → pins fade+pop → draw seg1 (driver→pickup)
+  //   → pickup pin popup → draw seg2 (pickup→dropoff) → dropoff pin popup → refit
+  // Runs once per tap — no loops, no repeats.
+  Future<void> _offerCardTapSequence(Map<String, dynamic> offer) async {
+    final oid = (offer['offer_id'] ?? offer['id'] ?? '').toString();
 
     final pickupLat = _safeDouble(offer['pickup_lat']);
     final pickupLng = _safeDouble(offer['pickup_lng']);

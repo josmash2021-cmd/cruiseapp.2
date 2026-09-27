@@ -2532,6 +2532,12 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       // start the animation.
       _autoTriggerRoutePreview(filtered.first);
     }
+
+    // Self-healing (user report: "queda la ruta dibujada de la oferta
+    // pasada"): with no preview open, no preview route/pins may remain —
+    // the sweep deletes survivors of any async race instead of trusting
+    // every clear path to have caught its own in-flight creates.
+    unawaited(_sweepPreviewOrphans());
   }
 
   Future<void> _poll() async {
@@ -3818,6 +3824,10 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       } catch (e) {
         debugPrint('[DriverOnline] _clearAllAnnotations failed on reject: $e');
       }
+      // Belt-and-suspenders after the clear (user report: "cuando se
+      // rechaza queda dibujada"): anything created in flight after the
+      // clear's snapshot is swept here.
+      unawaited(_sweepPreviewOrphans());
 
       if (_pos != null && mounted) {
         try {

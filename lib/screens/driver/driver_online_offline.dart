@@ -1353,7 +1353,8 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
   /// `_weeklyEarnings`, `_hourlySeries`, `_daySeries`) via `_loadAllEarnings`
   /// + `_startEarningsRefresh`, which run in both modes — so the builders
   /// below read those and `_refreshStats` was not ported.
-  Widget _buildOfflinePanelContent(Color textMuted, EdgeInsets pad) {
+  Widget _buildOfflinePanelContent(
+      Color textMuted, EdgeInsets pad, double panelFrac) {
     final dc = DriverColors.of(context);
     final s = S.of(context);
     return Column(
@@ -1418,7 +1419,14 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
         // to fit, they clip. ──
         Expanded(
           child: SingleChildScrollView(
-            physics: const ClampingScrollPhysics(),
+            // Misma regla que el body online (user report 2026-09-27: "se
+            // hace scroll cuando no he hecho scroll"): con el sheet cerrado
+            // el gesto vertical es del SHEET (lo arrastra / lo cierra), no
+            // de la lista — el contenido solo recibe scroll cuando el sheet
+            // ya está prácticamente abierto.
+            physics: panelFrac > 0.8
+                ? const ClampingScrollPhysics()
+                : const NeverScrollableScrollPhysics(),
             // The foot of the list clears the GO button hovering over it: the
             // button's own height, the gap it keeps above the home indicator,
             // and a little air on top. Without this the last row sits

@@ -232,7 +232,11 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   /// Sync the search-pulse animation to the current phase.
   /// Call this immediately after any setState block that changes _phase.
   void _syncSearchPulse() {
-    if (_phase == _Phase.searching) {
+    // La luz dorada que recorre el borde del sheet ES la señal de
+    // "buscando viajes" (mapa único, user report 2026-09-27: "cuando esta
+    // apagado no debe de salir") — en modo offline no hay búsqueda y el
+    // pulso solo quema batería dibujando una luz que no significa nada.
+    if (_phase == _Phase.searching && _driverOnline) {
       if (!_searchPulse.isAnimating) _searchPulse.repeat();
     } else {
       if (_searchPulse.isAnimating) _searchPulse.stop();
@@ -944,7 +948,9 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     // whole screen — live map included — to change something nobody could
     // see.
     _statusLineTimer = Timer.periodic(const Duration(seconds: 5), (_) {
-      if (!mounted || _phase != _Phase.searching) return;
+      // Modo único: offline no hay línea de búsqueda que alternar — el tick
+      // solo reconstruía la pantalla cada 5 s para nada.
+      if (!mounted || _phase != _Phase.searching || !_driverOnline) return;
       _setState(() => _statusLine = _statusLine == 0 ? 1 : 0);
     });
     _searchPulseVal = Tween<double>(begin: 0.0, end: 1.0).animate(
@@ -1902,8 +1908,12 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                 left: 16,
                 // Mapa único (2026-09-26): el botón de Home murió con la
                 // pantalla vieja — esta pantalla ES la raíz del driver en
-                // ambos modos; el menú vive aquí ahora.
-                child: _enterTopWrap(_buildOfflineMenuButton()),
+                // ambos modos; el menú vive aquí ahora (mismo helper `_fab`
+                // que el resto de botones de la pantalla).
+                child: _enterTopWrap(
+                  _fab(Icons.menu_rounded, 48, fabBg, fabBorder, fabIcon,
+                      _openDriverMenu),
+                ),
               ),
 
             // â”€â”€ Top-center: Earnings pill + TODAY (hidden during nav) â”€â”€

@@ -3409,11 +3409,16 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
         child: ListenableBuilder(
           listenable: _searchPulseVal,
           builder: (_, child) => CustomPaint(
-            foregroundPainter: _SearchingBorderPainter(
-              progress: _searchPulseVal.value,
-              // Hands the light over to the divider as the sheet opens.
-              expansion: t,
-            ),
+            // La luz que recorre el borde es la señal de "buscando viajes"
+            // (mapa único, user report 2026-09-27): en modo offline no hay
+            // búsqueda — el borde no se pinta.
+            foregroundPainter: _driverOnline
+                ? _SearchingBorderPainter(
+                    progress: _searchPulseVal.value,
+                    // Hands the light over to the divider as the sheet opens.
+                    expansion: t,
+                  )
+                : null,
             child: child,
           ),
           child: Container(
@@ -3458,7 +3463,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                 if (!_driverOnline)
                   Expanded(
                     child: _buildOfflinePanelContent(
-                        textMuted, MediaQuery.of(context).padding),
+                        textMuted, MediaQuery.of(context).padding, t),
                   )
                 else ...[
                 // Arrow icon: up when collapsed, down when expanded

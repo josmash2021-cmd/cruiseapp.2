@@ -1129,6 +1129,10 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     // Silence every isOnline:true writer BEFORE the offline write leaves —
     // the other order let a queued heartbeat flip the driver back online.
     _wentOffline = true;
+    // El turno se cerró de verdad (user report 2026-09-27, "el botón de GO
+    // se queda en RESUME"): el pref ya queda apagado abajo, pero el snapshot
+    // del boot sobrevivía y el GO seguía leyendo RESUME para siempre.
+    _driverWasOnlineAtBoot = false;
     _stopBackgroundHeartbeat();
     _goOfflineBackend();
     _pollT?.cancel();

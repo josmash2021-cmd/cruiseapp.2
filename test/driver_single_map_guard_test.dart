@@ -65,6 +65,16 @@ void main() {
           reason: 'the old _goOffline ended in a home push — dead now');
     });
 
+    test('leaving offline ends the shift for real — GO never reads RESUME '
+        'afterwards (user report 2026-09-27)', () {
+      final exit = ctrl.indexOf('Future<void> _exitOnlineMode(');
+      expect(exit, isNonNegative);
+      final exitBody = ctrl.substring(exit, exit + 900);
+      expect(exitBody.contains('_driverWasOnlineAtBoot = false'), isTrue,
+          reason: 'the pref goes false below, but the boot-time snapshot '
+              'survived and the GO button read RESUME forever');
+    });
+
     test('the GPS background flag is bound to the mode and the stream '
         'is recreated on every flip', () {
       expect(ctrl.contains('background: _driverOnline'), isTrue,

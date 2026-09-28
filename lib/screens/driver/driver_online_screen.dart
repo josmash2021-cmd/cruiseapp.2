@@ -1927,8 +1927,13 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                     children: [
                       // Long-press en el chip: muestra/oculta el panel de
                       // diagnóstico de movimiento (GPS/tick/cam/anot).
+                      // TRANSLUCENT, nunca opaque (user report 2026-09-27:
+                      // "el botón del menú no abre"): con opaque este
+                      // GestureDetector a todo lo ancho absorbía los taps de
+                      // la franja superior — incluido el botón del menú, que
+                      // va ANTES en el Stack y nunca los recibía.
                       GestureDetector(
-                        behavior: HitTestBehavior.opaque,
+                        behavior: HitTestBehavior.translucent,
                         onLongPress: toggleMotionDiag,
                         child: Center(child: _earningsPill(isDark)),
                       ),

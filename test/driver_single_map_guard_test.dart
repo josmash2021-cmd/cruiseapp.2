@@ -75,6 +75,19 @@ void main() {
               'survived and the GO button read RESUME forever');
     });
 
+    test('the earnings pill hotspot is translucent — it must never absorb '
+        'taps meant for the menu button (user report 2026-09-27: "el botón '
+        'del menú no abre")', () {
+      final hotspot = screen.indexOf('onLongPress: toggleMotionDiag');
+      expect(hotspot, isNonNegative);
+      final window = screen.substring(hotspot - 300, hotspot + 100);
+      expect(window.contains('HitTestBehavior.translucent'), isTrue);
+      expect(window.contains('HitTestBehavior.opaque'), isFalse,
+          reason: 'a full-width OPAQUE detector over the top band absorbed '
+              'every tap before it reached the menu button below it in the '
+              'Stack — the bell survived only because it stacks ABOVE it');
+    });
+
     test('the GPS background flag is bound to the mode and the stream '
         'is recreated on every flip', () {
       expect(ctrl.contains('background: _driverOnline'), isTrue,

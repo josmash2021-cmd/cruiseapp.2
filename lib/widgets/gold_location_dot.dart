@@ -219,10 +219,17 @@ class GoldLocationDot {
   TickerProvider? _vsync;
   bool _isDisposing = false;
 
-  // Throttle annotation redraws to ~30 fps. Mapbox point annotations don't
-  // benefit from 60 fps updates and the extra platform-channel traffic can
-  // cause micro-stutter on mid-range devices.
-  static const int _minTickIntervalMs = 33;
+  // Throttle annotation redraws. Mapbox point annotations don't benefit
+  // from 60 fps updates by default and the extra platform-channel traffic
+  // can cause micro-stutter on mid-range devices — 33 ms ≈ 30 fps is the
+  // default, but a full-screen navigation map (where the marker is the one
+  // thing the driver watches continuously) may ask for frame rate.
+  static const int _defaultMinTickIntervalMs = 33;
+
+  /// Minimum ms between annotation writes for THIS dot. Lower = smoother,
+  /// more channel traffic. The nav view sets 16 (~60 fps); every other
+  /// screen keeps the 33 default.
+  int minTickIntervalMs = _defaultMinTickIntervalMs;
   DateTime? _lastTickAt;
 
   /// Interpolated position — use this to place the Mapbox annotation.
@@ -412,7 +419,7 @@ class GoldLocationDot {
 
         final now = DateTime.now();
         if (_lastTickAt != null &&
-            now.difference(_lastTickAt!).inMilliseconds < _minTickIntervalMs) {
+            now.difference(_lastTickAt!).inMilliseconds < minTickIntervalMs) {
           return;
         }
         _lastTickAt = now;

@@ -266,14 +266,14 @@ void main() {
   });
 
   group('nav view: off-route rerouting', () {
-    test('25 m threshold held for 1 s of fixes, 20 m reset, 6 s cooldown '
-        '(tightened again — user spec: "redireccionando rapido")', () {
+    test('25 m threshold held for 600 ms of fixes, 20 m reset, 4 s cooldown '
+        '(user spec 2026-09-27: "redireccionar de forma instantanea")', () {
       expect(nav.contains('_offRouteM = 25.0'), isTrue,
           reason: 'user report: "redireccionando rapido" — 30 m / 2 s / 8 s '
               'was still too slow to redirect');
       expect(nav.contains('_offRouteResetM = 20.0'), isTrue);
-      expect(nav.contains('_offRouteHoldSecs = 1'), isTrue);
-      expect(nav.contains('_rerouteCooldownSecs = 6'), isTrue);
+      expect(nav.contains('_offRouteHoldMs = 600'), isTrue);
+      expect(nav.contains('_rerouteCooldownSecs = 4'), isTrue);
       expect(nav.contains('RouteSplice.distanceToPolylineM(_routePts, pos)'),
           isTrue);
     });
@@ -349,13 +349,13 @@ void main() {
           reason: 'the per-frame chase must be gated on the camera state');
     });
 
-    test('dynamic chase zoom 17.1 / 16.7 / 18.0, lerped never stepped '
-        '(user spec 2026-09-19: more anticipation)', () {
-      expect(nav.contains('_chaseZoomDefault = 17.1'), isTrue,
-          reason: 'slight zoom-out — the next stop/intersection shows '
-              'BEFORE it is on top of the car');
-      expect(nav.contains('_chaseZoomFast = 16.7'), isTrue);
-      expect(nav.contains('_chaseZoomManeuver = 18.0'), isTrue);
+    test('dynamic chase zoom 16.8 / 16.4 / 17.7, lerped never stepped '
+        '(user spec 2026-09-27: "zoom out")', () {
+      expect(nav.contains('_chaseZoomDefault = 16.8'), isTrue,
+          reason: 'user spec 2026-09-27: "un poco mas de inclinacion y zoom '
+              'out" — one step out from 17.1 at the new 50° tilt');
+      expect(nav.contains('_chaseZoomFast = 16.4'), isTrue);
+      expect(nav.contains('_chaseZoomManeuver = 17.7'), isTrue);
       expect(nav.contains('_zoomLerpPerSec = 0.5'), isTrue);
       final frame = bodyOf(nav, 'void _onDotFrame() {', maxLen: 1600);
       expect(frame.contains('+ 240'), isTrue,
@@ -582,13 +582,14 @@ void main() {
               'crawl the speed channel has not confirmed yet');
     });
 
-    test('the tangent look-ahead scales with speed — no early rotation', () {
+    test('the tangent look-ahead scales with speed — the arrow turns WITH '
+        'the car, never off the line', () {
       final body = bodyOf(nav, 'double? _routeHeadingFor(LatLng pos) {',
           maxLen: 1400);
-      expect(body.contains('(_speedMps * 1.2).clamp(8.0, 30.0)'), isTrue,
-          reason: 'user report: "la camara y la flecha giran antes de que el '
-              'driver realmente gire" — a fixed 30 m crossed the corner up '
-              'to ~2.5 s before the car did');
+      expect(body.contains('(_speedMps * 0.8).clamp(6.0, 24.0)'), isTrue,
+          reason: 'user report 2026-09-27: "cuando da la vuelta la flecha se '
+              'pasa o se sale de la linea" — the 1.2 s lead pointed the arrow '
+              'a full curve ahead mid-turn');
     });
 
     test('remaining min/miles measure ALONG the route, current step prorated '
@@ -842,11 +843,11 @@ void main() {
 
   group('user spec 2026-09-17: tilted chase, gold call disc, true speed',
       () {
-    test('the chase tilt is 45° (user spec: "inclina un poco mas el mapa"), '
-        'never back at 55 or 25', () {
-      expect(nav.contains('_chasePitch = 45.0'), isTrue,
-          reason: 'user spec: "inclina un poco mas el mapa" — 35° still read '
-              'flat at a glance mid-drive');
+    test('the chase tilt is 50° (user spec 2026-09-27: "un poco mas de '
+        'inclinacion"), never back at 55 or 25', () {
+      expect(nav.contains('_chasePitch = 50.0'), isTrue,
+          reason: 'user spec 2026-09-27: "un poco mas de inclinacion" — 45° '
+              'still read flat mid-drive');
       expect(nav, isNot(contains('_chasePitch = 25.0')));
       expect(nav, isNot(contains('_chasePitch = 55.0')));
     });
@@ -861,14 +862,16 @@ void main() {
           reason: 'the filled disc carries a dark icon on gold');
     });
 
-    test('the speed box reads the fix, then the smoother, never a stale 0',
-        () {
+    test('the speed box reads the fix, then the smoother, and zeroes THE '
+        'fix a stop happens (user spec 2026-09-27: "instantaneo y en tiempo '
+        'real")', () {
       final body = bodyOf(nav, 'void _onGpsFix(Position pos) {', maxLen: 3400);
       expect(body.contains('_dot.speedMps'), isTrue,
           reason: 'iOS reports speed -1 when it has none — the box falls '
               'back to the smoother’s measured glide speed');
-      expect(body.contains('rawSpeed < 0.45'), isTrue,
-          reason: 'the <1 mph deadband kills the 0↔1 parked flicker');
+      expect(body.contains('rawSpeed < 0.9'), isTrue,
+          reason: 'the ~2 mph deadband: a stopped car reads 0 the same fix — '
+              'the old 0.45 floor left it sitting at 7-10 mph');
       final dot = File('lib/widgets/gold_location_dot.dart')
           .readAsStringSync();
       expect(dot.contains('double get speedMps => _motion.speedMps;'), isTrue);

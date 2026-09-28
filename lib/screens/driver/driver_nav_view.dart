@@ -239,20 +239,20 @@ class DriverNavViewState extends State<DriverNavView>
   mapbox.CameraOptions? _pendingCamWrite;
   bool _camWriteBusy = false;
 
-  // Dynamic chase zoom: 17.1 at city pace, 16.7 past 20 m/s, 18.0 with a
+  // Dynamic chase zoom: 16.8 at city pace, 16.4 past 20 m/s, 17.7 with a
   // maneuver under 150 m — lerped at ≤0.5 zoom/sec, never a step.
-  // (17.5/17.0 → 17.3/16.9 → 17.1/16.7, user spec 2026-09-19: more
-  // anticipation — the next stop / intersection must be visible BEFORE it
-  // is on top of the car. The car also rides lower on screen, see topPad.)
-  double _chaseZoom = 17.1;
+  // (User spec 2026-09-27: "un poco mas de inclinacion y zoom out" —
+  // zoomed out one step from 17.1/16.7/18.0 so the road ahead reads with
+  // more context at the new 50° tilt.)
+  double _chaseZoom = 16.8;
   DateTime? _lastChaseFrameAt;
-  static const _chaseZoomDefault = 17.1;
-  static const _chaseZoomFast = 16.7;
-  static const _chaseZoomManeuver = 18.0;
+  static const _chaseZoomDefault = 16.8;
+  static const _chaseZoomFast = 16.4;
+  static const _chaseZoomManeuver = 17.7;
   static const _zoomLerpPerSec = 0.5;
-  // Chase tilt: 45° (user spec: "inclina un poco mas el mapa" — 35° still
-  // read flat at a glance; 55° was the horizon view that hid the streets).
-  static const _chasePitch = 45.0;
+  // Chase tilt: 50° (user spec 2026-09-27: "un poco mas de inclinacion" —
+  // 45° still read flat; 55° was the horizon view that hid the streets).
+  static const _chasePitch = 50.0;
 
   // ── Route + maneuvers ──
   List<LatLng> _routePts = [];
@@ -292,21 +292,22 @@ class DriverNavViewState extends State<DriverNavView>
   // ── Navigation state machine ──
   _NavPhase _navPhase = _NavPhase.initializing;
 
-  // Off-route: >25 m from the line held for 1 s of fixes arms a reroute;
-  // back within 20 m resets the clock. One request in flight, 6 s cooldown,
+  // Off-route: >25 m from the line held for 600 ms of fixes arms a reroute;
+  // back within 20 m resets the clock. One request in flight, 4 s cooldown,
   // and a sequence token so a stale response can never replace a newer plan.
   DateTime? _offRouteSince;
   int _rerouteSeq = 0;
   DateTime? _lastRerouteAt;
   bool _rerouting = false;
-  // Off-route rerouting: 25 m off the polyline held for 1 s of fixes arms
-  // the fetch (reset the moment a fix lands back within 20 m), 6 s between
-  // fetches — tightened again (user spec: "redireccionando rapido") now that
-  // the 65 m accuracy gate keeps GPS noise from arming it.
+  // Off-route rerouting (user spec 2026-09-27: "redireccionar de forma
+  // instantanea y agradable"): 25 m off the polyline held for 600 ms of
+  // fixes arms the fetch (reset the moment a fix lands back within 20 m),
+  // 4 s between fetches — under the 65 m accuracy gate that keeps GPS noise
+  // from arming it. The landing stays smooth (_flyToChasePose 650 ms).
   static const _offRouteM = 25.0;
   static const _offRouteResetM = 20.0;
-  static const _offRouteHoldSecs = 1;
-  static const _rerouteCooldownSecs = 6;
+  static const _offRouteHoldMs = 600;
+  static const _rerouteCooldownSecs = 4;
   static const _prefetchDestMaxM = 150.0;
 
   // Internal arrival: approaching under 200 m; arrived after 2 consecutive
@@ -397,6 +398,11 @@ class DriverNavViewState extends State<DriverNavView>
     // _onMapCreated draws it the instant the surface is ready.
     _seedPrefetchedRoute();
     _navPhase = _derivePhase();
+    // The nav marker is the ONE thing the driver watches continuously on a
+    // full-screen map (user spec 2026-09-27: "el movimiento de la flecha
+    // muchisimo mas smooth") — annotation writes at ~60 fps here; every
+    // other screen keeps the 33 ms default.
+    _dot.minTickIntervalMs = 16;
     // Drives the marker and hands the per-frame callbacks: onTick writes the
     // annotation (throttled by GoldLocationDot), onFrame chases the camera.
     _dot.build(this, _onDotTick, onFrame: _onDotFrame);
@@ -772,15 +778,17 @@ class DriverNavViewState extends State<DriverNavView>
       // a parked driver's position jumps but his speed keeps reading ~0.
       speedMps: pos.speed.isFinite && pos.speed >= 0 ? pos.speed : null,
     );
-    // Speed readout (user spec 2026-09-17 — precise, never frozen at a
-    // stale figure): the platform speed when the fix carries one; iOS
+    // Speed readout (user spec 2026-09-27 — "tiene que ser instantaneo y en
+    // tiempo real"): the platform speed when the fix carries one; iOS
     // reports -1 when it has none, so fall back to the smoother's own
-    // measured glide speed instead of lying with a 0. Under ~1 mph is a
-    // parked car, not a speed — the deadband kills the 0↔1 flicker.
+    // measured glide speed instead of lying with a 0. Deadband at 0.9 m/s
+    // (~2 mph): under that the car is stopped and the box must read 0 THE
+    // SAME fix — the old 0.45 floor let a stop sit at 7-10 mph while the
+    // extrapolated glide bled off.
     final rawSpeed = pos.speed.isFinite && pos.speed >= 0
         ? pos.speed
         : _dot.speedMps;
-    _speedMps = rawSpeed < 0.45 ? 0.0 : rawSpeed;
+    _speedMps = rawSpeed < 0.9 ? 0.0 : rawSpeed;
     final mph = (_speedMps * 2.23694).round();
     if (mph != _lastMphShown) {
       _lastMphShown = mph;
@@ -835,14 +843,16 @@ class DriverNavViewState extends State<DriverNavView>
     if (pts.length < 2) return null;
     final seg = RouteSplice.closestSegmentIndex(pts, pos);
     var from = RouteSplice.projectOnSegment(pos, pts[seg], pts[seg + 1]);
-    // Look-ahead scaled by speed (user report: "la camara y la flecha giran
-    // antes de que el driver realmente gire"): a fixed 30 m crossed the
-    // corner up to ~2.5 s before the car did, so the arrow swept onto the
-    // new street early — and at a stoplight it pointed at a turn the driver
-    // had not taken yet. ~1.2 s of travel, floored at 8 m (parked: the
-    // street the car is ON, not the turn ahead), capped at the old 30 m
-    // (highway: the anticipation is genuinely needed there).
-    var remaining = (_speedMps * 1.2).clamp(8.0, 30.0);
+    // Look-ahead scaled by speed (user reports 2026-09-26: "la camara y la
+    // flecha giran antes de que el driver realmente gire", y 2026-09-27:
+    // "cuando da la vuelta la flecha se pasa o se sale de la linea"): a
+    // fixed 30 m crossed the corner up to ~2.5 s before the car did, and
+    // even the 1.2 s-of-travel scale pointed the arrow a full curve ahead
+    // mid-turn, visibly off the road under the car. ~0.8 s of travel now,
+    // floored at 6 m (parked: the street the car is ON), capped at 24 m
+    // (highway: the anticipation is genuinely needed there) — the arrow
+    // turns WITH the car, on the line.
+    var remaining = (_speedMps * 0.8).clamp(6.0, 24.0);
     for (var i = seg + 1; i < pts.length; i++) {
       final d = RouteSplice.haversineM(from, pts[i]);
       if (d >= remaining && d > 1e-3) {
@@ -900,12 +910,11 @@ class DriverNavViewState extends State<DriverNavView>
   }
 
   /// GPS noise never reroutes: the driver must sit more than 25 m off the
-  /// polyline for 1 straight second of fixes (sampled per fix, reset the
-  /// moment a fix lands back within 20 m) before a reroute is even asked
-  /// for. Possible at all under the 65 m fix-accuracy gate — without it, a
-  /// bad-signal day would arm false reroutes at 25 m. Inside the approach
-  /// radius there is nothing to reroute to — the line already ends at the
-  /// pin.
+  /// polyline for 600 ms of fixes (sampled per fix, reset the moment a fix
+  /// lands back within 20 m) before a reroute is even asked for. Possible at
+  /// all under the 65 m fix-accuracy gate — without it, a bad-signal day
+  /// would arm false reroutes at 25 m. Inside the approach radius there is
+  /// nothing to reroute to — the line already ends at the pin.
   void _checkOffRoute(LatLng pos) {
     if (_routePts.length < 2 || _navArrived || _routeFetching) return;
     if (RouteSplice.haversineM(pos, _dest) < _approachRadiusM) return;
@@ -917,7 +926,7 @@ class DriverNavViewState extends State<DriverNavView>
     if (d <= _offRouteM) return; // hysteresis band: neither arm nor reset
     final now = DateTime.now();
     _offRouteSince ??= now;
-    if (now.difference(_offRouteSince!).inSeconds >= _offRouteHoldSecs) {
+    if (now.difference(_offRouteSince!).inMilliseconds >= _offRouteHoldMs) {
       _offRouteSince = null;
       unawaited(_fetchRoute(kind: _RouteFetchKind.reroute, origin: pos));
     }
@@ -1382,7 +1391,8 @@ class DriverNavViewState extends State<DriverNavView>
         'navRoute',
         [for (final p in pts) (lng: p.longitude, lat: p.latitude)],
         color: '#E8C547',
-        width: 5,
+        // 7 como en nativo (user spec 2026-09-27).
+        width: 7,
       );
       return;
     }
@@ -1613,7 +1623,8 @@ class DriverNavViewState extends State<DriverNavView>
               (lng: p.longitude, lat: p.latitude)
           ],
           color: '#E8C547',
-          width: 5,
+          // 7 como en nativo (user spec 2026-09-27).
+          width: 7,
         );
       }
       return;
@@ -1632,9 +1643,16 @@ class DriverNavViewState extends State<DriverNavView>
         _routeAnnot = await mgr.create(mapbox.PolylineAnnotationOptions(
           geometry: geom,
           lineColor: _gold.toARGB32(),
-          lineWidth: 5.0,
+          // 5.0 → 7.0 (user spec 2026-09-27, "la linea mas gruesa") — at 5
+          // the route read as a thread at chase zoom; 7 carries it. ROUND
+          // join + ROUND cap: the curve corners are eased, never pointed
+          // ("las esquinas de curva no punteagudas").
+          lineWidth: 7.0,
           lineJoin: mapbox.LineJoin.ROUND,
         ));
+        // line-cap va por capa (no es parámetro del annotation en este
+        // SDK): extremos redondeados también en el corte del trim.
+        await _map?.style.setStyleLayerProperty(mgr.id, 'line-cap', 'round');
       } catch (_) {}
     }
   }
@@ -1937,6 +1955,11 @@ class DriverNavViewState extends State<DriverNavView>
         try {
           await _map?.style.setStyleLayerProperty(
               mgr.id, 'icon-rotation-alignment', 'map');
+          // La flecha también se inclina con la cámara (user spec 2026-09-27,
+          // "la flecha un poquito inclinada"): pitch-alignment 'map' la
+          // acuesta con el tilt de 50° en vez de dejarla parada como sticker.
+          await _map?.style.setStyleLayerProperty(
+              mgr.id, 'icon-pitch-alignment', 'map');
         } catch (_) {}
       } else {
         _driverAnnot!.geometry =
@@ -2270,7 +2293,8 @@ class DriverNavViewState extends State<DriverNavView>
                                 (lng: p.longitude, lat: p.latitude)
                             ],
                             color: '#E8C547',
-                            width: 5,
+                            // 7 como en nativo (user spec 2026-09-27).
+                            width: 7,
                           );
                         }
                       },

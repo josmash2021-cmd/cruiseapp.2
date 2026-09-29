@@ -2,7 +2,9 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' as mapbox;
 import '../../services/haptic_service.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:intl/intl.dart';
@@ -11,6 +13,11 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../config/api_keys.dart';
 import '../../config/app_theme.dart';
+import '../../config/map_theme.dart';
+import '../../config/mapbox_config.dart';
+import '../../map/map_surface_coordinator.dart';
+import '../../utils/mapbox_safe.dart';
+import '../../widgets/map/circular_pin_renderer.dart';
 import '../../widgets/static_route_preview.dart';
 import '../../widgets/neu_style.dart';
 import '../../l10n/app_localizations.dart';
@@ -56,6 +63,18 @@ class _ScheduledRidesScreenState extends State<ScheduledRidesScreen>
   String? _errorMine;
   DateTime? _lastMineFetch; // throttle: min 10 s between fetches
   bool _fetchingMine = false; // guard concurrent calls
+
+  /// The one expanded My-Rides card. An expanded card mounts a LIVE Mapbox
+  /// preview (user spec 2026-09-27: same map, same pins, same tilt as the
+  /// rest of the app), and only one native surface may exist — so expansion
+  /// is an accordion: opening a card closes the previously open one.
+  int? _expandedTripId;
+
+  void _onCardToggle(int tripId) {
+    setState(() {
+      _expandedTripId = _expandedTripId == tripId ? null : tripId;
+    });
+  }
 
   @override
   void initState() {
@@ -487,7 +506,15 @@ class _ScheduledRidesScreenState extends State<ScheduledRidesScreen>
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
         itemCount: trips.length,
         itemBuilder: (ctx, i) => isMyRides
-            ? _DriverMyRideCard(trip: trips[i], onCancelled: onRefresh)
+            ? _DriverMyRideCard(
+                trip: trips[i],
+                onCancelled: onRefresh,
+                expanded: _expandedTripId == trips[i]['id'],
+                onToggle: () {
+                  final id = trips[i]['id'] as int?;
+                  if (id != null) _onCardToggle(id);
+                },
+              )
             : _buildAvailableCard(trips[i]),
       ),
     );
@@ -873,7 +900,18 @@ class _ScheduledRidesScreenState extends State<ScheduledRidesScreen>
 class _DriverMyRideCard extends StatefulWidget {
   final Map<String, dynamic> trip;
   final VoidCallback? onCancelled;
-  const _DriverMyRideCard({required this.trip, this.onCancelled});
+
+  /// Accordion: the parent screen owns which card is expanded (only one —
+  /// an expanded card holds the one live map surface). [onToggle] asks the
+  /// parent to flip this card.
+  final bool expanded;
+  final VoidCallback? onToggle;
+  const _DriverMyRideCard({
+    required this.trip,
+    this.onCancelled,
+    required this.expanded,
+    this.onToggle,
+  });
 
   @override
   State<_DriverMyRideCard> createState() => _DriverMyRideCardState();
@@ -886,7 +924,9 @@ class _DriverMyRideCardState extends State<_DriverMyRideCard>
   static const _airport = Color(0xFF4285F4);
 
   // ── Expand state ──
-  bool _expanded = false;
+  // The expanded bit itself lives on the parent (accordion) — this latch
+  // only keeps the preview area built after the first expand so re-expands
+  // animate from a mounted child.
   bool _mapEverExpanded = false;
 
   // ── Mapbox state ──
@@ -930,11 +970,16 @@ class _DriverMyRideCardState extends State<_DriverMyRideCard>
   }
 
   void _toggle() {
-    setState(() {
-      _expanded = !_expanded;
-      if (_expanded) _mapEverExpanded = true;
-    });
-    if (_expanded) unawaited(_loadRouteDuration());
+    widget.onToggle?.call();
+  }
+
+  @override
+  void didUpdateWidget(covariant _DriverMyRideCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.expanded && !oldWidget.expanded) {
+      _mapEverExpanded = true;
+      unawaited(_loadRouteDuration());
+    }
   }
 
   Future<void> _cancelTrip() async {
@@ -1017,7 +1062,7 @@ class _DriverMyRideCardState extends State<_DriverMyRideCard>
       final dropoff = LatLng(_dropoffLat!, _dropoffLng!);
       final dirs = DirectionsService(ApiKeys.webServices);
       final route = await dirs.getRoute(origin: pickup, destination: dropoff);
-      if (!mounted || !_expanded) return;
+      if (!mounted || !widget.expanded) return;
       if (route == null) return;
       setState(() {
         _tripDuration = route.durationText;
@@ -1072,7 +1117,11 @@ class _DriverMyRideCardState extends State<_DriverMyRideCard>
     final minutesUntil = scheduledAt != null
         ? scheduledAt.difference(DateTime.now()).inMinutes
         : 0;
-    final canCancel = minutesUntil > 60;
+    // Same rule the server enforces (2026-09-27): a claimed scheduled ride
+    // is cancellable only with MORE than 1 hour of notice — inside the
+    // window it is "Contact Support to cancel".
+    final canCancel = scheduledAt != null &&
+        scheduledAt.difference(DateTime.now()) > const Duration(hours: 1);
 
     return GestureDetector(
       onTap: _hasCoords ? _toggle : null,
@@ -1082,7 +1131,7 @@ class _DriverMyRideCardState extends State<_DriverMyRideCard>
         // one; everything else takes the shared neu border.
         decoration: neuBox(
           radius: 20,
-          borderColor: _expanded
+          borderColor: widget.expanded
               ? _gold.withValues(alpha: 0.35)
               : isAirport
                   ? _airport.withValues(alpha: 0.25)
@@ -1189,7 +1238,7 @@ class _DriverMyRideCardState extends State<_DriverMyRideCard>
                     if (_hasCoords) ...[
                       const SizedBox(width: 8),
                       AnimatedRotation(
-                        turns: _expanded ? 0.5 : 0,
+                        turns: widget.expanded ? 0.5 : 0,
                         duration: const Duration(milliseconds: 300),
                         child: Icon(
                           Icons.expand_more_rounded,
@@ -1226,7 +1275,7 @@ class _DriverMyRideCardState extends State<_DriverMyRideCard>
                       ? Padding(
                           padding: const EdgeInsets.fromLTRB(12, 10, 12, 0),
                           child: SizedBox(
-                            height: _expanded ? 200.0 : 0.0,
+                            height: widget.expanded ? 200.0 : 0.0,
                             child: _buildMiniMap(),
                           ),
                         )
@@ -1307,7 +1356,7 @@ class _DriverMyRideCardState extends State<_DriverMyRideCard>
                   ),
                 ),
                 secondChild: const SizedBox(width: double.infinity, height: 0),
-                crossFadeState: _expanded
+                crossFadeState: widget.expanded
                     ? CrossFadeState.showSecond
                     : CrossFadeState.showFirst,
                 duration: const Duration(milliseconds: 300),
@@ -1458,11 +1507,14 @@ class _DriverMyRideCardState extends State<_DriverMyRideCard>
   }
 
   Widget _buildMiniMap() {
-    // Every expanded card used to mount its own live Mapbox surface, so two
-    // cards open at once was already two of them. This is a still image, so
-    // the count no longer matters. Tilted at 45° with the gold route drawn
-    // in (2026-08-30 spec) — flat and route-less it read as a random map,
-    // not as THIS trip.
+    // The base layer is the still image: it is the placeholder while the
+    // native surface spins up and the whole preview on web (Mapbox native
+    // does not run there). Over it, while the card is expanded, sits the
+    // LIVE map with the app's own look — navy/gold theme, circular pins,
+    // 50° tilt (user spec 2026-09-27: "el mismo mapa de la app, mismos
+    // pines, misma inclinación"). The parent accordion keeps one expanded
+    // card at a time and _CardLiveMap claims the surface through
+    // MapSurfaceCoordinator, so the one-native-surface rule holds.
     return ClipRRect(
       borderRadius: BorderRadius.circular(16),
       child: Stack(
@@ -1477,6 +1529,21 @@ class _DriverMyRideCardState extends State<_DriverMyRideCard>
               pitch: 45,
             ),
           ),
+          if (widget.expanded && !kIsWeb)
+            Positioned.fill(
+              // Non-interactive: the card's tap-to-collapse keeps working
+              // through the map.
+              child: IgnorePointer(
+                child: _CardLiveMap(
+                  tripId: widget.trip['id'] as int? ?? 0,
+                  pickupLat: _pickupLat!,
+                  pickupLng: _pickupLng!,
+                  dropoffLat: _dropoffLat!,
+                  dropoffLng: _dropoffLng!,
+                  route: _routePts,
+                ),
+              ),
+            ),
           // Fade the bottom edge into the card surface.
           const Positioned(
             bottom: 0,
@@ -1555,6 +1622,321 @@ class _DriverMyRideCardState extends State<_DriverMyRideCard>
           ),
         ],
       ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────
+//  _CardLiveMap — the app's real map inside an expanded My-Rides card
+// ─────────────────────────────────────────────
+
+/// The live preview of an expanded card (user spec 2026-09-27: the card map
+/// must be the SAME map the app uses everywhere — navy/gold theme, circular
+/// gold pins, and the tilt animation — not a generic still). Replaces the
+/// old per-card live surfaces that crashed iOS when two cards were open:
+/// the parent screen expands only one card (accordion), and the surface is
+/// claimed through [MapSurfaceCoordinator], which revokes whatever map sits
+/// underneath; the online screen re-claims on pop.
+///
+/// The widget is non-interactive (IgnorePointer at the call site keeps the
+/// card's tap-to-collapse working): a preview, not a navigation surface.
+class _CardLiveMap extends StatefulWidget {
+  final int tripId;
+  final double pickupLat;
+  final double pickupLng;
+  final double dropoffLat;
+  final double dropoffLng;
+
+  /// The driving route, fetched by the card for the duration chip. May
+  /// arrive after mount — the polyline and the camera refit on update.
+  final List<LatLng> route;
+
+  const _CardLiveMap({
+    required this.tripId,
+    required this.pickupLat,
+    required this.pickupLng,
+    required this.dropoffLat,
+    required this.dropoffLng,
+    required this.route,
+  });
+
+  @override
+  State<_CardLiveMap> createState() => _CardLiveMapState();
+}
+
+class _CardLiveMapState extends State<_CardLiveMap> {
+  mapbox.MapboxMap? _map;
+  mapbox.PointAnnotationManager? _pinMgr;
+  mapbox.PolylineAnnotationManager? _routeMgr;
+
+  bool _mapMounted = false;
+
+  /// Plain flag readable from `onRevoke` after dispose — a later acquirer
+  /// can evict us mid-teardown, and `setState` is illegal there.
+  bool _mapAlive = false;
+
+  /// Drives the fade-in over the static still once the navy theme landed.
+  bool _styleReady = false;
+
+  int _drawnRouteLen = -1;
+  bool _cameraFitDone = false;
+
+  String get _owner => 'SchedRideCard-${widget.tripId}';
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_acquire());
+  }
+
+  Future<void> _acquire() async {
+    try {
+      await MapSurfaceCoordinator.instance.acquire(
+        owner: _owner,
+        onRevoke: () async {
+          if (!_mapAlive) return;
+          _mapAlive = false;
+          if (mounted) setState(() => _mapMounted = false);
+          // Confirm the PlatformView is really gone before the next holder
+          // mounts — the coordinator's whole point.
+          await surfaceRemoved();
+        },
+      );
+    } catch (e) {
+      // A failed claim must not crash the card — the still underneath is a
+      // complete preview on its own.
+      debugPrint('[SchedCardMap] surface claim failed: $e');
+      return;
+    }
+    if (!mounted) {
+      MapSurfaceCoordinator.instance.release(_owner);
+      return;
+    }
+    setState(() {
+      _mapMounted = true;
+      _mapAlive = true;
+    });
+  }
+
+  @override
+  void dispose() {
+    // Release AFTER the teardown window, not synchronously: a sibling card
+    // acquiring in the same frame must not mount into our half-dead
+    // surface. If an acquirer beats this timer the onRevoke above does the
+    // same wait for them, and this release then no-ops on the new owner.
+    final owner = _owner;
+    unawaited(Future(() async {
+      await surfaceRemoved();
+      MapSurfaceCoordinator.instance.release(owner);
+    }));
+    super.dispose();
+  }
+
+  void _onMapCreated(mapbox.MapboxMap ctrl) {
+    _map = ctrl;
+    // Pure preview: every gesture off. Pigeon calls reject if the surface
+    // dies mid-setup, hence the guard.
+    try {
+      ctrl.gestures.updateSettings(mapbox.GesturesSettings(
+        scrollEnabled: false,
+        rotateEnabled: false,
+        pinchToZoomEnabled: false,
+        doubleTapToZoomInEnabled: false,
+        doubleTouchToZoomOutEnabled: false,
+        pitchEnabled: false,
+        quickZoomEnabled: false,
+        simultaneousRotateAndPinchToZoomEnabled: false,
+      ));
+      ctrl.compass.updateSettings(mapbox.CompassSettings(enabled: false));
+      ctrl.attribution.updateSettings(mapbox.AttributionSettings(
+        iconColor: 0x00000000,
+        position: mapbox.OrnamentPosition.BOTTOM_LEFT,
+      ));
+      ctrl.logo.updateSettings(mapbox.LogoSettings(
+        position: mapbox.OrnamentPosition.BOTTOM_LEFT,
+        marginLeft: -100,
+      ));
+    } catch (e) {
+      debugPrint('[SchedCardMap] gesture/ornament setup failed: $e');
+    }
+  }
+
+  Future<void> _onStyleLoaded() async {
+    final m = _map;
+    if (m == null) return;
+    // The navy/gold every live map wears — THIS is what made the still read
+    // as a different app.
+    await MapTheme.applyNavyGold(m);
+    if (!mounted) return;
+    try {
+      _pinMgr ??= await m.annotations.createPointAnnotationManager();
+      _routeMgr ??= await m.annotations.createPolylineAnnotationManager();
+    } catch (e) {
+      debugPrint('[SchedCardMap] annotation managers failed: $e');
+      return;
+    }
+    await _drawAll(animated: true);
+    if (mounted) setState(() => _styleReady = true);
+  }
+
+  @override
+  void didUpdateWidget(covariant _CardLiveMap oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // The route lands after mount (the card fetches it for the chip): draw
+    // the line and refit once the real geometry exists.
+    final newRoute =
+        widget.route.length >= 2 && widget.route.length != _drawnRouteLen;
+    if (_styleReady && newRoute) {
+      _cameraFitDone = false;
+      unawaited(_drawAll(animated: false));
+    }
+  }
+
+  Future<void> _drawAll({required bool animated}) async {
+    final m = _map;
+    final pinMgr = _pinMgr;
+    if (m == null || pinMgr == null) return;
+
+    final pickupPoint = safePoint(widget.pickupLng, widget.pickupLat);
+    final dropoffPoint = safePoint(widget.dropoffLng, widget.dropoffLat);
+    if (pickupPoint == null || dropoffPoint == null) return;
+
+    // The same circular pins every other map draws: gold person at the
+    // pickup, dark flag at the dropoff, teardrop tip on the coordinate.
+    try {
+      final pinBytes = await Future.wait([
+        renderCircularPinBytes(
+            icon: CircularPinIcon.person, isPickup: true, radius: 32),
+        renderCircularPinBytes(
+            icon: CircularPinIcon.flag, isPickup: false, radius: 32),
+      ]);
+      if (!mounted) return;
+      await pinMgr.deleteAll();
+      await pinMgr.create(mapbox.PointAnnotationOptions(
+        geometry: pickupPoint,
+        image: pinBytes[0],
+        iconSize: 0.62,
+        iconAnchor: mapbox.IconAnchor.BOTTOM,
+      ));
+      await pinMgr.create(mapbox.PointAnnotationOptions(
+        geometry: dropoffPoint,
+        image: pinBytes[1],
+        iconSize: 0.62,
+        iconAnchor: mapbox.IconAnchor.BOTTOM,
+      ));
+    } catch (e) {
+      debugPrint('[SchedCardMap] pin draw failed: $e');
+    }
+
+    final routeMgr = _routeMgr;
+    if (routeMgr != null && widget.route.length >= 2) {
+      final geom = safeLineString(widget.route);
+      if (geom != null) {
+        try {
+          await routeMgr.deleteAll();
+          await routeMgr.create(mapbox.PolylineAnnotationOptions(
+            geometry: geom,
+            lineColor: const Color(0xFFE8C547).toARGB32(),
+            lineWidth: 6.0,
+            lineJoin: mapbox.LineJoin.ROUND,
+          ));
+          _drawnRouteLen = widget.route.length;
+        } catch (e) {
+          debugPrint('[SchedCardMap] route draw failed: $e');
+        }
+      }
+    }
+
+    await _fitCamera(animated: animated);
+  }
+
+  Future<void> _fitCamera({required bool animated}) async {
+    final m = _map;
+    if (m == null || _cameraFitDone) return;
+
+    // NaN-safe bounds fold (same lesson as the trip preview): a non-finite
+    // point through cameraForCoordinateBounds raises inside Objective-C,
+    // where no Dart catch can hold it.
+    final pts = <LatLng>[
+      LatLng(widget.pickupLat, widget.pickupLng),
+      LatLng(widget.dropoffLat, widget.dropoffLng),
+      ...widget.route,
+    ]
+        .where((p) =>
+            isValidLatLng(p.latitude, p.longitude) &&
+            p.latitude.abs() <= 90 &&
+            p.longitude.abs() <= 180)
+        .toList();
+    if (pts.length < 2) return;
+
+    double minLat = pts.first.latitude, maxLat = minLat;
+    double minLng = pts.first.longitude, maxLng = minLng;
+    for (final p in pts) {
+      if (p.latitude < minLat) minLat = p.latitude;
+      if (p.latitude > maxLat) maxLat = p.latitude;
+      if (p.longitude < minLng) minLng = p.longitude;
+      if (p.longitude > maxLng) maxLng = p.longitude;
+    }
+    final bounds = mapbox.CoordinateBounds(
+      southwest: mapbox.Point(coordinates: mapbox.Position(minLng, minLat)),
+      northeast: mapbox.Point(coordinates: mapbox.Position(maxLng, maxLat)),
+      infiniteBounds: false,
+    );
+
+    try {
+      final cam = await m.cameraForCoordinateBounds(
+        bounds,
+        mapbox.MbxEdgeInsets(top: 44, left: 36, bottom: 56, right: 36),
+        0.0,
+        0.0,
+        null,
+        null,
+      );
+      if (!mounted) return;
+      final zoom = ((cam.zoom ?? 14) - 0.15).clamp(9.0, 16.0);
+      final center = cam.center;
+      if (center == null || !zoom.isFinite) return;
+      _cameraFitDone = true;
+      if (animated) {
+        // Flat fit first, then ease into the 50° tilt — the same "animación
+        // de inclinación" the live maps open with.
+        await m.setCamera(mapbox.CameraOptions(
+            center: center, zoom: zoom, pitch: 0.0));
+        if (!mounted) return;
+        await m.flyTo(
+          mapbox.CameraOptions(center: center, zoom: zoom, pitch: 50.0),
+          mapbox.MapAnimationOptions(duration: 700),
+        );
+      } else {
+        // Route refit: keep the tilt, just reframe.
+        await m.flyTo(
+          mapbox.CameraOptions(center: center, zoom: zoom, pitch: 50.0),
+          mapbox.MapAnimationOptions(duration: 400),
+        );
+      }
+    } catch (e) {
+      debugPrint('[SchedCardMap] camera fit failed: $e');
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // Invisible until the navy style landed — the static still shows through
+    // in the meantime, so the handoff reads as the map "coming alive", not
+    // as a grey flash.
+    return AnimatedOpacity(
+      opacity: _styleReady ? 1.0 : 0.0,
+      duration: const Duration(milliseconds: 250),
+      child: _mapMounted
+          ? RepaintBoundary(
+              child: mapbox.MapWidget(
+                textureView: true,
+                styleUri: MapboxConfig.styleDark,
+                onMapCreated: _onMapCreated,
+                onStyleLoadedListener: (_) => unawaited(_onStyleLoaded()),
+              ),
+            )
+          : const SizedBox.shrink(),
     );
   }
 }

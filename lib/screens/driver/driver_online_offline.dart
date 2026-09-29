@@ -1661,7 +1661,12 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
                         slideFromRightRoute(
                           const ScheduledRidesScreen(initialTab: 0),
                         ),
-                      );
+                        // An expanded My-Rides card holds the one live map
+                        // surface — claim it back on return, the same
+                        // convention every map-pushing route here uses.
+                      ).then((_) {
+                        if (mounted) unawaited(_remountMapSurface());
+                      });
                     },
                     child: Container(
                       padding: const EdgeInsets.all(16),

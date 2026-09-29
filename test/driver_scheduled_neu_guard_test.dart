@@ -60,4 +60,61 @@ void main() {
       expect(preview, contains('alpha: 0.30'));
     });
   });
+
+  group('expanded card live map (user spec 2026-09-27)', () {
+    test('the expanded card layers the live map over the still', () {
+      expect(screen, contains('class _CardLiveMap extends StatefulWidget'));
+      expect(screen, contains('if (widget.expanded && !kIsWeb)'),
+          reason: 'the still stays the placeholder AND the whole preview on '
+              'web — mapbox_maps_flutter does not run there');
+    });
+
+    test('the one-surface rule holds: accordion + coordinator', () {
+      expect(screen, contains('int? _expandedTripId'),
+          reason: 'one expanded card at a time — two live native surfaces '
+              'is the iOS crash this redesign had once already');
+      expect(screen, contains("'SchedRideCard-\${widget.tripId}'"));
+      expect(screen, contains('MapSurfaceCoordinator.instance.acquire'));
+      expect(screen, contains('MapSurfaceCoordinator.instance.release(owner)'),
+          reason: 'collapse releases after the teardown window so a sibling '
+              'card never mounts into a half-dead surface');
+    });
+
+    test('the app look: navy theme, circular pins, 50 tilt, gold round route',
+        () {
+      expect(screen, contains('MapTheme.applyNavyGold(m)'),
+          reason: 'the navy/gold every live map wears — its absence is what '
+              'made the still read as a different app');
+      expect(screen, contains('CircularPinIcon.person'));
+      expect(screen, contains('CircularPinIcon.flag'));
+      expect(screen, contains('pitch: 50.0'),
+          reason: 'the tilt animation the user asked for');
+      expect(screen, contains('lineJoin: mapbox.LineJoin.ROUND'));
+    });
+
+    test('the preview stays non-interactive so the card tap still collapses',
+        () {
+      expect(screen, contains('child: IgnorePointer('));
+      expect(screen, contains('scrollEnabled: false'));
+    });
+
+    test('the online map re-claims the surface when the screen pops', () {
+      final offline =
+          File('lib/screens/driver/driver_online_offline.dart')
+              .readAsStringSync();
+      final pushStart =
+          offline.indexOf('const ScheduledRidesScreen(initialTab: 0)');
+      final block = offline.substring(pushStart, pushStart + 800);
+      expect(block, contains('_remountMapSurface()'),
+          reason: 'the card map revokes the online map through the '
+              'coordinator — on pop it must come back');
+    });
+
+    test('the 1-hour cancel window matches the server gate exactly', () {
+      expect(screen, contains('> const Duration(hours: 1)'),
+          reason: 'server rejects <= 60 min (scheduled.py '
+              '_require_cancel_notice_window) — the UI must not offer what '
+              'the server will refuse');
+    });
+  });
 }

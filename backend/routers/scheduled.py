@@ -625,6 +625,27 @@ async def start_scheduled_trip(
 #  POST /scheduled-trips/{trip_id}/cancel — driver drops ride
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+# User spec (2026-09-27): a claimed scheduled ride may only be released with
+# at least 1 hour of notice. Inside the window the app hides the cancel
+# button and points at support; this gate is the server half of that rule —
+# the UI alone can be bypassed. Both driver release endpoints (/cancel and
+# /drop) enforce it. The dispatcher's own offline-release path is internal
+# and never goes through these endpoints.
+def _require_cancel_notice_window(trip: Trip) -> None:
+    sched_at = trip.scheduled_at
+    if sched_at is None:
+        return
+    if sched_at.tzinfo is None:
+        # SQLite drops tzinfo — same awareness fix as the claim window above.
+        sched_at = sched_at.replace(tzinfo=timezone.utc)
+    if sched_at - datetime.now(timezone.utc) <= timedelta(minutes=60):
+        raise HTTPException(
+            400,
+            "Scheduled rides can only be cancelled at least 1 hour before "
+            "pickup — contact support",
+        )
+
+
 @router.post("/scheduled-trips/{trip_id}/cancel", dependencies=[Depends(_verify_api_key)])
 async def cancel_claimed_scheduled_trip(
     trip_id: int,
@@ -640,6 +661,7 @@ async def cancel_claimed_scheduled_trip(
         raise HTTPException(403, "This trip is not assigned to you")
     if trip.status not in ("scheduled_accepted", "scheduled_active"):
         raise HTTPException(400, f"Cannot cancel trip with status '{trip.status}'")
+    _require_cancel_notice_window(trip)
 
     trip.driver_id = None
     trip.status = "scheduled"
@@ -744,6 +766,7 @@ async def drop_scheduled_trip(
             400,
             f"Cannot drop scheduled ride in status '{trip.status}' — contact dispatch",
         )
+    _require_cancel_notice_window(trip)
 
     previous_driver_id = trip.driver_id
     previous_status = trip.status

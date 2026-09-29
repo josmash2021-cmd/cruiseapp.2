@@ -7,6 +7,10 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:video_player/video_player.dart';
 import 'welcome_screen.dart';
 import 'home_screen.dart';
+import 'rider_name_screen.dart';
+import 'rider_email_screen.dart';
+import 'driver/driver_email_screen.dart';
+import 'driver/driver_name_screen.dart';
 import 'driver/driver_online_screen.dart';
 import 'driver/driver_pending_review_screen.dart';
 import 'driver/onboarding/driver_todo_screen.dart';
@@ -261,6 +265,14 @@ class _SplashScreenState extends State<SplashScreen> {
     if (mode == 'driver') {
       await UserSession.initPhotoNotifier();
 
+      // Resume an abandoned signup where it stopped (user spec 2026-09-27):
+      // a persisted session from a half-finished registration boots to the
+      // first incomplete required step — the approval routing below assumes
+      // onboarding finished.
+      final driverResume =
+          _driverResumeScreen(await UserSession.getUser());
+      if (driverResume != null) return driverResume;
+
       // ── CRITICAL FIX: Check if driver was EVER approved ──
       // If driver was approved before, NEVER send them back to pending review
       // even if backend is down or cache is stale.
@@ -387,11 +399,57 @@ class _SplashScreenState extends State<SplashScreen> {
     } else {
       await UserSession.initPhotoNotifier();
 
+      // Same resume rule as the driver branch (user spec 2026-09-27):
+      // names, then email — never a half-blank home.
+      final riderResume = _riderResumeScreen(await UserSession.getUser());
+      if (riderResume != null) return riderResume;
+
       // Fire background profile sync + account status check (no await)
       unawaited(_backgroundProfileSync());
 
       return const HomeScreen();
     }
+  }
+
+  /// The session cache (camelCase keys) reshaped as the user map the
+  /// onboarding step screens expect (snake_case, as phone-login returns).
+  Map<String, dynamic> _sessionAsOnboardingUser(Map<String, dynamic> u) => {
+        'id': int.tryParse(u['userId']?.toString() ?? ''),
+        'first_name': u['firstName'] ?? '',
+        'last_name': u['lastName'] ?? '',
+        'email': u['email'] ?? '',
+        'phone': u['phone'] ?? '',
+        'photo_url':
+            (u['photoUrl'] ?? '').toString().isEmpty ? null : u['photoUrl'],
+      };
+
+  /// The first incomplete REQUIRED rider-onboarding step, or null when the
+  /// profile is complete. Name + email only: photo/gender and payment chain
+  /// off the email screen itself (and payment stays skippable).
+  Widget? _riderResumeScreen(Map<String, dynamic>? cached) {
+    if (cached == null) return null;
+    final user = _sessionAsOnboardingUser(cached);
+    if ((user['first_name'] as String).trim().isEmpty) {
+      return RiderNameScreen(user: user);
+    }
+    if ((user['email'] as String).trim().isEmpty) {
+      return RiderEmailScreen(user: user);
+    }
+    return null;
+  }
+
+  /// Same ladder for the driver: names, then email. Anything past that
+  /// (vehicle, docs, review) is resumed by the approval/onboarding routing
+  /// in the caller — the to-do hub is already that surface.
+  Widget? _driverResumeScreen(Map<String, dynamic>? cached) {
+    if (cached == null) return null;
+    final user = _sessionAsOnboardingUser(cached);
+    final firstName = (user['first_name'] as String).trim();
+    if (firstName.isEmpty) return DriverNameScreen(user: user);
+    if ((user['email'] as String).trim().isEmpty) {
+      return DriverEmailScreen(firstName: firstName);
+    }
+    return null;
   }
 
   /// Returns true for any status string that indicates an approved driver.

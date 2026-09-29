@@ -9,6 +9,7 @@ import '../services/user_session.dart';
 import '../utils/phone_format.dart';
 import 'find_account_screen.dart';
 import 'home_screen.dart';
+import 'rider_email_screen.dart';
 import 'rider_name_screen.dart';
 import 'verify_code_screen.dart';
 
@@ -204,9 +205,26 @@ class _RiderWelcomeScreenState extends State<RiderWelcomeScreen> {
     await UserSession.initPhotoNotifier();
     if (!mounted) return;
 
-    if (isNewUser) {
+    _routeByProfile(user, isNewUser: isNewUser);
+  }
+
+  /// Route by profile completeness (user spec 2026-09-27): an abandoned
+  /// signup resumes at the exact step it stopped at — names, then email
+  /// (which itself chains into photo/gender → payment → ready → home) — and
+  /// only a rider who finished every required step lands on the home
+  /// screen. `is_new_user` from the backend already means "nameless" (a row
+  /// without a name never finished onboarding); the field checks are the
+  /// local belt for any other path (social, older backend).
+  void _routeByProfile(Map<String, dynamic> user, {required bool isNewUser}) {
+    if (isNewUser || (user['first_name'] ?? '').toString().trim().isEmpty) {
       Navigator.of(context).push(
         onboardingFadeSlideRoute(RiderNameScreen(user: user)),
+      );
+      return;
+    }
+    if ((user['email'] ?? '').toString().trim().isEmpty) {
+      Navigator.of(context).push(
+        onboardingFadeSlideRoute(RiderEmailScreen(user: user)),
       );
       return;
     }
@@ -234,17 +252,10 @@ class _RiderWelcomeScreenState extends State<RiderWelcomeScreen> {
       await UserSession.saveMode('rider');
       if (!mounted) return;
 
-      final hasPhone = (user['phone'] ?? '').toString().isNotEmpty;
-      if (!hasPhone) {
-        Navigator.of(context).push(
-          onboardingFadeSlideRoute(RiderNameScreen(user: user)),
-        );
-        return;
-      }
-      Navigator.of(context).pushAndRemoveUntil(
-        smoothFadeRoute(const HomeScreen(), durationMs: 600),
-        (_) => false,
-      );
+      // Same resume ladder as the phone path — an Apple account missing a
+      // required field (name on first sign-in, email on a private relay)
+      // continues where it stopped instead of landing half-blank.
+      _routeByProfile(user, isNewUser: false);
     } catch (_) {
       if (!mounted) return;
       setState(() => _appleLoading = false);

@@ -8,6 +8,7 @@ import '../../services/sms_service.dart';
 import '../../services/user_session.dart';
 import '../../utils/phone_format.dart';
 import '../verify_code_screen.dart';
+import 'driver_email_screen.dart';
 import 'driver_online_screen.dart';
 import 'driver_name_screen.dart';
 import 'driver_pending_review_screen.dart';
@@ -194,6 +195,19 @@ class _DriverWelcomeScreenState extends State<DriverWelcomeScreen> {
     if (isNewUser) {
       Navigator.of(context).push(
         onboardingFadeSlideRoute(DriverNameScreen(user: user)),
+      );
+      return;
+    }
+    // Same resume ladder as the rider (user spec 2026-09-27): names done
+    // but no email = abandoned at the email step (required, no skip) —
+    // resume there; its chain flows into notifications → drive city, and
+    // the approval routing below takes over from the next login on.
+    if ((user['email'] ?? '').toString().trim().isEmpty) {
+      Navigator.of(context).push(
+        onboardingFadeSlideRoute(
+          DriverEmailScreen(
+              firstName: (user['first_name'] ?? '').toString().trim()),
+        ),
       );
       return;
     }

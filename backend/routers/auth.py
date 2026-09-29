@@ -1051,7 +1051,12 @@ async def phone_login(body: PhoneLoginIn, request: Request, db: AsyncSession = D
         )
     )
     user = result.scalars().first()
-    is_new_user = user is None
+    # A row without a first name never finished onboarding (the app collects
+    # first/last name right after this call): an abandoned signup that
+    # re-enters its number must go BACK to the name page, not into the app
+    # with a blank profile (user report 2026-09-27 — bail at the name step,
+    # re-enter the number, land on a blank "New rider" home).
+    is_new_user = user is None or not (user.first_name or "").strip()
     now = datetime.now(timezone.utc)
 
     if user:

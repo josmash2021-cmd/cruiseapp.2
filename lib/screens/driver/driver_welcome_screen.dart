@@ -170,7 +170,11 @@ class _DriverWelcomeScreenState extends State<DriverWelcomeScreen> {
     final data = _loginResult;
     if (data == null) return;
     final user = data['user'] as Map<String, dynamic>? ?? const {};
-    final isNewUser = data['is_new_user'] == true;
+    // Belt + suspenders (user report 2026-09-27): the backend already flags
+    // a nameless account as new, but ANY path that yields a blank profile
+    // must land on the name page — never on a blank home.
+    final isNewUser = data['is_new_user'] == true ||
+        (user['first_name'] ?? '').toString().trim().isEmpty;
 
     await UserSession.saveUser(
       firstName: user['first_name'] ?? '',

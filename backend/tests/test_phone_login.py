@@ -170,3 +170,82 @@ async def test_phone_login_rate_limit(client: AsyncClient, db):
         headers=_make_auth_headers(),
     )
     assert resp.status_code == 429
+
+
+async def test_phone_login_abandoned_signup_is_new_again(client: AsyncClient, db):
+    """User report (2026-09-27): verify the code, bail at the name page,
+    re-enter the number later — the account already exists with EMPTY names
+    and used to come back as `is_new_user: False`, routing straight into a
+    blank home ("New rider", no photo). A nameless row never finished
+    onboarding, so it must route BACK to the name page."""
+    await _seed_otp(db, "+15551112222", "111111")
+    resp = await client.post(
+        "/auth/phone-login",
+        json={"phone": "5551112222", "code": "111111", "role": "rider"},
+        headers=_make_auth_headers(),
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["is_new_user"] is True
+    assert resp.json()["user"]["first_name"] == ""
+
+    # Abandoned at the name page — no PATCH ever happened. New code, same
+    # number: still new.
+    await _seed_otp(db, "+15551112222", "222222")
+    resp = await client.post(
+        "/auth/phone-login",
+        json={"phone": "5551112222", "code": "222222", "role": "rider"},
+        headers=_make_auth_headers(),
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["is_new_user"] is True
+
+
+async def test_phone_login_whitespace_name_is_new(client: AsyncClient, db):
+    """A whitespace-only first name is as blank as an empty one."""
+    from main import User
+    user = User(
+        first_name="   ",
+        last_name="",
+        phone="+15553334444",
+        password_hash="x",
+        role="driver",
+        status="active",
+        created_at=datetime.now(timezone.utc),
+    )
+    db.add(user)
+    await db.commit()
+    await _seed_otp(db, "+15553334444", "333333")
+
+    resp = await client.post(
+        "/auth/phone-login",
+        json={"phone": "5553334444", "code": "333333", "role": "driver"},
+        headers=_make_auth_headers(),
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["is_new_user"] is True
+
+
+async def test_phone_login_named_user_stays_not_new(client: AsyncClient, db):
+    """Once the name page PATCHed real names, the same number logs straight
+    in — the resume only catches genuinely blank profiles."""
+    from main import User
+    user = User(
+        first_name="Ana",
+        last_name="Rider",
+        phone="+15554445555",
+        password_hash="x",
+        role="rider",
+        status="active",
+        created_at=datetime.now(timezone.utc),
+    )
+    db.add(user)
+    await db.commit()
+    await _seed_otp(db, "+15554445555", "444444")
+
+    resp = await client.post(
+        "/auth/phone-login",
+        json={"phone": "5554445555", "code": "444444", "role": "rider"},
+        headers=_make_auth_headers(),
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["is_new_user"] is False

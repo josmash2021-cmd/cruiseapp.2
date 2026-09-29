@@ -91,4 +91,49 @@ void main() {
       expect(claimBlock, contains('_loadAvailable(force: true)'));
     });
   });
+
+  group('push deep-link into the ride detail (user spec 2026-09-27)', () {
+    test('the screen takes initialTripId and selects it once data + map are up',
+        () {
+      expect(screen, contains('final int? initialTripId'));
+      expect(screen, contains('_pendingSelectTripId = widget.initialTripId'));
+      expect(screen, contains('void _tryConsumePendingSelect()'),
+          reason: 'the selection waits for BOTH the fresh list and the live '
+              'map — drawing the route pre-map leaves a detail with no line');
+      expect(screen, contains('_selectTrip(hit)'));
+    });
+
+    test('a trip gone from the fresh list gets an honest toast', () {
+      expect(screen, contains('scheduledRideNoLongerAvailable'),
+          reason: 'claimed by another driver / filtered out must never be a '
+              'silent no-op');
+    });
+
+    test('main.dart routes the scheduled_ride tap to this screen', () {
+      final main = File('lib/main.dart').readAsStringSync();
+      expect(main.contains("if (type == 'scheduled_ride')"), isTrue,
+          reason: 'before this there was NO handler — the tap did nothing');
+      expect(
+          main.contains('ScheduledRidesMapScreen(initialTripId: tripId)'),
+          isTrue);
+      expect(main.contains("if (mode != 'driver') return;"), isTrue,
+          reason: 'the marketplace is drivers-only — role gate on the tap');
+    });
+
+    test('the backend fan-out replaced the country-wide topic broadcast', () {
+      final trips = File('backend/routers/trips.py').readAsStringSync();
+      final payments = File('backend/routers/payments.py').readAsStringSync();
+      final broadcast =
+          File('backend/services/scheduled_broadcast.py').readAsStringSync();
+      expect(trips.contains('notify_new_scheduled_ride(trip.id)'), isTrue);
+      expect(payments.contains('notify_new_scheduled_ride(trip.id)'), isTrue);
+      expect(trips.contains('topic="drivers_available"'), isFalse,
+          reason: 'the state-less broadcast is what spammed every driver in '
+              'the country — it must not come back');
+      expect(broadcast.contains('_state_for'), isTrue,
+          reason: 'the state filter is the headline ask');
+      expect(broadcast.contains('"Open to accept the ride"'), isTrue,
+          reason: 'bare body — no price, no addresses');
+    });
+  });
 }

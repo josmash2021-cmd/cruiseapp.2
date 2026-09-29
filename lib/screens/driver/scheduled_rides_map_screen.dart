@@ -33,7 +33,12 @@ import 'scheduled_rides_screen.dart';
 /// button lives INSIDE the sheet, below the card — never floating over the
 /// map.
 class ScheduledRidesMapScreen extends StatefulWidget {
-  const ScheduledRidesMapScreen({super.key});
+  /// Deep-link from the "New Scheduled Ride Available" push (user spec
+  /// 2026-09-27): open straight into that trip's detail. When the ride is
+  /// gone from the fresh list (claimed by another driver, or filtered out
+  /// for this one) a toast says so and the map stays in browse mode.
+  final int? initialTripId;
+  const ScheduledRidesMapScreen({super.key, this.initialTripId});
 
   @override
   State<ScheduledRidesMapScreen> createState() =>
@@ -72,6 +77,11 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
   // True once the style finished loading — the price-bubble images attach
   // only after that (pre-style they render as the default blue marker).
   bool _styleReady = false;
+
+  /// Deep-link selection (widget.initialTripId) pending on BOTH the fresh
+  /// list and the live map — see _tryConsumePendingSelect.
+  int? _pendingSelectTripId;
+  bool _freshLoaded = false;
   mapbox.PointAnnotationManager? _bubbleMgr;
   mapbox.PointAnnotationManager? _dotMgr;
   mapbox.PointAnnotation? _dotAnnot;
@@ -137,6 +147,7 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
   @override
   void initState() {
     super.initState();
+    _pendingSelectTripId = widget.initialTripId;
     _seedInitialCenter();
     _loadAvailable();
     _loadMyRidesCount();
@@ -189,6 +200,7 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
       return;
     }
     setState(() => _mapMounted = true);
+    _tryConsumePendingSelect();
   }
 
   /// Last-known GPS wins; a cached trip's pickup is the fallback so the map
@@ -283,8 +295,10 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
       setState(() {
         _available = trips;
         _loadingAvail = false;
+        _freshLoaded = true;
       });
       _syncBubbles();
+      _tryConsumePendingSelect();
     } catch (e) {
       if (!mounted) return;
       if (_available.isEmpty) {
@@ -695,6 +709,36 @@ class _ScheduledRidesMapScreenState extends State<ScheduledRidesMapScreen>
   // ─────────────────────────────────────────────
   //  Selection / detail mode
   // ─────────────────────────────────────────────
+
+  /// The push deep-link (widget.initialTripId): select the trip once BOTH
+  /// the fresh list and the live map are up. Not finding it means another
+  /// driver claimed it or the server filtered it out for this one
+  /// (state/tier) — an honest toast, never a silent no-op.
+  void _tryConsumePendingSelect() {
+    final id = _pendingSelectTripId;
+    if (id == null || !_freshLoaded || !_mapMounted) return;
+    _pendingSelectTripId = null;
+    Map<String, dynamic>? hit;
+    for (final t in _available) {
+      if (t['id'] == id) {
+        hit = t;
+        break;
+      }
+    }
+    if (hit != null) {
+      _selectTrip(hit);
+      return;
+    }
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(
+        S.of(context).scheduledRideNoLongerAvailable,
+        style: const TextStyle(color: Colors.black, fontWeight: FontWeight.w600),
+      ),
+      backgroundColor: _gold,
+      behavior: SnackBarBehavior.floating,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+    ));
+  }
 
   void _selectTrip(Map<String, dynamic> trip) {
     HapticService.lightImpact();

@@ -4753,6 +4753,9 @@ class S {
       : '$count scheduled ride${count == 1 ? '' : 's'} available near you';
   String get scheduledRideConfirmed =>
       _es ? 'Viaje reservado confirmado' : 'Scheduled ride confirmed';
+  String get scheduledRideNoLongerAvailable => _es
+      ? 'Este viaje ya no está disponible'
+      : 'This ride is no longer available';
   String get noScheduledRidesAvailable => _es
       ? 'No hay viajes reservados disponibles'
       : 'No scheduled rides available';

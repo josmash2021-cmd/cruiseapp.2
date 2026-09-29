@@ -2214,21 +2214,13 @@ async def web_create_booking(request: Request, db: AsyncSession = Depends(get_db
             except Exception as _e:
                 logging.warning("[WebBooking] Firestore sync scheduled trip %d failed: %s", trip.id, _e)
         _safe_create_task(_bg_sched_firestore_sync())
-        try:
-            from services.fcm_service import send_to_topic_async
-            _fare_str = f"${trip.fare:.2f}" if trip.fare else ""
-            _pu = (trip.pickup_address or "")[:40]
-            _do = (trip.dropoff_address or "")[:40]
-            _sched_str = trip.scheduled_at.strftime("%b %d %I:%M %p") if trip.scheduled_at else ""
-            _body = f"{_fare_str} \u00b7 {_pu} \u2192 {_do} \u00b7 {_sched_str}".strip(" \u00b7")
-            _safe_create_task(send_to_topic_async(
-                topic="drivers_available",
-                title="New Scheduled Ride Available",
-                body=_body,
-                data={"type": "scheduled_ride", "trip_id": str(trip.id)},
-            ))
-        except Exception as _fcm_err:
-            logging.warning("[WebBooking] FCM scheduled-ride broadcast failed: %s", _fcm_err)
+        # Same per-driver fan-out as the rider-app create path (user spec
+        # 2026-09-27): state + tier targeted, bare body.
+        from services.scheduled_broadcast import notify_new_scheduled_ride
+        _safe_create_task(
+            notify_new_scheduled_ride(trip.id),
+            name=f"scheduled_broadcast_web_{trip.id}",
+        )
     else:
         # Mirror the rider-app path: sync immediate web bookings to Firestore
         # so the dispatch panel and any other real-time listeners see them

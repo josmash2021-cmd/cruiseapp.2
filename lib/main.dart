@@ -32,6 +32,7 @@ import 'screens/driver/driver_online_screen.dart';
 import 'screens/driver/driver_pending_review_screen.dart';
 import 'screens/driver/onboarding/driver_approved_celebration_screen.dart';
 import 'screens/driver/driver_trip_accept_screen.dart';
+import 'screens/driver/scheduled_rides_map_screen.dart';
 import 'services/api_service.dart';
 import 'services/map_controller_cache.dart';
 import 'services/notification_service.dart';
@@ -531,6 +532,13 @@ void _handleNotificationTap(RemoteMessage message) {
     return;
   }
 
+  // Driver: new scheduled ride in the marketplace → open the browse map
+  // straight into that ride's detail (user spec 2026-09-27).
+  if (type == 'scheduled_ride') {
+    _handleScheduledRidePush(message);
+    return;
+  }
+
   // Rider: scheduled ride starting → fetch trip and open tracking
   if (type == 'scheduled_trip_starting' || type == 'scheduled_claimed') {
     final tripId = int.tryParse(message.data['trip_id'] ?? '');
@@ -574,6 +582,22 @@ void _handleNotificationTap(RemoteMessage message) {
     _handleAccountRejected(type == 'driver_rejected');
     return;
   }
+}
+
+/// Driver tapped "New Scheduled Ride Available": open the marketplace map
+/// with that ride pre-selected (its detail + Reserve). Role-gated like
+/// every driver push — the backend fan-out only targets drivers, but the
+/// tap handler never trusts that.
+void _handleScheduledRidePush(RemoteMessage message) {
+  final tripId = int.tryParse('${message.data['trip_id'] ?? ''}');
+  UserSession.getMode().then((mode) {
+    if (mode != 'driver') return;
+    final nav = _navigatorKey.currentState;
+    if (nav == null) return;
+    nav.push(MaterialPageRoute(
+      builder: (_) => ScheduledRidesMapScreen(initialTripId: tripId),
+    ));
+  });
 }
 
 /// Haversine distance in km — same formula the driver home uses to estimate

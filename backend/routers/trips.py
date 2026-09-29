@@ -16,7 +16,7 @@ from utils.security import (
     _get_current_user, _verify_api_key, _security_audit_log,
 )
 from utils.helpers import utc_now, _haversine, _trip_dict, _abs_photo_url, _resolve_rider_display, _safe_create_task, _compute_user_rating, _gen_pickup_pin, MAX_DISPATCH_RADIUS_KM
-from services.fcm_service import _send_fcm_push_async, send_to_topic_async
+from services.fcm_service import _send_fcm_push_async
 from services import rating_actions, vehicle_tiers
 from services.sms_service import (
     notify_guest_driver_assigned,
@@ -596,22 +596,16 @@ async def create_trip(body: CreateTripIn, user: User = Depends(_get_current_user
                 logging.error("Firestore sync on create_trip failed: %s", e)
         _safe_create_task(_bg_firestore_sync())
 
-    # Notify online drivers when a new scheduled ride enters the marketplace
+    # Notify the marketplace about the new scheduled ride — per-driver
+    # fan-out, only to approved drivers in the ride's state whose tier can
+    # serve it, bare body (user spec 2026-09-27: no price/addresses in the
+    # push, no cross-state spam). See services/scheduled_broadcast.py.
     if trip.status == "scheduled" and trip.scheduled_at:
-        try:
-            _fare_str = f"${trip.fare:.2f}" if trip.fare else ""
-            _pickup = (trip.pickup_address or "")[:40]
-            _dropoff = (trip.dropoff_address or "")[:40]
-            _sched_time = trip.scheduled_at.strftime("%b %d %I:%M %p") if trip.scheduled_at else ""
-            _body = f"{_fare_str} \u00b7 {_pickup} \u2192 {_dropoff} \u00b7 {_sched_time}".strip(" \u00b7")
-            _safe_create_task(send_to_topic_async(
-                topic="drivers_available",
-                title="New Scheduled Ride Available",
-                body=_body,
-                data={"type": "scheduled_ride", "trip_id": str(trip.id)},
-            ))
-        except Exception as _fcm_err:
-            logging.warning("[FCM] Scheduled ride topic push failed: %s", _fcm_err)
+        from services.scheduled_broadcast import notify_new_scheduled_ride
+        _safe_create_task(
+            notify_new_scheduled_ride(trip.id),
+            name=f"scheduled_broadcast_{trip.id}",
+        )
 
     return _trip_dict(trip)
 

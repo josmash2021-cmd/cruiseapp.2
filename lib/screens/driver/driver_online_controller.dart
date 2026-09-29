@@ -78,20 +78,28 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       if (!mounted) return;
       // Fire-and-forget: these must not block the UI thread
       unawaited(_locate());
-      // ¿Entrar online de una? Solo cuando la entrada ya era de trabajo:
-      // resume de viaje, tap de oferta push, handoff encadenado — o el
-      // pref que dice que el turno nunca se cerró (el backend nunca recibió
-      // el offline; el driver SIGUE online allá — el home lo detectaba por
-      // poll y re-empujaba la pantalla; aquí el modo entra directo). Un
-      // boot pelado abre OFFLINE: el mapa arriba, nada escuchando ofertas.
+      // ¿Entrar online de una? SOLO por una entrada de trabajo real (user
+      // report 2026-09-27: "cuando el driver inicia sesion automaticamente
+      // aparece online"): resume de viaje, tap de oferta push, handoff
+      // encadenado. Un boot pelado — incluido un login — abre OFFLINE
+      // siempre: el mapa arriba, nada escuchando ofertas, y el pref
+      // `driver_was_online` solo decide si el GO lee RESUME (turno vivo) o
+      // GO (turno cerrado). La vía correcta de volver al turno sin tap es
+      // la oferta de verdad: el push-tap entra online solo.
       final wasOnline = await PrefsCache.instance
           .then((p) => p.getBool('driver_was_online') ?? false);
       if (!mounted) return;
       _driverWasOnlineAtBoot = wasOnline;
+      // ¿Entrar online de una? SOLO por una entrada de trabajo real:
+      // resume de viaje, tap de oferta push, handoff encadenado. El pref
+      // `driver_was_online` NO basta (user report 2026-09-27: "cuando el
+      // driver inicia sesion automaticamente aparece online") — un login
+      // abre OFFLINE siempre, y el GO lee RESUME si el turno sigue vivo;
+      // cuando llegue una oferta de verdad, el push-tap entra online solo
+      // (_applyInjectedOffer), que es la vía correcta de volver.
       if (widget.resuming ||
           widget.deepLinkOffer != null ||
-          DriverOnlineScreen.chainedHandoffOffer != null ||
-          wasOnline) {
+          DriverOnlineScreen.chainedHandoffOffer != null) {
         unawaited(_enterOnlineMode(resuming: true));
       }
     });

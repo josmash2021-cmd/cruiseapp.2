@@ -114,10 +114,15 @@ void main() {
     test('the boot enters online only for real work entries', () {
       final boot = ctrl.indexOf('Future<void> _boot() async {');
       expect(boot, isNonNegative);
-      final body = ctrl.substring(boot, boot + 2400);
-      expect(body.contains('_enterOnlineMode(resuming: true)'), isTrue);
-      expect(body.contains("driver_was_online"), isTrue,
-          reason: 'a shift that never closed resumes into online mode');
+      final body = ctrl.substring(boot, boot + 3200);
+      expect(body.contains('_enterOnlineMode(resuming: true)'), isTrue,
+          reason: 'only real work entries auto-enter: trip resume, offer '
+              'tap, chained handoff');
+      expect(body.contains('wasOnline) {'), isFalse,
+          reason: 'user report 2026-09-27: "cuando el driver inicia sesion '
+              'automaticamente aparece online" — the was-online pref alone '
+              'used to auto-enter online on login; now it only feeds the '
+              'RESUME label, and an offer push is the way back without a tap');
     });
   });
 }

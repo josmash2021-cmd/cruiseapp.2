@@ -315,8 +315,6 @@ class DriverNavViewState extends State<DriverNavView>
   // sliders stay the trip-flow authority.
   int _arriveHits = 0;
   bool _navArrived = false;
-  // One auto-raise per arrival (see _recomputeNavPhase) — reset on leg flip.
-  bool _endRouteRaised = false;
   bool _navApproaching = false;
   static const _arriveRadiusM = 30.0;
   static const _arriveAccuracyM = 25.0;
@@ -506,20 +504,10 @@ class DriverNavViewState extends State<DriverNavView>
     final next = _derivePhase();
     if (next == _navPhase) return;
     setState(() => _navPhase = next);
-    // Arrival raises the sheet ONCE so the in-sheet End Route is actually
-    // visible (user spec 2026-09-17) — a driver who dragged it back down
-    // keeps it there; a leg flip re-arms the raise.
-    final arrivedNow =
-        next == _NavPhase.arrivedPickup || next == _NavPhase.arrivedDropoff;
-    if (arrivedNow && !_endRouteRaised) {
-      _endRouteRaised = true;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted || !_sheetCtrl.isAttached) return;
-        _sheetCtrl.animateTo(0.42,
-            duration: const Duration(milliseconds: 450),
-            curve: Curves.easeOutCubic);
-      });
-    }
+    // User spec 2026-09-27: arrival does NOT auto-raise the sheet anymore —
+    // the face keeps its collapsed summary and the driver drags it up by
+    // hand to reach the gold I've-arrived button (which still crossfades in
+    // via _endRouteVisible).
   }
 
   // ─────────────────────────────────────────────
@@ -1306,7 +1294,6 @@ class DriverNavViewState extends State<DriverNavView>
     _navApproaching = false;
     _arriveHits = 0;
     _headingSetAt = null; // the new leg re-anchors the heading freeze
-    _endRouteRaised = false;
     _offlineRetryTimer?.cancel();
     _offlineRetryAttempt = 0;
     _offlineKeepRoute = false;
@@ -2543,7 +2530,7 @@ class DriverNavViewState extends State<DriverNavView>
             ),
             child: Icon(
                 _endRouteVisible
-                    ? Icons.flag_rounded
+                    ? Icons.place_rounded
                     : _maneuverIcon(_maneuverType, _maneuverModifier),
                 key: ValueKey(
                     '${_endRouteVisible}_${_maneuverType}_$_maneuverModifier'),
@@ -2798,7 +2785,7 @@ class DriverNavViewState extends State<DriverNavView>
   }
 
   IconData _maneuverIcon(String type, String modifier) {
-    if (type == 'arrive') return Icons.flag_rounded;
+    if (type == 'arrive') return Icons.place_rounded;
     if (type == 'roundabout' || type == 'rotary') {
       return Icons.roundabout_left_rounded;
     }
@@ -2944,7 +2931,7 @@ class DriverNavViewState extends State<DriverNavView>
           HapticService.lightImpact();
           widget.onExit();
         },
-        icon: const Icon(Icons.flag_rounded, color: Colors.black, size: 20),
+        icon: const Icon(Icons.place_rounded, color: Colors.black, size: 20),
         label: Text(
           // "He llegado" (user spec 2026-09-19): the button only shows once
           // the driver is AT the client's place — it announces the arrival,
@@ -3044,8 +3031,9 @@ class DriverNavViewState extends State<DriverNavView>
         const SizedBox(height: 16),
         // On arrival the expanded content hands its slot to End Route (user
         // spec 2026-09-17): addresses, instructions, earnings and report fade
-        // out, the gold button fades in — same slot, one motion, and the
-        // sheet auto-raises once so the driver actually sees it.
+        // out, the gold button fades in — same slot, one motion. The sheet
+        // does NOT auto-raise (user spec 2026-09-27): the driver drags it up
+        // by hand when they want the button.
         AnimatedSwitcher(
           duration: const Duration(milliseconds: 320),
           switchInCurve: Curves.easeOutCubic,

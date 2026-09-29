@@ -407,9 +407,15 @@ void main() {
               'only shows once the driver is AT the client\'s place');
       expect(btn.contains('backgroundColor: _gold'), isTrue,
           reason: 'gold FILLED — never the outlined navy floater again');
-      expect(nav.contains('_endRouteRaised'), isTrue,
-          reason: 'the sheet auto-raises once on arrival so the button is '
-              'actually visible');
+      expect(btn.contains('Icons.place_rounded'), isTrue,
+          reason: 'user spec 2026-09-27: pin icon on the button — the flag '
+              'is gone');
+      expect(btn, isNot(contains('Icons.flag_rounded')));
+      expect(nav.contains('_endRouteRaised'), isFalse,
+          reason: 'user spec 2026-09-27: the sheet does NOT auto-raise on '
+              'arrival — the driver drags it up by hand');
+      expect(nav.contains('animateTo(0.42'), isFalse,
+          reason: 'no auto-raise animation remains in the nav view');
       final bar = bodyOf(nav, 'Widget _buildManeuverBar(S s) {', maxLen: 6400);
       expect(bar.contains('s.navExit'), isTrue,
           reason: 'the top bar keeps the quiet X — End Route is below');

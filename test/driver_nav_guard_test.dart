@@ -410,7 +410,7 @@ void main() {
       expect(nav.contains('_endRouteRaised'), isTrue,
           reason: 'the sheet auto-raises once on arrival so the button is '
               'actually visible');
-      final bar = bodyOf(nav, 'Widget _buildManeuverBar(S s) {', maxLen: 5300);
+      final bar = bodyOf(nav, 'Widget _buildManeuverBar(S s) {', maxLen: 6400);
       expect(bar.contains('s.navExit'), isTrue,
           reason: 'the top bar keeps the quiet X — End Route is below');
       expect(bar, isNot(contains('navEndRoute')));
@@ -613,6 +613,18 @@ void main() {
               'street name, which says nothing about the exit to take');
     });
 
+    test('the freeway exit number rides its own gold chip at the bar\'s '
+        'top-right (user spec 2026-09-27, Google-style "exit 157")', () {
+      final body = bodyOf(nav, 'Widget _buildManeuverBar(S s) {', maxLen: 4000);
+      expect(body.contains('exitLabel'), isTrue);
+      expect(
+          body.contains("RegExp(r'exit\\s+[0-9][0-9A-Za-z-]*'"), isTrue,
+          reason: 'the exit number parses out of the instruction text');
+      expect(body.contains('fontSize: useInstruction ? 18 : 22'), isTrue,
+          reason: 'the guide letters grew a step (user spec 2026-09-27: '
+              '"un poquito mas grande las letras")');
+    });
+
     test('the line is eaten forward-only, off the dot glide, cursor reset '
         'with fresh geometry', () {
       expect(nav.contains('void _trimRouteTo(LatLng pos)'), isTrue);
@@ -662,14 +674,18 @@ void main() {
           reason: 'furniture applies on style-load, after the navy/gold '
               'theme — layer writes before that fail silently');
     });
-    test('the display arrow snaps onto the route line (80 m), measurements '
-        'stay raw (user report 2026-09-19)', () {
+    test('the display arrow is ALWAYS on the route line, measurements stay '
+        'raw (user spec 2026-09-27: "la flecha no puede salirse de las '
+        'lineas")', () {
       expect(nav.contains('LatLng? _snapToNavRoute(LatLng p)'), isTrue);
       final body = bodyOf(nav, 'LatLng? _snapToNavRoute(LatLng p) {',
           maxLen: 500);
-      expect(body.contains('<= 80'), isTrue,
-          reason: 'the Find-My threshold — beyond it the fix is genuinely '
-              'off-route and snapping would teleport the car');
+      expect(body.contains('<= 80'), isFalse,
+          reason: 'the 80 m gate let the arrow float off the line — the '
+              'display position is now ALWAYS the route projection, any '
+              'distance; only measurements (off-route / arrival / trim) '
+              'keep the raw fix');
+      expect(body.contains('RouteSplice.projectOnSegment'), isTrue);
       final fix = bodyOf(nav, 'void _onGpsFix(Position pos) {', maxLen: 2600);
       expect(fix.contains('_snapToNavRoute(fixLL) ?? fixLL'), isTrue,
           reason: 'a house driveway is genuinely off the road — the arrow '
@@ -677,7 +693,8 @@ void main() {
       expect(fix.contains('RouteSplice.distanceToPolylineM(_routePts, fixLL)'),
           isTrue,
           reason: 'off-route detection must read the RAW fix, never the '
-              'snapped display point');
+              'snapped display point — that is what answers "did he take '
+              'the exit or not" in real time');
       final seed = bodyOf(nav, 'if (_dot.lat == null) {', maxLen: 500);
       expect(seed.contains('_snapToNavRoute(widget.initialDriverPos)'),
           isTrue,

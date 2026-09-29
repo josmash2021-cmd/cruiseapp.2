@@ -750,14 +750,14 @@ class DriverNavViewState extends State<DriverNavView>
     // off-route threshold tighten to 30 m without GPS noise rerouting.
     if (pos.accuracy > 65) return;
     final fixLL = LatLng(pos.latitude, pos.longitude);
-    // Display vs measurement (user report 2026-09-19, "la flecha fuera de
-    // las lineas del mapa"): the arrow rides the route LINE — a house
-    // driveway or a parking lot is genuinely off the road, and the raw fix
-    // floating in a block reads as a bug (worst at nav start, parked at
-    // the pickup address). Within 80 m the DISPLAY target snaps to the
-    // route's projection — the Find-My's discipline. Everything that
-    // MEASURES keeps the raw fix: the off-route check, the tangent, the
-    // trim cursor, the arrival latch.
+    // Display vs measurement (user specs 2026-09-19, "la flecha fuera de
+    // las lineas del mapa", y 2026-09-27, "la flecha no puede salirse de
+    // las lineas"): the arrow rides the route LINE — a house driveway or a
+    // parking lot is genuinely off the road, and the raw fix floating in a
+    // block reads as a bug. The DISPLAY target is ALWAYS the projection on
+    // the line now. Everything that MEASURES keeps the raw fix: the
+    // off-route check (which answers "did he take the exit or not" in real
+    // time), the tangent, the trim cursor, the arrival latch.
     final display = _snapToNavRoute(fixLL) ?? fixLL;
     // On the route, the tangent below is the arrow's ONLY compass (user
     // spec 2026-09-19, "que gire fluido, no de golpe"): GPS headings arrive
@@ -822,15 +822,20 @@ class DriverNavViewState extends State<DriverNavView>
     _checkOffRoute(fixLL);
   }
 
-  /// Nearest point on the drawn route within 80 m of [p] — beyond that the
-  /// raw fix is the truth (genuinely off-route) and snapping would teleport
-  /// the car. Same threshold the Find-My's `_snapToRoad` uses.
+  /// The arrow's DISPLAY position: ALWAYS the nearest point on the drawn
+  /// route (user spec 2026-09-27: "la flecha no puede estar fuera de las
+  /// lineas") — any distance, no gate, so through curves and crossings the
+  /// arrow rides the line and turns with it in real time. The off-route
+  /// CHECK still reads the raw fix: the instant the driver misses an exit,
+  /// ramp or crossing, the 25 m / 600 ms hold fires the reroute, the
+  /// Rerouting pill tells him clearly, and the fresh line replaces under
+  /// the arrow — so "did he take it or not" is answered in real time by
+  /// the line itself, never by the arrow lying off-road.
   LatLng? _snapToNavRoute(LatLng p) {
     final pts = _routePts;
     if (pts.length < 2) return null;
     final seg = RouteSplice.closestSegmentIndex(pts, p);
-    final proj = RouteSplice.projectOnSegment(p, pts[seg], pts[seg + 1]);
-    return RouteSplice.haversineM(p, proj) <= 80 ? proj : null;
+    return RouteSplice.projectOnSegment(p, pts[seg], pts[seg + 1]);
   }
 
   /// Where the arrow should point when the GPS has nothing to say: along
@@ -1390,8 +1395,8 @@ class DriverNavViewState extends State<DriverNavView>
         'navRoute',
         [for (final p in pts) (lng: p.longitude, lat: p.latitude)],
         color: '#E8C547',
-        // 7 como en nativo (user spec 2026-09-27).
-        width: 7,
+        // 8 como en nativo (user spec 2026-09-27).
+        width: 8,
       );
       return;
     }
@@ -1622,8 +1627,8 @@ class DriverNavViewState extends State<DriverNavView>
               (lng: p.longitude, lat: p.latitude)
           ],
           color: '#E8C547',
-          // 7 como en nativo (user spec 2026-09-27).
-          width: 7,
+          // 8 como en nativo (user spec 2026-09-27).
+          width: 8,
         );
       }
       return;
@@ -1642,11 +1647,11 @@ class DriverNavViewState extends State<DriverNavView>
         _routeAnnot = await mgr.create(mapbox.PolylineAnnotationOptions(
           geometry: geom,
           lineColor: _gold.toARGB32(),
-          // 5.0 → 7.0 (user spec 2026-09-27, "la linea mas gruesa") — at 5
-          // the route read as a thread at chase zoom; 7 carries it. ROUND
-          // join + ROUND cap: the curve corners are eased, never pointed
-          // ("las esquinas de curva no punteagudas").
-          lineWidth: 7.0,
+          // 7.0 → 8.0 (user spec 2026-09-27, "un poco mas gruesa") — at 7
+          // the route still read thin under the new tilt; 8 carries it.
+          // ROUND join + ROUND cap: the curve corners are eased, never
+          // pointed ("las esquinas de curva no punteagudas").
+          lineWidth: 8.0,
           lineJoin: mapbox.LineJoin.ROUND,
         ));
         // line-cap va por capa (no es parámetro del annotation en este
@@ -2292,8 +2297,8 @@ class DriverNavViewState extends State<DriverNavView>
                                 (lng: p.longitude, lat: p.latitude)
                             ],
                             color: '#E8C547',
-                            // 7 como en nativo (user spec 2026-09-27).
-                            width: 7,
+                            // 8 como en nativo (user spec 2026-09-27).
+                            width: 8,
                           );
                         }
                       },
@@ -2500,6 +2505,17 @@ class DriverNavViewState extends State<DriverNavView>
         : (_maneuverDistLabel.isNotEmpty
             ? _maneuverDistLabel
             : _destDistLabel(s));
+    // The freeway exit badge (user spec 2026-09-27, Google-style): the exit
+    // number parsed out of the instruction ("Take exit 157 on the right
+    // onto Amphitheater Rd" → "exit 157"), in its own gold-bordered chip at
+    // the bar's top-right — a ramp is easier to spot by its number than by
+    // a sentence.
+    String? exitLabel;
+    if (useInstruction) {
+      final m = RegExp(r'exit\s+[0-9][0-9A-Za-z-]*', caseSensitive: false)
+          .firstMatch(_instructionLabel);
+      if (m != null) exitLabel = m.group(0);
+    }
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 14, 10, 14),
       decoration: BoxDecoration(
@@ -2546,10 +2562,11 @@ class DriverNavViewState extends State<DriverNavView>
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     color: Colors.white,
-                    // A full instruction sentence needs the second line and
-                    // a step down in size; a bare street name keeps the
-                    // big single-line treatment.
-                    fontSize: useInstruction ? 16 : 20,
+                    // Un poquito mas grande (user spec 2026-09-27): a full
+                    // instruction sentence needs the second line and a step
+                    // down in size; a bare street name keeps the big
+                    // single-line treatment.
+                    fontSize: useInstruction ? 18 : 22,
                     fontWeight: FontWeight.w800,
                     letterSpacing: -0.2,
                   ),
@@ -2561,7 +2578,7 @@ class DriverNavViewState extends State<DriverNavView>
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
                     color: _gold,
-                    fontSize: 15,
+                    fontSize: 17,
                     fontWeight: FontWeight.w700,
                   ),
                 ),
@@ -2572,13 +2589,38 @@ class DriverNavViewState extends State<DriverNavView>
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
                       color: Colors.white54,
-                      fontSize: 11,
+                      fontSize: 12,
                       fontWeight: FontWeight.w500,
                     ),
                   ),
               ],
             ),
           ),
+          // The exit badge, pinned at the bar's top-right inside the guide
+          // (user spec 2026-09-27).
+          if (exitLabel != null)
+            Align(
+              alignment: Alignment.topCenter,
+              child: Container(
+                margin: const EdgeInsets.only(left: 8, right: 4, top: 2),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                decoration: BoxDecoration(
+                  color: _gold.withValues(alpha: 0.14),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                      color: _gold.withValues(alpha: 0.55), width: 1.2),
+                ),
+                child: Text(
+                  exitLabel,
+                  style: const TextStyle(
+                    color: _gold,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+            ),
           // Way back to the trip sheet — navigation never traps the driver.
           // The arrival close action lives at the bottom, under the stage
           // control (_buildEndRouteButton); the bar keeps the quiet X.

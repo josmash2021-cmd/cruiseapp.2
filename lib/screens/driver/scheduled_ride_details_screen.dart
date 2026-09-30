@@ -324,7 +324,8 @@ class _ScheduledRideDetailsScreenState extends State<ScheduledRideDetailsScreen>
         ? DateFormat('EEEE d MMMM, h:mm a').format(scheduledAt.toLocal())
         : '';
 
-    final canStart = _secondsRemaining <= 900; // Can start 15 min early
+    // Opens 30 min before pickup (user spec 2026-09-30).
+    final canStart = _secondsRemaining <= 1800;
 
     return Scaffold(
       backgroundColor: neuBase,
@@ -389,24 +390,38 @@ class _ScheduledRideDetailsScreenState extends State<ScheduledRideDetailsScreen>
                   radius: 100,
                   borderColor: _gold.withValues(alpha: 0.2),
                 ),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Text(
-                      _secondsRemaining <= 0 ? loc.nowLabel.toUpperCase() : _countdownText,
-                      style: TextStyle(
-                        color: _secondsRemaining <= 0 ? Colors.green : _gold,
-                        fontSize: _secondsRemaining <= 0 ? 32 : 36,
-                        fontWeight: FontWeight.w900,
-                        fontFeatures: const [FontFeature.tabularFigures()],
+                // Everything inside the coin, on ONE centred line (user
+                // report 2026-09-30: "1h 24m" wrapped and "57s" spilled out
+                // of the circle): FittedBox scales the countdown down to the
+                // padded width instead of wrapping it.
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 22),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Text(
+                          _secondsRemaining <= 0
+                              ? loc.nowLabel.toUpperCase()
+                              : _countdownText,
+                          maxLines: 1,
+                          style: TextStyle(
+                            color: _secondsRemaining <= 0 ? Colors.green : _gold,
+                            fontSize: _secondsRemaining <= 0 ? 32 : 40,
+                            fontWeight: FontWeight.w900,
+                            fontFeatures: const [FontFeature.tabularFigures()],
+                          ),
+                        ),
                       ),
-                    ),
-                    if (_secondsRemaining > 0)
-                      Text(
-                        loc.forPickup,
-                        style: const TextStyle(color: Colors.white54, fontSize: 12),
-                      ),
-                  ],
+                      if (_secondsRemaining > 0)
+                        Text(
+                          loc.forPickup,
+                          style: const TextStyle(
+                              color: Colors.white54, fontSize: 12),
+                        ),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -432,21 +447,21 @@ class _ScheduledRideDetailsScreenState extends State<ScheduledRideDetailsScreen>
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                      // Pickup
+                      // Pickup → dropoff rail, same dots + connector as the
+                      // booking address entry (user spec 2026-09-30): gold
+                      // dot over the thin line over the white dot — never the
+                      // generic green/red bullets.
                       _addressRow(
-                        icon: Icons.circle,
-                        color: Colors.green,
+                        color: _gold,
                         label: S.of(context).pickupUpperLabel,
                         address: pickup,
                       ),
                       Padding(
                         padding: const EdgeInsets.only(left: 7),
-                        child: Container(width: 2, height: 20, color: Colors.white12),
+                        child: Container(width: 1.5, height: 20, color: Colors.white12),
                       ),
-                      // Dropoff
                       _addressRow(
-                        icon: Icons.circle,
-                        color: _red,
+                        color: Colors.white,
                         label: S.of(context).dropoffUpperLabel,
                         address: dropoff,
                       ),
@@ -647,7 +662,7 @@ class _ScheduledRideDetailsScreenState extends State<ScheduledRideDetailsScreen>
                               : Text(
                                   canStart
                                       ? loc.startRideButton
-                                      : '${loc.availableInLabel} ${_formatMinutesAsTime((_secondsRemaining ~/ 60) - 15)}',
+                                      : '${loc.availableInLabel} ${_formatMinutesAsTime((_secondsRemaining ~/ 60) - 30)}',
                                   style: TextStyle(
                                     color: canStart ? Colors.black87 : Colors.white38,
                                     fontWeight: FontWeight.w800,
@@ -668,7 +683,6 @@ class _ScheduledRideDetailsScreenState extends State<ScheduledRideDetailsScreen>
   }
 
   Widget _addressRow({
-    required IconData icon,
     required Color color,
     required String label,
     required String address,
@@ -676,9 +690,19 @@ class _ScheduledRideDetailsScreenState extends State<ScheduledRideDetailsScreen>
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        // The booking rail's dot: filled circle with a soft ring of the
+        // same colour.
         Padding(
-          padding: const EdgeInsets.only(top: 2),
-          child: Icon(icon, color: color, size: 14),
+          padding: const EdgeInsets.only(top: 3),
+          child: Container(
+            width: 10,
+            height: 10,
+            decoration: BoxDecoration(
+              color: color,
+              shape: BoxShape.circle,
+              border: Border.all(color: color.withValues(alpha: 0.3), width: 2.5),
+            ),
+          ),
         ),
         const SizedBox(width: 10),
         Expanded(

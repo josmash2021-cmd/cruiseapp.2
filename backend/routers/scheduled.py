@@ -21,7 +21,11 @@ router = APIRouter(tags=["scheduled"])
 
 DRIVER_SHARE_RATE = 0.70
 # Lockout kicks in this many minutes before scheduled pickup
-LOCKOUT_MINUTES = 30
+# User spec 2026-09-30: no new offers in the hour before a claimed
+# scheduled pickup. The candidate-level enforcement lives in
+# routers/dispatch._find_nearest_drivers (upcoming_scheduled); this constant
+# is the poll/UI mirror of the same rule.
+LOCKOUT_MINUTES = 60
 # Minimum advance for marketplace (rides closer than this go through auto-dispatch)
 MIN_ADVANCE_MINUTES = 30
 
@@ -875,7 +879,8 @@ async def drop_scheduled_trip(
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 async def driver_is_locked_for_scheduled(driver_id: int, db: AsyncSession) -> bool:
-    """Return True if driver has a scheduled ride starting within LOCKOUT_MINUTES."""
+    """Return True if driver has a scheduled ride starting within LOCKOUT_MINUTES
+    (60 per user spec 2026-09-30)."""
     now = datetime.now(timezone.utc)
     cutoff = now + timedelta(minutes=LOCKOUT_MINUTES)
     result = await db.execute(

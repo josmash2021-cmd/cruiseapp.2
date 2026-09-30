@@ -422,6 +422,28 @@ async def _find_nearest_drivers(
         .scalar_subquery()
     )
 
+    # User spec (2026-09-30): no offers in the HOUR before a claimed
+    # scheduled pickup. From that moment until the ride's dropoff the driver
+    # belongs to that rider — the "1 min from dropoff" unlock is the
+    # chained-trip mechanism in still_busy above (same ~1 mile window every
+    # other trip already gets). A pickup up to 5 min in the past still locks:
+    # the driver may be on the way to it right now.
+    _sched_lock_from = utc_now() - timedelta(minutes=5)
+    _sched_lock_until = utc_now() + timedelta(minutes=60)
+    upcoming_scheduled = (
+        select(Trip.id)
+        .where(
+            and_(
+                Trip.driver_id == User.id,
+                Trip.status.in_(["scheduled_accepted", "scheduled_active"]),
+                Trip.scheduled_at.isnot(None),
+                Trip.scheduled_at <= _sched_lock_until,
+                Trip.scheduled_at >= _sched_lock_from,
+            )
+        )
+        .exists()
+    )
+
     # Build WHERE conditions
     conditions = [
         User.role == "driver",
@@ -446,6 +468,8 @@ async def _find_nearest_drivers(
         # at once used to put ten cards on one phone, and accepting one
         # left nine stranded that nobody else had been given a chance at.
         ~User.id.in_(holding_subq),
+        # And nobody gets pulled off their next scheduled client.
+        ~upcoming_scheduled,
     ]
     if exclude_driver_ids:
         conditions.append(~User.id.in_(list(exclude_driver_ids)))

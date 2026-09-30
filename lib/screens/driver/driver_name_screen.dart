@@ -48,8 +48,14 @@ class _DriverNameScreenState extends State<DriverNameScreen> {
   @override
   void initState() {
     super.initState();
+    // Pre-fill what the account already has — same rule as the rider screen.
+    final first = (widget.user['first_name'] ?? '').toString().trim();
+    final last = (widget.user['last_name'] ?? '').toString().trim();
+    if (first.isNotEmpty && first != 'User') _firstCtrl.text = first;
+    if (last.isNotEmpty) _lastCtrl.text = last;
     _firstCtrl.addListener(_validate);
     _lastCtrl.addListener(_validate);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _validate());
   }
 
   @override

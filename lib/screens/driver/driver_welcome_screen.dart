@@ -216,6 +216,19 @@ class _DriverWelcomeScreenState extends State<DriverWelcomeScreen> {
       );
       return;
     }
+    // Same DOB rung as the rider (user spec 2026-09-30): a fresh account
+    // without a date of birth completes it at the name screen (drivers
+    // 25+), names pre-filled. Legacy drivers are untouched.
+    final dobText = (user['date_of_birth'] ?? '').toString().trim();
+    final createdAt = DateTime.tryParse('${user['created_at'] ?? ''}');
+    final freshAccount = createdAt != null &&
+        DateTime.now().difference(createdAt) < const Duration(minutes: 15);
+    if (dobText.isEmpty && freshAccount) {
+      Navigator.of(context).push(
+        onboardingFadeSlideRoute(DriverNameScreen(user: user)),
+      );
+      return;
+    }
     await DriverWelcomeScreen.routeExistingDriver(context, user);
   }
 

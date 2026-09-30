@@ -56,6 +56,50 @@ void main() {
     });
   });
 
+  group('every path lands on a DOB step (user spec 2026-09-30)', () {
+    test('fresh accounts without DOB route to the name screen — rider AND '
+        'driver welcome', () {
+      final rider = File('lib/screens/rider_welcome_screen.dart')
+          .readAsStringSync();
+      final driver = File('lib/screens/driver/driver_welcome_screen.dart')
+          .readAsStringSync();
+      for (final src in [rider, driver]) {
+        expect(src.contains('dobText.isEmpty && freshAccount'), isTrue,
+            reason: 'a NEW account (created minutes ago) without a date of '
+                'birth completes it at the name screen');
+        expect(src.contains('const Duration(minutes: 15)'), isTrue,
+            reason: 'scoped to fresh accounts — a legacy user logging in '
+                'must not be bounced into registration');
+      }
+      expect(rider.contains('RiderNameScreen(user: user)'), isTrue);
+      expect(driver.contains('DriverNameScreen(user: user)'), isTrue);
+    });
+
+    test('the name screens pre-fill the account names', () {
+      final rider = File('lib/screens/rider_name_screen.dart')
+          .readAsStringSync();
+      final driver = File('lib/screens/driver/driver_name_screen.dart')
+          .readAsStringSync();
+      for (final src in [rider, driver]) {
+        expect(src.contains("_firstCtrl.text = first"), isTrue,
+            reason: 'the DOB rung must not force re-typing names the '
+                'account already has');
+        expect(src.contains("first != 'User'"), isTrue,
+            reason: 'the Apple placeholder counts as empty');
+      }
+    });
+
+    test('computeAge uses the UTC ruler, exactly like the server', () {
+      final util =
+          File('lib/utils/date_of_birth.dart').readAsStringSync();
+      expect(util.contains('.toUtc()'), isTrue,
+          reason: 'an 18th/25th-birthday evening must not pass the app gate '
+              'and then bounce off the server gate (local date behind UTC)');
+      expect(computeAge(DateTime(2008, 9, 27), DateTime(2026, 9, 27)), 18);
+      expect(computeAge(DateTime(2008, 9, 28), DateTime(2026, 9, 27)), 17);
+    });
+  });
+
   group('backend gates (single source of truth in utils/helpers.py)', () {
     final helpers =
         File('backend/utils/helpers.py').readAsStringSync();

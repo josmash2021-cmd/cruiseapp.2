@@ -48,8 +48,16 @@ class _RiderNameScreenState extends State<RiderNameScreen> {
   @override
   void initState() {
     super.initState();
+    // Pre-fill what the account already has (DOB rung / social): the rider
+    // only picks the date. The provider's "User" placeholder (Apple stops
+    // sharing names after the first authorization) counts as empty.
+    final first = (widget.user['first_name'] ?? '').toString().trim();
+    final last = (widget.user['last_name'] ?? '').toString().trim();
+    if (first.isNotEmpty && first != 'User') _firstCtrl.text = first;
+    if (last.isNotEmpty) _lastCtrl.text = last;
     _firstCtrl.addListener(_validate);
     _lastCtrl.addListener(_validate);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _validate());
   }
 
   @override

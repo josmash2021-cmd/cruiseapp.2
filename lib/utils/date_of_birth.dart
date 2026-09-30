@@ -3,10 +3,14 @@ import 'package:flutter/material.dart';
 /// Age in full years at [today] (defaults to the device's current date) —
 /// the same birthday-not-yet arithmetic as backend `compute_age`.
 int computeAge(DateTime dob, [DateTime? today]) {
-  final now = today ?? DateTime.now();
-  var years = now.year - dob.year;
-  if (now.month < dob.month ||
-      (now.month == dob.month && now.day < dob.day)) {
+  // Pure calendar dates vs the UTC date — the exact ruler the backend's
+  // compute_age uses, so an 18th/25th birthday evening can't pass the app
+  // gate and then bounce off the server's (local date behind UTC).
+  final nowUtc = (today ?? DateTime.now()).toUtc();
+  final dUtc = DateTime.utc(dob.year, dob.month, dob.day);
+  var years = nowUtc.year - dUtc.year;
+  if (nowUtc.month < dUtc.month ||
+      (nowUtc.month == dUtc.month && nowUtc.day < dUtc.day)) {
     years--;
   }
   return years;

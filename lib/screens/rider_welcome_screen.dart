@@ -228,6 +228,21 @@ class _RiderWelcomeScreenState extends State<RiderWelcomeScreen> {
       );
       return;
     }
+    // DOB rung (user spec 2026-09-30): a NEW account without a date of
+    // birth completes it at the name screen (names come pre-filled — for a
+    // social account that is also where the provider's "User" placeholder
+    // gets fixed). Scoped to accounts created minutes ago: a legacy rider
+    // logging in must not be bounced into registration.
+    final dobText = (user['date_of_birth'] ?? '').toString().trim();
+    final createdAt = DateTime.tryParse('${user['created_at'] ?? ''}');
+    final freshAccount = createdAt != null &&
+        DateTime.now().difference(createdAt) < const Duration(minutes: 15);
+    if (dobText.isEmpty && freshAccount) {
+      Navigator.of(context).push(
+        onboardingFadeSlideRoute(RiderNameScreen(user: user)),
+      );
+      return;
+    }
     Navigator.of(context).pushAndRemoveUntil(
       smoothFadeRoute(const HomeScreen(), durationMs: 600),
       (_) => false,

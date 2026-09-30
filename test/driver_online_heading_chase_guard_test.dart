@@ -264,4 +264,28 @@ void main() {
       expect(body.contains('bearing: _heading'), isTrue);
     });
   });
+
+  group('zoom clone: the trailing-edge flush (user report 2026-09-27 — '
+      'pinch/double-tap duplicates the arrow)', () {
+    final map = File('lib/screens/driver/driver_online_map.dart')
+        .readAsStringSync();
+
+    test('a flush skipped on busy is re-fired when the channel drains', () {
+      final pendingSets =
+          RegExp(r'_annotFlushPending = true;').allMatches(map).length;
+      expect(pendingSets, greaterThanOrEqualTo(2),
+          reason: 'BOTH annotation paths (gold dot and nav car): a state '
+              'written while the channel was busy must be re-flushed — a '
+              'parked driver has no later caller, so the native side would '
+              'keep stale opacity/geometry and the overlay + annotation '
+              'draw two arrows');
+      final consumes =
+          RegExp(r'if \(_annotFlushPending\) \{').allMatches(map).length;
+      expect(consumes, greaterThanOrEqualTo(2));
+      final recalls = RegExp(r'Future\.microtask\(_updateDriverAnnotation\)')
+          .allMatches(map)
+          .length;
+      expect(recalls, greaterThanOrEqualTo(2));
+    });
+  });
 }

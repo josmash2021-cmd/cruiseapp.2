@@ -673,6 +673,13 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   bool _smoothTickerStarted = false; // first start is deferred, restarts aren't
   bool _annotUpdateBusy =
       false; // prevents overlapping annotation update() IPC calls
+  // Latest-wins trailing edge for the flush above: a state written while the
+  // channel was busy never crosses — for a STATIONARY driver nobody else is
+  // guaranteed to re-call, so the native side keeps whatever opacity/
+  // geometry it last got (user report 2026-09-27: pinch/double-tap zoom
+  // clones the arrow — the overlay showed while the native hide sat
+  // unflushed). Set on every skipped flush, consumed in the finally.
+  bool _annotFlushPending = false;
 
   /// True once the native gold dot has been flushed to invisible, so the
   /// per-frame path can stop re-sending the same hide.

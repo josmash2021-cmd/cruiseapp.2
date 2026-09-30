@@ -178,8 +178,12 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
       if (overlayOwns && _goldDotHidden) return;
 
       // Fire update() only when previous IPC finished. If busy, the geometry
-      // write above already captured the latest position — no info lost.
-      if (_annotUpdateBusy) return;
+      // write above already captured the latest position — no info lost,
+      // because the finally of that in-flight call re-flushes us.
+      if (_annotUpdateBusy) {
+        _annotFlushPending = true;
+        return;
+      }
       _annotUpdateBusy = true;
       _diagAnnotUpdates++;
       try {
@@ -202,6 +206,10 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
         _goldDotHidden = false;
       } finally {
         _annotUpdateBusy = false;
+        if (_annotFlushPending) {
+          _annotFlushPending = false;
+          unawaited(Future.microtask(_updateDriverAnnotation));
+        }
       }
     } else if (isNav) {
       // ── Navigation mode: nav car icon ──
@@ -259,7 +267,10 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
         return;
       }
 
-      if (_annotUpdateBusy) return;
+      if (_annotUpdateBusy) {
+        _annotFlushPending = true;
+        return;
+      }
       _annotUpdateBusy = true;
       _diagAnnotUpdates++;
       try {
@@ -274,6 +285,10 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
         _carAnnotGen = 0;
       } finally {
         _annotUpdateBusy = false;
+        if (_annotFlushPending) {
+          _annotFlushPending = false;
+          unawaited(Future.microtask(_updateDriverAnnotation));
+        }
       }
     }
   }

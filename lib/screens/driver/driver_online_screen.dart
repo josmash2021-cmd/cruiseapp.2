@@ -165,6 +165,12 @@ class DriverOnlineScreen extends StatefulWidget {
   /// the provisional card comes back down. Carries the offer id to remove.
   static final ValueNotifier<int?> removeOfferNotifier = ValueNotifier(null);
 
+  /// The 12 h shift cap fired server-side (user spec 2026-09-27): the ghost
+  /// agent flipped the driver offline and pushed `driver_shift_ended`; this
+  /// is how the LIVE screen learns it — the app may have been open on the
+  /// searching map when the push landed.
+  static final ValueNotifier<int> shiftEndedNotifier = ValueNotifier(0);
+
   const DriverOnlineScreen({
     super.key,
     this.initialPos,
@@ -919,6 +925,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     DriverOnlineScreen.deepLinkOfferNotifier.addListener(_applyInjectedOffer);
     DriverOnlineScreen.removeOfferNotifier
         .addListener(_applyRemoveInjectedOffer);
+    DriverOnlineScreen.shiftEndedNotifier.addListener(_onShiftEndedPush);
     // A chained ride handed over by a cancelled trip: already locked on the
     // backend, so it runs the accept flow without re-locking — the same
     // route _handoffChainedOffer takes. Consumed once, never replayed.
@@ -1223,6 +1230,13 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   bool _resumingActiveTrip = false;
   // "El turno nunca se cerró": el pref leído al boot — el GO lee RESUME.
   bool _driverWasOnlineAtBoot = false;
+
+  /// The 12 h shift cap (user spec 2026-09-27): when the current shift
+  /// started locally + the 1-min check that closes it on time. The server
+  /// (ghost agent over `online_since`) is the truth with the app dead; this
+  /// is the live-UI half.
+  DateTime? _shiftStartedAt;
+  Timer? _shiftCapTimer;
   static bool _permsScreenShownThisProcess = false;
   // Los relojes del GO button (los nombres pelados los tiene la tarjeta de
   // oferta). Nullables: se crean post-frame como el resto de la entrada.
@@ -1463,6 +1477,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     DriverOnlineScreen.deepLinkOfferNotifier.removeListener(_applyInjectedOffer);
     DriverOnlineScreen.removeOfferNotifier
         .removeListener(_applyRemoveInjectedOffer);
+    DriverOnlineScreen.shiftEndedNotifier.removeListener(_onShiftEndedPush);
     if (_networkListener != null) {
       NetworkService().onlineNotifier.removeListener(_networkListener!);
       _networkListener = null;

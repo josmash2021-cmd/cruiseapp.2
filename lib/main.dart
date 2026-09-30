@@ -539,6 +539,13 @@ void _handleNotificationTap(RemoteMessage message) {
     return;
   }
 
+  // Driver: the 12 h shift cap fired server-side (user spec 2026-09-27) —
+  // flip the live UI to offline too.
+  if (type == 'driver_shift_ended') {
+    DriverOnlineScreen.shiftEndedNotifier.value++;
+    return;
+  }
+
   // Rider: scheduled ride starting → fetch trip and open tracking
   if (type == 'scheduled_trip_starting' || type == 'scheduled_claimed') {
     final tripId = int.tryParse(message.data['trip_id'] ?? '');

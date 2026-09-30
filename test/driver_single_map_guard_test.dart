@@ -36,7 +36,7 @@ void main() {
     test('enter/exit exist and own the channels and the backend', () {
       final enter = ctrl.indexOf('Future<void> _enterOnlineMode(');
       expect(enter, isNonNegative);
-      final enterBody = ctrl.substring(enter, enter + 2600);
+      final enterBody = ctrl.substring(enter, enter + 5000);
       expect(enterBody.contains('_goOnlineBackend()'), isTrue);
       expect(enterBody.contains('_connectSse()') ||
           enterBody.contains('_startPolling()'), isTrue,
@@ -114,7 +114,7 @@ void main() {
     test('the boot enters online only for real work entries', () {
       final boot = ctrl.indexOf('Future<void> _boot() async {');
       expect(boot, isNonNegative);
-      final body = ctrl.substring(boot, boot + 3200);
+      final body = ctrl.substring(boot, boot + 4400);
       expect(body.contains('_enterOnlineMode(resuming: true)'), isTrue,
           reason: 'only real work entries auto-enter: trip resume, offer '
               'tap, chained handoff');

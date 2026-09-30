@@ -269,6 +269,10 @@ class User(Base):
     # phone onboarding, legacy register) and age-gated server-side on every
     # write — riders 18+, drivers 25+ (utils/helpers.py MIN_*_AGE).
     date_of_birth = Column(Date, nullable=True)
+    # When the current online shift started (2026-09-27): stamped on the
+    # offline→online flip, cleared going offline. The ghost agent caps shifts
+    # at 12 h (user spec: "la app no puede quedar prendida mas de 12 horas").
+    online_since = Column(DateTime(timezone=True), nullable=True)
 
 
 class ConsentLog(Base):
@@ -1096,6 +1100,7 @@ async def migrate_add_columns(conn):
         # DOB at registration (2026-09-27) — in the boot lists or prod never
         # gets it (trampa #0).
         ("users", "date_of_birth", "DATE"),
+        ("users", "online_since", "DATETIME"),
     ]
     for table, col, col_type in new_columns:
         try:
@@ -1319,6 +1324,7 @@ async def migrate_postgres(conn):
         # DOB at registration (2026-09-27) — boot list or prod never gets it
         # (trampa #0).
         ("users", "date_of_birth", "DATE"),
+        ("users", "online_since", "TIMESTAMP WITH TIME ZONE"),
     ]
     for table, col, col_type in migrations:
         try:

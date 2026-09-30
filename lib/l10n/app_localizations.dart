@@ -1189,6 +1189,10 @@ class S {
   String enterCodeSentTo(String contact) => _es
       ? 'Introduce el código enviado a $contact.'
       : 'Enter the code sent to $contact.';
+  // 12 h shift cap (2026-09-27): app timer + server-side push share it.
+  String get shiftEnded12h => _es
+      ? 'Estuviste en línea 12 horas — tu turno se cerró.'
+      : 'You were online for 12 hours — your shift ended.';
   // Registration date-of-birth gate (2026-09-27): riders 18+, drivers 25+.
   String dobMinAge(int age) => _es
       ? 'Debes tener al menos $age años.'

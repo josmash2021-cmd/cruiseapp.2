@@ -86,10 +86,18 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       // `driver_was_online` solo decide si el GO lee RESUME (turno vivo) o
       // GO (turno cerrado). La vía correcta de volver al turno sin tap es
       // la oferta de verdad: el push-tap entra online solo.
-      final wasOnline = await PrefsCache.instance
-          .then((p) => p.getBool('driver_was_online') ?? false);
+      final bootPrefs = await PrefsCache.instance;
+      final wasOnline = bootPrefs.getBool('driver_was_online') ?? false;
+      final wentOnlineAt = bootPrefs.getInt('driver_went_online_at');
+      // A "live shift" only lives 12 h (user spec 2026-09-27): past the cap
+      // the GO button reads GO, not RESUME — even if the app died mid-shift
+      // and nobody cleared the pref.
+      final shiftAlive = wasOnline &&
+          wentOnlineAt != null &&
+          DateTime.now().millisecondsSinceEpoch - wentOnlineAt <
+              const Duration(hours: 12).inMilliseconds;
       if (!mounted) return;
-      _driverWasOnlineAtBoot = wasOnline;
+      _driverWasOnlineAtBoot = shiftAlive;
       // ¿Entrar online de una? SOLO por una entrada de trabajo real:
       // resume de viaje, tap de oferta push, handoff encadenado. El pref
       // `driver_was_online` NO basta (user report 2026-09-27: "cuando el
@@ -1094,6 +1102,34 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       // aplica el flag en un request nuevo).
       _syncPosStreamMode();
       PrefsCache.instance.then((p) => p.setBool('driver_was_online', true));
+      // 12 h shift cap (user spec 2026-09-27): the ghost agent caps the
+      // shift server-side off online_since even with the app dead; this
+      // 1-min check is the live half — it also stamps when the shift
+      // started so the boot's RESUME label expires at the cap too.
+      _shiftStartedAt = DateTime.now();
+      PrefsCache.instance.then((p) => p.setInt(
+          'driver_went_online_at', _shiftStartedAt!.millisecondsSinceEpoch));
+      _shiftCapTimer?.cancel();
+      _shiftCapTimer = Timer.periodic(const Duration(minutes: 1), (_) {
+        final started = _shiftStartedAt;
+        if (started == null || !mounted || !_driverOnline) return;
+        if (DateTime.now().difference(started) >= const Duration(hours: 12)) {
+          unawaited(_exitOnlineMode().then((_) {
+            if (!mounted) return;
+            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+              content: Text(
+                S.of(context).shiftEnded12h,
+                style: const TextStyle(
+                    color: Colors.black, fontWeight: FontWeight.w600),
+              ),
+              backgroundColor: const Color(0xFFE8C547),
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12)),
+            ));
+          }));
+        }
+      });
       // Chime solo en un GO fresco (los resumes ya saben) — la transición
       // de ruta que lo congelaba murió con el push: no hay nada que esquivar.
       if (!resuming) {
@@ -1173,7 +1209,30 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     unawaited(_sweepPreviewOrphans());
     _syncPosStreamMode(); // foreground-only
     PrefsCache.instance.then((p) => p.setBool('driver_was_online', false));
+    PrefsCache.instance.then((p) => p.remove('driver_went_online_at'));
+    _shiftCapTimer?.cancel();
+    _shiftCapTimer = null;
+    _shiftStartedAt = null;
     _syncOfferLiveActivity();
+  }
+
+  /// The server-side half of the 12 h cap landing while the app is OPEN
+  /// (user spec 2026-09-27): the ghost agent flipped the shift off and
+  /// pushed — close the local turn the same way a manual offline would.
+  void _onShiftEndedPush() {
+    if (!mounted || !_driverOnline) return;
+    unawaited(_exitOnlineMode().then((_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(
+          S.of(context).shiftEnded12h,
+          style: const TextStyle(color: Colors.black, fontWeight: FontWeight.w600),
+        ),
+        backgroundColor: const Color(0xFFE8C547),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ));
+    }));
   }
 
   /// El flag de background del GPS va atado al modo (regla 2026-08-22):

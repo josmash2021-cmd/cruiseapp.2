@@ -1725,6 +1725,7 @@ async def go_offline(user: User = Depends(_get_current_user), db: AsyncSession =
     db_user = result.scalar_one_or_none()
     if db_user and db_user.is_online:
         db_user.is_online = False
+        db_user.online_since = None  # the 12 h shift clock stops with it
         if db_user.role == "driver":
             # Same retirement the location endpoint does — an offline driver
             # must hold no pending offers (late push taps raise dead cards).

@@ -51,7 +51,12 @@ class DriverWelcomeScreen extends StatefulWidget {
 
     if (approved) {
       Navigator.of(context).pushAndRemoveUntil(
-        slideFromRightRoute(const DriverOnlineScreen(resuming: true)),
+        // OFFLINE siempre (user spec 2026-09-27, "cuando abre la app ya esta
+        // online automaticamente"): `resuming: true` disparaba el modo
+        // online al terminar el login — el turno solo empieza con GO (o con
+        // una entrada de trabajo real: oferta push, viaje activo, que sus
+        // propias rutas resumen por su lado).
+        slideFromRightRoute(const DriverOnlineScreen()),
         (_) => false,
       );
     } else if (s == 'pending') {

@@ -54,6 +54,7 @@ async def _ghost_offline_push_enabled(db) -> bool:
     _flag_cache["at"] = now
     return _flag_cache["value"]
 STALE_LOCATION_HOURS = 24      # Ignore drivers with location older than this
+SHIFT_CAP_HOURS = 12           # User spec 2026-09-27: no shift runs past 12 h online
 
 # ── Ghost recovery phases (driver has an ACTIVE trip) ─────────────────
 RECOVERY_WARN_MINUTES = 10     # Phase 1: send "are you still there?" push
@@ -144,6 +145,7 @@ class GhostDriverAgent:
         now = datetime.now(timezone.utc)
         warn_cutoff = now - timedelta(minutes=WARN_AFTER_MINUTES)
         offline_cutoff = now - timedelta(minutes=OFFLINE_AFTER_MINUTES)
+        shift_cap_cutoff = now - timedelta(hours=SHIFT_CAP_HOURS)
 
         from models.database import User, Trip
 
@@ -180,8 +182,49 @@ class GhostDriverAgent:
 
             warned_count = 0
             offlined_count = 0
+            shift_capped_count = 0
 
             for driver in online_drivers:
+                # ── 12 H SHIFT CAP (user spec 2026-09-27) ─────────────
+                # "La app no puede quedar prendida mas de 12 horas": a shift
+                # never runs past 12 h of continuous online time, however
+                # active the driver is — that is the point of a cap, and it
+                # also retires the "forgot to disconnect" ghost that keeps
+                # heartbeating from a parked phone. Never mid-trip: the cap
+                # lands on the next scan once the trip closes.
+                since = driver.online_since
+                if since is not None:
+                    if since.tzinfo is None:
+                        # SQLite drops tzinfo — read as UTC.
+                        since = since.replace(tzinfo=timezone.utc)
+                    if since < shift_cap_cutoff:
+                        if driver.id in drivers_on_active_trip:
+                            continue  # never yank a driver with a rider aboard
+                        driver.is_online = False
+                        driver.online_since = None
+                        shift_capped_count += 1
+                        _warned_drivers.pop(driver.id, None)
+                        _recovery_phase.pop(driver.id, None)
+                        logger.warning(
+                            "[ShiftCap] OFFLINE driver #%d (%s) — shift hit "
+                            "%d h (online since %s)",
+                            driver.id, driver.first_name, SHIFT_CAP_HOURS,
+                            since.isoformat(),
+                        )
+                        if driver.fcm_token:
+                            self._send_shift_ended_push(driver)
+                        # Same retirement as a manual offline: no pending
+                        # offer outlives the flip.
+                        try:
+                            from routers.dispatch import expire_pending_offers_for_driver  # lazy: import cycle
+                            await expire_pending_offers_for_driver(db, driver.id, "12h shift cap")
+                        except Exception as _ee:
+                            logger.warning(
+                                "[ShiftCap] offer expiry failed for #%d: %s",
+                                driver.id, _ee)
+                        await self._sync_driver_offline(driver)
+                        continue
+
                 last_active = driver.last_active_at
                 if not last_active:
                     # No activity ever recorded — use created_at as fallback
@@ -277,7 +320,7 @@ class GhostDriverAgent:
                     _warned_drivers.pop(driver.id, None)
                     _recovery_phase.pop(driver.id, None)
 
-            if offlined_count > 0:
+            if offlined_count > 0 or shift_capped_count > 0:
                 await db.commit()
 
                 # Alert admin about mass ghost cleanup
@@ -288,6 +331,7 @@ class GhostDriverAgent:
             self._stats["scans"] += 1
             self._stats["ghosts_warned"] += warned_count
             self._stats["ghosts_offlined"] += offlined_count
+            self._stats["shifts_capped"] = self._stats.get("shifts_capped", 0) + shift_capped_count
             self._stats["last_scan_at"] = now.isoformat()
             self._stats["last_scan_duration_ms"] = round((time.time() - t0) * 1000, 1)
 
@@ -529,6 +573,24 @@ class GhostDriverAgent:
             )
         except Exception as e:
             logger.warning("[GhostDriver] Offline push failed for #%d: %s", driver.id, e)
+
+    def _send_shift_ended_push(self, driver):
+        """12 h cap: tell the driver the shift closed (app flips its UI live
+        off the data type)."""
+        try:
+            from services.fcm_service import _send_fcm_push
+            _send_fcm_push(
+                driver.fcm_token,
+                title="Te desconectamos",
+                body="Estuviste en línea 12 horas seguidas. "
+                     "Vuelve a conectarte cuando estés listo.",
+                data={
+                    "type": "driver_shift_ended",
+                    "driver_id": str(driver.id),
+                },
+            )
+        except Exception as e:
+            logger.warning("[ShiftCap] push failed for #%d: %s", driver.id, e)
 
     async def _sync_driver_offline(self, driver):
         """Update Firestore to reflect driver is now offline."""

@@ -303,6 +303,11 @@ async def update_driver_location(driver_id: int, body: DriverLocationIn, user: U
         user.is_online = body.is_online
         if body.is_online:
             user.last_active_at = utc_now()
+        # Shift clock (user spec 2026-09-27): the 12 h cap counts from the
+        # offline→online flip; going offline clears it. Stamped on the flip
+        # only — heartbeats must not restart it.
+        if _online_flipped:
+            user.online_since = utc_now() if body.is_online else None
         await db.commit()
         _driver_last_db_write[driver_id] = _now
 

@@ -109,7 +109,9 @@ class _DriverProfilePhotoScreenState extends State<DriverProfilePhotoScreen> {
         return;
       }
       Navigator.of(context).pushAndRemoveUntil(
-        slideFromRightRoute(const DriverOnlineScreen(resuming: true)),
+        // Misma regla que el login (2026-09-27): abrir OFFLINE — el turno
+        // empieza con GO.
+        slideFromRightRoute(const DriverOnlineScreen()),
         (_) => false,
       );
     } catch (e) {

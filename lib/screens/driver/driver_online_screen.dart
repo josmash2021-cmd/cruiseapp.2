@@ -29,6 +29,7 @@ import '../../widgets/route_connector_line.dart';
 import '../../widgets/map/circular_pin_renderer.dart';
 import '../../widgets/map/route_endpoint_markers.dart';
 import '../../services/gps_service.dart';
+import '../../services/road_snap_service.dart';
 import '../../services/heading_service.dart';
 import '../../services/earnings_privacy.dart';
 import '../../services/trip_firestore_service.dart';
@@ -656,6 +657,15 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   // marker never flickers between the lane and raw GPS.
   bool _routeSnapActive = false;
   int _snapSegIdx = -1;
+  // Road-snap while searching (user report 2026-09-27: arrow off the road
+  // lines at high zoom with no route to project onto). The service keeps a
+  // matched polyline of the streets actually driven; _snapToRoute projects
+  // onto it whenever _routePts is empty. _snapOnRouteSrc tracks which line
+  // the segment bookkeeping belongs to (route vs road line).
+  List<LatLng> _roadLinePts = const [];
+  bool _snapOnRouteSrc = true;
+  late final RoadSnapService _roadSnap = RoadSnapService()
+    ..onLine = _onRoadSnapLine;
   // Re-asserts the dot annotation while the smooth ticker is parked (driver
   // stationary). Without it a dot that failed to appear — or whose final
   // pop-scale flush was dropped mid-IPC — stays wrong until the driver moves.
@@ -1464,6 +1474,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     _navTimer?.cancel();
     _dotWatchdog?.cancel();
     _goldDot.dispose();
+    _roadSnap.reset(); // in-flight matching answers die with the screen
     _headingSub?.cancel();
     _headingSource.dispose();
     EarningsPrivacy.hidden.removeListener(_onEarningsPrivacyChanged);

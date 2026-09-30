@@ -339,7 +339,13 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     }
   }
 
-  /// Snap a raw GPS coordinate to the nearest point on the active route polyline.
+  /// Snap a raw GPS coordinate to the nearest point on the snap line.
+  ///
+  /// The line is the active route whenever one exists (offer preview,
+  /// routeSummary, enRoute, inTrip — the old phase gate left preview and
+  /// summary unsnapped, user report 2026-09-27); while searching there is
+  /// no route, so the line is the matched polyline the RoadSnapService
+  /// maintains from the driver's own trace. With neither, raw GPS.
   ///
   /// Hysteresis on the boundary, and continuity on the segment. The old flat
   /// 40 m in/out rule flickered: a fix at 39 m snapped to the lane, the next
@@ -349,20 +355,34 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
   /// the segment it was on unless another is clearly (8 m) closer — divided
   /// highways used to flip the marker between carriageways.
   LatLng _snapToRoute(LatLng raw) {
-    if (_routePts.length < 2 ||
-        (_phase != _Phase.enRouteToPickup && _phase != _Phase.inTrip)) {
+    final onRoute = _routePts.length >= 2;
+    final pts = onRoute ? _routePts : _roadLinePts;
+    if (pts.length < 2) {
       _routeSnapActive = false;
       _snapSegIdx = -1;
+      _snapOnRouteSrc = onRoute;
       return raw;
+    }
+    // Source switch (a route appeared, or vanished): the segment
+    // bookkeeping belongs to the old line. Leaving the route also means a
+    // fresh search — the road trace restarts with it.
+    if (_snapOnRouteSrc != onRoute) {
+      _snapOnRouteSrc = onRoute;
+      _routeSnapActive = false;
+      _snapSegIdx = -1;
+      if (onRoute) {
+        _roadLinePts = const [];
+        _roadSnap.reset();
+      }
     }
     double bestDist = double.infinity;
     LatLng best = raw;
     int bestIdx = -1;
-    for (int i = 0; i < _routePts.length - 1; i++) {
+    for (int i = 0; i < pts.length - 1; i++) {
       final candidate = _closestPointOnSegment(
         raw,
-        _routePts[i],
-        _routePts[i + 1],
+        pts[i],
+        pts[i + 1],
       );
       final d = _hav(raw, candidate);
       if (d < bestDist) {
@@ -373,9 +393,9 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     }
     // Lane continuity: keep the segment we are on unless another wins by a
     // real margin (8 m) — not by GPS noise. _hav is kilometres here.
-    if (_snapSegIdx >= 0 && _snapSegIdx < _routePts.length - 1) {
+    if (_snapSegIdx >= 0 && _snapSegIdx < pts.length - 1) {
       final prev = _closestPointOnSegment(
-          raw, _routePts[_snapSegIdx], _routePts[_snapSegIdx + 1]);
+          raw, pts[_snapSegIdx], pts[_snapSegIdx + 1]);
       final dPrev = _hav(raw, prev);
       if (dPrev < bestDist + 0.008) {
         best = prev;
@@ -387,11 +407,27 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     if (bestDist <= limitKm) {
       _routeSnapActive = true;
       _snapSegIdx = bestIdx;
+      // Road line only: eat it behind the driver so the matched polyline
+      // stays a local window (the route has its own trim).
+      if (!onRoute && bestIdx > 2) {
+        _roadLinePts = _roadLinePts.sublist(bestIdx - 2);
+        _snapSegIdx = 2;
+      }
       return best;
     }
     _routeSnapActive = false;
     _snapSegIdx = -1;
     return raw;
+  }
+
+  /// The RoadSnapService found a better street line: swap the projection
+  /// source (searching only — a live route always wins, and the service is
+  /// reset the moment a route appears).
+  void _onRoadSnapLine(List<LatLng> line) {
+    if (!mounted || line.length < 2) return;
+    _roadLinePts = line;
+    _routeSnapActive = false; // re-enter hysteresis against the new line
+    _snapSegIdx = -1;
   }
 
   /// Closest point on segment [a→b] to point [p] (flat lat/lng approximation).

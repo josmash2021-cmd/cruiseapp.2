@@ -1151,6 +1151,10 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     _scheduledPollTimer?.cancel();
     _pauseTimer?.cancel();
     _isPaused = false;
+    // The search trace belongs to the shift that just ended — forget it so
+    // the next online run starts the road-snap fresh.
+    _roadSnap.reset();
+    _roadLinePts = const [];
     // Offline de verdad: este sí silencia los uploads de posición (RTDB).
     _leavingOffline = true;
     _gpsService.stopTracking();
@@ -1474,6 +1478,14 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
         // needs them; only the display target is gated.
         final fixUsable = pos.accuracy <= 25;
         if (fixUsable) {
+          // Searching has no route to snap to — feed the road-matching
+          // trace (user report 2026-09-27: arrow off the road lines at
+          // high zoom). Gated on the map being alive and the app in front:
+          // a covered/backgrounded screen never draws the arrow, and
+          // matching calls are not free.
+          if (_routePts.length < 2 && _mapMounted && _appInForeground) {
+            _roadSnap.onFix(pos);
+          }
           // Snap to route polyline — prevents GPS drift off-road
           final snappedLL = _snapToRoute(newLL);
           _smoothMoveTo(snappedLL, _smoothedBearing,

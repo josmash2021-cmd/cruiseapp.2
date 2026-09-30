@@ -1984,6 +1984,30 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
   /// Continuous 60fps ticker — Google-Maps-style constant-velocity advance
   /// via [SmoothMotion]. Never resets, never stutters, keeps gliding at the
   /// measured speed between GPS fixes instead of decelerating into a stall.
+  /// The map's rotation chase (user report 2026-09-30: "la camara de las
+  /// pantallas del mapa del driver gira como paso a paso / cuadro por
+  /// cuadro"). The arrow's bearing can pulse with 1 Hz course noise even
+  /// after SmoothMotion; if the camera copies it per frame the whole view
+  /// steps with it. The camera instead trails the arrow at ≤60°/s with a
+  /// 0.2° deadband — real curves (10-30°/s) pass through untouched, noise
+  /// bursts arrive as one continuous sweep. The arrow itself is untouched.
+  double _chaseCamBearing(double target, double dtSec) {
+    final cur = _camChaseBearingValue ?? target;
+    var d = (target - cur) % 360;
+    if (d > 180) d -= 360;
+    if (d < -180) d += 360;
+    if (d.abs() <= 0.2) {
+      _camChaseBearingValue = cur;
+      return cur;
+    }
+    const maxDps = 60.0;
+    final maxStep = maxDps * dtSec;
+    final step = d.abs() <= maxStep ? d : (d > 0 ? maxStep : -maxStep);
+    final next = (cur + step) % 360;
+    _camChaseBearingValue = next < 0 ? next + 360 : next;
+    return _camChaseBearingValue!;
+  }
+
   void _onSmoothTick(Duration elapsed) {
     if (!mounted || _pos == null) return;
     _diagTicks++;
@@ -2069,6 +2093,10 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
         var bDiff = (camBearing - lastWrittenB).abs() % 360;
         if (bDiff > 180) bDiff = 360 - bDiff;
         if (bDiff <= 12) camBearing = lastWrittenB;
+      } else {
+        // Moving: the map trails the arrow's rotation at ≤60°/s (see
+        // _chaseCamBearing) — never stepping with course noise.
+        camBearing = _chaseCamBearing(_heading, dtSec);
       }
       // A parked car on a frozen bearing produces the IDENTICAL camera
       // every frame — skip ONLY the write (never the rest of the tick: the
@@ -2097,14 +2125,15 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
         );
       }
     } else if (isNav && _cameraFollowing) {
-      _cameraBearing = _heading;
-      _lastCamWriteBearing = _heading;
+      final camBearing = _chaseCamBearing(_heading, dtSec);
+      _cameraBearing = camBearing;
+      _lastCamWriteBearing = camBearing;
       _writeCamera(
         mapbox.CameraOptions(
           center: mapbox.Point(
               coordinates: mapbox.Position(_pos!.longitude, _pos!.latitude)),
           zoom: 17.5,
-          bearing: _heading,
+          bearing: camBearing,
           pitch: 55,
         ),
       );

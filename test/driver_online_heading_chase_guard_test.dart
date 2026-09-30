@@ -33,7 +33,7 @@ void main() {
         'heading, never north-up', () {
       final body = bodyOf(
           ctrl, "if (_phase == _Phase.searching && !offerActive && _cameraFollowing)",
-          maxLen: 3000);
+          maxLen: 4000);
       expect(body.contains('bearing: camBearing'), isTrue,
           reason: 'the chase must rotate with the arrow — bearing 0 was the '
               'north-up map that never turned');
@@ -49,7 +49,7 @@ void main() {
         'turn is real (user report 2026-09-27)', () {
       final body = bodyOf(
           ctrl, "if (_phase == _Phase.searching && !offerActive && _cameraFollowing)",
-          maxLen: 3000);
+          maxLen: 4000);
       expect(body.contains('_currentSpeedMph < 3'), isTrue,
           reason: 'the compass owns the arrow while parked — without the '
               'deadband, magnetometer drift swings the whole map');
@@ -132,7 +132,7 @@ void main() {
       final body = bodyOf(
           ctrl,
           'if (_phase == _Phase.searching && !offerActive && _cameraFollowing)',
-          maxLen: 3000);
+          maxLen: 4000);
       expect(body.contains('bearing: camBearing'), isTrue,
           reason: 'the chase rotates with the arrow online AND offline — '
               'same map, same arrow');
@@ -272,13 +272,16 @@ void main() {
     });
   });
 
-  group('nav phases untouched', () {
-    test('the tilted nav chase keeps 17.5/55 with the same bearing source', () {
+  group('nav phases keep their tilt, with the same rate-limited chase', () {
+    test('the tilted nav chase keeps 17.5/55 and now trails the arrow '
+        '(2026-09-30)', () {
       final body = bodyOf(ctrl, 'else if (isNav && _cameraFollowing) {',
-          maxLen: 500);
+          maxLen: 700);
       expect(body.contains('zoom: 17.5'), isTrue);
       expect(body.contains('pitch: 55'), isTrue);
-      expect(body.contains('bearing: _heading'), isTrue);
+      expect(body.contains('bearing: camBearing'), isTrue);
+      expect(body.contains('_chaseCamBearing(_heading, dtSec)'), isTrue,
+          reason: 'same arrow source — the camera just trails it at 60°/s');
     });
   });
 
@@ -303,6 +306,26 @@ void main() {
           .allMatches(map)
           .length;
       expect(recalls, greaterThanOrEqualTo(2));
+    });
+  });
+
+  group('camera rotation chase (user report 2026-09-30: "la camara gira '
+      'paso a paso / cuadro por cuadro")', () {
+    test('both driver maps trail the arrow at ≤60°/s with a deadband', () {
+      final ctrlSrc = File('lib/screens/driver/driver_online_controller.dart')
+          .readAsStringSync();
+      final navSrc =
+          File('lib/screens/driver/driver_nav_view.dart').readAsStringSync();
+      for (final src in [ctrlSrc, navSrc]) {
+        expect(src.contains('_chaseCamBearing('), isTrue,
+            reason: 'the camera must trail the arrow — copying it per frame '
+                'steps the view with 1 Hz course noise');
+        expect(src.contains('const maxDps = 60.0'), isTrue);
+        expect(src.contains('if (d.abs() <= 0.2)'), isTrue,
+            reason: 'the deadband parks the camera on micro-jitter');
+      }
+      expect(ctrlSrc.contains('_chaseCamBearing(_heading, dtSec)'), isTrue);
+      expect(navSrc.contains('_chaseCamBearing(_dot.bearing, dt)'), isTrue);
     });
   });
 

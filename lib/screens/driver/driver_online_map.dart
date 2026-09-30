@@ -2041,6 +2041,7 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     if (_previewingOffer != null) return;
     final bearing = _smoothedBearing;
     _cameraBearing = bearing; // sync for sprite selection
+    _camChaseBearingValue = null; // the rotation chase re-seeds on it
     if (_pos == null) {
       // No position to fly to, so there is no flight to wait out.
       _setState(() => _cameraFollowing = true);

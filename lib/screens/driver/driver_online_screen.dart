@@ -649,6 +649,11 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   LatLng? _lastCamWriteCenter;
   double? _lastCamWriteZoom;
 
+  /// The map's own rotation chase (user report 2026-09-30, "la camara gira
+  /// paso a paso / cuadro por cuadro"): the camera's bearing trails the
+  /// arrow's at ≤60°/s instead of copying it — see _chaseCamBearing.
+  double? _camChaseBearingValue;
+
   /// Suppresses the manual-rotate unlatch while a programmatic flyTo runs:
   /// its intermediate bearings legitimately differ from the follow write.
   DateTime _camFlightUntil = DateTime(2000);

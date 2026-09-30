@@ -44,6 +44,19 @@ class HeadingService {
   /// see on a 32-point arrow and it removes most of the traffic.
   static const double _compassDeadBandDeg = 0.5;
 
+  /// Circular EMA applied to the compass branch (user report 2026-09-27:
+  /// "la flecha gira paso a paso y a veces se mueve hasta estabilizarse").
+  /// Raw magnetometer headings arrive in steps of several degrees, and each
+  /// step used to be forwarded raw — the arrow hopped and the heading-up
+  /// camera swung with it. At the sensor's ~20 Hz an alpha of 0.08 is a
+  /// ~0.4 s time constant: sensor steps arrive as one smooth sweep, while a
+  /// real turn still lands fast enough to read as instant. Applied to the
+  /// compass ONLY — the GPS course while driving belongs to SmoothMotion's
+  /// turn-rate channel (pre-lagging it there poisoned that measurement,
+  /// 2026-09-25).
+  static const double _compassAlpha = 0.08;
+  double? _compassEma;
+
   /// Fastest we will forward compass readings. Android delivers them at up to
   /// 60 Hz; the marker turns at a fixed rate per second regardless, so
   /// anything past ~20 Hz is work nobody can see.
@@ -101,7 +114,19 @@ class HeadingService {
     // reports negative values while the heading is invalid.
     if (h == null || h.isNaN || h.isInfinite || h < 0) return;
     _compass = h % 360;
-    if (!usingCourse) _emit(_compass!, deadBand: _compassDeadBandDeg);
+    // Circular EMA over the shortest arc (359° → 1° moves +2°, not −358°).
+    // Tracks in the background while the GPS course owns the arrow, so the
+    // switch back to compass opens on a settled value, not a stale one.
+    final ema = _compassEma;
+    if (ema == null) {
+      _compassEma = _compass;
+    } else {
+      var delta = (_compass! - ema) % 360;
+      if (delta > 180) delta -= 360;
+      if (delta < -180) delta += 360;
+      _compassEma = (ema + delta * _compassAlpha) % 360;
+    }
+    if (!usingCourse) _emit(_compassEma!, deadBand: _compassDeadBandDeg);
   }
 
   /// Feed every GPS fix. Decides which source is in charge from this point on.
@@ -142,7 +167,7 @@ class HeadingService {
       // Dropping back to the compass at a standstill: send its current
       // reading straight away rather than waiting for the sensor's next
       // event, so the arrow does not hold the last driving course.
-      _emit(_compass!, deadBand: _compassDeadBandDeg);
+      _emit(_compassEma ?? _compass!, deadBand: _compassDeadBandDeg);
     }
   }
 

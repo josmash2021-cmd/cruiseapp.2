@@ -637,6 +637,12 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   /// divergence is what unlatches follow instead of fighting the finger.
   double? _lastCamWriteBearing;
 
+  /// Center/zoom of the last chase write (user report 2026-09-27): with the
+  /// bearing frozen while parked, an unchanged camera is not re-written —
+  /// 60 identical channel calls a second for a no-op.
+  LatLng? _lastCamWriteCenter;
+  double? _lastCamWriteZoom;
+
   /// Suppresses the manual-rotate unlatch while a programmatic flyTo runs:
   /// its intermediate bearings legitimately differ from the follow write.
   DateTime _camFlightUntil = DateTime(2000);

@@ -1995,17 +1995,48 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       // flat but rotates WITH the arrow — _heading is SmoothMotion's
       // per-frame lerped bearing, so the whole view sweeps fluidly as the
       // driver turns, exactly like the arrow itself.
-      _cameraBearing = _heading;
-      _lastCamWriteBearing = _heading;
-      _writeCamera(
-        mapbox.CameraOptions(
-          center: mapbox.Point(
-              coordinates: mapbox.Position(_pos!.longitude, _pos!.latitude)),
-          zoom: zoom,
-          bearing: _heading,
-          pitch: 0,
-        ),
-      );
+      //
+      // Parked/crawling (user report 2026-09-27, "la camara no sigue
+      // continuo y fluido; la flecha gira paso a paso y a veces se mueve
+      // hasta estabilizarse"): the compass owns the arrow there, and even
+      // EMA-smoothed magnetometer drift would swing the whole map with it.
+      // Under ~3 mph the map's rotation freezes unless the turn is real
+      // (>12° from the last write) — the arrow still turns inside a steady
+      // street grid, Lyft-style. Moving faster, the chase sweeps per frame
+      // exactly as before.
+      var camBearing = _heading;
+      final lastWrittenB = _lastCamWriteBearing;
+      if (_currentSpeedMph < 3 && lastWrittenB != null) {
+        var bDiff = (camBearing - lastWrittenB).abs() % 360;
+        if (bDiff > 180) bDiff = 360 - bDiff;
+        if (bDiff <= 12) camBearing = lastWrittenB;
+      }
+      // A parked car on a frozen bearing produces the IDENTICAL camera
+      // every frame — skip ONLY the write (never the rest of the tick: the
+      // arrow still turns via the marker repaint below) instead of paying
+      // 60 channel calls a second for a no-op. The zoom ease changes zoom
+      // per frame, so it always gets through.
+      final lastC = _lastCamWriteCenter;
+      final unchanged = lastC != null &&
+          (_pos!.latitude - lastC.latitude).abs() < 1e-7 &&
+          (_pos!.longitude - lastC.longitude).abs() < 1e-7 &&
+          (camBearing - (lastWrittenB ?? camBearing)).abs() < 0.05 &&
+          (zoom - (_lastCamWriteZoom ?? -1)).abs() < 1e-4;
+      if (!unchanged) {
+        _cameraBearing = camBearing;
+        _lastCamWriteBearing = camBearing;
+        _lastCamWriteCenter = _pos;
+        _lastCamWriteZoom = zoom;
+        _writeCamera(
+          mapbox.CameraOptions(
+            center: mapbox.Point(
+                coordinates: mapbox.Position(_pos!.longitude, _pos!.latitude)),
+            zoom: zoom,
+            bearing: camBearing,
+            pitch: 0,
+          ),
+        );
+      }
     } else if (isNav && _cameraFollowing) {
       _cameraBearing = _heading;
       _lastCamWriteBearing = _heading;

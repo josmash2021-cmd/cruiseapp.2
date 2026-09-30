@@ -29,19 +29,36 @@ void main() {
   }
 
   group('searching chase rotates heading-up, top-down (spec 2026-09-19)', () {
-    test('the per-frame searching write carries _heading, not north-up', () {
+    test('the per-frame searching write carries the (possibly frozen) '
+        'heading, never north-up', () {
       final body = bodyOf(
           ctrl, "if (_phase == _Phase.searching && !offerActive && _cameraFollowing)",
-          maxLen: 1800);
-      expect(body.contains('bearing: _heading'), isTrue,
+          maxLen: 3000);
+      expect(body.contains('bearing: camBearing'), isTrue,
           reason: 'the chase must rotate with the arrow — bearing 0 was the '
               'north-up map that never turned');
       expect(body.contains('pitch: 0'), isTrue,
           reason: 'top-down stays — the user asked rotation, not tilt');
-      expect(body.contains('_cameraBearing = _heading'), isTrue,
+      expect(body.contains('_cameraBearing = camBearing'), isTrue,
           reason: 'the overlay sprite selection syncs to the same bearing');
-      expect(body.contains('_lastCamWriteBearing = _heading'), isTrue,
+      expect(body.contains('_lastCamWriteBearing = camBearing'), isTrue,
           reason: 'the manual-rotate detector needs the last written value');
+    });
+
+    test('parked/crawling: the map rotation freezes under ~3 mph unless the '
+        'turn is real (user report 2026-09-27)', () {
+      final body = bodyOf(
+          ctrl, "if (_phase == _Phase.searching && !offerActive && _cameraFollowing)",
+          maxLen: 3000);
+      expect(body.contains('_currentSpeedMph < 3'), isTrue,
+          reason: 'the compass owns the arrow while parked — without the '
+              'deadband, magnetometer drift swings the whole map');
+      expect(body.contains('if (bDiff <= 12) camBearing = lastWrittenB;'),
+          isTrue,
+          reason: 'a real turn (>12°) still re-aims the map');
+      expect(body.contains('if (!unchanged) {'), isTrue,
+          reason: 'identical parked cameras are not re-written 60×/s — but '
+              'only the write is skipped, never the marker repaint below');
     });
 
     test('every searching reset flies to the current heading, never north',
@@ -115,8 +132,8 @@ void main() {
       final body = bodyOf(
           ctrl,
           'if (_phase == _Phase.searching && !offerActive && _cameraFollowing)',
-          maxLen: 1800);
-      expect(body.contains('bearing: _heading'), isTrue,
+          maxLen: 3000);
+      expect(body.contains('bearing: camBearing'), isTrue,
           reason: 'the chase rotates with the arrow online AND offline — '
               'same map, same arrow');
       expect(body.contains('_driverOnline'), isFalse,
@@ -286,6 +303,25 @@ void main() {
           .allMatches(map)
           .length;
       expect(recalls, greaterThanOrEqualTo(2));
+    });
+  });
+
+  group('compass EMA (user report 2026-09-27: the arrow turns in steps and '
+      'wanders before settling)', () {
+    final svc = File('lib/services/heading_service.dart').readAsStringSync();
+
+    test('the compass branch is low-passed; the GPS course stays raw', () {
+      expect(svc.contains('_compassAlpha = 0.08'), isTrue,
+          reason: '~0.4 s at the sensor 20 Hz — steps arrive as a sweep');
+      final onCompass =
+          bodyOf(svc, 'void _onCompass(CompassEvent e) {', maxLen: 1100);
+      expect(onCompass.contains('_compassEma'), isTrue);
+      expect(
+          bodyOf(svc, 'if (usingCourse) {', maxLen: 300)
+              .contains('_emit(_course!)'),
+          isTrue,
+          reason: 'the driving course stays RAW — pre-lagging it poisoned '
+              'SmoothMotion turn-rate measurement (2026-09-25)');
     });
   });
 }

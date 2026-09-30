@@ -45,18 +45,17 @@ void main() {
           reason: 'the manual-rotate detector needs the last written value');
     });
 
-    test('the rotation chase runs ALWAYS — the 12° parked freeze died '
-        '(user report 2026-09-30)', () {
+    test('the camera mirrors the arrow directly — no chase layer, no '
+        'freeze (user reports 2026-09-27/30)', () {
       final body = bodyOf(
           ctrl, "if (_phase == _Phase.searching && !offerActive && _cameraFollowing)",
           maxLen: 4000);
-      expect(body.contains('camBearing = _chaseCamBearing(_heading, dtSec);'),
-          isTrue,
-          reason: 'the chase deadband parks micro-jitter — the 12° freeze '
-              'chunked REAL slow turns into snaps (the regression the user '
-              'reported)');
+      expect(body.contains('final camBearing = _heading;'), isTrue,
+          reason: 'ONE source of truth for rotation: the arrow — its own '
+              'smoothing (compass EMA, adaptive blend, turn-rate glide) is '
+              'what the map shows, fluid and in real time at every speed');
       expect(body.contains('_currentSpeedMph < 3'), isFalse,
-          reason: 'no speed gate in the searching chase anymore');
+          reason: 'no speed gate — the 12° freeze chunked real slow turns');
       expect(body.contains('if (!unchanged) {'), isTrue,
           reason: 'identical parked cameras are still not re-written 60×/s');
     });
@@ -279,9 +278,9 @@ void main() {
           maxLen: 700);
       expect(body.contains('zoom: 17.5'), isTrue);
       expect(body.contains('pitch: 55'), isTrue);
-      expect(body.contains('bearing: camBearing'), isTrue);
-      expect(body.contains('_chaseCamBearing(_heading, dtSec)'), isTrue,
-          reason: 'same arrow source — the camera just trails it at 60°/s');
+      expect(body.contains('bearing: _heading'), isTrue,
+          reason: 'the tilted chase mirrors the arrow — the arrow IS the '
+              'rotation channel, no second filter on top');
     });
   });
 
@@ -309,23 +308,22 @@ void main() {
     });
   });
 
-  group('camera rotation chase (user report 2026-09-30: "la camara gira '
-      'paso a paso / cuadro por cuadro")', () {
-    test('both driver maps trail the arrow at ≤60°/s with a deadband', () {
+  group('camera rotation = mirror of the arrow (user reports '
+      '2026-09-27/30)', () {
+    test('NO chase layer survives in either driver map', () {
       final ctrlSrc = File('lib/screens/driver/driver_online_controller.dart')
           .readAsStringSync();
       final navSrc =
           File('lib/screens/driver/driver_nav_view.dart').readAsStringSync();
-      for (final src in [ctrlSrc, navSrc]) {
-        expect(src.contains('_chaseCamBearing('), isTrue,
-            reason: 'the camera must trail the arrow — copying it per frame '
-                'steps the view with 1 Hz course noise');
-        expect(src.contains('const maxDps = 60.0'), isTrue);
-        expect(src.contains('if (d.abs() <= 0.2)'), isTrue,
-            reason: 'the deadband parks the camera on micro-jitter');
+      final screenSrc = File('lib/screens/driver/driver_online_screen.dart')
+          .readAsStringSync();
+      for (final src in [ctrlSrc, navSrc, screenSrc]) {
+        expect(src.contains('_chaseCamBearing'), isFalse,
+            reason: 'the linear-rate chase read robotic — rotation belongs '
+                'to the arrow alone, the camera only mirrors it');
+        expect(src.contains('_camChaseBearingValue'), isFalse);
       }
-      expect(ctrlSrc.contains('_chaseCamBearing(_heading, dtSec)'), isTrue);
-      expect(navSrc.contains('_chaseCamBearing(_dot.bearing, dt)'), isTrue);
+      expect(navSrc.contains('bearing: _dot.bearing'), isTrue);
     });
 
     test('the turn-rate blend is adaptive — noise jumps earn less trust', () {

@@ -1756,29 +1756,6 @@ class DriverNavViewState extends State<DriverNavView>
   /// the marker never moves on screen — the map slides under it — so the
   /// camera is the only thing to write per frame. In freeLook / recentering
   /// / overview the chase writes nothing at all.
-  /// The map's own rotation chase (user report 2026-09-30, "la camara gira
-  /// paso a paso / cuadro por cuadro"): same deal as the online map — the
-  /// camera trails the arrow's bearing at ≤60°/s with a 0.2° deadband
-  /// instead of copying it, so 1 Hz course noise never steps the view.
-  double? _chaseCamBearingValue;
-
-  double _chaseCamBearing(double target, double dtSec) {
-    final cur = _chaseCamBearingValue ?? target;
-    var d = (target - cur) % 360;
-    if (d > 180) d -= 360;
-    if (d < -180) d += 360;
-    if (d.abs() <= 0.2) {
-      _chaseCamBearingValue = cur;
-      return cur;
-    }
-    const maxDps = 60.0;
-    final maxStep = maxDps * dtSec;
-    final step = d.abs() <= maxStep ? d : (d > 0 ? maxStep : -maxStep);
-    final next = (cur + step) % 360;
-    _chaseCamBearingValue = next < 0 ? next + 360 : next;
-    return _chaseCamBearingValue!;
-  }
-
   void _onDotFrame() {
     if (_camState != _CamState.following || _overview || !_mapMounted) {
       return;
@@ -1809,7 +1786,10 @@ class DriverNavViewState extends State<DriverNavView>
     _writeCamera(mapbox.CameraOptions(
       center: mapbox.Point(coordinates: mapbox.Position(lng, lat)),
       zoom: _chaseZoom,
-      bearing: _chaseCamBearing(_dot.bearing, dt),
+      // One source of truth for rotation, like the online map (2026-09-30):
+      // the camera carries the arrow's bearing as-is — every smoothing
+      // decision lives in the arrow itself.
+      bearing: _dot.bearing,
       pitch: _chasePitch,
       padding: mapbox.MbxEdgeInsets(top: topPad, left: 0, right: 0, bottom: 0),
     ));

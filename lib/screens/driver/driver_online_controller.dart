@@ -1984,30 +1984,6 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
   /// Continuous 60fps ticker — Google-Maps-style constant-velocity advance
   /// via [SmoothMotion]. Never resets, never stutters, keeps gliding at the
   /// measured speed between GPS fixes instead of decelerating into a stall.
-  /// The map's rotation chase (user report 2026-09-30: "la camara de las
-  /// pantallas del mapa del driver gira como paso a paso / cuadro por
-  /// cuadro"). The arrow's bearing can pulse with 1 Hz course noise even
-  /// after SmoothMotion; if the camera copies it per frame the whole view
-  /// steps with it. The camera instead trails the arrow at ≤60°/s with a
-  /// 0.2° deadband — real curves (10-30°/s) pass through untouched, noise
-  /// bursts arrive as one continuous sweep. The arrow itself is untouched.
-  double _chaseCamBearing(double target, double dtSec) {
-    final cur = _camChaseBearingValue ?? target;
-    var d = (target - cur) % 360;
-    if (d > 180) d -= 360;
-    if (d < -180) d += 360;
-    if (d.abs() <= 0.2) {
-      _camChaseBearingValue = cur;
-      return cur;
-    }
-    const maxDps = 60.0;
-    final maxStep = maxDps * dtSec;
-    final step = d.abs() <= maxStep ? d : (d > 0 ? maxStep : -maxStep);
-    final next = (cur + step) % 360;
-    _camChaseBearingValue = next < 0 ? next + 360 : next;
-    return _camChaseBearingValue!;
-  }
-
   void _onSmoothTick(Duration elapsed) {
     if (!mounted || _pos == null) return;
     _diagTicks++;
@@ -2087,14 +2063,14 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       // (>12° from the last write) — the arrow still turns inside a steady
       // street grid, Lyft-style. Moving faster, the chase sweeps per frame
       // exactly as before.
-      // The map's rotation trails the arrow's — ALWAYS through the chase
-      // (user report 2026-09-30: "de todos los cambios ahora la camara no
-      // gira fluido, gira paso a paso"). The 12° parked freeze I tried
-      // first chunked REAL slow turns into visible snaps; the chase's own
-      // 0.2° deadband parks micro-jitter instead, and the ≤60°/s cap sweeps
-      // everything else continuously. (The stoplight pre-rotation stays
-      // held by the arrow-side heading freeze — untouched by this.)
-      final camBearing = _chaseCamBearing(_heading, dtSec);
+      // Heading-up top-down chase (user spec 2026-09-19; reset 2026-09-30
+      // after the chase experiments): the camera simply carries the arrow's
+      // bearing — ONE source of truth for rotation. All the smoothing lives
+      // in the arrow (compass EMA, adaptive turn blend, SmoothMotion's
+      // turn-rate glide between 1 Hz fixes), so whatever the arrow does is
+      // what the map shows — fluid and in real time at every speed, with no
+      // second filter to step, lag or fight it.
+      final camBearing = _heading;
       final lastWrittenB = _lastCamWriteBearing;
       // A parked car on a frozen bearing produces the IDENTICAL camera
       // every frame — skip ONLY the write (never the rest of the tick: the
@@ -2123,15 +2099,14 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
         );
       }
     } else if (isNav && _cameraFollowing) {
-      final camBearing = _chaseCamBearing(_heading, dtSec);
-      _cameraBearing = camBearing;
-      _lastCamWriteBearing = camBearing;
+      _cameraBearing = _heading;
+      _lastCamWriteBearing = _heading;
       _writeCamera(
         mapbox.CameraOptions(
           center: mapbox.Point(
               coordinates: mapbox.Position(_pos!.longitude, _pos!.latitude)),
           zoom: 17.5,
-          bearing: camBearing,
+          bearing: _heading,
           pitch: 55,
         ),
       );

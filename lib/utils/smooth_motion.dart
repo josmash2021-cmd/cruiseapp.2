@@ -427,7 +427,14 @@ class SmoothMotion {
     var t = bearing % 360;
     if (t < 0) t += 360;
     // Measure the turn rate between consecutive samples, same discipline as
-    // the position velocity: sane spacing only, capped, blended 0.2/0.8.
+    // the position velocity: sane spacing only, capped, blended. 2026-09-30
+    // (user report: camera/arrow rotate in bursts through traffic): a flat
+    // 0.8-on-new passed every noisy 1 Hz course sample straight into v —
+    // the arrow pulsed and "se movia hasta estabilizarse" — while 0.4
+    // under-rotated real curves. Adaptive instead: real city turns
+    // (≤45°/s) earn fast tracking (0.7); bigger jumps — multipath noise
+    // bursts, never a street turn at course speed — earn only 0.25, so the
+    // burst train lands as one calm average.
     final now = DateTime.now();
     if (_lastBearingAt != null) {
       final dt = now.difference(_lastBearingAt!).inMilliseconds / 1000.0;
@@ -441,7 +448,8 @@ class SmoothMotion {
         }
         final measured =
             (d / dt).clamp(-_maxTurnRateDps, _maxTurnRateDps).toDouble();
-        _vBearing = _vBearing * 0.2 + measured * 0.8;
+        final w = measured.abs() > 45.0 ? 0.25 : 0.7;
+        _vBearing = _vBearing * (1 - w) + measured * w;
       }
     }
     _lastBearingAt = now;

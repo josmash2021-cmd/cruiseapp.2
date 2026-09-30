@@ -2087,17 +2087,15 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       // (>12° from the last write) — the arrow still turns inside a steady
       // street grid, Lyft-style. Moving faster, the chase sweeps per frame
       // exactly as before.
-      var camBearing = _heading;
+      // The map's rotation trails the arrow's — ALWAYS through the chase
+      // (user report 2026-09-30: "de todos los cambios ahora la camara no
+      // gira fluido, gira paso a paso"). The 12° parked freeze I tried
+      // first chunked REAL slow turns into visible snaps; the chase's own
+      // 0.2° deadband parks micro-jitter instead, and the ≤60°/s cap sweeps
+      // everything else continuously. (The stoplight pre-rotation stays
+      // held by the arrow-side heading freeze — untouched by this.)
+      final camBearing = _chaseCamBearing(_heading, dtSec);
       final lastWrittenB = _lastCamWriteBearing;
-      if (_currentSpeedMph < 3 && lastWrittenB != null) {
-        var bDiff = (camBearing - lastWrittenB).abs() % 360;
-        if (bDiff > 180) bDiff = 360 - bDiff;
-        if (bDiff <= 12) camBearing = lastWrittenB;
-      } else {
-        // Moving: the map trails the arrow's rotation at ≤60°/s (see
-        // _chaseCamBearing) — never stepping with course noise.
-        camBearing = _chaseCamBearing(_heading, dtSec);
-      }
       // A parked car on a frozen bearing produces the IDENTICAL camera
       // every frame — skip ONLY the write (never the rest of the tick: the
       // arrow still turns via the marker repaint below) instead of paying

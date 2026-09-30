@@ -45,20 +45,20 @@ void main() {
           reason: 'the manual-rotate detector needs the last written value');
     });
 
-    test('parked/crawling: the map rotation freezes under ~3 mph unless the '
-        'turn is real (user report 2026-09-27)', () {
+    test('the rotation chase runs ALWAYS — the 12° parked freeze died '
+        '(user report 2026-09-30)', () {
       final body = bodyOf(
           ctrl, "if (_phase == _Phase.searching && !offerActive && _cameraFollowing)",
           maxLen: 4000);
-      expect(body.contains('_currentSpeedMph < 3'), isTrue,
-          reason: 'the compass owns the arrow while parked — without the '
-              'deadband, magnetometer drift swings the whole map');
-      expect(body.contains('if (bDiff <= 12) camBearing = lastWrittenB;'),
+      expect(body.contains('camBearing = _chaseCamBearing(_heading, dtSec);'),
           isTrue,
-          reason: 'a real turn (>12°) still re-aims the map');
+          reason: 'the chase deadband parks micro-jitter — the 12° freeze '
+              'chunked REAL slow turns into snaps (the regression the user '
+              'reported)');
+      expect(body.contains('_currentSpeedMph < 3'), isFalse,
+          reason: 'no speed gate in the searching chase anymore');
       expect(body.contains('if (!unchanged) {'), isTrue,
-          reason: 'identical parked cameras are not re-written 60×/s — but '
-              'only the write is skipped, never the marker repaint below');
+          reason: 'identical parked cameras are still not re-written 60×/s');
     });
 
     test('every searching reset flies to the current heading, never north',
@@ -326,6 +326,16 @@ void main() {
       }
       expect(ctrlSrc.contains('_chaseCamBearing(_heading, dtSec)'), isTrue);
       expect(navSrc.contains('_chaseCamBearing(_dot.bearing, dt)'), isTrue);
+    });
+
+    test('the turn-rate blend is adaptive — noise jumps earn less trust', () {
+      final sm =
+          File('lib/utils/smooth_motion.dart').readAsStringSync();
+      expect(sm.contains('final w = measured.abs() > 45.0 ? 0.25 : 0.7;'),
+          isTrue,
+          reason: 'real city turns (≤45°/s) track fast; multipath bursts '
+              'land as one calm average — the flat 0.8 blend pulsed the '
+              'arrow through traffic');
     });
   });
 

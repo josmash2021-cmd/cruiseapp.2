@@ -14,6 +14,7 @@ import '../services/photo_recovery_service.dart';
 import '../widgets/dismiss_keyboard.dart';
 import '../services/user_session.dart';
 import '../services/google_auth_service.dart';
+import '../utils/date_of_birth.dart';
 import 'ready_to_ride_screen.dart';
 
 class ProfileReviewScreen extends StatefulWidget {
@@ -46,6 +47,24 @@ class _ProfileReviewScreenState extends State<ProfileReviewScreen> {
   bool _dropdownOpen = false;
   bool _saving = false;
 
+  /// Date of birth — required, riders must be at least 18 (user spec
+  /// 2026-09-27; the server re-gates register + PATCH /auth/me).
+  static const int _minAge = 18;
+  DateTime? _dob;
+
+  String get _dobIso {
+    final d = _dob!;
+    return '${d.year.toString().padLeft(4, '0')}-'
+        '${d.month.toString().padLeft(2, '0')}-'
+        '${d.day.toString().padLeft(2, '0')}';
+  }
+
+  Future<void> _pickDob() async {
+    final picked = await pickDateOfBirth(context, minAge: _minAge, initial: _dob);
+    if (picked == null || !mounted) return;
+    setState(() => _dob = picked);
+  }
+
   final List<String> _genderOptions = const [
     'Men',
     'Women',
@@ -58,6 +77,21 @@ class _ProfileReviewScreenState extends State<ProfileReviewScreen> {
     // registrations, and with no spinner the button looked dead while the
     // network worked.
     if (_saving) return;
+    // Age gate before anything moves (user spec 2026-09-27): a rider under
+    // 18 reads why instead of hitting a bare 400 from register/PATCH.
+    final dob = _dob;
+    if (dob == null || computeAge(dob) < _minAge) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(S.of(context).dobMinAge(_minAge),
+              style: const TextStyle(fontWeight: FontWeight.w600)),
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12)),
+        ),
+      );
+      return;
+    }
     setState(() => _saving = true);
     try {
     // Check if this is a social auth flow (Google/Apple)
@@ -95,7 +129,7 @@ class _ProfileReviewScreenState extends State<ProfileReviewScreen> {
         debugPrint('✅ Social auth successful');
 
         // Update additional profile fields (phone, etc.)
-        final updates = <String, dynamic>{};
+        final updates = <String, dynamic>{'date_of_birth': _dobIso};
         if (widget.phone.isNotEmpty) updates['phone'] = widget.phone;
         if (widget.firstName.isNotEmpty) updates['first_name'] = widget.firstName;
         if (widget.lastName.isNotEmpty) updates['last_name'] = widget.lastName;
@@ -155,6 +189,7 @@ class _ProfileReviewScreenState extends State<ProfileReviewScreen> {
           email: widget.email.isNotEmpty ? widget.email : null,
           phone: widget.phone.isNotEmpty ? widget.phone : null,
           password: pendingPass,
+          dateOfBirth: _dobIso,
         );
         final user = result['user'] as Map<String, dynamic>;
         userId = user['id'] as int?;
@@ -483,6 +518,47 @@ class _ProfileReviewScreenState extends State<ProfileReviewScreen> {
                         ),
                       ),
                       const SizedBox(height: 32),
+
+                      // ── Date of birth (required, 18+) — 2026-09-27 ──
+                      GestureDetector(
+                        onTap: _pickDob,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 16,
+                          ),
+                          decoration: BoxDecoration(
+                            color: c.surface,
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(
+                              color: _dob != null ? _gold : c.border,
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  _dob == null
+                                      ? S.of(context).dateOfBirth
+                                      : '${_dob!.month.toString().padLeft(2, '0')}/${_dob!.day.toString().padLeft(2, '0')}/${_dob!.year}',
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    color: _dob != null
+                                        ? c.textPrimary
+                                        : c.textTertiary,
+                                  ),
+                                ),
+                              ),
+                              Icon(
+                                Icons.calendar_month_rounded,
+                                color: c.textTertiary,
+                                size: 20,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
 
                       // ── Gender selector ──
                       GestureDetector(

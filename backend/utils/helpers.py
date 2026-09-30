@@ -330,6 +330,7 @@ def _user_dict(u) -> dict:
         "auth_provider": u.auth_provider or "password",
         "email_verified": u.email_verified or False,
         "email_verified_at": u.email_verified_at.isoformat() if u.email_verified_at else None,
+        "date_of_birth": u.date_of_birth.isoformat() if getattr(u, 'date_of_birth', None) else None,
         "background_check_status": u.background_check_status or "none",
         "background_check_completed_at": u.background_check_completed_at.isoformat() if u.background_check_completed_at else None,
         "created_at": u.created_at.isoformat() if u.created_at else None,
@@ -487,10 +488,14 @@ def _support_msg_dict(m, sender_name=""):
 
 
 # ═══════════════════════════════════════════════════════
-#  Driver minimum-age validation (21+) / Edad mínima de conductor
+#  Minimum-age validation (riders 18+ / drivers 25+) / Edad mínima
 # ═══════════════════════════════════════════════════════
 
-MIN_DRIVER_AGE = 21
+# User spec 2026-09-27: drivers 25+ (was 21 — raised at the owner's call),
+# riders 18+. One source of truth; the schema validator, /auth/register,
+# PATCH /auth/me and the background-check endpoint all read these.
+MIN_DRIVER_AGE = 25
+MIN_RIDER_AGE = 18
 
 
 def parse_date_of_birth(value) -> date:
@@ -520,7 +525,7 @@ def compute_age(dob: date, today: date | None = None) -> int:
     return years
 
 
-def validate_driver_minimum_age(value, minimum_age: int = MIN_DRIVER_AGE) -> date:
+def validate_minimum_age(value, minimum_age: int, who: str) -> date:
     """Parse a DOB and ensure the person is at least `minimum_age` years old.
 
     Returns the parsed date. Raises ValueError with a clear message otherwise.
@@ -531,6 +536,14 @@ def validate_driver_minimum_age(value, minimum_age: int = MIN_DRIVER_AGE) -> dat
         raise ValueError("Date of birth cannot be in the future")
     if age < minimum_age:
         raise ValueError(
-            f"Drivers must be at least {minimum_age} years old to drive with Cruise"
+            f"{who} must be at least {minimum_age} years old to use Cruise"
         )
     return dob
+
+
+def validate_driver_minimum_age(value, minimum_age: int = MIN_DRIVER_AGE) -> date:
+    return validate_minimum_age(value, minimum_age, "Drivers")
+
+
+def validate_rider_minimum_age(value, minimum_age: int = MIN_RIDER_AGE) -> date:
+    return validate_minimum_age(value, minimum_age, "Riders")

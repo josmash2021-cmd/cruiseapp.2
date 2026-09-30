@@ -23,7 +23,9 @@ class RegisterIn(BaseModel):
     password: str
     photo_url: Optional[str] = None
     role: str = "rider"
-    # YYYY-MM-DD. Required (and 21+) for drivers; optional for riders.
+    # YYYY-MM-DD. Required (and 25+, user spec 2026-09-27) for drivers;
+    # optional for riders in this legacy payload (the phone onboarding
+    # collects it at the name step) but age-gated 18+ whenever present.
     date_of_birth: Optional[str] = None
 
     @field_validator('first_name', 'last_name')
@@ -62,12 +64,16 @@ class RegisterIn(BaseModel):
 
     @model_validator(mode='after')
     def validate_driver_age(self):
-        """Drivers must provide a date of birth and be at least 21 years old."""
+        """Drivers must provide a date of birth and be at least 25 years old;
+        a rider DOB is optional here but is 18+-gated when present."""
         if self.role == 'driver':
             if not self.date_of_birth:
                 raise ValueError('Date of birth is required for driver registration')
             from utils.helpers import validate_driver_minimum_age
             validate_driver_minimum_age(self.date_of_birth)
+        elif self.date_of_birth:
+            from utils.helpers import validate_rider_minimum_age
+            validate_rider_minimum_age(self.date_of_birth)
         return self
 
 

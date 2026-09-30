@@ -4,7 +4,7 @@ import os
 import logging
 from datetime import datetime, timezone
 from sqlalchemy import (
-    Column, Integer, String, Float, Boolean, DateTime, ForeignKey, Text,
+    Column, Integer, String, Float, Boolean, Date, DateTime, ForeignKey, Text,
     UniqueConstraint, Index, text, func,
 )
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
@@ -265,6 +265,10 @@ class User(Base):
     dest_lng = Column(Float, nullable=True)
     dest_address = Column(String(255), nullable=True)
     dest_set_at = Column(DateTime(timezone=True), nullable=True)
+    # Date of birth (2026-09-27): collected at registration (name step of the
+    # phone onboarding, legacy register) and age-gated server-side on every
+    # write — riders 18+, drivers 25+ (utils/helpers.py MIN_*_AGE).
+    date_of_birth = Column(Date, nullable=True)
 
 
 class ConsentLog(Base):
@@ -1089,6 +1093,9 @@ async def migrate_add_columns(conn):
         ("users", "dest_lng", "FLOAT"),
         ("users", "dest_address", "VARCHAR(255)"),
         ("users", "dest_set_at", "DATETIME"),
+        # DOB at registration (2026-09-27) — in the boot lists or prod never
+        # gets it (trampa #0).
+        ("users", "date_of_birth", "DATE"),
     ]
     for table, col, col_type in new_columns:
         try:
@@ -1309,6 +1316,9 @@ async def migrate_postgres(conn):
         ("users", "dest_lng", "DOUBLE PRECISION"),
         ("users", "dest_address", "VARCHAR(255)"),
         ("users", "dest_set_at", "TIMESTAMP WITH TIME ZONE"),
+        # DOB at registration (2026-09-27) — boot list or prod never gets it
+        # (trampa #0).
+        ("users", "date_of_birth", "DATE"),
     ]
     for table, col, col_type in migrations:
         try:

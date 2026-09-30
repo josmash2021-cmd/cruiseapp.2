@@ -290,9 +290,9 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
   // earns $25 after their first 2 rides (redeemed right after register).
   final _refCodeCtrl = TextEditingController();
 
-  // Date of birth — drivers must be at least 21 (server re-validates).
+  // Date of birth — drivers must be at least 25 (server re-validates).
   DateTime? _dob;
-  static const int _minDriverAge = 21;
+  static const int _minDriverAge = 25;
 
   // ── Inline duplicate-check state ───────────────────────────────────────────
   String? _emailError;
@@ -363,7 +363,7 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
 
   Future<void> _pickDob() async {
     final now = DateTime.now();
-    // Neumorphic three-step picker: year (capped at 21+), month grid,
+    // Neumorphic three-step picker: year (capped at 25+), month grid,
     // then the day calendar of that month — each step slides in.
     final picked = await showDialog<DateTime>(
       context: context,
@@ -1448,7 +1448,7 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
     );
   }
 
-  /// Date-of-birth picker tile (Step 0). Shows the 21+ requirement and an
+  /// Date-of-birth picker tile (Step 0). Shows the 25+ requirement and an
   /// inline error when the selected date makes the driver underage.
   Widget _buildDobPicker() {
     final c = AppColors.of(context);

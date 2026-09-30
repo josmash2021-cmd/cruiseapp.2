@@ -896,11 +896,11 @@ class S {
   String get fieldHintConfirmPassword =>
       _es ? 'Confirma tu contraseña' : 'Confirm your password';
   String get driverAgeRequirement => _es
-      ? 'Debes tener al menos 21 años para conducir con Cruise.'
-      : 'You must be at least 21 years old to drive with Cruise.';
+      ? 'Debes tener al menos 25 años para conducir con Cruise.'
+      : 'You must be at least 25 years old to drive with Cruise.';
   String get driverAgeTooYoung => _es
-      ? 'Lo sentimos, debes tener al menos 21 años para registrarte como conductor.'
-      : 'Sorry, you must be at least 21 years old to sign up as a driver.';
+      ? 'Lo sentimos, debes tener al menos 25 años para registrarte como conductor.'
+      : 'Sorry, you must be at least 25 years old to sign up as a driver.';
   String get vehicleDetails =>
       _es ? 'Detalles del Vehículo' : 'Vehicle details';
   String get vehicleInfoSubtitle => _es
@@ -1189,6 +1189,10 @@ class S {
   String enterCodeSentTo(String contact) => _es
       ? 'Introduce el código enviado a $contact.'
       : 'Enter the code sent to $contact.';
+  // Registration date-of-birth gate (2026-09-27): riders 18+, drivers 25+.
+  String dobMinAge(int age) => _es
+      ? 'Debes tener al menos $age años.'
+      : 'You must be at least $age years old.';
 
   // ── Ride Options ──────────────────────────────────────────────────────────
   String get confirmRide => _es ? 'Confirmar Viaje' : 'Confirm Ride';

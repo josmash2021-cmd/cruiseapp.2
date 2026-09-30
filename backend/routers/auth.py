@@ -25,7 +25,7 @@ from utils.security import (
     revoke_token, _check_password_reset_rate, _record_password_reset,
     JWT_SECRET, JWT_ALGORITHM,
 )
-from utils.helpers import _safe_create_task, utc_now, _user_dict, _haversine, _trip_dict, _compute_user_rating, validate_driver_minimum_age, _name_matches
+from utils.helpers import _safe_create_task, utc_now, _user_dict, _haversine, _trip_dict, _compute_user_rating, validate_driver_minimum_age, validate_rider_minimum_age, parse_date_of_birth, MIN_DRIVER_AGE, MIN_RIDER_AGE
 from utils.image_validation import validate_image_bytes
 from services import vehicle_tiers
 from services.fcm_service import _send_fcm_push_async
@@ -192,6 +192,15 @@ async def logout(
 @router.post("/auth/register", dependencies=[Depends(_verify_api_key)])
 async def register(body: RegisterIn, db: AsyncSession = Depends(get_db)):
     role = body.role if body.role in ("rider", "driver") else "rider"
+    # The schema validator already age-gated this (drivers 25+, riders 18+
+    # when present) — parse once here so both the reactivation branches and
+    # the fresh create can store it.
+    dob = None
+    if body.date_of_birth:
+        try:
+            dob = parse_date_of_birth(body.date_of_birth)
+        except ValueError as e:
+            raise HTTPException(400, str(e))
     # Check duplicates per role ï¿½ allow same email/phone for different roles (driver vs rider)
     if body.email:
         exists = await db.execute(select(User).where(func.lower(User.email) == body.email.strip().lower(), User.role == role))
@@ -206,6 +215,8 @@ async def register(body: RegisterIn, db: AsyncSession = Depends(get_db)):
                 existing.photo_url = body.photo_url
                 existing.status = "active"
                 existing.deletion_requested_at = None
+                if dob is not None:
+                    existing.date_of_birth = dob
                 await db.commit()
                 await db.refresh(existing)
                 try:
@@ -228,6 +239,8 @@ async def register(body: RegisterIn, db: AsyncSession = Depends(get_db)):
                 existing.photo_url = body.photo_url
                 existing.status = "active"
                 existing.deletion_requested_at = None
+                if dob is not None:
+                    existing.date_of_birth = dob
                 await db.commit()
                 await db.refresh(existing)
                 try:
@@ -247,6 +260,7 @@ async def register(body: RegisterIn, db: AsyncSession = Depends(get_db)):
         password_plain=body.password,
         photo_url=body.photo_url,
         role=role,
+        date_of_birth=dob,
     )
     db.add(user)
     try:
@@ -1801,6 +1815,22 @@ async def update_me(request: Request, user: User = Depends(_get_current_user), d
             if key == "onboarding_survey" and val is not None and not isinstance(val, str):
                 raise HTTPException(400, "onboarding_survey must be a JSON string")
             setattr(db_user, key, val)
+    # Date of birth (user spec 2026-09-27): collected at registration and
+    # age-gated by role on EVERY write — riders 18+, drivers 25+ — so a
+    # later edit cannot drop below the minimum either. An empty value never
+    # clobbers a stored date.
+    if "date_of_birth" in updates:
+        _dob_val = updates["date_of_birth"]
+        if _dob_val is not None and (
+                not isinstance(_dob_val, str) or _dob_val.strip()):
+            try:
+                db_user.date_of_birth = (
+                    validate_driver_minimum_age(_dob_val)
+                    if db_user.role == "driver"
+                    else validate_rider_minimum_age(_dob_val)
+                )
+            except ValueError as e:
+                raise HTTPException(400, str(e))
     # Update last active timestamp
     db_user.last_active_at = datetime.now(timezone.utc)
     await db.commit()

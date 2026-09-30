@@ -1,9 +1,9 @@
-"""Tests for the minimum driver age (21+) enforcement.
+"""Tests for the minimum driver age (25+) enforcement.
 
 Covers the shared validation helper (utils.helpers.validate_driver_minimum_age)
 and the endpoints that enforce it:
-- POST /auth/register (driver role requires DOB, must be 21+)
-- POST /drivers/{id}/background-check (DOB already required, must be 21+)
+- POST /auth/register (driver role requires DOB, must be 25+)
+- POST /drivers/{id}/background-check (DOB already required, must be 25+)
 """
 
 from datetime import date, datetime, timedelta, timezone
@@ -40,6 +40,15 @@ def _dob_for_age(years: int, *, day_offset: int = 0) -> str:
     return dob.isoformat()
 
 
+
+
+def _h(token):
+    # The HMAC nonce is single-use — fresh signed headers per request or the
+    # middleware answers 401 "Replay detected".
+    from tests.conftest import _make_auth_headers
+    return {**_make_auth_headers(), "Authorization": f"Bearer {token}"}
+
+
 def _register_payload(dob: str | None) -> dict:
     payload = {
         "first_name": "Age",
@@ -73,19 +82,19 @@ def test_parse_date_of_birth_formats():
         parse_date_of_birth(None)
 
 
-def test_validate_minimum_age_accepts_exactly_21():
+def test_validate_minimum_age_accepts_exactly_25():
     dob = validate_driver_minimum_age(_dob_for_age(MIN_DRIVER_AGE))
     assert compute_age(dob) == MIN_DRIVER_AGE
 
 
-def test_validate_minimum_age_rejects_one_day_short_of_21():
-    with pytest.raises(ValueError, match="at least 21"):
+def test_validate_minimum_age_rejects_one_day_short_of_25():
+    with pytest.raises(ValueError, match=f"at least {MIN_DRIVER_AGE}"):
         validate_driver_minimum_age(_dob_for_age(MIN_DRIVER_AGE, day_offset=1))
 
 
-def test_validate_minimum_age_rejects_20():
-    with pytest.raises(ValueError, match="at least 21"):
-        validate_driver_minimum_age(_dob_for_age(20))
+def test_validate_minimum_age_rejects_24():
+    with pytest.raises(ValueError, match=f"at least {MIN_DRIVER_AGE}"):
+        validate_driver_minimum_age(_dob_for_age(24))
 
 
 def test_validate_minimum_age_rejects_future_dob():
@@ -97,7 +106,7 @@ def test_validate_minimum_age_rejects_future_dob():
 # ── POST /auth/register ───────────────────────────────────────────────────────
 
 @pytest.mark.asyncio
-async def test_register_driver_exactly_21_accepted(client: AsyncClient):
+async def test_register_driver_exactly_25_accepted(client: AsyncClient):
     from tests.conftest import _make_auth_headers
 
     resp = await client.post(
@@ -110,16 +119,16 @@ async def test_register_driver_exactly_21_accepted(client: AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_register_driver_under_21_rejected(client: AsyncClient):
+async def test_register_driver_under_25_rejected(client: AsyncClient):
     from tests.conftest import _make_auth_headers
 
     resp = await client.post(
         "/auth/register",
-        json=_register_payload(_dob_for_age(20)),
+        json=_register_payload(_dob_for_age(24)),
         headers=_make_auth_headers(),
     )
     assert resp.status_code == 422
-    assert "at least 21" in resp.text
+    assert f"at least {MIN_DRIVER_AGE}" in resp.text
 
 
 @pytest.mark.asyncio
@@ -164,17 +173,17 @@ async def test_register_rider_without_dob_still_allowed(client: AsyncClient):
 # ── POST /drivers/{id}/background-check ──────────────────────────────────────
 
 @pytest.mark.asyncio
-async def test_background_check_under_21_rejected(client: AsyncClient, test_driver):
+async def test_background_check_under_25_rejected(client: AsyncClient, test_driver):
     from tests.conftest import _make_auth_headers
 
     driver, token = test_driver
     resp = await client.post(
         f"/drivers/{driver.id}/background-check",
-        json={"dob": _dob_for_age(20)},
+        json={"dob": _dob_for_age(24)},
         headers={**_make_auth_headers(), "Authorization": f"Bearer {token}"},
     )
     assert resp.status_code == 400
-    assert "at least 21" in resp.json()["detail"]
+    assert f"at least {MIN_DRIVER_AGE}" in resp.json()["detail"]
 
 
 @pytest.mark.asyncio
@@ -202,3 +211,97 @@ async def test_background_check_missing_dob_rejected(client: AsyncClient, test_d
     )
     assert resp.status_code == 400
     assert "Date of birth is required" in resp.json()["detail"]
+
+
+
+# ── Rider age gate (18+, user spec 2026-09-27) ─────────────────────────────
+# Registered through the legacy payload when present, and through
+# PATCH /auth/me from the phone-onboarding name step.
+
+@pytest.mark.asyncio
+async def test_register_rider_18_accepted(client: AsyncClient):
+    from tests.conftest import _make_auth_headers
+
+    payload = _register_payload(_dob_for_age(18))
+    payload["role"] = "rider"
+    resp = await client.post(
+        "/auth/register", json=payload, headers=_make_auth_headers())
+    assert resp.status_code == 200, resp.text
+
+
+@pytest.mark.asyncio
+async def test_register_rider_under_18_rejected(client: AsyncClient):
+    from tests.conftest import _make_auth_headers
+
+    payload = _register_payload(_dob_for_age(17))
+    payload["role"] = "rider"
+    resp = await client.post(
+        "/auth/register", json=payload, headers=_make_auth_headers())
+    assert resp.status_code == 422
+    assert "at least 18" in resp.text
+
+
+@pytest.mark.asyncio
+async def test_patch_me_dob_rider_gate(client: AsyncClient, test_rider):
+    from tests.conftest import _make_auth_headers
+
+    rider, token = test_rider
+
+    resp = await client.patch(
+        "/auth/me", json={"date_of_birth": _dob_for_age(17)}, headers=_h(token))
+    assert resp.status_code == 400
+    assert "at least 18" in resp.json()["detail"]
+
+    resp = await client.patch(
+        "/auth/me", json={"date_of_birth": _dob_for_age(18)}, headers=_h(token))
+    assert resp.status_code == 200, resp.text
+
+
+@pytest.mark.asyncio
+async def test_patch_me_dob_driver_gate(client: AsyncClient, test_driver):
+    from tests.conftest import _make_auth_headers
+
+    driver, token = test_driver
+
+    resp = await client.patch(
+        "/auth/me",
+        json={"date_of_birth": _dob_for_age(MIN_DRIVER_AGE, day_offset=1)},
+        headers=_h(token))
+    assert resp.status_code == 400
+    assert f"at least {MIN_DRIVER_AGE}" in resp.json()["detail"]
+
+    resp = await client.patch(
+        "/auth/me",
+        json={"date_of_birth": _dob_for_age(MIN_DRIVER_AGE)},
+        headers=_h(token))
+    assert resp.status_code == 200, resp.text
+
+
+@pytest.mark.asyncio
+async def test_patch_me_dob_empty_never_clobbers(client: AsyncClient, test_rider):
+    from tests.conftest import _make_auth_headers
+
+    rider, token = test_rider
+    good = _dob_for_age(30)
+    resp = await client.patch(
+        "/auth/me", json={"date_of_birth": good}, headers=_h(token))
+    assert resp.status_code == 200, resp.text
+
+    # An empty write must not erase the stored date.
+    resp = await client.patch(
+        "/auth/me", json={"date_of_birth": ""}, headers=_h(token))
+    assert resp.status_code == 200, resp.text
+
+    resp = await client.get("/auth/me", headers=_h(token))
+    assert resp.json().get("date_of_birth") == good
+
+
+@pytest.mark.asyncio
+async def test_patch_me_dob_future_rejected(client: AsyncClient, test_rider):
+    from tests.conftest import _make_auth_headers
+
+    rider, token = test_rider
+    future = (date.today() + timedelta(days=30)).isoformat()
+    resp = await client.patch(
+        "/auth/me", json={"date_of_birth": future}, headers=_h(token))
+    assert resp.status_code == 400

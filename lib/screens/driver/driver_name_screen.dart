@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:intl/intl.dart';
 import '../../config/page_transitions.dart';
 import '../../l10n/app_localizations.dart';
 import '../../services/api_service.dart';
 import '../../services/user_session.dart';
+import '../../utils/date_of_birth.dart';
 import 'driver_email_screen.dart';
 
 /// Driver phone onboarding — step 3, only for brand-new accounts
@@ -31,6 +33,18 @@ class _DriverNameScreenState extends State<DriverNameScreen> {
   bool _saving = false;
   String? _errorText;
 
+  /// Date of birth — required, drivers must be at least 25 (user spec
+  /// 2026-09-27; the server re-gates every write at PATCH /auth/me).
+  static const int _minAge = 25;
+  DateTime? _dob;
+
+  String get _dobIso {
+    final d = _dob!;
+    return '${d.year.toString().padLeft(4, '0')}-'
+        '${d.month.toString().padLeft(2, '0')}-'
+        '${d.day.toString().padLeft(2, '0')}';
+  }
+
   @override
   void initState() {
     super.initState();
@@ -47,13 +61,21 @@ class _DriverNameScreenState extends State<DriverNameScreen> {
 
   void _validate() {
     final ok = _firstCtrl.text.trim().isNotEmpty &&
-        _lastCtrl.text.trim().isNotEmpty;
+        _lastCtrl.text.trim().isNotEmpty &&
+        _dob != null;
     if (ok != _canContinue || _errorText != null) {
       setState(() {
         _canContinue = ok;
         _errorText = null;
       });
     }
+  }
+
+  Future<void> _pickDob() async {
+    final picked = await pickDateOfBirth(context, minAge: _minAge, initial: _dob);
+    if (picked == null || !mounted) return;
+    setState(() => _dob = picked);
+    _validate();
   }
 
   Future<void> _continue() async {
@@ -66,10 +88,22 @@ class _DriverNameScreenState extends State<DriverNameScreen> {
     final first = _firstCtrl.text.trim();
     final last = _lastCtrl.text.trim();
 
+    // Age belt (the server re-gates): any past date is pickable — a driver
+    // under 25 reads why instead of hitting a bare 400.
+    final dob = _dob;
+    if (dob == null || computeAge(dob) < _minAge) {
+      setState(() {
+        _saving = false;
+        _errorText = S.of(context).dobMinAge(_minAge);
+      });
+      return;
+    }
+
     try {
       await ApiService.updateMe({
         'first_name': first,
         'last_name': last,
+        'date_of_birth': _dobIso,
       });
       await UserSession.saveUser(
         firstName: first,
@@ -166,6 +200,49 @@ class _DriverNameScreenState extends State<DriverNameScreen> {
                     const SizedBox(height: 16),
                     _field(_lastCtrl, S.of(context).lastNameLabel,
                         textCapitalization: TextCapitalization.words),
+                    const SizedBox(height: 16),
+                    // Date of birth — required; drivers 25+ (user spec
+                    // 2026-09-27).
+                    GestureDetector(
+                      onTap: _pickDob,
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.07),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(
+                              color: _dob != null
+                                  ? _gold
+                                  : Colors.white.withValues(alpha: 0.14)),
+                        ),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 18),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                _dob == null
+                                    ? S.of(context).dateOfBirth
+                                    : DateFormat('MM/dd/yyyy').format(_dob!),
+                                style: TextStyle(
+                                  color: _dob == null
+                                      ? Colors.white.withValues(alpha: 0.3)
+                                      : Colors.white,
+                                  fontSize: 17,
+                                  fontWeight: _dob == null
+                                      ? FontWeight.w400
+                                      : FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                            Icon(
+                              Icons.calendar_month_rounded,
+                              color: Colors.white.withValues(alpha: 0.45),
+                              size: 22,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
                     if (_errorText != null)
                       Padding(
                         padding: const EdgeInsets.only(top: 12, left: 4),

@@ -1012,6 +1012,22 @@ async def lifespan(app: FastAPI):
                             logging.error("[DB Init] Table %s NOT accessible from async engine: %s", tbl, _verify_err)
                             raise RuntimeError(f"Table {tbl} exists but is not accessible: {_verify_err}")
             
+            # Column migrations run at boot too (user spec 2026-09-30, "eso
+            # no deberia suceder receurda"): a new ORM column must reach prod
+            # WITH the deploy that carries it — never depend on someone
+            # remembering /admin/run-migrations. The list is idempotent
+            # (per-column information_schema existence check inside nested
+            # transactions), so a healthy boot pays only the SELECTs and a
+            # failed ALTER logs without blocking startup. INDEX creation
+            # stays manual (heavier DDL — the note below).
+            if not IS_SQLITE:
+                try:
+                    async with engine.begin() as conn:
+                        await _migrate_postgres(conn)
+                    logging.info("[DB Init] Column migrations applied (idempotent)")
+                except Exception as _mig_err:
+                    logging.error("[DB Init] column migration failed (non-fatal): %s", _mig_err)
+
             # NOTE: PostgreSQL index migrations moved to standalone script
             # (backend/run_migrations.py) to avoid running DDL on every boot.
             # Indexes are created with IF NOT EXISTS, but checking pg_indexes

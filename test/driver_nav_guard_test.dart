@@ -624,8 +624,11 @@ void main() {
       final body = bodyOf(nav, 'Widget _buildManeuverBar(S s) {', maxLen: 4000);
       expect(body.contains('exitLabel'), isTrue);
       expect(
-          body.contains("RegExp(r'exit\\s+[0-9][0-9A-Za-z-]*'"), isTrue,
-          reason: 'the exit number parses out of the instruction text');
+          body.contains(
+              "RegExp(r'(?:exit|salida)\\s+[0-9][0-9A-Za-z-]*'"), isTrue,
+          reason: 'the exit number parses out of the instruction text in '
+              'BOTH languages — the English-only regex died silently for '
+              'every Spanish driver (2026-09-30)');
       expect(body.contains('fontSize: useInstruction ? 18 : 22'), isTrue,
           reason: 'the guide letters grew a step (user spec 2026-09-27: '
               '"un poquito mas grande las letras")');

@@ -2502,7 +2502,11 @@ class DriverNavViewState extends State<DriverNavView>
     // a sentence.
     String? exitLabel;
     if (useInstruction) {
-      final m = RegExp(r'exit\s+[0-9][0-9A-Za-z-]*', caseSensitive: false)
+      // Both languages the instructions arrive in (2026-09-30): "Take exit
+      // 155" and "Tome la salida 155" — the English-only regex meant the
+      // chip died silently for every Spanish driver.
+      final m = RegExp(r'(?:exit|salida)\s+[0-9][0-9A-Za-z-]*',
+              caseSensitive: false)
           .firstMatch(_instructionLabel);
       if (m != null) exitLabel = m.group(0);
     }

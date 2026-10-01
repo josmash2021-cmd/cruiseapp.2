@@ -1506,6 +1506,12 @@ _RATE_WINDOW = 60         # per this many seconds
 
 @app.middleware("http")
 async def rate_limit_middleware(request: Request, call_next):
+    # Staging load-test escape hatch (NEVER set in prod): the per-IP tiers
+    # throttle real clients, and a load test IS thousands of clients from
+    # one build machine — without this we measured the limiter, not the
+    # server (the 429 storm of the first staging run).
+    if os.environ.get("RATE_LIMIT_OFF") == "1":
+        return await call_next(request)
     # Let CORS middleware handle OPTIONS preflight requests
     if request.method == "OPTIONS":
         return await call_next(request)

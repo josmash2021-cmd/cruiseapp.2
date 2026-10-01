@@ -38,6 +38,14 @@ _STORAGE_BUCKET = "cruise-af9f1.firebasestorage.app"
 # under it makes a network call, so it cannot stall the pool.
 _INIT_LOCK = threading.Lock()
 
+# Latch for "no Firebase credentials" (2026-10-01, found by the load test):
+# without it, EVERY heartbeat's sync re-ran the whole credential hunt and
+# re-logged the warning — hundreds of synchronous stdout writes a second,
+# and once Railway's 500 logs/s drain filled the pipe, write() blocked and
+# stalled the entire event loop. Credentials never materialize without a
+# redeploy, so once is enough.
+_no_creds = False
+
 # Wall-clock ceiling for a single Firestore RPC. Without it a wedged gRPC
 # channel hangs the calling worker (and any request waiting on it) forever.
 try:
@@ -64,10 +72,16 @@ def _ensure_init(force: bool = False):
     global _db, _fs_db, _bucket
     if _db is not None and not force:
         return
+    # The no-creds latch skips the lock entirely — no hunting, no warning,
+    # no serializing every heartbeat behind the log pipe.
+    if _no_creds and not force:
+        return
     with _INIT_LOCK:
         # Re-check under the lock — another thread may have finished while we
         # waited, in which case there is nothing left to do.
         if _db is not None and not force:
+            return
+        if _no_creds and not force:
             return
         if force:
             _teardown_app()
@@ -137,7 +151,9 @@ def _init_locked():
                 log.error("❌ Failed to load FIREBASE_SERVICE_ACCOUNT env var: %s", e)
 
     if cred is None:
-        log.warning("⚠️  No Firebase credentials found — Firestore sync disabled")
+        global _no_creds
+        _no_creds = True  # the latch — see the declaration for why
+        log.warning("⚠️  No Firebase credentials found — Firestore sync disabled (logged once; not retried per call)")
         return
 
     try:

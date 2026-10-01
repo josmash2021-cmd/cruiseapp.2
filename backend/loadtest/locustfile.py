@@ -32,7 +32,7 @@ import random
 import secrets
 import time
 
-from locust import FastHttpUser, between, task
+from locust import FastHttpUser, between, events, task
 
 API_KEY = os.environ.get("LT_API_KEY", "loadtest-key")
 HMAC_SECRET = os.environ.get("LT_HMAC_SECRET", "loadtest-secret")
@@ -42,6 +42,26 @@ _ids = itertools.count(1)
 # One synthetic city block — every sim lives inside it so dispatch always
 # has drivers in range of every booking.
 _BASE_LAT, _BASE_LNG = 25.7617, -80.1918
+
+
+@events.test_start.add_listener
+def _reset_staging_state(environment, **kwargs):
+    """Cancel zombie trips/offers and offline every test driver BEFORE the
+    spawn burst. A finished run leaves 'requested' trips behind that the
+    guardian agents re-dispatch forever; without a reset each run measures
+    the previous run's backlog."""
+    if environment.parsed_options and getattr(environment.parsed_options, "worker", False):
+        return
+    import requests
+    try:
+        r = requests.post(
+            f"{environment.host}/loadtest/reset",
+            headers=_signed(),
+            timeout=60,
+        )
+        print(f"[loadtest] reset: {r.status_code} {r.text[:200]}")
+    except Exception as e:
+        print(f"[loadtest] reset failed (continuing anyway): {e}")
 
 
 def _signed(token: str | None = None) -> dict:
@@ -88,7 +108,7 @@ class _Sim:
             catch_response=True,
         ) as res:
             if res.status_code != 200:
-                res.failure(f"auth {res.status_code}: {res.text[:120]}")
+                res.failure(f"auth {res.status_code}: {(res.text or '')[:120]}")
                 return False
             data = res.json()
         self.token = data["access_token"]
@@ -121,6 +141,7 @@ class DriverSim(_Sim, FastHttpUser):
     """Online driver: heartbeat + offer polling + trips."""
 
     role = "driver"
+    weight = 2  # 2:1 driver:rider — USERS=7500 means 5,000 drivers online
     wait_time = between(0.5, 1.0)
 
     def on_start(self):

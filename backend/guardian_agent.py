@@ -1285,7 +1285,6 @@ class UnmatchedTripRetryAgent:
             from models.database import Trip, DispatchOffer, User
             from utils.helpers import utc_now, _haversine
             from services.event_bus import event_bus
-            from services.fcm_service import _send_fcm_push
             from config import _pending_cache, OFFER_TIMEOUT_SECONDS, firestore_sync, _HAS_FIRESTORE
         except ImportError:
             return
@@ -1302,6 +1301,13 @@ class UnmatchedTripRetryAgent:
 
         async with self._db_session_maker() as db:
             # Find trips in "requested" status that have NO pending/accepted offers
+            #
+            # Capped + oldest-first (2026-10-01, load test): this pass runs on
+            # the 15s tick AND once per trip create (dispatch_pending_now), so
+            # an unbounded backlog made every create re-process every stuck
+            # trip — quadratic loop burn that starved the single uvicorn
+            # worker (py-spy caught the loop parsing rows here for seconds).
+            # 25 per pass drains a backlog in a few ticks without the spike.
             trips_result = await db.execute(
                 select(Trip).where(
                     and_(
@@ -1309,7 +1315,7 @@ class UnmatchedTripRetryAgent:
                         Trip.driver_id.is_(None),
                         Trip.created_at >= min_age,
                     )
-                )
+                ).order_by(Trip.created_at).limit(25)
             )
             stuck_trips = trips_result.scalars().all()
             if not stuck_trips:
@@ -1348,8 +1354,19 @@ class UnmatchedTripRetryAgent:
                 excluded_ids = {r[0] for r in prev_result.all()}
 
                 # Find eligible drivers
+                #
+                # Columns, not the full User row (2026-10-01, load test):
+                # select(User) drags every blob column (base64 photos, OCR
+                # text, docs) for EVERY online driver, and psycopg parses the
+                # result synchronously ON the event loop — with a stuck-trip
+                # backlog this scan ran per trip per pass and pinned the
+                # single worker for seconds at a time. The scan only needs
+                # id/coords for sort+filter and the push tokens for the send.
                 drivers_result = await db.execute(
-                    select(User).where(
+                    select(
+                        User.id, User.lat, User.lng, User.fcm_token,
+                        User.apns_la_activity_token, User.apns_la_start_token,
+                    ).where(
                         and_(
                             User.role == "driver",
                             User.is_online == True,
@@ -1361,7 +1378,7 @@ class UnmatchedTripRetryAgent:
                         )
                     )
                 )
-                drivers = drivers_result.scalars().all()
+                drivers = drivers_result.all()
                 if not drivers:
                     self._retries += 1
                     continue
@@ -1477,7 +1494,15 @@ class UnmatchedTripRetryAgent:
                         # Same instant-card payload as dispatch's offer push:
                         # the tap draws the card from this data, the server
                         # only confirms after (2026-08-09).
-                        _send_fcm_push(
+                        #
+                        # Async wrapper, not the sync sender (2026-10-01, load
+                        # test): _send_fcm_push does a blocking HTTPS call to
+                        # Google, and calling it bare here ran it ON the event
+                        # loop — every re-dispatch froze every other request
+                        # for the duration of that call.
+                        from services.fcm_service import _send_fcm_push_async
+                        from utils.helpers import _safe_create_task
+                        _safe_create_task(_send_fcm_push_async(
                             assigned.fcm_token,
                             title="New Ride Offer",
                             body="Open Cruise to accept.",
@@ -1501,7 +1526,7 @@ class UnmatchedTripRetryAgent:
                                 "offer_timeout_seconds": str(OFFER_TIMEOUT_SECONDS),
                             },
                             is_offer=True,
-                        )
+                        ))
                     except Exception:
                         pass
 

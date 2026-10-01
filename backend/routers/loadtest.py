@@ -12,7 +12,7 @@ import os
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -109,4 +109,51 @@ async def loadtest_auth(body: LoadTestAuthIn, db: AsyncSession = Depends(get_db)
         "refresh_token": refresh,
         "token_type": "bearer",
         "user": {"id": user.id, "role": user.role},
+    }
+
+
+@router.post("/loadtest/reset")
+async def loadtest_reset(db: AsyncSession = Depends(get_db)):
+    """Clean slate between runs: cancel every live test trip, expire every
+    pending test offer, and take every test driver offline.
+
+    Without this, trips a finished run left in 'requested' are re-dispatched
+    by the guardian agents forever — each re-dispatch is a fresh round of
+    offers, counter bumps and pushes, so the next run measures the backlog of
+    the previous one instead of the system.
+    """
+    if not _flag_on():
+        raise HTTPException(404, "Not found")
+
+    domain = f"%{_DOMAIN}"
+    offers = await db.execute(
+        text(
+            "UPDATE dispatch_offers SET status='expired' WHERE status='pending' AND ("
+            " driver_id IN (SELECT id FROM users WHERE email LIKE :dom) OR"
+            " trip_id IN (SELECT id FROM trips WHERE rider_id IN"
+            "   (SELECT id FROM users WHERE email LIKE :dom)))"
+        ),
+        {"dom": domain},
+    )
+    trips = await db.execute(
+        text(
+            "UPDATE trips SET status='cancelled', cancel_reason='loadtest_reset'"
+            " WHERE status NOT IN ('completed','cancelled') AND ("
+            " rider_id IN (SELECT id FROM users WHERE email LIKE :dom) OR"
+            " driver_id IN (SELECT id FROM users WHERE email LIKE :dom))"
+        ),
+        {"dom": domain},
+    )
+    drivers = await db.execute(
+        text(
+            "UPDATE users SET is_online=false"
+            " WHERE email LIKE :dom AND is_online=true"
+        ),
+        {"dom": domain},
+    )
+    await db.commit()
+    return {
+        "offers_expired": offers.rowcount,
+        "trips_cancelled": trips.rowcount,
+        "drivers_offlined": drivers.rowcount,
     }

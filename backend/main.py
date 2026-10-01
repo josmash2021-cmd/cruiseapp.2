@@ -1618,6 +1618,25 @@ async def crash_protection_middleware(request: Request, call_next):
         )
 
 
+# -- Request timing probe (outermost app middleware — sees the truth) ----
+#
+# The 5k-driver load test showed client-measured p50 in the seconds while
+# every server-side probe (DB RTT 0.5 ms, py-spy loop idle) looked healthy.
+# Without a server-side clock there was no way to tell "the app is slow"
+# from "the road between them is slow". One WARNING line per slow request,
+# threshold tunable by env; fast requests log nothing.
+_SLOW_REQ_MS = int(os.environ.get("SLOW_REQ_MS", "800"))
+
+@app.middleware("http")
+async def slow_request_probe(request: Request, call_next):
+    _t0 = time.perf_counter()
+    response = await call_next(request)
+    _ms = (time.perf_counter() - _t0) * 1000
+    if _ms >= _SLOW_REQ_MS:
+        logging.warning("[SLOW] %s %s — %.0f ms", request.method, request.url.path, _ms)
+    return response
+
+
 # -- CORS, registered LAST so it is the OUTERMOST middleware --------------
 #
 # Starlette builds the stack so the last-added middleware runs outermost.

@@ -1368,6 +1368,13 @@ app.include_router(legal_router)
 app.include_router(store_router)
 app.include_router(zero_tolerance_router)
 
+# Load-test auth exists only on staging: mounted AND self-gated by
+# LOAD_TEST=1 — production never includes it (the 404 double-check inside
+# stands even if this line were ever uncommented there by mistake).
+if os.environ.get("LOAD_TEST") == "1":
+    from routers.loadtest import router as _loadtest_router
+    app.include_router(_loadtest_router)
+
 # Serve static legal documents (FCRA Summary of Rights PDF, disclosures, etc.)
 app.mount(
     "/static",

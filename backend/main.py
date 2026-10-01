@@ -933,6 +933,24 @@ async def lifespan(app: FastAPI):
     from services.event_bus import event_bus as _eb
     _eb.start_heartbeat()
 
+    # Multi-worker fan-out for SSE (2026-10-01, 5k-driver load test): with
+    # more than one uvicorn worker an SSE stream only exists inside the
+    # process that accepted it, so every push is also fanned through Redis
+    # pub/sub. Single-worker deploys skip the bridge entirely — realtime
+    # then depends on nothing but this process, exactly as before.
+    try:
+        if int(os.environ.get("UVICORN_WORKERS", "1")) > 1:
+            _redis_url = (os.environ.get("REDIS_URL") or os.environ.get("REDIS_TLS_URL") or "").strip()
+            if _redis_url:
+                await _eb.start_redis_bridge(_redis_url)
+            else:
+                logging.error(
+                    "[Lifespan] UVICORN_WORKERS>1 but no REDIS_URL — SSE "
+                    "events will only reach clients on the same worker"
+                )
+    except Exception as _bridge_err:  # never block boot on the bridge
+        logging.error("[Lifespan] SSE Redis bridge failed to start: %s", _bridge_err)
+
     # Resolve the support LLM provider now and say which one won.
     #
     # The module logs this at import, but routers/support.py imports it
@@ -1439,33 +1457,36 @@ _CORS_LOCALHOST_RE = r"http://(localhost|127\.0\.0\.1)(:\d+)?"
 # Paths served to browsers (dispatch dashboard, photos, uploads)
 _BROWSER_PATHS = ("/dispatch", "/photos", "/uploads", "/panel")
 
-@app.middleware("http")
-async def security_headers_middleware(request: Request, call_next):
-    # Let CORS middleware handle OPTIONS preflight requests
-    if request.method == "OPTIONS":
-        return await call_next(request)
-    response = await call_next(request)
-    _path = request.url.path
-    response.headers["X-Content-Type-Options"] = "nosniff"
+
+def _security_headers_for(path: str, method: str) -> list[tuple[bytes, bytes]]:
+    """The security-header set for one response (ported verbatim from the
+    old security_headers_middleware into the pure-ASGI gateway below)."""
+    if method == "OPTIONS":
+        return []
+    hdrs: list[tuple[bytes, bytes]] = [(b"x-content-type-options", b"nosniff")]
     # API paths (mobile app) + Socket.io — minimal headers, skip CSP/HSTS/cache overhead
-    if _path.startswith("/api/") or _path.startswith("/auth/") or _path.startswith("/drivers/") or _path.startswith("/dispatch/") or _path.startswith("/trips/") or _path.startswith("/socket.io") or _is_hot_path(_path):
-        return response
+    if (path.startswith("/api/") or path.startswith("/auth/") or path.startswith("/drivers/")
+            or path.startswith("/dispatch/") or path.startswith("/trips/")
+            or path.startswith("/socket.io") or _is_hot_path(path)):
+        return hdrs
     # Browser-facing paths — full security headers
-    response.headers["X-Frame-Options"] = "DENY"
-    response.headers["X-XSS-Protection"] = "1; mode=block"
-    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
-    response.headers["Pragma"] = "no-cache"
-    response.headers["Permissions-Policy"] = "geolocation=(), camera=(), microphone=()"
-    if any(_path.startswith(p) for p in _BROWSER_PATHS):
-        response.headers["Content-Security-Policy"] = (
-            # 'wasm-unsafe-eval': Flutter's CanvasKit renderer compiles
-            # canvaskit.wasm — Chrome blocks WebAssembly without it.
-            # gstatic: flutterfire injects the Firebase JS SDKs from there;
-            # without them Firebase never initializes and the panel renders
-            # a white page. api.mapbox.com: the web fleet map's GL JS bundle.
-            # worker-src blob: Mapbox GL spins its workers up from blob URLs.
-            # fonts.googleapis/gstatic: the panel's Google Fonts (Inter).
+    hdrs += [
+        (b"x-frame-options", b"DENY"),
+        (b"x-xss-protection", b"1; mode=block"),
+        (b"referrer-policy", b"strict-origin-when-cross-origin"),
+        (b"cache-control", b"no-store, no-cache, must-revalidate"),
+        (b"pragma", b"no-cache"),
+        (b"permissions-policy", b"geolocation=(), camera=(), microphone=()"),
+    ]
+    if any(path.startswith(p) for p in _BROWSER_PATHS):
+        # 'wasm-unsafe-eval': Flutter's CanvasKit renderer compiles
+        # canvaskit.wasm — Chrome blocks WebAssembly without it.
+        # gstatic: flutterfire injects the Firebase JS SDKs from there;
+        # without them Firebase never initializes and the panel renders
+        # a white page. api.mapbox.com: the web fleet map's GL JS bundle.
+        # worker-src blob: Mapbox GL spins its workers up from blob URLs.
+        # fonts.googleapis/gstatic: the panel's Google Fonts (Inter).
+        csp = (
             "default-src 'self'; "
             "script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' https://www.gstatic.com https://api.mapbox.com; "
             "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://api.mapbox.com; "
@@ -1477,10 +1498,13 @@ async def security_headers_middleware(request: Request, call_next):
             "frame-ancestors 'none'"
         )
     else:
-        response.headers["Content-Security-Policy"] = "default-src 'none'; frame-ancestors 'none'"
-    response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
-    response.headers["Connection"] = "keep-alive"
-    return response
+        csp = "default-src 'none'; frame-ancestors 'none'"
+    hdrs += [
+        (b"content-security-policy", csp.encode()),
+        (b"strict-transport-security", b"max-age=31536000; includeSubDomains"),
+        (b"connection", b"keep-alive"),
+    ]
+    return hdrs
 
 # Read-only endpoints the app polls on a timer while a trip is active.
 #
@@ -1504,39 +1528,43 @@ def _is_read_poll_path(path: str) -> bool:
 _RATE_LIMIT = 3000        # max requests per IP per window (1500+ users + SSE + polling)
 _RATE_WINDOW = 60         # per this many seconds
 
-@app.middleware("http")
-async def rate_limit_middleware(request: Request, call_next):
+
+async def _rate_limit_check(path: str, method: str, client_ip: str) -> tuple[int, dict] | None:
+    """One rate-limit decision (ported verbatim from rate_limit_middleware).
+
+    Returns (status, payload) when the request must be short-circuited,
+    None when it may pass. The logic is identical to the old middleware —
+    only the plumbing around it changed.
+    """
     # Staging load-test escape hatch (NEVER set in prod): the per-IP tiers
     # throttle real clients, and a load test IS thousands of clients from
     # one build machine — without this we measured the limiter, not the
     # server (the 429 storm of the first staging run).
     if os.environ.get("RATE_LIMIT_OFF") == "1":
-        return await call_next(request)
+        return None
     # Let CORS middleware handle OPTIONS preflight requests
-    if request.method == "OPTIONS":
-        return await call_next(request)
-    client_ip = request.client.host if request.client else "unknown"
+    if method == "OPTIONS":
+        return None
     # IP blacklist check (merged — avoid extra middleware hop)
     if client_ip in _ip_blacklist:
-        return JSONResponse({"detail": "Access denied"}, status_code=403)
-    _path = request.url.path
+        return 403, {"detail": "Access denied"}
     # Skip rate limiting for SSE streams, Socket.io, hot paths, and health checks
-    if _path.endswith("/stream") or _path.startswith("/socket.io") or _is_hot_path(_path):
-        return await call_next(request)
+    if path.endswith("/stream") or path.startswith("/socket.io") or _is_hot_path(path):
+        return None
     # Skip tiered limits for health/docs/static (they don't need per-endpoint throttling)
     # and for read-only poll GETs (they skip the 100/min tier but STAY under
     # the global DDoS cap below).
-    if _path not in ("/ping", "/docs", "/openapi.json") and not (
-        request.method == "GET" and _is_read_poll_path(_path)
+    if path not in ("/ping", "/docs", "/openapi.json") and not (
+        method == "GET" and _is_read_poll_path(path)
     ):
         # ── Tiered rate limiting (stricter for auth, moderate for general API) ──
         # This runs BEFORE the global DDoS cap below and provides per-category limits.
         # The limiter may be sync (in-memory) or async (Redis) — handle both.
         try:
-            if "/auth/" in _path:
+            if "/auth/" in path:
                 # Auth endpoints: 20 req/min per IP (prevents brute-force/OTP spam)
                 _check = _tiered_rate_limiter.check(f"auth:{client_ip}", max_requests=20, window_seconds=60)
-            elif "/payments/" in _path or "/webhooks/" in _path:
+            elif "/payments/" in path or "/webhooks/" in path:
                 # Payment endpoints: 30 req/min per IP (prevents charge spam)
                 _check = _tiered_rate_limiter.check(f"pay:{client_ip}", max_requests=30, window_seconds=60)
             else:
@@ -1547,7 +1575,7 @@ async def rate_limit_middleware(request: Request, call_next):
                 await _check
         except HTTPException:
             # Re-raise 429 from tiered limiter as a JSONResponse
-            return JSONResponse({"detail": "Too many requests. Please try again later."}, status_code=429)
+            return 429, {"detail": "Too many requests. Please try again later."}
     # ── Global DDoS cap (Layer 3 — all endpoints, high ceiling) ──
     # Uses the same limiter backend as tiered limits so Redis is enforced
     # in multi-instance deployments when REDIS_URL is configured.
@@ -1558,8 +1586,8 @@ async def rate_limit_middleware(request: Request, call_next):
         if inspect.isawaitable(_check):
             await _check
     except HTTPException:
-        return JSONResponse({"detail": "Rate limit exceeded"}, status_code=429)
-    return await call_next(request)
+        return 429, {"detail": "Rate limit exceeded"}
+    return None
 
 
 
@@ -1568,20 +1596,25 @@ _MAX_BODY_SIZE = 5 * 1024 * 1024  # 5 MB max (photos are ~1-2MB base64)
 _MAX_VERIFY_SIZE = 30 * 1024 * 1024  # 30 MB for verification (photos + video)
 _LARGE_BODY_PATHS = {"/auth/verify-request", "/drivers/documents", "/drivers/documents/upload"}
 
-@app.middleware("http")
-async def request_size_limit_middleware(request: Request, call_next):
+
+def _body_size_check(path: str, method: str, headers) -> tuple[int, dict] | None:
+    """Body-size gate (ported verbatim from request_size_limit_middleware)."""
     # GET/HEAD/OPTIONS/Socket.io/hot paths never have meaningful bodies — skip entirely
-    if request.method in ("GET", "HEAD", "OPTIONS") or request.url.path.startswith("/socket.io") or _is_hot_path(request.url.path):
-        return await call_next(request)
-    limit = _MAX_VERIFY_SIZE if request.url.path in _LARGE_BODY_PATHS else _MAX_BODY_SIZE
-    content_length = request.headers.get("content-length")
+    if method in ("GET", "HEAD", "OPTIONS") or path.startswith("/socket.io") or _is_hot_path(path):
+        return None
+    limit = _MAX_VERIFY_SIZE if path in _LARGE_BODY_PATHS else _MAX_BODY_SIZE
+    content_length = None
+    for k, v in headers:
+        if k.lower() == b"content-length":
+            content_length = v.decode("latin-1")
+            break
     if content_length:
         try:
             if int(content_length) > limit:
-                return JSONResponse({"detail": "Request body too large"}, status_code=413)
+                return 413, {"detail": "Request body too large"}
         except ValueError:
-            return JSONResponse({"detail": "Invalid content-length"}, status_code=400)
-    return await call_next(request)
+            return 400, {"detail": "Invalid content-length"}
+    return None
 
 
 # Hot paths that should skip expensive middleware operations (checksum, etc.)
@@ -1603,22 +1636,7 @@ def _is_hot_path(path: str) -> bool:
             or (path.startswith(_LOCATION_PREFIX) and path.endswith("/location"))
             or path.startswith(_PHOTO_PREFIX))
 
-@app.middleware("http")
-async def crash_protection_middleware(request: Request, call_next):
-    try:
-        return await call_next(request)
-    except Exception as e:
-        import traceback as _tb
-        client_ip = request.client.host if request.client else "unknown"
-        logging.error("[CRASH] Unhandled error from %s on %s: %s\n%s", client_ip, request.url.path, str(e), _tb.format_exc())
-        _security_audit_log("crash", client_ip, f"Unhandled: {request.url.path}")
-        return JSONResponse(
-            {"detail": "Internal server error"},
-            status_code=500,
-        )
-
-
-# -- Request timing probe (outermost app middleware — sees the truth) ----
+# -- Request timing probe threshold --------------------------------------
 #
 # The 5k-driver load test showed client-measured p50 in the seconds while
 # every server-side probe (DB RTT 0.5 ms, py-spy loop idle) looked healthy.
@@ -1627,24 +1645,117 @@ async def crash_protection_middleware(request: Request, call_next):
 # threshold tunable by env; fast requests log nothing.
 _SLOW_REQ_MS = int(os.environ.get("SLOW_REQ_MS", "800"))
 
-@app.middleware("http")
-async def slow_request_probe(request: Request, call_next):
-    _t0 = time.perf_counter()
-    response = await call_next(request)
-    _ms = (time.perf_counter() - _t0) * 1000
-    if _ms >= _SLOW_REQ_MS:
-        logging.warning("[SLOW] %s %s — %.0f ms", request.method, request.url.path, _ms)
-    return response
+
+async def _asgi_json_response(send, payload: dict, status: int) -> None:
+    """Minimal JSON reply straight onto the ASGI channel (no Response object,
+    no BaseHTTPMiddleware stream)."""
+    body = json.dumps(payload).encode()
+    await send({
+        "type": "http.response.start",
+        "status": status,
+        "headers": [
+            (b"content-type", b"application/json"),
+            (b"content-length", str(len(body)).encode()),
+        ],
+    })
+    await send({"type": "http.response.body", "body": body})
+
+
+class CoreGatewayMiddleware:
+    """Pure-ASGI gateway: rate limit + body-size + crash guard + security
+    headers + slow-request probe, in ONE layer.
+
+    These five used to be five @app.middleware("http") functions — five
+    BaseHTTPMiddleware layers, and each of those spawns an anyio task plus
+    a memory stream PER REQUEST PER LAYER. In the 5k-driver load test
+    (2026-10-01) every worker's event loop sat inside
+    starlette/middleware/base.py call_next (py-spy): with ~600 requests in
+    flight, each task hop queued behind hundreds of coroutines, and p50
+    hit 3 s while CPU, DB pool and Postgres all idled. One pure-ASGI layer
+    makes the exact same decisions with zero task hops. Every check above
+    is ported verbatim from the middleware it replaces.
+    """
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        method = scope.get("method", "GET")
+        path = scope.get("path", "")
+        client = scope.get("client")
+        client_ip = client[0] if client else "unknown"
+
+        # ── Layer 3: rate limiting ──
+        blocked = await _rate_limit_check(path, method, client_ip)
+        if blocked is not None:
+            await _asgi_json_response(send, blocked[1], blocked[0])
+            return
+
+        # ── Layer 4: body-size limit ──
+        too_big = _body_size_check(path, method, scope.get("headers", []))
+        if too_big is not None:
+            await _asgi_json_response(send, too_big[1], too_big[0])
+            return
+
+        # ── Layers 0/1/2: crash guard + security headers + timing ──
+        t0 = time.perf_counter()
+        headers_sent = False
+        sec_hdrs = _security_headers_for(path, method)
+
+        async def send_with_headers(message):
+            nonlocal headers_sent
+            if message["type"] == "http.response.start":
+                headers_sent = True
+                if sec_hdrs:
+                    # Replace same-named headers, then append — mirrors the
+                    # old response.headers[...] = ... overwrites.
+                    replaced = {name.lower() for name, _ in sec_hdrs}
+                    existing = [
+                        (k, v) for k, v in message.get("headers", [])
+                        if k.lower() not in replaced
+                    ]
+                    existing.extend(sec_hdrs)
+                    message["headers"] = existing
+            await send(message)
+
+        try:
+            await self.app(scope, receive, send_with_headers)
+        except Exception as e:
+            import traceback as _tb
+            logging.error(
+                "[CRASH] Unhandled error from %s on %s: %s\n%s",
+                client_ip, path, str(e), _tb.format_exc(),
+            )
+            _security_audit_log("crash", client_ip, f"Unhandled: {path}")
+            if not headers_sent:
+                try:
+                    await _asgi_json_response(send, {"detail": "Internal server error"}, 500)
+                except Exception:
+                    pass
+        finally:
+            _ms = (time.perf_counter() - t0) * 1000
+            # SSE/socket.io hold the request open for minutes by design —
+            # their "duration" is connection life, not slowness.
+            if _ms >= _SLOW_REQ_MS and not (
+                path.endswith("/stream") or path.startswith("/socket.io")
+            ):
+                logging.warning("[SLOW] %s %s — %.0f ms", method, path, _ms)
+
+
+app.add_middleware(CoreGatewayMiddleware)
 
 
 # -- CORS, registered LAST so it is the OUTERMOST middleware --------------
 #
 # Starlette builds the stack so the last-added middleware runs outermost.
-# CORS used to be added before the four @app.middleware("http") handlers
-# above, which put it *inside* them — so every response those return
-# without calling call_next (403 blacklist, 429 rate limit, 413 body too
-# large, 500 crash) went to the browser with no Access-Control-Allow-Origin
-# on it.
+# CORS used to be added before the request middleware, which put it
+# *inside* it — so every response the gateway returned without calling the
+# app (403 blacklist, 429 rate limit, 413 body too large, 500 crash) went
+# to the browser with no Access-Control-Allow-Origin on it.
 #
 # A browser rejects such a response outright. The client never sees the
 # status, so a 500 and a dead server are indistinguishable to it, and the

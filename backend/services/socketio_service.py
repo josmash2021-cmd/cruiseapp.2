@@ -40,10 +40,19 @@ def configure(jwt_secret: str, algorithm: str = "HS256"):
 
 
 # ── Redis adapter for horizontal scaling ──────────────────────────────
-# If REDIS_URL is set, use Redis as the message broker so multiple
-# server instances can share Socket.io rooms and broadcasts.
-# Falls back to in-memory adapter (single-server only).
+# If REDIS_URL is set AND the deployment runs multiple uvicorn workers,
+# use Redis as the message broker so emits/broadcasts reach clients whose
+# connection lives on another worker. A single-worker deploy keeps the
+# in-memory adapter: emits then never depend on Redis being up.
 _redis_manager = None
+
+
+def _multi_worker() -> bool:
+    try:
+        return int(os.environ.get("UVICORN_WORKERS", "1")) > 1
+    except ValueError:
+        return False
+
 
 def _get_redis_url() -> Optional[str]:
     """Return Redis URL from environment, or None if not configured."""
@@ -54,14 +63,21 @@ def _get_redis_url() -> Optional[str]:
 
 
 def _create_manager():
-    """Create Socket.io manager with Redis adapter if available."""
+    """Create Socket.io manager with Redis adapter if available.
+
+    AsyncRedisManager, not the sync RedisManager that was once wired here:
+    the sync one ran its Redis I/O inline and blocked the event loop (that
+    is why the adapter was disabled in the first place). The async manager
+    talks to the same redis.asyncio client family the rest of the backend
+    uses. Manager creation is lazy about connecting — with no workers to
+    fan out to (single-worker) we skip it entirely above.
+    """
     global _redis_manager
     redis_url = _get_redis_url()
     if redis_url:
         try:
-            import socketio.redis_manager
-            _redis_manager = socketio.redis_manager.RedisManager(redis_url)
-            logger.info("[Socket.io] Redis adapter configured: %s", redis_url.split("@")[-1])
+            _redis_manager = socketio.AsyncRedisManager(redis_url)
+            logger.info("[Socket.io] AsyncRedisManager configured: %s", redis_url.split("@")[-1])
             return _redis_manager
         except Exception as e:
             logger.warning("[Socket.io] Redis adapter failed, falling back to in-memory: %s", e)
@@ -110,7 +126,7 @@ sio = socketio.AsyncServer(
     ping_timeout=20,                   # Allow 20s for pong (mobile networks can be slow)
     ping_interval=10,                  # Ping every 10s (was 5s — less battery drain)
     max_http_buffer_size=1_000_000,
-    # client_manager=_create_manager(),  # DISABLED: Redis adapter causes blocking with 1 worker
+    client_manager=_create_manager() if _multi_worker() else None,
 )
 
 # In-memory connection registry

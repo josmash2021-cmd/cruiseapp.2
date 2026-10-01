@@ -39,6 +39,13 @@ HMAC_SECRET = os.environ.get("LT_HMAC_SECRET", "loadtest-secret")
 
 _ids = itertools.count(1)
 
+# Distributed runs (master + N worker processes in the same container):
+# every process counts from 1, so without an offset four workers would
+# auth the SAME lt_driver_1@loadtest.invalid accounts and kick each other
+# off via single-device session enforcement. WORKER_ID namespaces the id
+# space per process.
+_WORKER_OFFSET = int(os.environ.get("WORKER_ID", "0")) * 1_000_000
+
 # One synthetic city block — every sim lives inside it so dispatch always
 # has drivers in range of every booking.
 _BASE_LAT, _BASE_LNG = 25.7617, -80.1918
@@ -97,7 +104,7 @@ class _Sim:
     role = "driver"
 
     def _auth(self, vu_tag: str) -> bool:
-        self.n = next(_ids)
+        self.n = next(_ids) + _WORKER_OFFSET
         self.email = f"lt_{self.role}_{self.n}@loadtest.invalid"
         self._ip = _xff()
         with self.client.post(

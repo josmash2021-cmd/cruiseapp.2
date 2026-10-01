@@ -280,6 +280,7 @@ class DriverNavViewState extends State<DriverNavView>
   String _instructionLabel = '';
   String _maneuverType = 'depart';
   String _maneuverModifier = '';
+  String _maneuverExit = ''; // structured maneuver.exit when Mapbox has it
   double _speedMps = 0;
   // Where the fix stood when the arrow's heading was last set — the anchor
   // the stoplight heading-freeze measures genuine movement against.
@@ -1005,12 +1006,14 @@ class DriverNavViewState extends State<DriverNavView>
 
     final type = cur?.maneuverType ?? 'arrive';
     final modifier = cur?.modifier ?? '';
+    final exitNum = cur?.exitNumber ?? '';
     if (street == _streetLabel &&
         dist == _maneuverDistLabel &&
         then == _thenLabel &&
         instruction == _instructionLabel &&
         type == _maneuverType &&
         modifier == _maneuverModifier &&
+        exitNum == _maneuverExit &&
         (secs - _remainSecs).abs() < 15) {
       return;
     }
@@ -1021,6 +1024,7 @@ class DriverNavViewState extends State<DriverNavView>
       _instructionLabel = instruction;
       _maneuverType = type;
       _maneuverModifier = modifier;
+      _maneuverExit = exitNum;
       _remainSecs = secs;
       _remainMeters = meters;
     });
@@ -2502,13 +2506,22 @@ class DriverNavViewState extends State<DriverNavView>
     // a sentence.
     String? exitLabel;
     if (useInstruction) {
-      // Both languages the instructions arrive in (2026-09-30): "Take exit
-      // 155" and "Tome la salida 155" — the English-only regex meant the
-      // chip died silently for every Spanish driver.
-      final m = RegExp(r'(?:exit|salida)\s+[0-9][0-9A-Za-z-]*',
-              caseSensitive: false)
-          .firstMatch(_instructionLabel);
-      if (m != null) exitLabel = m.group(0);
+      // The exact exit number first (user spec 2026-09-30: "Salida 155, el
+      // numero correcto"): Mapbox's structured maneuver.exit, capitalized
+      // and in the app's language. The text regex (both languages: "Take
+      // exit 155" / "Tome la salida 155") stays as the fallback for
+      // providers that carry no exit field.
+      if (_maneuverExit.isNotEmpty) {
+        exitLabel = '${s.navExitNumber} $_maneuverExit';
+      } else {
+        final m = RegExp(r'(?:exit|salida)\s+[0-9][0-9A-Za-z-]*',
+                caseSensitive: false)
+            .firstMatch(_instructionLabel);
+        final raw = m?.group(0) ?? '';
+        if (raw.isNotEmpty) {
+          exitLabel = raw[0].toUpperCase() + raw.substring(1);
+        }
+      }
     }
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 14, 10, 14),

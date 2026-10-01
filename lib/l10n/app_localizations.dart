@@ -1189,6 +1189,8 @@ class S {
   String enterCodeSentTo(String contact) => _es
       ? 'Introduce el código enviado a $contact.'
       : 'Enter the code sent to $contact.';
+  // Freeway exit chip word (2026-09-30): "Salida 155" / "Exit 155".
+  String get navExitNumber => _es ? 'Salida' : 'Exit';
   // 12 h shift cap (2026-09-27): app timer + server-side push share it.
   String get shiftEnded12h => _es
       ? 'Estuviste en línea 12 horas — tu turno se cerró.'

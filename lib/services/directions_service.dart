@@ -60,6 +60,12 @@ class NavStep {
   final int durationSeconds;
   final String instruction;
 
+  /// The freeway exit number from Mapbox's structured `maneuver.exit` — the
+  /// exact one, not the regex-parsed one (user spec 2026-09-30: "Salida
+  /// 155, el numero correcto"). Empty when the maneuver is not an exit or
+  /// the provider carries none (Google/OSRM).
+  final String exitNumber;
+
   const NavStep({
     required this.maneuverType,
     required this.modifier,
@@ -68,6 +74,7 @@ class NavStep {
     required this.distanceMeters,
     required this.durationSeconds,
     required this.instruction,
+    this.exitNumber = '',
   });
 }
 
@@ -825,6 +832,7 @@ class DirectionsService {
           distanceMeters: (s['distance'] as num?)?.toDouble() ?? 0,
           durationSeconds: (s['duration'] as num?)?.toInt() ?? 0,
           instruction: (maneuver['instruction'] as String?) ?? '',
+          exitNumber: (maneuver['exit'] ?? '').toString(),
         ));
       }
     }

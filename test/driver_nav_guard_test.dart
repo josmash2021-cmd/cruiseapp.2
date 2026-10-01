@@ -621,14 +621,28 @@ void main() {
 
     test('the freeway exit number rides its own gold chip at the bar\'s '
         'top-right (user spec 2026-09-27, Google-style "exit 157")', () {
-      final body = bodyOf(nav, 'Widget _buildManeuverBar(S s) {', maxLen: 4000);
+      final body = bodyOf(nav, 'Widget _buildManeuverBar(S s) {', maxLen: 4600);
       expect(body.contains('exitLabel'), isTrue);
+      expect(body.contains('_maneuverExit.isNotEmpty'), isTrue,
+          reason: 'the EXACT number first: Mapbox structured maneuver.exit '
+              '(user spec 2026-09-30: "Salida 155, el numero correcto")');
+      expect(body.contains('s.navExitNumber'), isTrue,
+          reason: 'the chip word rides the locale: "Salida 155" / "Exit 155"');
       expect(
           body.contains(
               "RegExp(r'(?:exit|salida)\\s+[0-9][0-9A-Za-z-]*'"), isTrue,
-          reason: 'the exit number parses out of the instruction text in '
-              'BOTH languages — the English-only regex died silently for '
-              'every Spanish driver (2026-09-30)');
+          reason: 'the text regex stays as the fallback for providers with '
+              'no exit field — in BOTH languages');
+      final dirs = File('lib/services/directions_service.dart')
+          .readAsStringSync();
+      expect(dirs.contains("exitNumber: (maneuver['exit'] ?? '').toString(),"),
+          isTrue,
+          reason: 'NavStep.exitNumber parsed from maneuver.exit');
+      expect(
+          File('lib/l10n/app_localizations.dart')
+              .readAsStringSync()
+              .contains('navExitNumber'),
+          isTrue);
       expect(body.contains('fontSize: useInstruction ? 18 : 22'), isTrue,
           reason: 'the guide letters grew a step (user spec 2026-09-27: '
               '"un poquito mas grande las letras")');

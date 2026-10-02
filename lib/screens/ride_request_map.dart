@@ -961,8 +961,9 @@ extension _RideRequestMap on _RideRequestScreenState {
     // keeps them glued afterwards.
     unawaited(_syncLabelOffsets());
 
-    // If the cinematic ran on the estimated 2-point route and the REAL
-    // road-snapped route has already arrived in the meantime, the
+    // If the cinematic ran on the estimated straight-line route (2 pts, or
+    // 3 with a stop — hence RouteResult.estimated, not the count) and the
+    // REAL road-snapped route has already arrived in the meantime, the
     // controller's `!_cinematicRunning` branch never fired (we WERE
     // running). Catch it now — this is the only path that guarantees
     // the polyline gets drawn when Directions resolves before the
@@ -971,6 +972,7 @@ extension _RideRequestMap on _RideRequestScreenState {
     if (mounted &&
         latestRoute != null &&
         latestRoute.points.length >= 3 &&
+        !latestRoute.estimated &&
         _routeAnnot == null) {
       final pts = _capRouteEndpoints(List<LatLng>.from(latestRoute.points));
       _buildRouteMarkers();

@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:cruise_app/models/lat_lng.dart';
@@ -43,6 +45,40 @@ void main() {
       expect(withStop.distanceMeters,
           greaterThanOrEqualTo(direct.distanceMeters));
       expect(withStop.distanceMeters, greaterThan(0));
+    });
+
+    test('the placeholder is marked estimated — with and without a stop', () {
+      expect(
+          ds.getEstimatedRoute(origin: pickup, destination: dropoff)
+              .estimated,
+          isTrue);
+      expect(
+          ds
+              .getEstimatedRoute(
+                  origin: pickup, destination: dropoff, waypoints: const [stop])
+              .estimated,
+          isTrue);
+    });
+  });
+
+  group('the booking map never mistakes the placeholder for the real route',
+      () {
+    // User report: "los dibuja recto" — with a stop the estimate has 3
+    // points, `points.length >= 3` called it "real", the straight
+    // placeholder was drawn as the final route and the road geometry
+    // never replaced it. Both draw gates must check the flag.
+    test('ride_request_controller gates on RouteResult.estimated', () {
+      final src =
+          File('lib/screens/ride_request_controller.dart').readAsStringSync();
+      expect(src.contains('!s.route!.estimated'), isTrue,
+          reason: 'the count alone cannot tell a 3-point estimate from the '
+              'real route — the flag is the only safe gate');
+    });
+
+    test('the cinematic catch-up gate checks the flag too', () {
+      final src =
+          File('lib/screens/ride_request_map.dart').readAsStringSync();
+      expect(src.contains('!latestRoute.estimated'), isTrue);
     });
   });
 }

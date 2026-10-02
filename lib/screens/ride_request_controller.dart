@@ -608,14 +608,19 @@ extension _RideRequestController on _RideRequestScreenState {
         // watchdog caused races where the sheet stayed empty on iOS.
         //
         // Start cinematic + route draw as soon as any route is available.
-        // Estimated route (2 points — straight-line placeholder) triggers
-        // markers+tilt; the real road-snapped route (≥3 points, short OR
-        // long trip) triggers the gold polyline draw. The >15 threshold
-        // previously used here dropped short real routes (≤15 pts) that
-        // arrived after the cinematic — they were never drawn and the
-        // "Finding best route" spinner never stopped.
+        // Estimated route (straight-line placeholder, 2 pts — or 3 with a
+        // stop) triggers markers+tilt; the real road-snapped route triggers
+        // the gold polyline draw. The >15 threshold previously used here
+        // dropped short real routes (≤15 pts) that arrived after the
+        // cinematic — they were never drawn and the "Finding best route"
+        // spinner never stopped. The count alone can no longer tell them
+        // apart: a stop makes the estimate 3 points too, which is why
+        // RouteResult.estimated exists (user report: "los dibuja recto" —
+        // the straight placeholder was drawn as the final route and the
+        // real road geometry never replaced it).
         if (s.route != null && s.pickup != null && s.dropoff != null) {
-          final isRealRoute = s.route!.points.length >= 3;
+          final isRealRoute =
+              s.route!.points.length >= 3 && !s.route!.estimated;
           if (isRealRoute) _fetchingRoute = false;
 
           if (kIsWeb) {

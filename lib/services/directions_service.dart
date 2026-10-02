@@ -33,12 +33,21 @@ class RouteResult {
     this.durationSeconds,
     this.steps = const [],
     this.furniture = const [],
+    this.estimated = false,
   });
 
   /// Traffic lights / stop signs along the route, parsed from the Mapbox
   /// Directions intersections (the same data the Navigation SDK uses for
   /// its on-map icons). Google/OSRM routes carry none — an empty list.
   final List<NavFurniture> furniture;
+
+  /// True only for the instant straight-line placeholder from
+  /// [getEstimatedRoute]. The booking map used to tell it apart from the
+  /// real route by point count (estimate=2, real≥3) — a stop makes the
+  /// estimate 3 points too, and without this flag the placeholder got
+  /// drawn as the FINAL route and the real road geometry never replaced
+  /// it (user report: "los dibuja recto").
+  final bool estimated;
 }
 
 /// A traffic signal or stop sign on the route. [isStopSign] false = traffic
@@ -1119,6 +1128,7 @@ class DirectionsService {
       startAddress: 'Origin',
       endAddress: 'Destination',
       durationSeconds: estimatedSeconds > 0 ? estimatedSeconds : null,
+      estimated: true,
     );
   }
 

@@ -109,6 +109,10 @@ class RideRequestScreen extends StatefulWidget {
   /// The intermediate stop chosen on the addresses page ("+"). Travels in
   /// the booking notes ("Stop: …") — the create endpoint takes no stop field.
   final String? initialStopAddress;
+  /// The stop's coordinates — the map pins it and the preview route runs
+  /// pickup → stop → dropoff through them.
+  final double? initialStopLat;
+  final double? initialStopLng;
   final String? initialPickupLabel;
   final String? initialDropoffLabel;
   final RouteResult? preloadedRoute;
@@ -137,6 +141,8 @@ class RideRequestScreen extends StatefulWidget {
     this.airportSelection,
     this.initialDropoffAddress,
     this.initialStopAddress,
+    this.initialStopLat,
+    this.initialStopLng,
     this.initialPickupDetails,
     this.initialDropoffDetails,
     this.initialPickupLabel,
@@ -423,6 +429,9 @@ class _RideRequestScreenState extends State<RideRequestScreen>
   mapbox.PolylineAnnotationManager? _polylineAnnotMgr;
   mapbox.PointAnnotation? _pickupAnnot;
   mapbox.PointAnnotation? _dropoffAnnot;
+  // The mid-trip stop pin (same dropoff pin bitmap, per user spec) — null
+  // when the booking has no stop.
+  mapbox.PointAnnotation? _stopAnnot;
   mapbox.PointAnnotation? _goldDotAnnot;
   mapbox.PointAnnotation? _userDotAnnot;
   mapbox.PolylineAnnotation? _routeAnnot;
@@ -984,7 +993,8 @@ class _RideRequestScreenState extends State<RideRequestScreen>
       _ctrl.setSchedule(widget.scheduledAt);
     }
     if ((widget.initialStopAddress ?? '').isNotEmpty) {
-      _ctrl.setStopAddress(widget.initialStopAddress);
+      _ctrl.setStopAddress(widget.initialStopAddress,
+          lat: widget.initialStopLat, lng: widget.initialStopLng);
     }
 
     // ── Pre-populate map center from initial details so map renders instantly ──
@@ -1179,6 +1189,7 @@ class _RideRequestScreenState extends State<RideRequestScreen>
         _pointAnnotMgr = null;
         _pickupAnnot = null;
         _dropoffAnnot = null;
+        _stopAnnot = null;
         _routeAnnot = null;
         // A dead surface takes any in-flight cinematic with it. Leaving
         // `_cinematicRunning` true blocked onMapCreated's redraw path, so

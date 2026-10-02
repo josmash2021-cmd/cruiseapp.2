@@ -189,9 +189,13 @@ class DirectionsService {
     _cacheAccessTimes.clear();
   }
 
-  String _cacheKey(LatLng a, LatLng b, String profile, [String? language]) =>
+  String _cacheKey(LatLng a, LatLng b, String profile,
+          [String? language, List<LatLng>? waypoints]) =>
       '${profile}_${language ?? ''}_${a.latitude.toStringAsFixed(3)},${a.longitude.toStringAsFixed(3)}_'
-      '${b.latitude.toStringAsFixed(3)},${b.longitude.toStringAsFixed(3)}';
+      '${b.latitude.toStringAsFixed(3)},${b.longitude.toStringAsFixed(3)}'
+      // A route with a stop is a different route — never serve the
+      // stop-less cache entry to a booking that has one (or vice versa).
+      '${waypoints == null || waypoints.isEmpty ? '' : '_via_${waypoints.map((w) => '${w.latitude.toStringAsFixed(3)},${w.longitude.toStringAsFixed(3)}').join(';')}'}';
 
   bool _isCacheValid(String key) {
     final t = _cacheTimes[key];
@@ -347,9 +351,13 @@ class DirectionsService {
     // the nav view passes it; part of the cache key so a cached route in
     // one language never serves steps worded in another.
     String? language,
+    // Intermediate stops, in visit order — the route then runs
+    // origin → …waypoints → destination as one continuous line (booking
+    // with a "+ stop"; every provider takes them in its coordinates chain).
+    List<LatLng>? waypoints,
   }) async {
     // Check route cache first (instant return)
-    final key = _cacheKey(origin, destination, profile, language);
+    final key = _cacheKey(origin, destination, profile, language, waypoints);
     if (_routeCache.containsKey(key) && _isCacheValid(key)) {
       debugPrint('[Route] Cache hit for $key');
       _cacheAccessTimes[key] = DateTime.now(); // LRU: mark as recently used
@@ -366,7 +374,8 @@ class DirectionsService {
               origin: origin,
               destination: destination,
               profile: profile,
-              language: language)
+              language: language,
+              waypoints: waypoints)
           .timeout(const Duration(seconds: 5), onTimeout: () => null);
       if (r != null && r.points.length >= 2) {
         _routeCache[key] = r;
@@ -394,20 +403,23 @@ class DirectionsService {
         origin: origin,
         destination: destination,
         profile: profile,
+        waypoints: waypoints,
       ).then((data) {
         if (data == null) return null;
         return _parseGoogleRoute(data, origin, destination);
       }).timeout(const Duration(seconds: 6), onTimeout: () => null);
 
       final osrmFuture = _requestOsrmRoute(
-              origin: origin, destination: destination, profile: profile)
+              origin: origin, destination: destination, profile: profile,
+              waypoints: waypoints)
           .timeout(const Duration(seconds: 6), onTimeout: () => null);
 
       final mapboxFuture = _requestMapboxRoute(
               origin: origin,
               destination: destination,
               profile: profile,
-              language: language)
+              language: language,
+              waypoints: waypoints)
           .timeout(const Duration(seconds: 8), onTimeout: () => null);
 
       // Wait for all, take the first non-null result (prefer Mapbox > Google > OSRM)
@@ -558,14 +570,19 @@ class DirectionsService {
     required LatLng origin,
     required LatLng destination,
     String profile = 'driving',
+    List<LatLng>? waypoints,
   }) async {
     try {
       // OSRM names its profiles car/bike/foot (the public demo server only
       // serves car data — a foot request simply fails and the other
       // providers answer instead).
       final osrmProfile = profile == 'walking' ? 'foot' : 'driving';
-      final path =
-          '/route/v1/$osrmProfile/${origin.longitude},${origin.latitude};${destination.longitude},${destination.latitude}';
+      final chain = [
+        origin,
+        ...?waypoints,
+        destination,
+      ].map((p) => '${p.longitude},${p.latitude}').join(';');
+      final path = '/route/v1/$osrmProfile/$chain';
       final uri = Uri.https('router.project-osrm.org', path, {
         'overview': 'full',
         'alternatives': 'true',
@@ -641,6 +658,7 @@ class DirectionsService {
     required LatLng destination,
     String profile = 'driving',
     String? language,
+    List<LatLng>? waypoints,
   }) async {
     try {
       // driving-traffic (user spec 2026-09-17): the plain 'driving' profile
@@ -650,9 +668,14 @@ class DirectionsService {
       // pickup approach, on-trip) is real with or without traffic. maxspeed
       // stays a driving-only annotation — walking rejects it.
       final mbxProfile = profile == 'driving' ? 'driving-traffic' : profile;
+      final chain = [
+        origin,
+        ...?waypoints,
+        destination,
+      ].map((p) => '${p.longitude},${p.latitude}').join(';');
       final url = Uri.parse(
         'https://api.mapbox.com/directions/v5/mapbox/$mbxProfile/'
-        '${origin.longitude},${origin.latitude};${destination.longitude},${destination.latitude}'
+        '$chain'
         '?geometries=geojson&overview=full&steps=true'
         '${profile == 'driving' ? '&annotations=maxspeed' : ''}'
         '${language != null ? '&language=$language' : ''}'
@@ -987,7 +1010,14 @@ class DirectionsService {
     required LatLng origin,
     required LatLng destination,
     String profile = 'driving',
+    List<LatLng>? waypoints,
   }) async {
+    // Google's stop syntax: pipe-separated "lat,lng" in visit order.
+    final wp = (waypoints == null || waypoints.isEmpty)
+        ? null
+        : waypoints
+            .map((p) => '${p.latitude},${p.longitude}')
+            .join('|');
     final variants = <Map<String, String>>[
       // departure_time + traffic_model are driving/transit only — Google
       // rejects them on a walking request, so the traffic variant exists
@@ -1001,6 +1031,7 @@ class DirectionsService {
           'departure_time': 'now',
           'traffic_model': 'best_guess',
           'alternatives': 'true',
+          if (wp != null) 'waypoints': wp,
         },
       {
         'origin': '${origin.latitude},${origin.longitude}',
@@ -1008,12 +1039,14 @@ class DirectionsService {
         'key': apiKey,
         'mode': profile,
         'alternatives': 'true',
+        if (wp != null) 'waypoints': wp,
       },
       {
         'origin': '${origin.latitude},${origin.longitude}',
         'destination': '${destination.latitude},${destination.longitude}',
         'key': apiKey,
         'mode': profile,
+        if (wp != null) 'waypoints': wp,
       },
     ];
 
@@ -1055,9 +1088,15 @@ class DirectionsService {
   RouteResult getEstimatedRoute({
     required LatLng origin,
     required LatLng destination,
+    List<LatLng>? waypoints,
   }) {
-    // Calculate straight-line distance using haversine
-    final distanceMeters = _haversineMeters(origin, destination).toInt();
+    // With a stop the placeholder runs origin → stop → destination too —
+    // same continuous shape the real route will draw, summed per leg.
+    final legs = <LatLng>[origin, ...?waypoints, destination];
+    var distanceMeters = 0;
+    for (var i = 0; i < legs.length - 1; i++) {
+      distanceMeters += _haversineMeters(legs[i], legs[i + 1]).toInt();
+    }
     final distanceText = _metersToMilesText(distanceMeters);
     
     // Estimate duration: assume 30 mph average city speed (13.4 m/s)
@@ -1065,9 +1104,10 @@ class DirectionsService {
     final estimatedSeconds = ((distanceMeters / 13.4) * 1.2).toInt();
     final durationText = _durationTextFromSeconds(estimatedSeconds);
     
-    // Just 2 endpoints — the UI will draw a straight line between them.
-    // This is only a temporary placeholder until the real route loads.
-    final points = <LatLng>[origin, destination];
+    // Just the endpoints (and any stop) — the UI draws straight lines
+    // between them. This is only a temporary placeholder until the real
+    // route loads.
+    final points = legs;
     
     debugPrint('[Route] Generated estimated route: $distanceText, $durationText (${points.length} points)');
     

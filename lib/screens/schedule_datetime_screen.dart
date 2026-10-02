@@ -32,6 +32,8 @@ class ScheduleDateTimeScreen extends StatefulWidget {
     this.prefilledPickupLabel,
     this.prefilledDropoffLabel,
     this.prefilledStopAddress,
+    this.prefilledStopLat,
+    this.prefilledStopLng,
   });
 
   final double? initialPickupLat;
@@ -53,8 +55,11 @@ class ScheduleDateTimeScreen extends StatefulWidget {
   final String? prefilledDropoffLabel;
 
   /// The optional intermediate stop from the addresses page — travels in
-  /// the record and into the booking notes ("Stop: …").
+  /// the record and into the booking notes ("Stop: …"); its coordinates
+  /// pin the stop on the booking map and route the preview through it.
   final String? prefilledStopAddress;
+  final double? prefilledStopLat;
+  final double? prefilledStopLng;
 
   @override
   State<ScheduleDateTimeScreen> createState() =>
@@ -174,6 +179,11 @@ class _ScheduleDateTimeScreenState extends State<ScheduleDateTimeScreen> {
           if (widget.prefilledStopAddress != null &&
               widget.prefilledStopAddress!.isNotEmpty)
             'stopAddress': widget.prefilledStopAddress,
+          if (widget.prefilledStopLat != null &&
+              widget.prefilledStopLng != null) ...{
+            'stopLat': widget.prefilledStopLat,
+            'stopLng': widget.prefilledStopLng,
+          },
         },
       ));
       return;

@@ -72,8 +72,11 @@ Future<void> continueScheduleToBooking(
         initialDropoffLabel: effectiveDropoffLabel,
         initialDropoffAddress: effectiveDropoffLabel,
         // The intermediate stop the rider added on the addresses page —
-        // the booking notes carry it ("Stop: …").
+        // the booking notes carry it ("Stop: …") and its coordinates pin
+        // it on the map / route the preview through it.
         initialStopAddress: searchResult['stopAddress'] as String?,
+        initialStopLat: (searchResult['stopLat'] as num?)?.toDouble(),
+        initialStopLng: (searchResult['stopLng'] as num?)?.toDouble(),
       ),
     ),
   );

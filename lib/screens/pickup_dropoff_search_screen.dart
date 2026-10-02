@@ -601,6 +601,8 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
         prefilledStopAddress: _stopDetails != null
             ? (_stopLabel.isNotEmpty ? _stopLabel : _stopDetails!.address)
             : null,
+        prefilledStopLat: _stopDetails?.lat,
+        prefilledStopLng: _stopDetails?.lng,
       )),
     );
     if (record == null || !mounted) return;
@@ -669,6 +671,10 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
             (_stopLabel.isNotEmpty || _stopDetails!.address.isNotEmpty))
           'stopAddress':
               _stopLabel.isNotEmpty ? _stopLabel : _stopDetails!.address,
+        if (_stopDetails != null) ...{
+          'stopLat': _stopDetails!.lat,
+          'stopLng': _stopDetails!.lng,
+        },
       };
       if (mounted) Navigator.of(context).pop(searchResult);
       return;
@@ -716,6 +722,14 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
           handoffZoom: _handoffZoom ?? 16.0,
           handoffBearing: _handoffBearing ?? 0.0,
           handoffPitch: _handoffPitch ?? 0.0,
+          // The "+" stop rides too — address for the booking notes,
+          // coordinates for the map pin and the pickup → stop → dropoff
+          // route. (This push dropped the stop entirely until now.)
+          initialStopAddress: _stopDetails != null
+              ? (_stopLabel.isNotEmpty ? _stopLabel : _stopDetails!.address)
+              : null,
+          initialStopLat: _stopDetails?.lat,
+          initialStopLng: _stopDetails?.lng,
           // Forward Schedule/Airport context so the destination CTA
           // says "Reserve Now" instead of "Request Ride".
           scheduledAt: widget.scheduledAt,

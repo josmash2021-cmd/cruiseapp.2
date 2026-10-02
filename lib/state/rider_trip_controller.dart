@@ -132,6 +132,12 @@ class RiderTripState {
   /// ("Stop: …") — the live-trip stop endpoint stays the real-time path.
   final String? stopAddress;
 
+  /// The stop's coordinates — the booking map draws the stop pin and the
+  /// pickup → stop → dropoff route from these (the address alone is text
+  /// for the notes; a pin needs a point).
+  final double? stopLat;
+  final double? stopLng;
+
   // Backend trip IDs
   final int? tripId;
   final String? firestoreTripId;
@@ -168,6 +174,8 @@ class RiderTripState {
     this.airportFlight,
     this.pickupNote,
     this.stopAddress,
+    this.stopLat,
+    this.stopLng,
     this.tripId,
     this.firestoreTripId,
     this.cancelReason,
@@ -196,6 +204,8 @@ class RiderTripState {
     String? airportFlight,
     String? pickupNote,
     String? stopAddress,
+    double? stopLat,
+    double? stopLng,
     int? tripId,
     String? firestoreTripId,
     String? cancelReason,
@@ -223,6 +233,8 @@ class RiderTripState {
       airportFlight: airportFlight ?? this.airportFlight,
       pickupNote: pickupNote ?? this.pickupNote,
       stopAddress: stopAddress ?? this.stopAddress,
+      stopLat: stopLat ?? this.stopLat,
+      stopLng: stopLng ?? this.stopLng,
       tripId: tripId ?? this.tripId,
       firestoreTripId: firestoreTripId ?? this.firestoreTripId,
       cancelReason: cancelReason ?? this.cancelReason,
@@ -396,10 +408,25 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   /// The intermediate stop from the addresses page (same clearing rule as
-  /// the note: empty string, not null).
-  void setStopAddress(String? address) {
-    _state = _state.copyWith(stopAddress: address?.trim() ?? '');
+  /// the note: empty string, not null). lat/lng ride along so the booking
+  /// map can pin the stop and route through it.
+  void setStopAddress(String? address, {double? lat, double? lng}) {
+    _state = _state.copyWith(
+      stopAddress: address?.trim() ?? '',
+      stopLat: lat,
+      stopLng: lng,
+    );
     notifyListeners();
+  }
+
+  /// The stop as a point, or null when there is none (or only the text
+  /// address — a pin and a route leg need real coordinates).
+  LatLng? get stopPoint {
+    final a = _state.stopAddress ?? '';
+    final lat = _state.stopLat;
+    final lng = _state.stopLng;
+    if (a.isEmpty || lat == null || lng == null) return null;
+    return LatLng(lat, lng);
   }
 
   /// Retry fetching the route after a failure.
@@ -519,12 +546,17 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
 
     final origin = LatLng(_state.pickup!.lat, _state.pickup!.lng);
     final dest = LatLng(_state.dropoff!.lat, _state.dropoff!.lng);
+    // A stop makes the route origin → stop → destination, one continuous
+    // line (user spec: "se dibujara asi de esa forma continua").
+    final stop = stopPoint;
+    final waypoints = stop == null ? null : [stop];
 
     // INSTANT: Show estimated route + estimated prices immediately.
     // Cards appear right away — no shimmer wait.
     final estimatedRoute = _directions.getEstimatedRoute(
       origin: origin,
       destination: dest,
+      waypoints: waypoints,
     );
     final estimatedOptions = _generateRideOptions(estimatedRoute);
     _state = _state.copyWith(
@@ -561,7 +593,8 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
           .timeout(const Duration(seconds: 5))
           .catchError((_) => <String, dynamic>{'surge_multiplier': 1.0});
       // Real route from Directions API
-      routeResult = await _directions.getRoute(origin: origin, destination: dest);
+      routeResult = await _directions.getRoute(
+          origin: origin, destination: dest, waypoints: waypoints);
 
       // Update with real route immediately (don't wait for surge)
       if (routeResult != null) {

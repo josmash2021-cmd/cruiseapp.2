@@ -1280,6 +1280,11 @@ extension _RideRequestMap on _RideRequestScreenState {
       dropoff.iconSize = s * 0.65;
       _pushPinUpdate(mgr, dropoff);
     }
+    final stop = _stopAnnot;
+    if (stop != null) {
+      stop.iconSize = s * 0.65;
+      _pushPinUpdate(mgr, stop);
+    }
   }
 
   /// Fire-and-forget iconSize write for the pop animations, which run every
@@ -1331,6 +1336,7 @@ extension _RideRequestMap on _RideRequestScreenState {
       // this update was in flight, the new handles must survive.
       if (identical(_pickupAnnot, annot)) _pickupAnnot = null;
       if (identical(_dropoffAnnot, annot)) _dropoffAnnot = null;
+      if (identical(_stopAnnot, annot)) _stopAnnot = null;
       // Rule 17(b): null the handle AND fire-and-forget the delete. Nulling
       // alone is what put two gold dots on the rider's map — the native
       // annotation outlives the handle and the next create adds a second.
@@ -1723,9 +1729,24 @@ extension _RideRequestMap on _RideRequestScreenState {
           iconOffset: [0, 0],
         ));
       }
-      // Fit camera to show both markers (preserve tilt if cinematic already ran)
+      // The mid-trip stop wears the dropoff pin (user spec) and joins the
+      // pre-route camera fit, so all three points frame at once.
+      final stop = _ctrl.stopPoint;
+      final stopPoint =
+          stop == null ? null : safePoint(stop.longitude, stop.latitude);
+      if (stopPoint != null) {
+        _stopAnnot ??= await mgr.create(mapbox.PointAnnotationOptions(
+          geometry: stopPoint,
+          image: _goldDropoffPinIcon ?? _goldPinIcon!,
+          iconSize: 0.85,
+          iconAnchor: mapbox.IconAnchor.BOTTOM,
+          iconOffset: [0, 0],
+        ));
+      }
+      // Fit camera to show all markers (preserve tilt if cinematic already ran)
       _fitRoute([
         LatLng(s.pickup!.lat, s.pickup!.lng),
+        if (stop != null) stop,
         LatLng(s.dropoff!.lat, s.dropoff!.lng),
       ], preserveCamera: _cinematicDone);
       if (mounted) _setState(() {});
@@ -1820,6 +1841,23 @@ extension _RideRequestMap on _RideRequestScreenState {
       if (bytes != null && dropoffPoint != null) {
         _dropoffAnnot = await mgr.create(mapbox.PointAnnotationOptions(
           geometry: dropoffPoint,
+          image: bytes,
+          iconSize: pinScale(),
+          iconAnchor: mapbox.IconAnchor.BOTTOM,
+          iconOffset: [0, 0],
+        ));
+      }
+    }
+
+    // Stop marker — same pin as the dropoff (user spec), no floating label.
+    if (_stopAnnot != null) { try { await mgr.delete(_stopAnnot!); } catch (_) {} _stopAnnot = null; }
+    final stopPt = _ctrl.stopPoint;
+    if (stopPt != null) {
+      Uint8List? bytes = _dropoffPinOnly?.$1 ?? _goldDropoffPinIcon ?? _goldPinIcon;
+      final stopPoint = safePoint(stopPt.longitude, stopPt.latitude);
+      if (bytes != null && stopPoint != null) {
+        _stopAnnot = await mgr.create(mapbox.PointAnnotationOptions(
+          geometry: stopPoint,
           image: bytes,
           iconSize: pinScale(),
           iconAnchor: mapbox.IconAnchor.BOTTOM,

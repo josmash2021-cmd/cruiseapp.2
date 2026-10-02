@@ -610,9 +610,18 @@ class _ScheduledRidesScreenState extends State<ScheduledRidesScreen>
     final countdownStr = _countdown(scheduledAt);
     final isClaiming = _claimingId == tripId;
     final hasPickup = pickupLat != null && pickupLng != null;
+    final expanded = _expandedTripId == tripId;
+    // Tap-to-expand mounts the app's live map (same navy/gold, circular
+    // pins, tilt as My Rides) — it needs both ends, and web keeps the
+    // still because mapbox_maps_flutter does not run there.
+    final canExpand = hasPickup &&
+        dropoffLat != null &&
+        dropoffLng != null &&
+        !kIsWeb;
 
     return _cardShell(
       isAirport: false,
+      onTap: canExpand ? () => _onCardToggle(tripId) : null,
       children: [
         // 1) Header: clock + date + countdown left, gold fare pill right
         _cardHeader(
@@ -620,6 +629,7 @@ class _ScheduledRidesScreenState extends State<ScheduledRidesScreen>
           countdown: countdownStr,
           fare: fare,
           isAirport: false,
+          expanded: canExpand ? expanded : null,
         ),
         // 2) One row: tier badge + chips
         Padding(
@@ -632,24 +642,21 @@ class _ScheduledRidesScreenState extends State<ScheduledRidesScreen>
                   Colors.blue),
           ]),
         ),
-        // 3) Route preview — a still, not a live map. One of these is
-        // mounted per card, and a native Mapbox surface per card is the
-        // crash that closed the app. The gold line lands when the route
-        // fetch for this trip resolves (one call per trip id).
+        // 3) Route preview — the still always (fast, no native surface per
+        // card), the app's live map layered over it when expanded. The gold
+        // line lands when the route fetch for this trip resolves (one call
+        // per trip id).
         if (hasPickup)
           Padding(
             padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
-            child: SizedBox(
-              height: 140,
-              width: double.infinity,
-              child: _previewWithFade(
-                StaticRoutePreview(
-                  pickupLat: pickupLat,
-                  pickupLng: pickupLng,
-                  dropoffLat: dropoffLat,
-                  dropoffLng: dropoffLng,
-                  route: _availRoutes[tripId] ?? _kickAvailRoute(trip),
-                  borderRadius: 14,
+            child: AnimatedSize(
+              duration: const Duration(milliseconds: 350),
+              curve: Curves.easeOutCubic,
+              child: SizedBox(
+                height: expanded ? 200.0 : 140.0,
+                width: double.infinity,
+                child: _previewWithFade(
+                  _availablePreview(trip, expanded: expanded),
                 ),
               ),
             ),
@@ -702,22 +709,65 @@ class _ScheduledRidesScreenState extends State<ScheduledRidesScreen>
   Widget _cardShell({
     required bool isAirport,
     required List<Widget> children,
+    VoidCallback? onTap,
   }) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 16),
-      // Airport trips keep their blue edge; everything else takes the
-      // shared neu border.
-      decoration: neuBox(
-        radius: 20,
-        borderColor: isAirport ? _airport.withValues(alpha: 0.25) : null,
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: children,
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 16),
+        // Airport trips keep their blue edge; everything else takes the
+        // shared neu border.
+        decoration: neuBox(
+          radius: 20,
+          borderColor: isAirport ? _airport.withValues(alpha: 0.25) : null,
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: children,
+          ),
         ),
       ),
+    );
+  }
+
+  /// Map thumbnail with its bottom edge fading into the card surface.
+  /// Requests-card preview: the static still as base layer, and when the
+  /// card is expanded the app's LIVE map over it — same navy/gold theme,
+  /// circular person/flag pins and 50° tilt as the My-Rides expansion
+  /// (user spec: "mismo diseño y pines que ya utiliza la app"). The shared
+  /// accordion (_expandedTripId) plus _CardLiveMap's coordinator claim
+  /// keep the one-native-surface rule; IgnorePointer lets the card tap
+  /// still collapse it.
+  Widget _availablePreview(Map<String, dynamic> trip,
+      {required bool expanded}) {
+    final tripId = trip['id'] as int;
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        StaticRoutePreview(
+          pickupLat: (trip['pickup_lat'] as num).toDouble(),
+          pickupLng: (trip['pickup_lng'] as num).toDouble(),
+          dropoffLat: (trip['dropoff_lat'] as num?)?.toDouble(),
+          dropoffLng: (trip['dropoff_lng'] as num?)?.toDouble(),
+          route: _availRoutes[tripId] ?? _kickAvailRoute(trip),
+          borderRadius: 14,
+        ),
+        if (expanded)
+          Positioned.fill(
+            child: IgnorePointer(
+              child: _CardLiveMap(
+                tripId: tripId,
+                pickupLat: (trip['pickup_lat'] as num).toDouble(),
+                pickupLng: (trip['pickup_lng'] as num).toDouble(),
+                dropoffLat: (trip['dropoff_lat'] as num).toDouble(),
+                dropoffLng: (trip['dropoff_lng'] as num).toDouble(),
+                route: _availRoutes[tripId] ?? const [],
+              ),
+            ),
+          ),
+      ],
     );
   }
 
@@ -758,6 +808,7 @@ class _ScheduledRidesScreenState extends State<ScheduledRidesScreen>
     double? fare,
     required bool isAirport,
     String? airportCode,
+    bool? expanded,
   }) {
     final accentColor = isAirport ? _airport : _gold;
     return Container(
@@ -844,6 +895,18 @@ class _ScheduledRidesScreenState extends State<ScheduledRidesScreen>
                     ),
                   ),
                 ],
+              ),
+            ),
+          ],
+          if (expanded != null) ...[
+            const SizedBox(width: 8),
+            AnimatedRotation(
+              turns: expanded ? 0.5 : 0,
+              duration: const Duration(milliseconds: 300),
+              child: Icon(
+                Icons.expand_more_rounded,
+                color: _gold.withValues(alpha: 0.7),
+                size: 20,
               ),
             ),
           ],

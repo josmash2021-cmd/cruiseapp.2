@@ -271,11 +271,13 @@ void main() {
       expect(directions.contains("String profile = 'driving'"), isTrue,
           reason: 'every existing caller keeps driving by default');
       expect(
-          directions.contains('_cacheKey(origin, destination, profile, language)'),
+          directions.contains(
+              '_cacheKey(origin, destination, profile, language, waypoints)'),
           isTrue,
-          reason: 'a walking route must never hit the driving cache — and a '
+          reason: 'a walking route must never hit the driving cache, a '
               'route cached in one language never serves steps worded in '
-              'another');
+              'another — and a route WITH a stop never serves the stop-less '
+              'entry (waypoints joined the key with multi-stop booking)');
       expect(directions.contains('directions/v5/mapbox/\$mbxProfile/'), isTrue);
       expect(
           directions

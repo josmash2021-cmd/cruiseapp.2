@@ -7,6 +7,7 @@ import '../config/page_transitions.dart';
 import '../l10n/app_localizations.dart';
 import '../services/api_service.dart';
 import '../services/calendar_service.dart';
+import '../utils/vehicle_tier_style.dart';
 import '../widgets/feathered_image.dart';
 import '../widgets/neu_style.dart';
 import 'schedule_cancel_policy_screen.dart';
@@ -81,10 +82,12 @@ class _ScheduleHubScreenState extends State<ScheduleHubScreen> {
             dt.year, dt.month, dt.day, dt.hour, dt.minute, dt.second);
   }
 
+  /// Display name in the CURRENT four-tier catalogue (Compact / Standard /
+  /// Premium / Black) — tierKey normalises legacy rows like "comfort" or
+  /// "vip" instead of showing the old name.
   static String _tierLabel(dynamic vehicleType) {
-    final raw = (vehicleType as String? ?? '').trim();
-    if (raw.isEmpty) return 'Standard';
-    return raw[0].toUpperCase() + raw.substring(1).toLowerCase();
+    final k = tierKey(vehicleType as String?);
+    return k[0].toUpperCase() + k.substring(1);
   }
 
   /// App-side mirror of `_scheduled_cancel_fee` in backend/routers/trips.py:
@@ -727,16 +730,8 @@ class _ScheduleHubScreenState extends State<ScheduleHubScreen> {
         children: [
           Row(
             children: [
-              Container(
-                width: 44,
-                height: 44,
-                decoration: BoxDecoration(
-                  color: _gold.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                child: const Icon(Icons.event_note_rounded,
-                    color: _gold, size: 22),
-              ),
+              const Icon(Icons.calendar_month_rounded,
+                  color: _gold, size: 30),
               const SizedBox(width: 14),
               Expanded(
                 child: Column(

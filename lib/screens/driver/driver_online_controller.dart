@@ -1073,6 +1073,15 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     // iOS only — a silent no-op on Android.
     LiveActivityService.startOnline();
     _islandState = 'online';
+    // If Live Activities are off in Settings, the island never appears and
+    // the token pipeline no-ops in silence — prod had zero registrations
+    // fleet-wide (2026-10-02). Tell the driver, once per shift.
+    unawaited(() async {
+      final enabled = await LiveActivityService.areActivitiesEnabled();
+      if (!enabled && mounted) {
+        _setState(() => _laDisabled = true);
+      }
+    }());
     // The persistent "You're Online" tray notification was retired — the
     // background-service notification is the one that anchors Android, and
     // two silent entries said the same thing.

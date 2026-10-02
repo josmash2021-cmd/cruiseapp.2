@@ -736,7 +736,71 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
     }
   }
 
-  // â”€â”€ SEARCHING: Uber-style "Finding trips" bar â”€â”€
+  // ── SEARCHING: Uber-style "Finding trips" bar ──
+  /// Slim notice when iOS has Live Activities OFF for Cruise (Settings >
+  /// Cruise). The island and the whole token pipeline silently no-op in
+  /// that state — prod had zero registrations fleet-wide (2026-10-02) and
+  /// the only symptom was "the island never shows up". Gold row with a
+  /// direct jump to the app's Settings page; X dismisses it for the shift.
+  Widget _laDisabledNotice() {
+    if (!_laDisabled) return const SizedBox.shrink();
+    const gold = Color(0xFFE8C547);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 10, 8, 0),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: gold.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: gold.withValues(alpha: 0.35)),
+        ),
+        child: Row(
+          children: [
+            const Icon(Icons.notifications_off_outlined,
+                color: gold, size: 18),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    S.of(context).liveActivityOffTitle,
+                    style: const TextStyle(
+                        color: gold,
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w700),
+                  ),
+                  Text(
+                    S.of(context).liveActivityOffBody,
+                    style: TextStyle(
+                        color: gold.withValues(alpha: 0.8), fontSize: 11.5),
+                  ),
+                ],
+              ),
+            ),
+            TextButton(
+              onPressed: () => openAppSettings(),
+              style: TextButton.styleFrom(
+                foregroundColor: gold,
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                minimumSize: const Size(0, 32),
+              ),
+              child: Text(S.of(context).settings),
+            ),
+            GestureDetector(
+              onTap: () => _setState(() => _laDisabled = false),
+              child: const Padding(
+                padding: EdgeInsets.all(4),
+                child: Icon(Icons.close, color: gold, size: 16),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _searchingBar(
     bool isDark,
     Color surface,
@@ -771,6 +835,10 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   const SizedBox(height: 2), // Spacer for border glow
+                  // Live Activities off in Settings — say it out loud or
+                  // the driver never learns why the island never appears
+                  // (prod 2026-10-02: zero token registrations, all silent).
+                  _laDisabledNotice(),
                   // Drag handle
                   Padding(
                     padding: const EdgeInsets.only(top: 10, bottom: 4),

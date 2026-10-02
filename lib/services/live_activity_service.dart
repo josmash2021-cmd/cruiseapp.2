@@ -50,6 +50,23 @@ class LiveActivityService {
     _invoke('pushTokenHookReady', null);
   }
 
+  /// Settings > Cruise > Live Activities — is the island even allowed to
+  /// appear? When it is off, every token path silently no-ops and the
+  /// driver never sees offers outside the app (prod 2026-10-02: zero LA
+  /// token registrations fleet-wide, invisible until the server was
+  /// queried). The online screen asks this once per shift so it can say
+  /// so out loud. Non-iOS and older native builds answer true — no
+  /// banner for a feature that does not exist there.
+  static Future<bool> areActivitiesEnabled() async {
+    if (!AppPlatform.isIOS) return true;
+    try {
+      final v = await _channel.invokeMethod<bool>('activitiesEnabled');
+      return v ?? true;
+    } catch (_) {
+      return true;
+    }
+  }
+
   /// Driver went online — put the Cruise logo in the Dynamic Island.
   static Future<void> startOnline() {
     installPushTokenHook();

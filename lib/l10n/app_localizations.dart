@@ -970,6 +970,11 @@ class S {
   String get tripsToday => _es ? 'Viajes Hoy' : 'Trips Today';
   String get hoursOnline => _es ? 'Horas en Línea' : 'Hours Online';
   String get findingTrips => _es ? 'Buscando viajes' : 'Finding trips';
+  String get liveActivityOffTitle =>
+      _es ? 'Live Activities apagadas' : 'Live Activities are off';
+  String get liveActivityOffBody => _es
+      ? 'Actívalas en Ajustes para ver las ofertas fuera de la app'
+      : 'Turn them on in Settings to see offers outside the app';
   String get youreOnlineStatus => _es ? 'Estás en línea' : "You're online";
   String get safetyHub => _es ? 'Seguridad' : 'Safety';
   String get reservedLabel => _es ? 'Reservas' : 'Reserved';

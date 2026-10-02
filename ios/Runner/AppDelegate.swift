@@ -68,6 +68,12 @@ import ActivityKit
         // could only ever arrive as the plain FCM banner).
         CruiseLiveActivityManager.shared.flushPendingTokens()
         result(true)
+      case "activitiesEnabled":
+        // Settings > Cruise > Live Activities: when it is off, every
+        // island path (start, offer, push-to-start) silently no-ops and
+        // prod showed zero token registrations fleet-wide. The app asks
+        // this so the driver gets told to switch it on instead of silence.
+        result(ActivityAuthorizationInfo().areActivitiesEnabled)
       case "stop":
         CruiseLiveActivityManager.shared.stop()
         result(true)

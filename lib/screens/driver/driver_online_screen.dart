@@ -406,6 +406,13 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   /// rather than from each path remembering to update it.
   String? _islandState;
 
+  /// True when iOS reports Live Activities OFF for Cruise (Settings >
+  /// Cruise > Live Activities): the island and its token pipeline silently
+  /// no-op, so offers to a backgrounded app only ever arrive as the plain
+  /// banner. Surfaced as a slim notice above the searching bar — the
+  /// driver otherwise has no way to know why the island never shows.
+  bool _laDisabled = false;
+
   /// A ride accepted while still driving the current trip (chaining) —
   /// it starts when this trip wraps up. See _acceptChainedOffer.
   Map<String, dynamic>? _chainedNextOffer;

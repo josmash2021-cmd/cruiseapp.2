@@ -687,6 +687,11 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
             .getRoute(
               origin: LatLng(effectivePickup.lat, effectivePickup.lng),
               destination: LatLng(dropoff.lat, dropoff.lng),
+              // The stop rides the preload too — a stop-less straight line
+              // would flash under the real pickup → stop → dropoff route.
+              waypoints: _stopDetails == null
+                  ? null
+                  : [LatLng(_stopDetails!.lat, _stopDetails!.lng)],
             )
             .timeout(const Duration(milliseconds: 200));
       } catch (_) {}

@@ -449,6 +449,15 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   // ── Scheduled rides badge ──
   int _scheduledAvailCount = 0;
 
+  // ── Marketplace de viajes sin agarrar (user spec 2026-10-02) ──
+  // Viajes que ya sonaron a los candidatos y nadie tomó: la píldora arriba
+  // del sheet los cuenta, y al tocarla el sheet se transforma en la(s)
+  // tarjeta(s) para agarrarlos — el primero que lo toma se lo queda.
+  List<Map<String, dynamic>> _availableTrips = [];
+  Timer? _marketplacePollTimer;
+  bool _marketplaceOpen = false;
+  int? _claimingTripId;
+
   /// Notifications the driver has not opened. This is what the bell's
   /// badge counts — it used to show _scheduledAvailCount, so the number on
   /// the bell was how many reservations were up for grabs, not how many
@@ -1506,6 +1515,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     _activeTripCancelWatcher?.cancel();
     _sseReconnectTimer?.cancel();
     _scheduledPollTimer?.cancel();
+    _marketplacePollTimer?.cancel();
     _clock?.cancel();
     _navTimer?.cancel();
     _dotWatchdog?.cancel();

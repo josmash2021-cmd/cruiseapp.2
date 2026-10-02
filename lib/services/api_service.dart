@@ -3415,6 +3415,47 @@ class ApiService {
     return [];
   }
 
+  /// Unclaimed instant trips near the driver — the marketplace pill's feed
+  /// (user spec 2026-10-02). A trip lands here only after the cascade
+  /// already rang someone and nobody took it; the first claim keeps it.
+  static Future<List<Map<String, dynamic>>> getUnclaimedTrips(
+    int driverId,
+  ) async {
+    final h = await _authHeaders();
+    final res = await _client
+        .get(
+          Uri.parse('$_baseUrl/dispatch/available?driver_id=$driverId'),
+          headers: h,
+        )
+        .timeout(const Duration(seconds: 5));
+    if (res.statusCode >= 200 && res.statusCode < 300) {
+      final body = jsonDecode(res.body);
+      if (body is List) return body.cast<Map<String, dynamic>>();
+    }
+    return [];
+  }
+
+  /// Grab an unclaimed trip off the board. The backend resolves the race
+  /// atomically: 200 = yours, 409 = another driver took it first
+  /// ("Ya este viaje no está disponible").
+  static Future<Map<String, dynamic>> claimUnclaimedTrip({
+    required int tripId,
+    required int driverId,
+  }) async {
+    final h = await _authHeaders();
+    final res = await _client
+        .post(
+          Uri.parse(
+            '$_baseUrl/dispatch/claim?trip_id=$tripId&driver_id=$driverId',
+          ),
+          headers: h,
+        )
+        .timeout(const Duration(seconds: 30));
+    final parsed = _parse(res);
+    parsed['_http_status'] = res.statusCode;
+    return parsed;
+  }
+
   /// Driver accepts a ride offer.
   ///
   /// Timeout bumped to 30s (was 8s) because on slow cellular or during a

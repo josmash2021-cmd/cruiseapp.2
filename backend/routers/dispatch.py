@@ -2177,6 +2177,164 @@ async def trip_status_sse(
     )
 
 
+async def _announce_driver_assignment(
+    db: AsyncSession, trip: Trip, driver_id: int, accepted_status: str,
+) -> None:
+    """Everything the rider/guests are told once a driver takes a trip.
+
+    Shared by accept_offer (the driver tapped the ring) and
+    claim_available_trip (the driver grabbed it off the marketplace board):
+    Firestore mirror, the SSE trip update carrying the full driver card,
+    guest SMS/email, and the rider's FCM + SMS. Fail-soft throughout — a
+    notification channel must never turn a won assignment into a 500.
+    """
+    # Sync to Firestore so rider sees driver assigned in real time (non-blocking)
+    if _HAS_FIRESTORE and trip:
+        async def _sync_firestore_accept():
+            try:
+                async with SessionLocal() as _db:
+                    drv_result = await _db.execute(select(User).where(User.id == driver_id))
+                    drv = drv_result.scalar_one_or_none()
+                    veh_result = await _db.execute(select(Vehicle).where(
+                        Vehicle.user_id == driver_id,
+                        Vehicle.is_active == True,
+                    ))
+                    veh = veh_result.scalar_one_or_none()
+                    firestore_sync.sync_trip_status(
+                        trip_id=trip.id, status=accepted_status,
+                        driver_id=driver_id,
+                        driver_name=f"{drv.first_name} {drv.last_name}" if drv else None,
+                        driver_phone=drv.phone if drv else None,
+                        driver_photo_url=(_abs_photo_url(drv.photo_url) or "") if drv else None,
+                        vehicle_make=veh.make if veh else None,
+                        vehicle_model=veh.model if veh else None,
+                        vehicle_color=veh.color if veh else None,
+                        vehicle_plate=veh.plate if veh else None,
+                        vehicle_year=str(veh.year) if veh else None,
+                    )
+            except Exception as e:
+                logging.error("Firestore sync on accept failed: %s", e)
+        _safe_create_task(_sync_firestore_accept())
+
+    # -- SSE instant push to rider watching this trip (with FULL driver info) --
+    # Uses await (not create_task) so the push is guaranteed delivered before HTTP response returns.
+    if trip:
+        try:
+            async with SessionLocal() as _db2:
+                drv_r = await _db2.execute(select(User).where(User.id == driver_id))
+                drv = drv_r.scalar_one_or_none()
+                veh_r = await _db2.execute(select(Vehicle).where(
+                    Vehicle.user_id == driver_id,
+                    Vehicle.is_active == True,
+                ))
+                veh = veh_r.scalar_one_or_none()
+                # Fetch actual driver stats from ratings
+                _stats_r = await _db2.execute(
+                    select(
+                        func.count(Rating.id).label("trip_count"),
+                        select(User.average_rating)
+                        .where(User.id == driver_id)
+                        .scalar_subquery().label("avg_rating"),
+                    ).where(Rating.to_user_id == driver_id)
+                )
+                _stats_row = _stats_r.first()
+                _driver_trips = _stats_row.trip_count if _stats_row else 0
+                _driver_rating = round(float(_stats_row.avg_rating), 1) if (_stats_row and _stats_row.avg_rating is not None and _stats_row.trip_count > 0) else None
+            await event_bus.push_trip_update(trip.id, {
+                "status": accepted_status,
+                "trip_id": trip.id,
+                "driver_id": driver_id,
+                "driver_name": f"{drv.first_name} {drv.last_name}" if drv else "Driver",
+                "driver_phone": (drv.phone or "") if drv else "",
+                "driver_photo_url": (_abs_photo_url(drv.photo_url) or "") if drv else "",
+                "driver_rating": _driver_rating,
+                "driver_trips": _driver_trips,
+                "vehicle_make": veh.make if veh else "",
+                "vehicle_model": veh.model if veh else "",
+                "vehicle_color": veh.color if veh else "",
+                "vehicle_plate": veh.plate if veh else "",
+                "vehicle_year": str(veh.year) if veh else "",
+            })
+        except Exception as e:
+            logging.error("SSE push with driver info failed: %s", e)
+
+        # Guest SMS: driver assigned (no-op if trip.guest_phone is empty).
+        # Reuses `drv` and `veh` loaded above — no extra queries.
+        # If the vehicle row is missing, pass a stub so the template doesn't crash.
+        try:
+            if veh is None:
+                class _VehStub:
+                    make = ""
+                    model = ""
+                    plate = ""
+                    year = ""
+                    color = ""
+                _veh_for_sms = _VehStub()
+            else:
+                _veh_for_sms = veh
+            await notify_guest_driver_assigned(db, trip, drv, _veh_for_sms)
+        except Exception as _sms_err:
+            logging.warning(
+                "[SMS] notify_guest_driver_assigned failed for trip %s: %s",
+                trip.id, _sms_err,
+            )
+        try:
+            await email_guest_driver_assigned(db, trip, drv, _veh_for_sms)
+        except Exception as _email_err:
+            logging.warning(
+                "[EMAIL] email_guest_driver_assigned failed for trip %s: %s",
+                trip.id, _email_err,
+            )
+
+    # -- Push + SMS notification to rider when driver accepts --
+    if trip:
+        try:
+            rider_result = await db.execute(select(User).where(User.id == trip.rider_id))
+            rider = rider_result.scalar_one_or_none()
+            drv_result2 = await db.execute(select(User).where(User.id == driver_id))
+            drv2 = drv_result2.scalar_one_or_none()
+            driver_display = f"{drv2.first_name} {drv2.last_name}" if drv2 else "Your driver"
+
+            # Push notification via FCM (works for ALL trip types).
+            # A reservation taken days early is not "on the way" — saying so
+            # sends the rider to the door for a ride next week.
+            _is_reservation = accepted_status == "scheduled_accepted"
+            if rider and rider.fcm_token:
+                _send_fcm_push(
+                    rider.fcm_token,
+                    title="Conductor asignado" if _is_reservation else "Driver Found!",
+                    body=(
+                        f"{driver_display} tomó tu viaje reservado. Te avisamos "
+                        "cuando esté en camino."
+                        if _is_reservation
+                        else f"{driver_display} is on the way to pick you up."
+                    ),
+                    data={
+                        "type": "scheduled_claimed" if _is_reservation else "driver_assigned",
+                        "trip_id": str(trip.id),
+                        "driver_id": str(driver_id),
+                    },
+                )
+
+            # SMS via Twilio (non-blocking -- don't slow down accept response)
+            if rider and rider.phone and TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN and TWILIO_PHONE_NUMBER:
+                def _send_sms():
+                    try:
+                        from twilio.rest import Client as TwilioClient
+                        twilio_client = TwilioClient(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
+                        twilio_client.messages.create(
+                            to=rider.phone,
+                            from_=TWILIO_PHONE_NUMBER,
+                            body=f"Cruise: Your ride has been confirmed! {driver_display} will be your driver. Open the app for details.",
+                        )
+                        logging.info("[SMS] Ride confirmation sent to %s", rider.phone[-4:])
+                    except Exception as sms_err:
+                        logging.warning("[SMS] Failed to send confirmation: %s", sms_err)
+                asyncio.get_event_loop().run_in_executor(None, _send_sms)
+        except Exception as notif_err:
+            logging.warning("[Notify] Failed to notify rider on accept: %s", notif_err)
+
+
 @router.post("/dispatch/driver/accept", dependencies=[Depends(_verify_api_key)])
 async def accept_offer(offer_id: int = Query(...), driver_id: int = Query(...), user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
     # Authorization: ensure the authenticated user IS the driver
@@ -2275,154 +2433,180 @@ async def accept_offer(offer_id: int = Query(...), driver_id: int = Query(...), 
     trip.status = accepted_status
     await db.commit()
 
-    # Sync to Firestore so rider sees driver assigned in real time (non-blocking)
-    if _HAS_FIRESTORE and trip:
-        async def _sync_firestore_accept():
-            try:
-                async with SessionLocal() as _db:
-                    drv_result = await _db.execute(select(User).where(User.id == driver_id))
-                    drv = drv_result.scalar_one_or_none()
-                    veh_result = await _db.execute(select(Vehicle).where(
-                        Vehicle.user_id == driver_id,
-                        Vehicle.is_active == True,
-                    ))
-                    veh = veh_result.scalar_one_or_none()
-                    firestore_sync.sync_trip_status(
-                        trip_id=trip.id, status=accepted_status,
-                        driver_id=driver_id,
-                        driver_name=f"{drv.first_name} {drv.last_name}" if drv else None,
-                        driver_phone=drv.phone if drv else None,
-                        driver_photo_url=(_abs_photo_url(drv.photo_url) or "") if drv else None,
-                        vehicle_make=veh.make if veh else None,
-                        vehicle_model=veh.model if veh else None,
-                        vehicle_color=veh.color if veh else None,
-                        vehicle_plate=veh.plate if veh else None,
-                        vehicle_year=str(veh.year) if veh else None,
-                    )
-            except Exception as e:
-                logging.error("Firestore sync on accept_offer failed: %s", e)
-        _safe_create_task(_sync_firestore_accept())
-
-    # -- SSE instant push to rider watching this trip (with FULL driver info) --
-    # Uses await (not create_task) so the push is guaranteed delivered before HTTP response returns.
-    if trip:
-        try:
-            async with SessionLocal() as _db2:
-                drv_r = await _db2.execute(select(User).where(User.id == driver_id))
-                drv = drv_r.scalar_one_or_none()
-                veh_r = await _db2.execute(select(Vehicle).where(
-                    Vehicle.user_id == driver_id,
-                    Vehicle.is_active == True,
-                ))
-                veh = veh_r.scalar_one_or_none()
-                # Fetch actual driver stats from ratings
-                _stats_r = await _db2.execute(
-                    select(
-                        func.count(Rating.id).label("trip_count"),
-                        select(User.average_rating)
-                        .where(User.id == driver_id)
-                        .scalar_subquery().label("avg_rating"),
-                    ).where(Rating.to_user_id == driver_id)
-                )
-                _stats_row = _stats_r.first()
-                _driver_trips = _stats_row.trip_count if _stats_row else 0
-                _driver_trips = _stats_row.trip_count if _stats_row else 0
-                _driver_rating = round(float(_stats_row.avg_rating), 1) if (_stats_row and _stats_row.avg_rating is not None and _stats_row.trip_count > 0) else None
-            await event_bus.push_trip_update(trip.id, {
-                "status": accepted_status,
-                "trip_id": trip.id,
-                "driver_id": driver_id,
-                "driver_name": f"{drv.first_name} {drv.last_name}" if drv else "Driver",
-                "driver_phone": (drv.phone or "") if drv else "",
-                "driver_photo_url": (_abs_photo_url(drv.photo_url) or "") if drv else "",
-                "driver_rating": _driver_rating,
-                "driver_trips": _driver_trips,
-                "vehicle_make": veh.make if veh else "",
-                "vehicle_model": veh.model if veh else "",
-                "vehicle_color": veh.color if veh else "",
-                "vehicle_plate": veh.plate if veh else "",
-                "vehicle_year": str(veh.year) if veh else "",
-            })
-        except Exception as e:
-            logging.error("SSE push with driver info failed: %s", e)
-
-        # Guest SMS: driver assigned (no-op if trip.guest_phone is empty).
-        # Reuses `drv` and `veh` loaded above — no extra queries.
-        # If the vehicle row is missing, pass a stub so the template doesn't crash.
-        try:
-            if veh is None:
-                class _VehStub:
-                    make = ""
-                    model = ""
-                    plate = ""
-                    year = ""
-                    color = ""
-                _veh_for_sms = _VehStub()
-            else:
-                _veh_for_sms = veh
-            await notify_guest_driver_assigned(db, trip, drv, _veh_for_sms)
-        except Exception as _sms_err:
-            logging.warning(
-                "[SMS] notify_guest_driver_assigned failed for trip %s: %s",
-                trip.id, _sms_err,
-            )
-        try:
-            await email_guest_driver_assigned(db, trip, drv, _veh_for_sms)
-        except Exception as _email_err:
-            logging.warning(
-                "[EMAIL] email_guest_driver_assigned failed for trip %s: %s",
-                trip.id, _email_err,
-            )
-
-    # -- Push + SMS notification to rider when driver accepts --
-    if trip:
-        try:
-            rider_result = await db.execute(select(User).where(User.id == trip.rider_id))
-            rider = rider_result.scalar_one_or_none()
-            drv_result2 = await db.execute(select(User).where(User.id == driver_id))
-            drv2 = drv_result2.scalar_one_or_none()
-            driver_display = f"{drv2.first_name} {drv2.last_name}" if drv2 else "Your driver"
-
-            # Push notification via FCM (works for ALL trip types).
-            # A reservation taken days early is not "on the way" — saying so
-            # sends the rider to the door for a ride next week.
-            _is_reservation = accepted_status == "scheduled_accepted"
-            if rider and rider.fcm_token:
-                _send_fcm_push(
-                    rider.fcm_token,
-                    title="Conductor asignado" if _is_reservation else "Driver Found!",
-                    body=(
-                        f"{driver_display} tomó tu viaje reservado. Te avisamos "
-                        "cuando esté en camino."
-                        if _is_reservation
-                        else f"{driver_display} is on the way to pick you up."
-                    ),
-                    data={
-                        "type": "scheduled_claimed" if _is_reservation else "driver_assigned",
-                        "trip_id": str(trip.id),
-                        "driver_id": str(driver_id),
-                    },
-                )
-
-            # SMS via Twilio (non-blocking -- don't slow down accept response)
-            if rider and rider.phone and TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN and TWILIO_PHONE_NUMBER:
-                def _send_sms():
-                    try:
-                        from twilio.rest import Client as TwilioClient
-                        twilio_client = TwilioClient(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
-                        twilio_client.messages.create(
-                            to=rider.phone,
-                            from_=TWILIO_PHONE_NUMBER,
-                            body=f"Cruise: Your ride has been confirmed! {driver_display} will be your driver. Open the app for details.",
-                        )
-                        logging.info("[SMS] Scheduled ride confirmation sent to %s", rider.phone[-4:])
-                    except Exception as sms_err:
-                        logging.warning("[SMS] Failed to send scheduled confirmation: %s", sms_err)
-                asyncio.get_event_loop().run_in_executor(None, _send_sms)
-        except Exception as notif_err:
-            logging.warning("[Notify] Failed to notify rider on accept: %s", notif_err)
+    await _announce_driver_assignment(db, trip, driver_id, accepted_status)
 
     return {"status": "accepted", "trip": _trip_dict(trip) if trip else None}
+
+
+# ── Marketplace of unclaimed trips (user spec 2026-10-02) ────────────────
+# A trip rings each nearby driver ONCE (guardian's retry never re-offers).
+# When every candidate passed, it sits on this board instead of ringing
+# forever: any online driver within the dispatch radius sees it in the
+# pill above the online sheet, and the first to claim keeps it.
+
+
+@router.get("/dispatch/available", dependencies=[Depends(_verify_api_key)])
+async def list_available_trips(driver_id: int = Query(...), user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
+    """Unclaimed instant trips near this driver — the pill's feed.
+
+    A trip lands here only AFTER the cascade already rang someone (an offer
+    row exists): a fresh trip mid-cascade is still ringing its candidates
+    and must never appear on the board at the same time. While it sits here
+    the rider simply keeps waiting — nothing is cancelled by this path.
+    """
+    if user.id != driver_id or user.role != "driver":
+        raise HTTPException(403, "Not authorized to view available trips")
+    if not user.is_online or user.lat is None or user.lng is None:
+        return []
+
+    now = utc_now()
+    radius_km = _LIVE_DISPATCH_RADIUS_KM
+    delta_lat = radius_km / 111.0
+    cos_lat = math.cos(math.radians(user.lat)) if user.lat else 1.0
+    delta_lng = radius_km / (111.0 * cos_lat) if cos_lat != 0 else radius_km / 111.0
+
+    rows = await db.execute(
+        select(Trip).where(
+            and_(
+                Trip.status == "requested",
+                Trip.driver_id.is_(None),
+                Trip.scheduled_at.is_(None),
+                # The DataGuardian cancels stuck trips at 30 min — older
+                # rows are dead even if they still say 'requested'.
+                Trip.created_at >= now - timedelta(minutes=30),
+                Trip.pickup_lat >= user.lat - delta_lat,
+                Trip.pickup_lat <= user.lat + delta_lat,
+                Trip.pickup_lng >= user.lng - delta_lng,
+                Trip.pickup_lng <= user.lng + delta_lng,
+                select(DispatchOffer.id)
+                .where(DispatchOffer.trip_id == Trip.id)
+                .exists(),
+            )
+        ).order_by(Trip.created_at).limit(10)
+    )
+    trips = rows.scalars().all()
+
+    rider_ids = [t.rider_id for t in trips if t.rider_id]
+    rider_rep: dict[int, tuple[str, float | None, int]] = {}
+    if rider_ids:
+        rr = await db.execute(
+            select(
+                User.id, User.first_name, User.average_rating,
+                select(func.count(Trip.id)).where(Trip.rider_id == User.id).scalar_subquery(),
+            ).where(User.id.in_(rider_ids))
+        )
+        for rid, fname, avg, cnt in rr.all():
+            rider_rep[rid] = (fname or "", (round(float(avg), 2) if avg is not None else None), int(cnt or 0))
+
+    out = []
+    for t in trips:
+        dist_km = _haversine(user.lat, user.lng, t.pickup_lat or 0, t.pickup_lng or 0)
+        if dist_km > radius_km:
+            continue  # bounding-box corners overshoot the circle
+        est_driver_fare = round(float(t.fare or 0.0) * DRIVER_SHARE_RATE, 2)
+        minutes = int(t.duration) if t.duration else 0
+        miles = float(t.distance) if t.distance else 0.0
+        per_hour = (f"${est_driver_fare / (minutes / 60):.2f}/hr" if minutes > 0 else None)
+        rname, rrate, rrides = rider_rep.get(t.rider_id, ("", None, 0))
+        out.append({
+            "trip_id": t.id,
+            "pickup_address": t.pickup_address or "",
+            "dropoff_address": t.dropoff_address or "",
+            "vehicle_type": t.vehicle_type or "",
+            "fare": est_driver_fare,
+            "driver_earnings": est_driver_fare,
+            "per_hour": per_hour,
+            "miles": f"{miles:.1f} mi" if miles > 0 else None,
+            "minutes": f"{minutes} min" if minutes > 0 else None,
+            "pickup_distance_miles": round(dist_km * 0.621371, 1),
+            "rider_name": rname,
+            "rider_rating": rrate,
+            "rider_rides_count": max(0, rrides - 1),
+            "rider_is_new": rrides <= 1,
+            "created_at": t.created_at.isoformat() if t.created_at else None,
+        })
+    return out
+
+
+@router.post("/dispatch/claim", dependencies=[Depends(_verify_api_key)])
+async def claim_available_trip(trip_id: int = Query(...), driver_id: int = Query(...), user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
+    """Grab an unclaimed trip off the board. ATOMIC: the trip row is locked
+    FOR UPDATE before the state check, so two drivers grabbing at once can
+    never both win — the loser commits after the winner and reads the trip
+    as already taken (409 → "Ya este viaje no está disponible").
+    """
+    if user.id != driver_id or user.role != "driver":
+        raise HTTPException(403, "Not authorized to claim this trip")
+
+    # Lock the trip FIRST (canonical lock order: trips before offers — same
+    # convention as accept_offer, which is the race this lock settles).
+    trip_result = await db.execute(
+        select(Trip).where(Trip.id == trip_id).with_for_update()
+    )
+    trip = trip_result.scalar_one_or_none()
+    if not trip or trip.status != "requested" or trip.driver_id is not None:
+        raise HTTPException(409, "trip_no_longer_available")
+
+    # Same eligibility the cascade demands of a candidate before ringing.
+    if not user.is_online or (user.status or "active") not in ACTIVE_ACCOUNT_STATUSES:
+        raise HTTPException(403, "not_eligible")
+    if user.lat is None or user.lng is None or _haversine(
+            user.lat, user.lng, trip.pickup_lat or 0, trip.pickup_lng or 0) > _LIVE_DISPATCH_RADIUS_KM:
+        raise HTTPException(403, "too_far_from_pickup")
+
+    accepted_status = (
+        "scheduled_accepted"
+        if trip.status == "scheduled" and trip.scheduled_at is not None
+        else "driver_en_route"
+    )
+    trip.driver_id = driver_id
+    trip.driver_assigned_at = datetime.now(timezone.utc)
+    trip.status = accepted_status
+
+    # Every ring still standing for this trip dies with it — including the
+    # one a freshly-online driver may be looking at right now. Their card
+    # must not accept a trip that is already gone (the 409 above guards the
+    # accept side; this clears the visible leftovers).
+    # Every ring still standing for this trip dies with it — including the
+    # one a freshly-online driver may be looking at right now. Their card
+    # must not accept a trip that is already gone (the 409 above guards the
+    # accept side; this clears the visible leftovers). One set-based UPDATE
+    # — ORM attribute writes on rows loaded in this same locked transaction
+    # silently failed to flush on the aiosqlite test harness (2026-10-02).
+    ring_ids = (
+        await db.execute(
+            select(DispatchOffer.driver_id).where(
+                DispatchOffer.trip_id == trip.id,
+                DispatchOffer.status == "pending",
+            )
+        )
+    ).scalars().all()
+    for rid in ring_ids:
+        await db.execute(
+            DispatchOffer.__table__.update()
+            .where(DispatchOffer.trip_id == trip.id,
+                   DispatchOffer.driver_id == rid,
+                   DispatchOffer.status == "pending")
+            .values(status="expired")
+        )
+        await _bump_offer_counter(db, rid, "expired")
+        _pending_cache.pop(rid, None)
+        _safe_create_task(_clear_live_activity_offer(rid))
+
+    _pending_cache.pop(driver_id, None)
+    _dispatch_status_cache.pop(trip.id, None)
+    _safe_create_task(_clear_live_activity_offer(driver_id))
+
+    cascade_task = _cascade_tasks.pop(trip.id, None)
+    if cascade_task and not cascade_task.done():
+        cascade_task.cancel()
+
+    await db.flush()
+    await db.commit()
+
+    logging.info("[Dispatch] trip %s CLAIMED from the board by driver %s", trip.id, driver_id)
+    await _announce_driver_assignment(db, trip, driver_id, accepted_status)
+    return {"status": "accepted", "trip": _trip_dict(trip)}
 
 
 async def _requeue_trip_to_next_driver(db: AsyncSession, trip: Trip):

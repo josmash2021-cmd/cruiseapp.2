@@ -1339,16 +1339,18 @@ class UnmatchedTripRetryAgent:
                 if existing.scalar() > 0:
                     continue  # already has a pending offer, skip
 
-                # Only exclude drivers with active (pending/accepted) offers — allow
-                # re-offering to drivers whose previous offer expired or was auto-rejected
-                # (e.g. 20-second UI countdown timeout). This prevents a single-driver
-                # scenario from permanently blocking dispatch.
+                # One ring per driver, ever (user spec 2026-10-02): drivers
+                # with ANY prior offer for this trip — pending, accepted,
+                # expired or rejected — are out. The old rule re-offered to
+                # everyone whose offer had expired, so the same phone rang
+                # the same trip every 15 s forever. The fallback for a trip
+                # nobody took is the marketplace board (/dispatch/available +
+                # /dispatch/claim), and the only phones this loop may still
+                # ring are drivers who have never seen it — e.g. someone who
+                # just came online.
                 prev_result = await db.execute(
                     select(DispatchOffer.driver_id).where(
-                        and_(
-                            DispatchOffer.trip_id == trip.id,
-                            DispatchOffer.status.in_(["pending", "accepted"]),
-                        )
+                        DispatchOffer.trip_id == trip.id,
                     )
                 )
                 excluded_ids = {r[0] for r in prev_result.all()}

@@ -2480,6 +2480,13 @@ class S {
   String get headToDestination => _es ? 'Hacia destino' : 'To destination';
   String get tripNoLongerAvailable =>
       _es ? 'Viaje ya no disponible' : 'Trip no longer available';
+  String get acceptFailedTryAgain =>
+      _es ? 'No se pudo aceptar — inténtalo de nuevo' : 'Could not accept — try again';
+  String availableTrips(int n) => _es
+      ? (n == 1 ? '1 viaje disponible' : '$n viajes disponibles')
+      : (n == 1 ? '1 trip available' : '$n trips available');
+  String get grabTrip => _es ? 'Aceptar viaje' : 'Accept trip';
+  String get tripsNearYou => _es ? 'cerca de ti' : 'near you';
 
   // ── Trip Complete / Nav UI ─────────────────────────────────────────────────
   String get tripComplete => _es ? 'Viaje completo' : 'Trip Complete';

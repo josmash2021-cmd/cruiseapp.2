@@ -736,6 +736,237 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
     }
   }
 
+  // ── Marketplace pill + claim card (user spec 2026-10-02) ──────────────
+  /// Closed: a gold pill counting the unclaimed trips. Tap and it morphs
+  /// (AnimatedSize + crossfade) into the trip card(s) with Accept — first
+  /// driver to grab keeps it; the board refreshes on every poll.
+  Widget _marketplacePill() {
+    const gold = Color(0xFFE8C547);
+    final n = _availableTrips.length;
+    return AnimatedSize(
+      duration: const Duration(milliseconds: 320),
+      curve: Curves.easeInOutCubic,
+      child: AnimatedSwitcher(
+        duration: const Duration(milliseconds: 220),
+        child: _marketplaceOpen
+            ? _marketplaceCard(gold, key: const ValueKey('open'))
+            : GestureDetector(
+                key: const ValueKey('closed'),
+                onTap: () {
+                  HapticService.lightImpact();
+                  _setState(() => _marketplaceOpen = true);
+                },
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                  decoration: BoxDecoration(
+                    color: neuBase,
+                    borderRadius: BorderRadius.circular(24),
+                    border: Border.all(color: gold.withValues(alpha: 0.55)),
+                    boxShadow: [
+                      BoxShadow(
+                        color: gold.withValues(alpha: 0.18),
+                        blurRadius: 14,
+                        spreadRadius: 1,
+                      ),
+                    ],
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(Icons.directions_car_filled_rounded,
+                          color: gold, size: 18),
+                      const SizedBox(width: 8),
+                      Text(
+                        S.of(context).availableTrips(n),
+                        style: const TextStyle(
+                          color: gold,
+                          fontSize: 14.5,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      Icon(Icons.keyboard_arrow_up_rounded,
+                          color: gold.withValues(alpha: 0.7), size: 18),
+                    ],
+                  ),
+                ),
+              ),
+      ),
+    );
+  }
+
+  /// The morphed-open sheet: the unclaimed trips, each with Accept.
+  Widget _marketplaceCard(Color gold, {Key? key}) {
+    return Container(
+      key: key,
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
+      decoration: BoxDecoration(
+        color: neuBase,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: gold.withValues(alpha: 0.5)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.directions_car_filled_rounded,
+                  color: gold, size: 16),
+              const SizedBox(width: 7),
+              Expanded(
+                child: Text(
+                  '${S.of(context).availableTrips(_availableTrips.length)} '
+                  '${S.of(context).tripsNearYou}',
+                  style: TextStyle(
+                    color: gold,
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              GestureDetector(
+                onTap: () => _setState(() => _marketplaceOpen = false),
+                child: Padding(
+                  padding: const EdgeInsets.all(2),
+                  child: Icon(Icons.close_rounded,
+                      color: Colors.white.withValues(alpha: 0.6), size: 17),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          for (final t in _availableTrips.take(3)) _claimTripRow(gold, t),
+        ],
+      ),
+    );
+  }
+
+  Widget _claimTripRow(Color gold, Map<String, dynamic> t) {
+    final tripId = (t['trip_id'] as num?)?.toInt();
+    final claiming = _claimingTripId != null && _claimingTripId == tripId;
+    final fare = t['driver_earnings'] ?? t['fare'];
+    final pickup = (t['pickup_address'] ?? '').toString();
+    final dropoff = (t['dropoff_address'] ?? '').toString();
+    final riderName = (t['rider_name'] ?? '').toString();
+    final rating = t['rider_rating'];
+    final isNew = t['rider_is_new'] == true;
+    final bits = <String>[
+      if (t['per_hour'] != null) t['per_hour'].toString(),
+      if (t['miles'] != null) t['miles'].toString(),
+      if (t['minutes'] != null) t['minutes'].toString(),
+    ].join(' · ');
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.04),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              if (fare != null)
+                Text(
+                  '\$${(fare as num).toStringAsFixed(2)}',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 17,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              const SizedBox(width: 8),
+              if (bits.isNotEmpty)
+                Expanded(
+                  child: Text(
+                    bits,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.65),
+                      fontSize: 12,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          _addrRow(Icons.trip_origin, const Color(0xFF4CAF50), pickup),
+          const SizedBox(height: 3),
+          _addrRow(Icons.location_on, Colors.redAccent, dropoff),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  isNew
+                      ? S.of(context).newRiderLabel
+                      : '$riderName${rating != null ? ' ★$rating' : ''}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.7),
+                    fontSize: 12,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              GestureDetector(
+                onTap: claiming ? null : () => _claimTrip(t),
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
+                  decoration: BoxDecoration(
+                    color: gold,
+                    borderRadius: BorderRadius.circular(18),
+                  ),
+                  child: claiming
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                              strokeWidth: 2, color: Colors.black),
+                        )
+                      : Text(
+                          S.of(context).grabTrip,
+                          style: const TextStyle(
+                            color: Colors.black,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _addrRow(IconData icon, Color color, String text) {
+    return Row(
+      children: [
+        Icon(icon, color: color, size: 12),
+        const SizedBox(width: 6),
+        Expanded(
+          child: Text(
+            text,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.85),
+              fontSize: 12.5,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
   // ── SEARCHING: Uber-style "Finding trips" bar ──
   /// Slim notice when iOS has Live Activities OFF for Cruise (Settings >
   /// Cruise). The island and the whole token pipeline silently no-op in
@@ -1210,6 +1441,16 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                   ),
                 ),
               ),
+            ),
+          // ── Marketplace pill: viajes sin agarrar (user spec 2026-10-02) ──
+          // Sits right above the Finding trips bar while searching; tap and
+          // the sheet morphs open into the claim cards. First grab keeps it.
+          if (_availableTrips.isNotEmpty &&
+              _phase == _Phase.searching &&
+              _pendingOffers.isEmpty)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              child: _marketplacePill(),
             ),
           // ── "Finding trips" bar at the bottom ──
           ClipRect(

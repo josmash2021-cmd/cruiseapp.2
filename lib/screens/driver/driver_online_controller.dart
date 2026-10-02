@@ -1170,6 +1170,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       _startClock();
       _startPolling();
       _startScheduledPoll();
+      _startMarketplacePoll();
     } finally {
       _enteringOnline = false;
     }
@@ -1194,6 +1195,9 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     _sseActive = false;
     _clock?.cancel();
     _scheduledPollTimer?.cancel();
+    _marketplacePollTimer?.cancel();
+    _marketplaceOpen = false;
+    _availableTrips = [];
     _pauseTimer?.cancel();
     _isPaused = false;
     // The search trace belongs to the shift that just ended — forget it so
@@ -2222,6 +2226,81 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       // stops carrying it, the chip disappears on this refresh.
       if (mounted) _loadDestination();
     });
+  }
+
+  /// Poll the unclaimed-trips board every 12 s (user spec 2026-10-02).
+  /// The pill above the sheet counts these; tapping it morphs the sheet
+  /// into the claim cards. Only while searching and online.
+  void _startMarketplacePoll() {
+    _marketplacePollTimer?.cancel();
+    _fetchAvailableTrips();
+    _marketplacePollTimer = Timer.periodic(const Duration(seconds: 12), (_) {
+      if (!mounted || _phase != _Phase.searching || !_driverOnline) return;
+      _fetchAvailableTrips();
+    });
+  }
+
+  Future<void> _fetchAvailableTrips() async {
+    if (_driverId == null || _phase != _Phase.searching || !_driverOnline) {
+      return;
+    }
+    try {
+      final trips = await ApiService.getUnclaimedTrips(_driverId!);
+      if (!mounted) return;
+      final had = _availableTrips.length;
+      _setState(() => _availableTrips = trips);
+      // Fresh arrivals bump the pill like the scheduled badge does.
+      if (trips.length > had && trips.isNotEmpty) {
+        HapticService.lightImpact();
+      }
+      // A trip on the open card got taken by someone else: close it back.
+      if (trips.isEmpty && _marketplaceOpen) {
+        _setState(() => _marketplaceOpen = false);
+      }
+    } catch (e) {
+      debugPrint('[DriverOnline] marketplace fetch failed: $e');
+    }
+  }
+
+  /// Grab an unclaimed trip off the board — the backend resolves the race
+  /// atomically; on 409 the card comes down with "ya no está disponible".
+  Future<void> _claimTrip(Map<String, dynamic> t) async {
+    final tripId = (t['trip_id'] as num?)?.toInt();
+    if (tripId == null || _driverId == null || _claimingTripId != null) return;
+    HapticService.mediumImpact();
+    _setState(() => _claimingTripId = tripId);
+    try {
+      final res = await ApiService.claimUnclaimedTrip(
+          tripId: tripId, driverId: _driverId!);
+      if (!mounted) return;
+      final httpStatus = (res['_http_status'] as num?)?.toInt() ?? 200;
+      if (httpStatus == 200 && res['trip'] is Map<String, dynamic>) {
+        _setState(() {
+          _marketplaceOpen = false;
+          _availableTrips = [];
+          _claimingTripId = null;
+        });
+        // Same flow as accepting a ring: the backend already assigned it.
+        await _acceptOffer(Map<String, dynamic>.from(res['trip'] as Map),
+            alreadyAcceptedOnBackend: true);
+        return;
+      }
+      _setState(() => _claimingTripId = null);
+      if (httpStatus == 409) {
+        _snack(S.of(context).tripNoLongerAvailable);
+        _availableTrips.removeWhere((x) => x['trip_id'] == tripId);
+        _setState(() {});
+        unawaited(_fetchAvailableTrips());
+      } else {
+        _snack(S.of(context).acceptFailedTryAgain);
+      }
+    } catch (e) {
+      debugPrint('[DriverOnline] claim failed: $e');
+      if (mounted) {
+        _setState(() => _claimingTripId = null);
+        _snack(S.of(context).acceptFailedTryAgain);
+      }
+    }
   }
 
   // ── Destination filter ("heading to") ─────────────────────────────

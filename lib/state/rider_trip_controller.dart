@@ -925,6 +925,11 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
         pickupZone: _state.airportPickupZone,
         notes: notes,
         stripePaymentIntentId: _heldPaymentIntentId,
+        stopLat: _state.stopLat,
+        stopLng: _state.stopLng,
+        stopAddress: (_state.stopAddress ?? '').isNotEmpty
+            ? _state.stopAddress
+            : null,
       );
 
       final tripId = result['trip_id'] as int?;

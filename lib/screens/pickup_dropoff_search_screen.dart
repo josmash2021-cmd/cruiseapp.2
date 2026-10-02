@@ -379,6 +379,13 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
           handoffLng: seed.lng,
           pickerMode: true,
           pickerIsPickup: false,
+          // The stop survives the pin-confirm: the booking continues in
+          // THIS same canvas, so it must arrive here too.
+          initialStopAddress: _stopDetails != null
+              ? (_stopLabel.isNotEmpty ? _stopLabel : _stopDetails!.address)
+              : null,
+          initialStopLat: _stopDetails?.lat,
+          initialStopLng: _stopDetails?.lng,
           // Forward Schedule/Airport context so the destination CTA
           // says "Reserve Now" instead of "Request Ride".
           scheduledAt: widget.scheduledAt,
@@ -457,6 +464,13 @@ class _PickupDropoffSearchScreenState extends State<PickupDropoffSearchScreen> {
         handoffLng: lng,
         pickerMode: true,
         pickerIsPickup: _editingPickup,
+        // Same stop carry-over as _confirmDropoffOnMap — the booking
+        // continues inside this canvas.
+        initialStopAddress: _stopDetails != null
+            ? (_stopLabel.isNotEmpty ? _stopLabel : _stopDetails!.address)
+            : null,
+        initialStopLat: _stopDetails?.lat,
+        initialStopLng: _stopDetails?.lng,
         // Forward Schedule/Airport context so the destination CTA
         // says "Reserve Now" instead of "Request Ride".
         scheduledAt: widget.scheduledAt,

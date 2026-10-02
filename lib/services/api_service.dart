@@ -2064,6 +2064,10 @@ class ApiService {
     String? pickupZone,
     String? notes,
     String? paymentIntentId,
+    // Booking-time stop ("+"): the backend folds them into trips.stops.
+    double? stopLat,
+    double? stopLng,
+    String? stopAddress,
   }) async {
     final h = await _authHeaders();
     final res = await _client
@@ -2089,6 +2093,11 @@ class ApiService {
             if (notes != null) 'notes': notes,
             if (paymentIntentId != null)
               'stripe_payment_intent_id': paymentIntentId,
+            if (stopLat != null && stopLng != null) ...{
+              'stop_lat': stopLat,
+              'stop_lng': stopLng,
+              if (stopAddress != null) 'stop_address': stopAddress,
+            },
           }),
         )
         .timeout(const Duration(seconds: 10));
@@ -3130,6 +3139,10 @@ class ApiService {
     String? pickupZone,
     String? notes,
     String? stripePaymentIntentId,
+    // Booking-time stop ("+"): the backend folds them into trips.stops.
+    double? stopLat,
+    double? stopLng,
+    String? stopAddress,
   }) async {
     final h = await _authHeaders();
     final res = await _client
@@ -3155,6 +3168,11 @@ class ApiService {
             if (notes != null) 'notes': notes,
             if (stripePaymentIntentId != null)
               'stripe_payment_intent_id': stripePaymentIntentId,
+            if (stopLat != null && stopLng != null) ...{
+              'stop_lat': stopLat,
+              'stop_lng': stopLng,
+              if (stopAddress != null) 'stop_address': stopAddress,
+            },
           }),
         )
         .timeout(const Duration(seconds: 10));

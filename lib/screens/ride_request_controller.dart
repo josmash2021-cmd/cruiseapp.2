@@ -2380,6 +2380,11 @@ extension _RideRequestController on _RideRequestScreenState {
         // payment). A legacy build that did hold still sends it and the
         // backend settles it as before.
         paymentIntentId: _heldPaymentIntentId,
+        stopLat: state.stopLat,
+        stopLng: state.stopLng,
+        stopAddress: (state.stopAddress ?? '').isNotEmpty
+            ? state.stopAddress
+            : null,
       );
 
       if (!mounted) return;

@@ -11,6 +11,7 @@ import '../../l10n/app_localizations.dart';
 import '../../models/lat_lng.dart';
 import '../../services/api_service.dart';
 import '../../services/masked_call_service.dart';
+import '../../utils/trip_stops.dart';
 import '../../widgets/neu_style.dart';
 import 'driver_trip_accept_screen.dart';
 
@@ -212,6 +213,8 @@ class _ScheduledRideDetailsScreenState extends State<ScheduledRideDetailsScreen>
           etaMinutes: etaMinutes,
           riderPhone: trip['rider_phone']?.toString() ?? '',
           tripAlreadyStarted: true,
+          stopLatLng: parseTripStop(trip)?.point,
+          stopLabel: parseTripStop(trip)?.label ?? '',
         ),
       ),
     );

@@ -2947,7 +2947,12 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
         etaToPickup = 1;
         distToPickupMi = 0;
       }
-      final tripDistKm = _hav(pickupLL, dropoffLL);
+      // Straight-line fallback runs pickup→stop→dropoff when the ride
+      // has a booking-time stop, or it under-quotes the detour.
+      final stopLL = _offerStopPoint(offer);
+      final tripDistKm = stopLL == null
+          ? _hav(pickupLL, dropoffLL)
+          : _hav(pickupLL, stopLL) + _hav(stopLL, dropoffLL);
       final safeTripDist = tripDistKm.isFinite ? tripDistKm : 0.0;
       tripEta = (safeTripDist * 1000 / 17.88 / 60).ceil().clamp(1, 99);
       tripDistMi = safeTripDist * 0.621371;

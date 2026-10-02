@@ -36,6 +36,7 @@ import '../../services/trip_firestore_service.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../services/map_cache_service.dart';
 import '../../utils/mapbox_safe.dart';
+import '../../utils/trip_stops.dart';
 import '../../utils/route_splice.dart';
 import '../../services/local_cache.dart';
 import '../../services/firebase_auth_recovery.dart';
@@ -592,6 +593,10 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   String _vehicleType = '';
   LatLng _pickupLL = const LatLng(0, 0);
   LatLng _dropoffLL = const LatLng(0, 0);
+  // The accepted offer's booking-time stop — handed to the trip screen so
+  // its mini map opens already routed pickup → stop → dropoff.
+  LatLng? _stopLL;
+  String _stopLabel = '';
 
   // â”€â”€ Navigation â”€â”€
   double _navDist = 0;

@@ -428,7 +428,23 @@ def _trip_dict(t) -> dict:
         # Compute derived distance/duration from pickup/dropoff coordinates
         # so the frontend always has values even when raw DB columns are NULL.
         if d.get("pickup_lat") and d.get("dropoff_lat"):
-            computed_miles = round(_haversine(d["pickup_lat"], d["pickup_lng"], d["dropoff_lat"], d["dropoff_lng"]) * 0.621371, 1)
+            # A trip with a stop measures pickup → stop → dropoff — the
+            # straight pickup→dropoff haversine would under-quote the detour
+            # in the offer push ("mi · min") and the Live Activity card.
+            _legs = [(d["pickup_lat"], d["pickup_lng"])]
+            try:
+                _st = json.loads(d["stops"]) if d.get("stops") else []
+            except Exception:
+                _st = []
+            for _s in _st:
+                if isinstance(_s, dict) and _s.get("lat") and _s.get("lng"):
+                    _legs.append((_s["lat"], _s["lng"]))
+            _legs.append((d["dropoff_lat"], d["dropoff_lng"]))
+            _km = 0.0
+            for _i in range(len(_legs) - 1):
+                _km += _haversine(
+                    _legs[_i][0], _legs[_i][1], _legs[_i + 1][0], _legs[_i + 1][1])
+            computed_miles = round(_km * 0.621371, 1)
             computed_minutes = max(round(computed_miles * 2.5), 3) if computed_miles else None
             d["distance_miles"] = computed_miles
             d["duration_minutes"] = computed_minutes

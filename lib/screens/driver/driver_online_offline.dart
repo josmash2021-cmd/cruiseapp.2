@@ -490,6 +490,8 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
               etaMinutes: etaMinutes,
               riderPhone: _pickString(trip, ['rider_phone']),
               tripAlreadyStarted: true,
+              stopLatLng: parseTripStop(trip)?.point,
+              stopLabel: parseTripStop(trip)?.label ?? '',
             ),
           ),
         )
@@ -804,6 +806,8 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
             arrivedAtPickup: arrivedAtPickup,
             rideStarted: rideStarted,
             tripAlreadyStarted: true,
+            stopLatLng: parseTripStop(trip)?.point,
+            stopLabel: parseTripStop(trip)?.label ?? '',
           ),
         ),
       );

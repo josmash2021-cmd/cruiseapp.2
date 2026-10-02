@@ -3435,7 +3435,15 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       double finite(double v) => v.isFinite ? v : 0.0;
       _distToPickup = _pos != null ? finite(_hav(_pos!, _pickupLL)) : 0.0;
       _etaToPickup = (_distToPickup * 1000 / 17.88 / 60).ceil().clamp(1, 99);
-      _tripDist = finite(_hav(_pickupLL, _dropoffLL));
+      // Booking-time stop: rides into the trip screen handoff, and the
+      // straight-line trip estimate runs both legs — pickup→dropoff alone
+      // would under-quote the detour on the trip card.
+      final stopInfo = parseTripStop(r);
+      _stopLL = stopInfo?.point;
+      _stopLabel = stopInfo?.label ?? '';
+      _tripDist = _stopLL == null
+          ? finite(_hav(_pickupLL, _dropoffLL))
+          : finite(_hav(_pickupLL, _stopLL!) + _hav(_stopLL!, _dropoffLL));
       _tripEta = (_tripDist * 1000 / 17.88 / 60).ceil().clamp(1, 99);
 
       // ── Extract cached route BEFORE clearing cache ──
@@ -3962,6 +3970,8 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
           riderPhone: _riderPhone,
           routePoints: routePoints,
           pickupInstructions: _riderNotes,
+          stopLatLng: _stopLL,
+          stopLabel: _stopLabel,
         ),
       ),
     );

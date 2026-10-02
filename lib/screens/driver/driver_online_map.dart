@@ -1936,34 +1936,12 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
   /// field — a JSON string from the server payloads, or an already-decoded
   /// list. Null when the ride has no stop.
   LatLng? _offerStopPoint(Map<String, dynamic> offer) {
-    return _offerStop(offer)?.point;
+    return parseTripStop(offer)?.point;
   }
 
   /// The stop's display label ("Stop" row on the offer card).
   String? _offerStopLabel(Map<String, dynamic> offer) {
-    return _offerStop(offer)?.label;
-  }
-
-  /// The booking-time stop parsed once: point + label. The `stops` field
-  /// arrives as a JSON string from the server payloads, or an already
-  /// decoded list; null when the ride has no stop.
-  ({LatLng point, String label})? _offerStop(Map<String, dynamic> offer) {
-    try {
-      final raw = offer['stops'];
-      final list =
-          raw is String ? jsonDecode(raw) : (raw is List ? raw : null);
-      if (list is! List || list.isEmpty) return null;
-      final s = list.first;
-      if (s is! Map) return null;
-      final lat = (s['lat'] as num?)?.toDouble();
-      final lng = (s['lng'] as num?)?.toDouble();
-      if (lat == null || lng == null) return null;
-      if (!lat.isFinite || !lng.isFinite) return null;
-      if (lat.abs() > 90 || lng.abs() > 180) return null;
-      return (point: LatLng(lat, lng), label: (s['label'] ?? '').toString());
-    } catch (_) {
-      return null;
-    }
+    return parseTripStop(offer)?.label;
   }
 
   Future<List<LatLng>> _fetchRoutePoints(LatLng o, LatLng d,

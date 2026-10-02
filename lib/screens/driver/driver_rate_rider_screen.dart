@@ -15,6 +15,7 @@ import '../../widgets/static_route_preview.dart';
 import 'driver_online_screen.dart';
 import 'driver_trip_accept_screen.dart';
 import '../../utils/responsive.dart';
+import '../../utils/trip_stops.dart';
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  DRIVER RATE RIDER SCREEN — Post-trip feedback
@@ -238,6 +239,8 @@ class _DriverRateRiderScreenState extends State<DriverRateRiderScreen>
           distToPickupKm: distKm,
           etaMinutes: eta,
           riderPhone: (offer['rider_phone'] as String?) ?? '',
+          stopLatLng: parseTripStop(offer)?.point,
+          stopLabel: parseTripStop(offer)?.label ?? '',
         ),
         transitionsBuilder: (_, anim, __, child) => FadeTransition(
           opacity: CurvedAnimation(parent: anim, curve: Curves.easeInOut),

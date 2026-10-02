@@ -36,6 +36,7 @@ import '../../services/resilient_position_stream.dart';
 import '../../utils/driver_location_settings.dart';
 import '../../utils/mapbox_safe.dart';
 import '../../utils/smooth_motion.dart';
+import '../../utils/trip_stops.dart';
 import '../../services/map_controller_cache.dart';
 import '../chat_screen.dart';
 import '../help_screen.dart';
@@ -93,6 +94,8 @@ class DriverTripAcceptScreen extends StatefulWidget {
     this.rideStarted = false,
     this.tripAlreadyStarted = false,
     this.riderId,
+    this.stopLatLng,
+    this.stopLabel = '',
   });
 
   final int tripId;
@@ -117,6 +120,11 @@ class DriverTripAcceptScreen extends StatefulWidget {
   final bool arrivedAtPickup;
   final bool rideStarted;
   final bool tripAlreadyStarted;
+  // The booking-time stop (the rider's "+"), when the trip has one. The
+  // mini map routes pickup → stop → dropoff through it and pins it; the
+  // sheet's stop card keys off the same fields as a mid-trip stop.
+  final LatLng? stopLatLng;
+  final String stopLabel;
 
   @override
   State<DriverTripAcceptScreen> createState() => _DriverTripAcceptScreenState();
@@ -588,6 +596,20 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
                               color: Colors.white.withValues(alpha: 0.45),
                               fontSize: 12)),
                     ],
+                    // Booking-time stop: the chained card is compact, but a
+                    // stop changes the drive — it must be visible here too.
+                    if (parseTripStop(offer)?.label.isNotEmpty == true) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        '${s.stopFieldLabel}: ${parseTripStop(offer)!.label}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                            color: _gold,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600),
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -653,6 +675,10 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     _enforceDriverRole();
     _pickupAddr = widget.pickupAddress;
     _dropoffAddr = widget.dropoffAddress;
+    // Booking-time stop: seeded before the first route load so the mini map
+    // opens already routed through it (same fields a mid-trip stop sets).
+    _stopLatLng = widget.stopLatLng;
+    _stopLabel = widget.stopLabel;
     _riderPhotoUrl = _normalizedPhotoUrl(widget.riderPhotoUrl);
     _resolveGenericAddresses();
     _resolveRiderPhotoFromTrip();
@@ -1754,6 +1780,19 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
           // Dispatch advanced the trip while the Firestore stream lagged.
           _applyRemoteStage(status);
         }
+        // Booking-time stop backstop: resume paths that never saw the offer
+        // still read `stops` off the trip payload here — seeded once, no
+        // banner (it was in the fare since booking, not a route change).
+        if (_stopLatLng == null) {
+          final st = parseTripStop(trip);
+          if (st != null && mounted) {
+            setState(() {
+              _stopLatLng = st.point;
+              _stopLabel = st.label;
+            });
+            unawaited(_redrawMiniMapForRouteChange());
+          }
+        }
       } on ApiException catch (e) {
         // A 404 is not transient: the trip does not exist server-side at
         // all, so there is nothing to keep this screen for. Treat it like
@@ -2085,6 +2124,32 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     });
   }
 
+  /// Drops the stop pin once the mini map's pins exist — shared by the
+  /// mid-trip redraw and the initial setup of a booking that came with a
+  /// stop already attached.
+  Future<void> _ensureStopPin() async {
+    final stop = _stopLatLng;
+    if (kIsWeb || stop == null || _stopPinAnnot != null) return;
+    final mgr = _annotMgr;
+    if (mgr == null || !mounted) return;
+    try {
+      final bytes = await renderCircularPinBytes(
+          icon: CircularPinIcon.flag, isPickup: false, radius: 32);
+      final p = safePoint(stop.longitude, stop.latitude);
+      if (p == null || !mounted || _stopPinAnnot != null) return;
+      _stopPinAnnot = await mgr.create(
+        mapbox.PointAnnotationOptions(
+          geometry: p,
+          image: bytes,
+          iconSize: 0.62,
+          iconAnchor: mapbox.IconAnchor.BOTTOM,
+        ),
+      );
+    } catch (e) {
+      debugPrint('[DriverTrip] stop pin failed: $e');
+    }
+  }
+
   /// New legs pickup → (stop) → dropoff, the line's geometry swapped in
   /// place, the stop pin dropped once, the dropoff pin moved if needed,
   /// and one smooth reframe over the whole new plan. Nothing rebuilt.
@@ -2110,21 +2175,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
         _routeAnnot!.geometry = geom;
         _polyMgr!.update(_routeAnnot!).catchError((_) {});
       }
-      if (stop != null && _stopPinAnnot == null && _annotMgr != null) {
-        final bytes = await renderCircularPinBytes(
-            icon: CircularPinIcon.flag, isPickup: false, radius: 32);
-        final p = safePoint(stop.longitude, stop.latitude);
-        if (p != null && mounted && _annotMgr != null) {
-          _stopPinAnnot = await _annotMgr!.create(
-            mapbox.PointAnnotationOptions(
-              geometry: p,
-              image: bytes,
-              iconSize: 0.62,
-              iconAnchor: mapbox.IconAnchor.BOTTOM,
-            ),
-          );
-        }
-      }
+      if (stop != null) await _ensureStopPin();
       if (_dropoffOverride != null &&
           _pinAnnots.isNotEmpty &&
           _annotMgr != null) {
@@ -3688,8 +3739,22 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
       final startMatchesPickup = _haversineMeters(cached.first, widget.pickupLatLng) <= 120;
       final endMatchesDropoff = _haversineMeters(cached.last, _dropoffLL) <= 120;
       if (startMatchesPickup && endMatchesDropoff) {
-        return cached;
+        // A stop-less cached line must not serve a trip that has a stop.
+        final stop = _stopLatLng;
+        if (stop == null) return cached;
+        final hitsStop =
+            cached.any((p) => _haversineMeters(p, stop) <= 120);
+        if (hitsStop) return cached;
       }
+    }
+    // A booking-time stop routes the preview through it: pickup → stop →
+    // dropoff as one continuous line (same leg math as the redraw path).
+    final stop = _stopLatLng;
+    if (stop != null) {
+      final l1 = await _fetchRoutePoints(widget.pickupLatLng, stop);
+      final l2 = await _fetchRoutePoints(stop, _dropoffLL);
+      if (l1.length >= 2 && l2.length >= 2) return [...l1, ...l2.skip(1)];
+      // A failed leg falls through to the direct route rather than nothing.
     }
     // Fetch fresh routed geometry for the mini-map details view.
     return _fetchRoutePoints(widget.pickupLatLng, _dropoffLL);
@@ -4014,6 +4079,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
         // to draw and no car to start on top of pins that do not exist.
         if (pins == null) return;
         _pinAnnots.addAll(pins);
+        unawaited(_ensureStopPin());
       }
       if (_polyMgr != null && _routePoints.length >= 2) {
         final safeGeom = safeLineString(_routePoints);
@@ -4080,6 +4146,9 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
       // car to launch. Pressing on only queues more rejected pigeon calls.
       if (pins == null) return;
       _pinAnnots.addAll(pins);
+      // The booking-time stop pin lands with them (tracked apart, like the
+      // mid-trip one — not in _pinAnnots, which the pop loop scales).
+      unawaited(_ensureStopPin());
     }
     // Animate pins: 0.01 → 1.15 → 1.0 over 400ms
     const pinMs = 400;

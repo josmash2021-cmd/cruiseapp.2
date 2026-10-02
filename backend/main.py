@@ -930,6 +930,26 @@ async def _scheduler_bootstrap() -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Optimized startup: critical path first, agents staggered."""
+    # Thread budget, per worker (2026-10-01, 7500-sim load run). Railway
+    # caps the container at 1000 pids total: anyio's default 40-token
+    # thread pool + asyncio's default 32-thread executor PER WORKER x 12
+    # workers is ~900 threads, and once the kernel refused new threads
+    # every request needing a sync dependency (HMAC/JWT verify runs in the
+    # anyio pool) died with RuntimeError("can't start new thread") → the
+    # 500 storm. The sync deps are ~50µs of hashing each, so a dozen
+    # tokens is still thousands of req/s of headroom per worker.
+    try:
+        import anyio.to_thread as _anyio_thread
+        from concurrent.futures import ThreadPoolExecutor as _TPE
+        _anyio_thread.current_default_thread_limiter().total_tokens = int(
+            os.environ.get("ANYIO_THREAD_TOKENS", "12"))
+        asyncio.get_running_loop().set_default_executor(
+            _TPE(max_workers=int(os.environ.get("LOOP_EXECUTOR_THREADS", "8")),
+                 thread_name_prefix="loop-exec")
+        )
+    except Exception as _tbudget_err:  # never block boot on pool tuning
+        logging.error("[Lifespan] thread-pool budget setup failed: %s", _tbudget_err)
+
     from services.event_bus import event_bus as _eb
     _eb.start_heartbeat()
 
@@ -1645,6 +1665,10 @@ def _is_hot_path(path: str) -> bool:
 # threshold tunable by env; fast requests log nothing.
 _SLOW_REQ_MS = int(os.environ.get("SLOW_REQ_MS", "800"))
 
+# Last-N crash ring buffer — the only place a 500 storm's tracebacks
+# survive when the log drain sheds them (read via /health/crashes).
+_RECENT_CRASHES = collections.deque(maxlen=50)
+
 
 async def _asgi_json_response(send, payload: dict, status: int) -> None:
     """Minimal JSON reply straight onto the ASGI channel (no Response object,
@@ -1726,11 +1750,19 @@ class CoreGatewayMiddleware:
             await self.app(scope, receive, send_with_headers)
         except Exception as e:
             import traceback as _tb
+            _tb_text = _tb.format_exc()
             logging.error(
                 "[CRASH] Unhandled error from %s on %s: %s\n%s",
-                client_ip, path, str(e), _tb.format_exc(),
+                client_ip, path, str(e), _tb_text,
             )
             _security_audit_log("crash", client_ip, f"Unhandled: {path}")
+            # Ring buffer for /health/crashes: under a 500 storm the log
+            # drain sheds exactly these lines, and the exception is gone.
+            _RECENT_CRASHES.appendleft({
+                "ts": time.time(), "ip": client_ip, "method": method,
+                "path": path, "error": f"{type(e).__name__}: {e}",
+                "tb": _tb_text[-2000:],
+            })
             if not headers_sent:
                 try:
                     await _asgi_json_response(send, {"detail": "Internal server error"}, 500)
@@ -1782,6 +1814,20 @@ app.add_middleware(
 async def ping():
     """Ultra-fast connectivity check — no DB, no auth, no overhead."""
     return {"status": "ok"}
+
+
+@app.get("/health/crashes")
+async def health_crashes(x_api_key: str = Header("")):
+    """The last ~50 unhandled exceptions per worker, newest first.
+
+    Under a 500 storm the log drain sheds the [CRASH] lines before they can
+    be read; this ring buffer is the fallback. API-key gated like the rest
+    of the /health family. Note the buffer is per worker process, so a few
+    calls may be needed to see every worker's slice.
+    """
+    if not _api_key_ok(x_api_key):
+        raise HTTPException(401, "Invalid API key")
+    return {"crashes": list(_RECENT_CRASHES)}
 
 
 def _api_key_ok(provided: str) -> bool:

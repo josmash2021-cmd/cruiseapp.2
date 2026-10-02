@@ -253,9 +253,20 @@ _MAX_AUDIT_LOG = 10000
 _audit_db_queue: list[dict] = []  # buffered for async DB write
 _MAX_AUDIT_QUEUE = 500
 
+# High-volume success events (2026-10-01, 7500-sim load test): one stdout
+# line per REQUEST saturates Railway's ~500 lines/s drain, the pipe fills,
+# and every logging call then blocks its request behind the handler lock —
+# measured as a uniform ~2.5s on every endpoint at ~1.5k req/s while CPU,
+# DB and Redis idled (py-spy caught workers parked in logging.acquire).
+# The hash chain and the DB queue below still see EVERY event; only the
+# stdout copy of these is aggregated into one summary line per minute.
+_QUIET_EVENTS = frozenset({"auth_ok"})
+_quiet_counts: dict = {}
+_quiet_flush_at: float = 0.0
+
 
 def _security_audit_log(event: str, ip: str, details: str = "", user_id: Optional[int] = None):
-    global _audit_last_hash
+    global _audit_last_hash, _quiet_flush_at
     entry = {
         "ts": datetime.now(timezone.utc).isoformat(),
         "event": event,
@@ -269,7 +280,16 @@ def _security_audit_log(event: str, ip: str, details: str = "", user_id: Optiona
     _audit_chain.append(entry)
     if len(_audit_chain) > _MAX_AUDIT_LOG:
         _audit_chain.pop(0)
-    logging.info("[AUDIT] %s | %s | %s | %s", event, ip, details, _audit_last_hash[:12])
+    if event in _QUIET_EVENTS:
+        _quiet_counts[event] = _quiet_counts.get(event, 0) + 1
+        now = time.monotonic()
+        if now >= _quiet_flush_at:
+            summary = ", ".join(f"{k} ×{v}" for k, v in sorted(_quiet_counts.items()))
+            logging.info("[AUDIT] quiet-minute | %s | %s", summary, _audit_last_hash[:12])
+            _quiet_counts.clear()
+            _quiet_flush_at = now + 60
+    else:
+        logging.info("[AUDIT] %s | %s | %s | %s", event, ip, details, _audit_last_hash[:12])
     # Buffer for async DB persistence
     _audit_db_queue.append({
         "event": event, "ip": ip, "user_id": user_id,

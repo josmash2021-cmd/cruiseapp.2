@@ -25,6 +25,19 @@ _rng = random.Random()
 # ═══════════════════════════════════════════════════════
 #  TF-IDF MATCHER — semantic similarity via scikit-learn
 # ═══════════════════════════════════════════════════════
+#
+# sklearn → numpy/scipy → OpenBLAS, and OpenBLAS spawns a native thread
+# pool sized to the HOST's cores in every process that touches it. In the
+# multi-worker load test (2026-10-01) that was ~64 threads × 12 workers ≈
+# 770 of the container's 1000-pid budget — every request needing a new
+# thread then died with "can't start new thread". TF-IDF cosine on tiny
+# matrices gains nothing from BLAS parallelism, so pin every native math
+# pool to one thread BEFORE the first numpy/scipy import. The Dockerfile
+# sets the same pins for the deployed image; setdefault keeps local runs
+# and tests covered without overriding an operator's choice.
+import os as _os
+for _v in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "MKL_NUM_THREADS", "NUMEXPR_NUM_THREADS"):
+    _os.environ.setdefault(_v, "1")
 
 try:
     from sklearn.feature_extraction.text import TfidfVectorizer

@@ -46,6 +46,17 @@ ENV PYTHONPATH=/app
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
 
+# Native math libraries must NOT size their thread pools to the host CPU:
+# sklearn (support_cache TF-IDF) pulls numpy/scipy, whose OpenBLAS spawns a
+# thread pool per PROCESS — ~64 threads x 12 uvicorn workers ate ~770 of
+# Railway's 1000-pid container budget and every request needing a thread
+# 500'd with "can't start new thread" (7500-sim load run, 2026-10-01).
+# Tiny TF-IDF matrices see no gain from BLAS parallelism. One thread each.
+ENV OPENBLAS_NUM_THREADS=1 \
+    OMP_NUM_THREADS=1 \
+    MKL_NUM_THREADS=1 \
+    NUMEXPR_NUM_THREADS=1
+
 # Uvicorn tuning.
 #
 # ONE WORKER, and it is not about CPU or about the database.

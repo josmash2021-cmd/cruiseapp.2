@@ -107,23 +107,33 @@ class _Sim:
         self.n = next(_ids) + _WORKER_OFFSET
         self.email = f"lt_{self.role}_{self.n}@loadtest.invalid"
         self._ip = _xff()
-        with self.client.post(
-            "/loadtest/auth",
-            json={"email": self.email, "role": self.role},
-            headers={**_signed(), "X-Forwarded-For": self._ip},
-            name="loadtest/auth",
-            catch_response=True,
-        ) as res:
-            if res.status_code != 200:
-                res.failure(f"auth {res.status_code}: {(res.text or '')[:120]}")
-                return False
-            data = res.json()
-        self.token = data["access_token"]
-        self.user_id = data["user"]["id"]
-        # Each sim stands on its own tile so dispatch never co-locates them.
-        self.lat = _BASE_LAT + ((self.n % 100) - 50) * 0.0004
-        self.lng = _BASE_LNG + (((self.n // 100) % 100) - 50) * 0.0004
-        return True
+        # Retry instead of giving up: a failed auth used to stop() the sim,
+        # locust respawned it with a NEW email, and the respawn storm of
+        # synthetic signups became the loudest traffic in the run (the ~26k
+        # "auth 0" client timeouts per 7500-sim run — harness artifact, not
+        # server load). With retries, sims come online once and STAY online,
+        # which is the whole point of the concurrency proof.
+        for attempt in range(6):
+            with self.client.post(
+                "/loadtest/auth",
+                json={"email": self.email, "role": self.role},
+                headers={**_signed(), "X-Forwarded-For": self._ip},
+                name="loadtest/auth",
+                catch_response=True,
+            ) as res:
+                if res.status_code == 200:
+                    data = res.json()
+                    self.token = data["access_token"]
+                    self.user_id = data["user"]["id"]
+                    # Each sim stands on its own tile so dispatch never co-locates them.
+                    self.lat = _BASE_LAT + ((self.n % 100) - 50) * 0.0004
+                    self.lng = _BASE_LNG + (((self.n // 100) % 100) - 50) * 0.0004
+                    return True
+                if attempt < 5:
+                    res.success()  # transient — retry, don't count as failure
+            time.sleep(2 * (attempt + 1))
+        res.failure(f"auth {res.status_code}: {(res.text or '')[:120]}")
+        return False
 
     def _get(self, path, name):
         return self.client.get(

@@ -68,5 +68,20 @@ void main() {
       final body = buttons.substring(start, start + 500);
       expect(body.contains('_syncRideLiveActivity(end: true)'), isTrue);
     });
+
+    test('the island self-terminates past the ETA (user report 2026-10-02)',
+        () {
+      final appDelegate =
+          File('ios/Runner/AppDelegate.swift').readAsStringSync();
+      // Both RIDE paths must carry the bounded staleDate — with nil the
+      // finished trip's island lived for hours when every end path failed
+      // (killed app + no ride token on the server). The driver's own
+      // presence island keeps its own discipline and is out of scope here.
+      expect(appDelegate.contains('dropoffAt.addingTimeInterval(90 * 60)'),
+          isTrue,
+          reason: 'the island self-terminates 90 min past the shown ETA; '
+              'live updateRide calls re-anchor it forward so an active trip '
+              'never goes stale mid-ride');
+    });
   });
 }

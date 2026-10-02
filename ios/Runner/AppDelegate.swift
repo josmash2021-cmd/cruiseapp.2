@@ -434,7 +434,17 @@ final class CruiseLiveActivityManager {
       do {
         let act = try Activity.request(
           attributes: CruiseRideActivityAttributes(),
-          content: .init(state: state, staleDate: nil)
+          // staleDate (user report 2026-10-02, "la isla sigue activa con el
+          // viaje terminado"): both end paths — the app's endRide and the
+          // backend's APNs end — can fail when the rider kills the app and
+          // no ride token ever reached the server. With staleDate nil the
+          // card then lived for HOURS showing a finished trip. Now it
+          // self-terminates 90 min past the shown ETA no matter what;
+          // every live updateRide re-anchors it forward, so an active trip
+          // never goes stale mid-ride.
+          content: .init(
+            state: state,
+            staleDate: dropoffAt.addingTimeInterval(90 * 60))
         )
         self.rideActivity = act
         self.observeRidePushToken(act)
@@ -459,7 +469,12 @@ final class CruiseLiveActivityManager {
         // Silent repaint, no alert — a ringing phone on every ETA tick is
         // worse than a stale minute. Phase changes that must be seen
         // (driver arrived) come through as their own push/notification.
-        await a.update(.init(state: state, staleDate: nil))
+        // Same staleDate as startRide: the island self-terminates 90 min
+        // past the shown ETA if every end path failed (user report
+        // 2026-10-02 — a finished trip's island lived for hours).
+        await a.update(.init(
+          state: state,
+          staleDate: dropoffAt.addingTimeInterval(90 * 60)))
       }
     }
   }

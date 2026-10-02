@@ -2178,26 +2178,117 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                 left: 16,
                 child: Column(
                   children: [
-                    _fab(
-                      Icons.calendar_today_rounded,
-                      44,
-                      fabBg,
-                      fabBorder,
-                      // Gold with the available count when there are rides
-                      // (user spec 2026-08-28) — same badge as the panel's
-                      // calendar action.
-                      _scheduledAvailCount > 0 ? _gold : fabIcon,
-                      () => Navigator.push(
-                        context,
-                        slideFromRightRoute(
-                          const ScheduledRidesMapScreen(),
+                    Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        _fab(
+                          Icons.calendar_today_rounded,
+                          44,
+                          fabBg,
+                          fabBorder,
+                          // Gold with the available count when there are rides
+                          // (user spec 2026-08-28) — same badge as the panel's
+                          // calendar action.
+                          _scheduledAvailCount > 0 ? _gold : fabIcon,
+                          () => Navigator.push(
+                            context,
+                            slideFromRightRoute(
+                              const ScheduledRidesMapScreen(),
+                            ),
+                          ).then((_) {
+                            _fetchScheduledCount();
+                            _remountMapSurface();
+                          }),
+                          stagger: 0,
+                          badge: _scheduledAvailCount,
                         ),
-                      ).then((_) {
-                        _fetchScheduledCount();
-                        _remountMapSurface();
-                      }),
-                      stagger: 0,
-                      badge: _scheduledAvailCount,
+                        // Same "N scheduled" box the bell toast wears, but
+                        // anchored above the schedule button so the driver
+                        // knows where to tap (user spec 2026-10-02) — auto-
+                        // hides with the same 3 s flag as the bell toast.
+                        if (_showScheduledToast && _scheduledAvailCount > 0)
+                          Positioned(
+                            bottom: 52,
+                            left: 0,
+                            child: TweenAnimationBuilder<double>(
+                              tween: Tween(begin: 0.0, end: 1.0),
+                              duration: const Duration(milliseconds: 400),
+                              curve: Curves.easeOutBack,
+                              builder: (context, value, child) =>
+                                  Transform.scale(
+                                scale: value,
+                                alignment: Alignment.bottomLeft,
+                                child: Opacity(
+                                  opacity: value.clamp(0.0, 1.0),
+                                  child: child,
+                                ),
+                              ),
+                              child: GestureDetector(
+                                onTap: () {
+                                  HapticService.selectionClick();
+                                  _setState(
+                                      () => _showScheduledToast = false);
+                                  Navigator.push(
+                                    context,
+                                    slideFromRightRoute(
+                                        const ScheduledRidesMapScreen()),
+                                  ).then((_) {
+                                    _fetchScheduledCount();
+                                    _remountMapSurface();
+                                  });
+                                },
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 12, vertical: 9),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFF1A1D24),
+                                    borderRadius: BorderRadius.circular(14),
+                                    border: Border.all(
+                                      color: const Color(0xFFE8C547)
+                                          .withValues(alpha: 0.4),
+                                      width: 1,
+                                    ),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: const Color(0xFFE8C547)
+                                            .withValues(alpha: 0.15),
+                                        blurRadius: 12,
+                                        spreadRadius: 1,
+                                      ),
+                                    ],
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      const Icon(
+                                        Icons.calendar_today_rounded,
+                                        color: Color(0xFFE8C547),
+                                        size: 15,
+                                      ),
+                                      const SizedBox(width: 7),
+                                      Text(
+                                        _scheduledAvailCount == 1
+                                            ? '1 scheduled ride available'
+                                            : '$_scheduledAvailCount scheduled rides available',
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 11.5,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 4),
+                                      const Icon(
+                                        Icons.chevron_right_rounded,
+                                        color: Color(0xFFE8C547),
+                                        size: 15,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                      ],
                     ),
                     const SizedBox(height: 10),
                     // Destination filter ("heading to"). Gold while a filter

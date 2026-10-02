@@ -2586,7 +2586,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
         _scheduledBounceCtrl?.forward(from: 0);
         if (oldCount == 0 || newCount > _prevScheduledCount) {
           _setState(() => _showScheduledToast = true);
-          Future.delayed(const Duration(seconds: 4), () {
+          Future.delayed(const Duration(seconds: 3), () {
             if (mounted) _setState(() => _showScheduledToast = false);
           });
         }

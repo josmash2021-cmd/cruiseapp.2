@@ -328,7 +328,17 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
         t.cancel();
         return;
       }
-      MapTheme.applyNavyGold(ctrl);
+      MapTheme.applyNavyGold(ctrl).then((_) {
+        // The theme landing IS the proof the style engine is alive — lift
+        // the snapshot flag even if onStyleLoaded never re-fires on this
+        // remount (an identical, already-cached styleUri can skip the
+        // event; the 60% veil still then covered the live map forever —
+        // user report 2026-10-02, "al volver de schedule el mapa se queda
+        // oscuro"). The veil still waits for the first idle render too.
+        if (mounted && _mapGeneration == themeGen && !_mapStyleLoaded) {
+          _setState(() => _mapStyleLoaded = true);
+        }
+      }).catchError((_) {});
     });
     // Watchdog: if the style never loads (no network, hung renderer)
     // the driver stares at a dead grey map forever. Give it 7 s, then

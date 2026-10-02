@@ -13,15 +13,24 @@ import 'package:flutter_test/flutter_test.dart';
 ///    (the silent no-op that hid the whole failure).
 /// 3. Dart must ask it, and the online screen must say it out loud.
 void main() {
-  test('push-to-start entitlement declared (island starts on a killed app)',
-      () {
+  test('push-to-start entitlement is intentionally NOT declared', () {
+    // 2026-10-02: adding com.apple.developer.live-activity-push-to-start
+    // made Codemagic fail signing — its API-generated provisioning
+    // profiles can only include App ID capabilities, and Apple exposes no
+    // "Live Activities" checkbox on the App ID page (verified: the key is
+    // only granted by Xcode-managed signing, which this pipeline does not
+    // use). Without it the island still works for the real case — driver
+    // went online (the app starts the island) and then backgrounds; only
+    // the killed-cold-start case is out. Pin the decision so nobody
+    // re-adds the key and breaks the iOS build again.
     final ent =
         File('ios/Runner/Runner.entitlements').readAsStringSync();
     expect(
       ent.contains('com.apple.developer.live-activity-push-to-start'),
-      isTrue,
-      reason: 'without it iOS never issues a push-to-start token, so the '
-          'island can never start while the driver is outside the app',
+      isFalse,
+      reason: 'Codemagic API profiles cannot include this entitlement — '
+          'declaring it kills the iOS build at signing (2026-10-02). '
+          'Revisit only with Xcode-managed signing (allowProvisioningUpdates).',
     );
   });
 

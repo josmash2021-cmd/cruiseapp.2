@@ -83,10 +83,11 @@ class _ScheduleHubScreenState extends State<ScheduleHubScreen> {
   }
 
   /// Display name in the CURRENT four-tier catalogue (Compact / Standard /
-  /// Premium / Black) — tierKey normalises legacy rows like "comfort" or
-  /// "vip" instead of showing the old name.
+  /// Premium / Black) — tripTierKey normalises legacy booking names
+  /// ("comfort" -> Standard, "SUV XL" -> Premium, "vip" -> Black) the same
+  /// way the booking sheet named them.
   static String _tierLabel(dynamic vehicleType) {
-    final k = tierKey(vehicleType as String?);
+    final k = tripTierKey(vehicleType as String?);
     return k[0].toUpperCase() + k.substring(1);
   }
 
@@ -94,14 +95,15 @@ class _ScheduleHubScreenState extends State<ScheduleHubScreen> {
   /// free with no driver or more than 60 min out, otherwise the tier fee
   /// (kScheduledCancelFeesUsd, the same table the policy page shows) capped
   /// by the upfront fare. The dialog is an estimate — the backend's number
-  /// is the one actually captured.
+  /// is the one actually captured, so the tier resolves with tierKey (=
+  /// the backend's normalize_tier), NOT the booking-name display mapping.
   static double _estimatedCancelFee(Map<String, dynamic> t) {
     if (t['driver_id'] == null) return 0;
     final sa = _parseSchedAt(t);
     if (sa != null && sa.difference(DateTime.now()).inMinutes > 60) return 0;
-    final fee =
-        (kScheduledCancelFeesUsd[_tierLabel(t['vehicle_type'])] ?? 15)
-            .toDouble();
+    final feeTier = tierKey(t['vehicle_type'] as String?);
+    final feeLabel = feeTier[0].toUpperCase() + feeTier.substring(1);
+    final fee = (kScheduledCancelFeesUsd[feeLabel] ?? 15).toDouble();
     final fare = (t['fare'] as num?)?.toDouble() ?? 0;
     return fare > 0 && fare < fee ? fare : fee;
   }

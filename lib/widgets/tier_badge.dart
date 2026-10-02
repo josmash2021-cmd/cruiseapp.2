@@ -1,10 +1,15 @@
 import 'package:flutter/material.dart';
 
-/// Tier color/label info derived from ride name.
-/// Color palette + glyph match the Choose a Vehicle horizontal card
-/// (ride_request_widgets.dart) so badges look identical wherever they
-/// appear: VIP=black-on-gold-border-with-diamond, PREMIUM=gold-with-
-/// star, COMFORT=silver-with-sparkle.
+import '../utils/vehicle_tier_style.dart';
+
+/// Tier color/label info derived from a trip's ride name.
+///
+/// The catalogue is the current four — Standard / Compact / Premium /
+/// Black — resolved through [tripTierKey], so rows that still carry a
+/// legacy booking name ("Comfort", "SUV XL", "VIP") read in the current
+/// names everywhere this badge appears. Black keeps the old VIP look
+/// (black-on-gold-border-with-diamond), Premium the gold-with-star,
+/// Standard the silver-with-sparkle; Compact takes the green gap.
 class TierInfo {
   final List<Color> bgGradient;
   final Color textColor;
@@ -14,6 +19,7 @@ class TierInfo {
   final bool isVIP;
   final bool isPremium;
   final bool isComfort;
+  final bool isCompact;
 
   const TierInfo._({
     required this.bgGradient,
@@ -24,47 +30,61 @@ class TierInfo {
     required this.isVIP,
     required this.isPremium,
     required this.isComfort,
+    required this.isCompact,
   });
 
   /// Resolve tier from ride/vehicle name (case-insensitive).
   factory TierInfo.from(String rideName) {
-    final n = rideName.toLowerCase();
-    if (n.contains('vip') || n.contains('suv') || n.contains('suburban') ||
-        n.contains('black')) {
-      return const TierInfo._(
-        bgGradient: [Color(0xFF1A1A1A), Color(0xFF000000)],
-        textColor: Colors.white,
-        label: 'VIP',
-        icon: Icons.diamond,
-        isVIP: true,
-        isPremium: false,
-        isComfort: false,
-      );
+    switch (tripTierKey(rideName)) {
+      case kTierBlack:
+        return const TierInfo._(
+          bgGradient: [Color(0xFF1A1A1A), Color(0xFF000000)],
+          textColor: Colors.white,
+          label: 'Black',
+          icon: Icons.diamond,
+          isVIP: true,
+          isPremium: false,
+          isComfort: false,
+          isCompact: false,
+        );
+      case kTierPremium:
+        return const TierInfo._(
+          bgGradient: [
+            Color(0xFFF5DC7A),
+            Color(0xFFE8C547),
+            Color(0xFFB08800),
+          ],
+          textColor: Colors.black,
+          label: 'Premium',
+          glyph: '★',
+          isVIP: false,
+          isPremium: true,
+          isComfort: false,
+          isCompact: false,
+        );
+      case kTierCompact:
+        return const TierInfo._(
+          bgGradient: [Color(0xFF9CCC9E), Color(0xFF4E9A51)],
+          textColor: Color(0xFF0B2E0D),
+          label: 'Compact',
+          icon: Icons.eco_rounded,
+          isVIP: false,
+          isPremium: false,
+          isComfort: false,
+          isCompact: true,
+        );
+      default:
+        return const TierInfo._(
+          bgGradient: [Color(0xFFE8E8E8), Color(0xFFB0B0B0)],
+          textColor: Color(0xFF1A1A1A),
+          label: 'Standard',
+          glyph: '✦',
+          isVIP: false,
+          isPremium: false,
+          isComfort: true,
+          isCompact: false,
+        );
     }
-    if (n.contains('premium') || n.contains('camry')) {
-      return const TierInfo._(
-        bgGradient: [
-          Color(0xFFF5DC7A),
-          Color(0xFFE8C547),
-          Color(0xFFB08800),
-        ],
-        textColor: Colors.black,
-        label: 'PREMIUM',
-        glyph: '★',
-        isVIP: false,
-        isPremium: true,
-        isComfort: false,
-      );
-    }
-    return const TierInfo._(
-      bgGradient: [Color(0xFFE8E8E8), Color(0xFFB0B0B0)],
-      textColor: Color(0xFF1A1A1A),
-      label: 'COMFORT',
-      glyph: '✦',
-      isVIP: false,
-      isPremium: false,
-      isComfort: true,
-    );
   }
 
   /// Gradient colors for the amount card on receipts (kept for callers
@@ -72,37 +92,23 @@ class TierInfo {
   List<Color> get gradient {
     if (isVIP) return const [Color(0xFF1A1A1A), Color(0xFF000000)];
     if (isPremium) return const [Color(0xFFE8C547), Color(0xFFF5D990)];
+    if (isCompact) return const [Color(0xFF66BB6A), Color(0xFF43A047)];
     return const [Color(0xFFB0B0B0), Color(0xFFE8E8E8)];
   }
 
-  /// Human-readable ride title from the raw vehicle_type value.
-  /// "black premium" -> "Black Premium", "vip" -> "VIP".
-  /// Legacy backend values map to the 3 canonical services
-  /// (VIP / Premium / Comfort): "sedan" -> "Comfort", etc.
+  /// Human-readable ride title from the raw vehicle_type value, in the
+  /// current catalogue: "Comfort" -> "Standard", "SUV XL" -> "Premium",
+  /// "VIP" -> "Black", "Sedan" -> "Compact".
   static String displayTitle(String rideName) {
-    const legacyAliases = {
-      'sedan': 'Comfort',
-      'standard': 'Comfort',
-      'economy': 'Comfort',
-      'fusion': 'Comfort',
-      'camry': 'Premium',
-      'suburban': 'VIP',
-    };
-    final key = rideName.trim().toLowerCase();
-    final alias = legacyAliases[key];
-    if (alias != null) return alias;
-    final words = key.split(RegExp(r'[\s_\-]+'));
-    return words.map((w) {
-      if (w.isEmpty) return w;
-      if (w == 'vip' || w == 'suv') return w.toUpperCase();
-      return w[0].toUpperCase() + w.substring(1);
-    }).join(' ');
+    final k = tripTierKey(rideName);
+    return k[0].toUpperCase() + k.substring(1);
   }
 }
 
-/// Auto-width badge showing the real ride title (e.g. "Black Premium",
-/// "Standard") with the tier's colors/glyph: VIP=black-on-gold-border-
-/// with-diamond, PREMIUM=gold-with-star, COMFORT=silver-with-sparkle.
+/// Auto-width badge showing the real ride title ("Standard", "Black
+/// Premium") with the tier's colors/glyph: BLACK=black-on-gold-border-
+/// with-diamond, PREMIUM=gold-with-star, COMPACT=green-with-leaf,
+/// STANDARD=silver-with-sparkle.
 class TierBadge extends StatelessWidget {
   final String rideName;
 
@@ -117,9 +123,11 @@ class TierBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final tier = TierInfo.from(rideName);
+    // No `alignment` on this Container: with alignment set it expands to
+    // the max width its parent offers (in a Wrap, the whole row) instead
+    // of shrink-wrapping the label.
     return Container(
       height: 24,
-      alignment: Alignment.center,
       padding: const EdgeInsets.symmetric(horizontal: 9),
       decoration: BoxDecoration(
         gradient: LinearGradient(
@@ -151,7 +159,7 @@ class TierBadge extends StatelessWidget {
             ),
           const SizedBox(width: 4),
           Text(
-            TierInfo.displayTitle(rideName),
+            tier.label,
             style: TextStyle(
               color: tier.textColor,
               fontSize: 9.5,

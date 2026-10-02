@@ -104,7 +104,6 @@ void main() {
       expect(tierLabel('comfort'), 'STANDARD');
       expect(tierLabel('vip'), 'BLACK');
     });
-
     test('each tier is its own colour', () {
       final colours = kVehicleTiers.map(tierColor).toSet();
       expect(colours.length, 4);
@@ -113,6 +112,31 @@ void main() {
     test('each tier is its own icon', () {
       final icons = kVehicleTiers.map(tierIcon).toSet();
       expect(icons.length, 4);
+    });
+  });
+
+  group('trip display names (booking option names, not car classes)', () {
+    // Trip rows store the picker's option NAME, and the sheet sold "Sedan"
+    // as Compact and "SUV XL" as Premium — tripTierKey follows the sheet,
+    // where tierKey (car classification) reads a sedan as Standard.
+    test('the four option names land on the tier the rider tapped', () {
+      expect(tripTierKey('Comfort'), kTierStandard);
+      expect(tripTierKey('Sedan'), kTierCompact);
+      expect(tripTierKey('SUV XL'), kTierPremium);
+      expect(tripTierKey('VIP'), kTierBlack);
+    });
+
+    test('canonical keys pass through', () {
+      expect(tripTierKey('standard'), kTierStandard);
+      expect(tripTierKey('compact'), kTierCompact);
+      expect(tripTierKey('premium'), kTierPremium);
+      expect(tripTierKey('black'), kTierBlack);
+    });
+
+    test('nothing to go on is Standard', () {
+      expect(tripTierKey(''), kTierStandard);
+      expect(tripTierKey(null), kTierStandard);
+      expect(tripTierKey('banana'), kTierStandard);
     });
   });
 }

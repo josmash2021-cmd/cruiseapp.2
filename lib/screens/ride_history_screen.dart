@@ -9,6 +9,7 @@ import '../services/local_data_service.dart';
 import '../config/api_keys.dart';
 import '../services/api_service.dart';
 import '../services/places_service.dart';
+import '../utils/vehicle_tier_style.dart';
 import '../widgets/neu_style.dart';
 import 'trip_receipt_screen.dart';
 
@@ -267,20 +268,11 @@ class _RideHistoryScreenState extends State<RideHistoryScreen> {
 
   /// The tier as the rider is shown it, from whatever `vehicle_type` holds.
   ///
-  /// Not TierInfo: that still answers VIP / PREMIUM / COMFORT and is used on
-  /// other screens. `suv` is tested before `vip`, or "SUV XL" matches the VIP
-  /// branch and every trip comes back BLACK.
-  static String _tierLabel(String vehicleType) {
-    final n = vehicleType.toLowerCase();
-    if (n.contains('suv')) return 'PREMIUM';
-    if (n.contains('vip') || n.contains('suburban') || n.contains('black')) {
-      return 'BLACK';
-    }
-    if (n.contains('sedan') || n.contains('camry') || n.contains('premium')) {
-      return 'COMPACT';
-    }
-    return 'STANDARD';
-  }
+  /// Shared with the badges and the schedule hub via tripTierKey — the
+  /// booking-name mapping (a "Sedan" booking was sold as Compact), not the
+  /// vehicle classification in tierKey.
+  static String _tierLabel(String vehicleType) =>
+      tripTierKey(vehicleType).toUpperCase();
 
   /// The car that goes with it — the same four renders the booking sheet uses.
   static String _tierAsset(String vehicleType) {

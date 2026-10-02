@@ -57,6 +57,12 @@ class _ScheduledRidesScreenState extends State<ScheduledRidesScreen>
   DateTime? _lastAvailFetch; // throttle: min 10 s between fetches
   bool _fetchingAvail = false; // guard concurrent calls
 
+  /// Driving geometry for the Requests-card stills, one fetch per trip id.
+  /// Without it the preview drew pins only and read as a bare map — the
+  /// same complaint that put the line on the My-Rides still (2026-08-30).
+  final Map<int, List<LatLng>> _availRoutes = {};
+  final Set<int> _availRouteFetching = {};
+
   // ── My Rides tab state ──
   List<Map<String, dynamic>> _myRides = [];
   bool _loadingMine = true;
@@ -227,6 +233,46 @@ class _ScheduledRidesScreenState extends State<ScheduledRidesScreen>
       _fetchingMine = false;
       _lastMineFetch = DateTime.now();
     }
+  }
+
+  /// Kicks the one-per-trip route fetch that feeds the Requests-card
+  /// still's gold line. Guarded so a rebuild never double-fetches.
+  Future<void> _fetchAvailRoute(int tripId, double pickupLat,
+      double pickupLng, double dropoffLat, double dropoffLng) async {
+    if (_availRouteFetching.contains(tripId) ||
+        _availRoutes.containsKey(tripId)) {
+      return;
+    }
+    _availRouteFetching.add(tripId);
+    try {
+      final route = await DirectionsService(ApiKeys.webServices).getRoute(
+        origin: LatLng(pickupLat, pickupLng),
+        destination: LatLng(dropoffLat, dropoffLng),
+      );
+      if (!mounted) return;
+      if (route != null && route.points.isNotEmpty) {
+        setState(() => _availRoutes[tripId] = route.points);
+      }
+    } catch (e) {
+      debugPrint('[SchedRides] route fetch failed for trip $tripId: $e');
+    } finally {
+      _availRouteFetching.remove(tripId);
+    }
+  }
+
+  /// Starts the route fetch for a Requests card (guarded inside
+  /// [_fetchAvailRoute]) and returns what the still draws until the line
+  /// lands: nothing — pins only.
+  List<LatLng> _kickAvailRoute(Map<String, dynamic> trip) {
+    final tripId = trip['id'] as int;
+    final plat = (trip['pickup_lat'] as num?)?.toDouble();
+    final plng = (trip['pickup_lng'] as num?)?.toDouble();
+    final dlat = (trip['dropoff_lat'] as num?)?.toDouble();
+    final dlng = (trip['dropoff_lng'] as num?)?.toDouble();
+    if (plat != null && plng != null && dlat != null && dlng != null) {
+      _fetchAvailRoute(tripId, plat, plng, dlat, dlng);
+    }
+    return const <LatLng>[];
   }
 
   Future<void> _claimTrip(int tripId) async {
@@ -588,7 +634,8 @@ class _ScheduledRidesScreenState extends State<ScheduledRidesScreen>
         ),
         // 3) Route preview — a still, not a live map. One of these is
         // mounted per card, and a native Mapbox surface per card is the
-        // crash that closed the app.
+        // crash that closed the app. The gold line lands when the route
+        // fetch for this trip resolves (one call per trip id).
         if (hasPickup)
           Padding(
             padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
@@ -601,6 +648,7 @@ class _ScheduledRidesScreenState extends State<ScheduledRidesScreen>
                   pickupLng: pickupLng,
                   dropoffLat: dropoffLat,
                   dropoffLng: dropoffLng,
+                  route: _availRoutes[tripId] ?? _kickAvailRoute(trip),
                   borderRadius: 14,
                 ),
               ),

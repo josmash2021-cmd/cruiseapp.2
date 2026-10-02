@@ -116,6 +116,37 @@ String tierCarImage(String? raw) {
 /// Uppercase, because every place that shows it shows it uppercase.
 String tierLabel(String? raw) => tierKey(raw).toUpperCase();
 
+/// What a TRIP's `vehicle_type` means for display. Trip rows store the
+/// booking option's display name, not a car class — and the picker sold
+/// "Sedan" as Compact and "SUV XL" as Premium — so trip labels follow the
+/// booking sheet, not the vehicle classification above (tierKey reads a
+/// sedan as Standard, which is right for cars and wrong for bookings).
+String tripTierKey(String? raw) {
+  final k = (raw ?? '')
+      .trim()
+      .toLowerCase()
+      .replaceAll(RegExp(r'[ \-]'), '_');
+  if (k.isEmpty) return kTierStandard;
+  if (kVehicleTiers.contains(k)) return k;
+  // "suv" first: "SUV XL" must not fall into the vip/black branch.
+  if (k.contains('suv')) return kTierPremium;
+  if (k.contains('vip') ||
+      k.contains('suburban') ||
+      k.contains('black') ||
+      k.contains('luxury') ||
+      k.contains('escalade')) {
+    return kTierBlack;
+  }
+  if (k.contains('sedan') ||
+      k.contains('camry') ||
+      k.contains('compact') ||
+      k.contains('rav4')) {
+    return kTierCompact;
+  }
+  // comfort, fusion, economy and anything unrecognised.
+  return kTierStandard;
+}
+
 /// Premium and Black keep the colours they have always had. The two new
 /// tiers take the gap below them.
 Color tierColor(String? raw) {

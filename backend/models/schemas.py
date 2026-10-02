@@ -175,6 +175,13 @@ class CreateTripIn(BaseModel):
     pickup_zone: Optional[str] = None
     notes: Optional[str] = None
     stripe_payment_intent_id: Optional[str] = None
+    # Booking-time intermediate stop (the "+" on the addresses page). One
+    # per trip; lands in trips.stops with the same shape the mid-trip
+    # endpoint writes, extra_cents 0 — the stop's miles are already priced
+    # into the fare the rider confirmed.
+    stop_lat: Optional[float] = None
+    stop_lng: Optional[float] = None
+    stop_address: Optional[str] = None
 
 
 class AcceptTripIn(BaseModel):
@@ -297,6 +304,10 @@ class DispatchRequestIn(BaseModel):
     scheduled_at: Optional[str] = None
     meet_inside: bool = False
     stripe_payment_intent_id: Optional[str] = None
+    # Booking-time stop — same handling as CreateTripIn.
+    stop_lat: Optional[float] = None
+    stop_lng: Optional[float] = None
+    stop_address: Optional[str] = None
 
 
 # ═══════════════════════════════════════════════════════

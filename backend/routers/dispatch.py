@@ -17,7 +17,7 @@ from utils.security import (
     _dispatch_sessions, _security_audit_log,
     JWT_SECRET, JWT_ALGORITHM,
 )
-from utils.helpers import _safe_create_task, utc_now, _haversine, _trip_dict, _user_dict, _abs_photo_url, _resolve_rider_display, _gen_pickup_pin, MAX_DISPATCH_RADIUS_KM, ACTIVE_ACCOUNT_STATUSES, _active_destination
+from utils.helpers import _safe_create_task, utc_now, _haversine, _trip_dict, _user_dict, _abs_photo_url, _resolve_rider_display, _gen_pickup_pin, booking_stops_json, MAX_DISPATCH_RADIUS_KM, ACTIVE_ACCOUNT_STATUSES, _active_destination
 from services.fcm_service import _send_fcm_push, _send_fcm_push_async
 from services.sms_service import notify_guest_driver_assigned
 from services.email_service import email_guest_driver_assigned
@@ -985,6 +985,17 @@ async def _send_offer_to_driver(
         "driver_earnings": f"{estimated_driver_fare:.2f}",
         "offer_timeout_seconds": str(OFFER_TIMEOUT_SECONDS),
     })
+    # Booking-time stop: flat strings for the instant tap-card (the SSE /
+    # pending payloads carry the raw stops JSON via _trip_dict already).
+    try:
+        _stops = json.loads(trip.stops) if trip.stops else []
+    except Exception:
+        _stops = []
+    if _stops and isinstance(_stops[0], dict):
+        _s = _stops[0]
+        push_data["stop_lat"] = str(_s.get("lat") or "")
+        push_data["stop_lng"] = str(_s.get("lng") or "")
+        push_data["stop_address"] = (_s.get("label") or "")[:200]
     # Outside the app the offer shows up in exactly ONE place. Miles and
     # minutes ride along as context for the drive.
     #
@@ -1775,6 +1786,10 @@ async def dispatch_request(body: DispatchRequestIn, user: User = Depends(_get_cu
 
     # 4-digit pickup handshake for the rider's Find-My screen (2026-09-12)
     data["pickup_pin"] = _gen_pickup_pin()
+
+    # Booking-time stop ("+"): flat fields → trips.stops JSON, same shape
+    # as the mid-trip endpoint (Trip(**data) would reject the flat fields).
+    booking_stops_json(data)
 
     trip = Trip(**data)
     db.add(trip)

@@ -1,6 +1,7 @@
 """Cruise App — Helper functions: datetime, haversine, dict converters."""
 
 import asyncio
+import json
 import logging
 import math
 import os
@@ -133,6 +134,36 @@ def _name_matches(account_name: str, ocr_text: str) -> bool:
 
 def utc_now() -> datetime:
     return datetime.now(timezone.utc)
+
+def booking_stops_json(data: dict) -> None:
+    """Fold the booking-time stop fields (stop_lat/stop_lng/stop_address)
+    into the `trips.stops` JSON column — the same shape the mid-trip
+    endpoint writes, so offers/tracking read ONE shape no matter when the
+    stop was added. Mutates `data` in place: pops the flat fields
+    (`Trip(**data)` would reject them — there are no such columns) and
+    sets "stops" only when the coordinates are present and in bounds.
+    extra_cents is 0: at booking the stop's miles/minutes are already
+    priced into the fare, unlike the mid-trip surcharge."""
+    s_lat = data.pop("stop_lat", None)
+    s_lng = data.pop("stop_lng", None)
+    s_addr = (data.pop("stop_address", None) or "").strip()[:200]
+    try:
+        ok = (
+            s_lat is not None and s_lng is not None
+            and -90.0 <= float(s_lat) <= 90.0
+            and -180.0 <= float(s_lng) <= 180.0
+        )
+    except (TypeError, ValueError):
+        ok = False
+    if not ok:
+        return
+    data["stops"] = json.dumps([{
+        "lat": float(s_lat),
+        "lng": float(s_lng),
+        "label": s_addr,
+        "extra_cents": 0,
+        "added_at": utc_now().isoformat(),
+    }])
 
 def utc_today_start() -> datetime:
     return datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)

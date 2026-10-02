@@ -15,7 +15,7 @@ from pydantic import BaseModel, field_validator
 from utils.security import (
     _get_current_user, _verify_api_key, _security_audit_log,
 )
-from utils.helpers import utc_now, _haversine, _trip_dict, _abs_photo_url, _resolve_rider_display, _safe_create_task, _compute_user_rating, _gen_pickup_pin, MAX_DISPATCH_RADIUS_KM
+from utils.helpers import utc_now, _haversine, _trip_dict, _abs_photo_url, _resolve_rider_display, _safe_create_task, _compute_user_rating, _gen_pickup_pin, booking_stops_json, MAX_DISPATCH_RADIUS_KM
 from services.fcm_service import _send_fcm_push_async
 from services import rating_actions, vehicle_tiers
 from services.sms_service import (
@@ -518,6 +518,9 @@ async def create_trip(body: CreateTripIn, user: User = Depends(_get_current_user
         "fare", "vehicle_type", "scheduled_at", "airport_code", "terminal",
         "pickup_zone", "notes", "stripe_payment_intent_id",
     )}
+    # Booking-time stop ("+"): flat fields → trips.stops JSON (helper pops
+    # them; Trip has no such columns and **data would 500).
+    booking_stops_json(data)
     # 4-digit pickup handshake for the rider's Find-My screen (2026-09-12)
     data["pickup_pin"] = _gen_pickup_pin()
     try:

@@ -270,6 +270,9 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   mapbox.PointAnnotation? _prevDriverAnnot;
   mapbox.PointAnnotation? _prevPickupAnnot;
   mapbox.PointAnnotation? _prevDropoffAnnot;
+  // The booking-time stop pin on the offer preview — same dropoff
+  // ring-dot bitmap (user spec: "con pin de dropoff").
+  mapbox.PointAnnotation? _prevStopAnnot;
   mapbox.PolylineAnnotation? _routeAnnot;
   mapbox.PolylineAnnotation? _previewPickupAnnot;
   mapbox.PolylineAnnotation? _previewDropoffAnnot;
@@ -1633,9 +1636,12 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
       final placeType = _detectPlaceType(dropoffAddr);
 
       // Pre-build unified gold pins + fetch routes in parallel
+      // segTwo runs through the booking-time stop when the ride has one.
+      final stopLL = _offerStopPoint(offer);
       Future.wait<Object?>([
         _fetchRouteWithMetrics(_pos!, pickupLL), // [0] segOne + metrics
-        _fetchRouteWithMetrics(pickupLL, dropoffLL), // [1] segTwo + metrics
+        _fetchRouteWithMetrics(pickupLL, dropoffLL, // [1] segTwo + metrics
+            waypoints: stopLL == null ? null : [stopLL]),
         renderCircularPinBytes(
             icon: CircularPinIcon.person,
             isPickup: true,
@@ -1734,13 +1740,14 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   /// that cuts across blocks lies to the driver (it was the line in the bug
   /// report photo); no line at all is the honest failure, and the pins stay.
   Future<({List<LatLng> pts, double? durSec, double? distM})>
-      _fetchRouteWithMetrics(LatLng o, LatLng d) async {
+      _fetchRouteWithMetrics(LatLng o, LatLng d,
+          {List<LatLng>? waypoints}) async {
     for (var attempt = 0; attempt < 2; attempt++) {
       if (attempt > 0) {
         await Future.delayed(const Duration(milliseconds: 600));
         if (!mounted) break;
       }
-      final r = await _fetchRouteWithMetricsOnce(o, d);
+      final r = await _fetchRouteWithMetricsOnce(o, d, waypoints: waypoints);
       if (r.pts.length >= 2) return r;
     }
     debugPrint('[Route] _fetchRouteWithMetrics: all providers failed — no line');
@@ -1749,7 +1756,14 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
 
   /// One pass over the providers: Google → OSRM → Mapbox.
   Future<({List<LatLng> pts, double? durSec, double? distM})>
-      _fetchRouteWithMetricsOnce(LatLng o, LatLng d) async {
+      _fetchRouteWithMetricsOnce(LatLng o, LatLng d,
+          {List<LatLng>? waypoints}) async {
+    final via = (waypoints == null || waypoints.isEmpty)
+        ? null
+        : waypoints.map((p) => '${p.latitude},${p.longitude}').join('|');
+    final chain = [o, ...?waypoints, d]
+        .map((p) => '${p.longitude},${p.latitude}')
+        .join(';');
     // Google Directions API
     try {
       final uri =
@@ -1758,6 +1772,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
         'destination': '${d.latitude},${d.longitude}',
         'key': ApiKeys.webServices,
         'mode': 'driving',
+        if (via != null) 'waypoints': via,
       });
       final res = await http.get(uri).timeout(const Duration(seconds: 10));
       if (res.statusCode == 200) {
@@ -1766,17 +1781,23 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
           final route = data['routes'][0];
           final pts =
               _decodePoly(route['overview_polyline']['points'] as String);
-          final leg = (route['legs'] as List?)?.firstOrNull;
-          final dur = (leg?['duration']?['value'] as num?)?.toDouble();
-          final dist = (leg?['distance']?['value'] as num?)?.toDouble();
+          // With a waypoint there is one leg PER segment — legs.first alone
+          // would quote only pickup→stop and the card's min/mi (and $/hr)
+          // would undercount the ride. Sum every leg.
+          double? dur, dist;
+          for (final leg in (route['legs'] as List?) ?? const []) {
+            dur = (dur ?? 0) +
+                ((leg['duration']?['value'] as num?)?.toDouble() ?? 0);
+            dist = (dist ?? 0) +
+                ((leg['distance']?['value'] as num?)?.toDouble() ?? 0);
+          }
           return (pts: pts, durSec: dur, distM: dist);
         }
       }
     } catch (_) {}
     // OSRM fallback
     try {
-      final path =
-          '/route/v1/driving/${o.longitude},${o.latitude};${d.longitude},${d.latitude}';
+      final path = '/route/v1/driving/$chain';
       final uri = Uri.https('router.project-osrm.org', path, {
         'overview': 'full',
         'geometries': 'polyline',
@@ -1799,7 +1820,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     try {
       final mbxUrl = Uri.parse(
         'https://api.mapbox.com/directions/v5/mapbox/driving/'
-        '${o.longitude},${o.latitude};${d.longitude},${d.latitude}'
+        '$chain'
         '?geometries=geojson&overview=full&steps=false'
         '&access_token=${MapboxConfig.accessToken}',
       );

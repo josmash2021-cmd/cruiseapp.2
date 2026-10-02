@@ -1938,6 +1938,10 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
         distToPickupMi = 0;
       }
       var td = _hav(pickupLL, dropoffLL);
+      // A booking-time stop makes the straight-line fallback two legs —
+      // pickup→stop + stop→dropoff — or it under-quotes the detour.
+      final stopLL = _offerStopPoint(offer);
+      if (stopLL != null) td = _hav(pickupLL, stopLL) + _hav(stopLL, dropoffLL);
       if (!td.isFinite) td = 0;
       tripDistKm = td;
       tripEta = (td * 1000 / 17.88 / 60).ceil().clamp(1, 99);
@@ -2265,7 +2269,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
 
         const SizedBox(height: 18),
 
-        // ── Pickup, then dropoff ────────────────────────────────────
+        // ── Pickup, (stop), then dropoff ─────────────────────────────
         _offerRoute(
           pickupMeta: S.of(context).offerAway(
                 etaToPickup,
@@ -2277,6 +2281,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                 tripDistMi.toStringAsFixed(1),
               ),
           dropoffAddr: dropoffAddr,
+          stopAddr: _offerStopLabel(offer),
         ),
 
         const SizedBox(height: 16),
@@ -2419,6 +2424,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
     required String pickupAddr,
     required String dropoffMeta,
     required String dropoffAddr,
+    String? stopAddr,
   }) {
     const goldAccent = Color(0xFFE8C547);
     // The markers are centred on the stops by arithmetic: half the typical
@@ -2427,6 +2433,14 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
     // so the centre can drift a point or two — invisible next to an 11-pt
     // dot, and nothing overflows.
     const halfPad = (_kOfferStopH - 11) / 2;
+    const goldRingDot = BoxDecoration(
+      shape: BoxShape.circle,
+      border: Border.fromBorderSide(BorderSide(color: goldAccent, width: 1.5)),
+    );
+    const whiteRing = BoxDecoration(
+      shape: BoxShape.circle,
+      border: Border.fromBorderSide(BorderSide(color: Colors.white, width: 1.5)),
+    );
     // One box around the pair, not one around each. The two stops are a
     // single journey; a box each said they were two unrelated rows.
     return Container(
@@ -2446,10 +2460,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                   Container(
                     width: 11,
                     height: 11,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      border: Border.all(color: goldAccent, width: 1.5),
-                    ),
+                    decoration: goldRingDot,
                     child: Center(
                       child: Container(
                         width: 4,
@@ -2468,14 +2479,17 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                   const Expanded(
                     child: RouteConnectorLine(),
                   ),
+                  // Mid-trip stop ("+" at booking): same hollow white ring
+                  // as the dropoff — the pin grammar the rider sees.
+                  if (stopAddr != null && stopAddr.isNotEmpty) ...[
+                    Container(width: 11, height: 11, decoration: whiteRing),
+                    const Expanded(child: RouteConnectorLine()),
+                  ],
                   // Dropoff: hollow white circle — ring only, no fill.
                   Container(
                     width: 11,
                     height: 11,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      border: Border.all(color: Colors.white, width: 1.5),
-                    ),
+                    decoration: whiteRing,
                   ),
                   const SizedBox(height: halfPad),
                 ],
@@ -2488,6 +2502,10 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   _offerStopText(pickupMeta, pickupAddr),
+                  if (stopAddr != null && stopAddr.isNotEmpty) ...[
+                    const SizedBox(height: 22),
+                    _offerStopText(S.of(context).stopFieldLabel, stopAddr),
+                  ],
                   const SizedBox(height: 22),
                   _offerStopText(dropoffMeta, dropoffAddr),
                 ],
@@ -2897,6 +2915,9 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
     final dropoffLng = _safeDouble(offer['dropoff_lng']);
     final pickupLL = LatLng(pickupLat, pickupLng);
     final dropoffLL = LatLng(dropoffLat, dropoffLng);
+    // The booking-time stop, when the ride has one — row between pickup
+    // and dropoff below, and the preview map pins/routes through it.
+    final stopLabel = _offerStopLabel(offer);
     final vehicleType =
         _mapRideType((offer['vehicle_type'] ?? 'Comfort') as String);
     final pickupAddr = _isGenericAddress(rawPickupAddr2)
@@ -3207,6 +3228,61 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                             ),
                           ],
                         ),
+                        // Stop (booking-time "+") — same white ring as
+                        // the dropoff, between pickup and dropoff.
+                        if (stopLabel != null && stopLabel.isNotEmpty)
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Column(
+                                children: [
+                                  Container(
+                                    width: 10,
+                                    height: 10,
+                                    decoration: BoxDecoration(
+                                      shape: BoxShape.circle,
+                                      border: Border.all(
+                                        color: Colors.white,
+                                        width: 2,
+                                      ),
+                                    ),
+                                  ),
+                                  Container(
+                                    width: 1.5,
+                                    height: 20,
+                                    color: cBorderC,
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      S.of(context).stopFieldLabel,
+                                      style: TextStyle(
+                                        color: cTextMuted,
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.w700,
+                                        letterSpacing: 0.5,
+                                      ),
+                                    ),
+                                    Text(
+                                      stopLabel,
+                                      style: const TextStyle(
+                                        color: cTextPrimary,
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
                         // Dropoff
                         Row(
                           crossAxisAlignment: CrossAxisAlignment.start,

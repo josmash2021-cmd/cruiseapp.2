@@ -1,4 +1,5 @@
 import 'dart:typed_data';
+import 'dart:convert';
 import 'dart:math' as math;
 import 'dart:ui' show PlatformDispatcher;
 import 'package:flutter/material.dart';
@@ -267,6 +268,18 @@ Map<String, dynamic>? _provisionalOfferFromPush(Map<String, dynamic> data) {
     'dropoff_lat': double.tryParse('${data['dropoff_lat'] ?? ''}'),
     'dropoff_lng': double.tryParse('${data['dropoff_lng'] ?? ''}'),
     'vehicle_type': data['vehicle_type'] ?? '',
+    // The booking-time stop arrives as flat push strings; fold it into the
+    // same `stops` JSON shape the SSE/pending payloads carry, so the map
+    // preview parses ONE shape no matter which channel delivered the offer.
+    if (double.tryParse('${data['stop_lat'] ?? ''}') != null &&
+        double.tryParse('${data['stop_lng'] ?? ''}') != null)
+      'stops': jsonEncode([
+        {
+          'lat': double.parse('${data['stop_lat']}'),
+          'lng': double.parse('${data['stop_lng']}'),
+          'label': data['stop_address'] ?? '',
+        }
+      ]),
     if (double.tryParse('${data['driver_earnings'] ?? ''}') != null)
       'driver_earnings': double.parse('${data['driver_earnings']}'),
     if (double.tryParse('${data['driver_earnings'] ?? ''}') != null)

@@ -675,6 +675,18 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
           iconSize: 1 / kEndpointRasterScale,
           iconAnchor: mapbox.IconAnchor.CENTER,
         ));
+        final stopLL = _offerStopPoint(offer);
+        if (stopLL != null) {
+          _prevStopAnnot =
+              await pointMgr.create(mapbox.PointAnnotationOptions(
+            geometry: mapbox.Point(
+                coordinates:
+                    mapbox.Position(stopLL.longitude, stopLL.latitude)),
+            image: imgs[1],
+            iconSize: 1 / kEndpointRasterScale,
+            iconAnchor: mapbox.IconAnchor.CENTER,
+          ));
+        }
       } catch (_) {}
     }
     if (!mounted || _previewingOffer == null) {
@@ -685,7 +697,8 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
 
     // A recreated surface boots centered on the driver at street zoom —
     // reframe the whole route or the lines just drawn sit off-screen.
-    await _fitBoundsMulti(_routeFramePoints(driverPos, pickupLL, dropoffLL));
+    await _fitBoundsMulti(_routeFramePoints(driverPos, pickupLL, dropoffLL,
+        stopLL: _offerStopPoint(offer)));
   }
 
   Future<void> _setPickupAnnotation() async {
@@ -753,7 +766,8 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
       _dropoffAnnot,
       _prevDriverAnnot,
       _prevPickupAnnot,
-      _prevDropoffAnnot
+      _prevDropoffAnnot,
+      _prevStopAnnot,
     ]) {
       if (annot != null) {
         try {
@@ -766,6 +780,7 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     _prevDriverAnnot = null;
     _prevPickupAnnot = null;
     _prevDropoffAnnot = null;
+    _prevStopAnnot = null;
   }
 
   Future<void> _clearAllAnnotations() async {
@@ -784,6 +799,7 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
           web.removePolyline('offerSegTwo');
           web.removeMarker('offerPickup');
           web.removeMarker('offerDropoff');
+          web.removeMarker('offerStop');
           web.removeCircle('driverPos');
         }
       }
@@ -829,13 +845,15 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
         _previewPickupAnnot == null &&
         _previewDropoffAnnot == null &&
         _prevPickupAnnot == null &&
-        _prevDropoffAnnot == null) {
+        _prevDropoffAnnot == null &&
+        _prevStopAnnot == null) {
       return;
     }
     debugPrint('[OfferRoute] sweep: orphan preview annotations removed '
         '(route=${_routeAnnot != null} seg1=${_previewPickupAnnot != null} '
         'seg2=${_previewDropoffAnnot != null} pins='
-        '${_prevPickupAnnot != null || _prevDropoffAnnot != null})');
+        '${_prevPickupAnnot != null || _prevDropoffAnnot != null} '
+        'stop=${_prevStopAnnot != null})');
     try {
       await _clearAllAnnotations();
     } catch (e) {
@@ -897,9 +915,15 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
   List<LatLng> _routeFramePoints(
     LatLng driverPos,
     LatLng pickupLL,
-    LatLng dropoffLL,
-  ) {
-    final pts = <LatLng>[driverPos, pickupLL, dropoffLL];
+    LatLng dropoffLL, {
+    LatLng? stopLL,
+  }) {
+    final pts = <LatLng>[
+      driverPos,
+      pickupLL,
+      if (stopLL != null) stopLL,
+      dropoffLL,
+    ];
     for (final seg in [_fullSegOne, _fullSegTwo]) {
       if (seg.length < 3) continue;
       final step = (seg.length / 24).ceil().clamp(1, seg.length);
@@ -1167,6 +1191,10 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     final pickupLL = LatLng(pickupLat, pickupLng);
     final dropoffLL = LatLng(dropoffLat, dropoffLng);
     final driverPos = _pos ?? pickupLL; // fallback when GPS hasn't resolved yet
+    // A booking-time stop turns seg2 into pickup → stop → dropoff, one
+    // continuous line, and gets the dropoff pin (user spec).
+    final stopLL = _offerStopPoint(offer);
+    final segTwoVia = stopLL == null ? null : [stopLL];
 
     _setState(() {
       _previewingOffer = offer;
@@ -1189,7 +1217,7 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     } else {
       final routeFutures = await Future.wait([
         _fetchRoutePoints(driverPos, pickupLL),
-        _fetchRoutePoints(pickupLL, dropoffLL),
+        _fetchRoutePoints(pickupLL, dropoffLL, waypoints: segTwoVia),
       ]);
       _fullSegOne = routeFutures[0];
       _fullSegTwo = routeFutures[1];
@@ -1214,7 +1242,8 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     // below would run against null managers and draw nothing. The browser
     // gets the same result in one pass: frame, both segments, both pins.
     if (kIsWeb) {
-      await _previewOfferRouteWeb(driverPos, pickupLL, dropoffLL);
+      await _previewOfferRouteWeb(driverPos, pickupLL, dropoffLL,
+          stopLL: stopLL);
       _isCardAnimating = false;
       return;
     }
@@ -1229,7 +1258,8 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     // cameraForCoordinatesPadding already works out the zoom from the
     // spread of what it is given, so a short hop and a cross-town run each
     // get the zoom they need; it just has to be given the real shape.
-    await _fitBoundsMulti(_routeFramePoints(driverPos, pickupLL, dropoffLL));
+    await _fitBoundsMulti(_routeFramePoints(driverPos, pickupLL, dropoffLL,
+        stopLL: stopLL));
     if (!mounted || _previewingOffer == null) {
       _isCardAnimating = false;
       return;
@@ -1277,6 +1307,17 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
         iconSize: 0.01,
         iconAnchor: mapbox.IconAnchor.CENTER,
       ));
+      // The stop pin sits BETWEEN the two endpoints in the pop cascade
+      // (phase 7) — same dropoff ring-dot bitmap.
+      if (stopLL != null) {
+        _prevStopAnnot = await pointMgr.create(mapbox.PointAnnotationOptions(
+          geometry: mapbox.Point(
+              coordinates: mapbox.Position(stopLL.longitude, stopLL.latitude)),
+          image: dropoffPinImg,
+          iconSize: 0.01,
+          iconAnchor: mapbox.IconAnchor.CENTER,
+        ));
+      }
     }
 
     // ── PHASE 3: none ──
@@ -1350,7 +1391,10 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
       return;
     }
 
-    // ── PHASE 7: Dropoff pin popup ──
+    // ── PHASE 7: Dropoff pin popup (stop first — the cascade follows the
+    // ride's order: pickup, stop, dropoff) ──
+    await _animateSinglePinPop(_prevStopAnnot,
+        targetScale: 1 / kEndpointRasterScale);
     await _animateSinglePinPop(_prevDropoffAnnot,
         targetScale: 1 / kEndpointRasterScale);
     if (!mounted || _previewingOffer == null) {
@@ -1359,7 +1403,8 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     }
 
     // ── PHASE 8: Refit with the full route shape ──
-    _fitBoundsMulti(_routeFramePoints(driverPos, pickupLL, dropoffLL));
+    _fitBoundsMulti(
+        _routeFramePoints(driverPos, pickupLL, dropoffLL, stopLL: stopLL));
 
     if (mounted && _previewingOffer != null) {
       _setState(() => _offerRouteShown = true);
@@ -1373,14 +1418,16 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
   Future<void> _previewOfferRouteWeb(
     LatLng driverPos,
     LatLng pickupLL,
-    LatLng dropoffLL,
-  ) async {
+    LatLng dropoffLL, {
+    LatLng? stopLL,
+  }) async {
     final web = _webMap;
     if (web == null) {
       debugPrint('[OfferRoute] web preview skipped — no controller yet');
       return;
     }
-    await _fitBoundsMulti(_routeFramePoints(driverPos, pickupLL, dropoffLL));
+    await _fitBoundsMulti(
+        _routeFramePoints(driverPos, pickupLL, dropoffLL, stopLL: stopLL));
     if (!mounted || _previewingOffer == null) return;
 
     List<LngLatPoint> lngLats(List<LatLng> seg) =>
@@ -1436,6 +1483,11 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
         iconBytes: pinResults[0]);
     web.addMarker('offerDropoff', dropoffLL.longitude, dropoffLL.latitude,
         iconBytes: pinResults[1]);
+    // The stop wears the dropoff ring-dot too (user spec).
+    if (stopLL != null) {
+      web.addMarker('offerStop', stopLL.longitude, stopLL.latitude,
+          iconBytes: pinResults[1]);
+    }
     _setState(() => _offerRouteShown = true);
   }
 
@@ -1880,13 +1932,48 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
   /// fallback was removed. That line cut across blocks and lied to the
   /// driver (it is the line in the bug-report photo); no line at all is the
   /// honest failure. Callers keep the pickup/dropoff markers either way.
-  Future<List<LatLng>> _fetchRoutePoints(LatLng o, LatLng d) async {
+  /// The booking-time stop as a point, parsed from the offer's `stops`
+  /// field — a JSON string from the server payloads, or an already-decoded
+  /// list. Null when the ride has no stop.
+  LatLng? _offerStopPoint(Map<String, dynamic> offer) {
+    return _offerStop(offer)?.point;
+  }
+
+  /// The stop's display label ("Stop" row on the offer card).
+  String? _offerStopLabel(Map<String, dynamic> offer) {
+    return _offerStop(offer)?.label;
+  }
+
+  /// The booking-time stop parsed once: point + label. The `stops` field
+  /// arrives as a JSON string from the server payloads, or an already
+  /// decoded list; null when the ride has no stop.
+  ({LatLng point, String label})? _offerStop(Map<String, dynamic> offer) {
+    try {
+      final raw = offer['stops'];
+      final list =
+          raw is String ? jsonDecode(raw) : (raw is List ? raw : null);
+      if (list is! List || list.isEmpty) return null;
+      final s = list.first;
+      if (s is! Map) return null;
+      final lat = (s['lat'] as num?)?.toDouble();
+      final lng = (s['lng'] as num?)?.toDouble();
+      if (lat == null || lng == null) return null;
+      if (!lat.isFinite || !lng.isFinite) return null;
+      if (lat.abs() > 90 || lng.abs() > 180) return null;
+      return (point: LatLng(lat, lng), label: (s['label'] ?? '').toString());
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<List<LatLng>> _fetchRoutePoints(LatLng o, LatLng d,
+      {List<LatLng>? waypoints}) async {
     for (var attempt = 0; attempt < 2; attempt++) {
       if (attempt > 0) {
         await Future.delayed(const Duration(milliseconds: 600));
         if (!mounted) break;
       }
-      final pts = await _fetchRoutePointsOnce(o, d);
+      final pts = await _fetchRoutePointsOnce(o, d, waypoints: waypoints);
       if (pts.length >= 2) return pts;
     }
     debugPrint('[OfferRoute] all providers failed — no route line drawn');
@@ -1894,7 +1981,16 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
   }
 
   /// One pass over the providers: Google → OSRM → Mapbox.
-  Future<List<LatLng>> _fetchRoutePointsOnce(LatLng o, LatLng d) async {
+  Future<List<LatLng>> _fetchRoutePointsOnce(LatLng o, LatLng d,
+      {List<LatLng>? waypoints}) async {
+    final via = (waypoints == null || waypoints.isEmpty)
+        ? null
+        : waypoints
+            .map((p) => '${p.latitude},${p.longitude}')
+            .join('|');
+    final chain = [o, ...?waypoints, d]
+        .map((p) => '${p.longitude},${p.latitude}')
+        .join(';');
     List<LatLng>? pts;
     // Google Directions API
     try {
@@ -1904,6 +2000,7 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
         'destination': '${d.latitude},${d.longitude}',
         'key': ApiKeys.webServices,
         'mode': 'driving',
+        if (via != null) 'waypoints': via,
       });
       final res = await http.get(uri).timeout(const Duration(seconds: 10));
       if (res.statusCode == 200) {
@@ -1917,8 +2014,7 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     // OSRM fallback
     if (pts == null) {
       try {
-        final path =
-            '/route/v1/driving/${o.longitude},${o.latitude};${d.longitude},${d.latitude}';
+        final path = '/route/v1/driving/$chain';
         final uri = Uri.https('router.project-osrm.org', path, {
           'overview': 'full',
           'geometries': 'polyline',
@@ -1939,7 +2035,7 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
       try {
         final mbxUrl = Uri.parse(
           'https://api.mapbox.com/directions/v5/mapbox/driving/'
-          '${o.longitude},${o.latitude};${d.longitude},${d.latitude}'
+          '$chain'
           '?geometries=geojson&overview=full&steps=false'
           '&access_token=${MapboxConfig.accessToken}',
         );

@@ -5440,6 +5440,10 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
               dropoffInstructions: widget.dropoffInstructions,
               waitStartedAt: _waitStartedAt,
               prefetchedRoutePoints: _routePoints,
+              // The stop follows the leg flips: null on the pickup leg,
+              // waypoint + pin once the rider is aboard.
+              stopLatLng: _stopLatLng,
+              stopLabel: _stopLabel,
               onExit: _exitNavMode,
               onArrived: _confirmArrival,
               onSlidePickUp: _startRideConfirmed,

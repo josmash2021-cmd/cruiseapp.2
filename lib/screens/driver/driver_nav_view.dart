@@ -112,6 +112,8 @@ class DriverNavView extends StatefulWidget {
     required this.stage,
     required this.passengerInstructions,
     required this.dropoffInstructions,
+    this.stopLatLng,
+    this.stopLabel = '',
     required this.waitStartedAt,
     required this.onExit,
     required this.onArrived,
@@ -139,6 +141,12 @@ class DriverNavView extends StatefulWidget {
   /// Pickup leg (going for the rider) vs dropoff leg (rider aboard). The leg
   /// flip also hides the rider figure — there is nobody left to walk to.
   final bool toPickup;
+
+  /// The booking-time (or mid-trip) stop. On the dropoff leg the route runs
+  /// through it as a waypoint (one continuous line, and Mapbox's steps carry
+  /// the "arrive at the stop" maneuver) and it gets the flag pin.
+  final LatLng? stopLatLng;
+  final String stopLabel;
 
   /// The parent screen's `_actionStageKey()`: arrived / waiting_rider /
   /// start_ride / finish / *_locked.
@@ -213,6 +221,9 @@ class DriverNavViewState extends State<DriverNavView>
   mapbox.PolylineAnnotation? _routeAnnot;
   mapbox.PointAnnotation? _driverAnnot;
   mapbox.PointAnnotation? _destAnnot;
+  // The booking/mid-trip stop pin (flag pin like the dropoff) — only on
+  // the dropoff leg; on the pickup leg it is nobody's business yet.
+  mapbox.PointAnnotation? _stopAnnot;
   bool _annotWriteBusy = false;
   // Last values actually sent to the native annotation — a parked car pays
   // zero channel writes (same discipline as the accept screen's mini car).
@@ -449,6 +460,10 @@ class DriverNavViewState extends State<DriverNavView>
       // The rider moved the destination mid-trip — the leg is the same,
       // the target is not.
       _onDestinationChanged();
+    } else if (oldWidget.stopLatLng != widget.stopLatLng) {
+      // A stop appeared (or moved) mid-drive — the route re-fetches through
+      // it, same invalidation path as a destination change.
+      _onDestinationChanged();
     }
   }
 
@@ -538,6 +553,7 @@ class DriverNavViewState extends State<DriverNavView>
         _routeAnnot = null;
         _driverAnnot = null;
         _destAnnot = null;
+        _stopAnnot = null;
         _riderHaloAnnot = null;
         _riderDotAnnot = null;
         // The signs' handles died with the surface too — null them so the
@@ -1124,9 +1140,14 @@ class DriverNavViewState extends State<DriverNavView>
     }
     try {
       final o = origin ?? _driverLatLng();
+      // On the dropoff leg a stop is a waypoint: the line runs through it
+      // (Mapbox steps then carry the "arrive at the stop" maneuver), and
+      // the remaining-time math over the geometry includes the detour.
+      final stop = widget.toPickup ? null : widget.stopLatLng;
       final result = await DirectionsService(ApiKeys.webServices).getRoute(
         origin: o,
         destination: _dest,
+        waypoints: stop == null ? null : [stop],
         // The app's locale, so maneuver instructions ("Take exit 67B…")
         // come back in the driver's language.
         language: Localizations.localeOf(context).languageCode,
@@ -1681,6 +1702,45 @@ class DriverNavViewState extends State<DriverNavView>
       );
       if (!mounted) return;
       _destAnnot = await mgr.create(mapbox.PointAnnotationOptions(
+        geometry: point,
+        image: bytes,
+        iconSize: 0.62,
+        iconAnchor: mapbox.IconAnchor.BOTTOM,
+      ));
+    } catch (_) {}
+    unawaited(_drawStopPin());
+  }
+
+  /// The stop rides the dropoff leg: flag pin at its coordinates. On the
+  /// pickup leg (or with no stop) any existing pin comes down.
+  Future<void> _drawStopPin() async {
+    final mgr = _pointMgr;
+    if (mgr == null) return;
+    final stop = widget.toPickup ? null : widget.stopLatLng;
+    if (stop == null) {
+      final old = _stopAnnot;
+      _stopAnnot = null;
+      if (old != null) {
+        try {
+          await mgr.delete(old);
+        } catch (_) {}
+      }
+      return;
+    }
+    final point = safePoint(stop.longitude, stop.latitude);
+    if (point == null) return;
+    if (_stopAnnot != null) {
+      _stopAnnot!.geometry = point;
+      try {
+        await mgr.update(_stopAnnot!);
+      } catch (_) {}
+      return;
+    }
+    try {
+      final bytes = await renderCircularPinBytes(
+          icon: CircularPinIcon.flag, isPickup: false, radius: 32);
+      if (!mounted) return;
+      _stopAnnot = await mgr.create(mapbox.PointAnnotationOptions(
         geometry: point,
         image: bytes,
         iconSize: 0.62,

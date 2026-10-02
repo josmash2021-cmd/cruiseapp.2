@@ -55,8 +55,13 @@ class SmoothMotion {
   /// lead, in seconds of turn. Shorter than the position lead: a position
   /// overshoot reads as a metre or two on the map, but an angular overshoot
   /// past a completed maneuver spins the arrow visibly off the road. 1 s
-  /// covers the 1 Hz course cadence exactly.
-  static const double _maxBearingLeadSec = 1.0;
+  /// covered the 1 Hz course cadence exactly — and also kept the arrow
+  /// turning a full second at the measured rate AFTER the turn had ended:
+  /// ~30-40° past a real city turn, then the swing back ("se colea",
+  /// user report 2026-10-02). 0.75 s still bridges the 1 Hz staircase
+  /// (the turn-glide guard still passes) while the past-turn swing shrinks
+  /// by a quarter; the adaptive decay in [setBearing] kills the rest.
+  static const double _maxBearingLeadSec = 0.75;
 
   DateTime? _lastTargetAt;
 
@@ -161,6 +166,26 @@ class SmoothMotion {
   static const double _stationaryExitMps = 1.2;
   bool _stationary = false;
 
+  /// The last fix the stationary freeze SKIPPED, kept for the release.
+  /// Without it the release fix is measured against the pre-freeze target:
+  /// the gap spans the whole frozen spell, the implied speed reads 2-3x
+  /// real, and the marker sprints the backlog then stalls then sprints
+  /// again — the crawl-speed stutter (user report 2026-10-02, "avanza, se
+  /// detiene, y luego avanza cuando va lento"). Measuring the release from
+  /// the last skipped fix instead gives the honest one-gap step.
+  double? _frozenSkipLat;
+  double? _frozenSkipLng;
+  DateTime? _frozenSkipAt;
+  double? _frozenSkipTsMs;
+
+  void _rememberFrozenSkip(
+      double lat, double lng, DateTime at, double? tsMs) {
+    _frozenSkipLat = lat;
+    _frozenSkipLng = lng;
+    _frozenSkipAt = at;
+    _frozenSkipTsMs = tsMs;
+  }
+
   /// Provide a new GPS target. Measures velocity from the delta to the
   /// previous target.
   ///
@@ -254,6 +279,7 @@ class SmoothMotion {
           _consecutiveHolds = 0;
           _lastTargetAt = now;
           if (fixTsMs != null) _lastTargetTsMs = fixTsMs;
+          _rememberFrozenSkip(lat, lng, now, fixTsMs);
           return;
         }
         _stationary = false; // real movement reported — release the hold
@@ -264,23 +290,40 @@ class SmoothMotion {
         _consecutiveHolds = 0;
         _lastTargetAt = now;
         if (fixTsMs != null) _lastTargetTsMs = fixTsMs;
+        _rememberFrozenSkip(lat, lng, now, fixTsMs);
         return;
       }
     }
     if (_targetLat != null && _lastTargetAt != null) {
-      var dtSec =
-          now.difference(_lastTargetAt!).inMilliseconds / 1000.0;
+      // Measurement base: normally the last accepted target. After a frozen
+      // spell, the last SKIPPED fix instead (see _rememberFrozenSkip) — the
+      // release then spans one honest fix gap, not the whole freeze.
+      var baseLat = _targetLat!;
+      var baseLng = _targetLng!;
+      var baseAt = _lastTargetAt!;
+      double? baseTsMs = _lastTargetTsMs;
+      if (_frozenSkipAt != null) {
+        baseLat = _frozenSkipLat!;
+        baseLng = _frozenSkipLng!;
+        baseAt = _frozenSkipAt!;
+        baseTsMs = _frozenSkipTsMs;
+        _frozenSkipLat = null;
+        _frozenSkipLng = null;
+        _frozenSkipAt = null;
+        _frozenSkipTsMs = null;
+      }
+      var dtSec = now.difference(baseAt).inMilliseconds / 1000.0;
       // Prefer capture-to-capture spacing over arrival-to-arrival when the
       // feed carries real timestamps (see the docstring).
-      if (fixTsMs != null && _lastTargetTsMs != null) {
-        final tsDt = (fixTsMs - _lastTargetTsMs!) / 1000.0;
+      if (fixTsMs != null && baseTsMs != null) {
+        final tsDt = (fixTsMs - baseTsMs) / 1000.0;
         if (tsDt > 0.05 && tsDt < 10.0) dtSec = tsDt;
       }
       if (dtSec > 0.05 && dtSec < 10.0) {
-        final dLat = lat - _targetLat!;
-        final dLng = lng - _targetLng!;
+        final dLat = lat - baseLat;
+        final dLng = lng - baseLng;
         // Equirectangular meters — accurate enough at GPS-smoothing scales.
-        final cosLat = math.cos(_targetLat! * math.pi / 180.0);
+        final cosLat = math.cos(baseLat * math.pi / 180.0);
         final distM = math.sqrt(
           math.pow(dLng * 111320.0 * cosLat, 2) +
               math.pow(dLat * 110540.0, 2),
@@ -347,7 +390,17 @@ class SmoothMotion {
         // is not noise. Without this a marker could be held indefinitely by
         // readings that each sit just inside the ring, which is the same
         // permanent error in a slower form.
-        if (curSpeedMps < 1.2 &&
+        //
+        // A fix whose own speed reading declares real movement never gets
+        // held either (2026-10-02): the gate's <1.2 m/s glide reading flaps
+        // in and out in crawling traffic, and every held fix was a stall
+        // followed by a sprint to the backlog. The platform's own "yes, we
+        // are moving" settles it.
+        final fixDeclaresMotion = speedMps != null &&
+            speedMps.isFinite &&
+            speedMps >= _stationaryExitMps;
+        if (!fixDeclaresMotion &&
+            curSpeedMps < 1.2 &&
             distM < holdRadiusM &&
             _consecutiveHolds < _maxConsecutiveHolds) {
           _consecutiveHolds++;
@@ -448,7 +501,16 @@ class SmoothMotion {
         }
         final measured =
             (d / dt).clamp(-_maxTurnRateDps, _maxTurnRateDps).toDouble();
-        final w = measured.abs() > 45.0 ? 0.25 : 0.7;
+        // Adaptive: real city turns (≤45°/s) earn fast tracking (0.7);
+        // bigger jumps — multipath noise bursts, never a street turn at
+        // course speed — earn only 0.25. And a STABLE course (|d| < 5°)
+        // while the glide still carries a big turn rate earns 0.9: the
+        // turn is over, so the tail dies this sample instead of dragging
+        // the arrow ~30-40° past it and swinging back (user report
+        // 2026-10-02, "al girar a veces gira mucho, como si se coleara").
+        final w = (d.abs() < 5.0 && _vBearing.abs() > 20.0)
+            ? 0.9
+            : (measured.abs() > 45.0 ? 0.25 : 0.7);
         _vBearing = _vBearing * (1 - w) + measured * w;
       }
     }
@@ -660,6 +722,10 @@ class SmoothMotion {
     _lastBearingAt = null;
     _consecutiveHolds = 0;
     _stationary = false;
+    _frozenSkipLat = null;
+    _frozenSkipLng = null;
+    _frozenSkipAt = null;
+    _frozenSkipTsMs = null;
     _lastTargetAt = DateTime.now();
     _lastTargetTsMs = null;
   }
@@ -678,6 +744,10 @@ class SmoothMotion {
     _targetBearing = 0;
     _consecutiveHolds = 0;
     _stationary = false;
+    _frozenSkipLat = null;
+    _frozenSkipLng = null;
+    _frozenSkipAt = null;
+    _frozenSkipTsMs = null;
     _lastTargetAt = null;
     _lastTargetTsMs = null;
   }

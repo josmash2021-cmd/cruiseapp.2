@@ -329,11 +329,16 @@ void main() {
     test('the turn-rate blend is adaptive — noise jumps earn less trust', () {
       final sm =
           File('lib/utils/smooth_motion.dart').readAsStringSync();
-      expect(sm.contains('final w = measured.abs() > 45.0 ? 0.25 : 0.7;'),
+      expect(sm.contains('measured.abs() > 45.0 ? 0.25 : 0.7'),
           isTrue,
           reason: 'real city turns (≤45°/s) track fast; multipath bursts '
               'land as one calm average — the flat 0.8 blend pulsed the '
               'arrow through traffic');
+      expect(sm.contains('d.abs() < 5.0 && _vBearing.abs() > 20.0'),
+          isTrue,
+          reason: 'a stable course with a big residual rate kills the tail '
+              'this sample — the arrow must not fishtail past a completed '
+              'turn (user report 2026-10-02, "se colea")');
     });
   });
 

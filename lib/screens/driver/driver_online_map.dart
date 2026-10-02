@@ -458,6 +458,71 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     return LatLng(a.latitude + tc * dy, a.longitude + tc * dx);
   }
 
+  /// Per-frame snap of the RENDERED arrow onto the active line (user report
+  /// 2026-10-02: "la flecha se sale de las líneas de las calles y luego se
+  /// reincorpora").
+  ///
+  /// [_snapToRoute] clamps the TARGET once per fix (~1 Hz), but the rendered
+  /// marker comes from SmoothMotion with an extrapolated lead of up to 2 s
+  /// of travel past that target — at city speed that is 10-20 m past the end
+  /// of the matched line, visibly off the road, and the next fix dragged it
+  /// back. So the target lived on the road while the arrow did not. This
+  /// re-projects the engine's output onto the same line every frame, so the
+  /// arrow never leaves it between fixes either.
+  ///
+  /// Read-only and cheap: it reuses the segment hint [_snapSegIdx] the fix
+  /// snap maintains and only scans a small window around it (O(1)/frame);
+  /// when the fix snap is not engaged (no line, or the car is genuinely far
+  /// from it) the engine's point passes through untouched — we never force
+  /// the marker onto a road it is not on.
+  LatLng _snapRenderedToLine(LatLng p) {
+    if (!_routeSnapActive || _snapSegIdx < 0) return p;
+    final onRoute = _routePts.length >= 2;
+    final pts = onRoute ? _routePts : _roadLinePts;
+    if (pts.length < 2) return p;
+
+    double bestDist = double.infinity;
+    LatLng best = p;
+    final from = (_snapSegIdx - 4).clamp(0, pts.length - 2);
+    final to = (_snapSegIdx + 4).clamp(0, pts.length - 2);
+    for (int i = from; i <= to; i++) {
+      final candidate = _closestPointOnSegment(p, pts[i], pts[i + 1]);
+      final d = _hav(p, candidate);
+      if (d < bestDist) {
+        bestDist = d;
+        best = candidate;
+      }
+    }
+    // The matched road line ends at the last fix; the engine's lead runs
+    // past it. Let the projection ride the final segment's direction a
+    // little further instead of parking at the line's end (routes already
+    // extend far ahead, so this only matters for the road line).
+    if (!onRoute && bestDist > 0.004 && pts.length >= 2) {
+      final a = pts[pts.length - 2];
+      final b = pts[pts.length - 1];
+      final brg = _bearingBetween(a, b) * math.pi / 180;
+      for (final extM in <double>[8.0, 16.0, 25.0]) {
+        final ext = LatLng(
+          b.latitude + (extM / 110540.0) * math.cos(brg),
+          b.longitude +
+              (extM /
+                      (111320.0 * math.cos(b.latitude * math.pi / 180))) *
+                  math.sin(brg),
+        );
+        final candidate = _closestPointOnSegment(p, a, ext);
+        final d = _hav(p, candidate);
+        if (d < bestDist) {
+          bestDist = d;
+          best = candidate;
+        }
+      }
+    }
+    // Sanity: the engine moves smoothly, so a projection far from the
+    // engine's point means the line went stale — keep the raw point rather
+    // than yank the arrow across the map onto an old line.
+    return bestDist <= 0.040 ? best : p;
+  }
+
   double _bearingBetween(LatLng a, LatLng b) {
     final dLng = (b.longitude - a.longitude) * math.pi / 180;
     final aLat = a.latitude * math.pi / 180;

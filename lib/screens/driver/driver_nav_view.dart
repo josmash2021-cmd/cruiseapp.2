@@ -202,6 +202,14 @@ class DriverNavViewState extends State<DriverNavView>
   // down on their side every time the camera turned. _pointMgr keeps the
   // default viewport alignment, so pins stand upright at any bearing.
   mapbox.PointAnnotationManager? _carMgr;
+
+  /// The arrow's drawn position after route projection (user report
+  /// 2026-10-02, same "se sale de las líneas" as the online map): each fix's
+  /// TARGET is already projected onto the route line, but the engine's
+  /// extrapolated lead runs past it between fixes and the arrow leaves the
+  /// road. Refreshed at dot-tick rate and consumed by the annotation write
+  /// and the chase camera, so every rendered thing rides the line.
+  LatLng? _renderPos;
   mapbox.PolylineAnnotation? _routeAnnot;
   mapbox.PointAnnotation? _driverAnnot;
   mapbox.PointAnnotation? _destAnnot;
@@ -1734,12 +1742,17 @@ class DriverNavViewState extends State<DriverNavView>
 
   /// GoldLocationDot onTick — throttled (~30 fps), position changed.
   void _onDotTick() {
-    _updateDriverAnnotation();
-    // The route erase rides the dot's animated position — the line is
-    // eaten under the car exactly as it glides, not once a GPS second.
     final lat = _dot.lat;
     final lng = _dot.lng;
-    if (lat != null && lng != null) _trimRouteTo(LatLng(lat, lng));
+    if (lat != null && lng != null) {
+      // Re-project onto the route line: the fix-level projection alone let
+      // the extrapolated lead wander off the road between fixes.
+      _renderPos = _snapToNavRoute(LatLng(lat, lng)) ?? LatLng(lat, lng);
+      // The route erase rides the dot's animated position — the line is
+      // eaten under the car exactly as it glides, not once a GPS second.
+      _trimRouteTo(LatLng(lat, lng));
+    }
+    _updateDriverAnnotation();
   }
 
   /// Where the chase zoom wants to be: tighter (18.0) with a maneuver under
@@ -1764,8 +1777,8 @@ class DriverNavViewState extends State<DriverNavView>
     if (_camState != _CamState.following || _overview || !_mapMounted) {
       return;
     }
-    final lat = _dot.lat;
-    final lng = _dot.lng;
+    final lat = _renderPos?.latitude ?? _dot.lat;
+    final lng = _renderPos?.longitude ?? _dot.lng;
     if (lat == null || lng == null) return;
     // Zoom lerps toward its target at ≤0.5/sec — a speed or maneuver change
     // is felt as a glide, never as a cut.
@@ -1918,8 +1931,8 @@ class DriverNavViewState extends State<DriverNavView>
     // the rider figure down whenever the chase camera rotated (user report
     // 2026-09-17, the "pin acostado").
     final mgr = _carMgr;
-    final lat = _dot.lat;
-    final lng = _dot.lng;
+    final lat = _renderPos?.latitude ?? _dot.lat;
+    final lng = _renderPos?.longitude ?? _dot.lng;
     if (mgr == null || lat == null || lng == null) return;
     if (!isValidLatLng(lat, lng)) return;
     final img = _dot.currentBytesHiRes ?? _dot.currentBytes;

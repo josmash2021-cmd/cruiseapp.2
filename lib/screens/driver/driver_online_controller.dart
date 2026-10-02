@@ -2007,7 +2007,10 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
 
     // tick() devuelve si posición O rumbo cambiaron este frame.
     final frameMoved = _motion.tick(dtSec);
-    _pos = LatLng(_motion.lat!, _motion.lng!);
+    // Re-project the engine's output onto the active line (route or matched
+    // road line) — the fix-level snap alone left the extrapolated lead
+    // running off the road between fixes (see _snapRenderedToLine).
+    _pos = _snapRenderedToLine(LatLng(_motion.lat!, _motion.lng!));
     _heading = _motion.bearing;
 
     // HEAT FIX (2026-08-19): un driver parado no necesita 120 escrituras de

@@ -133,6 +133,12 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
         }
         _dropoffAnnot = null;
       }
+      if (_stopAnnot != null) {
+        try { await ptMgr.delete(_stopAnnot!); } catch (e) {
+          debugPrint('[TrackingMap] Failed to delete stop annotation: $e');
+        }
+        _stopAnnot = null;
+      }
     }
   }
 
@@ -577,10 +583,19 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     if (widget.routePoints != null && widget.routePoints!.isNotEmpty) {
       tripRoute = List.from(widget.routePoints!);
     } else {
+      // Resume paths (local ActiveRide) never carried the stop — fill it
+      // once from the trip payload before choosing the frame's geometry.
+      if (_stopLL == null && widget.tripId != null) {
+        await _seedStopFromTrip();
+      }
       final ds = DirectionsService(ApiKeys.webServices);
+      // A booking-time stop is part of the trip plan — the full frame runs
+      // pickup → stop → dropoff from the very first draw.
+      final stop = _stopLL;
       final r = await ds.getRoute(
         origin: widget.pickupLatLng,
         destination: widget.dropoffLatLng,
+        waypoints: stop == null ? null : [stop],
       );
       if (r != null && mounted) {
         tripRoute = r.points;
@@ -1655,6 +1670,7 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
               _polylineAnnotMgr = null;
               _pickupAnnot = null;
               _dropoffAnnot = null;
+              _stopAnnot = null;
               _remainingRouteAnnot = null;
               _dimmedRouteAnnot = null;
               _approachAnnot = null;
@@ -1980,6 +1996,45 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     );
   }
 
+  /// The booking stop for resume paths that never carried it (local
+  /// ActiveRide persistence): one trip fetch, seeded once.
+  Future<void> _seedStopFromTrip() async {
+    if (_stopLL != null || widget.tripId == null) return;
+    try {
+      final trip = await ApiService.getTrip(widget.tripId!);
+      final st = parseTripStop(trip);
+      if (st != null && mounted) _stopLL = st.point;
+    } catch (e) {
+      debugPrint('[RiderTracking] stop seed failed: $e');
+    }
+  }
+
+  /// The booking-time stop pin, once, next to the pickup/dropoff pins —
+  /// outside the modular/legacy split (the modular one owns pickup/dropoff
+  /// only, and the retry machinery must not re-enter forever if this one
+  /// create fails).
+  Future<void> _ensureStopPin() async {
+    final stop = _stopLL;
+    if (kIsWeb || stop == null || _stopAnnot != null) return;
+    final mgr = _pointAnnotMgr;
+    if (mgr == null || !mounted) return;
+    final point = safePoint(stop.longitude, stop.latitude);
+    if (point == null) return;
+    try {
+      final bytes = await renderCircularPinBytes(
+          icon: CircularPinIcon.flag, isPickup: false, radius: 32);
+      if (!mounted || _stopAnnot != null) return;
+      _stopAnnot = await mgr.create(mapbox.PointAnnotationOptions(
+        geometry: point,
+        image: bytes,
+        iconSize: 0.62,
+        iconAnchor: mapbox.IconAnchor.BOTTOM,
+      ));
+    } catch (e) {
+      debugPrint('[TrackingMap] stop pin failed: $e');
+    }
+  }
+
   Future<void> _updateStaticAnnotationsOnce() async {
     if (kIsWeb) {
       _webCreateStaticAnnotationsOnce();
@@ -2031,6 +2086,7 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
           pickupLatLng: widget.pickupLatLng,
           dropoffLatLng: widget.dropoffLatLng,
         );
+        unawaited(_ensureStopPin());
       } else {
       // Pickup pin — legacy path. `_showPickupPin` was written twice and
       // read nowhere, so this recreated the pin after the rider boarded
@@ -2054,6 +2110,7 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
 
       // Dropoff pin — always show so rider can see full trip plan
       _addDropoffPin();
+      unawaited(_ensureStopPin());
       }
     } finally {
       _staticAnnotBusy = false;

@@ -2316,6 +2316,9 @@ extension _RideRequestMap on _RideRequestScreenState {
           dropoffLabel: s.dropoffLabel,
           tripId: s.tripId,
           firestoreTripId: s.firestoreTripId,
+          // The booking stop follows the rider into the trip map.
+          stopLatLng: _ctrl.stopPoint,
+          stopLabel: (_ctrl.state.stopAddress ?? ''),
           onTripComplete: () {
             _ctrl.isOnTrackingScreen = false;
             LocalDataService.clearActiveRide();

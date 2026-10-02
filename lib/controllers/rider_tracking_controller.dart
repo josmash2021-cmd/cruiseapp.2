@@ -542,6 +542,12 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     _lastAcceptedFixLat = ll.latitude;
     _lastAcceptedFixLng = ll.longitude;
     _lastDriverGpsAt = DateTime.now();
+    // The stop is served: past this point the on-trip route goes direct to
+    // the dropoff (no U-turn back through a stop already made).
+    final stopLL = _stopLL;
+    if (stopLL != null && !_stopPassed && _hav(ll, stopLL) * 1609.34 < 80) {
+      _stopPassed = true;
+    }
     // Validate bearing — NaN/Infinity would break rotation interpolation
     if (bearing != null && (bearing.isNaN || bearing.isInfinite)) bearing = null;
     if (speed != null && (speed.isNaN || speed.isInfinite || speed < 0)) speed = null;
@@ -863,9 +869,13 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
         '${toPickup ? "pickup" : "dropoff"}');
     try {
       final ds = DirectionsService(ApiKeys.webServices);
+      // A booking-time stop rides the on-trip leg as a waypoint — until the
+      // driver reaches it (the _stopPassed latch), never back after.
+      final stop = toPickup || _stopPassed ? null : _stopLL;
       final result = await ds.getRoute(
         origin: driverPos,
         destination: dest,
+        waypoints: stop == null ? null : [stop],
       );
       if (result == null || result.points.length < 2 || !mounted) return;
       // The rider can board (or the driver arrive) while this fetch is in
@@ -1622,9 +1632,12 @@ extension _RiderTrackingController on _RiderTrackingScreenState {
     if (_driverPos.latitude == 0 && _driverPos.longitude == 0) return;
     try {
       final ds = DirectionsService(ApiKeys.webServices);
+      // Same stop rule as the reroute: through it only while it is ahead.
+      final stop = !onTrip || _stopPassed ? null : _stopLL;
       final result = await ds.getRoute(
         origin: _driverPos,
         destination: onTrip ? widget.dropoffLatLng : widget.pickupLatLng,
+        waypoints: stop == null ? null : [stop],
       );
       if (result == null ||
           result.durationSeconds == null ||

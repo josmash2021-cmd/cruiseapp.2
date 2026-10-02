@@ -60,6 +60,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'firebase_options.dart';
 import 'l10n/app_localizations.dart';
 import 'utils/responsive.dart';
+import 'utils/trip_stops.dart';
 
 /// Global theme notifier so any screen can toggle night mode.
 final themeNotifier = ThemeNotifier();
@@ -758,6 +759,8 @@ void _navigateToScheduledTracking(int tripId) {
         dropoffLabel: (fresh['dropoff_address'] ?? '').toString(),
         tripId: tripId,
         firestoreTripId: 'sql_$tripId',
+        stopLatLng: parseTripStop(fresh)?.point,
+        stopLabel: parseTripStop(fresh)?.label ?? '',
         driverPhotoUrl: (fresh['driver_photo_url'] ?? '').toString(),
         driverId: (fresh['driver_id'] ?? '').toString(),
         initialStatus: status,

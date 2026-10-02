@@ -11,6 +11,7 @@ import 'package:flutter/scheduler.dart';
 import '../services/haptic_service.dart';
 import '../services/places_service.dart';
 import '../utils/stop_pricing.dart';
+import '../utils/trip_stops.dart';
 import 'package:flutter/services.dart' show rootBundle, SystemUiOverlayStyle;
 import 'package:geolocator/geolocator.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' as mapbox;
@@ -100,6 +101,8 @@ class RiderTrackingScreen extends StatefulWidget {
     this.driverId,
     this.onTripComplete,
     this.initialStatus,
+    this.stopLatLng,
+    this.stopLabel = '',
   });
 
   final LatLng pickupLatLng;
@@ -126,6 +129,12 @@ class RiderTrackingScreen extends StatefulWidget {
   /// (e.g. after reinstall). Maps to _TrackPhase so the rider resumes
   /// at the correct state.
   final String? initialStatus;
+
+  /// The booking-time stop (the rider's own "+"): the trip route draws
+  /// through it and it gets the flag pin. On-trip reroutes route through
+  /// it only until the driver reaches it (the _stopPassed latch).
+  final LatLng? stopLatLng;
+  final String stopLabel;
 
   @override
   State<RiderTrackingScreen> createState() => _RiderTrackingScreenState();
@@ -530,6 +539,7 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   void initState() {
     super.initState();
     unawaited(_acquireMapSurface());
+    _stopLL = widget.stopLatLng;
     _driverPhotoUrl = _normalizeRemotePhotoUrl(widget.driverPhotoUrl);
     // If no photo URL from dispatch, proactively fetch from Firestore user doc.
     if ((_driverPhotoUrl == null || _driverPhotoUrl!.isEmpty) &&
@@ -868,6 +878,14 @@ class _RiderTrackingScreenState extends State<RiderTrackingScreen>
   double? _lastAcceptedFixAt;
   double? _lastAcceptedFixLat;
   double? _lastAcceptedFixLng;
+  // The booking-time stop as a state field: widget.stopLatLng seeds it,
+  // and resume paths that never carried it (local ActiveRide) fill it
+  // once from the trip payload (_seedStopFromTrip).
+  LatLng? _stopLL;
+  // Set the first time a driver fix lands within 80 m of the booking-time
+  // stop: on-trip reroutes/refreshes route through the stop only UNTIL it
+  // is reached — past it, the waypoint would U-turn the line back to it.
+  bool _stopPassed = false;
 
   /// Re-arms the RTDB driver feed when [_lastDriverGpsAt] goes quiet.
   Timer? _driverGpsWatchdog;

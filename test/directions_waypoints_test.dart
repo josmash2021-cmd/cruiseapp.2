@@ -75,10 +75,19 @@ void main() {
               'real route — the flag is the only safe gate');
     });
 
-    test('the cinematic catch-up gate checks the flag too', () {
+    test('the cinematic + web skip gates check the flag too', () {
       final src =
           File('lib/screens/ride_request_map.dart').readAsStringSync();
       expect(src.contains('!latestRoute.estimated'), isTrue);
+      expect(src.contains('routeIsEstimate'), isTrue,
+          reason: 'the cinematic skipped the line draw on the 2-pt estimate '
+              'count — a stop makes it 3 pts, so the straight placeholder was '
+              'drawn as the final gold line and the road route never replaced it');
+      expect(src.contains('final Future<void> routeFuture = routeIsEstimate'),
+          isTrue,
+          reason: 'the cinematic draws the line only for a real route');
+      expect(src.contains('pts.length >= 3 && !isEstimate'), isTrue,
+          reason: 'the web map had the same count gate — same bug on web');
     });
   });
 }

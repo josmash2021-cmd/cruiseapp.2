@@ -712,6 +712,11 @@ extension _RideRequestMap on _RideRequestScreenState {
   ///   6. Sheet fades in after everything settles.
   Future<void> _startCinematicSequence(List<LatLng> pts) async {
     if (!mounted || _mapCtrl == null) return;
+    // Captured with pts from the same state — a stop makes the estimate 3
+    // points, so the count can't gate the route draw anymore; the flag can
+    // (user report: "los dibuja recto" — the straight placeholder drew as
+    // the final gold line and the road route never replaced it).
+    final routeIsEstimate = _ctrl.state.route?.estimated ?? false;
     // _cinematicRunning is already true — set by _drawRoute() caller.
     // Interruption token: if a cancel or the search-phase camera takes over
     // mid-flight, everything after our awaits must become a no-op.
@@ -897,13 +902,13 @@ extension _RideRequestMap on _RideRequestScreenState {
     // ── Route draws starting at 25% of the tilt animation ──
     await Future.delayed(const Duration(milliseconds: 550));
     if (!mounted) { _cinematicRunning = false; return; }
-    // SKIP route draw while the route is still the 2-point "estimated"
-    // placeholder (origin → destination straight line). Drawing it would
-    // put a diagonal gold line through buildings. The controller will
-    // refresh state with the real road-snapped route once Directions
-    // resolves; _onStateChange → _drawRoute will redraw it properly.
-    // ≥3 points means Mapbox/Google/OSRM returned the polyline.
-    final Future<void> routeFuture = pts.length < 3
+    // SKIP route draw while the route is still the straight-line
+    // placeholder. Drawing it would put a diagonal gold line through
+    // buildings. The controller refreshes state with the real road-snapped
+    // route once Directions resolves; _onStateChange → _drawRoute redraws
+    // it properly. The flag, not the point count: a stop makes the
+    // estimate 3 points too.
+    final Future<void> routeFuture = routeIsEstimate
         ? Future.value()
         : _animateGoldRoute(pts);
 
@@ -2043,6 +2048,9 @@ extension _RideRequestMap on _RideRequestScreenState {
     }
     final pts = s.route!.points;
     if (pts.length < 2) return;
+    // Same rule as native: the straight-line placeholder (2 pts, or 3 with
+    // a stop) never draws — the flag says so, not the point count.
+    final isEstimate = s.route!.estimated;
     // Identity of the route on screen: the controller notifies for tier
     // taps, surge updates and schedule changes too, and each notify lands
     // here — without this check every one re-pushed the line and re-flew
@@ -2056,15 +2064,15 @@ extension _RideRequestMap on _RideRequestScreenState {
       // points and 33 ms later would repaint them over the new line.
       _webRouteAnimTimer?.cancel();
       _webRouteSig = sig;
-      if (!_webRouteLineDrawn && pts.length >= 3) {
-        // The cinematic ran on the 2-point placeholder and skipped the
+      if (!_webRouteLineDrawn && pts.length >= 3 && !isEstimate) {
+        // The cinematic ran on the placeholder and skipped the
         // line; the real road route just landed — animate it now, mid- or
         // post-flight, same as native's end-of-cinematic catch.
         _animateWebRoute(web, pts);
         return;
       }
-      if (pts.length < 3) {
-        // Editing flows re-emit the 2-point estimate first. Native never
+      if (pts.length < 3 || isEstimate) {
+        // Editing flows re-emit the estimate first. Native never
         // draws it; drop the stale line and wait for the road route.
         web.removePolyline('route');
         _webRouteLineDrawn = false;

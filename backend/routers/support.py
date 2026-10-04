@@ -54,11 +54,21 @@ class BugReportBody(BaseModel):
 
 import random as _rng
 
-_AGENT_NAMES = [
-    "Lucia", "Sofia", "Isabella", "Valentina", "Camila",
-    "Mariana", "Daniela", "Gabriela", "Andrea", "Carolina",
-    "Ana Paula", "Laura", "Diana", "Natalia", "Alejandra",
+_RIDER_AGENT_NAMES = [
+    "Sofia", "Valentina", "Camila", "Mariana", "Daniela",
+    "Gabriela", "Andrea", "Carolina", "Natalia", "Alejandra",
 ]
+_DRIVER_AGENT_NAMES = [
+    "Diego", "Mateo", "Andres", "Javier", "Ricardo",
+    "Fernando", "Emilio", "Rodrigo",
+]
+
+
+def _agent_for_role(role: str) -> str:
+    """The seat picks the assistant's name pool (2026-10-02 redesign:
+    two assistants — riders are greeted by one crew, drivers by another)."""
+    pool = _DRIVER_AGENT_NAMES if (role or "").lower() == "driver" else _RIDER_AGENT_NAMES
+    return _rng.choice(pool)
 
 _ESCALATION_TRIGGERS = [
     "manager", "supervisor", "gerente", "jefe", "encargado", "superior",
@@ -317,7 +327,102 @@ async def _get_user_context(user_id: int, db: AsyncSession, lang: str) -> dict[s
     # Initialize to 0; will be overwritten by caller
     ctx["frustration_score"] = 0
 
+    # ── Role blocks (2026-10-02 redesign: two assistants) ──
+    # The seat decides which data the prompt gets to quote. Everything
+    # fail-soft: a missing table/row downgrades the answer, never the chat.
+    _role = ((ctx.get("user") or {}).get("role") or "rider").lower()
+    if _role == "driver":
+        ctx["driver"] = await _driver_context_block(user_id, db)
+    else:
+        ctx["payments"] = _payments_context_block(active_trip, recent)
+
     return ctx
+
+
+def _payments_context_block(active_trip, recent) -> dict:
+    """The rider's money picture for the prompt: their hold (if any) and
+    the payment status of their latest trips."""
+    active_hold = bool(
+        active_trip
+        and getattr(active_trip, "stripe_payment_intent_id", None)
+        and (getattr(active_trip, "payment_status", None) or "") == "held"
+    )
+    last = []
+    for t in recent[:3]:
+        last.append({
+            "id": t.id,
+            "fare": t.fare,
+            "status": t.status or "unknown",
+            "payment_status": getattr(t, "payment_status", None) or "unpaid",
+        })
+    return {"active_hold": active_hold, "recent": last}
+
+
+async def _driver_context_block(user_id: int, db: AsyncSession) -> dict:
+    """The driver's work picture for the prompt: earnings, next payout,
+    vehicle + tier, and document statuses. Fail-soft on every piece."""
+    from zoneinfo import ZoneInfo
+
+    out: dict = {}
+    now_chi = datetime.now(ZoneInfo("America/Chicago"))
+    day_start = now_chi.replace(hour=0, minute=0, second=0, microsecond=0)
+    week_start = (day_start - timedelta(days=day_start.weekday()))
+    try:
+        sums = await db.execute(
+            select(
+                func.coalesce(func.sum(Trip.driver_earnings).filter(
+                    Trip.completed_at >= day_start), 0.0),
+                func.coalesce(func.sum(Trip.driver_earnings).filter(
+                    Trip.completed_at >= week_start), 0.0),
+            ).where(
+                Trip.driver_id == user_id,
+                Trip.status == "completed",
+                Trip.driver_earnings.isnot(None),
+            )
+        )
+        today_sum, week_sum = sums.one()
+        out["earnings_today"] = round(float(today_sum or 0), 2)
+        out["earnings_week"] = round(float(week_sum or 0), 2)
+    except Exception as e:
+        logging.warning("[support] driver earnings block failed: %s", e)
+
+    try:
+        from main import _next_payout_run
+        out["next_payout"] = _next_payout_run().strftime("%A %m/%d")
+    except Exception as e:
+        logging.warning("[support] next-payout block failed: %s", e)
+
+    try:
+        from models.database import Vehicle
+        v_r = await db.execute(
+            select(Vehicle).where(Vehicle.driver_id == user_id)
+            .order_by(Vehicle.is_active.desc(), Vehicle.id.desc()).limit(1)
+        )
+        v = v_r.scalar_one_or_none()
+        if v:
+            out["vehicle"] = {
+                "make": getattr(v, "make", "") or "",
+                "model": getattr(v, "model", "") or "",
+                "year": getattr(v, "year", None),
+                "tier": getattr(v, "vehicle_type", None) or "standard",
+            }
+    except Exception as e:
+        logging.warning("[support] vehicle block failed: %s", e)
+
+    try:
+        from routers.auth import _derive_onboarding_items
+        u_r = await db.execute(select(User).where(User.id == user_id))
+        db_user = u_r.scalar_one_or_none()
+        if db_user:
+            items = await _derive_onboarding_items(db, db_user)
+            out["docs"] = [
+                {"type": k, "status": (v or {}).get("status", "unknown")}
+                for k, v in (items or {}).items() if isinstance(v, dict)
+            ]
+    except Exception as e:
+        logging.warning("[support] docs block failed: %s", e)
+
+    return out
 
 
 async def _bot_cancel_trip(user_id: int, db: AsyncSession, lang: str) -> str:
@@ -1696,7 +1801,10 @@ async def _generate_bot_replies(chat, user_msg: str, user_name: str, db: AsyncSe
     elif phase == "awaiting_details":
         # Realistic typing delay (Agent 4)
         await asyncio.sleep(_realistic_typing_delay("", is_first=True))
-        agent = _rng.choice(_AGENT_NAMES)
+        # The specialist answers from the same crew the chat opened with.
+        _u_r = await db.execute(select(User).where(User.id == chat.user_id))
+        _u = _u_r.scalar_one_or_none()
+        agent = _agent_for_role(getattr(_u, "role", None) or "rider")
         chat.agent_name = agent
 
         if lang.startswith("es"):
@@ -2311,6 +2419,7 @@ async def _get_or_create_support_chat(user: User, db: AsyncSession, subject: str
             await db.commit()
         return {"id": chat.id, "user_id": chat.user_id, "status": chat.status,
                 "subject": chat.subject, "agent_name": chat.agent_name,
+                "agent_avatar": (user.role or "rider").lower(),
                 "bot_phase": chat.bot_phase or "welcome",
                 "created_at": chat.created_at.isoformat() if chat.created_at else None}
 
@@ -2320,7 +2429,10 @@ async def _get_or_create_support_chat(user: User, db: AsyncSession, subject: str
     # the opening message came from "Cruise Support System" — a piece of
     # software announcing itself. The rest of the chat then introduced a
     # person, which reads as a handover that never happened.
-    agent = _rng.choice(_AGENT_NAMES)
+    # Two assistants (2026-10-02 redesign): the seat picks the crew — the
+    # rider assistant and the driver assistant open with different names
+    # and different welcomes, because what each one can settle is different.
+    agent = _agent_for_role(user.role or "rider")
     chat = SupportChat(user_id=user.id, subject=subject or "Soporte general",
                        bot_phase="welcome", locale=locale, agent_name=agent)
     db.add(chat)
@@ -2345,21 +2457,32 @@ async def _get_or_create_support_chat(user: User, db: AsyncSession, subject: str
     # header two lines above already reads "Automated system", so it was also
     # contradicting itself on screen.
     first = (user.first_name or "").strip().split(" ")[0]
+    is_driver = (user.role or "").lower() == "driver"
     if locale.startswith("es"):
         hello = f"Hola {first}" if first else "Hola"
         welcome_text = (
-            f"{hello}, soy tu asistente de IA de Cruise. Puedo ayudarte con "
-            "la mayoria de los problemas de soporte. Elige una opcion abajo o "
-            "cuentame lo que paso. Si no puedo resolverlo, te conecto con un "
-            "agente."
+            f"{hello}, soy {agent}, tu asistente de IA para drivers. Puedo "
+            "ayudarte con tus ganancias y payouts, tus documentos y vehiculo, "
+            "tu categoria y el viaje que tengas en curso. Cuentame lo que "
+            "paso. Si no puedo resolverlo, te conecto con un agente."
+        ) if is_driver else (
+            f"{hello}, soy {agent}, tu asistente de IA de Cruise. Puedo "
+            "ayudarte con tus pagos y holds, tus viajes y paradas, y tu "
+            "cuenta. Cuentame lo que paso. Si no puedo resolverlo, te "
+            "conecto con un agente."
         )
     else:
         hello = f"Hi {first}" if first else "Hi"
         welcome_text = (
-            f"{hello}, I'm your Cruise AI assistant! I can help with most "
-            "support issues. Select an option below or describe your issue "
-            "to get started. If I can't resolve your issue, I'll connect "
-            "you with an agent."
+            f"{hello}, I'm {agent}, your Cruise AI assistant for drivers. I "
+            "can help with your earnings and payouts, your documents and "
+            "vehicle, your tier, and the trip you're on. Tell me what "
+            "happened. If I can't resolve it, I'll connect you with an agent."
+        ) if is_driver else (
+            f"{hello}, I'm {agent}, your Cruise AI assistant. I can help "
+            "with your payments and holds, your trips and stops, and your "
+            "account. Tell me what happened. If I can't resolve it, I'll "
+            "connect you with an agent."
         )
     # "bot", not "system": the app renders a system message as a small grey
     # pill centred on the screen, which is right for "Ana joined the chat" and
@@ -2381,6 +2504,7 @@ async def _get_or_create_support_chat(user: User, db: AsyncSession, subject: str
 
     return {"id": chat.id, "user_id": chat.user_id, "status": chat.status,
             "subject": chat.subject, "agent_name": chat.agent_name,
+            "agent_avatar": (user.role or "rider").lower(),
             "bot_phase": chat.bot_phase or "welcome",
             "created_at": chat.created_at.isoformat() if chat.created_at else None}
 

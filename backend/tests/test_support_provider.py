@@ -77,10 +77,10 @@ async def test_rejected_primary_still_gets_an_llm_answer(monkeypatch):
 
     calls = []
 
-    async def _boom(_messages):
+    async def _boom(_messages, _tools):
         raise svc.SupportAuthError("openai rejected the key")
 
-    async def _ok(_messages):
+    async def _ok(_messages, _tools):
         calls.append("kimi")
         return {"response": "hola", "escalate": False}
 

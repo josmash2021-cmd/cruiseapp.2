@@ -113,7 +113,7 @@ _fallback = (
 _TOOLS_UNSUPPORTED = False
 
 
-def _anthropic_tools() -> list[dict[str, Any]]:
+def _anthropic_tools(tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """The same tools, in Anthropic's Messages shape.
 
     OpenAI nests them under `function` with a `parameters` schema; Anthropic
@@ -122,7 +122,7 @@ def _anthropic_tools() -> list[dict[str, Any]]:
     added to _FUNCTIONS reaches both providers.
     """
     out: list[dict[str, Any]] = []
-    for f in _FUNCTIONS:
+    for f in tools:
         fn = f.get("function") or {}
         if not fn.get("name"):
             continue
@@ -135,7 +135,8 @@ def _anthropic_tools() -> list[dict[str, Any]]:
     return out
 
 
-async def _anthropic_completion(messages: list[dict[str, Any]]) -> dict[str, Any]:
+async def _anthropic_completion(messages: list[dict[str, Any]],
+                                tools: list[dict[str, Any]]) -> dict[str, Any]:
     """One turn against an Anthropic-format endpoint (Kimi Code).
 
     Kimi Code speaks the Anthropic Messages protocol, not OpenAI's, so this
@@ -170,7 +171,7 @@ async def _anthropic_completion(messages: list[dict[str, Any]]) -> dict[str, Any
         "messages": convo,
     }
     if not _TOOLS_UNSUPPORTED:
-        body["tools"] = _anthropic_tools()
+        body["tools"] = _anthropic_tools(tools)
 
     async with httpx.AsyncClient(timeout=45.0) as client:
         resp = await client.post(
@@ -220,7 +221,8 @@ async def _anthropic_completion(messages: list[dict[str, Any]]) -> dict[str, Any
     }
 
 
-async def _openai_completion(messages: list[dict[str, Any]]) -> dict[str, Any]:
+async def _openai_completion(messages: list[dict[str, Any]],
+                             tools: list[dict[str, Any]]) -> dict[str, Any]:
     """One turn against OpenAI's chat completions.
 
     Returns the same {response, function_call?, escalate} dict the Kimi
@@ -228,7 +230,7 @@ async def _openai_completion(messages: list[dict[str, Any]]) -> dict[str, Any]:
     """
     global _TOOLS_UNSUPPORTED
     extra = {} if _TOOLS_UNSUPPORTED else {
-        "tools": _FUNCTIONS,
+        "tools": tools,
         "tool_choice": "auto",
     }
     try:
@@ -273,12 +275,13 @@ async def _openai_completion(messages: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
-async def _completion(messages: list[dict[str, Any]]) -> dict[str, Any]:
+async def _completion(messages: list[dict[str, Any]],
+                      tools: list[dict[str, Any]]) -> dict[str, Any]:
     """The active provider answers one turn. Both paths return the same
     dict, so switching providers mid-process (demote) is invisible here."""
     if _PROVIDER == "kimi":
-        return await _anthropic_completion(messages)
-    return await _openai_completion(messages)
+        return await _anthropic_completion(messages, tools)
+    return await _openai_completion(messages, tools)
 
 
 def _demote_primary(reason: str) -> bool:
@@ -312,7 +315,7 @@ def _demote_primary(reason: str) -> bool:
     return True
 
 # System prompt for Cruise support agent
-_SYSTEM_PROMPT = """You are Cruise Support, an AI assistant for a premium ride-sharing app called Cruise.
+_CORE_PROMPT = """You are Cruise Support, an AI assistant for a premium ride-sharing app called Cruise.
 
 Your personality:
 - Professional but warm and friendly
@@ -468,6 +471,62 @@ When you need to take action, use the available functions.
 When a user is frustrated (caps, exclamation marks, negative words), acknowledge their feelings first.
 """
 
+# ── Role specialisation (2026-10-02 redesign) ────────────────────────
+# Two assistants, not one with two hats: the customer IS a rider or a
+# driver (user.role), and the prompt + tool set follow that. The core
+# above holds what is true for both; these blocks hold what each seat
+# needs — and, just as hard, what it must never do.
+_RIDER_PROMPT = """
+YOU ARE TALKING TO A RIDER — the person who takes the trips.
+
+What you can actually do for them, and only this:
+- Payments and holds: explain how the pre-authorization hold works
+  (authorized at booking, captured when the trip completes, released if
+  the trip never happens), why a charge looks different from the estimate,
+  and where their receipt lives.
+- Trip help: their stops, the wait window at pickup, a left-behind item,
+  sharing the ride status.
+- Cancel their trip when the rules allow it (no driver assigned yet —
+  use cancel_trip; with a driver already assigned, a human has to do it:
+  escalate).
+- Report their driver (flag_driver) — safety always escalates.
+
+REFUNDS AND CREDITS — HARD RULE:
+You NEVER process, promise, estimate or negotiate a refund, a credit, or
+any amount of money back. Not a partial one, not "just this once". When a
+rider asks for money back — or their complaint implies it — say a human
+from our dispatch team reviews those cases personally, and escalate to a
+human right there. The only money action that exists in this chat is a
+cancellation, and only inside its own rules.
+"""
+
+_DRIVER_PROMPT = """
+YOU ARE TALKING TO A DRIVER — the person who drives the trips.
+
+What you can actually do for them, and only this:
+- Earnings and payouts: today's and this week's earnings and the next
+  payout date are in your context — quote those numbers, and explain the
+  weekly payout (and the instant option) when asked.
+- Documents and vehicle: their document statuses are in your context —
+  say what is missing, expired, or under review, and what unblocks going
+  online.
+- The active trip: pickups, the stop, the wait timer, the pickup PIN,
+  navigation issues. Rider problems go to flag_rider — safety always
+  escalates.
+- Tier questions: explain why their car is its tier (the rules above) and
+  that a human reviews any tier dispute — escalate those.
+
+You take NO actions over money or trips — no cancels, no refunds, no
+credits, no fare changes. Anything that moves money or a trip goes to a
+human: escalate.
+"""
+
+
+def _system_prompt_for(role: str) -> str:
+    """The core policies plus the block for the seat the user sits in."""
+    block = _DRIVER_PROMPT if (role or "").lower() == "driver" else _RIDER_PROMPT
+    return f"{_CORE_PROMPT}\n{block}"
+
 # Function definitions for OpenAI
 _FUNCTIONS = [
     {
@@ -536,6 +595,22 @@ _FUNCTIONS = [
     {
         "type": "function",
         "function": {
+            "name": "flag_rider",
+            "description": "Flag a rider for review by the safety team (driver reporting a passenger).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "rider_id": {"type": "integer", "description": "Rider ID"},
+                    "reason": {"type": "string", "description": "Reason for flagging"},
+                    "severity": {"type": "string", "enum": ["low", "medium", "high"], "description": "Severity level"}
+                },
+                "required": ["rider_id", "reason", "severity"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "escalate_to_human",
             "description": "Escalate the conversation to a human supervisor.",
             "parameters": {
@@ -578,6 +653,24 @@ _FUNCTIONS = [
         }
     }
 ]
+
+# The seat decides the tool belt (2026-10-02 redesign): a rider can cancel
+# (inside the rules), flag their driver and escalate — but NEVER touch
+# refund/credit tools, which are dispatch-only by product decision; a
+# driver reports their rider and escalates — no money or trip actions at
+# all. Anything unlisted never reaches the model.
+_TOOL_NAMES_FOR_ROLE = {
+    "rider": {"cancel_trip", "flag_driver", "escalate_to_human",
+              "get_trip_details", "get_user_trips"},
+    "driver": {"flag_rider", "escalate_to_human",
+               "get_trip_details", "get_user_trips"},
+}
+
+
+def _tools_for_role(role: str) -> list[dict[str, Any]]:
+    names = _TOOL_NAMES_FOR_ROLE.get((role or "").lower(), _TOOL_NAMES_FOR_ROLE["rider"])
+    return [f for f in _FUNCTIONS
+            if (f.get("function") or {}).get("name") in names]
 
 
 async def _check_fraud_patterns(user_context: dict[str, Any]) -> tuple[bool, str]:
@@ -688,9 +781,12 @@ async def generate_support_response(
             "escalate": True,
         }
 
-    # Build system message with context
+    # Build system message with context — the seat decides the prompt and
+    # the tool belt (2026-10-02 redesign: two assistants, not two hats).
+    _role = ((user_context.get("user") or {}).get("role") or "rider").lower()
     context_str = _format_user_context(user_context)
-    system_msg = f"{_SYSTEM_PROMPT}\n\nCurrent user context:\n{context_str}"
+    system_msg = f"{_system_prompt_for(_role)}\n\nCurrent user context:\n{context_str}"
+    role_tools = _tools_for_role(_role)
 
     # Prepare messages for OpenAI
     openai_messages = [{"role": "system", "content": system_msg}]
@@ -714,13 +810,13 @@ async def generate_support_response(
 
     try:
         try:
-            return await _completion(openai_messages)
+            return await _completion(openai_messages, role_tools)
         except (SupportAuthError, openai.AuthenticationError,
                 openai.RateLimitError) as e:
             # A rejected key or an exhausted quota demotes the primary for
             # the life of the process, and the standby answers this turn.
             if _demote_primary(str(e)[:120]):
-                return await _completion(openai_messages)
+                return await _completion(openai_messages, role_tools)
             raise
     except (SupportAuthError, openai.AuthenticationError,
             openai.RateLimitError):

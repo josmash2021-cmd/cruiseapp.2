@@ -11,6 +11,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../config/app_theme.dart';
 import '../config/page_transitions.dart';
 import '../widgets/neu_style.dart';
+import '../widgets/steering_wheel_icon.dart';
 import '../l10n/app_localizations.dart';
 import '../services/api_service.dart';
 import '../services/user_session.dart';
@@ -1093,6 +1094,9 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
 
   int? _chatId;
   String? _agentName;
+  // 'rider' | 'driver' from the chat payload — the persona the header
+  // renders (2026-10-02 redesign: two assistants).
+  String? _agentAvatar;
   String _subtitle = '';
   bool _loading = true;
   bool _sending = false;
@@ -1209,6 +1213,7 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
       );
       _chatId = chat['id'] as int?;
       _agentName = chat['agent_name'] as String?;
+      _agentAvatar = chat['agent_avatar'] as String?;
       final status = chat['status'] as String? ?? 'open';
       final botPhase = chat['bot_phase'] as String? ?? 'welcome';
       if (status == 'closed') _chatClosed = true;
@@ -1270,6 +1275,7 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
           );
           _chatId = chat['id'] as int?;
           _agentName = chat['agent_name'] as String?;
+          _agentAvatar = chat['agent_avatar'] as String?;
           if (_chatId != null) {
             await _loadMessages();
             _pollTimer = Timer.periodic(
@@ -2149,6 +2155,13 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
     } else if (_phase == _ChatPhase.agent) {
       statusLabel = _isSpanish ? 'En línea' : 'Online';
       statusColor = const Color(0xFF4CAF50);
+    } else if (_agentAvatar == 'driver') {
+      // Two assistants (2026-10-02): the subtitle says which one this is.
+      statusLabel = _isSpanish ? 'Asistente para drivers' : 'Driver assistant';
+      statusColor = const Color(0xFF4CAF50);
+    } else if (_agentAvatar == 'rider') {
+      statusLabel = _isSpanish ? 'Asistente para riders' : 'Rider assistant';
+      statusColor = const Color(0xFF4CAF50);
     } else {
       statusLabel = _isSpanish ? 'Sistema automatizado' : 'Automated system';
       statusColor = const Color(0xFF4CAF50);
@@ -2192,7 +2205,16 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
                         fontWeight: FontWeight.w800,
                       ),
                     )
-                  : const Icon(Icons.support_agent_rounded, color: Color(0xFF0A0800), size: 22),
+                  // The persona's glyph before a human takes over: person
+                  // for the rider assistant, wheel for the driver one.
+                  : _agentAvatar == 'driver'
+                      ? const SteeringWheelIcon(
+                          size: 22, color: Color(0xFF0A0800))
+                      : _agentAvatar == 'rider'
+                          ? const Icon(Icons.person_rounded,
+                              color: Color(0xFF0A0800), size: 22)
+                          : const Icon(Icons.support_agent_rounded,
+                              color: Color(0xFF0A0800), size: 22),
             ),
           ),
           const SizedBox(width: 10),
@@ -2525,6 +2547,12 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
       'message': _isSpanish
           ? 'El pasajero necesita cambiar el destino de este viaje.'
           : 'The passenger needs to change the destination of this trip.',
+    },
+    {
+      'label': _isSpanish ? 'Parada / stop' : 'Stop help',
+      'message': _isSpanish
+          ? 'Tengo una duda con la parada (stop) de este viaje.'
+          : 'I have a question about the stop on this trip.',
     },
     {
       'label': _isSpanish ? 'Hablar con un agente' : 'Talk to an agent',

@@ -19,72 +19,64 @@ class AgentPrompts {
     'Gabriel', 'Camila', 'Fernando',
   ];
 
-  /// Rider quick-action categories (ES / EN).
+  /// Rider quick-action categories (ES / EN) — the redesigned assistant's
+  /// four front doors (2026-10-02): payments, trip/stops, report, cancel.
   static List<Map<String, String>> riderQuickActions(bool isSpanish) => [
     {
-      'label': isSpanish ? 'Problema con un viaje' : 'Trip problem',
+      'label': isSpanish ? 'Un cobro o mi hold' : 'A charge or my hold',
       'message': isSpanish
-          ? 'Tuve un problema con un viaje reciente'
-          : 'I had a problem with a recent trip',
+          ? 'Tengo una duda sobre un cobro o el hold de mi tarjeta'
+          : 'I have a question about a charge or the hold on my card',
     },
     {
-      'label': isSpanish ? 'Problema con pago o cobro' : 'Payment issue',
+      'label': isSpanish ? 'Mi viaje o una parada' : 'My trip or a stop',
       'message': isSpanish
-          ? 'Tengo un problema con un pago o cobro en mi cuenta'
-          : 'I have a problem with a payment or charge on my account',
+          ? 'Necesito ayuda con un viaje o con una parada'
+          : 'I need help with a trip or with a stop',
     },
     {
-      'label': isSpanish ? 'Problema con mi cuenta' : 'Account help',
+      'label': isSpanish ? 'Reportar conductor' : 'Report my driver',
       'message': isSpanish
-          ? 'Necesito ayuda con mi cuenta o perfil'
-          : 'I need help with my account settings or profile',
+          ? 'Quiero reportar a mi conductor'
+          : 'I want to report my driver',
     },
     {
-      'label': isSpanish ? 'Seguridad o emergencia' : 'Safety concern',
+      'label': isSpanish ? 'Cancelar mi viaje' : 'Cancel my trip',
       'message': isSpanish
-          ? 'Quiero reportar una preocupación de seguridad'
-          : 'I want to report a safety concern',
+          ? 'Necesito cancelar mi viaje'
+          : 'I need to cancel my trip',
     },
-    {
-      'label': isSpanish ? 'Otro tema' : 'Other',
-      'message': isSpanish
-          ? 'Necesito ayuda con otro tema'
-          : 'I need help with something else',
-    },
+    {'label': isSpanish ? 'Otro tema' : 'Other', 'message': ''},
   ];
 
-  /// Driver quick-action categories (ES / EN).
+  /// Driver quick-action categories (ES / EN) — the driver assistant's
+  /// front doors: money, documents, tier, the active trip.
   static List<Map<String, String>> driverQuickActions(bool isSpanish) => [
     {
-      'label': isSpanish ? 'Problema con un viaje o pasajero' : 'Trip problem',
+      'label': isSpanish ? 'Ganancias y payouts' : 'Earnings & payouts',
       'message': isSpanish
-          ? 'Tuve un problema con un viaje o un pasajero'
-          : 'I had an issue with a trip or a rider',
+          ? 'Tengo una pregunta sobre mis ganancias o mi próximo payout'
+          : 'I have a question about my earnings or my next payout',
     },
     {
-      'label': isSpanish ? 'Ganancias o pagos' : 'Earnings help',
+      'label': isSpanish ? 'Documentos y vehículo' : 'Documents & vehicle',
       'message': isSpanish
-          ? 'Tengo una pregunta sobre mis ganancias o un pago'
-          : 'I have a question about my earnings or a payout',
+          ? 'Necesito ayuda con mis documentos o mi vehículo'
+          : 'I need help with my documents or my vehicle',
     },
     {
-      'label': isSpanish ? 'Documentos o vehículo' : 'Document help',
+      'label': isSpanish ? 'Mi categoría (tier)' : 'My tier',
       'message': isSpanish
-          ? 'Necesito ayuda con mis documentos o registro de vehículo'
-          : 'I need help with my documents or vehicle registration',
+          ? 'Tengo una duda sobre la categoría de mi vehículo'
+          : 'I have a question about my vehicle tier',
     },
     {
-      'label': isSpanish ? 'Problema con mi cuenta' : 'Account help',
+      'label': isSpanish ? 'Viaje activo' : 'Active trip',
       'message': isSpanish
-          ? 'Necesito ayuda con mi cuenta o perfil'
-          : 'I need help with my account settings',
+          ? 'Tengo un problema con el viaje que estoy haciendo'
+          : 'I have a problem with the trip I am on',
     },
-    {
-      'label': isSpanish ? 'Otro tema' : 'Other',
-      'message': isSpanish
-          ? 'Necesito ayuda con otro tema'
-          : 'I need help with something else',
-    },
+    {'label': isSpanish ? 'Otro tema' : 'Other', 'message': ''},
   ];
 
   /// Build the system prompt sent to the Claude API via the backend.

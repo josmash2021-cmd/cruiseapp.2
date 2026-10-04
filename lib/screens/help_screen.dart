@@ -1117,6 +1117,7 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
   /// hiccup between send and generation) the bubble must not sit there
   /// forever pretending someone is writing.
   Timer? _typingBackstop;
+  Timer? _readingDelayTimer;
 
   _ChatPhase _phase = _ChatPhase.bot;
   int _queueDuration = 180;
@@ -1148,6 +1149,7 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
     _typingDebounce?.cancel();
     _queueSafetyTimer?.cancel();
     _typingBackstop?.cancel();
+    _readingDelayTimer?.cancel();
     if (_isUserTyping && _chatId != null) {
       ApiService.setSupportTypingStatus(_chatId!, false);
     }
@@ -1735,14 +1737,24 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
 
     try {
       await ApiService.sendSupportMessage(_chatId!, text);
-      // Typing bubble while the reply is composed, in bot phase too — a
-      // person does not answer the instant you hit send, and the same LLM
-      // writes both the bot and the "agent" lines.
+      // Reading pause BEFORE the typing bubble (user spec 2026-10-04): a
+      // person reads first and types after — the bubble must not appear
+      // the instant the send lands. Length-paced, like a real reader.
       if (mounted && _phase != _ChatPhase.queue) {
-        setState(() => _isAgentTyping = true);
-        _scrollToBottom(force: true);
+        _readingDelayTimer?.cancel();
+        final readMs = text.length < 30
+            ? 2200
+            : text.length < 120
+                ? 4200
+                : 6500;
+        _readingDelayTimer = Timer(Duration(milliseconds: readMs), () {
+          if (!mounted || _isAgentTyping || _chatClosed) return;
+          setState(() => _isAgentTyping = true);
+          _scrollToBottom(force: true);
+        });
         _typingBackstop?.cancel();
-        _typingBackstop = Timer(const Duration(seconds: 25), () {
+        _typingBackstop =
+            Timer(Duration(seconds: 25 + (readMs / 1000).ceil()), () {
           if (mounted) setState(() => _isAgentTyping = false);
         });
       }

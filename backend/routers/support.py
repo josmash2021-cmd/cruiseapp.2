@@ -1159,8 +1159,11 @@ def _parse_action_markers(response: str) -> tuple[str, list[dict[str, Any]]]:
 # than an instant costume change. They were 60/20 when the wait was sold
 # as a real queue; with the queue card gone, a minute of dead air is just
 # bad service.
-_SUPERVISOR_JOINS_AFTER_S = 8
-_SUPERVISOR_GREETS_AFTER_S = 3
+# The transfer reads as a person picking the case up, not a hot swap:
+# a beat before the specialist appears, another before they speak
+# (2026-10-04, user spec "no conectar tan rapido los agentes").
+_SUPERVISOR_JOINS_AFTER_S = 15
+_SUPERVISOR_GREETS_AFTER_S = 4
 
 _JOINED_RE = re.compile(r"se ha conectado|joined the chat", re.I)
 
@@ -1194,7 +1197,24 @@ async def _advance_supervisor_script(chat, db: AsyncSession) -> None:
         return
 
     is_es = (getattr(chat, "locale", "en") or "en").startswith("es")
-    agent = (chat.agent_name or "").strip() or ("Ana" if is_es else "Angela")
+
+    # The specialist is ANOTHER person from the same crew — never the
+    # assistant's own name back. "Camila se ha conectado al chat" right
+    # after Camila was already the one talking read as the app talking to
+    # itself (user report 2026-10-04).
+    _role = "rider"
+    _user_name = ""
+    try:
+        u_r = await db.execute(select(User).where(User.id == chat.user_id))
+        _u = u_r.scalar_one_or_none()
+        if _u:
+            _role = (getattr(_u, "role", None) or "rider").lower()
+            _user_name = (getattr(_u, "first_name", None) or "").strip()
+    except Exception as e:
+        logging.warning("[support] supervisor identity lookup failed: %s", e)
+    _pool = _DRIVER_AGENT_NAMES if _role == "driver" else _RIDER_AGENT_NAMES
+    _candidates = [n for n in _pool if n != (chat.agent_name or "").strip()]
+    agent = _rng.choice(_candidates or _pool)
 
     rows_r = await db.execute(
         select(SupportMessage)
@@ -1251,39 +1271,23 @@ async def _advance_supervisor_script(chat, db: AsyncSession) -> None:
     if (now - _aware(joined.created_at)).total_seconds() < _SUPERVISOR_GREETS_AFTER_S:
         return
 
-    # Their own words, quoted back. A supervisor who repeats the problem is
-    # visibly caught up; one who opens with "how can I help you" makes the
-    # person type the whole thing again.
-    problem = ""
-    for m in reversed(rows):
-        if m.sender_role in ("rider", "driver", "user") and (m.message or "").strip():
-            problem = (m.message or "").strip()
-            break
-    if len(problem) > 160:
-        problem = problem[:157].rstrip() + "..."
-
-    name = ""
-    try:
-        u_r = await db.execute(select(User).where(User.id == chat.user_id))
-        u = u_r.scalar_one_or_none()
-        if u:
-            name = (u.first_name or "").strip()
-    except Exception as e:
-        logging.warning("[support] greeting name lookup failed: %s", e)
+    # The specialist's opening line (user spec 2026-10-04): greet, wish
+    # them well, and ask for a moment to review the chat — the analysis
+    # continues from there, not an echo of the user's own words back at
+    # them ("Veo que tienes un problema con 'quiero hablar con un agente'").
+    name = _user_name
 
     if is_es:
         hello = f"Hola {name}, soy {agent}." if name else f"Hola, soy {agent}."
-        seen = f' Veo que tienes un problema con "{problem}".' if problem else ""
         greeting = (
-            f"{hello}{seen} Voy a hacer todo lo posible por ayudarte. "
-            "¿Me puedes contar tu problema con mas detalle para atenderte mejor?"
+            f"{hello} Espero que te encuentres bien. Déjame revisar el chat "
+            "rápidamente para así poder ayudarte mejor, dame un momento."
         )
     else:
         hello = f"Hi {name}, I'm {agent}." if name else f"Hi, I'm {agent}."
-        seen = f" I can see you're having a problem with \"{problem}\"." if problem else ""
         greeting = (
-            f"{hello}{seen} I'll do everything I can to help. "
-            "Could you tell me a bit more about it so I can get this right?"
+            f"{hello} Hope you're doing well. Let me quickly review the chat "
+            "so I can help you better — give me a moment."
         )
 
     row = SupportMessage(
@@ -2073,6 +2077,9 @@ async def _generate_bot_replies(chat, user_msg: str, user_name: str, db: AsyncSe
 # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 _inactivity_tasks: dict[int, "asyncio.Task"] = {}
+# One reply in flight per chat — a newer user message supersedes whatever
+# was still being composed (debounce; see send_support_message).
+_reply_tasks: dict[int, "asyncio.Task"] = {}
 
 
 async def _followup_task(chat_id: int, user_id: int, lang: str) -> None:
@@ -2804,7 +2811,16 @@ async def send_support_message(chat_id: int, request: Request, user: User = Depe
     # Generate AI bot replies (only if not taken over by real dispatch)
     bot_phase_snapshot = chat.bot_phase
     if bot_phase_snapshot != "dispatch_takeover":
-        _safe_create_task(_background_bot_reply(chat_id, msg_text, user.first_name or "Cliente", bot_phase_snapshot))
+        # Debounce (user report 2026-10-04, "respondiendo doble"): rapid
+        # consecutive messages must not each spawn a full answer — a human
+        # reads the newest and answers ONCE. The reply still being composed
+        # is cancelled; the new task loads history at generation time, so
+        # everything gets one coherent answer.
+        _old = _reply_tasks.pop(chat_id, None)
+        if _old is not None and not _old.done():
+            _old.cancel()
+        _reply_tasks[chat_id] = _safe_create_task(
+            _background_bot_reply(chat_id, msg_text, user.first_name or "Cliente", bot_phase_snapshot))
 
     # Start inactivity timer
     _inactivity_tasks[chat_id] = _safe_create_task(_check_chat_inactivity(chat_id))

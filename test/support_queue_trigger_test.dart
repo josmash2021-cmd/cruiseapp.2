@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:cruise_app/services/ai_support_service.dart';
@@ -49,6 +51,21 @@ void main() {
         expect(AiSupportService.isConnectingMessage(e), isTrue,
             reason: 'a real escalation must open the queue: $e');
       }
+    });
+  });
+
+  group('reading pause before typing (user spec 2026-10-04)', () {
+    // A person reads first and types after — the bubble must not appear
+    // the instant the send lands.
+    test('the typing bubble waits out the reading window', () {
+      final src = File('lib/screens/help_screen.dart').readAsStringSync();
+      final sendStart = src.indexOf('Future<void> _sendMessage(');
+      expect(sendStart, greaterThan(-1));
+      final block = src.substring(sendStart, sendStart + 4200);
+      expect(block.contains('_readingDelayTimer'), isTrue,
+          reason: 'send must hold the typing bubble behind a reading pause');
+      expect(block.contains('final readMs'), isTrue,
+          reason: 'the pause is paced by message length, like a real reader');
     });
   });
 }

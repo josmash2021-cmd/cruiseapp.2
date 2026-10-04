@@ -195,6 +195,91 @@ async def test_asking_for_a_real_person_transfers_with_the_exact_phrase(db, test
     assert chat.needs_escalation is True
 
 
+async def test_supervisor_is_a_different_person_with_the_review_greeting(db, test_rider):
+    """User report 2026-10-04: "Camila se ha conectado" right after Camila
+    was the assistant. The specialist must be ANOTHER person from the same
+    crew, and the greeting must be the 'let me review the chat' one — not
+    an echo of the user's own words back at them."""
+    from datetime import timedelta
+    from routers.support import _advance_supervisor_script
+    rider, _ = test_rider
+    chat = await _open_chat_in_phase(rider, db, "escalated")
+    chat.agent_name = "Camila"
+    chat.locale = "es"
+    db.add(chat)
+    announce = SupportMessage(
+        chat_id=chat.id, sender_id=None, sender_role="system",
+        message="Un agente especializado se conectará en breve.",
+        created_at=datetime.now(timezone.utc) - timedelta(seconds=30),
+    )
+    db.add(announce)
+    await db.commit()
+
+    # The join fires on the first call (announcement is 30 s old).
+    await _advance_supervisor_script(chat, db)
+    joined = (await db.execute(
+        select(SupportMessage).where(
+            SupportMessage.chat_id == chat.id,
+            SupportMessage.sender_role == "system",
+            SupportMessage.message.like("%se ha conectado%"),
+        ))).scalars().all()
+    assert len(joined) == 1
+    assert "Camila se ha conectado" not in joined[0].message, (
+        "the specialist must NOT reuse the assistant's own name")
+
+    # Age the join past the greet gate and the opening line lands.
+    joined[0].created_at = datetime.now(timezone.utc) - timedelta(seconds=10)
+    await db.commit()
+    await _advance_supervisor_script(chat, db)
+    greet = (await db.execute(
+        select(SupportMessage).where(
+            SupportMessage.chat_id == chat.id,
+            SupportMessage.sender_role == "bot",
+        ))).scalars().all()
+    assert len(greet) == 1
+    assert "Déjame revisar el chat rápidamente" in greet[0].message
+    assert "Veo que tienes un problema" not in greet[0].message
+
+
+async def test_rapid_messages_get_one_answer_not_two(client, db, test_rider, monkeypatch):
+    """"respondiendo doble" (2026-10-04): two rapid messages must not each
+    spawn a full answer — the in-flight reply is superseded and only the
+    newest gets one."""
+    import asyncio
+    import services.openai_support_service as ai_svc
+    from tests.conftest import _make_auth_headers
+    rider, rtoken = test_rider
+    chat = await _open_chat_in_phase(rider, db, "agent_active")
+    chat.locale = "es"
+    await db.commit()
+
+    async def _slow_llm(messages, ctx):
+        await asyncio.sleep(2.5)
+        return {"response": "respuesta única", "escalate": False}
+    monkeypatch.setattr(ai_svc, "generate_support_response", _slow_llm)
+
+    h1 = {**_make_auth_headers(), "Authorization": f"Bearer {rtoken}"}
+    r1 = await client.post(f"/support/chats/{chat.id}/messages",
+                           headers=h1, json={"message": "hola"})
+    assert r1.status_code == 200, r1.text
+    # Fresh signature per request — the middleware rejects a reused nonce.
+    h2 = {**_make_auth_headers(), "Authorization": f"Bearer {rtoken}"}
+    r2 = await client.post(f"/support/chats/{chat.id}/messages",
+                           headers=h2, json={"message": "español ?"})
+    assert r2.status_code == 200, r2.text
+
+    # Let the superseded task die and the live one finish (read delay +
+    # slow llm + typing delay).
+    await asyncio.sleep(14)
+    bots = (await db.execute(
+        select(SupportMessage).where(
+            SupportMessage.chat_id == chat.id,
+            SupportMessage.sender_role == "bot",
+        ))).scalars().all()
+    assert len(bots) == 1, (
+        f"rapid double messages must get ONE answer, got {len(bots)}")
+
+
 async def test_language_switches_on_the_first_message_and_ai_answers(db, test_rider, monkeypatch):
     """User report: "habla español guebon" got English back, then a scripted
     transfer. Two rules pinned here: (1) the language switches from the

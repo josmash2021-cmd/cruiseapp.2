@@ -1864,11 +1864,16 @@ async def update_trip_status(trip_id: int, request: Request, status: str = Query
     # Record arrival timestamp for wait time fee calculation. Set ONCE on
     # first transition to "arrived" — re-arrivals (driver bumps the
     # status again) shouldn't reset the timer.
-    if canonical_new == "arrived" and not trip.arrived_at:
-        trip.arrived_at = datetime.now(timezone.utc)
-        # The rider's Find-My screen appears now and needs the 4-digit
-        # handshake code on the Firestore doc it already listens to. Lazy
-        # seed covers trips created before the column existed.
+    if canonical_new == "arrived":
+        if not trip.arrived_at:
+            trip.arrived_at = datetime.now(timezone.utc)
+        # The rider's Find-My screen needs the 4-digit handshake on the
+        # Firestore doc it already listens to — mirrored on EVERY arrival,
+        # not just the first: the arrived_at gate above skips re-arrivals
+        # (resurrected trips keep their first arrived_at; a driver tapping
+        # twice; status bounces), and those were exactly the trips whose
+        # rider never saw the code (user report 2026-10-02). Lazy seed
+        # covers trips created before the column existed.
         if not trip.pickup_pin:
             trip.pickup_pin = _gen_pickup_pin()
         if _HAS_FIRESTORE and firestore_sync:

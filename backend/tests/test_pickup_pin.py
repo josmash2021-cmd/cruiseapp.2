@@ -67,6 +67,49 @@ def _driver_headers(token):
     return {**_make_auth_headers(), "Authorization": f"Bearer {token}"}
 
 
+@pytest.mark.asyncio
+async def test_mirror_fires_on_every_arrival_not_just_the_first(
+        client, db, test_rider, test_driver, fs_fake):
+    """User report 2026-10-02: "driver pressed arrived and the rider never
+    saw the code". The mirror used to sit behind `not trip.arrived_at`, so
+    a trip that had arrived before — a resurrected trip keeps its first
+    arrived_at, a second tap, a status bounce — never got its pickup_pin
+    onto the rider's doc. It must mirror on EVERY arrival."""
+    from datetime import datetime, timedelta
+    rider, _ = test_rider
+    driver, dtoken = test_driver
+
+    # A resurrected trip: arrived once before, back in driver_en_route.
+    trip = Trip(
+        rider_id=rider.id,
+        driver_id=driver.id,
+        pickup_address="123 Test St",
+        dropoff_address="456 Dest Ave",
+        pickup_lat=25.7617,
+        pickup_lng=-80.1918,
+        dropoff_lat=25.7750,
+        dropoff_lng=-80.2000,
+        fare=25.50,
+        vehicle_type="comfort",
+        status="driver_en_route",
+        payment_status="held",
+        arrived_at=datetime.utcnow() - timedelta(minutes=30),
+    )
+    db.add(trip)
+    await db.commit()
+    await db.refresh(trip)
+
+    resp = await client.patch(
+        f"/trips/{trip.id}/status?status=arrived",
+        headers=_driver_headers(dtoken))
+    assert resp.status_code == 200, resp.text
+    assert fs_fake.pins, (
+        "second arrival must STILL mirror the code — the rider's doc "
+        "would otherwise carry status=arrived with no pickup_pin forever")
+    assert fs_fake.pins[-1][0] == trip.id
+    assert len(fs_fake.pins[-1][1]) == 4
+
+
 class TestPinGeneration:
     def test_format_four_letters(self):
         for _ in range(50):

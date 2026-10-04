@@ -38,12 +38,23 @@ class AiSupportService {
   /// Whether a bot message signals "connecting to agent" (detecting phase transition).
   static bool isConnectingMessage(String text) {
     final lower = text.toLowerCase();
-    return lower.contains('conectarte con un agente') ||
-        lower.contains('transferi') ||
-        lower.contains('connecting you') ||
-        lower.contains('transferring you') ||
-        lower.contains('connect you with') ||
-        lower.contains('voy a conectarte');
+    // Only the backend's REAL escalation lines may open the agent queue.
+    // Generic phrases ("connect you with an agent", anything containing
+    // "transferi") fired on the WELCOME itself ("…I'll connect you with an
+    // agent") and on casual AI text — every fresh chat opened into a fake
+    // "Finding an agent…" with the options hidden (user report 2026-10-04).
+    const triggers = [
+      'ya te transfiero a un agente especializado',
+      'transferring you to a specialized agent',
+      'conectarte de inmediato con un supervisor',
+      'connecting you right away with a supervisor',
+      'se ha solicitado un supervisor',
+      'a supervisor has been requested',
+      'conectarte con un supervisor',
+      'he escalado tu caso al equipo de seguridad',
+      'escalated your case to the safety team',
+    ];
+    return triggers.any(lower.contains);
   }
 
   /// Whether a system message signals an agent joined the chat.

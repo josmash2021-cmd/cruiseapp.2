@@ -582,7 +582,22 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     List<LatLng> tripRoute = [];
     if (widget.routePoints != null && widget.routePoints!.isNotEmpty) {
       tripRoute = List.from(widget.routePoints!);
-    } else {
+      // A handed route can still be the booking's straight-line estimate
+      // (the real fetch failed on the rider's phone before the driver was
+      // found, or a stale persisted copy). A handful of points spanning a
+      // real distance IS the beeline — fetch the road geometry instead of
+      // drawing it (user report: straight line on the tracking map).
+      if (tripRoute.length < 8) {
+        final spanM = RouteSplice.haversineM(tripRoute.first, tripRoute.last);
+        if (spanM > 800) {
+          debugPrint('[RiderTracking] handed route looks like the straight '
+              'estimate (${tripRoute.length} pts over ${spanM.round()} m) '
+              '— refetching road geometry');
+          tripRoute = [];
+        }
+      }
+    }
+    if (tripRoute.isEmpty) {
       // Resume paths (local ActiveRide) never carried the stop — fill it
       // once from the trip payload before choosing the frame's geometry.
       if (_stopLL == null && widget.tripId != null) {

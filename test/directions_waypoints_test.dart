@@ -89,5 +89,19 @@ void main() {
       expect(src.contains('pts.length >= 3 && !isEstimate'), isTrue,
           reason: 'the web map had the same count gate — same bug on web');
     });
+
+    test('the tracking handoff never passes the estimate downstream', () {
+      final src =
+          File('lib/screens/ride_request_map.dart').readAsStringSync();
+      expect(src.contains('!s.route!.estimated'), isTrue,
+          reason: 'when the real fetch failed, s.route is still the '
+              'placeholder — handing its points made tracking draw the '
+              'beeline as the trip route ("viendo su viaje asi")');
+      final tracking = File('lib/widgets/tracking/tracking_map_view.dart')
+          .readAsStringSync();
+      expect(tracking.contains('looks like the straight'), isTrue,
+          reason: 'defense in depth: degenerate handed routes refetch the '
+              'road geometry instead of drawing the beeline');
+    });
   });
 }

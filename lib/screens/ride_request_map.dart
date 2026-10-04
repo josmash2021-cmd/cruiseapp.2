@@ -2309,7 +2309,14 @@ extension _RideRequestMap on _RideRequestScreenState {
         RiderTrackingScreen(
           pickupLatLng: LatLng(s.pickup!.lat, s.pickup!.lng),
           dropoffLatLng: LatLng(s.dropoff!.lat, s.dropoff!.lng),
-          routePoints: s.route?.points,
+          // NEVER hand the straight-line estimate downstream: when the
+          // real route fetch failed on the rider's phone, s.route is still
+          // the 3-pt placeholder and tracking would draw it as the trip
+          // route (user report: "viendo su viaje asi" — beeline on the
+          // tracking map). null → tracking fetches real road geometry.
+          routePoints: (s.route != null && !s.route!.estimated)
+              ? s.route!.points
+              : null,
           driverName: s.driver?.name ?? 'Driver',
           driverRating: s.driver?.rating ?? 4.9,
           driverPhotoUrl: s.driver?.photoUrl,

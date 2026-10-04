@@ -1461,8 +1461,9 @@ async def _rehydrate_pending_reminders():
 async def _generate_ai_response(
     chat, user_msg: str, user_name: str, agent_name: str, db: AsyncSession
 ) -> tuple[str | None, list[dict]]:
-    """AI response engine: OpenAI GPT-4o with function calling.
-    Falls back to rule-based system if OpenAI is unavailable.
+    """AI response engine: the configured LLM with function calling
+    (Moonshot-only per the 2026-10-02 product call; OpenAI path dormant).
+    Falls back to rule-based system if the provider is unavailable.
     Returns (response_text, action_list). response_text is None only if everything fails.
     """
     from services.openai_support_service import generate_support_response
@@ -1510,7 +1511,7 @@ async def _generate_ai_response(
     # in English by the model and in Spanish by the fallback.
     ctx["lang"] = lang
 
-    # Try OpenAI first
+    # Try the configured LLM first (Moonshot; OpenAI path dormant)
     try:
         result = await generate_support_response(messages, ctx)
         
@@ -1532,7 +1533,7 @@ async def _generate_ai_response(
         return result["response"], actions
 
     except Exception as e:
-        logging.warning("[Support] OpenAI failed, falling back to rule-based: %s", e)
+        logging.warning("[Support] LLM failed, falling back to rule-based: %s", e)
 
     # -- Fallback: Rule-based system (original code) --
     intent, confidence = detect_intent(user_msg)

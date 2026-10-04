@@ -6,11 +6,11 @@ apply promo, escalate...).
 
 Provider
 --------
-OpenAI (GPT) when OPENAI_API_KEY is set, Kimi (Moonshot AI) when only
-MOONSHOT_API_KEY is set. Whichever key is configured second stands by: a
-primary whose key is rejected or out of quota demotes to it at request
-time (_demote_primary), loudly, instead of falling through to the
-rule-based replies in cruise_ai_engine.
+Kimi (Moonshot AI) — product call 2026-10-02: Moonshot-only. The OpenAI
+path below stays wired (client, model, demote machinery) but with no
+OPENAI_API_KEY configured it never builds a client; _build_kimi is the
+primary and there is no standby. If a second provider is ever wanted
+again, the two-provider demote/fallback code is dormant, not deleted.
 
 There is no fine-tuning involved for either. What makes this agent good
 or bad at Cruise support is _SYSTEM_PROMPT below: the app's real
@@ -69,7 +69,6 @@ _KIMI_BASE_URL = os.getenv("MOONSHOT_BASE_URL", "https://api.kimi.com/coding")
 _MOONSHOT_MODEL = os.getenv("MOONSHOT_MODEL", "k3")
 _OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 
-
 def _build_openai() -> tuple[Any, str, str] | None:
     if not _OPENAI_API_KEY:
         return None
@@ -91,7 +90,8 @@ _openai_client = None
 _MODEL = _OPENAI_MODEL
 _PROVIDER = "none"
 
-# OpenAI first, Kimi behind it.
+# Moonshot-only (product call 2026-10-02) — _build_openai() returns None
+# with no key configured, so _build_kimi wins by construction.
 _primary = _build_openai() or _build_kimi()
 if _primary:
     _openai_client, _MODEL, _PROVIDER = _primary

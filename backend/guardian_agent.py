@@ -1355,53 +1355,26 @@ class UnmatchedTripRetryAgent:
                 )
                 excluded_ids = {r[0] for r in prev_result.all()}
 
-                # Find eligible drivers
-                #
-                # Columns, not the full User row (2026-10-01, load test):
-                # select(User) drags every blob column (base64 photos, OCR
-                # text, docs) for EVERY online driver, and psycopg parses the
-                # result synchronously ON the event loop — with a stuck-trip
-                # backlog this scan ran per trip per pass and pinned the
-                # single worker for seconds at a time. The scan only needs
-                # id/coords for sort+filter and the push tokens for the send.
-                drivers_result = await db.execute(
-                    select(
-                        User.id, User.lat, User.lng, User.fcm_token,
-                        User.apns_la_activity_token, User.apns_la_start_token,
-                    ).where(
-                        and_(
-                            User.role == "driver",
-                            User.is_online == True,
-                            User.lat.isnot(None),
-                            User.lng.isnot(None),
-                            User.last_active_at.isnot(None),
-                            User.last_active_at >= active_cutoff,
-                            ~User.id.in_(excluded_ids) if excluded_ids else True,
-                        )
-                    )
+                # Find eligible drivers — through the SHARED choke point
+                # (2026-10-02, cross-state offer report). This loop used to
+                # run its own raw online-driver query: nearest nationwide,
+                # no border guard, no radius cap, no scheduled lockout —
+                # which is exactly how a driver in one state got rung for a
+                # pickup in another. Every rule live dispatch applies
+                # (border guard, per-state reach, tier, pending offers,
+                # scheduled lockout) lives in _find_nearest_drivers;
+                # re-implementing any of it here is how they drifted apart.
+                from routers.dispatch import _find_nearest_drivers  # lazy: import cycle
+                drivers_sorted = await _find_nearest_drivers(
+                    db,
+                    trip.pickup_lat,
+                    trip.pickup_lng,
+                    exclude_driver_ids=excluded_ids,
+                    vehicle_type=trip.vehicle_type or "standard",
                 )
-                drivers = drivers_result.all()
-                if not drivers:
+                if not drivers_sorted:
                     self._retries += 1
                     continue
-
-                # Tier guard — the same rule live dispatch applies
-                # (vehicle_tiers.eligible_tiers). The retry loop used to
-                # re-offer any trip to the nearest car whatever its tier.
-                from routers.dispatch import _filter_drivers_by_vehicle_tier  # lazy: import cycle
-                tier_ok = await _filter_drivers_by_vehicle_tier(
-                    db, [d.id for d in drivers],
-                    trip.vehicle_type or "standard",
-                )
-                drivers = [d for d in drivers if d.id in tier_ok]
-                if not drivers:
-                    self._retries += 1
-                    continue
-
-                drivers_sorted = sorted(
-                    drivers,
-                    key=lambda d: _haversine(trip.pickup_lat, trip.pickup_lng, d.lat or 0, d.lng or 0),
-                )
                 assigned = drivers_sorted[0]
 
                 # Selection filtered on is_online, but "go offline" is one

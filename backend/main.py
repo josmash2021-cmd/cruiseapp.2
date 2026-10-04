@@ -2124,6 +2124,23 @@ async def _dispatch_reserved_scheduled_rides(db, now):
             and last_active >= cutoff
         )
 
+        # Border guard at dispatch time (2026-10-02, user report): the claim
+        # was state-filtered when it was made, but weeks pass — a driver who
+        # has since crossed a state line must not be handed this pickup.
+        # Routed through the release path below so an in-state driver takes
+        # it instead. same_state fails open: an unresolvable side never
+        # excludes (a dead geocoder must not strand reservations).
+        if driver_online:
+            from routers.dispatch import same_state  # lazy: import cycle
+            if not await same_state(
+                    driver.lat, driver.lng, trip.pickup_lat, trip.pickup_lng):
+                logging.info(
+                    "[Reserved] trip=%d: driver %d no longer in the pickup's "
+                    "state — releasing to the in-state pool",
+                    trip.id, driver.id,
+                )
+                driver_online = False
+
         if driver_online:
             # DIRECT ASSIGNMENT — the reserving driver is on shift, so the
             # trip becomes theirs without an offer to accept.

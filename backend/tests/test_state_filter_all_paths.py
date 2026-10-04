@@ -128,3 +128,31 @@ async def test_state_rule_fails_open_on_unknown():
     D._state_cache.clear()
     _seed({AL: None, FL: "FL"})
     assert await D.same_state(*FL, *AL), "unknown pickup state excluded a trip"
+
+
+def test_retry_loop_uses_the_shared_choke_point():
+    """2026-10-02, user report: a driver got rung for an out-of-state
+    pickup. The unmatched-retry loop carried its own raw online-driver
+    query — nearest nationwide, no border guard, no radius, no lockout.
+    Every offer path must select through _find_nearest_drivers, the one
+    place the border guard lives."""
+    import guardian_agent
+
+    src = inspect.getsource(guardian_agent.UnmatchedTripRetryAgent._retry_unmatched)
+    assert "_find_nearest_drivers" in src, (
+        "the retry loop re-implemented driver selection again — the raw "
+        "query that rang a driver across a state line is back"
+    )
+
+
+def test_reserved_assignment_rechecks_state_at_dispatch_time():
+    """The claim was state-filtered when made; weeks later the driver may
+    have crossed a line. The reserved dispatcher must re-verify before
+    handing them the pickup."""
+    import main
+
+    src = inspect.getsource(main._dispatch_reserved_scheduled_rides)
+    assert "same_state" in src, (
+        "reserved rides assign at T-30 without re-checking the driver is "
+        "still in the pickup's state"
+    )

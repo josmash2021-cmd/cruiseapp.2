@@ -103,6 +103,53 @@ async def test_reserved_online_driver_gets_direct_assignment(
     assert all(c["token"] != rider.fcm_token for c in fcm_spy if rider.fcm_token)
 
 
+async def test_reserved_driver_out_of_state_releases_instead_of_assigning(
+    db, test_rider, test_driver, fcm_spy
+):
+    """2026-10-02, user report: claimed in-state, but the driver crossed a
+    state line before the window — released to the in-state pool, never
+    directly assigned."""
+    from routers import dispatch as D
+
+    rider, _ = test_rider
+    driver, _ = test_driver
+    rider.fcm_token = "rider-fcm-token"
+    driver.is_online = True
+    driver.last_active_at = datetime.now(timezone.utc)
+    AL = (33.5186, -86.8104)   # pickup (Alabama)
+    FL = (25.7617, -80.1918)   # where the driver actually stands (Miami)
+    try:
+        D._state_cache[D._state_cell(*AL)] = "AL"
+        D._state_cache[D._state_cell(*FL)] = "FL"
+
+        trip = _reserved_trip(rider.id, driver.id, minutes_out=20,
+                              pickup_lat=AL[0], pickup_lng=AL[1])
+        db.add(trip)
+        await db.commit()
+
+        await _run_pass(db)
+
+        await db.refresh(trip)
+        assert trip.status == "scheduled"
+        assert trip.driver_id is None, (
+            "a driver standing in another state must NOT be directly assigned"
+        )
+        assigned_pushes = [
+            c for c in fcm_spy
+            if c["token"] == driver.fcm_token
+            and c["data"].get("type") == "driver_assigned"
+        ]
+        assert not assigned_pushes
+        # The rider hears the usual "back to the marketplace" instead.
+        assert any(
+            c["token"] == rider.fcm_token
+            and c["data"].get("type") == "scheduled_driver_dropped"
+            for c in fcm_spy
+        )
+    finally:
+        D._state_cache.clear()
+
+
 async def test_reserved_offline_driver_releases_to_cascade(
     db, test_rider, test_driver, fcm_spy
 ):

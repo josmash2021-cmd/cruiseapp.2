@@ -1759,6 +1759,22 @@ async def _generate_bot_replies(chat, user_msg: str, user_name: str, db: AsyncSe
     """Generate AI bot replies with real DB lookups. Returns list of dicts."""
     phase = chat.bot_phase or "welcome"
     lang = getattr(chat, "locale", "en") or "en"
+
+    # The customer's language decides from the FIRST scripted beat, not
+    # just in the AI branch. Before this, detect_language only ran inside
+    # _generate_ai_response (branch 5), so a chat that opened in English
+    # kept answering in English through the welcome/details script even
+    # when the rider wrote "hola" — and then a scripted transfer landed in
+    # English too (user report: "habla español guebon").
+    _detected = detect_language(user_msg)
+    if _detected and not lang.startswith(_detected):
+        logging.info("[SupportBot] chat %s switching language %s -> %s",
+                     getattr(chat, "id", "?"), lang, _detected)
+        lang = _detected
+        chat.locale = _detected
+        db.add(chat)
+        await db.commit()
+
     suffix = "_es" if lang.startswith("es") else "_en"
     replies = []
 

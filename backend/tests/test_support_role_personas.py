@@ -172,3 +172,23 @@ async def test_driver_gets_the_same_rule_and_the_driver_assistant(db, test_drive
     # …and what opens is the driver assistant, not the rider one.
     assert out["agent_avatar"] == "driver"
     assert out["agent_name"] in _DRIVER_AGENT_NAMES
+
+
+async def test_language_switches_on_the_first_scripted_beat(db, test_rider):
+    """User report: "habla español guebon" got English back. Language
+    detection only ran inside the AI branch, so the welcome/details script
+    kept answering in the chat's opening language forever. The switch must
+    happen from the FIRST scripted beat."""
+    from routers.support import _generate_bot_replies
+    rider, _ = test_rider
+    chat = await _open_chat_in_phase(rider, db, "welcome")
+    chat.locale = "en"
+    await db.commit()
+
+    replies = await _generate_bot_replies(chat, "hola", "Apple", db)
+    assert replies
+    text = replies[0]["message"]
+    # The Spanish scripted welcome answer — never the English one.
+    assert text.startswith(("Entendido", "Gracias", "Claro")), text
+    assert not text.startswith(("Got it", "Thanks", "Sure")), text
+    assert chat.locale == "es"

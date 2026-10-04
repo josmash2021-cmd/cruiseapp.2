@@ -174,12 +174,19 @@ async def test_driver_gets_the_same_rule_and_the_driver_assistant(db, test_drive
     assert out["agent_name"] in _DRIVER_AGENT_NAMES
 
 
-async def test_language_switches_on_the_first_scripted_beat(db, test_rider):
-    """User report: "habla español guebon" got English back. Language
-    detection only ran inside the AI branch, so the welcome/details script
-    kept answering in the chat's opening language forever. The switch must
-    happen from the FIRST scripted beat."""
+async def test_language_switches_on_the_first_message_and_ai_answers(db, test_rider, monkeypatch):
+    """User report: "habla español guebon" got English back, then a scripted
+    transfer. Two rules pinned here: (1) the language switches from the
+    FIRST message, and (2) the AI answers from the FIRST message — no
+    canned "tell me more" beat, no scripted transfer before the model
+    speaks (2026-10-04 user spec)."""
     from routers.support import _generate_bot_replies
+    import services.openai_support_service as ai_svc
+
+    async def _fake_llm(messages, ctx):
+        return {"response": "Claro, cuéntame qué pasó.", "escalate": False}
+    monkeypatch.setattr(ai_svc, "generate_support_response", _fake_llm)
+
     rider, _ = test_rider
     chat = await _open_chat_in_phase(rider, db, "welcome")
     chat.locale = "en"
@@ -188,7 +195,9 @@ async def test_language_switches_on_the_first_scripted_beat(db, test_rider):
     replies = await _generate_bot_replies(chat, "hola", "Apple", db)
     assert replies
     text = replies[0]["message"]
-    # The Spanish scripted welcome answer — never the English one.
-    assert text.startswith(("Entendido", "Gracias", "Claro")), text
-    assert not text.startswith(("Got it", "Thanks", "Sure")), text
+    assert "Claro, cuéntame qué pasó." in text
+    # The old script is gone: no canned details beat, no transfer line.
+    assert "give me more details" not in text
+    assert "transferring" not in text
     assert chat.locale == "es"
+    assert chat.bot_phase == "agent_active"

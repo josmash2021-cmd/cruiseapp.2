@@ -1796,69 +1796,20 @@ async def _generate_bot_replies(chat, user_msg: str, user_name: str, db: AsyncSe
         phase = "agent_active"
         chat.bot_phase = "agent_active"
 
-    if phase == "welcome":
-        # Realistic typing delay based on response length (Agent 4)
-        await asyncio.sleep(_realistic_typing_delay("", is_first=True))
-        if lang.startswith("es"):
-            reply = _rng.choice([
-                f"Entendido, {user_name}. Para poder ayudarte de la mejor manera, podras darme mas detalles sobre tu problema o situacion?",
-                f"Gracias por contactarnos, {user_name}. Podras describir tu problema con un poco mas de detalle? Asi te asigno al mejor agente disponible.",
-                f"Claro, {user_name}. Cuentame un poco mas sobre lo que necesitas para poder conectarte con el agente indicado.",
-            ])
-        else:
-            reply = _rng.choice([
-                f"Got it, {user_name}. To help you in the best way possible, could you give me more details about your issue?",
-                f"Thanks for reaching out, {user_name}. Could you describe your problem in a bit more detail? That way I can assign you to the best available agent.",
-                f"Sure, {user_name}. Tell me a bit more about what you need so I can connect you with the right agent.",
-            ])
-        replies.append({"role": "bot", "message": reply, "sender_name": "Asistente Cruise" if lang.startswith("es") else "Cruise Assistant"})
-        chat.bot_phase = "awaiting_details"
-
-    elif phase == "awaiting_details":
-        # Realistic typing delay (Agent 4)
-        await asyncio.sleep(_realistic_typing_delay("", is_first=True))
-        # The specialist answers from the same crew the chat opened with.
-        _u_r = await db.execute(select(User).where(User.id == chat.user_id))
-        _u = _u_r.scalar_one_or_none()
-        agent = _agent_for_role(getattr(_u, "role", None) or "rider")
-        chat.agent_name = agent
-
-        if lang.startswith("es"):
-            transfer = _rng.choice([
-                f"Gracias por la informacion, {user_name}. Te estoy transfiriendo con un agente de soporte. En breve se conectar y te ayudar.",
-                f"Perfecto, {user_name}. Voy a conectarte con un agente especializado. Un momento por favor, enseguida te atender.",
-                f"Entendido, {user_name}. Estoy transfiriendo tu caso a un agente. Se conectar contigo en un momento.",
-            ])
-        else:
-            transfer = _rng.choice([
-                f"Thanks for the info, {user_name}. I'm transferring you to a support agent. They'll connect with you shortly.",
-                f"Perfect, {user_name}. I'm going to connect you with a specialized agent. One moment please, they'll be right with you.",
-                f"Got it, {user_name}. I'm transferring your case to an agent. They'll connect with you in just a moment.",
-            ])
-        replies.append({"role": "bot", "message": transfer, "sender_name": "Asistente Cruise" if lang.startswith("es") else "Cruise Assistant"})
-
-        if lang.startswith("es"):
-            connected = f"{agent} se ha conectado al chat"
-        else:
-            connected = f"{agent} has joined the chat"
-        replies.append({"role": "system", "message": connected, "sender_name": "Sistema" if lang.startswith("es") else "System"})
-
-        if lang.startswith("es"):
-            intro = _rng.choice([
-                f"Hola, mi nombre es {agent}. Espero que este bien, {user_name}. Voy a ayudarle a resolver lo que necesite y hare mi mejor esfuerzo. Me puede dar mas detalles del problema para asi ayudarle mejor?",
-                f"Hola {user_name}, soy {agent}. Estoy aqui para ayudarle. He revisado su caso y quiero darle la mejor atencion posible. Me podria ampliar un poco mas la informacion?",
-                f"Hola {user_name}, mi nombre es {agent} y voy a atender su caso personalmente. He leido su consulta y quiero ayudarle de la mejor manera. Cuenteme todo con confianza.",
-            ])
-        else:
-            intro = _rng.choice([
-                f"Hi, my name is {agent}. Hope you're doing well, {user_name}. I'm going to help you resolve whatever you need and I'll give it my best. Can you give me more details about the issue so I can help you better?",
-                f"Hey {user_name}, I'm {agent}. I'm here to help you. I've reviewed your case and I want to give you the best support possible. Could you give me a bit more information?",
-                f"Hello {user_name}, my name is {agent} and I'll be handling your case personally. I've read your inquiry and I want to help you in the best way possible. Tell me everything with confidence.",
-            ])
-        replies.append({"role": "bot", "message": intro, "sender_name": agent})
+    # The AI answers from the FIRST message (2026-10-04, user spec: "primero
+    # salen las opciones y luego empieza a escribir la ai, y ya luego conecta
+    # a un agente"). The old concierge script spent the first two user
+    # messages on canned beats — "tell me more details", then a scripted
+    # "I'm transferring you to an agent" under a NEW name — and only let the
+    # model speak on the third. That transfer is exactly what read as "te
+    # conecta directo con un agente". The assistant from the welcome now
+    # simply keeps talking; a human comes in only through the real
+    # escalation rules further down.
+    if phase in ("welcome", "awaiting_details"):
+        phase = "agent_active"
         chat.bot_phase = "agent_active"
 
-    elif phase == "awaiting_cancel_confirm":
+    if phase == "awaiting_cancel_confirm":
         agent = chat.agent_name or "Agente"
         await asyncio.sleep(_rng.uniform(1.5, 3.0))
         t_lower = user_msg.lower().strip()

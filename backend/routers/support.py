@@ -2457,28 +2457,24 @@ async def _get_or_create_support_chat(user: User, db: AsyncSession, subject: str
     if locale.startswith("es"):
         hello = f"Hola {first}" if first else "Hola"
         welcome_text = (
-            f"{hello}, soy {agent}, tu asistente de IA para drivers. Puedo "
-            "ayudarte con tus ganancias y payouts, tus documentos y vehiculo, "
-            "tu categoria y el viaje que tengas en curso. Cuentame lo que "
-            "paso. Si no puedo resolverlo, te conecto con un agente."
+            f"{hello}, soy {agent}, tu asistente de IA para drivers. "
+            "¿Cómo te puedo ayudar hoy? Elige una opción abajo o cuéntame "
+            "cuál es el problema."
         ) if is_driver else (
-            f"{hello}, soy {agent}, tu asistente de IA de Cruise. Puedo "
-            "ayudarte con tus pagos y holds, tus viajes y paradas, y tu "
-            "cuenta. Cuentame lo que paso. Si no puedo resolverlo, te "
-            "conecto con un agente."
+            f"{hello}, soy {agent}, tu asistente de IA de Cruise. "
+            "¿Cómo te puedo ayudar hoy? Elige una opción abajo o cuéntame "
+            "cuál es el problema."
         )
     else:
         hello = f"Hi {first}" if first else "Hi"
         welcome_text = (
-            f"{hello}, I'm {agent}, your Cruise AI assistant for drivers. I "
-            "can help with your earnings and payouts, your documents and "
-            "vehicle, your tier, and the trip you're on. Tell me what "
-            "happened. If I can't resolve it, I'll connect you with an agent."
+            f"{hello}, I'm {agent}, your Cruise AI assistant for drivers. "
+            "How can I help you today? Pick an option below or tell me "
+            "what the problem is."
         ) if is_driver else (
-            f"{hello}, I'm {agent}, your Cruise AI assistant. I can help "
-            "with your payments and holds, your trips and stops, and your "
-            "account. Tell me what happened. If I can't resolve it, I'll "
-            "connect you with an agent."
+            f"{hello}, I'm {agent}, your Cruise AI assistant. "
+            "How can I help you today? Pick an option below or tell me "
+            "what the problem is."
         )
     # "bot", not "system": the app renders a system message as a small grey
     # pill centred on the screen, which is right for "Ana joined the chat" and

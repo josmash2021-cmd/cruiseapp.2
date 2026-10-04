@@ -45,20 +45,22 @@ void main() {
     );
   });
 
-  test('dart asks + the online screen says it out loud', () {
-    final svc = File('lib/services/live_activity_service.dart')
-        .readAsStringSync();
-    expect(svc.contains('areActivitiesEnabled'), isTrue);
+  test('the island never shows offers — offers arrive as the FCM banner',
+      () {
+    // Product call 2026-10-02 (user spec): "quita el live activity de la
+    // isla cuando le llega una oferta — quiero que le llegue la
+    // notificacion de oferta". The island keeps only the online-presence
+    // state; the offer itself is the push banner + the in-app card.
     final ctrl = File('lib/screens/driver/driver_online_controller.dart')
         .readAsStringSync();
-    expect(ctrl.contains('_laDisabled'), isTrue,
-        reason: 'the notice must fire when the shift starts — silently '
-            'no island is how prod ended with zero token registrations');
-    final widgets = File('lib/screens/driver/driver_online_widgets.dart')
-        .readAsStringSync();
-    expect(widgets.contains('_laDisabledNotice'), isTrue);
-    final l10n = File('lib/l10n/app_localizations.dart').readAsStringSync();
-    expect(l10n.contains('liveActivityOffTitle'), isTrue);
-    expect(l10n.contains('liveActivityOffBody'), isTrue);
+    final syncStart = ctrl.indexOf('void _syncOfferLiveActivity');
+    expect(syncStart, greaterThan(-1));
+    final block = ctrl.substring(syncStart, syncStart + 1200);
+    expect(block.contains('showOffer('), isFalse,
+        reason: 'the offer must never paint the island again — banner only');
+    expect(block.contains("updateStatus(next)"), isTrue,
+        reason: 'the island stays presence-only (online / on_trip)');
+    expect(ctrl.contains('_offerLiveActivityFields'), isFalse,
+        reason: 'the offer-card formatter is dead with the island offer');
   });
 }

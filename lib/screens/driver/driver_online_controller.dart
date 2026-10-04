@@ -205,83 +205,14 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
   /// [force] re-sends the same state, for when an offer's road metrics land
   /// after its card was first drawn from the haversine fallback.
   void _syncOfferLiveActivity({bool force = false}) {
-    if (!mounted) return; // _offerLiveActivityFields reads S.of(context)
-    final head = _headOfferId;
-    // 'online' reads "receiving trips", which is a false statement to leave
-    // on the lock screen of someone with a passenger in the car.
-    final next = head != null
-        ? 'offer:$head'
-        : (_phase == _Phase.searching ? 'online' : 'on_trip');
+    if (!mounted) return;
+    // Offers no longer paint the island (product call 2026-10-02, user
+    // spec): the ride offer arrives as the FCM banner — the island keeps
+    // only the online-presence state.
+    final next = _phase == _Phase.searching ? 'online' : 'on_trip';
     if (next == _islandState && !force) return;
     _islandState = next;
-    if (head == null) {
-      unawaited(LiveActivityService.updateStatus(next));
-      return;
-    }
-    final la = _offerLiveActivityFields(_pendingOffers.first);
-    unawaited(LiveActivityService.showOffer(
-      fare: la['fare']!,
-      perHour: la['perHour']!,
-      miles: la['miles']!,
-      minutes: la['minutes']!,
-    ));
-  }
-
-  /// The four strings the iOS offer card shows, built from the same
-  /// numbers as the in-app offer card: the fare, what the ride pays per
-  /// hour of the driver's time (drive-to-pickup included, because that
-  /// time is spent whether or not it is paid), and the totals for distance
-  /// and time. Real Directions metrics when the route cache has them, the
-  /// same haversine fallback the card uses when it does not.
-  ///
-  /// Formatted here rather than in Swift so both surfaces read from one
-  /// place — a second formatter is a second place for the driver's pay to
-  /// disagree with itself.
-  Map<String, String> _offerLiveActivityFields(Map<String, dynamic> offer) {
-    final fare = _safeDouble(offer['fare']);
-    final pickupLat = _safeDouble(offer['pickup_lat']);
-    final pickupLng = _safeDouble(offer['pickup_lng']);
-    final dropoffLL =
-        LatLng(_safeDouble(offer['dropoff_lat']), _safeDouble(offer['dropoff_lng']));
-    final pickupLL = LatLng(pickupLat, pickupLng);
-    final offerId = (offer['offer_id'] ?? offer['id'] ?? '${pickupLat}_$pickupLng')
-        .toString();
-
-    final cached = _routeCache[offerId];
-    int etaToPickup;
-    int tripEta;
-    double distToPickupMi;
-    double tripDistMi;
-    if (cached?.driverToPickupKm != null && cached?.pickupToDropoffKm != null) {
-      etaToPickup = (cached!.driverToPickupMin ?? 1).ceil().clamp(1, 99);
-      distToPickupMi = cached.driverToPickupKm! * 0.621371;
-      tripEta = (cached.pickupToDropoffMin ?? 1).ceil().clamp(1, 99);
-      tripDistMi = cached.pickupToDropoffKm! * 0.621371;
-    } else {
-      var dtp = _pos != null ? _hav(_pos!, pickupLL) : 0.0;
-      if (!dtp.isFinite) dtp = 0;
-      var trip = _hav(pickupLL, dropoffLL);
-      if (!trip.isFinite) trip = 0;
-      etaToPickup = (dtp * 1000 / 17.88 / 60).ceil().clamp(1, 99);
-      tripEta = (trip * 1000 / 17.88 / 60).ceil().clamp(1, 99);
-      distToPickupMi = dtp * 0.621371;
-      tripDistMi = trip * 0.621371;
-    }
-
-    final totalMin = (etaToPickup + tripEta).clamp(1, 999);
-    final hourly = fare / (totalMin / 60.0);
-    // Same strings the card builds from the same numbers: two decimals on
-    // the rate, and offerDuration so an 80-minute ride reads "1 h 20 min"
-    // on the lock screen too, rather than the "80 min" the driver would
-    // have had to divide in their head. "mi" is left as-is in both
-    // languages, matching offerAway/offerTrip.
-    final s = S.of(context);
-    return {
-      'fare': '\$${fare.toStringAsFixed(2)}',
-      'perHour': s.offerHourlyRateShort(hourly.toStringAsFixed(2)),
-      'miles': '${(distToPickupMi + tripDistMi).toStringAsFixed(1)} mi',
-      'minutes': s.offerDuration(totalMin),
-    };
+    unawaited(LiveActivityService.updateStatus(next));
   }
 
   /// Start a periodic timer to refresh earnings every 45 seconds.

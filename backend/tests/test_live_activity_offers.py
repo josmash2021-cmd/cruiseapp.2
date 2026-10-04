@@ -1,17 +1,15 @@
-"""Guardians for the APNs Live Activity offer channel.
+"""Guardians for the offer push channel (2026-10-02 redesign).
 
-The liveactivity push is the ONLY outside-the-app copy of an offer on
-iPhones that registered their APNs channels — the FCM banner is suppressed
-for them. Three silent-death modes lived here:
+Product call 2026-10-02: the Live Activity island is no longer used for
+OFFERS — every offer goes out as the FCM banner, even for drivers with
+Live Activity tokens registered and APNs configured (user spec: "quiero
+que le llegue la notificacion de oferta"). The island keeps only the
+online-presence state. What stays pinned here:
 
-  * the payload drifts (wrong event, missing content-state key, wrong
-    topic) and Apple rejects every push — caught by inspecting what
-    send_live_activity_offer posts
-  * a dead channel (400/410) is never cleared, so every later offer aims
-    at a token that cannot land — caught by asserting the DB field is
-    nulled
-  * APNs not configured + banner suppressed = the driver gets NOTHING —
-    caught by asserting the FCM fallback still fires
+  * the dispatch ALWAYS fires the banner and never calls the island push
+  * the APNs payload shape of send_live_activity_offer (the function is
+    kept — it serves the rider trip card and may serve a future re-enable)
+  * the clear path never aims at the start token with no live card
 """
 import sys
 from pathlib import Path
@@ -123,86 +121,49 @@ class TestAStaleChannelIsCleared:
             per_hour=None, miles=None, minutes=None,
         ) == "stale_start"
 
-    @pytest.mark.parametrize(
-        "status,outcome,field",
-        [(400, "stale_activity", "apns_la_activity_token"),
-         (410, "stale_start", "apns_la_start_token")],
-    )
-    async def test_the_dispatcher_nulls_the_dead_token(
-            self, monkeypatch, db, test_driver, status, outcome, field):
+    async def test_the_offer_goes_out_as_the_fcm_banner_even_with_la_tokens(
+            self, monkeypatch, db, test_trip, test_driver):
+        """2026-10-02: LA tokens + APNs configured — the offer STILL goes
+        out as the FCM banner and the island push is never attempted."""
         from routers import dispatch
         driver, _ = test_driver
-        driver.apns_la_activity_token = "dead-activity"
-        driver.apns_la_start_token = "dead-start"
-        await db.commit()
-
-        async def _fake_send(**kwargs):
-            return outcome
-        monkeypatch.setattr(
-            apns_liveactivity, "send_live_activity_offer", _fake_send)
-
-        await dispatch._send_live_activity_offer(
-            driver, fare="", per_hour="", miles="2.4 mi", minutes="9 min")
-
-        await db.refresh(driver)
-        assert getattr(driver, field) is None
-        # The other channel was never reported dead — it stays.
-        other = ("apns_la_start_token" if field == "apns_la_activity_token"
-                 else "apns_la_activity_token")
-        assert getattr(driver, other) is not None
-
-    async def test_a_failed_island_push_falls_back_to_the_fcm_banner(
-            self, monkeypatch, db, test_driver):
-        """Spec 2026-08-22 ("no debe fallar"): the island IS the
-        notification only while it lands. Any push failure re-arms the FCM
-        banner for the SAME offer — no driver ever ends up with nothing."""
-        from routers import dispatch
-        driver, _ = test_driver
+        driver.apns_la_activity_token = "act-123"
+        driver.apns_la_start_token = "start-456"
         driver.fcm_token = "fcm-123"
         await db.commit()
+        monkeypatch.setattr(apns_liveactivity, "apns_configured", lambda: True)
 
-        async def _fake_send(**kwargs):
-            return "error"
-        monkeypatch.setattr(
-            apns_liveactivity, "send_live_activity_offer", _fake_send)
-
+        la_calls = []
         fcm_calls = []
+
+        async def _fake_la_send(**kwargs):
+            la_calls.append(kwargs)
+            return None
 
         async def _fake_fcm(token, **kwargs):
             fcm_calls.append((token, kwargs))
-        monkeypatch.setattr(dispatch, "_send_fcm_push_async", _fake_fcm)
 
-        await dispatch._send_live_activity_offer(
-            driver, fare="$6.14", per_hour="$33.49/hr", miles="2.4 mi",
-            minutes="9 min", fcm_data={"type": "new_offer"})
+        scheduled = []
 
-        assert fcm_calls and fcm_calls[0][0] == "fcm-123"
-        assert fcm_calls[0][1]["is_offer"] is True
-        assert fcm_calls[0][1]["data"] == {"type": "new_offer"}
+        def _immediate(coro, *args, **kwargs):
+            scheduled.append(coro)
 
-    async def test_a_landed_island_push_sends_no_banner(
-            self, monkeypatch, db, test_driver):
-        """The other half of the rule: a landed island push means NO FCM
-        banner — the offer must never say itself twice."""
-        from routers import dispatch
-        driver, _ = test_driver
-
-        async def _fake_send(**kwargs):
-            return None
         monkeypatch.setattr(
-            apns_liveactivity, "send_live_activity_offer", _fake_send)
-
-        fcm_calls = []
-
-        async def _fake_fcm(token, **kwargs):
-            fcm_calls.append(kwargs)
+            apns_liveactivity, "send_live_activity_offer", _fake_la_send)
         monkeypatch.setattr(dispatch, "_send_fcm_push_async", _fake_fcm)
+        monkeypatch.setattr(dispatch, "_safe_create_task", _immediate)
 
-        await dispatch._send_live_activity_offer(
-            driver, fare="$6.14", per_hour="$33.49/hr", miles="2.4 mi",
-            minutes="9 min", fcm_data={"type": "new_offer"})
+        await dispatch._send_offer_to_driver(
+            db, test_trip, driver, "Rider", "+1000", "")
+        for coro in scheduled:
+            await coro
 
-        assert not fcm_calls
+        assert fcm_calls, "the banner must ALWAYS go out — it is the only "
+        "notification the driver gets now"
+        assert fcm_calls[0][0] == "fcm-123"
+        assert fcm_calls[0][1]["is_offer"] is True
+        assert not la_calls, "the island push must never be attempted for "
+        "an offer anymore"
 
 
 class TestTheFcmFallback:
@@ -229,7 +190,7 @@ class TestTheFcmFallback:
         async def _fake_fcm(token, **kwargs):
             fcm_calls.append(kwargs)
 
-        async def _fake_la(driver, **kwargs):
+        async def _fake_la_send(**kwargs):
             la_calls.append(kwargs)
 
         scheduled = []
@@ -238,7 +199,8 @@ class TestTheFcmFallback:
             scheduled.append(coro)
 
         monkeypatch.setattr(dispatch, "_send_fcm_push_async", _fake_fcm)
-        monkeypatch.setattr(dispatch, "_send_live_activity_offer", _fake_la)
+        monkeypatch.setattr(
+            apns_liveactivity, "send_live_activity_offer", _fake_la_send)
         monkeypatch.setattr(dispatch, "_safe_create_task", _immediate)
 
         await dispatch._send_offer_to_driver(
@@ -324,43 +286,3 @@ class TestTheStartTokenIsSacred:
         assert driver.apns_la_start_token == "healthy-start", (
             "the start token is the seed for the NEXT offer's start push — "
             "a card that was never up must never cost it")
-
-    async def test_stale_activity_retries_the_offer_via_the_start_token(
-            self, monkeypatch, db, test_driver):
-        """The presence activity dies mid-shift (iOS kills it in hours); the
-        push-to-start channel is the designated fallback for exactly that
-        state — the same offer must retry as a START before resigning to
-        the FCM banner."""
-        from routers import dispatch
-        driver, _ = test_driver
-        driver.apns_la_activity_token = "dead-activity"
-        driver.apns_la_start_token = "healthy-start"
-        await db.commit()
-
-        calls = []
-
-        async def _fake_send(**kwargs):
-            calls.append(kwargs)
-            return "stale_activity" if len(calls) == 1 else None
-        monkeypatch.setattr(
-            apns_liveactivity, "send_live_activity_offer", _fake_send)
-
-        fcm_calls = []
-
-        async def _fake_fcm(token, **kwargs):
-            fcm_calls.append(kwargs)
-        monkeypatch.setattr(dispatch, "_send_fcm_push_async", _fake_fcm)
-
-        await dispatch._send_live_activity_offer(
-            driver, fare="$6.14", per_hour="$33.49/hr", miles="2.4 mi",
-            minutes="9 min", fcm_data={"type": "new_offer"})
-
-        assert len(calls) == 2
-        assert calls[0]["activity_token"] == "dead-activity"
-        # The retry rides the start channel as a start event.
-        assert calls[1]["activity_token"] is None
-        assert calls[1]["start_token"] == "healthy-start"
-        await db.refresh(driver)
-        assert driver.apns_la_activity_token is None
-        assert driver.apns_la_start_token == "healthy-start"
-        assert not fcm_calls, "the island push landed on retry — no banner"

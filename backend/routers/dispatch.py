@@ -1016,25 +1016,19 @@ async def _send_offer_to_driver(
     # leaves the driver with NOTHING outside the app. Fall back to FCM —
     # and the same fallback rides inside _send_live_activity_offer for the
     # case where the island push itself does not land.
-    from services.apns_liveactivity import apns_configured
-    if (driver.apns_la_activity_token or driver.apns_la_start_token) \
-            and apns_configured():
-        _safe_create_task(_send_live_activity_offer(
-            driver,
-            fare=fare_str,
-            per_hour=per_hour_str,
-            miles=miles_str,
-            minutes=minutes_str,
-            fcm_data=push_data,
-        ))
-    else:
-        _safe_create_task(_send_fcm_push_async(
-            driver.fcm_token or "",
-            title="New Ride Offer",
-            body="Open Cruise to accept.",
-            data=push_data,
-            is_offer=True,
-        ))
+    # Offer push = the FCM banner, ALWAYS (product call 2026-10-02, user
+    # spec: "quita el live activity de la isla cuando le llega una oferta
+    # — quiero que le llegue la notificacion de oferta"). The island is no
+    # longer used for offers; it keeps only the online-presence state
+    # (app-side). The clear on accept/reject/expire/offline still runs, so
+    # a card painted by an older build is taken down on schedule.
+    _safe_create_task(_send_fcm_push_async(
+        driver.fcm_token or "",
+        title="New Ride Offer",
+        body="Open Cruise to accept.",
+        data=push_data,
+        is_offer=True,
+    ))
 
     return offer
 
@@ -1102,80 +1096,6 @@ async def expire_pending_offers_for_driver(db: AsyncSession, driver_id: int,
         _pending_cache.pop(driver_id, None)
         _safe_create_task(_clear_live_activity_offer(driver_id))
     return len(offers)
-
-
-async def _send_live_activity_offer(driver, *, fare, per_hour, miles, minutes,
-                                    fcm_data: dict | None = None) -> None:
-    """Offer → the driver's Live Activity, straight over APNs. Fail-soft.
-
-    The island was supposed to BE the notification — the caller suppressed
-    the FCM banner on the strength of this push. So when the push does not
-    land (dead channel, transient APNs error, anything), the FCM banner
-    goes out as backup for the SAME offer: no driver, on a new build or an
-    old one, may ever end up with no notification at all (spec 2026-08-22).
-    """
-    outcome: str | None = None
-    try:
-        from services.apns_liveactivity import send_live_activity_offer
-        outcome = await send_live_activity_offer(
-            start_token=driver.apns_la_start_token,
-            activity_token=driver.apns_la_activity_token,
-            fare=fare,
-            per_hour=per_hour,
-            miles=miles,
-            minutes=minutes,
-        )
-        if outcome in ("stale_activity", "stale_start"):
-            # Dead channel — clear it so later offers stop aiming at it.
-            async with SessionLocal() as db:
-                d = await db.get(User, driver.id)
-                if d is not None:
-                    if outcome == "stale_activity":
-                        d.apns_la_activity_token = None
-                    else:
-                        d.apns_la_start_token = None
-                    await db.commit()
-            logging.warning(
-                "[LiveActivity] cleared %s for driver %s", outcome, driver.id)
-            if outcome == "stale_activity" and driver.apns_la_start_token:
-                # The presence activity ends mid-shift (iOS kills it in
-                # hours); the push-to-start channel is the designated
-                # fallback for exactly this state. Retry the SAME offer as
-                # a start before resigning to the FCM banner — without it a
-                # dead activity channel poisons every later offer too
-                # (user report 2026-09-23).
-                outcome = await send_live_activity_offer(
-                    start_token=driver.apns_la_start_token,
-                    activity_token=None,
-                    fare=fare,
-                    per_hour=per_hour,
-                    miles=miles,
-                    minutes=minutes,
-                )
-                if outcome == "stale_start":
-                    async with SessionLocal() as db:
-                        d = await db.get(User, driver.id)
-                        if d is not None:
-                            d.apns_la_start_token = None
-                            await db.commit()
-                    logging.warning(
-                        "[LiveActivity] cleared stale_start for driver %s",
-                        driver.id)
-    except Exception as e:
-        outcome = outcome or "error"
-        logging.warning("[LiveActivity] offer push failed for driver %s: %s",
-                        driver.id, e)
-    if outcome is not None and fcm_data is not None:
-        logging.info(
-            "[LiveActivity] island push did not land (%s) for driver %s — "
-            "FCM banner goes out as backup", outcome, driver.id)
-        await _send_fcm_push_async(
-            driver.fcm_token or "",
-            title="New Ride Offer",
-            body="Open Cruise to accept.",
-            data=fcm_data,
-            is_offer=True,
-        )
 
 
 async def _auto_cascade(trip_id: int, first_offer_id: int, first_driver_id: int) -> None:

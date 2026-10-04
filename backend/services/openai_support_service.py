@@ -185,10 +185,11 @@ async def _anthropic_completion(messages: list[dict[str, Any]],
         )
 
     if resp.status_code == 401:
+        # Plain Exception: positional message only — the OpenAI-SDK-shaped
+        # kwargs this used to carry (response=, body=) crashed the raise
+        # itself with "takes no keyword arguments" and hid the real 401.
         raise SupportAuthError(
-            f"kimi rejected the key: {resp.text[:120]}",
-            response=resp, body=None,
-        )
+            f"kimi rejected the key: {resp.text[:120]}")
     if resp.status_code >= 400:
         raise RuntimeError(f"kimi {resp.status_code}: {resp.text[:200]}")
 

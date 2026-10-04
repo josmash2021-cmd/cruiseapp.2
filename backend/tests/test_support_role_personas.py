@@ -157,3 +157,18 @@ async def test_bot_alive_phase_resumes_as_before(db, test_rider):
     old = await _open_chat_in_phase(rider, db, "awaiting_details")
     out = await _get_or_create_support_chat(rider, db, locale="en")
     assert out["id"] == old.id
+
+
+async def test_driver_gets_the_same_rule_and_the_driver_assistant(db, test_driver):
+    """User ask 2026-10-02: "para el driver debe ser igual". The rule is
+    role-agnostic — a driver's dead chat freshes exactly like a rider's —
+    and the fresh chat opens on the DRIVER assistant."""
+    driver, _ = test_driver
+    old = await _open_chat_in_phase(driver, db, "escalated")
+    out = await _get_or_create_support_chat(driver, db, locale="en")
+    assert out["id"] != old.id
+    await db.refresh(old)
+    assert old.status == "closed"
+    # …and what opens is the driver assistant, not the rider one.
+    assert out["agent_avatar"] == "driver"
+    assert out["agent_name"] in _DRIVER_AGENT_NAMES

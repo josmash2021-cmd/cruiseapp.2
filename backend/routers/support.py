@@ -2383,6 +2383,35 @@ async def _get_or_create_support_chat(user: User, db: AsyncSession, subject: str
     )
     chat = result.scalar_one_or_none()
 
+    # Dead-conversation rule (user report 2026-10-02, "lo conecta directo
+    # con un agente"): a phase where the bot no longer answers only resumes
+    # when a HUMAN from dispatch is genuinely inside and spoke recently.
+    # Escalated chats nobody picked up and proactive-agent chats (silent by
+    # design) otherwise hand the user a dead "agent phase" on every visit —
+    # support must always open on the bot, with options, that understands
+    # what they write. The phases where the bot IS alive resume as before.
+    _BOT_ALIVE_PHASES = {"welcome", "awaiting_details", "awaiting_cancel_confirm"}
+    if chat and not fresh and (chat.bot_phase or "") not in _BOT_ALIVE_PHASES:
+        last_human_r = await db.execute(
+            select(SupportMessage).where(
+                SupportMessage.chat_id == chat.id,
+                SupportMessage.sender_role == "dispatch",
+            ).order_by(SupportMessage.created_at.desc()).limit(1)
+        )
+        last_human = last_human_r.scalar_one_or_none()
+        if last_human is None:
+            logging.info(
+                "[support] chat %s in phase %r was never picked up by a human — fresh",
+                chat.id, chat.bot_phase)
+            fresh = True
+        else:
+            quiet_for = datetime.now(timezone.utc) - _aware(last_human.created_at)
+            if quiet_for > timedelta(minutes=30):
+                logging.info(
+                    "[support] chat %s: dispatch silent for %s — fresh",
+                    chat.id, quiet_for)
+                fresh = True
+
     # A chat nobody has spoken in for hours is not a live conversation, and
     # handing it back is how users end up talking into a dead escalated
     # transcript. The product already closes idle chats after 5m30 — but only

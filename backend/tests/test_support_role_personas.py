@@ -12,6 +12,7 @@ drivers). The hard product rules pinned here:
 """
 
 import pytest
+from datetime import datetime, timezone
 
 from models.database import SupportChat, SupportMessage
 from services.openai_support_service import (
@@ -103,3 +104,56 @@ async def test_context_blocks_by_role(db, test_rider, test_driver):
     assert "earnings_today" in dctx["driver"]
     assert "earnings_week" in dctx["driver"]
     assert "next_payout" in dctx["driver"]
+
+
+# ── Dead-conversation rule (user report 2026-10-02) ─────────────────
+# Opening support must ALWAYS land on the bot with options. A chat in a
+# bot-dead phase only resumes while a dispatch human is genuinely active.
+
+
+async def _open_chat_in_phase(user, db, phase: str) -> SupportChat:
+    chat = SupportChat(user_id=user.id, subject="t", bot_phase=phase,
+                       agent_name="Test", status="open")
+    db.add(chat)
+    await db.commit()
+    await db.refresh(chat)
+    return chat
+
+
+async def test_dead_phase_never_picked_up_starts_fresh(db, test_rider):
+    rider, _ = test_rider
+    old = await _open_chat_in_phase(rider, db, "escalated")
+    out = await _get_or_create_support_chat(rider, db, locale="en")
+    assert out["id"] != old.id
+    await db.refresh(old)
+    assert old.status == "closed"
+
+
+async def test_dead_phase_with_active_human_resumes(db, test_rider):
+    rider, _ = test_rider
+    old = await _open_chat_in_phase(rider, db, "dispatch_takeover")
+    db.add(SupportMessage(chat_id=old.id, sender_id=None,
+                          sender_role="dispatch", message="I am here"))
+    await db.commit()
+    out = await _get_or_create_support_chat(rider, db, locale="en")
+    assert out["id"] == old.id
+
+
+async def test_dead_phase_with_stale_human_starts_fresh(db, test_rider):
+    from datetime import timedelta as _td
+    rider, _ = test_rider
+    old = await _open_chat_in_phase(rider, db, "agent_active")
+    msg = SupportMessage(chat_id=old.id, sender_id=None,
+                         sender_role="dispatch", message="old hello")
+    msg.created_at = datetime.now(timezone.utc) - _td(hours=1)
+    db.add(msg)
+    await db.commit()
+    out = await _get_or_create_support_chat(rider, db, locale="en")
+    assert out["id"] != old.id
+
+
+async def test_bot_alive_phase_resumes_as_before(db, test_rider):
+    rider, _ = test_rider
+    old = await _open_chat_in_phase(rider, db, "awaiting_details")
+    out = await _get_or_create_support_chat(rider, db, locale="en")
+    assert out["id"] == old.id

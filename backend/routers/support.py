@@ -76,6 +76,9 @@ _ESCALATION_TRIGGERS = [
     "hablar con el jefe", "quiero hablar con un supervisor", "quiero hablar con el gerente",
     "no me ayudas", "incompetente", "inutil", "useless", "your boss",
     "real person", "persona real", "human", "humano",
+    "hablar con un agente", "hablar con una persona", "agente humano",
+    "persona de verdad", "speak to an agent", "talk to an agent",
+    "speak to a human", "talk to a human",
 ]
 
 _FRUSTRATION_KEYWORDS = [
@@ -1916,24 +1919,20 @@ async def _generate_bot_replies(chat, user_msg: str, user_name: str, db: AsyncSe
                 except Exception:
                     pass
 
-        # 2) Explicit escalation request
+        # 2) Explicit escalation request — the user asked for a real person
         elif _match_keywords(user_msg, _ESCALATION_TRIGGERS):
             chat.needs_escalation = True
             chat.bot_phase = "escalated"
+            # The exact acknowledgment (user spec 2026-10-04): reassure and
+            # say the transfer is already happening — no fake ETA.
             if lang.startswith("es"):
-                esc = _rng.choice([
-                    f"Entiendo tu solicitud, {user_name}. Voy a transferir tu caso a un supervisor. En aproximadamente 5 a 10 minutos un supervisor estar conectondose a este chat para atenderte personalmente.",
-                    f"Entendido, {user_name}. Voy a escalar tu caso. Un supervisor se conectar a este chat en unos 5 a 10 minutos para ayudarte directamente.",
-                    f"Comprendo, {user_name}. He solicitado la atencion de un supervisor. En 5 a 10 minutos estar conectondose a este chat para asistirte.",
-                ])
-                sys_msg = "Se ha solicitado un supervisor. Se conectara en 5-10 minutos."
+                esc = (f"No te preocupes, {user_name}. Ya te transfiero a un "
+                       "agente especializado que te atenderá personalmente.")
+                sys_msg = "Un agente especializado se conectará en breve."
             else:
-                esc = _rng.choice([
-                    f"I understand your request, {user_name}. I'm going to transfer your case to a supervisor. A supervisor will be connecting to this chat in approximately 5 to 10 minutes to assist you personally.",
-                    f"Got it, {user_name}. I'm escalating your case. A supervisor will connect to this chat in about 5 to 10 minutes to help you directly.",
-                    f"Understood, {user_name}. I've requested a supervisor's attention. They'll be connecting to this chat in 5 to 10 minutes to assist you.",
-                ])
-                sys_msg = "A supervisor has been requested. They will connect in 5-10 minutes."
+                esc = (f"Don't worry, {user_name}. I'm transferring you to a "
+                       "specialized agent who will assist you personally.")
+                sys_msg = "A specialized agent will connect shortly."
             replies.append({"role": "bot", "message": esc, "sender_name": agent})
             replies.append({"role": "system", "message": sys_msg, "sender_name": "Sistema" if lang.startswith("es") else "System"})
             if _HAS_FIRESTORE:

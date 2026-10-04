@@ -174,6 +174,27 @@ async def test_driver_gets_the_same_rule_and_the_driver_assistant(db, test_drive
     assert out["agent_name"] in _DRIVER_AGENT_NAMES
 
 
+async def test_asking_for_a_real_person_transfers_with_the_exact_phrase(db, test_rider):
+    """User spec 2026-10-04: when the user asks for a human, the chat
+    transfers them saying EXACTLY "no te preocupes, ya te transfiero a un
+    agente especializado" — and escalates to dispatch."""
+    from routers.support import _generate_bot_replies
+    rider, _ = test_rider
+    chat = await _open_chat_in_phase(rider, db, "agent_active")
+    chat.locale = "es"
+    chat.agent_name = "Sofia"
+    await db.commit()
+
+    replies = await _generate_bot_replies(
+        chat, "quiero hablar con una persona real", "Apple", db)
+    assert replies
+    first = replies[0]["message"]
+    assert "No te preocupes, Apple" in first
+    assert "Ya te transfiero a un agente especializado" in first
+    assert chat.bot_phase == "escalated"
+    assert chat.needs_escalation is True
+
+
 async def test_language_switches_on_the_first_message_and_ai_answers(db, test_rider, monkeypatch):
     """User report: "habla español guebon" got English back, then a scripted
     transfer. Two rules pinned here: (1) the language switches from the

@@ -1243,10 +1243,6 @@ async def _advance_supervisor_script(chat, db: AsyncSession) -> None:
 
     is_es = (getattr(chat, "locale", "en") or "en").startswith("es")
 
-    # The specialist is ANOTHER person from the same crew — never the
-    # assistant's own name back. "Camila se ha conectado al chat" right
-    # after Camila was already the one talking read as the app talking to
-    # itself (user report 2026-10-04).
     _role = "rider"
     _user_name = ""
     try:
@@ -1257,9 +1253,6 @@ async def _advance_supervisor_script(chat, db: AsyncSession) -> None:
             _user_name = (getattr(_u, "first_name", None) or "").strip()
     except Exception as e:
         logging.warning("[support] supervisor identity lookup failed: %s", e)
-    _pool = _DRIVER_AGENT_NAMES if _role == "driver" else _RIDER_AGENT_NAMES
-    _candidates = [n for n in _pool if n != (chat.agent_name or "").strip()]
-    agent = _rng.choice(_candidates or _pool)
 
     rows_r = await db.execute(
         select(SupportMessage)
@@ -1288,6 +1281,16 @@ async def _advance_supervisor_script(chat, db: AsyncSession) -> None:
         )
         if (now - _aware(anchor.created_at)).total_seconds() < _SUPERVISOR_JOINS_AFTER_S:
             return
+        # The specialist is ANOTHER person from the same crew — never the
+        # assistant's own name back ("Camila se ha conectado" right after
+        # Camila was already talking read as the app talking to itself,
+        # 2026-10-04). Rolled ONCE, here, and stored on the chat: every later
+        # step reads the stored name. Re-rolling per call made the join line
+        # and the greeting two different people (Emilio/Diego/Javier, user
+        # report 2026-10-05).
+        _pool = _DRIVER_AGENT_NAMES if _role == "driver" else _RIDER_AGENT_NAMES
+        _candidates = [n for n in _pool if n != (chat.agent_name or "").strip()]
+        agent = _rng.choice(_candidates or _pool)
         text = (f"{agent} se ha conectado al chat."
                 if is_es else f"{agent} has joined the chat.")
         chat.agent_name = agent
@@ -1315,6 +1318,17 @@ async def _advance_supervisor_script(chat, db: AsyncSession) -> None:
         return
     if (now - _aware(joined.created_at)).total_seconds() < _SUPERVISOR_GREETS_AFTER_S:
         return
+
+    # The SAME supervisor who joined speaks — the name stored in step 1,
+    # never a fresh roll. For a chat joined before the name was stored, read
+    # it back off the join line itself.
+    agent = (chat.agent_name or "").strip()
+    if not agent:
+        m_join = re.match(
+            r"([A-ZÁÉÍÓÚÑ][^\s]*)\s+(?:se ha conectado|has joined)",
+            joined.message or "",
+        )
+        agent = m_join.group(1) if m_join else ("Soporte" if is_es else "Support")
 
     # The specialist's opening line (user spec 2026-10-04): greet, wish
     # them well, and ask for a moment to review the chat — the analysis

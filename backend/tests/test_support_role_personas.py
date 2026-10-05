@@ -307,3 +307,49 @@ async def test_language_switches_on_the_first_message_and_ai_answers(db, test_ri
     assert "transferring" not in text
     assert chat.locale == "es"
     assert chat.bot_phase == "agent_active"
+
+
+async def test_supervisor_keeps_one_name_join_and_greeting(db, test_driver):
+    """"Emilio" saluda, "Diego se ha conectado", luego "soy Javier" (reporte
+    2026-10-05): cada paso del script re-rolaba el nombre del supervisor. El
+    nombre se elige UNA vez en el join y el saludo lee el guardado."""
+    from datetime import timedelta
+    from routers.support import _advance_supervisor_script
+    driver, _ = test_driver
+    chat = await _open_chat_in_phase(driver, db, "escalated")
+    chat.agent_name = "Emilio"
+    chat.locale = "es"
+    db.add(chat)
+    announce = SupportMessage(
+        chat_id=chat.id, sender_id=None, sender_role="system",
+        message="Un agente especializado se conectará en breve.",
+        created_at=datetime.now(timezone.utc) - timedelta(seconds=30),
+    )
+    db.add(announce)
+    await db.commit()
+
+    await _advance_supervisor_script(chat, db)
+    await db.refresh(chat)
+    joined = (await db.execute(
+        select(SupportMessage).where(
+            SupportMessage.chat_id == chat.id,
+            SupportMessage.sender_role == "system",
+            SupportMessage.message.like("%se ha conectado%"),
+        ))).scalars().all()
+    assert len(joined) == 1
+    announced = joined[0].message.split(" se ha conectado")[0]
+    assert announced != "Emilio"
+    assert chat.agent_name == announced
+
+    # Age the join past the greet gate — the greeting must name the SAME
+    # person the join line announced.
+    joined[0].created_at = datetime.now(timezone.utc) - timedelta(seconds=10)
+    await db.commit()
+    await _advance_supervisor_script(chat, db)
+    greet = (await db.execute(
+        select(SupportMessage).where(
+            SupportMessage.chat_id == chat.id,
+            SupportMessage.sender_role == "bot",
+        ))).scalars().all()
+    assert len(greet) == 1
+    assert f"soy {announced}" in greet[0].message

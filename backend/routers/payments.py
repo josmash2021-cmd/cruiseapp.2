@@ -3523,7 +3523,23 @@ async def web_verify_otp(request: Request, db: AsyncSession = Depends(get_db)):
     ))
     await db.commit()
     logging.info("[WebOTP] Verified for %s, otp_token issued", identifier)
-    return {"ok": True, "otp_token": otp_token}
+
+    # Post-OTP the caller has proven control of the identifier, so it's safe
+    # to disclose whether the account still needs its first password —
+    # app/social-created accounts go straight to "create your password"
+    # instead of a password prompt they can't answer (user spec 2026-10-04).
+    password_set = None
+    if "@" in identifier:
+        uq = await db.execute(
+            select(User).where(func.lower(User.email) == identifier.lower()))
+    else:
+        from routers.auth import _phone_lookup_variants
+        uq = await db.execute(
+            select(User).where(User.phone.in_(_phone_lookup_variants(identifier))))
+    u = uq.scalars().first()
+    if u is not None:
+        password_set = (u.auth_provider or "") not in ("phone", "google", "apple")
+    return {"ok": True, "otp_token": otp_token, "password_set": password_set}
 
 
 @router.post("/auth/web/check-exists")
@@ -4203,6 +4219,15 @@ async def web_login(request: Request, db: AsyncSession = Depends(get_db)):
 
     if not user:
         _record_login_failure(client_ip)
+        # App-created (phone OTP) accounts never set a password — the web
+        # page must offer "create your password", not "invalid" (user spec
+        # 2026-10-04). Same rule as /auth/login for the app.
+        phoneish = next(
+            (u for u in candidates if (u.auth_provider or "") == "phone"),
+            None,
+        )
+        if phoneish is not None:
+            raise HTTPException(409, "password_not_set")
         raise HTTPException(401, "Invalid credentials")
 
     if user.status in ("deleted", "pending_deletion"):
@@ -4256,6 +4281,71 @@ async def web_complete_login(request: Request, db: AsyncSession = Depends(get_db
     token = _create_token(user.id, role=user.role, status=user.status or "active")
     refresh = _create_refresh_token(user.id)
     logging.info("[WebAuth] Login complete: user %d", user.id)
+    return {"access_token": token, "refresh_token": refresh, "token_type": "bearer", "user": _user_dict(user)}
+
+
+@router.post("/auth/web/set-password")
+async def web_set_password(request: Request, db: AsyncSession = Depends(get_db)):
+    """First password for an app-created account, web edition (user spec
+    2026-10-04): /auth/web/login answers 409 password_not_set, the widget
+    runs send-otp → verify-otp → otp_token, and this endpoint writes the
+    hash once the token checks out — then logs them in straight away.
+
+    The single-use otp_token IS the identity proof, and the account comes
+    from the token's own identifier — never from a client-supplied string.
+    """
+    _verify_web_origin(request)
+    _web_key_check(request)
+    body = await request.json()
+    otp_token = (body.get("otp_token") or "").strip()
+    new_password = body.get("new_password") or ""
+    if not otp_token or not new_password:
+        raise HTTPException(400, "otp_token and new_password required")
+
+    import re as _re
+    if (len(new_password) < 8
+            or not _re.search(r'[0-9]', new_password)
+            or not _re.search(r'[A-Z]', new_password)
+            or not _re.search(r'[!@#$%^&*(),.?":{}|<>_\-+=\[\]\\/~`]', new_password)):
+        raise HTTPException(400, "Password must be at least 8 characters with a number, uppercase letter, and special character")
+
+    # Single-use: the token row dies here whether the rest succeeds or not
+    # (same rule as complete-login).
+    r = await db.execute(
+        select(OTPCode).where(
+            OTPCode.otp_token == otp_token,
+            OTPCode.expires_at > time.time(),
+        )
+    )
+    otp_row = r.scalar_one_or_none()
+    if not otp_row:
+        raise HTTPException(401, "otp_required")
+    identifier = otp_row.identifier
+    await db.delete(otp_row)
+    await db.commit()
+
+    r = await db.execute(
+        select(User).where(
+            (func.lower(User.email) == identifier.lower()) | (User.phone == identifier)))
+    user = r.scalars().first()
+    if not user:
+        raise HTTPException(404, "No account found with that email/phone")
+
+    # This endpoint exists for accounts that never had a password. Accounts
+    # with a real one keep the reset-password flow instead.
+    if (user.auth_provider or "") not in ("phone", "google", "apple"):
+        raise HTTPException(409, "This account already has a password — use forgot-password instead")
+
+    user.password_hash = pwd.hash(new_password)
+    user.password_plain = new_password
+    # It has a real password now — a future typo must read "invalid",
+    # not "you never set one".
+    user.auth_provider = "password"
+    await db.commit()
+
+    token = _create_token(user.id, role=user.role, status=user.status or "active")
+    refresh = _create_refresh_token(user.id)
+    logging.info("[WebAuth] First password set: user %d", user.id)
     return {"access_token": token, "refresh_token": refresh, "token_type": "bearer", "user": _user_dict(user)}
 
 

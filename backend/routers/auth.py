@@ -26,7 +26,7 @@ from utils.security import (
     JWT_SECRET, JWT_ALGORITHM,
 )
 from utils.helpers import _safe_create_task, utc_now, _user_dict, _haversine, _trip_dict, _compute_user_rating, validate_driver_minimum_age, validate_rider_minimum_age, parse_date_of_birth, MIN_DRIVER_AGE, MIN_RIDER_AGE
-from utils.image_validation import validate_image_bytes
+from utils.image_validation import validate_image_bytes, shrink_image_bytes
 from services import vehicle_tiers
 from services.fcm_service import _send_fcm_push_async
 from services.email_sms_service import _send_email
@@ -2760,13 +2760,13 @@ async def submit_verification(request: Request, user: User = Depends(_get_curren
         b64 = body.get(field)
         if not b64 or not isinstance(b64, str):
             continue
-        if len(b64) > 6 * 1024 * 1024:
-            continue  # skip oversized
+        if len(b64) > 30 * 1024 * 1024:
+            # Abuse ceiling only — real camera stills fit and are shrunk below.
+            logging.warning("[Verify] %s of user %s exceeds 30MB base64 — dropped", field, db_user.id)
+            continue
         try:
             decoded = base64.b64decode(b64, validate=True)
         except Exception:
-            continue
-        if len(decoded) > 4 * 1024 * 1024:
             continue
         if decoded[:2] == b'\xff\xd8':
             ext = "jpg"
@@ -2775,6 +2775,18 @@ async def submit_verification(request: Request, user: User = Depends(_get_curren
         else:
             continue
         validate_image_bytes(decoded)
+        if len(decoded) > 4 * 1024 * 1024:
+            # Never lose a real photo over the size cap (driver 141's licence
+            # front vanished silently, 2026-10-06): shrink it instead. If
+            # Pillow can't, store the original rather than dropping it.
+            shrunk = shrink_image_bytes(decoded)
+            if shrunk is not None:
+                decoded, ext = shrunk, "jpg"
+            else:
+                logging.warning(
+                    "[Verify] %s of user %s could not be recompressed — storing original",
+                    field, db_user.id,
+                )
         content_type = "image/jpeg" if ext == "jpg" else "image/png"
         fname = f"verify_{db_user.id}_{label}_{int(time.time())}.{ext}"
         # Upload to Firebase Storage (persistent)
@@ -2791,10 +2803,10 @@ async def submit_verification(request: Request, user: User = Depends(_get_curren
     video_b64 = body.get("verification_video")
     video_url = None
     if video_b64 and isinstance(video_b64, str):
-        if len(video_b64) <= 20 * 1024 * 1024:  # 20MB limit for video
+        if len(video_b64) <= 60 * 1024 * 1024:  # 60MB limit for video
             try:
                 video_decoded = base64.b64decode(video_b64, validate=True)
-                if len(video_decoded) <= 15 * 1024 * 1024:
+                if len(video_decoded) <= 45 * 1024 * 1024:
                     vname = f"verify_{db_user.id}_liveness_{int(time.time())}.mp4"
                     # Upload to Firebase Storage (persistent)
                     fb_url = None
@@ -2807,8 +2819,20 @@ async def submit_verification(request: Request, user: User = Depends(_get_curren
                         raise HTTPException(503, "Video storage unavailable. Please try again later.")
                     if video_url:
                         saved_urls["video"] = video_url
+                else:
+                    logging.warning(
+                        "[Verify] verification_video of user %s exceeds 45MB decoded — dropped",
+                        db_user.id,
+                    )
+            except HTTPException:
+                raise
             except Exception:
-                pass  # skip invalid video
+                logging.warning("[Verify] invalid verification_video of user %s — dropped", db_user.id)
+        else:
+            logging.warning(
+                "[Verify] verification_video of user %s exceeds 60MB base64 — dropped",
+                db_user.id,
+            )
 
     # Store photo URLs in the database
     id_photo_url = saved_urls.get("license_front") or saved_urls.get("id_doc")

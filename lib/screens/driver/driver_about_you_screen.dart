@@ -6,6 +6,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../config/page_transitions.dart';
 import '../../l10n/app_localizations.dart';
 import '../../services/api_service.dart';
+import '../../services/meta_app_events_service.dart';
 import 'onboarding/onboarding_intro_flow_screen.dart';
 
 /// Driver onboarding — Phase 2, step 2 ("Tell us about yourself").
@@ -98,6 +99,11 @@ class _DriverAboutYouScreenState extends State<DriverAboutYouScreen> {
           'income_role': _incomeRole,
         }),
       });
+      if (!mounted) return;
+      // Meta App Events: end of the initial registration ladder — the
+      // backend confirmed this final step. Fires once (pushAndRemoveUntil).
+      await MetaAppEventsService.logDriverRegistrationComplete(
+          'driver_signup_phone');
       if (!mounted) return;
       // The per-item intro sequence runs before the hub on every
       // registration (no once-per-device latch since 2026-08-25).

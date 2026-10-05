@@ -71,6 +71,11 @@ dependencies:
   firebase_crashlytics: ^4.3.10
   firebase_analytics: ^11.6.0
   firebase_remote_config: ^5.5.0
+  # Meta/Facebook App Events — campaign attribution for driver acquisition.
+  # Android: the Facebook SDK auto-initializes from the manifest meta-data
+  # (App ID in strings.xml, Client Token via the META_CLIENT_TOKEN manifest
+  # placeholder); there is no Dart-side initialization.
+  facebook_app_events: ^0.30.5
   google_sign_in: ^6.2.2
   sign_in_with_apple: ^6.1.4
   intl: ^0.20.2

@@ -92,6 +92,12 @@ android {
         manifestPlaceholders["MAPBOX_ACCESS_TOKEN"] =
             System.getenv("MAPBOX_ACCESS_TOKEN")
                 ?: localProperties.getProperty("MAPBOX_ACCESS_TOKEN", "")
+        // Meta/Facebook Client Token — local.properties (dev) or CI env.
+        // The placeholder default keeps debug builds compiling without it;
+        // Meta will not accept events until the real token is set.
+        manifestPlaceholders["META_CLIENT_TOKEN"] =
+            System.getenv("META_CLIENT_TOKEN")
+                ?: localProperties.getProperty("META_CLIENT_TOKEN", "YOUR_META_CLIENT_TOKEN")
 
         applicationId = "com.cruiseinride.app"
         minSdk = 26

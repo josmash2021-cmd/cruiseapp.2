@@ -15,6 +15,7 @@ import '../../config/app_theme.dart';
 import '../../config/page_transitions.dart';
 import '../../services/api_service.dart';
 import '../../services/local_data_service.dart';
+import '../../services/meta_app_events_service.dart';
 import '../../services/user_session.dart';
 import '../../widgets/neu_style.dart';
 import '../face_liveness_screen.dart';
@@ -970,6 +971,11 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
 
     if (!mounted) return;
     setState(() => _submitting = false);
+
+    // Meta App Events: the backend confirmed the registration (any failure
+    // above returns early); fires once — this screen navigates away.
+    await MetaAppEventsService.logDriverRegistrationComplete('driver_signup');
+    if (!mounted) return;
 
     Navigator.of(context).pushAndRemoveUntil(
       slideFromRightRoute(const DriverPendingReviewScreen()),

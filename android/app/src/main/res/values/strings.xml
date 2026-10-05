@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Meta/Facebook App Events. The App ID is public (it ships in the
+         binary); the Client Token is NOT stored here — it is injected via
+         the META_CLIENT_TOKEN manifest placeholder from local.properties
+         (dev) or the META_CLIENT_TOKEN env var (Codemagic CI). -->
+    <string name="facebook_app_id">4047536632047501</string>
+</resources>

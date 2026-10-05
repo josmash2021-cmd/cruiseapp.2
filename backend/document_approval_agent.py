@@ -219,7 +219,8 @@ class DocumentApprovalAgent:
                     if driver.fcm_token:
                         self._send_rejection_push(
                             driver, doc.doc_type,
-                            "No se detectó archivo. Por favor sube el documento nuevamente."
+                            "No se detectó archivo. Por favor sube el documento nuevamente.",
+                            reason_en="No file detected. Please upload the document again.",
                         )
                     continue
 
@@ -238,7 +239,8 @@ class DocumentApprovalAgent:
                     if driver.fcm_token:
                         self._send_rejection_push(
                             driver, doc.doc_type,
-                            "Hubo un error con tu archivo. Por favor súbelo nuevamente."
+                            "Hubo un error con tu archivo. Por favor súbelo nuevamente.",
+                            reason_en="There was a problem with your file. Please upload it again.",
                         )
                     continue
 
@@ -540,19 +542,27 @@ class DocumentApprovalAgent:
     #  PUSH NOTIFICATIONS
     # ══════════════════════════════════════════════════════════════════
 
+    # The driver's phone language decides push copy (users.locale, reported
+    # by the app at boot); Spanish default = the historical behaviour.
+    @staticmethod
+    def _es(driver) -> bool:
+        return (getattr(driver, "locale", None) or "es").lower().startswith("es")
+
     def _send_approval_push(self, driver, doc_type: str):
         """Notify driver that a vehicle document was approved."""
         try:
             from services.fcm_service import _send_fcm_push
+            es = self._es(driver)
             doc_names = {
-                "insurance": "Seguro del vehículo",
-                "registration": "Registro del vehículo",
+                "insurance": ("Seguro del vehículo", "Vehicle insurance"),
+                "registration": ("Registro del vehículo", "Vehicle registration"),
             }
-            doc_name = doc_names.get(doc_type, doc_type)
+            doc_name = (doc_names.get(doc_type) or (doc_type, doc_type))[0 if es else 1]
             _send_fcm_push(
                 driver.fcm_token,
-                title=f"✅ {doc_name} aprobado",
-                body=f"Tu {doc_name.lower()} ha sido verificado y aprobado.",
+                title=(f"✅ {doc_name} aprobado" if es else f"✅ {doc_name} approved"),
+                body=(f"Tu {doc_name.lower()} ha sido verificado y aprobado." if es else
+                      f"Your {doc_name.lower()} was verified and approved."),
                 data={
                     "type": "vehicle_doc_approved",
                     "doc_type": doc_type,
@@ -562,19 +572,20 @@ class DocumentApprovalAgent:
         except Exception as e:
             logger.warning("[DocApproval] Approval push failed: %s", e)
 
-    def _send_rejection_push(self, driver, doc_type: str, reason: str):
+    def _send_rejection_push(self, driver, doc_type: str, reason: str, reason_en: str | None = None):
         """Notify driver that a vehicle document was rejected."""
         try:
             from services.fcm_service import _send_fcm_push
+            es = self._es(driver)
             doc_names = {
-                "insurance": "Seguro del vehículo",
-                "registration": "Registro del vehículo",
+                "insurance": ("Seguro del vehículo", "Vehicle insurance"),
+                "registration": ("Registro del vehículo", "Vehicle registration"),
             }
-            doc_name = doc_names.get(doc_type, doc_type)
+            doc_name = (doc_names.get(doc_type) or (doc_type, doc_type))[0 if es else 1]
             _send_fcm_push(
                 driver.fcm_token,
-                title=f"❌ {doc_name} rechazado",
-                body=reason,
+                title=(f"❌ {doc_name} rechazado" if es else f"❌ {doc_name} rejected"),
+                body=(reason if es else (reason_en or reason)),
                 data={
                     "type": "vehicle_doc_rejected",
                     "doc_type": doc_type,
@@ -589,11 +600,14 @@ class DocumentApprovalAgent:
         """Notify driver that ALL vehicle documents are approved — ready to drive."""
         try:
             from services.fcm_service import _send_fcm_push
+            es = self._es(driver)
             _send_fcm_push(
                 driver.fcm_token,
-                title="🚗 ¡Documentos completos!",
-                body="Todos tus documentos de vehículo están aprobados. "
-                     "Ya puedes conectarte y comenzar a recibir viajes.",
+                title="🚗 ¡Documentos completos!" if es else "🚗 Documents complete!",
+                body=("Todos tus documentos de vehículo están aprobados. "
+                      "Ya puedes conectarte y comenzar a recibir viajes." if es else
+                      "All your vehicle documents are approved. "
+                      "You can go online and start receiving rides now."),
                 data={
                     "type": "all_vehicle_docs_approved",
                     "driver_id": str(driver.id),
@@ -622,10 +636,12 @@ class DocumentApprovalAgent:
         if driver.fcm_token:
             try:
                 from services.fcm_service import _send_fcm_push
+                es = self._es(driver)
                 _send_fcm_push(
                     driver.fcm_token,
-                    title="✅ ¡Cuenta verificada!",
-                    body="Tus documentos han sido aprobados. Ya puedes conducir.",
+                    title="✅ ¡Cuenta verificada!" if es else "✅ Account verified!",
+                    body=("Tus documentos han sido aprobados. Ya puedes conducir." if es else
+                          "Your documents were approved. You can start driving now."),
                     data={"type": "verification_approved", "driver_id": str(driver.id)},
                 )
             except Exception as e:
@@ -663,11 +679,14 @@ class DocumentApprovalAgent:
         if driver.fcm_token:
             try:
                 from services.fcm_service import _send_fcm_push
-                friendly = reasons[0] if reasons else "Documentación incompleta"
+                es = self._es(driver)
+                friendly = reasons[0] if reasons else (
+                    "Documentación incompleta" if es else "Incomplete documentation")
                 _send_fcm_push(
                     driver.fcm_token,
-                    title="❌ Verificación rechazada",
-                    body=f"Motivo: {friendly}. Corrige y envía nuevamente.",
+                    title="❌ Verificación rechazada" if es else "❌ Verification rejected",
+                    body=(f"Motivo: {friendly}. Corrige y envía nuevamente." if es else
+                          f"Reason: {friendly}. Fix it and submit again."),
                     data={"type": "verification_rejected", "reason": friendly, "driver_id": str(driver.id)},
                 )
             except Exception as e:

@@ -1500,6 +1500,9 @@ class _AddDebitCardSheetState extends State<_AddDebitCardSheet> {
       }
       Navigator.pop(context, token.id);
     } on stripe.StripeException catch (e) {
+      debugPrint('[AddDebitCard] StripeException code=${e.error.code} '
+          'localized=${e.error.localizedMessage} message=${e.error.message} '
+          'stripeCode=${e.error.stripeErrorCode}');
       if (!mounted) return;
       if (e.error.code == stripe.FailureCode.Canceled) {
         Navigator.pop(context);
@@ -1507,10 +1510,21 @@ class _AddDebitCardSheetState extends State<_AddDebitCardSheet> {
       }
       setState(() {
         _submitting = false;
-        _error = e.error.localizedMessage ?? S.of(context).failedToAddMethod;
+        _error = e.error.localizedMessage ??
+            e.error.message ??
+            S.of(context).failedToAddMethod;
+      });
+    } on stripe.StripeError catch (e) {
+      // Mismo motivo que AddBankAccountScreen: el SDK relanza como
+      // StripeError y el mensaje real nunca llegaba a la UI.
+      debugPrint('[AddDebitCard] StripeError: ${e.message}');
+      if (!mounted) return;
+      setState(() {
+        _submitting = false;
+        _error = e.message;
       });
     } catch (e) {
-      debugPrint('[AddDebitCard] createToken error: $e');
+      debugPrint('[AddDebitCard] unexpected ${e.runtimeType}: $e');
       if (!mounted) return;
       setState(() {
         _submitting = false;

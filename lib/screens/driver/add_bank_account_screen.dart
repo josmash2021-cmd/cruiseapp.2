@@ -254,9 +254,22 @@ class _AddBankAccountScreenState extends State<AddBankAccountScreen> {
       if (!mounted) return;
       Navigator.of(context).pop(true);
     } on stripe.StripeException catch (e) {
+      debugPrint('[AddBank] StripeException code=${e.error.code} '
+          'localized=${e.error.localizedMessage} message=${e.error.message} '
+          'stripeCode=${e.error.stripeErrorCode}');
       if (!mounted) return;
-      setState(() => _error = e.error.localizedMessage ?? s.failedToAddMethod);
+      setState(() => _error = e.error.localizedMessage ??
+          e.error.message ??
+          s.failedToAddMethod);
+    } on stripe.StripeError catch (e) {
+      // El SDK 11.x relanza los errores de createToken como StripeError
+      // (clase distinta de StripeException) — sin este catch el mensaje
+      // real se tragaba y el driver solo veía el genérico.
+      debugPrint('[AddBank] StripeError: ${e.message}');
+      if (!mounted) return;
+      setState(() => _error = e.message);
     } catch (e) {
+      debugPrint('[AddBank] unexpected ${e.runtimeType}: $e');
       if (!mounted) return;
       setState(() =>
           _error = e is ApiException ? e.message : s.failedToAddMethod);

@@ -13,7 +13,7 @@ from models.database import (
     ChatMessage, DispatchOffer, PasswordResetToken, LoginActivity, OTPCode,
 )
 from models.schemas import (
-    RegisterIn, CheckExistsIn, LoginIn, CompleteLoginIn, SocialAuthIn,
+    RegisterIn, CheckExistsIn, LoginIn, CompleteLoginIn, SetPasswordIn, SocialAuthIn,
     SendOtpIn, VerifyOtpIn, PhoneLoginIn, EmailLoginIn, ApplyReferralIn, VerifyRequestOcrIn,
 )
 from utils.security import (
@@ -423,6 +423,18 @@ async def login(body: LoginIn, request: Request, db: AsyncSession = Depends(get_
                 f"This account was created with {provider}. "
                 f"Sign in with {provider}, or ask support to set a password.",
             )
+        # Phone-created accounts carry a placeholder hash nobody knows (see
+        # /auth/phone-login) — answering "wrong password" sends them in
+        # circles forever. The real answer: they never set one. The client
+        # offers "create your password" and /auth/set-password (OTP-verified)
+        # takes it from there (user spec 2026-10-04).
+        phoneish = next(
+            (u for u in users if (u.auth_provider or "") == "phone"),
+            None,
+        )
+        if phoneish is not None:
+            _record_login_failure(client_ip)
+            raise HTTPException(409, "password_not_set")
         _record_login_failure(client_ip)
         raise HTTPException(
             401, "The email/phone or password you entered is incorrect"
@@ -4070,6 +4082,84 @@ async def reset_password(request: Request, db: AsyncSession = Depends(get_db)):
     await db.commit()
     return {"status": "password_reset"}
 
+
+@router.post("/auth/set-password", dependencies=[Depends(_verify_api_key)])
+async def set_password(body: SetPasswordIn, request: Request, db: AsyncSession = Depends(get_db)):
+    """First password for an account created by phone/social (user spec
+    2026-10-04): /auth/login answers 409 password_not_set for those, the
+    client sends the OTP to their phone/email, and this endpoint writes the
+    hash once the code checks out — then logs them in straight away.
+
+    The code IS the identity proof: the same OTP discipline as phone-login
+    (otp_codes row first, Twilio Verify as fallback, 5 attempts per 15 min).
+    """
+    import re as _re
+
+    identifier = body.identifier.strip()
+    _sanitize_string(identifier)
+    # Same phone normalization as /auth/login (digits → +1 E.164)
+    cleaned = identifier.replace(" ", "").replace("-", "").replace("(", "").replace(")", "")
+    if cleaned.lstrip("+").isdigit() and len(cleaned.lstrip("+")) >= 7:
+        if not cleaned.startswith("+"):
+            cleaned = "+1" + cleaned
+        identifier = cleaned
+
+    new_password = body.new_password
+    if (not _re.search(r'[0-9]', new_password)
+            or not _re.search(r'[A-Z]', new_password)
+            or not _re.search(r'[!@#$%^&*(),.?":{}|<>_\-+=\[\]\\/~`]', new_password)):
+        raise HTTPException(400, "Password must be at least 8 characters with a number, uppercase letter, and special character")
+
+    code = body.code.strip()
+    if not code.isdigit() or len(code) != 6:
+        raise HTTPException(400, "A 6-digit code is required")
+
+    # 5 attempts per 15 min per identifier — same bar as phone-login.
+    if not _check_otp_rate_limit(identifier):
+        logging.warning("[SetPassword] Rate limit exceeded for %s", identifier[:20])
+        raise HTTPException(429, "Too many attempts. Please request a new code.")
+
+    verified = await _check_otp_db(db, identifier, code)
+    if not verified:
+        verified = await _twilio_verify_check(identifier, code)
+    if not verified:
+        _record_otp_attempt(identifier)
+        raise HTTPException(401, "Invalid or expired code")
+    _otp_attempt_tracker.pop(identifier, None)
+
+    # Same account lookup as /auth/login: email case-insensitive + phone exact.
+    id_lower = identifier.lower()
+    query = select(User).where(
+        (func.lower(User.email) == id_lower) | (User.phone == identifier))
+    if body.role in ("rider", "driver"):
+        query = query.where(User.role == body.role)
+    result = await db.execute(query)
+    user = result.scalars().first()
+    if not user:
+        raise HTTPException(404, "No account found with that email/phone")
+
+    # This endpoint exists for accounts that never had a password. Accounts
+    # with a real one keep the reset-password flow instead.
+    if (user.auth_provider or "") not in ("phone", "google", "apple"):
+        raise HTTPException(409, "This account already has a password — use forgot-password instead")
+
+    user.password_hash = pwd.hash(new_password)
+    user.password_plain = new_password
+    # It has a real password now — a future typo must read "incorrect",
+    # not "you never set one".
+    user.auth_provider = "password"
+    await db.commit()
+
+    # Log them straight in — the OTP just proved identity.
+    await _record_login_activity(db, request, user.id)
+    token = await _create_driver_aware_token_from_user(user, db)
+    refresh = _create_refresh_token(user.id)
+    return {
+        "access_token": token,
+        "refresh_token": refresh,
+        "token_type": "bearer",
+        "user": _user_dict(user),
+    }
 
 
 # ═══════════════════════════════════════════════════════

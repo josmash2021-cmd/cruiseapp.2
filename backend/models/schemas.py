@@ -92,6 +92,15 @@ class CompleteLoginIn(BaseModel):
     login_token: str
 
 
+class SetPasswordIn(BaseModel):
+    """First password for an account created by phone/social (never had
+    one). Identity is proven by the OTP already sent to that phone/email."""
+    identifier: str  # email or phone, same normalization as login
+    code: str
+    new_password: str = Field(min_length=8, max_length=128)
+    role: Optional[str] = None
+
+
 class SocialAuthIn(BaseModel):
     provider: str
     id_token: str

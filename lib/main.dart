@@ -1189,6 +1189,20 @@ Future<void> heavyInit() async {
       }
     }(),
 
+    // ── Notification language ──
+    // The phone's locale decides the language of pushes (doc review, etc.).
+    // Reported on every cold start; the backend keeps the last one seen.
+    () async {
+      try {
+        if (!kIsWeb && await ApiService.getToken() != null) {
+          final lc = PlatformDispatcher.instance.locale.languageCode;
+          await ApiService.updateMe({'locale': lc.startsWith('es') ? 'es' : 'en'});
+        }
+      } catch (e) {
+        debugPrint('[Locale] report failed: $e');
+      }
+    }(),
+
     // ── Firebase + Messaging ──
     // NOTE: Firebase.initializeApp() and anonymous auth are already done
     // in main() Group 1. We only set up FCM handlers here.

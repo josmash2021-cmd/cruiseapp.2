@@ -43,35 +43,40 @@ _DOC_TO_ITEM = {
     "inspection": "inspection",
 }
 
-# Push copy per document (ES — the driver app's doc pushes are already
-# Spanish, e.g. "Documento rechazado"). Gender agreement is per noun, so
-# each entry carries its full title instead of a shared template.
+# Push copy per document, per language (2026-10-05, user spec: the phone's
+# language decides). Gender agreement is per noun, so each entry carries its
+# full title instead of a shared template.
 _DOC_COPY = {
-    "license": (
-        "✅ Licencia aprobada",
-        "Tu licencia de conducir fue aprobada.",
-        "❌ Licencia rechazada",
-    ),
-    "insurance": (
-        "✅ Seguro aprobado",
-        "El seguro de tu vehículo fue aprobado.",
-        "❌ Seguro rechazado",
-    ),
-    "registration": (
-        "✅ Registración aprobada",
-        "La registración de tu vehículo fue aprobada.",
-        "❌ Registración rechazada",
-    ),
-    "inspection": (
-        "✅ Inspección aprobada",
-        "La inspección de tu vehículo fue aprobada.",
-        "❌ Inspección rechazada",
-    ),
-    "background": (
-        "✅ Antecedentes aprobados",
-        "Tu verificación de antecedentes fue aprobada.",
-        "❌ Antecedentes rechazados",
-    ),
+    "license": {
+        "es": ("✅ Licencia aprobada", "Tu licencia de conducir fue aprobada.",
+               "❌ Licencia rechazada"),
+        "en": ("✅ License approved", "Your driver's license was approved.",
+               "❌ License rejected"),
+    },
+    "insurance": {
+        "es": ("✅ Seguro aprobado", "El seguro de tu vehículo fue aprobado.",
+               "❌ Seguro rechazado"),
+        "en": ("✅ Insurance approved", "Your vehicle's insurance was approved.",
+               "❌ Insurance rejected"),
+    },
+    "registration": {
+        "es": ("✅ Registración aprobada", "La registración de tu vehículo fue aprobada.",
+               "❌ Registración rechazada"),
+        "en": ("✅ Registration approved", "Your vehicle's registration was approved.",
+               "❌ Registration rejected"),
+    },
+    "inspection": {
+        "es": ("✅ Inspección aprobada", "La inspección de tu vehículo fue aprobada.",
+               "❌ Inspección rechazada"),
+        "en": ("✅ Inspection approved", "Your vehicle's inspection was approved.",
+               "❌ Inspection rejected"),
+    },
+    "background": {
+        "es": ("✅ Antecedentes aprobados", "Tu verificación de antecedentes fue aprobada.",
+               "❌ Antecedentes rechazados"),
+        "en": ("✅ Background check approved", "Your background check was approved.",
+               "❌ Background check rejected"),
+    },
 }
 
 
@@ -89,7 +94,10 @@ async def notify_document_reviewed(
     """Tell the driver INSTANTLY: one FCM push + one socket event per
     document decision. Fail-soft — a push failure never breaks the review."""
     item = doc_to_onboarding_item(doc_type) or doc_type or "document"
-    copy = _DOC_COPY.get(item, _DOC_COPY["license"])
+    # The driver's phone language decides (users.locale, reported by the app
+    # at boot); Spanish is the default — the historical behaviour.
+    es = (getattr(user, "locale", None) or "es").lower().startswith("es")
+    copy = _DOC_COPY.get(item, _DOC_COPY["license"])["es" if es else "en"]
     try:
         await notify_user(
             user.id,
@@ -109,9 +117,14 @@ async def notify_document_reviewed(
                 title, body = copy[0], copy[1]
             else:
                 title = copy[2]
-                body = (f"Motivo: {reason}. Corrígelo y reenvíalo desde tu "
-                        "lista To-do." if reason else
-                        "Corrígelo y reenvíalo desde tu lista To-do.")
+                if es:
+                    body = (f"Motivo: {reason}. Corrígelo y reenvíalo desde tu "
+                            "lista To-do." if reason else
+                            "Corrígelo y reenvíalo desde tu lista To-do.")
+                else:
+                    body = (f"Reason: {reason}. Fix it and resend it from your "
+                            "To-do list." if reason else
+                            "Fix it and resend it from your To-do list.")
             await _send_fcm_push_async(
                 user.fcm_token,
                 title,

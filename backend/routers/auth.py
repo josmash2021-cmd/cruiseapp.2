@@ -1808,6 +1808,11 @@ async def update_me(request: Request, user: User = Depends(_get_current_user), d
     for key in _DEVICE_FIELDS:
         if key in updates:
             setattr(db_user, key, updates[key])
+    # Notification language (2026-10-05, user spec): the app reports the
+    # device locale at boot; normalized to the two languages we ship copy in.
+    if "locale" in updates and updates["locale"] is not None:
+        _loc = str(updates["locale"]).strip().lower()
+        db_user.locale = "es" if _loc.startswith("es") else "en"
     # Update privacy preferences
     for key in _PRIVACY_FIELDS:
         if key in updates:

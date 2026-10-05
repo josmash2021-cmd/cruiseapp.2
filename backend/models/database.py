@@ -273,6 +273,12 @@ class User(Base):
     # offline→online flip, cleared going offline. The ghost agent caps shifts
     # at 12 h (user spec: "la app no puede quedar prendida mas de 12 horas").
     online_since = Column(DateTime(timezone=True), nullable=True)
+    # Notification language (2026-10-05, user spec): the app reports the
+    # device locale at every boot (PATCH /auth/me) and notifications read it
+    # — a Spanish phone gets Spanish pushes, an English one English.
+    # "es" default preserves the historical behaviour (the document pushes
+    # were Spanish-only) until the app reports otherwise.
+    locale = Column(String(5), default="es")
 
 
 class ConsentLog(Base):
@@ -1101,6 +1107,9 @@ async def migrate_add_columns(conn):
         # gets it (trampa #0).
         ("users", "date_of_birth", "DATE"),
         ("users", "online_since", "DATETIME"),
+        # Notification language reported by the app (2026-10-05) — boot lists
+        # or prod never gets it (trampa #0).
+        ("users", "locale", "VARCHAR(5) DEFAULT 'es'"),
     ]
     for table, col, col_type in new_columns:
         try:
@@ -1325,6 +1334,9 @@ async def migrate_postgres(conn):
         # (trampa #0).
         ("users", "date_of_birth", "DATE"),
         ("users", "online_since", "TIMESTAMP WITH TIME ZONE"),
+        # Notification language reported by the app (2026-10-05) — boot list
+        # or prod never gets it (trampa #0).
+        ("users", "locale", "VARCHAR(5) DEFAULT 'es'"),
     ]
     for table, col, col_type in migrations:
         try:

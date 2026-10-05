@@ -361,6 +361,24 @@ def _payments_context_block(active_trip, recent) -> dict:
     return {"active_hold": active_hold, "recent": last}
 
 
+# Human names for onboarding items / document types, (ES, EN) — the bot
+# quotes these verbatim to the driver and the chat-filing flow confirms with
+# them, so one map serves both.
+_DOC_LABELS = {
+    "license": ("licencia de conducir", "driver's license"),
+    "drivers_license": ("licencia de conducir", "driver's license"),
+    "insurance": ("seguro del vehículo", "vehicle insurance"),
+    "registration": ("registración del vehículo", "vehicle registration"),
+    "inspection": ("inspección del vehículo", "vehicle inspection"),
+    "vehicle_inspection": ("inspección del vehículo", "vehicle inspection"),
+    "photo": ("foto de perfil", "profile photo"),
+    "plate": ("placa", "license plate"),
+    "ssn": ("SSN", "SSN"),
+    "background": ("background check", "background check"),
+    "vehicle": ("vehículo", "vehicle"),
+}
+
+
 async def _driver_context_block(user_id: int, db: AsyncSession) -> dict:
     """The driver's work picture for the prompt: earnings, next payout,
     vehicle + tier, and document statuses. Fail-soft on every piece."""
@@ -398,7 +416,7 @@ async def _driver_context_block(user_id: int, db: AsyncSession) -> dict:
     try:
         from models.database import Vehicle
         v_r = await db.execute(
-            select(Vehicle).where(Vehicle.driver_id == user_id)
+            select(Vehicle).where(Vehicle.user_id == user_id)
             .order_by(Vehicle.is_active.desc(), Vehicle.id.desc()).limit(1)
         )
         v = v_r.scalar_one_or_none()
@@ -408,6 +426,7 @@ async def _driver_context_block(user_id: int, db: AsyncSession) -> dict:
                 "model": getattr(v, "model", "") or "",
                 "year": getattr(v, "year", None),
                 "tier": getattr(v, "vehicle_type", None) or "standard",
+                "approval": getattr(v, "approval_status", None),
             }
     except Exception as e:
         logging.warning("[support] vehicle block failed: %s", e)
@@ -422,6 +441,32 @@ async def _driver_context_block(user_id: int, db: AsyncSession) -> dict:
                 {"type": k, "status": (v or {}).get("status", "unknown")}
                 for k, v in (items or {}).items() if isinstance(v, dict)
             ]
+            # Activation summary (2026-10-12): the same onboarding items
+            # regrouped the way a "actívame la cuenta" question needs them —
+            # what is missing, what waits on review, what bounced and why.
+            missing, under_review, rejected, approved = [], [], [], []
+            for k, v in (items or {}).items():
+                if not isinstance(v, dict):
+                    continue
+                entry = {"item": k, "label": _DOC_LABELS.get(k, (k, k))}
+                st = v.get("status")
+                if st == "pending":
+                    missing.append(entry)
+                elif st == "submitted":
+                    under_review.append(entry)
+                elif st == "rejected":
+                    rejected.append({**entry, "reason": v.get("reason")})
+                elif st == "approved":
+                    approved.append(entry)
+            out["activation"] = {
+                "account_approved": bool(db_user.is_verified)
+                and db_user.verification_status == "approved",
+                "background_check": db_user.background_check_status or "none",
+                "missing": missing,
+                "under_review": under_review,
+                "rejected": rejected,
+                "approved": approved,
+            }
     except Exception as e:
         logging.warning("[support] docs block failed: %s", e)
 
@@ -2568,6 +2613,136 @@ async def list_all_support_chats(db: AsyncSession = Depends(get_db)):
 # URL on the way out.
 _ATTACH_PREFIX = "||ATT||"
 
+# ── Filing a chat attachment as a driver document (2026-10-12) ──────────────
+# A driver asking "actívame la cuenta" can send the missing document right
+# here. Deterministic rules, not the model: the file goes through the same
+# pipeline as an in-app upload, so dispatch's review queue sees it like any
+# other document.
+_CHAT_DOC_KEYWORDS = (
+    ("drivers_license", ("licencia", "license", "licence")),
+    ("insurance", ("seguro", "insurance")),
+    ("registration", ("registraci", "registration")),
+    ("vehicle_inspection", ("inspecci", "inspection")),
+)
+_CHAT_BACK_KEYWORDS = ("reverso", "atrás", "atras", "trasera", "trasero", "back")
+# Onboarding item key → Document doc_type. Only file-able documents — plate,
+# ssn, background and vehicle are data, and the photo goes through the face
+# flow.
+_ITEM_TO_DOC_TYPE = {
+    "license": "drivers_license",
+    "insurance": "insurance",
+    "registration": "registration",
+    "inspection": "vehicle_inspection",
+}
+
+
+def _doc_match_from_text(text: str) -> str | None:
+    for doc_type, keywords in _CHAT_DOC_KEYWORDS:
+        if any(k in text for k in keywords):
+            return doc_type
+    return None
+
+
+async def _bot_say(chat, db: AsyncSession, text: str) -> None:
+    msg = SupportMessage(chat_id=chat.id, sender_id=None, sender_role="bot", message=text)
+    db.add(msg)
+    await db.commit()
+    await db.refresh(msg)
+    if _HAS_FIRESTORE:
+        try:
+            firestore_sync.sync_support_message(
+                chat.id, msg.id, 0, chat.agent_name or "Agente", "bot", text
+            )
+        except Exception as e:
+            logging.warning("[support] bot doc-file message sync failed: %s", e)
+
+
+async def _maybe_file_chat_document(chat, user: User, data: bytes, db: AsyncSession) -> None:
+    """File a support-chat attachment onto the driver's profile when it is
+    clearly a document they owe.
+
+    Never demotes a document already on file, and never guesses between
+    several missing ones — it asks. Riders and unclear cases keep the old
+    behaviour: the attachment simply sits in the chat.
+    """
+    from routers.auth import _derive_onboarding_items
+    from routers.drivers import _store_driver_document
+
+    items = await _derive_onboarding_items(db, user)
+    actionable = [
+        (item_key, doc_type)
+        for item_key, doc_type in _ITEM_TO_DOC_TYPE.items()
+        if (items.get(item_key) or {}).get("status") in ("pending", "rejected")
+    ]
+    is_es = (getattr(chat, "locale", "en") or "en").startswith("es")
+
+    # What were they just talking about — the last few lines they wrote
+    # (excluding the attachment markers themselves).
+    r = await db.execute(
+        select(SupportMessage)
+        .where(SupportMessage.chat_id == chat.id, SupportMessage.sender_role == "driver")
+        .order_by(SupportMessage.created_at.desc()).limit(3)
+    )
+    recent = " ".join(
+        (m.message or "").lower() for m in r.scalars().all()
+        if not (m.message or "").startswith(_ATTACH_PREFIX)
+    )
+    named = _doc_match_from_text(recent)
+
+    def _label(dt: str) -> str:
+        pair = _DOC_LABELS.get(dt, (dt, dt))
+        return pair[0] if is_es else pair[1]
+
+    if named:
+        owed = {dt for _, dt in actionable}
+        if named not in owed:
+            # Named one that is not owed — never demote a doc already on file.
+            lbl = _label(named)
+            await _bot_say(chat, db,
+                f"Ya tengo tu {lbl} — no hace falta volver a enviarlo." if is_es else
+                f"I already have your {lbl} on file — no need to send it again.")
+            return
+        doc_type = named
+    elif len(actionable) == 1:
+        doc_type = actionable[0][1]
+    elif actionable:
+        names = ", ".join(_label(dt) for _, dt in actionable)
+        await _bot_say(chat, db,
+            f"¿De cuál documento se trata la foto? Te faltan: {names}. Dime cuál es y lo pongo en revisión de una vez." if is_es else
+            f"Which document is this photo of? You're missing: {names}. Tell me which one and I'll place it for review right away.")
+        return
+    else:
+        # Nothing owed — a screenshot or something for a human. Same silence
+        # as before this flow existed.
+        return
+
+    if doc_type == "drivers_license":
+        if any(k in recent for k in _CHAT_BACK_KEYWORDS):
+            side = "back"
+        else:
+            side = "front" if not user.license_front_url else "back"
+    else:
+        side = "front"
+    try:
+        doc = await _store_driver_document(db, user, doc_type, data, side=side)
+    except HTTPException as e:
+        if e.status_code == 400 and "vehicle" in str(e.detail).lower():
+            # Vehicle-level doc but no car registered yet — say so instead
+            # of going silent.
+            await _bot_say(chat, db,
+                "Primero registra tu vehículo en la app y luego me envías el documento por aquí." if is_es else
+                "Add your vehicle in the app first, then send me the document right here.")
+            return
+        raise
+    lbl = _label(doc_type)
+    await _bot_say(chat, db,
+        f"Recibí tu {lbl} — ya quedó en tu perfil para revisión. Te avisaremos por la app y por correo cuando esté aprobado." if is_es else
+        f"Got your {lbl} — it's on your profile for review now. We'll confirm in the app and by email once it's approved.")
+    logging.info(
+        "[support] filed chat attachment as %s for driver %s (doc #%s)",
+        doc_type, user.id, doc.id,
+    )
+
 
 @router.post("/support/chats/{chat_id}/attachments", dependencies=[Depends(_verify_api_key)])
 async def send_support_attachment(
@@ -2622,6 +2797,15 @@ async def send_support_attachment(
             )
         except Exception as e:
             logging.warning("[support] attachment sync failed for %s: %s", chat_id, e)
+
+    # A document photo from a driver may BE the document they owe — file it.
+    if (user.role or "").lower() == "driver":
+        try:
+            await _maybe_file_chat_document(chat, user, data, db)
+        except Exception as e:
+            # Best-effort: the attachment is already posted and dispatch can
+            # see it in the chat either way.
+            logging.warning("[support] chat document filing failed: %s", e)
 
     return {"id": row.id, "signed_url": result.get("signed_url", "")}
 

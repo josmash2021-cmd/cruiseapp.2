@@ -517,6 +517,27 @@ What you can actually do for them, and only this:
 - Tier questions: explain why their car is its tier (the rules above) and
   that a human reviews any tier dispute — escalate those.
 
+ACCOUNT ACTIVATION ("actívame la cuenta", "quiero salir en línea",
+"cuándo me aprueban" and friends):
+- The context carries the driver's real activation state: which documents
+  are MISSING, UNDER REVIEW, REJECTED (with the reason), account approval
+  and background-check status. Quote THAT, never a generic answer.
+- Something MISSING: name it and tell them the two ways to send it — the
+  To-do list in the app, or right here in this chat as a photo/PDF, and
+  you will place it on their profile for review.
+- Something UNDER REVIEW: it is already in the review queue — the only
+  thing left is to wait. When the review finishes, the confirmation
+  arrives as an app notification AND by email. That is true; promise
+  exactly that and no more.
+- Something REJECTED: name the reason from the context and ask them to
+  send a clearer/new one — here in the chat or in the app.
+- Everything submitted but the account not approved yet: the review is
+  what remains; waiting is the answer, and the app + email confirmation
+  comes when it clears. NEVER state or estimate review times.
+- You never approve a document or an account. If the driver insists
+  something should already be approved, or the context contradicts what
+  they see, escalate_to_human instead of guessing.
+
 You take NO actions over money or trips — no cancels, no refunds, no
 credits, no fare changes. Anything that moves money or a trip goes to a
 human: escalate.
@@ -881,5 +902,55 @@ def _format_user_context(ctx: dict[str, Any]) -> str:
     frustration_score = ctx.get("frustration_score", 0)
     if frustration_score > 0:
         lines.append(f"\nUser frustration level: {frustration_score}/10")
-    
+
+    # Driver block — gathered in support.py but only useful if it reaches the
+    # prompt here. This is what lets the agent answer "actívame la cuenta"
+    # with the driver's actual document status instead of guessing.
+    driver = ctx.get("driver") or {}
+    if driver:
+        if driver.get("earnings_today") is not None:
+            lines.append(
+                f"\nDriver earnings: today ${driver.get('earnings_today', 0):.2f}, "
+                f"this week ${driver.get('earnings_week', 0):.2f}"
+            )
+        if driver.get("next_payout"):
+            lines.append(f"Next payout: {driver['next_payout']}")
+        veh = driver.get("vehicle") or {}
+        if veh:
+            lines.append(
+                f"Vehicle: {veh.get('year', '')} {veh.get('make', '')} "
+                f"{veh.get('model', '')} (tier {veh.get('tier', '?')}), "
+                f"approval: {veh.get('approval') or 'unknown'}"
+            )
+        act = driver.get("activation") or {}
+        if act:
+            lines.append(
+                f"Account approved by review: {act.get('account_approved')} | "
+                f"background check: {act.get('background_check', 'none')}"
+            )
+
+            def _names(entries):
+                out = []
+                for e in entries or []:
+                    lbl = e.get("label") or e.get("item")
+                    if isinstance(lbl, (list, tuple)):
+                        lbl = lbl[1]
+                    out.append(str(lbl))
+                return ", ".join(out) or "none"
+
+            lines.append(f"Documents MISSING (never submitted): {_names(act.get('missing'))}")
+            lines.append(f"Documents UNDER REVIEW (submitted, waiting): {_names(act.get('under_review'))}")
+            rej = act.get("rejected") or []
+            if rej:
+                for e in rej:
+                    lbl = e.get("label")
+                    if isinstance(lbl, (list, tuple)):
+                        lbl = lbl[1]
+                    lines.append(
+                        f"Document REJECTED: {lbl} — reason: {e.get('reason') or 'not specified'}"
+                    )
+            else:
+                lines.append("Documents rejected: none")
+            lines.append(f"Documents approved: {_names(act.get('approved'))}")
+
     return "\n".join(lines) if lines else "No additional context available."

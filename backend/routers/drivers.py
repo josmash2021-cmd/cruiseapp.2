@@ -3433,30 +3433,22 @@ async def upload_document(request: Request, user: User = Depends(_get_current_us
     await db.refresh(doc)
     return _doc_dict(doc)
 
-@router.post("/drivers/documents/upload", dependencies=[Depends(_verify_api_key)])
-async def upload_document_multipart(
-    doc_type: str = Form(...),
-    vehicle_id: Optional[int] = Form(None),
-    file: UploadFile = File(...),
-    user: User = Depends(_get_current_user),
-    db: AsyncSession = Depends(get_db),
-):
-    """Upload a vehicle document via multipart form (more reliable than base64)."""
-    _sanitize_string(doc_type)
-    allowed_types = {"drivers_license", "insurance", "registration", "background_check", "vehicle_inspection", "profile_photo"}
-    if doc_type not in allowed_types:
-        raise HTTPException(400, f"Invalid document type. Allowed: {', '.join(allowed_types)}")
+async def _store_driver_document(
+    db: AsyncSession,
+    user: User,
+    doc_type: str,
+    data: bytes,
+    vehicle_id: Optional[int] = None,
+    side: str = "front",
+) -> Document:
+    """Validate document bytes, store them, and upsert the driver's Document
+    row (status pending — a re-upload clears a previous rejection).
 
-    # Multi-vehicle (2026-08-29): vehicle-level docs carry the vehicle they
-    # belong to; driver-level docs stay vehicle_id = NULL. Same onboarding
-    # fallback as the JSON endpoint — resolve inside the helper.
-    vehicle_level = {"insurance", "registration", "vehicle_inspection"}
-    if doc_type in vehicle_level:
-        vehicle_id = await _resolve_doc_vehicle(db, user.id, vehicle_id)
-    else:
-        vehicle_id = None
-
-    data = await file.read()
+    Shared pipeline: /drivers/documents/upload calls it, and so does the
+    support-chat filing flow (a driver who sends a document photo to support
+    gets it onto their profile through the exact same path). Raises
+    HTTPException on invalid data, like the endpoint always did.
+    """
     if len(data) > 4 * 1024 * 1024:
         raise HTTPException(413, "Document too large (max 4MB)")
 
@@ -3473,6 +3465,15 @@ async def upload_document_multipart(
         raise HTTPException(400, "Unsupported format (JPEG, PNG, PDF only)")
     if ct.startswith("image/"):
         validate_image_bytes(data)
+
+    # Multi-vehicle (2026-08-29): vehicle-level docs carry the vehicle they
+    # belong to; driver-level docs stay vehicle_id = NULL. Same onboarding
+    # fallback as the JSON endpoint — resolve inside the helper.
+    vehicle_level = {"insurance", "registration", "vehicle_inspection"}
+    if doc_type in vehicle_level:
+        vehicle_id = await _resolve_doc_vehicle(db, user.id, vehicle_id)
+    else:
+        vehicle_id = None
 
     fname = f"doc_{user.id}_{doc_type}_{int(time.time())}.{ext}"
     file_path = None
@@ -3510,8 +3511,35 @@ async def upload_document_multipart(
             file_path=file_path,
         )
         db.add(doc)
+    # The onboarding license item reads the user columns, not Document rows
+    # (auth.py verification flow) — mirror the URL so a license uploaded here
+    # moves the To-do item too. `side` picks the face.
+    if doc_type == "drivers_license" and file_path:
+        if side == "back":
+            user.license_back_url = file_path
+        else:
+            user.license_front_url = file_path
     await db.commit()
     await db.refresh(doc)
+    return doc
+
+
+@router.post("/drivers/documents/upload", dependencies=[Depends(_verify_api_key)])
+async def upload_document_multipart(
+    doc_type: str = Form(...),
+    vehicle_id: Optional[int] = Form(None),
+    file: UploadFile = File(...),
+    user: User = Depends(_get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Upload a vehicle document via multipart form (more reliable than base64)."""
+    _sanitize_string(doc_type)
+    allowed_types = {"drivers_license", "insurance", "registration", "background_check", "vehicle_inspection", "profile_photo"}
+    if doc_type not in allowed_types:
+        raise HTTPException(400, f"Invalid document type. Allowed: {', '.join(allowed_types)}")
+
+    data = await file.read()
+    doc = await _store_driver_document(db, user, doc_type, data, vehicle_id=vehicle_id)
     return _doc_dict(doc)
 
 

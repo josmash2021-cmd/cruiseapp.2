@@ -527,6 +527,59 @@ _RESPONSES: dict[str, dict[str, list[str]]] = {
 }
 
 
+def _driver_docs_status_response(act: dict, is_es: bool, name: str) -> str:
+    """The driver_documents intent answered with the driver's REAL status —
+    what is missing, what waits on review, what bounced and why. The canned
+    template invents a 24-48h review timeline; this replaces it."""
+    idx = 0 if is_es else 1
+
+    def _labels(entries):
+        out = []
+        for e in entries or []:
+            lbl = e.get("label") or e.get("item") or "?"
+            out.append(str(lbl[idx] if isinstance(lbl, (list, tuple)) else lbl))
+        return ", ".join(out)
+
+    parts = []
+    rejected = act.get("rejected") or []
+    if rejected:
+        for e in rejected:
+            lbl = e.get("label")
+            lbl = str(lbl[idx] if isinstance(lbl, (list, tuple)) else (lbl or "?"))
+            reason = e.get("reason")
+            if is_es:
+                parts.append(f"Su {lbl} fue rechazado" + (f" (motivo: {reason})" if reason else "") +
+                             " — puede volver a enviarlo aquí mismo como foto.")
+            else:
+                parts.append(f"Your {lbl} was rejected" + (f" (reason: {reason})" if reason else "") +
+                             " — you can send it again right here as a photo.")
+    missing = _labels(act.get("missing"))
+    if missing:
+        parts.append(
+            f"Le falta: {missing}. Puede subirlo en el To-do de la app o mandarlo aquí como foto y yo lo pongo en revisión."
+            if is_es else
+            f"You're missing: {missing}. You can upload it in the app's To-do list or send it right here as a photo and I'll place it for review."
+        )
+    review = _labels(act.get("under_review"))
+    if review:
+        parts.append(
+            f"En revisión: {review}."
+            if is_es else
+            f"Under review: {review}."
+        )
+    if not parts:
+        if is_es:
+            return (f"{name}, sus documentos están completos y sin rechazos — solo queda la revisión final. "
+                    "La confirmación le llega por la app y por correo en cuanto termine.")
+        return (f"{name}, your documents are complete with no rejections — only the final review remains. "
+                "The confirmation reaches you in the app and by email as soon as it clears.")
+    if is_es:
+        parts.append("Cuando todo se apruebe, la confirmación le llega por la app y por correo.")
+    else:
+        parts.append("Once everything is approved, the confirmation reaches you in the app and by email.")
+    return f"{name}, " + " ".join(parts) if name else " ".join(parts)
+
+
 def generate_response(
     intent: str,
     user_name: str,
@@ -552,6 +605,14 @@ def generate_response(
         options = _RESPONSES["unknown"][first_key]
 
     response = random.choice(options).format(name=user_name, agent=agent_name)
+
+    # Driver documents: when the caller gathered the real per-item status
+    # (support.py does), answer with THAT — the canned text below promises a
+    # review timeline we do not control, so real data replaces it outright.
+    if user_context and intent == "driver_documents":
+        act = (user_context.get("driver") or {}).get("activation") or {}
+        if act:
+            response = _driver_docs_status_response(act, is_es, user_name)
 
     # Add context from user's trip data if available
     if user_context:

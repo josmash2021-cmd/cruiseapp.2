@@ -220,7 +220,10 @@ definitions:
         # python -m pip, NOT pip3: pip3 pointed at a different interpreter on
         # the mac_mini image, so pytest never landed in the python that ran
         # the suite — build died with "No module named pytest" (2026-10-06).
+        # And pytest lives in requirements-dev.txt (split of dev deps) —
+        # installing only requirements.txt leaves the suite without it.
         python -m pip install -q -r requirements.txt
+        python -m pip install -q -r requirements-dev.txt
         python -m pytest tests/ -v --tb=short
 
     - &pod_install

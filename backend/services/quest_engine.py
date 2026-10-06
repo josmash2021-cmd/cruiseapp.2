@@ -11,7 +11,7 @@ from typing import Optional, List, Dict, Any
 from sqlalchemy import select, and_, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from models.database import get_db, User, Trip
+from models.database import get_db, User, Trip, DriverIncentive
 from models.quest_models import (
     QuestTemplate, QuestInstance, DriverStreak,
     QuestProgressLog, WeeklyQuestSummary,
@@ -352,6 +352,15 @@ class QuestEngine:
                     incentive.status = "completed"
                     incentive.completed_at = utc_now()
 
+    async def _driver_token(self, driver_id: int) -> Optional[str]:
+        """The driver's current FCM token, or None — a quest push with no
+        reachable device is simply skipped."""
+        from models.database import SessionLocal
+        async with SessionLocal() as db:
+            r = await db.execute(select(User.fcm_token).where(User.id == driver_id))
+            row = r.first()
+            return row[0] if row else None
+
     async def _notify_tier_achieved(
         self,
         driver_id: int,
@@ -361,8 +370,14 @@ class QuestEngine:
     ) -> None:
         """Send FCM push notification for tier achievement."""
         try:
+            # Bug fix (2026-10-06): the call used to pass user_id= to a
+            # function whose first parameter is `token` — TypeError swallowed
+            # by the except below, so these pushes NEVER went out.
+            token = await self._driver_token(driver_id)
+            if not token:
+                return
             await _send_fcm_push_async(
-                user_id=driver_id,
+                token,
                 title="🎯 ¡Hito de Quest alcanzado!",
                 body=f"¡Llegaste al nivel {tier} en '{template.title}' y ganaste ${reward:.2f}!",
                 title_en="🎯 Quest Milestone Reached!",
@@ -385,8 +400,11 @@ class QuestEngine:
     ) -> None:
         """Send FCM push notification for quest completion."""
         try:
+            token = await self._driver_token(driver_id)
+            if not token:
+                return
             await _send_fcm_push_async(
-                user_id=driver_id,
+                token,
                 title="🏆 ¡Quest completada!",
                 body=f"¡Completaste '{template.title}'! Recompensa total: ${total_reward:.2f}. Toca para reclamar.",
                 title_en="🏆 Quest Complete!",

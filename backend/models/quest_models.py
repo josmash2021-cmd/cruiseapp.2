@@ -124,7 +124,10 @@ class QuestProgressLog(Base):
     reason = Column(String(100), nullable=False)  # "trip_completed", "manual_adjust", "tier_achieved"
     
     trip_id = Column(Integer, ForeignKey("trips.id"), nullable=True)
-    metadata = Column(JSON, default=dict)
+    # Attribute name "metadata" is RESERVED by SQLAlchemy 2 Declarative — the
+    # class exploded at import, which is exactly why nothing can import
+    # quest_engine today. DB column keeps its name; only the attribute moves.
+    extra = Column("metadata", JSON, default=dict)
     
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 

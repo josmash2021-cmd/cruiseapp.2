@@ -9,12 +9,19 @@ import logging
 from datetime import datetime, timedelta, timezone
 from sqlalchemy import select, and_, func
 from models.database import SessionLocal, User, Trip, Rating, SupportChat, SupportMessage
-from services.fcm_service import _send_fcm_push
+from services.fcm_service import _send_fcm_push_async
 from utils.helpers import user_lang
 
 log = logging.getLogger(__name__)
 
 _PROACTIVE_COOLDOWN_HOURS = 48  # Don't contact the same user more than once per 48 h
+
+# Product call (2026-10-06, user spec): proactive outreach only for
+# outage-shaped events — overlong trip, stranded rider, failed payment.
+# Rating callouts ("calificaste 1-2 estrellas…") read as surveillance, and
+# first-trip congrats are push noise; both rules stay in the code, off.
+_RULE_LOW_RATING_ENABLED = False
+_RULE_FIRST_TRIP_ENABLED = False
 
 
 async def _user_has_recent_support(user_id: int, db, hours: int = 48) -> bool:
@@ -93,6 +100,8 @@ async def check_bad_trips(db) -> int:
             ).limit(20)
         )
         bad_rated_trips = bad_rated_r.scalars().all()
+        if not _RULE_LOW_RATING_ENABLED:
+            bad_rated_trips = []  # rule off — see the flag at the top
 
         for trip in bad_rated_trips:
             if not trip.rider_id:
@@ -129,7 +138,7 @@ async def check_bad_trips(db) -> int:
 
             chat_id = await _create_proactive_chat(trip.rider_id, subject, msg, lang, db)
             if chat_id and user.fcm_token:
-                await _send_fcm_push(
+                await _send_fcm_push_async(
                     token=user.fcm_token,
                     title=push_title,
                     body=push_body,
@@ -208,7 +217,7 @@ async def check_bad_trips(db) -> int:
 
             chat_id = await _create_proactive_chat(trip.rider_id, subject, msg, lang, db)
             if chat_id and user.fcm_token:
-                await _send_fcm_push(
+                await _send_fcm_push_async(
                     token=user.fcm_token,
                     title=push_title,
                     body=push_body,
@@ -273,7 +282,7 @@ async def check_bad_trips(db) -> int:
                 )
             chat_id = await _create_proactive_chat(trip.rider_id, subject, msg, lang, db)
             if chat_id and user.fcm_token:
-                await _send_fcm_push(
+                await _send_fcm_push_async(
                     token=user.fcm_token, title=push_title, body=push_body,
                     title_en=push_title_en, body_en=push_body_en,
                     locale=user_lang(user),
@@ -294,6 +303,8 @@ async def check_bad_trips(db) -> int:
             ).limit(20)
         )
         new_drivers = new_driver_r.scalars().all()
+        if not _RULE_FIRST_TRIP_ENABLED:
+            new_drivers = []  # rule off — see the flag at the top
         for driver in new_drivers:
             # Check if they completed exactly 1 trip total
             trip_count_r = await db.execute(
@@ -319,7 +330,7 @@ async def check_bad_trips(db) -> int:
             push_body_en = f"Hi {name}, how did it go? We're here if you need help."
             chat_id = await _create_proactive_chat(driver.id, subject, msg, "es", db)
             if chat_id and driver.fcm_token:
-                await _send_fcm_push(
+                await _send_fcm_push_async(
                     token=driver.fcm_token, title=push_title, body=push_body,
                     title_en=push_title_en, body_en=push_body_en,
                     locale=user_lang(driver),
@@ -374,7 +385,7 @@ async def check_bad_trips(db) -> int:
                 )
             chat_id = await _create_proactive_chat(trip.rider_id, subject, msg, lang, db)
             if chat_id and user.fcm_token:
-                await _send_fcm_push(
+                await _send_fcm_push_async(
                     token=user.fcm_token, title=push_title, body=push_body,
                     title_en=push_title_en, body_en=push_body_en,
                     locale=user_lang(user),

@@ -31,7 +31,7 @@ from utils.security import (
 from utils.helpers import (
     utc_now, utc_today_start, utc_month_start,
     _user_dict, _trip_dict, _doc_dict, _vehicle_dict, _haversine, _resolve_rider_display, _safe_create_task,
-    _abs_photo_url, _gen_pickup_pin,
+    _abs_photo_url, _gen_pickup_pin, user_lang,
     SETTABLE_ACCOUNT_STATUSES, ACTIVE_ACCOUNT_STATUSES, normalise_account_status,
 )
 from utils.ssn_encryption import is_ssn_provided, decrypt_ssn, get_ssn_masked, format_ssn_for_display
@@ -929,6 +929,7 @@ async def admin_review_verification(user_id: int, request: Request, db: AsyncSes
     # sees the decision instantly, even when backgrounded or the Firestore
     # listener is not attached (e.g. home screen after reinstall).
     is_driver = (user.role or "") == "driver"
+    es = user_lang(user) == "es"
     try:
         await notify_user(
             user_id,
@@ -938,11 +939,14 @@ async def admin_review_verification(user_id: int, request: Request, db: AsyncSes
                 "role": user.role or "driver",
                 "reason": reason if action == "reject" else None,
                 "message": (
-                    "Your driver application has been approved!"
+                    ("¡Tu solicitud de driver fue aprobada!" if es
+                     else "Your driver application has been approved!")
                     if action == "approve" and is_driver
-                    else "Your account has been verified!"
+                    else ("¡Tu cuenta fue verificada!" if es
+                          else "Your account has been verified!")
                     if action == "approve"
-                    else "Your application was not approved."
+                    else ("Tu solicitud no fue aprobada." if es
+                          else "Your application was not approved.")
                 ),
             },
         )
@@ -953,16 +957,19 @@ async def admin_review_verification(user_id: int, request: Request, db: AsyncSes
     try:
         if user.fcm_token:
             if action == "approve":
-                title = "You're Approved! 🎉" if is_driver else "Account Verified ✓"
-                body = (
-                    "Welcome to the Cruise family! Open the app to start driving."
-                    if is_driver
-                    else "Your identity has been verified. You can now request rides."
-                )
+                if is_driver:
+                    title = "¡Aprobado! 🎉" if es else "You're Approved! 🎉"
+                    body = ("¡Bienvenido a la familia Cruise! Abre la app para empezar a manejar." if es
+                            else "Welcome to the Cruise family! Open the app to start driving.")
+                else:
+                    title = "Cuenta verificada ✓" if es else "Account Verified ✓"
+                    body = ("Tu identidad ha sido verificada. Ya puedes pedir viajes." if es
+                            else "Your identity has been verified. You can now request rides.")
                 payload_type = "driver_approved" if is_driver else "rider_approved"
             else:
-                title = "Verification Update"
-                body = reason or "Your verification was not approved. Please try again."
+                title = "Actualización de verificación" if es else "Verification Update"
+                body = reason or ("Tu verificación no fue aprobada. Inténtalo de nuevo." if es
+                                  else "Your verification was not approved. Please try again.")
                 payload_type = "driver_rejected" if is_driver else "rider_rejected"
             # NOTE: the `await` that used to sit here made this
             # _safe_create_task(None) — _send_fcm_push_async returns None — which

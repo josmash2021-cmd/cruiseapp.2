@@ -25,7 +25,7 @@ from utils.security import (
     revoke_token, _check_password_reset_rate, _record_password_reset,
     JWT_SECRET, JWT_ALGORITHM,
 )
-from utils.helpers import _safe_create_task, utc_now, _user_dict, _haversine, _trip_dict, _compute_user_rating, validate_driver_minimum_age, validate_rider_minimum_age, parse_date_of_birth, MIN_DRIVER_AGE, MIN_RIDER_AGE
+from utils.helpers import _safe_create_task, utc_now, _user_dict, _haversine, _trip_dict, _compute_user_rating, validate_driver_minimum_age, validate_rider_minimum_age, parse_date_of_birth, MIN_DRIVER_AGE, MIN_RIDER_AGE, user_lang
 from utils.image_validation import validate_image_bytes, shrink_image_bytes
 from services import vehicle_tiers
 from services.fcm_service import _send_fcm_push_async
@@ -3148,6 +3148,7 @@ async def dispatch_approve_driver(user_id: int, db: AsyncSession = Depends(get_d
     else:
         logging.warning("[DISPATCH-APPROVE] _HAS_FIRESTORE=False - Firestore sync skipped")
     # ── Send real-time Socket.IO push + FCM to the approved driver ──
+    es = user_lang(db_user) == "es"
     try:
         await notify_user(
             user_id,
@@ -3155,7 +3156,8 @@ async def dispatch_approve_driver(user_id: int, db: AsyncSession = Depends(get_d
             {
                 "status": "approved",
                 "role": "driver",
-                "message": "Your driver application has been approved!",
+                "message": ("¡Tu solicitud de driver fue aprobada!" if es
+                            else "Your driver application has been approved!"),
             },
         )
         logging.info("[DISPATCH-APPROVE] Socket.IO push sent to user %d", user_id)
@@ -3166,8 +3168,9 @@ async def dispatch_approve_driver(user_id: int, db: AsyncSession = Depends(get_d
         if db_user.fcm_token:
             await _send_fcm_push_async(
                 db_user.fcm_token,
-                "You're Approved! 🎉",
-                "Welcome to the Cruise family! Open the app to start driving.",
+                "¡Aprobado! 🎉" if es else "You're Approved! 🎉",
+                ("¡Bienvenido a la familia Cruise! Abre la app para empezar a manejar." if es
+                 else "Welcome to the Cruise family! Open the app to start driving."),
                 {"type": "driver_approved", "user_id": str(user_id)},
             )
             logging.info("[DISPATCH-APPROVE] FCM push sent to user %d", user_id)
@@ -3215,6 +3218,7 @@ async def dispatch_reject_driver(user_id: int, request: Request, db: AsyncSessio
             logging.warning("Firestore reject sync failed: %s", e)
 
     # ── Send real-time Socket.IO push + FCM to the rejected driver ──
+    es = user_lang(db_user) == "es"
     try:
         await notify_user(
             user_id,
@@ -3223,7 +3227,8 @@ async def dispatch_reject_driver(user_id: int, request: Request, db: AsyncSessio
                 "status": "rejected",
                 "role": "driver",
                 "reason": reason,
-                "message": "Your driver application was not approved.",
+                "message": ("Tu solicitud de driver no fue aprobada." if es
+                            else "Your driver application was not approved."),
             },
         )
         logging.info("[DISPATCH-REJECT] Socket.IO push sent to user %d", user_id)
@@ -3233,17 +3238,23 @@ async def dispatch_reject_driver(user_id: int, request: Request, db: AsyncSessio
     try:
         if db_user.fcm_token:
             if item:
+                # Push copy follows the phone's locale — "Documento rechazado"
+                # hardcodeado le llegaba en español a los teléfonos en inglés.
                 await _send_fcm_push_async(
                     db_user.fcm_token,
-                    "Documento rechazado",
-                    f"Documento rechazado: {reason}",
+                    "Documento rechazado" if es else "Document rejected",
+                    (f"Motivo: {reason}" if reason else
+                     "Corrígelo y reenvíalo desde la app.") if es
+                    else (f"Reason: {reason}" if reason else
+                          "Fix it and resubmit it from the app."),
                     {"type": "onboarding_item_rejected", "user_id": str(user_id), "item": item, "reason": reason},
                 )
             else:
                 await _send_fcm_push_async(
                     db_user.fcm_token,
-                    "Verification Update",
-                    reason or "Your driver application was not approved. Please try again.",
+                    "Actualización de verificación" if es else "Verification Update",
+                    reason or ("Tu solicitud de driver no fue aprobada. Inténtalo de nuevo." if es
+                               else "Your driver application was not approved. Please try again."),
                     {"type": "driver_rejected", "user_id": str(user_id), "reason": reason},
                 )
             logging.info("[DISPATCH-REJECT] FCM push sent to user %d", user_id)

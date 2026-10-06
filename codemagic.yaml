@@ -95,6 +95,23 @@ definitions:
           fi
         fi
 
+    # Shorebird = OTA patches (2026-10-06): releases built with `shorebird
+    # release` carry the updater; Dart changes then reach devices with
+    # `shorebird patch` — no store update. The CLI authenticates with
+    # SHOREBIRD_TOKEN (Codemagic group "Default", where the other vars live).
+    # Patches must match the release's Flutter exactly — pinned 3.38.9
+    # (Shorebird's closest to the repo's 3.38.10).
+    - &shorebird_setup
+      name: Shorebird (OTA) setup
+      script: |
+        if [ -z "${SHOREBIRD_TOKEN:-}" ]; then
+          echo "❌ SHOREBIRD_TOKEN is not set — add it in Codemagic (group Default)"; exit 1
+        fi
+        curl -sSfL https://raw.githubusercontent.com/shorebirdtech/install/main/install.sh | bash
+        export PATH="$HOME/.shorebird/bin:$PATH"
+        echo "PATH=$PATH" >> $CM_ENV
+        shorebird --version
+
     - &generate_env
       name: Generate env.dart
       script: |
@@ -542,6 +559,7 @@ workflows:
       - *mapbox_auth
       - *flutter_pub_get
       - *pod_install
+      - *shorebird_setup
       - name: Set up iOS code signing
         script: |
           # ── Decode CERTIFICATE_PRIVATE_KEY from base64 → raw PEM ──────────
@@ -680,17 +698,21 @@ workflows:
           echo "── FLUTTER_XCODE env vars ──"
           cat $CM_ENV 2>/dev/null | grep FLUTTER_XCODE || true
           echo "✅ Signing ready"
-      - name: Build IPA (App Store)
+      - name: Build IPA (App Store) — Shorebird release (OTA habilitado)
         script: |
           set -o pipefail
           # Use build number from pubspec.yaml (not Codemagic counter)
           # to avoid Apple rejecting lower build numbers
           PUBSPEC_BUILD=$(grep '^version:' pubspec.yaml | sed 's/.*+//')
           echo "Build number from pubspec: $PUBSPEC_BUILD"
-          flutter build ipa \
+          # Shorebird release = el mismo IPA firmado pero con el updater OTA
+          # adentro; los parches Dart luego llegan sin App Store. Flutter va
+          # pineado (los parches deben casar la versión del release).
+          # --no-tree-shake-icons ya no hace falta: la app no construye
+          # IconData dinámicos (verificado 2026-10-06).
+          shorebird release ios \
+            --flutter-version 3.38.9 \
             --dart-define=MAPBOX_TOKEN=$MAPBOX_ACCESS_TOKEN \
-            --release \
-            --no-tree-shake-icons \
             --build-number=${PUBSPEC_BUILD:-$BUILD_NUMBER} \
             --export-options-plist=$HOME/export_options.plist
 
@@ -777,11 +799,14 @@ workflows:
       - *flutter_pub_get
       - *flutter_test
       - *backend_test
-      - name: Build APK
+      - *shorebird_setup
+      - name: Build APK — Shorebird release (OTA habilitado)
         script: |
           # Same source as the AAB and the IPA — see android-release below.
           PUBSPEC_BUILD=$(grep '^version:' pubspec.yaml | sed 's/.*+//')
-          flutter build apk --release --no-tree-shake-icons \
+          shorebird release android \
+            --flutter-version 3.38.9 \
+            --artifact apk \
             --obfuscate --split-debug-info=build/symbols \
             --dart-define=MAPBOX_TOKEN=$MAPBOX_ACCESS_TOKEN \
             --build-number=${PUBSPEC_BUILD:-$BUILD_NUMBER}
@@ -843,7 +868,8 @@ workflows:
           echo "$CM_KEYSTORE" | base64 --decode > /tmp/cruise-release.keystore
           echo "✅ Keystore decoded: $(du -sh /tmp/cruise-release.keystore | cut -f1)"
       - *flutter_pub_get
-      - name: Build AAB
+      - *shorebird_setup
+      - name: Build AAB — Shorebird release (OTA habilitado)
         script: |
           # Build number from pubspec.yaml, not the Codemagic counter.
           #
@@ -858,7 +884,10 @@ workflows:
           # since Apple rejected the same thing. Android never got it.
           PUBSPEC_BUILD=$(grep '^version:' pubspec.yaml | sed 's/.*+//')
           echo "Build number from pubspec: $PUBSPEC_BUILD"
-          flutter build appbundle --release --no-tree-shake-icons \
+          # Shorebird release = el mismo AAB pero con el updater OTA adentro.
+          shorebird release android \
+            --flutter-version 3.38.9 \
+            --artifact aab \
             --obfuscate --split-debug-info=build/symbols \
             --dart-define=MAPBOX_TOKEN=$MAPBOX_ACCESS_TOKEN \
             --build-number=${PUBSPEC_BUILD:-$BUILD_NUMBER}

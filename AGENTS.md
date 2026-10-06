@@ -126,7 +126,7 @@
 2. **El bloque `notification` del FCM SE QUEDA** — sin él Android no dispara `onMessageOpenedApp`/`getInitialMessage` y el tap no hace nada. El dedup vive en el cliente (bg handler retorna temprano en ofertas).
 3. **Sonido APNs custom:** el `.wav` debe ser miembro del target Runner en `project.pbxproj` (lo es desde 2026-08-07). Si falta, iOS cae al sonido default SIN error ni log.
 4. **`Runner.entitlements` lleva `aps-environment=production`** (2026-08-07) — exige la capability Push Notifications en el App ID de App Store Connect o la firma falla.
-5. **TODO build (iOS y Android) se compila por Codemagic** — no hay OTA. Cambios nativos (pbxproj, entitlements, AndroidManifest, pods) y de Dart requieren build completo por Codemagic.
+5. **Tienda por Codemagic, pero cambios Dart van por Shorebird OTA (2026-10-06):** los workflows `ios-release` / `android-release` / `android-apk` compilan con `shorebird release` (Flutter pineado **3.38.9** — el parche debe casar la versión del release; `*shorebird_setup` instala el CLI y exige `SHOREBIRD_TOKEN` del grupo Default de Codemagic). Un cambio SOLO-Dart (`lib/`) ya NO necesita tienda: commit + `SHOREBIRD_TOKEN=… shorebird patch android --release-version <versión>` (y `patch ios`) — llega solo al próximo arranque de la app (auto_update). Cambios nativos (pbxproj, entitlements, AndroidManifest, pods, plugins, bump de Flutter) SIGUEN requiriendo build completo de tienda. La app Shorebird vive en la cuenta josmash33 (app_id en `shorebird.yaml`).
 6. **`pickerMode` queda `true` tras un Confirm exitoso** — jamás gates con `widget.pickerMode`; gatea por fase `pickingLocation`.
 7. **Checklist anti-bug-silencioso (aplicar a TODO fix):** (a) ¿el archivo/asset es miembro del bundle/target nativo? (b) ¿el error llega a la UI o solo a `debugPrint`/`catch (_) {}`? (c) ¿todo gate de fase/estado tiene su camino de salida explícito? (d) ¿el push lleva contenido visible o solo ids? (e) ¿hay entradas HERMANAS al mismo flujo (front/back, cámara/galería, Android/iOS) que necesitan el mismo cambio? — grep por hermanos, no solo el caso reportado.
 8. **`face_liveness_screen_new.dart` fue borrado** (duplicado muerto con el bug yuv420 + catch silencioso) — no recrear ni re-importar.
@@ -166,7 +166,7 @@
 flutter analyze                                            # tras editar Dart
 cd backend && ./.venv/Scripts/python.exe -m pytest tests/ -q   # tras editar Python
 railway up --detach                                        # deploy backend
-# iOS y Android = Codemagic — NUNCA flutter build apk manual (no hay OTA)
+# iOS y Android = Codemagic (shorebird release) — cambios Dart-only: `shorebird patch` (OTA), sin tienda
 ```
 
 *Última actualización: 2026-08-07 — convertido en cerebro de navegación Kimi tras la sesión de 5 fixes (push ofertas, snaps de mapa, guías licencia, cara).*

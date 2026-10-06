@@ -1149,7 +1149,29 @@ EMERGENCY: {"Si esta en peligro inmediato, llame al 911 primero." if is_es else 
 """
 
 
-async def _get_chat_history(chat_id: int, db: AsyncSession, limit: int = 10) -> list[dict[str, str]]:
+# What the model reads when a chat row is an attachment. The stored text is
+# ||ATT||<s3 key> — a raw object key means nothing to a text model, so the
+# history swaps it for a plain-language note it can acknowledge and act on.
+def _attachment_note(text: str, lang: str) -> str:
+    key = text[len(_ATTACH_PREFIX):].strip().split("?")[0].lower()
+    es = (lang or "en").startswith("es")
+    if key.endswith(".pdf"):
+        return "[El usuario envió un documento PDF]" if es else "[User sent a PDF document]"
+    return "[El usuario envió una foto]" if es else "[User sent a photo]"
+
+
+# The chat UI renders raw text — a model that answers in markdown shows the
+# asterisks to the user verbatim. Strip emphasis pairs (the common offender)
+# at the choke point where bot replies are persisted, so the guarantee does
+# not depend on prompt obedience.
+_MD_BOLD_RE = re.compile(r"(\*\*|__)(.+?)\1", re.S)
+
+
+def _strip_markdown(text: str) -> str:
+    return _MD_BOLD_RE.sub(r"\2", text)
+
+
+async def _get_chat_history(chat_id: int, db: AsyncSession, limit: int = 10, lang: str = "en") -> list[dict[str, str]]:
     """Fetch recent chat messages for Claude conversation context. Trimmed to 10 for cost."""
     result = await db.execute(
         select(SupportMessage).where(SupportMessage.chat_id == chat_id)
@@ -1158,10 +1180,13 @@ async def _get_chat_history(chat_id: int, db: AsyncSession, limit: int = 10) -> 
     messages = list(reversed(result.scalars().all()))
     history = []
     for m in messages:
+        content = m.message or ""
+        if content.startswith(_ATTACH_PREFIX):
+            content = _attachment_note(content, lang)
         if m.sender_role in ("rider", "driver"):
-            history.append({"role": "user", "content": m.message})
+            history.append({"role": "user", "content": content})
         elif m.sender_role == "bot":
-            history.append({"role": "assistant", "content": m.message})
+            history.append({"role": "assistant", "content": content})
     return history
 
 
@@ -1663,7 +1688,7 @@ async def _generate_ai_response(
     actions: list[dict] = []
 
     # Build conversation history for OpenAI
-    history = await _get_chat_history(chat.id, db, limit=20)
+    history = await _get_chat_history(chat.id, db, limit=20, lang=lang)
     messages = []
     for h in history:
         messages.append({
@@ -2219,7 +2244,7 @@ async def _background_bot_reply(chat_id: int, user_msg: str, user_name: str, bot
                 # Split ||SPLIT|| markers into separate messages with typing delays
                 parts = r["message"].split("||SPLIT||") if "||SPLIT||" in r["message"] else [r["message"]]
                 for pidx, part in enumerate(parts):
-                    part = part.strip()
+                    part = _strip_markdown(part.strip())
                     if not part:
                         continue
                     if pidx > 0:
@@ -2671,13 +2696,17 @@ async def _bot_say(chat, db: AsyncSession, text: str) -> None:
             logging.warning("[support] bot doc-file message sync failed: %s", e)
 
 
-async def _maybe_file_chat_document(chat, user: User, data: bytes, db: AsyncSession) -> None:
+async def _maybe_file_chat_document(chat, user: User, data: bytes, db: AsyncSession) -> bool:
     """File a support-chat attachment onto the driver's profile when it is
     clearly a document they owe.
 
     Never demotes a document already on file, and never guesses between
     several missing ones — it asks. Riders and unclear cases keep the old
     behaviour: the attachment simply sits in the chat.
+
+    Returns True when it already spoke to the user (filed a document, asked
+    which one it is, or explained a problem) so the caller does not stack a
+    second bot reply on top.
     """
     from routers.auth import _derive_onboarding_items
     from routers.drivers import _store_driver_document
@@ -2715,7 +2744,7 @@ async def _maybe_file_chat_document(chat, user: User, data: bytes, db: AsyncSess
             await _bot_say(chat, db,
                 f"Ya tengo tu {lbl} — no hace falta volver a enviarlo." if is_es else
                 f"I already have your {lbl} on file — no need to send it again.")
-            return
+            return True
         doc_type = named
     elif len(actionable) == 1:
         doc_type = actionable[0][1]
@@ -2724,11 +2753,11 @@ async def _maybe_file_chat_document(chat, user: User, data: bytes, db: AsyncSess
         await _bot_say(chat, db,
             f"¿De cuál documento se trata la foto? Te faltan: {names}. Dime cuál es y lo pongo en revisión de una vez." if is_es else
             f"Which document is this photo of? You're missing: {names}. Tell me which one and I'll place it for review right away.")
-        return
+        return True
     else:
-        # Nothing owed — a screenshot or something for a human. Same silence
-        # as before this flow existed.
-        return
+        # Nothing owed — a screenshot or something for a human. The generic
+        # bot acknowledgment (in the caller) covers this case now.
+        return False
 
     if doc_type == "drivers_license":
         if any(k in recent for k in _CHAT_BACK_KEYWORDS):
@@ -2746,7 +2775,7 @@ async def _maybe_file_chat_document(chat, user: User, data: bytes, db: AsyncSess
             await _bot_say(chat, db,
                 "Primero registra tu vehículo en la app y luego me envías el documento por aquí." if is_es else
                 "Add your vehicle in the app first, then send me the document right here.")
-            return
+            return True
         raise
     lbl = _label(doc_type)
     await _bot_say(chat, db,
@@ -2756,6 +2785,7 @@ async def _maybe_file_chat_document(chat, user: User, data: bytes, db: AsyncSess
         "[support] filed chat attachment as %s for driver %s (doc #%s)",
         doc_type, user.id, doc.id,
     )
+    return True
 
 
 @router.post("/support/chats/{chat_id}/attachments", dependencies=[Depends(_verify_api_key)])
@@ -2800,8 +2830,14 @@ async def send_support_attachment(
         message=f"{_ATTACH_PREFIX}{result['key']}",
     )
     db.add(row)
+    # A photo is user activity just like a typed message: bump the chat so it
+    # surfaces in the dispatch list and restarts the inactivity clock.
+    chat.updated_at = datetime.now(timezone.utc)
+    chat.last_user_message_at = datetime.now(timezone.utc)
     await db.commit()
 
+    user_full = f"{user.first_name} {user.last_name}".strip()
+    chat_lang = getattr(chat, "locale", "en") or "en"
     if _HAS_FIRESTORE:
         try:
             firestore_sync.sync_support_message(
@@ -2809,19 +2845,61 @@ async def send_support_attachment(
                 f"{user.first_name or ''}".strip(),
                 row.sender_role, row.message,
             )
+            # Text messages notify dispatch of every arrival; attachments
+            # were invisible to the notification center until now.
+            firestore_sync.sync_dispatch_notification(
+                chat_id, user_full, "new_message",
+                f"{user_full}: {'📷 foto adjunta' if chat_lang.startswith('es') else '📷 photo attachment'}",
+            )
         except Exception as e:
             logging.warning("[support] attachment sync failed for %s: %s", chat_id, e)
 
     # A document photo from a driver may BE the document they owe — file it.
+    spoke = False
     if (user.role or "").lower() == "driver":
         try:
-            await _maybe_file_chat_document(chat, user, data, db)
+            spoke = await _maybe_file_chat_document(chat, user, data, db)
         except Exception as e:
             # Best-effort: the attachment is already posted and dispatch can
             # see it in the chat either way.
             logging.warning("[support] chat document filing failed: %s", e)
 
+    # The bot answers a photo like it answers text — a user who sent only a
+    # screenshot used to get total silence. Same debounce as typed messages:
+    # a photo followed by text gets ONE coherent reply. Skipped when the
+    # document flow already spoke, or a human owns the chat.
+    bot_phase_snapshot = chat.bot_phase
+    if not spoke and bot_phase_snapshot != "dispatch_takeover":
+        note = _attachment_note(row.message, chat_lang)
+        _old = _reply_tasks.pop(chat_id, None)
+        if _old is not None and not _old.done():
+            _old.cancel()
+        _reply_tasks[chat_id] = _safe_create_task(
+            _background_bot_reply(chat_id, note, user.first_name or "Cliente", bot_phase_snapshot))
+
+    old_task = _inactivity_tasks.pop(chat_id, None)
+    if old_task and not old_task.done():
+        old_task.cancel()
+    _inactivity_tasks[chat_id] = _safe_create_task(_check_chat_inactivity(chat_id))
+
     return {"id": row.id, "signed_url": result.get("signed_url", "")}
+
+
+@router.get("/support/chats/{chat_id}/attachment-url", dependencies=[Depends(_require_dispatch_auth)])
+async def get_support_attachment_url(chat_id: int, key: str = Query(...)):
+    """Fresh signed URL for a chat attachment (dispatch panel).
+
+    The Firestore mirror only carries the durable S3 key, so the panel asks
+    here when it needs to render one. The key is pinned to this chat's
+    folder — without that check this would sign reads of ANY object in the
+    bucket.
+    """
+    if not key.startswith(f"support/{chat_id}/") or ".." in key:
+        raise HTTPException(status_code=400, detail="Invalid attachment key")
+    try:
+        return {"signed_url": await get_signed_url(key)}
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
 
 
 @router.get("/support/chats/{chat_id}/messages", dependencies=[Depends(_verify_api_key)])

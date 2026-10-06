@@ -1808,6 +1808,21 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
   static String _attachUrl(String text) =>
       text.substring(_attachPrefix.length).trim();
 
+  /// Dedup identity for the local-echo sweep in `_mergeMessages`. Attachment
+  /// messages carry a freshly SIGNED url and the server re-signs on every
+  /// poll, so the same photo arrives with a different query string each
+  /// time — comparing the full text never matched and the photo landed
+  /// twice. The URL path embeds the durable S3 key, stable across signings.
+  static String _dedupKey(String role, String text) {
+    if (_isAttachment(text)) {
+      final uri = Uri.tryParse(_attachUrl(text));
+      if (uri != null && uri.path.isNotEmpty) {
+        return 'local:$role:$_attachPrefix${uri.path}';
+      }
+    }
+    return 'local:$role:$text';
+  }
+
   static bool _isPdfUrl(String url) {
     // Signed URLs carry a query string, so the extension is not at the end.
     final path = Uri.tryParse(url)?.path.toLowerCase() ?? url.toLowerCase();
@@ -1994,9 +2009,10 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
     // A local message the server has now confirmed: drop the local copy so
     // the confirmed one takes its place with a real id.
     final incomingText = {
-      for (final m in incoming) if (m.role == _userRole) 'local:${m.role}:${m.text}'
+      for (final m in incoming) if (m.role == _userRole) _dedupKey(m.role, m.text)
     };
-    _messages.removeWhere((m) => m.id == null && incomingText.contains(m.key));
+    _messages.removeWhere(
+        (m) => m.id == null && incomingText.contains(_dedupKey(m.role, m.text)));
     seen
       ..clear()
       ..addAll(_messages.map((m) => m.key));

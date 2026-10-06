@@ -508,7 +508,11 @@ async def _get_current_user(
     if not user:
         raise HTTPException(401, "User not found")
     if (user.status or "active") in ("deleted", "blocked"):
-        raise HTTPException(403, f"Account {user.status}")
+        # Machine-readable code (same convention as session_expired_new_device):
+        # the app force-logouts on this — before, the detail was prose and the
+        # app's status check swallowed the 403, so a blocked/deleted driver
+        # with a live session kept the app open (user report 2026-10-06).
+        raise HTTPException(403, f"account_{user.status}")
 
     # Driver single-device enforcement: check session_id matches
     jwt_sid = payload.get("sid")

@@ -493,6 +493,9 @@ class ApiService {
   /// Called when the backend returns 401 with detail "session_expired_new_device",
   /// meaning the driver logged in on another device and this session is invalid.
   static void Function()? onSessionExpiredNewDevice;
+  /// Account blocked/deleted server-side while the session was alive — the
+  /// app must leave immediately (main.dart wires the navigation).
+  static void Function()? onAccountTerminated;
 
   /// Fired after every successful [_saveToken]. Wired in main.dart to
   /// SocketService: the boot-time socket init runs before a brand-new user
@@ -755,6 +758,19 @@ class ApiService {
       clearToken().ignore();
       onSessionExpiredNewDevice?.call();
       throw ApiException(401, 'session_expired_new_device');
+    }
+    // Account blocked/deleted server-side with a live session (2026-10-06,
+    // user report): the 403 used to carry prose and every screen's catch
+    // swallowed it — the driver kept the app open as normal. The detail is
+    // now machine-readable and ANY endpoint answer carrying it ends the
+    // session here.
+    if (res.statusCode == 403 && body is Map) {
+      final d = body['detail']?.toString();
+      if (d == 'account_blocked' || d == 'account_deleted') {
+        clearToken().ignore();
+        onAccountTerminated?.call();
+        throw ApiException(403, d!);
+      }
     }
     // M2: on 401, attempt token refresh in background; signal logout if refresh fails
     if (res.statusCode == 401) {

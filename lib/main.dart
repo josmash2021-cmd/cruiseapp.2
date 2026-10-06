@@ -1561,6 +1561,27 @@ class _UberCloneAppState extends State<UberCloneApp>
         ),
       );
     };
+
+    // Account blocked/deleted while logged in — the session is dead no
+    // matter what screen is up; leave to the splash, which lands on welcome
+    // with no session. (User report 2026-10-06: a driver whose account was
+    // deactivated while logged in kept opening the app as normal.)
+    ApiService.onAccountTerminated = () {
+      final nav = _navigatorKey.currentState;
+      if (nav == null) return;
+      nav.pushAndRemoveUntil(
+        PageRouteBuilder(
+          pageBuilder: (_, __, ___) => const SplashScreen(),
+          transitionDuration: const Duration(milliseconds: 280),
+          reverseTransitionDuration: const Duration(milliseconds: 220),
+          transitionsBuilder: (_, anim, __, child) => FadeTransition(
+            opacity: CurvedAnimation(parent: anim, curve: Curves.easeInOut),
+            child: child,
+          ),
+        ),
+        (_) => false,
+      );
+    };
   }
 
   @override

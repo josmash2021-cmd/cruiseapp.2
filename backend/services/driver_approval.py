@@ -14,6 +14,7 @@ The manual ops override stays: /auth/dispatch-approve force-approves an
 account even with pieces missing.
 """
 
+import json
 import logging
 from datetime import datetime, timezone
 from typing import Optional
@@ -91,13 +92,35 @@ async def notify_document_reviewed(
     approved: bool,
     reason: str | None = None,
 ) -> None:
-    """Tell the driver INSTANTLY: one FCM push + one socket event per
-    document decision. Fail-soft — a push failure never breaks the review."""
+    """Tell the driver a document was decided, on EVERY channel that can
+    reach them (2026-10-06, user spec "que no falle"):
+
+      1. socket event (live app),
+      2. an in-app inbox row (Notification) — ALWAYS; the decision waits
+         inside the app even with no reachable device,
+      3. FCM push when the driver has a registered device — and when they
+         don't, an SMS. Signup is phone OTP, so the phone is the channel
+         every driver always has.
+
+    Fail-soft per channel — a delivery failure never breaks the review.
+    """
     item = doc_to_onboarding_item(doc_type) or doc_type or "document"
     # The driver's phone language decides (users.locale, reported by the app
     # at boot); Spanish is the default — the historical behaviour.
     es = (getattr(user, "locale", None) or "es").lower().startswith("es")
     copy = _DOC_COPY.get(item, _DOC_COPY["license"])["es" if es else "en"]
+    if approved:
+        title, body = copy[0], copy[1]
+    else:
+        title = copy[2]
+        if es:
+            body = (f"Motivo: {reason}. Corrígelo y reenvíalo desde tu "
+                    "lista To-do." if reason else
+                    "Corrígelo y reenvíalo desde tu lista To-do.")
+        else:
+            body = (f"Reason: {reason}. Fix it and resend it from your "
+                    "To-do list." if reason else
+                    "Fix it and resend it from your To-do list.")
     try:
         await notify_user(
             user.id,
@@ -111,20 +134,30 @@ async def notify_document_reviewed(
     except Exception as e:
         logger.warning("[DocApproval] socket push failed for user %s: %s",
                        user.id, e)
+
+    # In-app inbox — always: push banners get missed (no token, app dead),
+    # the inbox row does not.
+    try:
+        from models.database import SessionLocal, Notification
+        async with SessionLocal() as _db:
+            _db.add(Notification(
+                user_id=user.id,
+                title=title,
+                body=body,
+                notif_type="document_review",
+                data=json.dumps({
+                    "item": item,
+                    "status": "approved" if approved else "rejected",
+                    "reason": reason or "",
+                }),
+            ))
+            await _db.commit()
+    except Exception as e:
+        logger.warning("[DocApproval] inbox row failed for user %s: %s",
+                       user.id, e)
+
     try:
         if user.fcm_token:
-            if approved:
-                title, body = copy[0], copy[1]
-            else:
-                title = copy[2]
-                if es:
-                    body = (f"Motivo: {reason}. Corrígelo y reenvíalo desde tu "
-                            "lista To-do." if reason else
-                            "Corrígelo y reenvíalo desde tu lista To-do.")
-                else:
-                    body = (f"Reason: {reason}. Fix it and resend it from your "
-                            "To-do list." if reason else
-                            "Fix it and resend it from your To-do list.")
             await _send_fcm_push_async(
                 user.fcm_token,
                 title,
@@ -137,8 +170,21 @@ async def notify_document_reviewed(
                     "reason": reason or "",
                 },
             )
+        elif user.phone:
+            # No device registered (never opened the app / token moved to
+            # another account on the same phone) — SMS is the channel every
+            # driver always has, because signup itself is a phone OTP.
+            import asyncio
+            from services.email_sms_service import _send_sms
+            logger.info(
+                "[DocApproval] no push token for user %s — SMS fallback",
+                user.id,
+            )
+            loop = asyncio.get_running_loop()
+            await loop.run_in_executor(
+                None, lambda: _send_sms(user.phone, f"Cruise — {title}: {body}"))
     except Exception as e:
-        logger.warning("[DocApproval] FCM failed for user %s: %s", user.id, e)
+        logger.warning("[DocApproval] FCM/SMS failed for user %s: %s", user.id, e)
 
 
 async def send_approved_email(user: User) -> None:

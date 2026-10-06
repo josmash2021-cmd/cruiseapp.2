@@ -113,7 +113,10 @@ async def test_intake_blocks_receiving_offers(client: AsyncClient, db, test_ride
     driver, _ = test_driver
 
     # Make the driver freshly active so they WOULD be eligible if not suspended.
+    # (Dispatch only offers to reviewed drivers since 2026-10-06.)
     driver.last_active_at = datetime.now(timezone.utc)
+    driver.is_verified = True
+    driver.verification_status = "approved"
     await db.commit()
 
     eligible = await _find_nearest_drivers(db, 25.7617, -80.1918)

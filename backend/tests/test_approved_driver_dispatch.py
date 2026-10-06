@@ -47,6 +47,8 @@ async def test_approved_driver_can_go_online(client, db, test_driver):
     """The 403 the Railway logs were full of."""
     driver, token = test_driver
     driver.status = "approved"
+    driver.is_verified = True
+    driver.verification_status = "approved"
     await db.commit()
 
     resp = await client.patch(

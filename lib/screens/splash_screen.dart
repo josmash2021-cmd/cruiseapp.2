@@ -453,16 +453,13 @@ class _SplashScreenState extends State<SplashScreen> {
   }
 
   /// Returns true for any status string that indicates an approved driver.
-  /// The backend may return 'approved', 'active', 'online', 'clear', or 'verified'
-  /// depending on the endpoint and database state.
+  /// The backend may return 'approved', 'pending', 'rejected' or 'none'
+  /// (verification_status). 'active'/'online' are ACCOUNT-liveness words,
+  /// not approval — accepting them let a live, never-reviewed account in
+  /// (user report 2026-10-06).
   bool _isApprovedStatus(String? status) {
     if (status == null) return false;
-    final s = status.toLowerCase().trim();
-    return s == 'approved' ||
-        s == 'active' ||
-        s == 'online' ||
-        s == 'clear' ||
-        s == 'verified';
+    return status.toLowerCase().trim() == 'approved';
   }
 
   /// Returns true if the user object from getMe() indicates an approved driver.

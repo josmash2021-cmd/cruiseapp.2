@@ -278,6 +278,15 @@ async def update_driver_location(driver_id: int, body: DriverLocationIn, user: U
         _driver_locations.pop(driver_id, None)
         raise HTTPException(403, f"Account {user.status} — cannot go online")
 
+    # Approval gate (2026-10-06, user report: an UNAPPROVED driver got the
+    # full UI): account liveness alone must never put a driver online —
+    # only a reviewed account (same test can_go_online uses). Without this,
+    # an app-side routing slip was enough for a pending driver to enter
+    # dispatch eligibility and work.
+    if body.is_online and (user.verification_status or "").lower() != "approved":
+        _driver_locations.pop(driver_id, None)
+        raise HTTPException(403, "account_not_approved")
+
     # Update in-memory location cache FIRST (instant for nearby reads)
     _now = time.monotonic()
     _driver_locations[driver_id] = {

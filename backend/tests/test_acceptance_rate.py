@@ -54,6 +54,10 @@ async def _mk_driver(db, email, lat, lng, **over):
         password_hash="x",
         role="driver",
         status="active",
+        # Dispatch only offers to REVIEWED drivers (2026-10-06) — these
+        # fixtures model working drivers, so they are approved.
+        is_verified=True,
+        verification_status="approved",
         is_online=True,
         lat=lat,
         lng=lng,

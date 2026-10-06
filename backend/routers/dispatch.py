@@ -454,6 +454,11 @@ async def _find_nearest_drivers(
         # status "approved", and matching only "active" excluded exactly the
         # drivers an operator had just approved.
         User.status.in_(ACTIVE_ACCOUNT_STATUSES),
+        # Only REVIEWED drivers get work (2026-10-06, user report: an
+        # unapproved driver reached the approved UI and could actually
+        # receive trips). This is the choke point every offer path funnels
+        # through — live cascade, guardian retry, scheduled dispatcher, web.
+        User.verification_status == "approved",
         User.lat.isnot(None),
         User.lng.isnot(None),
         User.lat >= min_lat,

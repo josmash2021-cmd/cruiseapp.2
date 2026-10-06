@@ -31,6 +31,11 @@ async def test_offline_flip_bypasses_the_location_write_throttle(
     """Heartbeat, then offline 0 s later: the DB must still go offline."""
     driver, token = test_driver
 
+    # The online flip requires a reviewed account (2026-10-06).
+    driver.is_verified = True
+    driver.verification_status = "approved"
+    await db.commit()
+
     # The heartbeat — this starts the 3 s throttle window.
     resp = await client.patch(
         f"/drivers/{driver.id}/location",

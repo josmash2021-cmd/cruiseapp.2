@@ -116,7 +116,7 @@ class _DriverTodoScreenState extends State<DriverTodoScreen> {
           .trim();
       final approved = user['is_verified'] == true ||
           user['isVerified'] == true ||
-          {'approved', 'active', 'online', 'clear', 'verified'}.contains(s);
+          s == 'approved';
       if (approved) {
         _goApproved();
       } else if (s == 'rejected') {

@@ -29,18 +29,28 @@ class DriverWelcomeScreen extends StatefulWidget {
   /// review (navigable legacy status screen); never-registered
   /// (`none`/anything else) → the Phase 2 to-do hub (the legacy
   /// DriverSignupScreen stays for legacy users).
+  /// The ONLY approval test that counts: the verification fields.
+  /// user['status'] is account LIVENESS (active/deactivated/blocked) — a
+  /// live, never-reviewed account read as "approved" through that branch
+  /// and the driver landed on the approved UI (user report 2026-10-06).
+  /// Prod verification_status values: none/pending/approved/rejected.
+  static bool isApprovedDriverMap(Map<String, dynamic> user) {
+    final s = (user['verification_status'] as String? ?? 'none')
+        .toLowerCase()
+        .trim();
+    final isVerified =
+        user['is_verified'] == true || user['isVerified'] == true;
+    return isVerified || s == 'approved';
+  }
+
   static Future<void> routeExistingDriver(
     BuildContext context,
     Map<String, dynamic> user,
   ) async {
-    final vStatus = user['verification_status'] as String? ?? 'none';
-    final isVerified = user['is_verified'] == true || user['isVerified'] == true;
-    final accountStatus = (user['status'] as String? ?? '').toLowerCase().trim();
-    final s = vStatus.toLowerCase().trim();
-    final approved = isVerified ||
-        {'approved', 'active', 'online', 'clear', 'verified'}.contains(s) ||
-        {'approved', 'active', 'online', 'clear', 'verified'}
-            .contains(accountStatus);
+    final s = (user['verification_status'] as String? ?? 'none')
+        .toLowerCase()
+        .trim();
+    final approved = isApprovedDriverMap(user);
 
     if (approved) {
       await LocalDataService.setDriverApprovalStatus('approved');

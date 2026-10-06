@@ -15,7 +15,7 @@ from pydantic import BaseModel, field_validator
 from utils.security import (
     _get_current_user, _verify_api_key, _security_audit_log,
 )
-from utils.helpers import utc_now, _haversine, _trip_dict, _abs_photo_url, _resolve_rider_display, _safe_create_task, _compute_user_rating, _gen_pickup_pin, booking_stops_json, MAX_DISPATCH_RADIUS_KM
+from utils.helpers import utc_now, _haversine, _trip_dict, _abs_photo_url, _resolve_rider_display, _safe_create_task, _compute_user_rating, _gen_pickup_pin, booking_stops_json, MAX_DISPATCH_RADIUS_KM, user_lang
 from services.fcm_service import _send_fcm_push_async
 from services import rating_actions, vehicle_tiers
 from services.sms_service import (
@@ -818,8 +818,11 @@ async def accept_trip(trip_id: int, body: AcceptTripIn, user: User = Depends(_ge
         rider = rider_res.scalar_one_or_none()
         if rider and rider.fcm_token:
             driver_name = f"{user.first_name or ''} {user.last_name or ''}".strip() or "Your driver"
-            await _send_fcm_push_async(rider.fcm_token, title="Driver Found!",
-                body=f"{driver_name} is on the way to pick you up.",
+            await _send_fcm_push_async(rider.fcm_token, title="¡Conductor encontrado!",
+                body=f"{driver_name} va en camino a recogerte.",
+                title_en="Driver Found!",
+                body_en=f"{driver_name} is on the way to pick you up.",
+                locale=user_lang(rider),
                 data={"type": "driver_found", "trip_id": str(trip_id)})
     except Exception as _fcm_err:
         logging.warning("[FCM] Driver found push failed: %s", _fcm_err)
@@ -1308,7 +1311,8 @@ class TripDestinationIn(BaseModel):
 _ROUTE_CHANGE_STATUSES = ("accepted", "driver_en_route", "arrived", "in_trip")
 
 
-async def _notify_driver_route_change(db, trip, title: str, body_text: str):
+async def _notify_driver_route_change(db, trip, title: str, body_text: str,
+                                      *, title_en: str = None, body_en: str = None):
     """FCM to the driver — high priority so a phone sitting in Google
     Maps surfaces the banner; tapping it lands back in the Cruise trip."""
     if not trip.driver_id:
@@ -1319,6 +1323,9 @@ async def _notify_driver_route_change(db, trip, title: str, body_text: str):
             drv.fcm_token,
             title=title,
             body=body_text,
+            title_en=title_en,
+            body_en=body_en,
+            locale=user_lang(drv),
             data={"type": "route_change", "trip_id": str(trip.id)},
         ))
 
@@ -1473,8 +1480,10 @@ async def add_trip_stop(trip_id: int, body: TripStopIn,
         except Exception as e:
             logging.error("[Stops] Firestore sync failed for %s: %s", trip.id, e)
     await _notify_driver_route_change(
-        db, trip, "New stop added",
-        stop["label"] or "The rider added a stop — open Cruise")
+        db, trip, "Nueva parada agregada",
+        stop["label"] or "El pasajero agregó una parada — abre Cruise",
+        title_en="New stop added",
+        body_en=stop["label"] or "The rider added a stop — open Cruise")
     logging.info("[Stops] Trip %s: stop added (+$%.2f) by user %s",
                  trip.id, extra / 100.0, user.id)
     return {"status": "ok", "stops": [stop], "fare": trip.fare}
@@ -1517,8 +1526,10 @@ async def change_trip_destination(trip_id: int, body: TripDestinationIn,
         except Exception as e:
             logging.error("[Stops] Firestore sync failed for %s: %s", trip.id, e)
     await _notify_driver_route_change(
-        db, trip, "Destination changed",
-        trip.dropoff_address or "The rider changed the destination — open Cruise")
+        db, trip, "Destino cambiado",
+        trip.dropoff_address or "El pasajero cambió el destino — abre Cruise",
+        title_en="Destination changed",
+        body_en=trip.dropoff_address or "The rider changed the destination — open Cruise")
     logging.info("[Stops] Trip %s: destination changed by user %s", trip.id, user.id)
     return {"status": "ok", "dropoff_address": trip.dropoff_address, "fare": trip.fare}
 
@@ -1700,8 +1711,11 @@ async def confirm_pickup_pin(trip_id: int, body: PickupPinIn,
         if user.fcm_token:
             await _send_fcm_push_async(
                 user.fcm_token,
-                title="Your rider is with you",
-                body="The pickup code matched — you can start the trip.",
+                title="Tu pasajero está contigo",
+                body="El código de recogida coincidió — puedes iniciar el viaje.",
+                title_en="Your rider is with you",
+                body_en="The pickup code matched — you can start the trip.",
+                locale=user_lang(user),
                 data={"type": "rider_confirmed_pickup", "trip_id": str(trip.id)},
             )
     except Exception as _fcm_err:
@@ -2138,31 +2152,49 @@ async def update_trip_status(trip_id: int, request: Request, status: str = Query
         rider = rider_res.scalar_one_or_none()
         if rider and rider.fcm_token:
             if canonical_new == "driver_en_route":
-                await _send_fcm_push_async(rider.fcm_token, title="Driver On The Way",
-                    body="Your driver is heading to your pickup location.",
+                await _send_fcm_push_async(rider.fcm_token, title="Conductor en camino",
+                    body="Tu conductor se dirige a tu punto de recogida.",
+                    title_en="Driver On The Way",
+                    body_en="Your driver is heading to your pickup location.",
+                    locale=user_lang(rider),
                     data={"type": "driver_en_route", "trip_id": str(trip_id)})
             elif canonical_new == "arrived":
-                await _send_fcm_push_async(rider.fcm_token, title="Driver Arrived",
-                    body="Your driver has arrived at the pickup point!",
+                await _send_fcm_push_async(rider.fcm_token, title="El conductor llegó",
+                    body="¡Tu conductor llegó al punto de recogida!",
+                    title_en="Driver Arrived",
+                    body_en="Your driver has arrived at the pickup point!",
+                    locale=user_lang(rider),
                     data={"type": "driver_arrived", "trip_id": str(trip_id)})
             elif canonical_new == "in_trip":
-                await _send_fcm_push_async(rider.fcm_token, title="Trip Started",
-                    body="Your trip has started. Enjoy your ride!",
+                await _send_fcm_push_async(rider.fcm_token, title="Viaje iniciado",
+                    body="Tu viaje ha comenzado. ¡Disfruta el recorrido!",
+                    title_en="Trip Started",
+                    body_en="Your trip has started. Enjoy your ride!",
+                    locale=user_lang(rider),
                     data={"type": "trip_started", "trip_id": str(trip_id)})
             elif canonical_new == "completed":
                 # Fix H7: differentiate notification based on actual charge outcome
                 if trip.payment_status == "paid":
                     fare_str = f"${trip.fare:.2f}" if trip.fare else ""
-                    await _send_fcm_push_async(rider.fcm_token, title="Trip Completed",
-                        body=f"Your trip is complete. {fare_str} charged to your card.",
+                    await _send_fcm_push_async(rider.fcm_token, title="Viaje completado",
+                        body=f"Tu viaje ha terminado. {fare_str} cargados a tu tarjeta.",
+                        title_en="Trip Completed",
+                        body_en=f"Your trip is complete. {fare_str} charged to your card.",
+                        locale=user_lang(rider),
                         data={"type": "trip_completed", "trip_id": str(trip_id)})
                 else:
-                    await _send_fcm_push_async(rider.fcm_token, title="Payment Failed",
-                        body="Your trip is complete but we couldn't charge your card. Please update your payment method.",
+                    await _send_fcm_push_async(rider.fcm_token, title="Pago fallido",
+                        body="Tu viaje ha terminado, pero no pudimos cobrar a tu tarjeta. Actualiza tu método de pago.",
+                        title_en="Payment Failed",
+                        body_en="Your trip is complete but we couldn't charge your card. Please update your payment method.",
+                        locale=user_lang(rider),
                         data={"type": "payment_failed", "trip_id": str(trip_id)})
             elif canonical_new == "cancelled":
-                await _send_fcm_push_async(rider.fcm_token, title="Trip Canceled",
-                    body="Your trip has been canceled.",
+                await _send_fcm_push_async(rider.fcm_token, title="Viaje cancelado",
+                    body="Tu viaje ha sido cancelado.",
+                    title_en="Trip Canceled",
+                    body_en="Your trip has been canceled.",
+                    locale=user_lang(rider),
                     data={"type": "trip_canceled", "trip_id": str(trip_id)})
     except Exception as _fcm_err_inner:
         logging.warning("[FCM] Rider push failed: %s", _fcm_err_inner)
@@ -2424,8 +2456,13 @@ async def cancel_trip(trip_id: int, request: Request, user: User = Depends(_get_
                 if _drv.fcm_token:
                     _safe_create_task(_send_fcm_push_async(
                         _drv.fcm_token,
-                        title=_title,
-                        body=_body,
+                        title="Viaje terminado" if in_trip_full_fare else "Viaje cancelado",
+                        body=("El pasajero terminó el viaje antes — se te paga la tarifa completa."
+                              if in_trip_full_fare else
+                              "El pasajero canceló este viaje. Estás en línea de nuevo."),
+                        title_en=_title,
+                        body_en=_body,
+                        locale=user_lang(_drv),
                         data={
                             "type": "trip_cancelled",
                             "trip_id": str(trip.id),
@@ -2589,8 +2626,11 @@ async def driver_cancel_trip(
             if rider and rider.fcm_token:
                 _safe_create_task(_send_fcm_push_async(
                     rider.fcm_token,
-                    "Trip cancelled",
-                    "Your driver cancelled the trip. You can request a new ride whenever you're ready.",
+                    "Viaje cancelado",
+                    "Tu conductor canceló el viaje. Puedes solicitar uno nuevo cuando quieras.",
+                    title_en="Trip cancelled",
+                    body_en="Your driver cancelled the trip. You can request a new ride whenever you're ready.",
+                    locale=user_lang(rider),
                     data={"type": "driver_cancelled", "trip_id": str(trip.id)},
                 ))
         except Exception as _fcm_err:
@@ -2653,8 +2693,11 @@ async def driver_cancel_trip(
         if rider and rider.fcm_token:
             _safe_create_task(_send_fcm_push_async(
                 rider.fcm_token,
-                "Finding you another driver",
-                "Your previous driver cancelled — we're matching you with a new driver now.",
+                "Buscándote otro conductor",
+                "Tu conductor anterior canceló — te estamos asignando uno nuevo ahora.",
+                title_en="Finding you another driver",
+                body_en="Your previous driver cancelled — we're matching you with a new driver now.",
+                locale=user_lang(rider),
                 data={"type": "driver_cancelled", "trip_id": str(trip.id)},
             ))
     except Exception as _fcm_err:

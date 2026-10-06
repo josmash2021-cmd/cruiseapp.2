@@ -560,11 +560,16 @@ class GhostDriverAgent:
         """Notify driver they've been set offline."""
         try:
             from services.fcm_service import _send_fcm_push
+            from utils.helpers import user_lang
             _send_fcm_push(
                 driver.fcm_token,
                 title="Te hemos desconectado",
                 body="Llevas más de 20 minutos sin actividad. "
                      "Abre la app cuando estés listo para conducir.",
+                title_en="You've been disconnected",
+                body_en="You've been inactive for over 20 minutes. "
+                        "Open the app when you're ready to drive.",
+                locale=user_lang(driver),
                 data={
                     "type": "ghost_offlined",
                     "action": "go_online",
@@ -579,11 +584,16 @@ class GhostDriverAgent:
         off the data type)."""
         try:
             from services.fcm_service import _send_fcm_push
+            from utils.helpers import user_lang
             _send_fcm_push(
                 driver.fcm_token,
                 title="Te desconectamos",
                 body="Estuviste en línea 12 horas seguidas. "
                      "Vuelve a conectarte cuando estés listo.",
+                title_en="Your shift has ended",
+                body_en="You were online for 12 hours straight. "
+                        "Go back online whenever you're ready.",
+                locale=user_lang(driver),
                 data={
                     "type": "driver_shift_ended",
                     "driver_id": str(driver.id),

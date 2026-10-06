@@ -5,6 +5,8 @@ import os
 import threading
 import time
 
+from cachetools import TTLCache
+
 # ── Firebase availability ────────────────────────────────────────
 # This used to be decided ONCE at import time, reading only the
 # FIREBASE_SERVICE_ACCOUNT env var. This module is imported (via
@@ -35,6 +37,46 @@ _STORAGE_BUCKET = "cruise-af9f1.firebasestorage.app"
 _drop_counts: dict = {}
 _last_drop_log = 0.0
 _DROP_LOG_INTERVAL = 60.0      # seconds between WARNING lines (first drop logs immediately)
+
+
+# ── Notification language (2026-10-05, user spec) ────────────────────────
+# `users.locale` is reported by the app at every boot. A push carrying both
+# copies (title/body ES + title_en/body_en) picks by it. Resolution order:
+# explicit `locale=` from the caller → lookup by FCM token (claim-on-write:
+# a token lives in exactly one users row) → Spanish, the historical default.
+_LOCALE_CACHE: "TTLCache[str, str]" = TTLCache(maxsize=10000, ttl=300)
+
+
+def _pick_lang(locale) -> str:
+    return "es" if (locale or "es").lower().startswith("es") else "en"
+
+
+async def _locale_for_token(token: str) -> str:
+    cached = _LOCALE_CACHE.get(token)
+    if cached:
+        return cached
+    locale = "es"
+    try:
+        from sqlalchemy import select as _sel
+        from models.database import SessionLocal as _SL, User as _U
+        async with _SL() as _db:
+            _r = await _db.execute(
+                _sel(_U.locale).where(_U.fcm_token == token).limit(1)
+            )
+            _row = _r.first()
+            if _row and _row[0]:
+                locale = _row[0]
+    except Exception as _e:
+        logging.debug("[FCM] locale lookup failed: %s", _e)
+    _LOCALE_CACHE[token] = locale
+    return locale
+
+
+def _apply_lang(locale, title, body, title_en, body_en):
+    """Pick the English copy when the user is EN and the caller sent one."""
+    if (title_en or body_en) and _pick_lang(locale) == "en":
+        return title_en or title, body_en or body
+    return title, body
 
 
 def _load_credentials():
@@ -223,22 +265,35 @@ def _send_to_topic(topic: str, title: str, body: str, data: dict = None) -> None
         logging.warning("[FCM] Topic push to '%s' failed: %s", topic, _e)
 
 
-async def _send_fcm_push_async(token: str, title: str, body: str, data: dict = None, is_offer: bool = False) -> None:
-    """Async wrapper — runs FCM push in thread pool to avoid blocking event loop."""
+async def _send_fcm_push_async(token: str, title: str, body: str, data: dict = None, is_offer: bool = False, *, title_en: str = None, body_en: str = None, locale: str = None) -> None:
+    """Async wrapper — runs FCM push in thread pool to avoid blocking event loop.
+
+    With `title_en`/`body_en` the copy follows the user's phone language:
+    an explicit `locale=` wins; otherwise it is resolved from the token's
+    user row (cached). Spanish when unknown — the historical default.
+    """
     import asyncio
     global _MAIN_LOOP
     if _MAIN_LOOP is None:
         _MAIN_LOOP = asyncio.get_event_loop()
+    if title_en or body_en:
+        _lang = _pick_lang(locale) if locale else await _locale_for_token(token)
+        title, body = _apply_lang(_lang, title, body, title_en, body_en)
     loop = asyncio.get_event_loop()
     await loop.run_in_executor(None, lambda: _send_fcm_push(token, title, body, data, is_offer))
 
 
-def _send_fcm_push(token: str, title: str, body: str, data: dict = None, is_offer: bool = False):
+def _send_fcm_push(token: str, title: str, body: str, data: dict = None, is_offer: bool = False, *, title_en: str = None, body_en: str = None, locale: str = None):
     """Send FCM push notification. Skips (and logs) if Firebase not available.
 
     Set is_offer=True for ride offer notifications — uses cruise_offers channel
     which has fullScreenIntent and max priority on Android.
+
+    With `title_en`/`body_en`, pass `locale=` (the caller's user.locale) to
+    pick the copy — the sync path cannot resolve the token's user itself.
     """
+    if locale and (title_en or body_en):
+        title, body = _apply_lang(locale, title, body, title_en, body_en)
     if not token:
         # Common and expected (user never registered a device), so it is
         # counted rather than logged line-by-line — see _log_drop.
@@ -384,9 +439,9 @@ def _send_fcm_push(token: str, title: str, body: str, data: dict = None, is_offe
 #  UNIVERSAL WRAPPER — works in both sync and async contexts
 # ═══════════════════════════════════════════════════════════════
 
-def send_fcm_push(token: str, title: str, body: str, data: dict = None, is_offer: bool = False):
+def send_fcm_push(token: str, title: str, body: str, data: dict = None, is_offer: bool = False, *, title_en: str = None, body_en: str = None, locale: str = None):
     """Universal FCM push sender — works in sync AND async contexts.
-    
+
     Use this instead of _send_fcm_push() or _send_fcm_push_async().
     It automatically detects if we're in an async context and handles accordingly.
     """
@@ -395,9 +450,9 @@ def send_fcm_push(token: str, title: str, body: str, data: dict = None, is_offer
         loop = asyncio.get_running_loop()
         # We're in an async context — schedule in background
         if loop.is_running():
-            asyncio.create_task(_send_fcm_push_async(token, title, body, data, is_offer))
+            asyncio.create_task(_send_fcm_push_async(token, title, body, data, is_offer, title_en=title_en, body_en=body_en, locale=locale))
         else:
-            loop.run_until_complete(_send_fcm_push_async(token, title, body, data, is_offer))
+            loop.run_until_complete(_send_fcm_push_async(token, title, body, data, is_offer, title_en=title_en, body_en=body_en, locale=locale))
     except RuntimeError:
         # No event loop — sync context, call directly
-        _send_fcm_push(token, title, body, data, is_offer)
+        _send_fcm_push(token, title, body, data, is_offer, title_en=title_en, body_en=body_en, locale=locale)

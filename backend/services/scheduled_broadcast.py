@@ -22,10 +22,14 @@ from sqlalchemy import select
 
 from models.database import SessionLocal, Trip, User, Vehicle
 from services.fcm_service import _send_fcm_push_async
-from utils.helpers import ACTIVE_ACCOUNT_STATUSES
+from utils.helpers import ACTIVE_ACCOUNT_STATUSES, user_lang
 
-_TITLE = "New Scheduled Ride Available"
-_BODY = "Open to accept the ride"
+# Spanish is the default (old phones report no locale); English rides in
+# title_en/body_en and fcm_service picks by the driver's users.locale.
+_TITLE = "Nuevo viaje programado disponible"
+_BODY = "Abre la app para aceptar el viaje"
+_TITLE_EN = "New Scheduled Ride Available"
+_BODY_EN = "Open to accept the ride"
 
 
 async def notify_new_scheduled_ride(trip_id: int) -> None:
@@ -103,6 +107,9 @@ async def notify_new_scheduled_ride(trip_id: int) -> None:
                             token=token,
                             title=_TITLE,
                             body=_BODY,
+                            title_en=_TITLE_EN,
+                            body_en=_BODY_EN,
+                            locale=user_lang(d),
                             data={
                                 "type": "scheduled_ride",
                                 "trip_id": str(trip.id),

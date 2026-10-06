@@ -10,6 +10,7 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import select, and_, func
 from models.database import SessionLocal, User, Trip, Rating, SupportChat, SupportMessage
 from services.fcm_service import _send_fcm_push
+from utils.helpers import user_lang
 
 log = logging.getLogger(__name__)
 
@@ -106,6 +107,10 @@ async def check_bad_trips(db) -> int:
 
             lang = "es"  # default; can be extended to read user locale
             name = (user.first_name or "").strip() or "Cliente"
+            push_title = "Tuviste algun problema en tu viaje?"
+            push_body = f"Hola {name}, nos importa tu experiencia. Escribenos si necesitas ayuda."
+            push_title_en = "Did something go wrong on your trip?"
+            push_body_en = f"Hi {name}, your experience matters to us. Message us if you need help."
 
             if lang.startswith("es"):
                 subject = f"Viaje #{trip.id} — experiencia negativa"
@@ -114,8 +119,6 @@ async def check_bad_trips(db) -> int:
                     f"Tuviste algun problema con tu conductor o el servicio? "
                     f"Estoy aqui para ayudarte a resolverlo."
                 )
-                push_title = "Tuviste algun problema en tu viaje?"
-                push_body = f"Hola {name}, nos importa tu experiencia. Escribenos si necesitas ayuda."
             else:
                 subject = f"Trip #{trip.id} — negative experience"
                 msg = (
@@ -123,8 +126,6 @@ async def check_bad_trips(db) -> int:
                     f"Did you have any issues with your driver or the service? "
                     f"I'm here to help resolve it."
                 )
-                push_title = "Did something go wrong on your trip?"
-                push_body = f"Hi {name}, your experience matters to us. Message us if you need help."
 
             chat_id = await _create_proactive_chat(trip.rider_id, subject, msg, lang, db)
             if chat_id and user.fcm_token:
@@ -132,6 +133,9 @@ async def check_bad_trips(db) -> int:
                     token=user.fcm_token,
                     title=push_title,
                     body=push_body,
+                    title_en=push_title_en,
+                    body_en=push_body_en,
+                    locale=user_lang(user),
                     data={"type": "proactive_support", "chat_id": str(chat_id)},
                 )
                 contacted += 1
@@ -182,6 +186,10 @@ async def check_bad_trips(db) -> int:
             name = (user.first_name or "").strip() or "Cliente"
             actual_min = int((trip.completed_at - trip.started_at).total_seconds() / 60)
             extra_min = max(0, actual_min - (trip.duration or 0))
+            push_title = "Tu viaje tardo mas de lo esperado"
+            push_body = f"Hola {name}, todo bien? Podemos revisar el cobro de tu ultimo viaje."
+            push_title_en = "Your trip took longer than expected"
+            push_body_en = f"Hi {name}, is everything okay? We can review your last trip charge."
 
             if lang.startswith("es"):
                 subject = f"Viaje #{trip.id} — duracion excesiva"
@@ -190,8 +198,6 @@ async def check_bad_trips(db) -> int:
                     f"mas de lo estimado. Tuviste algun inconveniente con la ruta? "
                     f"Puedo revisar el cobro si hubo un recargo injusto."
                 )
-                push_title = "Tu viaje tardo mas de lo esperado"
-                push_body = f"Hola {name}, todo bien? Podemos revisar el cobro de tu ultimo viaje."
             else:
                 subject = f"Trip #{trip.id} — excessive duration"
                 msg = (
@@ -199,8 +205,6 @@ async def check_bad_trips(db) -> int:
                     f"beyond the estimate. Did you have any issues with the route? "
                     f"I can review the charge if there was an unfair added cost."
                 )
-                push_title = "Your trip took longer than expected"
-                push_body = f"Hi {name}, is everything okay? We can review your last trip charge."
 
             chat_id = await _create_proactive_chat(trip.rider_id, subject, msg, lang, db)
             if chat_id and user.fcm_token:
@@ -208,6 +212,9 @@ async def check_bad_trips(db) -> int:
                     token=user.fcm_token,
                     title=push_title,
                     body=push_body,
+                    title_en=push_title_en,
+                    body_en=push_body_en,
+                    locale=user_lang(user),
                     data={"type": "proactive_support", "chat_id": str(chat_id)},
                 )
                 contacted += 1
@@ -246,6 +253,10 @@ async def check_bad_trips(db) -> int:
                 continue
             lang = "es"
             name = (user.first_name or "").strip() or "Cliente"
+            push_title = "Lamentamos la cancelacion de tu conductor"
+            push_body = f"Hola {name}, puedo ayudarte con tu viaje cancelado?"
+            push_title_en = "Sorry about your driver's cancellation"
+            push_body_en = f"Hi {name}, can I help with your canceled trip?"
             if lang.startswith("es"):
                 subject = f"Viaje #{trip.id} -- conductor cancelo"
                 msg = (
@@ -253,8 +264,6 @@ async def check_bad_trips(db) -> int:
                     f"Entendemos que eso puede ser muy inconveniente. "
                     f"Te cobraron alguna tarifa de cancelacion? Puedo revisarlo y procesarla si aplica."
                 )
-                push_title = "Lamentamos la cancelacion de tu conductor"
-                push_body = f"Hola {name}, puedo ayudarte con tu viaje cancelado?"
             else:
                 subject = f"Trip #{trip.id} -- driver canceled"
                 msg = (
@@ -262,12 +271,12 @@ async def check_bad_trips(db) -> int:
                     f"We understand that can be very inconvenient. "
                     f"Were you charged any cancellation fee? I can review and waive it if applicable."
                 )
-                push_title = "Sorry about your driver's cancellation"
-                push_body = f"Hi {name}, can I help with your canceled trip?"
             chat_id = await _create_proactive_chat(trip.rider_id, subject, msg, lang, db)
             if chat_id and user.fcm_token:
                 await _send_fcm_push(
                     token=user.fcm_token, title=push_title, body=push_body,
+                    title_en=push_title_en, body_en=push_body_en,
+                    locale=user_lang(user),
                     data={"type": "proactive_support", "chat_id": str(chat_id)},
                 )
                 contacted += 1
@@ -306,10 +315,14 @@ async def check_bad_trips(db) -> int:
             )
             push_title = "Felicitaciones por tu primer viaje!"
             push_body = f"Hola {name}, como te fue? Estamos aqui si necesitas ayuda."
+            push_title_en = "Congratulations on your first trip!"
+            push_body_en = f"Hi {name}, how did it go? We're here if you need help."
             chat_id = await _create_proactive_chat(driver.id, subject, msg, "es", db)
             if chat_id and driver.fcm_token:
                 await _send_fcm_push(
                     token=driver.fcm_token, title=push_title, body=push_body,
+                    title_en=push_title_en, body_en=push_body_en,
+                    locale=user_lang(driver),
                     data={"type": "proactive_support", "chat_id": str(chat_id)},
                 )
                 contacted += 1
@@ -341,6 +354,10 @@ async def check_bad_trips(db) -> int:
                 continue
             name = (user.first_name or "").strip() or "Cliente"
             lang = "es"
+            push_title = "Problema con tu pago -- podemos ayudar"
+            push_body = f"Hola {name}, hay un detalle con el pago de tu ultimo viaje."
+            push_title_en = "Payment issue -- we can help"
+            push_body_en = f"Hi {name}, there's a detail with your last trip payment."
             if lang.startswith("es"):
                 subject = f"Viaje #{trip.id} -- problema de pago"
                 msg = (
@@ -348,8 +365,6 @@ async def check_bad_trips(db) -> int:
                     f"No te preocupes, tu viaje esta registrado. "
                     f"Podemos revisar juntos tu metodo de pago para resolverlo?"
                 )
-                push_title = "Problema con tu pago -- podemos ayudar"
-                push_body = f"Hola {name}, hay un detalle con el pago de tu ultimo viaje."
             else:
                 subject = f"Trip #{trip.id} -- payment issue"
                 msg = (
@@ -357,12 +372,12 @@ async def check_bad_trips(db) -> int:
                     f"Don't worry, your trip is on record. "
                     f"Can we review your payment method together to resolve it?"
                 )
-                push_title = "Payment issue -- we can help"
-                push_body = f"Hi {name}, there's a detail with your last trip payment."
             chat_id = await _create_proactive_chat(trip.rider_id, subject, msg, lang, db)
             if chat_id and user.fcm_token:
                 await _send_fcm_push(
                     token=user.fcm_token, title=push_title, body=push_body,
+                    title_en=push_title_en, body_en=push_body_en,
+                    locale=user_lang(user),
                     data={"type": "proactive_support", "chat_id": str(chat_id)},
                 )
                 contacted += 1

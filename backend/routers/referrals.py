@@ -279,7 +279,7 @@ async def credit_referrer_if_qualified(
         # Failures are tolerated (no FCM token, network blip, etc.).
         try:
             from services.fcm_service import _send_fcm_push_async
-            from utils.helpers import _safe_create_task
+            from utils.helpers import _safe_create_task, user_lang
             from sqlalchemy import select as _sel
             from models.database import User as _U
             _r = await db.execute(_sel(_U).where(_U.id == ref.referrer_id))
@@ -291,10 +291,13 @@ async def credit_referrer_if_qualified(
                 _safe_create_task(
                     _send_fcm_push_async(
                         _ru.fcm_token,
-                        f"🎉 You earned ${bonus_cents // 100} Cruise Cash!",
-                        "Your referral completed their qualifying ride. Spend it on any trip.",
+                        f"🎉 ¡Ganaste ${bonus_cents // 100} en Cruise Cash!",
+                        "Tu referido completó un viaje que califica. Úsalo en cualquier viaje.",
                         data={"type": "cruise_cash_earned",
                               "amount_cents": str(bonus_cents)},
+                        title_en=f"🎉 You earned ${bonus_cents // 100} Cruise Cash!",
+                        body_en="Your referral completed their qualifying ride. Spend it on any trip.",
+                        locale=user_lang(_ru),
                     ),
                     name=f"referral_bonus_push_{ref.referrer_id}",
                 )
@@ -305,10 +308,13 @@ async def credit_referrer_if_qualified(
                     _safe_create_task(
                         _send_fcm_push_async(
                             _ru2.fcm_token,
-                            f"🎉 You earned ${referee_bonus_cents // 100} Cruise Cash!",
-                            "Your referral welcome bonus just landed. Spend it on any trip.",
+                            f"🎉 ¡Ganaste ${referee_bonus_cents // 100} en Cruise Cash!",
+                            "Tu bono de bienvenida por referido acaba de llegar. Úsalo en cualquier viaje.",
                             data={"type": "cruise_cash_earned",
                                   "amount_cents": str(referee_bonus_cents)},
+                            title_en=f"🎉 You earned ${referee_bonus_cents // 100} Cruise Cash!",
+                            body_en="Your referral welcome bonus just landed. Spend it on any trip.",
+                            locale=user_lang(_ru2),
                         ),
                         name=f"referral_welcome_push_{referee_id}",
                     )

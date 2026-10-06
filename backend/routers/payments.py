@@ -19,7 +19,7 @@ from utils.security import (
     _check_login_throttle, _record_login_failure, _clear_login_failures,
     JWT_SECRET, JWT_ALGORITHM,
 )
-from utils.helpers import _safe_create_task, _haversine, _abs_photo_url, _user_dict, _resolve_rider_display, _gen_pickup_pin
+from utils.helpers import _safe_create_task, _haversine, _abs_photo_url, _user_dict, _resolve_rider_display, _gen_pickup_pin, user_lang
 from services.fcm_service import _send_fcm_push
 from services import vehicle_tiers, web_pricing
 from services.sms_service import notify_guest_welcome
@@ -1624,9 +1624,12 @@ async def stripe_webhook(request: Request, db: AsyncSession = Depends(get_db)):
                             from services.fcm_service import _send_fcm_push
                             _send_fcm_push(
                                 rider.fcm_token,
-                                "Payment Failed",
-                                f"Your payment for trip #{trip_id} failed. Please update your payment method.",
+                                "Pago rechazado",
+                                f"Tu pago del viaje #{trip_id} falló. Actualiza tu método de pago.",
                                 {"type": "payment_failed", "trip_id": str(trip_id)},
+                                title_en="Payment Failed",
+                                body_en=f"Your payment for trip #{trip_id} failed. Please update your payment method.",
+                                locale=user_lang(rider),
                             )
                     except Exception as fcm_err:
                         logging.warning("[Stripe Webhook] FCM notify failed for trip %s: %s", trip_id, fcm_err)
@@ -2767,13 +2770,16 @@ async def web_booking_cancel(booking_id: int, request: Request, db: AsyncSession
                     continue
                 _safe_create_task(_send_fcm_push_async(
                     drv.fcm_token,
-                    title="Ride cancelled",
-                    body="The rider cancelled this trip.",
+                    title="Viaje cancelado",
+                    body="El pasajero canceló este viaje.",
                     data={
                         "type": "booking_cancelled",
                         "trip_id": str(trip.id),
                         "cancelled_by": "rider",
                     },
+                    title_en="Ride cancelled",
+                    body_en="The rider cancelled this trip.",
+                    locale=user_lang(drv),
                 ))
     except Exception as _fcm_err:
         logging.warning("[WebCancel] FCM fan-out failed for trip %d: %s", trip.id, _fcm_err)
@@ -2922,9 +2928,12 @@ async def _web_tip_credit(db, trip, amount_cents: int, intent_id: str):
         if drv and drv.fcm_token:
             _send_fcm_push(
                 drv.fcm_token,
-                title="You got a tip 🎉",
-                body=f"Your rider left you a ${amt:.2f} tip.",
+                title="Recibiste una propina 🎉",
+                body=f"Tu pasajero te dejó una propina de ${amt:.2f}.",
                 data={"type": "tip", "trip_id": str(trip.id)},
+                title_en="You got a tip 🎉",
+                body_en=f"Your rider left you a ${amt:.2f} tip.",
+                locale=user_lang(drv),
             )
     except Exception as e:
         logging.warning("[WebTip] FCM failed for trip %s: %s", trip.id, e)
@@ -3095,9 +3104,12 @@ async def web_booking_rider_confirmed(booking_id: int, request: Request, db: Asy
         if drv and drv.fcm_token:
             _send_fcm_push(
                 drv.fcm_token,
-                title="Your rider is with you",
-                body="The rider confirmed they are in the car — you can start the trip.",
+                title="Tu pasajero está contigo",
+                body="El pasajero confirmó que está en el carro — puedes iniciar el viaje.",
                 data={"type": "rider_confirmed_pickup", "trip_id": str(trip.id)},
+                title_en="Your rider is with you",
+                body_en="The rider confirmed they are in the car — you can start the trip.",
+                locale=user_lang(drv),
             )
     except Exception as _fcm_err:
         logging.warning("[WebRiderConfirm] FCM failed for trip %d: %s", trip.id, _fcm_err)
@@ -3121,7 +3133,8 @@ async def web_booking_rider_confirmed(booking_id: int, request: Request, db: Asy
 _WEB_ROUTE_CHANGE_STATUSES = ("accepted", "driver_en_route", "arrived", "in_trip")
 
 
-async def _web_notify_driver_route_change(db, trip, title: str, body_text: str):
+async def _web_notify_driver_route_change(db, trip, title: str, body_text: str,
+                                          title_en: str = None, body_en: str = None):
     """FCM to the driver — same banner the app's route-change endpoints send."""
     if not trip.driver_id:
         return
@@ -3133,6 +3146,9 @@ async def _web_notify_driver_route_change(db, trip, title: str, body_text: str):
                 title=title,
                 body=body_text,
                 data={"type": "route_change", "trip_id": str(trip.id)},
+                title_en=title_en,
+                body_en=body_en,
+                locale=user_lang(drv),
             )
     except Exception as _fcm_err:
         logging.warning("[WebStops] FCM failed for trip %d: %s", trip.id, _fcm_err)
@@ -3194,8 +3210,10 @@ async def web_booking_add_stop(booking_id: int, request: Request, db: AsyncSessi
         except Exception as e:
             logging.error("[WebStops] Firestore sync failed for %s: %s", trip.id, e)
     await _web_notify_driver_route_change(
-        db, trip, "New stop added",
-        label or "The rider added a stop — open Cruise")
+        db, trip, "Nueva parada agregada",
+        label or "El pasajero agregó una parada — abre Cruise",
+        title_en="New stop added",
+        body_en=label or "The rider added a stop — open Cruise")
     logging.info("[WebStops] Trip %s: stop added (+$%.2f) via web", trip.id, extra / 100.0)
     return {"status": "ok", "stops": [stop], "fare": trip.fare}
 
@@ -3251,8 +3269,10 @@ async def web_booking_change_destination(booking_id: int, request: Request, db: 
         except Exception as e:
             logging.error("[WebStops] Firestore sync failed for %s: %s", trip.id, e)
     await _web_notify_driver_route_change(
-        db, trip, "Destination changed",
-        trip.dropoff_address or "The rider changed the destination — open Cruise")
+        db, trip, "Destino cambiado",
+        trip.dropoff_address or "El pasajero cambió el destino — abre Cruise",
+        title_en="Destination changed",
+        body_en=trip.dropoff_address or "The rider changed the destination — open Cruise")
     logging.info("[WebStops] Trip %s: destination changed via web", trip.id)
     return {"status": "ok", "dropoff_address": trip.dropoff_address, "fare": trip.fare}
 

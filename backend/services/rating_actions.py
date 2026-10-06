@@ -20,6 +20,7 @@ from sqlalchemy import func, select
 
 from models.database import Notification, Rating, User
 from services import rating_engine as eng
+from utils.helpers import user_lang
 
 logger = logging.getLogger(__name__)
 
@@ -38,12 +39,22 @@ FOLLOWUP_DELAY_MINUTES = 30
 
 # ── Copy ──────────────────────────────────────────────────────────────
 # Spanish, matching every other driver-facing notification in the backend.
+# Each `_en` twin feeds FCM's title_en/body_en so the push follows the
+# driver's phone language; the in-app record keeps the Spanish copy.
 
 def _warning_copy(score: float) -> tuple[str, str]:
     return (
         "Tu calificación bajó",
         f"Tu calificación es {score:.1f}. Cuida los detalles del viaje para "
         "que vuelva a subir: cada viaje con 4 o 5 estrellas te suma.",
+    )
+
+
+def _warning_copy_en(score: float) -> tuple[str, str]:
+    return (
+        "Your rating went down",
+        f"Your rating is {score:.1f}. Take care of the details on each "
+        "trip to bring it back up: every 4 or 5 star trip adds up.",
     )
 
 
@@ -56,12 +67,30 @@ def _danger_copy(score: float) -> tuple[str, str]:
     )
 
 
+def _danger_copy_en(score: float) -> tuple[str, str]:
+    return (
+        "Deactivation risk",
+        f"Your rating is {score:.1f}. If it drops to "
+        f"{eng.SUSPEND_AT:.1f} your account will be temporarily "
+        "deactivated. Improve your service and take care of every trip.",
+    )
+
+
 def _suspended_copy(score: float) -> tuple[str, str]:
     return (
         "Cuenta desactivada temporalmente",
         f"Tu calificación bajó a {score:.1f}. Tu cuenta queda desactivada "
         f"por {eng.SUSPENSION_HOURS} horas. Al volver podrás conducir de "
         "nuevo; cuida tu servicio para no perder el acceso.",
+    )
+
+
+def _suspended_copy_en(score: float) -> tuple[str, str]:
+    return (
+        "Account temporarily deactivated",
+        f"Your rating dropped to {score:.1f}. Your account is deactivated "
+        f"for {eng.SUSPENSION_HOURS} hours. Once you are back you can "
+        "drive again; take care of your service so you don't lose access.",
     )
 
 
@@ -73,6 +102,14 @@ def _restored_copy(score: float) -> tuple[str, str]:
     )
 
 
+def _restored_copy_en(score: float) -> tuple[str, str]:
+    return (
+        "Your account is active again",
+        f"You can drive again. Your rating is now "
+        f"{score:.1f} — 4 and 5 star trips will bring it back up.",
+    )
+
+
 def _followup_copy() -> tuple[str, str]:
     return (
         "Cuida tu servicio",
@@ -81,10 +118,24 @@ def _followup_copy() -> tuple[str, str]:
     )
 
 
+def _followup_copy_en() -> tuple[str, str]:
+    return (
+        "Take care of your service",
+        "One of your recent trips was not great. Take care of your service "
+        "and improve it so you stay among the top drivers.",
+    )
+
+
 _BAND_COPY = {
     "warning": (TYPE_WARNING, _warning_copy),
     "danger": (TYPE_DANGER, _danger_copy),
     "suspend": (TYPE_SUSPENDED, _suspended_copy),
+}
+
+_BAND_COPY_EN = {
+    "warning": _warning_copy_en,
+    "danger": _danger_copy_en,
+    "suspend": _suspended_copy_en,
 }
 
 
@@ -95,12 +146,15 @@ _PUSH_MUTED = {TYPE_WARNING, TYPE_DANGER, TYPE_SUSPENDED, TYPE_RESTORED}
 
 
 async def notify(db, user: User, notif_type: str, title: str, body: str,
-                  data: dict | None = None) -> None:
+                  data: dict | None = None, *, title_en: str | None = None,
+                  body_en: str | None = None) -> None:
     """Write the in-app notification, then try the push.
 
     The row goes in first and is not conditional on the push: the
     notifications page is the record, FCM is only the tap on the shoulder.
     A stale token is the normal case for this app, not an exception.
+    The push half follows the driver's phone language when the English
+    copy is provided.
     """
     db.add(Notification(
         user_id=user.id,
@@ -119,6 +173,9 @@ async def notify(db, user: User, notif_type: str, title: str, body: str,
             user.fcm_token,
             title=title,
             body=body,
+            title_en=title_en,
+            body_en=body_en,
+            locale=user_lang(user),
             data={"type": notif_type, **{k: str(v) for k, v in (data or {}).items()}},
         )
     except Exception as e:
@@ -157,8 +214,10 @@ async def apply_driver_rating(db, driver: User, stars: int) -> float:
                 "suspend — warning instead", driver.id, new,
             )
             title, body = _danger_copy(new)
+            title_en, body_en = _danger_copy_en(new)
             await notify(db, driver, TYPE_DANGER, title, body,
-                          {"score": new})
+                          {"score": new}, title_en=title_en,
+                          body_en=body_en)
             return new
 
         # Not for an account that is already gone: "deactivated" is below
@@ -179,7 +238,9 @@ async def apply_driver_rating(db, driver: User, stars: int) -> float:
 
     notif_type, copy = _BAND_COPY[new_band]
     title, body = copy(new)
-    await notify(db, driver, notif_type, title, body, {"score": new})
+    title_en, body_en = _BAND_COPY_EN[new_band](new)
+    await notify(db, driver, notif_type, title, body, {"score": new},
+                 title_en=title_en, body_en=body_en)
     return new
 
 
@@ -264,8 +325,10 @@ async def deliver_due_followups(db, now: datetime | None = None) -> int:
             continue
 
         title, body = _followup_copy()
+        title_en, body_en = _followup_copy_en()
         await notify(db, user, TYPE_FOLLOWUP, title, body,
-                     {"rating_id": rating.id})
+                     {"rating_id": rating.id}, title_en=title_en,
+                     body_en=body_en)
         sent += 1
 
     if sent:
@@ -311,8 +374,10 @@ async def release_expired_suspensions(db, now: datetime | None = None) -> int:
 
         driver.status = "active"
         title, body = _restored_copy(eng.RATING_AFTER_SUSPENSION)
+        title_en, body_en = _restored_copy_en(eng.RATING_AFTER_SUSPENSION)
         await notify(db, driver, TYPE_RESTORED, title, body,
-                     {"score": eng.RATING_AFTER_SUSPENSION})
+                     {"score": eng.RATING_AFTER_SUSPENSION},
+                     title_en=title_en, body_en=body_en)
         logger.info("[Rating] driver %s released from rating suspension",
                     driver.id)
 

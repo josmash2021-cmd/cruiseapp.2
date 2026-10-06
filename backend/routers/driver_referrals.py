@@ -42,7 +42,7 @@ from models.database import (
     get_db,
 )
 from utils.security import _get_current_user, _verify_api_key
-from utils.helpers import _safe_create_task
+from utils.helpers import _safe_create_task, user_lang
 from services.fcm_service import _send_fcm_push_async
 
 router = APIRouter()
@@ -317,7 +317,9 @@ async def _credit_cash(db: AsyncSession, driver: User, cents: int) -> None:
     driver.total_earnings = round((driver.total_earnings or 0.0) + dollars, 2)
 
 
-def _push(driver: User, title: str, body: str, cents: int, tag: str) -> None:
+def _push(driver: User, title: str, body: str, cents: int, tag: str,
+          title_en: Optional[str] = None,
+          body_en: Optional[str] = None) -> None:
     """FCM, best-effort and fire-and-forget — this runs inside the
     trip-completion path, so a slow token must never stall it."""
     if not driver.fcm_token:
@@ -329,6 +331,9 @@ def _push(driver: User, title: str, body: str, cents: int, tag: str) -> None:
                 title,
                 body,
                 data={"type": tag, "amount_cents": str(cents)},
+                title_en=title_en,
+                body_en=body_en,
+                locale=user_lang(driver),
             ),
             name=f"{tag}_{driver.id}",
         )
@@ -395,10 +400,13 @@ async def bump_driver_referral_progress(
                     ref.status = "qualified"
                     ref.qualified_at = now
                     ref.paid_at = now
-                    _push(referrer, "Referral bonus earned!",
-                          f"You just earned ${cents // 100} from a driver you "
-                          "referred. Cash out anytime.", cents,
-                          "driver_referral_qualified")
+                    _push(referrer, "¡Bono de referido ganado!",
+                          f"Acabas de ganar ${cents // 100} de un conductor que "
+                          "referiste. Retira cuando quieras.", cents,
+                          "driver_referral_qualified",
+                          title_en="Referral bonus earned!",
+                          body_en=f"You just earned ${cents // 100} from a driver you "
+                                  "referred. Cash out anytime.")
             await db.commit()
             return
 
@@ -416,10 +424,13 @@ async def bump_driver_referral_progress(
                 cents = settings["referee_bonus_cents"]
                 await _credit_cash(db, referee, cents)
                 ref.referee_bonus_paid_at = now
-                _push(referee, "Welcome bonus earned!",
-                      f"You just earned ${cents // 100} for completing your "
-                      "first rides. Cash out anytime.", cents,
-                      "driver_referral_welcome")
+                _push(referee, "¡Bono de bienvenida ganado!",
+                      f"Acabas de ganar ${cents // 100} por completar tus "
+                      "primeros viajes. Retira cuando quieras.", cents,
+                      "driver_referral_welcome",
+                      title_en="Welcome bonus earned!",
+                      body_en=f"You just earned ${cents // 100} for completing your "
+                              "first rides. Cash out anytime.")
 
         # ── Milestone 1: 50 rides inside the 60-day window ──
         if ref.qualified_at is None:
@@ -442,12 +453,17 @@ async def bump_driver_referral_progress(
                     await _credit_cash(db, referrer, cents)
                     ref.qualified_at = now
                     ref.status = "milestone1"
-                    _push(referrer, "Referral bonus earned!",
-                          f"You just earned ${cents // 100} — a driver you "
-                          f"referred completed {m1['rides']} rides. "
-                          f"${m2['amount_cents'] // 100} more at "
-                          f"{m2['rides']}.", cents,
-                          "driver_referral_milestone1")
+                    _push(referrer, "¡Bono de referido ganado!",
+                          f"Acabas de ganar ${cents // 100} — un conductor que "
+                          f"referiste completó {m1['rides']} viajes. "
+                          f"${m2['amount_cents'] // 100} más a los "
+                          f"{m2['rides']} viajes.", cents,
+                          "driver_referral_milestone1",
+                          title_en="Referral bonus earned!",
+                          body_en=f"You just earned ${cents // 100} — a driver you "
+                                  f"referred completed {m1['rides']} rides. "
+                                  f"${m2['amount_cents'] // 100} more at "
+                                  f"{m2['rides']}.")
 
         # ── Milestone 2: 200 rides inside the 180-day window ──
         elif ref.paid_at is None and ref.rides_completed >= m2["rides"]:
@@ -460,11 +476,15 @@ async def bump_driver_referral_progress(
                 await _credit_cash(db, referrer, cents)
                 ref.paid_at = now
                 ref.status = "qualified"
-                _push(referrer, "Referral bonus earned!",
-                      f"You just earned ${cents // 100} — a driver you "
-                      f"referred completed {m2['rides']} rides. Cash out "
-                      "anytime.", cents,
-                      "driver_referral_milestone2")
+                _push(referrer, "¡Bono de referido ganado!",
+                      f"Acabas de ganar ${cents // 100} — un conductor que "
+                      f"referiste completó {m2['rides']} viajes. Retira "
+                      "cuando quieras.", cents,
+                      "driver_referral_milestone2",
+                      title_en="Referral bonus earned!",
+                      body_en=f"You just earned ${cents // 100} — a driver you "
+                              f"referred completed {m2['rides']} rides. Cash out "
+                              "anytime.")
 
         await db.commit()
     except Exception as e:

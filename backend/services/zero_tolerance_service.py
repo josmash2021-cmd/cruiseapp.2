@@ -30,6 +30,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.database import User, ZeroToleranceComplaint, ZeroToleranceAudit
+from utils.helpers import user_lang
 
 logger = logging.getLogger(__name__)
 
@@ -205,10 +206,16 @@ def _notify_driver_suspended(driver: User, complaint_id: int):
         _send_fcm_push(
             driver.fcm_token,
             title="🚫 Cuenta suspendida — investigación en curso",
+            title_en="🚫 Account suspended — investigation in progress",
             body=(
                 "Recibimos un reporte de seguridad. Tu cuenta está suspendida "
                 "temporalmente mientras investigamos (política de tolerancia cero)."
             ),
+            body_en=(
+                "We received a safety report. Your account is temporarily "
+                "suspended while we investigate (zero-tolerance policy)."
+            ),
+            locale=user_lang(driver),
             data={
                 "type": "zero_tolerance_suspended",
                 "driver_id": str(driver.id),
@@ -227,10 +234,16 @@ def _notify_driver_restored(driver: User, complaint_id: int):
         _send_fcm_push(
             driver.fcm_token,
             title="✅ Cuenta reactivada",
+            title_en="✅ Account reactivated",
             body=(
                 "La investigación concluyó y tu cuenta fue reactivada. "
                 "Ya puedes volver a conectarte."
             ),
+            body_en=(
+                "The investigation concluded and your account was reactivated. "
+                "You can go back online now."
+            ),
+            locale=user_lang(driver),
             data={
                 "type": "zero_tolerance_restored",
                 "driver_id": str(driver.id),
@@ -249,10 +262,16 @@ def _notify_driver_deactivated(driver: User, complaint_id: int):
         _send_fcm_push(
             driver.fcm_token,
             title="🚫 Cuenta desactivada",
+            title_en="🚫 Account deactivated",
             body=(
                 "Tras completar la investigación, tu cuenta ha sido desactivada "
                 "conforme a nuestra política de tolerancia cero."
             ),
+            body_en=(
+                "After completing the investigation, your account has been "
+                "deactivated under our zero-tolerance policy."
+            ),
+            locale=user_lang(driver),
             data={
                 "type": "zero_tolerance_deactivated",
                 "driver_id": str(driver.id),

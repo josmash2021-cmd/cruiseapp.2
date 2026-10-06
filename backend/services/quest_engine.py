@@ -363,8 +363,10 @@ class QuestEngine:
         try:
             await _send_fcm_push_async(
                 user_id=driver_id,
-                title=f"🎯 Quest Milestone Reached!",
-                body=f"You hit Tier {tier} in '{template.title}' and earned ${reward:.2f}!",
+                title="🎯 ¡Hito de Quest alcanzado!",
+                body=f"¡Llegaste al nivel {tier} en '{template.title}' y ganaste ${reward:.2f}!",
+                title_en="🎯 Quest Milestone Reached!",
+                body_en=f"You hit Tier {tier} in '{template.title}' and earned ${reward:.2f}!",
                 data={
                     "type": "quest_tier_achieved",
                     "quest_template_id": str(template.id),
@@ -385,8 +387,10 @@ class QuestEngine:
         try:
             await _send_fcm_push_async(
                 user_id=driver_id,
-                title=f"🏆 Quest Complete!",
-                body=f"You completed '{template.title}'! Total reward: ${total_reward:.2f}. Tap to claim.",
+                title="🏆 ¡Quest completada!",
+                body=f"¡Completaste '{template.title}'! Recompensa total: ${total_reward:.2f}. Toca para reclamar.",
+                title_en="🏆 Quest Complete!",
+                body_en=f"You completed '{template.title}'! Total reward: ${total_reward:.2f}. Tap to claim.",
                 data={
                     "type": "quest_completed",
                     "quest_template_id": str(template.id),

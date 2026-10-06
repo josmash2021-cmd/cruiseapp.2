@@ -16,6 +16,8 @@ from typing import Optional
 from fastapi import APIRouter, Request, HTTPException, BackgroundTasks
 from fastapi.responses import JSONResponse
 
+from utils.helpers import user_lang
+
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["webhooks"])
 
@@ -287,9 +289,12 @@ async def _handle_payment_intent_failed(data_object: dict, client_ip: str):
         if rider and rider.fcm_token:
             _send_fcm_push(
                 rider.fcm_token,
-                "Payment Failed",
-                f"Your payment for trip #{trip_id} failed. Please update your payment method.",
+                "Pago rechazado",
+                f"Tu pago del viaje #{trip_id} falló. Por favor actualiza tu método de pago.",
                 {"type": "payment_failed", "trip_id": str(trip_id)},
+                title_en="Payment Failed",
+                body_en=f"Your payment for trip #{trip_id} failed. Please update your payment method.",
+                locale=user_lang(rider),
             )
 
     logger.warning("[StripeWH] Trip %s payment failed: %s", trip_id, error_msg)

@@ -22,7 +22,7 @@ from utils.security import (
 from utils.helpers import (
     utc_now, utc_today_start, utc_days_ago, utc_month_start, utc_year_start,
     _haversine, _user_dict, _vehicle_dict, _doc_dict, _trip_dict, _safe_create_task,
-    _compute_user_rating, validate_driver_minimum_age,
+    _compute_user_rating, validate_driver_minimum_age, user_lang,
     ACTIVE_ACCOUNT_STATUSES, _active_destination,
 )
 # Both of these were used below without ever being imported: every
@@ -3132,9 +3132,13 @@ async def change_license_plate(
             if user.fcm_token:
                 await _send_fcm_push_async(
                     user.fcm_token,
-                    title="Upload your new registration",
-                    body="Your plate changed, so we need a registration that "
-                         "matches it before you can go online.",
+                    title="Sube tu nuevo registro",
+                    body="Tu placa cambió, así que necesitamos un registro que "
+                         "coincida con ella antes de que puedas conectarte.",
+                    title_en="Upload your new registration",
+                    body_en="Your plate changed, so we need a registration that "
+                            "matches it before you can go online.",
+                    locale=user_lang(user),
                     data={"type": "plate_changed"},
                 )
         except Exception:
@@ -3711,6 +3715,13 @@ async def _send_pre_adverse_notice(driver, report_id: str):
                     "Si resulta en una decisión adversa, recibirás un aviso "
                     "previo con una copia del reporte y tus derechos (FCRA)."
                 ),
+                title_en="📋 Update on your background check",
+                body_en=(
+                    "Your background check requires review. If it results "
+                    "in an adverse decision, you will receive a pre-adverse "
+                    "notice with a copy of the report and your rights (FCRA)."
+                ),
+                locale=user_lang(driver),
                 data={
                     "type": "background_check_pre_adverse",
                     "driver_id": str(driver.id),

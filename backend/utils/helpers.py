@@ -594,3 +594,9 @@ def validate_driver_minimum_age(value, minimum_age: int = MIN_DRIVER_AGE) -> dat
 
 def validate_rider_minimum_age(value, minimum_age: int = MIN_RIDER_AGE) -> date:
     return validate_minimum_age(value, minimum_age, "Riders")
+
+
+def user_lang(user) -> str:
+    """"es" | "en" — the phone language the app reported (users.locale).
+    Spanish default = the historical behaviour for users on old builds."""
+    return "es" if (getattr(user, "locale", None) or "es").lower().startswith("es") else "en"

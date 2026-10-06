@@ -319,6 +319,7 @@ class DocumentExpiryAgent:
             if not driver.fcm_token:
                 return
             from services.fcm_service import _send_fcm_push
+            from utils.helpers import user_lang
 
             doc_names = {
                 "license": "licencia de conducir",
@@ -329,6 +330,15 @@ class DocumentExpiryAgent:
                 "document": "documento",
             }
             doc_name = doc_names.get(doc_type, doc_type)
+            doc_names_en = {
+                "license": "driver's license",
+                "insurance": "vehicle insurance",
+                "registration": "vehicle registration",
+                "vehicle_registration": "vehicle registration",
+                "vehicle_insurance": "vehicle insurance",
+                "document": "document",
+            }
+            doc_name_en = doc_names_en.get(doc_type, doc_type)
 
             if threshold <= 3:
                 title = f"🔴 URGENTE: Tu {doc_name} vence en {days_left} días"
@@ -336,17 +346,29 @@ class DocumentExpiryAgent:
                     f"Actualiza tu {doc_name} antes de que expire. "
                     "Si vence, tu cuenta será suspendida automáticamente."
                 )
+                title_en = f"🔴 URGENT: Your {doc_name_en} expires in {days_left} days"
+                body_en = (
+                    f"Update your {doc_name_en} before it expires. "
+                    "If it expires, your account will be suspended automatically."
+                )
             elif threshold <= 7:
                 title = f"🟠 Tu {doc_name} vence en {days_left} días"
                 body = f"Recuerda renovar tu {doc_name} lo antes posible para seguir conduciendo."
+                title_en = f"🟠 Your {doc_name_en} expires in {days_left} days"
+                body_en = f"Remember to renew your {doc_name_en} as soon as possible to keep driving."
             else:
                 title = f"📋 Tu {doc_name} vence en {days_left} días"
                 body = f"Te recordamos que tu {doc_name} vence pronto. Planifica su renovación."
+                title_en = f"📋 Your {doc_name_en} expires in {days_left} days"
+                body_en = f"Reminder: your {doc_name_en} expires soon. Plan its renewal."
 
             _send_fcm_push(
                 driver.fcm_token,
                 title=title,
                 body=body,
+                title_en=title_en,
+                body_en=body_en,
+                locale=user_lang(driver),
                 data={
                     "type": "document_expiry_warning",
                     "doc_type": doc_type,
@@ -363,6 +385,7 @@ class DocumentExpiryAgent:
             if not driver.fcm_token:
                 return
             from services.fcm_service import _send_fcm_push
+            from utils.helpers import user_lang
 
             if suspended:
                 title = "🚫 Cuenta suspendida — documento expirado"
@@ -371,14 +394,25 @@ class DocumentExpiryAgent:
                     "Tu cuenta ha sido suspendida. Actualiza tu documento "
                     "para reactivar tu cuenta."
                 )
+                title_en = "🚫 Account suspended — expired document"
+                body_en = (
+                    f"Your {doc_type} expired {days_overdue} day(s) ago. "
+                    "Your account has been suspended. Update your document "
+                    "to reactivate your account."
+                )
             else:
                 title = f"⚠️ Tu {doc_type} ha expirado"
                 body = "Actualiza tu documento lo antes posible para seguir conduciendo."
+                title_en = f"⚠️ Your {doc_type} has expired"
+                body_en = "Update your document as soon as possible to keep driving."
 
             _send_fcm_push(
                 driver.fcm_token,
                 title=title,
                 body=body,
+                title_en=title_en,
+                body_en=body_en,
+                locale=user_lang(driver),
                 data={
                     "type": "document_expired",
                     "doc_type": doc_type,
@@ -395,6 +429,7 @@ class DocumentExpiryAgent:
             if not driver.fcm_token:
                 return
             from services.fcm_service import _send_fcm_push
+            from utils.helpers import user_lang
             _send_fcm_push(
                 driver.fcm_token,
                 title="🔴 ÚLTIMO AVISO — Desactivación inminente",
@@ -402,6 +437,12 @@ class DocumentExpiryAgent:
                     f"Tu {doc_type} lleva {days_overdue} días expirado. "
                     "Si no lo actualizas, tu cuenta será desactivada permanentemente."
                 ),
+                title_en="🔴 FINAL NOTICE — Imminent deactivation",
+                body_en=(
+                    f"Your {doc_type} has been expired for {days_overdue} days. "
+                    "If you don't update it, your account will be permanently deactivated."
+                ),
+                locale=user_lang(driver),
                 data={
                     "type": "deactivation_warning",
                     "doc_type": doc_type,

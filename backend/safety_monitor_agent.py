@@ -398,12 +398,18 @@ class SafetyMonitorAgent:
                     rider = r.scalar_one_or_none()
                     if rider and rider.fcm_token:
                         from services.fcm_service import _send_fcm_push
+                        from utils.helpers import user_lang
                         _send_fcm_push(
                             rider.fcm_token,
                             title="⚠️ Alerta de seguridad",
                             body="Hemos detectado una anomalía en tu viaje. "
                                  "Nuestro equipo está revisando. Si necesitas ayuda, "
                                  "usa el botón de emergencia.",
+                            title_en="⚠️ Safety alert",
+                            body_en="We detected an anomaly during your trip. "
+                                    "Our team is reviewing it. If you need help, "
+                                    "use the emergency button.",
+                            locale=user_lang(rider),
                             data={
                                 "type": "safety_alert",
                                 "trip_id": str(trip.id),

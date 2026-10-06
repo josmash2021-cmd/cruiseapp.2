@@ -17,7 +17,7 @@ from utils.security import (
     _dispatch_sessions, _security_audit_log,
     JWT_SECRET, JWT_ALGORITHM,
 )
-from utils.helpers import _safe_create_task, utc_now, _haversine, _trip_dict, _user_dict, _abs_photo_url, _resolve_rider_display, _gen_pickup_pin, booking_stops_json, MAX_DISPATCH_RADIUS_KM, ACTIVE_ACCOUNT_STATUSES, _active_destination
+from utils.helpers import _safe_create_task, utc_now, _haversine, _trip_dict, _user_dict, _abs_photo_url, _resolve_rider_display, _gen_pickup_pin, booking_stops_json, MAX_DISPATCH_RADIUS_KM, ACTIVE_ACCOUNT_STATUSES, _active_destination, user_lang
 from services.fcm_service import _send_fcm_push, _send_fcm_push_async
 from services.sms_service import notify_guest_driver_assigned
 from services.email_service import email_guest_driver_assigned
@@ -1024,8 +1024,11 @@ async def _send_offer_to_driver(
     # a card painted by an older build is taken down on schedule.
     _safe_create_task(_send_fcm_push_async(
         driver.fcm_token or "",
-        title="New Ride Offer",
-        body="Open Cruise to accept.",
+        title="Nueva oferta de viaje",
+        body="Abre Cruise para aceptar.",
+        title_en="New Ride Offer",
+        body_en="Open Cruise to accept.",
+        locale=user_lang(driver),
         data=push_data,
         is_offer=True,
     ))
@@ -2237,13 +2240,21 @@ async def _announce_driver_assignment(
             if rider and rider.fcm_token:
                 _send_fcm_push(
                     rider.fcm_token,
-                    title="Conductor asignado" if _is_reservation else "Driver Found!",
+                    title="Conductor asignado" if _is_reservation else "¡Conductor encontrado!",
                     body=(
                         f"{driver_display} tomó tu viaje reservado. Te avisamos "
                         "cuando esté en camino."
                         if _is_reservation
+                        else f"{driver_display} está en camino a recogerte."
+                    ),
+                    title_en="Driver assigned" if _is_reservation else "Driver Found!",
+                    body_en=(
+                        f"{driver_display} took your reserved ride. We'll let "
+                        "you know when they're on the way."
+                        if _is_reservation
                         else f"{driver_display} is on the way to pick you up."
                     ),
+                    locale=user_lang(rider),
                     data={
                         "type": "scheduled_claimed" if _is_reservation else "driver_assigned",
                         "trip_id": str(trip.id),

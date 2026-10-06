@@ -24,7 +24,9 @@ def fcm_spy(monkeypatch):
     calls = []
 
     async def fake(token=None, title=None, body=None, data=None, **kw):
-        calls.append({"token": token, "title": title, "body": body, "data": data})
+        calls.append({"token": token, "title": title, "body": body, "data": data,
+                      "title_en": kw.get("title_en"), "body_en": kw.get("body_en"),
+                      "locale": kw.get("locale")})
 
     monkeypatch.setattr(sb, "_send_fcm_push_async", fake)
     return calls
@@ -120,10 +122,16 @@ async def test_body_is_bare_and_payload_routes(db, fcm_spy, state_fake):
 
     assert len(fcm_spy) == 1
     call = fcm_spy[0]
-    assert call["title"] == "New Scheduled Ride Available"
-    assert call["body"] == "Open to accept the ride"
+    # Phone-language contract (2026-10-05): the bare copy goes out in the
+    # recipient's language — Spanish default (title/body), English via the
+    # service's title_en/body_en. Both stay bare: no fare, no addresses.
+    assert call["title"] == "Nuevo viaje programado disponible"
+    assert call["body"] == "Abre la app para aceptar el viaje"
+    assert call["title_en"] == "New Scheduled Ride Available"
+    assert call["body_en"] == "Open to accept the ride"
+    assert call["locale"] == "es"
     assert "Main St" not in call["body"] and "Oak Ave" not in call["body"]
-    assert "$" not in call["body"]
+    assert "$" not in call["body"] and "$" not in call["body_en"]
     assert call["data"] == {"type": "scheduled_ride", "trip_id": str(trip.id)}
 
 

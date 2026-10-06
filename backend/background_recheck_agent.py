@@ -250,6 +250,7 @@ class BackgroundRecheckAgent:
             if not driver.fcm_token:
                 return
             from services.fcm_service import _send_fcm_push
+            from utils.helpers import user_lang
             _send_fcm_push(
                 driver.fcm_token,
                 title="🚫 Cuenta suspendida — verificación vencida",
@@ -262,6 +263,13 @@ class BackgroundRecheckAgent:
                     "type": "background_recheck_suspended",
                     "driver_id": str(driver.id),
                 },
+                title_en="🚫 Account suspended — verification overdue",
+                body_en=(
+                    f"Your periodic background check expired {days_overdue} "
+                    "day(s) ago. Your account has been suspended. Complete "
+                    "the Checkr invitation to reactivate it."
+                ),
+                locale=user_lang(driver),
             )
         except Exception as e:
             logger.warning("[BGRecheck] Suspension push failed for #%d: %s", driver.id, e)

@@ -342,6 +342,28 @@ class _PayoutMethodsScreenState extends State<PayoutMethodsScreen> {
                                   child: _buildMethodCard(m),
                                 ),
                               ),
+                              // Gate mode (the post-approval flow): a visible
+                              // way forward without linking anything. Popping
+                              // is enough — the celebration continues the
+                              // chain (guide → home) on ANY pop; the back
+                              // arrow up top already works the same way.
+                              if (widget.autoPopOnBankLinked) ...[
+                                const SizedBox(height: 18),
+                                Center(
+                                  child: TextButton(
+                                    onPressed: () =>
+                                        Navigator.of(context).pop(),
+                                    child: Text(
+                                      s.skip,
+                                      style: const TextStyle(
+                                        color: _gold,
+                                        fontSize: 15,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ],
                           ),
               ),

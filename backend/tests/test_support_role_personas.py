@@ -75,8 +75,8 @@ async def test_persona_by_role_in_chat_creation(db, test_rider, test_driver):
     assert dc["agent_avatar"] == "driver"
     assert dc["agent_name"] in _DRIVER_AGENT_NAMES
 
-    # The welcomes open differently — the rider hears payments/trips,
-    # the driver hears earnings/documents.
+    # The greeting presents itself as "Cruise AI" — no first name, no
+    # "for drivers / para riders" qualifier (user spec 2026-10-06).
     rw = (await db.execute(
         select(SupportMessage).where(
             SupportMessage.chat_id == rc["id"]).order_by(
@@ -85,8 +85,12 @@ async def test_persona_by_role_in_chat_creation(db, test_rider, test_driver):
         select(SupportMessage).where(
             SupportMessage.chat_id == dc["id"]).order_by(
             SupportMessage.created_at).limit(1))).scalar_one()
-    assert "drivers" not in rw.message
-    assert "drivers" in dw.message or "drivers" in dw.message.lower()
+    for w in (rw, dw):
+        assert "Cruise AI" in w.message
+        assert "drivers" not in w.message.lower()
+        assert "riders" not in w.message.lower()
+        assert rc["agent_name"] not in w.message
+        assert dc["agent_name"] not in w.message
 
 
 async def test_context_blocks_by_role(db, test_rider, test_driver):

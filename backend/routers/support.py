@@ -2527,42 +2527,24 @@ async def _get_or_create_support_chat(user: User, db: AsyncSession, subject: str
 
     # The opening line.
     #
-    # It used to read "Cruise Support System  Session started." over a
-    # bulleted menu of departments — the tone of a terminal booting, and the
-    # shape of a phone tree. Someone writing in has a problem already; being
-    # handed a directory first asks them to file it themselves.
-    #
-    # So: their name, one plain sentence saying they can just say what
-    # happened, and what this chat can actually settle — as a sentence rather
-    # than a menu, naming outcomes (cancel, refund, a left-behind bag) instead
-    # of departments.
-    #
-    # It says "an automated system", not a first name. agent_name still exists
-    # and is still used further down, but opening with "I'm Isabella" is a
-    # machine claiming to be a person before it has done anything — and the
-    # header two lines above already reads "Automated system", so it was also
-    # contradicting itself on screen.
+    # The greeting introduces itself as what it is — "Cruise AI" (user spec
+    # 2026-10-06): no first name, no "for drivers/riders" qualifier. The
+    # persona name still exists further down (a NAMED specialist joining
+    # after an AI reads as a human taking over, which is the point of the
+    # escalation); opening with "I'm Emilio" was a machine claiming person
+    # AND seating in one line.
     first = (user.first_name or "").strip().split(" ")[0]
-    is_driver = (user.role or "").lower() == "driver"
     if locale.startswith("es"):
         hello = f"Hola {first}" if first else "Hola"
         welcome_text = (
-            f"{hello}, soy {agent}, tu asistente de IA para drivers. "
-            "¿Cómo te puedo ayudar hoy? Elige una opción abajo o cuéntame "
-            "cuál es el problema."
-        ) if is_driver else (
-            f"{hello}, soy {agent}, tu asistente de IA de Cruise. "
+            f"{hello}, soy tu asistente Cruise AI. "
             "¿Cómo te puedo ayudar hoy? Elige una opción abajo o cuéntame "
             "cuál es el problema."
         )
     else:
         hello = f"Hi {first}" if first else "Hi"
         welcome_text = (
-            f"{hello}, I'm {agent}, your Cruise AI assistant for drivers. "
-            "How can I help you today? Pick an option below or tell me "
-            "what the problem is."
-        ) if is_driver else (
-            f"{hello}, I'm {agent}, your Cruise AI assistant. "
+            f"{hello}, I'm your Cruise AI assistant. "
             "How can I help you today? Pick an option below or tell me "
             "what the problem is."
         )

@@ -161,9 +161,9 @@ the pickup location, the destination, and the trip fare for that trip, as
 displayed in the app.
 
 8.3. **Service fee and Driver share.** The Company retains a service fee of
-**30%** of the gross trip fare (base fare, time and distance charges, and any
+**40%** of the gross trip fare (base fare, time and distance charges, and any
 demand-based or surge pricing), and the Driver receives the remaining
-**70%**. **No service fee applies to tips or to reimbursed tolls.**
+**60%**. **No service fee applies to tips or to reimbursed tolls.**
 Cancellation fees are defined and allocated separately under Section 8.6.
 Any change to the service fee will be communicated in advance and, if
 material, presented for re-acceptance under Section 22.
@@ -178,8 +178,8 @@ to the passenger and remitted to the Driver as displayed in the app.
 *[Confirm practice.]*
 
 8.6. **Cancellation charges.** Where a passenger cancellation fee applies
-under the Terms of Service, the fee is **$5.00**: the Driver receives **70%
-($3.50)** and the Company retains **30% ($1.50)**, as displayed in the app.
+under the Terms of Service, the fee is **$5.00**: the Driver receives **60%
+($3.00)** and the Company retains **40% ($2.00)**, as displayed in the app.
 No payment-processing fee or other deduction is applied to the Driver's
 share.
 

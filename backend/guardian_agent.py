@@ -1405,9 +1405,9 @@ class UnmatchedTripRetryAgent:
 
                 # Calculate driver fare
                 try:
-                    from config import DRIVER_SHARE_RATE
+                    from routers.trips import DRIVER_SHARE_RATE
                 except ImportError:
-                    DRIVER_SHARE_RATE = 0.70
+                    DRIVER_SHARE_RATE = 0.60
                 estimated_driver_fare = round(float(trip.fare or 0.0) * DRIVER_SHARE_RATE, 2)
 
                 # SSE push

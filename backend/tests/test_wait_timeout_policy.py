@@ -114,8 +114,8 @@ async def test_min_fee_wins_over_small_accrual(db, test_rider, test_driver):
     await db.refresh(trip)
 
     assert trip.cancellation_fee == 5.00
-    assert trip.driver_earnings == 3.50
-    assert trip.platform_fee == 1.50
+    assert trip.driver_earnings == 3.00
+    assert trip.platform_fee == 2.00
 
 
 async def test_accrual_wins_over_min_fee(db, test_rider, test_driver):
@@ -135,8 +135,8 @@ async def test_accrual_wins_over_min_fee(db, test_rider, test_driver):
     await db.refresh(trip)
 
     assert trip.cancellation_fee == 20.00
-    assert trip.driver_earnings == 14.00
-    assert trip.platform_fee == 6.00
+    assert trip.driver_earnings == 12.00
+    assert trip.platform_fee == 8.00
 
 
 async def test_leaving_soon_warning_fires_once_in_window(db, test_rider, test_driver):

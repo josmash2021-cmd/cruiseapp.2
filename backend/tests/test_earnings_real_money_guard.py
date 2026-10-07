@@ -3,7 +3,7 @@
 A driver may ONLY be credited from money that was actually collected:
   - completing a trip whose fare was never captured (test-mode button,
     failed charge) must leave driver_earnings NULL and balances untouched;
-  - completing a PAID trip credits the 70/30 split exactly once;
+  - completing a PAID trip credits the 60/40 split exactly once;
   - a cancellation fee that was assessed but never captured
     (payment_status != "paid") must NOT credit the driver;
   - the split helper is idempotent and skips non-completed / unpaid trips.
@@ -74,7 +74,7 @@ async def test_unpaid_completion_credits_nothing(db, test_rider, test_driver):
 
 
 async def test_paid_completion_credits_split_once(db, test_rider, test_driver):
-    """Real collected fare → 70/30 split, and never twice."""
+    """Real collected fare → 60/40 split, and never twice."""
     from main import User
     from routers.trips import _credit_driver_earnings
 
@@ -84,8 +84,8 @@ async def test_paid_completion_credits_split_once(db, test_rider, test_driver):
 
     assert await _credit_driver_earnings(db, trip) is True
     await db.commit()
-    assert trip.driver_earnings == 14.0  # 70% of $20 comfort
-    assert trip.platform_fee == 6.0
+    assert trip.driver_earnings == 12.0  # 60% of $20 comfort
+    assert trip.platform_fee == 8.0
 
     # Second call (e.g. capture webhook arriving after the charge response)
     # must NOT pay again.
@@ -93,8 +93,8 @@ async def test_paid_completion_credits_split_once(db, test_rider, test_driver):
     await db.commit()
 
     drv = (await db.execute(select(User).where(User.id == driver.id))).scalar_one()
-    assert drv.pending_balance == 14.0
-    assert drv.total_earnings == 14.0
+    assert drv.pending_balance == 12.0
+    assert drv.total_earnings == 12.0
 
 
 async def test_non_completed_trip_never_credits(db, test_rider, test_driver):
@@ -126,7 +126,7 @@ async def test_uncaptured_cancel_fee_credits_nothing(db, test_rider, test_driver
 
 
 async def test_captured_cancel_fee_credits_driver(db, test_rider, test_driver):
-    """Fee actually captured from the rider's hold → 70/30 split."""
+    """Fee actually captured from the rider's hold → 60/40 split."""
     from main import User
     from routers.trips import _credit_driver_cancellation_fee
 
@@ -138,10 +138,10 @@ async def test_captured_cancel_fee_credits_driver(db, test_rider, test_driver):
     driver_share, platform_share = await _credit_driver_cancellation_fee(db, trip)
     await db.commit()
 
-    assert driver_share == 3.50
-    assert platform_share == 1.50
+    assert driver_share == 3.00
+    assert platform_share == 2.00
     drv = (await db.execute(select(User).where(User.id == driver.id))).scalar_one()
-    assert drv.pending_balance == 3.50
+    assert drv.pending_balance == 3.00
 
 
 async def test_unpaid_terminal_trip_displays_zero(db, test_rider, test_driver):

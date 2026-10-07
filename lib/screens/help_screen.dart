@@ -265,7 +265,7 @@ class _HelpScreenState extends State<HelpScreen> {
           icon: Icons.percent_rounded,
           title: 'How much do I earn per trip?',
           answer:
-              'You keep 70% of the fare on every trip, in every tier — plus 100% of tips.\n\n'
+              'You keep 60% of the fare on every trip, in every tier — plus 100% of tips.\n\n'
               'Your trips and earnings are listed in the app so you can verify each payout yourself.',
         ),
         _HelpTopic(

@@ -443,7 +443,7 @@ PAYMENTS AND HOLDS:
 FOR DRIVERS:
   - New driver accounts are reviewed by the team — it usually takes 24 to
     72 hours, and the app's To-do screen updates on its own when approved.
-  - Earnings: the driver keeps 70% of the fare in every tier. Payouts are
+  - Earnings: the driver keeps 60% of the fare in every tier. Payouts are
     weekly (Mondays, US Central time) through Stripe Connect.
   - Drivers cannot cancel an assigned trip themselves; if they cannot
     continue, dispatch reassigns the rider at no cost to the rider.

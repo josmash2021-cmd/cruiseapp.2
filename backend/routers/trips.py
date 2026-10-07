@@ -44,8 +44,8 @@ router = APIRouter()
 
 # Commission splits live in services/vehicle_tiers.py, which is the one
 # place that knows both the four tiers and the strings they replaced:
-# a flat 70% driver / 30% platform on every tier, legacy strings
-# included (pricing policy 2026-08: the driver earns like on Uber).
+# a flat 60% driver / 40% platform on every tier, legacy strings
+# included (pricing policy 2026-10-06, user spec "40/60 para todos").
 # Duplicating the table here is how the offer card ended up
 # quoting a rate the payout did not use.
 _COMMISSION_BY_TYPE = vehicle_tiers.COMMISSION
@@ -194,8 +194,9 @@ def _wait_policy(vehicle_type: str | None, is_airport: bool) -> tuple[int, float
     return _WAIT_POLICY_BY_TYPE.get(_vehicle_key(vehicle_type), _DEFAULT_WAIT_POLICY)
 
 # Legacy constants kept for backward-compat in places that don't have vehicle_type
-PLATFORM_COMMISSION_RATE = 0.30
-DRIVER_SHARE_RATE = 0.70
+# (pricing policy 2026-10-06: flat 60% driver / 40% platform on every tier)
+PLATFORM_COMMISSION_RATE = 0.40
+DRIVER_SHARE_RATE = 0.60
 
 
 def _driver_visible_trip_dict(trip: Trip) -> dict:
@@ -240,8 +241,8 @@ def _trip_dict_for_user(trip: Trip, user: User) -> dict:
 async def _credit_driver_cancellation_fee(db, trip: Trip) -> tuple[float, float]:
     """Split a charged cancellation fee with the driver using the SAME ledger
     mechanism as the completed-trip fare split:
-      - trip.driver_earnings  <- 70% driver share (e.g. $3.50 of $5.00)
-      - trip.platform_fee     <- 30% Company revenue (e.g. $1.50 of $5.00)
+      - trip.driver_earnings  <- 60% driver share (e.g. $3.00 of $5.00)
+      - trip.platform_fee     <- 40% Company revenue (e.g. $2.00 of $5.00)
       - driver.pending_balance / total_earnings incremented by the driver share
     Returns (driver_share, platform_share). No-op when there is no fee or
     no assigned driver.
@@ -2320,7 +2321,7 @@ async def cancel_trip(trip_id: int, request: Request, user: User = Depends(_get_
     # IN-TRIP cancel (user spec 2026-09-23). The rider may end the ride at
     # any moment; the trip is charged the FULL estimate below (the same
     # real-money machinery as the $5 en-route fee captures it from the hold
-    # and splits 70/30 to the driver). Everyone else keeps the 409.
+    # and splits 60/40 to the driver). Everyone else keeps the 409.
     in_trip_full_fare = False
     if trip.status in ("in_trip", "in_progress"):
         if not is_owner_rider:
@@ -2347,7 +2348,7 @@ async def cancel_trip(trip_id: int, request: Request, user: User = Depends(_get_
         # Full estimate (user decision 2026-09-23): partial-capturing
         # cancellation_fee == fare from the hold charges exactly the quoted
         # price and releases any surcharge headroom — and the driver split
-        # below pays out the same 70% a normal completion would.
+        # below pays out the same 60% a normal completion would.
         cancellation_fee = round(float(trip.fare or 0.0), 2)
     elif trip.status in ("scheduled", "scheduled_accepted"):
         cancellation_fee = _scheduled_cancel_fee(trip)
@@ -2422,8 +2423,8 @@ async def cancel_trip(trip_id: int, request: Request, user: User = Depends(_get_
             trip_id, trip.stripe_payment_intent_id,
         )
 
-    # Credit the driver their 70% share of any charged cancellation fee
-    # (same 70/30 ledger split as completed-trip fares; 30% = Company revenue).
+    # Credit the driver their 60% share of any charged cancellation fee
+    # (same 60/40 ledger split as completed-trip fares; 40% = Company revenue).
     if cancellation_fee > 0:
         await _credit_driver_cancellation_fee(db, trip)
 

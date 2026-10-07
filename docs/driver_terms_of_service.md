@@ -116,14 +116,14 @@ conditions described in the rider-facing terms, a cancellation fee of
 pickup window with a driver assigned, the rider-facing terms instead apply a
 per-tier cancellation fee (**$10.00** Compact, **$15.00** Standard,
 **$25.00** Premium, **$35.00** Black), capped at the trip's upfront fare. In
-either case the Driver receives **70% of the cancellation fee** and the
-Company retains **30%**, allocated as displayed in the app, and only when the
+either case the Driver receives **60% of the cancellation fee** and the
+Company retains **40%**, allocated as displayed in the app, and only when the
 fee is actually captured from the rider. No payment-processing fee or other
 deduction is applied to the Driver's share.
 
 5.3. **No-shows.** If a rider does not appear within the waiting period
 displayed in the app, the Driver may cancel and receives the Driver's share
-(70%) of the accrued wait-time fee, as displayed in the app.
+(60%) of the accrued wait-time fee, as displayed in the app.
 
 ## 6. Ratings
 
@@ -155,9 +155,9 @@ rating or rating-based action resulted from discrimination prohibited by law.
 
 ## 7. Fares, Payments, and Fees
 
-7.1. **Driver share.** The Driver receives **70%** of the gross trip fare
+7.1. **Driver share.** The Driver receives **60%** of the gross trip fare
 (base fare, time and distance charges, and any demand-based or surge
-pricing); the Company retains a service fee of **30%** of that fare. **No
+pricing); the Company retains a service fee of **40%** of that fare. **No
 service fee applies to tips.** Cancellation fees are
 defined and allocated separately under Section 5.2.
 

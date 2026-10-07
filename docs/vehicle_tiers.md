@@ -22,20 +22,21 @@ Standard. It still drives; it just never reaches a higher tier.
 
 ## Commission
 
-Flat 70/30 everywhere, per the 2026-08 pricing policy ("the driver earns
-like on Uber"). It replaced the 60–70% ladder this section used to
+Flat 60/40 everywhere, per the 2026-10-06 pricing policy (user spec: "40%
+para cruise y 60% para el driver para todos"). It replaced the flat 70/30
+of August — itself the replacement of the 60–70% ladder this section used to
 describe; `COMMISSION` and `LEGACY_COMMISSION` in
-`backend/services/vehicle_tiers.py` both read `0.30 / 0.70` on every row.
+`backend/services/vehicle_tiers.py` both read `0.40 / 0.60` on every row.
 
 | Tier | Driver keeps |
 |---|---|
-| Standard | 70% |
-| Compact | 70% |
-| Premium | 70% |
-| Black | 70% |
+| Standard | 60% |
+| Compact | 60% |
+| Premium | 60% |
+| Black | 60% |
 
 Legacy strings (`sedan`, `comfort`, `suv_xl`, `vip`) resolve to the same
-flat 70%.
+flat 60%.
 
 ### The estimate on the offer card uses the same flat rate
 

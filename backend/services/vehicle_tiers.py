@@ -61,24 +61,24 @@ COMPACT_MIN_YEAR = 2016
 SEDAN_PREMIUM_MIN_YEAR = 2021
 
 # ── Commission, platform share first ──────────────────────────────────
-# Flat 70/30 in every tier (pricing policy 2026-08: the driver earns
-# like on Uber, ~70% of the fare). It replaces the old 60–70% ladder
-# that paid a better car a bigger cut.
+# Flat 60/40 in every tier (pricing policy 2026-10-06, user spec: "40% para
+# cruise y 60% para el driver para todos"). It replaces the 70/30 flat that
+# replaced the old 60–70% ladder.
 COMMISSION = {
-    TIER_STANDARD: (0.30, 0.70),
-    TIER_COMPACT: (0.30, 0.70),
-    TIER_PREMIUM: (0.30, 0.70),
-    TIER_BLACK: (0.30, 0.70),
+    TIER_STANDARD: (0.40, 0.60),
+    TIER_COMPACT: (0.40, 0.60),
+    TIER_PREMIUM: (0.40, 0.60),
+    TIER_BLACK: (0.40, 0.60),
 }
 
 # Rows written before the four tiers existed. Kept so a vehicle that has
 # not been migrated yet still resolves to a rate rather than falling
-# through to a default — the same flat 70/30 as everyone else.
+# through to a default — the same flat 60/40 as everyone else.
 LEGACY_COMMISSION = {
-    "sedan": (0.30, 0.70),
-    "comfort": (0.30, 0.70),
-    "suv_xl": (0.30, 0.70),
-    "vip": (0.30, 0.70),
+    "sedan": (0.40, 0.60),
+    "comfort": (0.40, 0.60),
+    "suv_xl": (0.40, 0.60),
+    "vip": (0.40, 0.60),
 }
 
 # What an unrecognised tier string is worth. The safe direction is the

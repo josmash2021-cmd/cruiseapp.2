@@ -2179,9 +2179,9 @@ def _admin_trip_driver_earnings(trip: Trip) -> float:
     """Best-effort driver earnings for the admin earnings endpoint."""
     if trip.driver_earnings is not None:
         return float(trip.driver_earnings)
-    # Fallback to the default 70/30 split when the field hasn't been backfilled.
+    # Fallback to the default 60/40 split when the field hasn't been backfilled.
     tip = float(trip.tip_amount or 0.0)
-    base = round(float(trip.fare or 0.0) * 0.7, 2)
+    base = round(float(trip.fare or 0.0) * 0.6, 2)
     return round(base + tip, 2)
 
 

@@ -1,7 +1,7 @@
 """Rider IN-TRIP cancel (user spec 2026-09-23): the rider may end the ride
 at any moment — the trip is cancelled and charged the FULL estimate
 (cancellation_fee == fare), captured from the hold by the same real-money
-machinery as the $5 en-route fee, and the driver is split the same 70% a
+machinery as the $5 en-route fee, and the driver is split the same 60% a
 normal completion pays. Non-riders keep the 409."""
 import pytest
 
@@ -64,8 +64,8 @@ async def test_rider_in_trip_cancel_charges_full_estimate(
     # The fee IS the full estimate, and it is what the hold capture was asked for.
     assert trip.cancellation_fee == 25.50
     assert captured["fee"] == 25.50
-    # The driver split runs on the captured fee: same 70% as a completion.
-    assert trip.driver_earnings == round(25.50 * 0.70, 2)
+    # The driver split runs on the captured fee: same 60% as a completion.
+    assert trip.driver_earnings == round(25.50 * 0.60, 2)
     assert trip.platform_fee == round(25.50 - trip.driver_earnings, 2)
     # The driver keeps the trip assignment — no rematch for an ended ride.
     assert trip.driver_id == driver.id
@@ -98,7 +98,7 @@ async def test_rider_in_trip_cancel_never_refunds_the_paid_fare(
     await db.refresh(trip)
     assert trip.status == "cancelled"
     assert trip.payment_status == "paid"  # the charge stands
-    assert trip.driver_earnings == round(25.50 * 0.70, 2)
+    assert trip.driver_earnings == round(25.50 * 0.60, 2)
 
 
 @pytest.mark.asyncio
@@ -140,4 +140,4 @@ async def test_pre_pickup_rider_cancel_fee_unchanged(
     assert resp.status_code == 200, resp.text
     await db.refresh(trip)
     assert trip.cancellation_fee == 5.0
-    assert trip.driver_earnings == round(5.0 * 0.70, 2)
+    assert trip.driver_earnings == round(5.0 * 0.60, 2)

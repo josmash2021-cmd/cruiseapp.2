@@ -283,8 +283,8 @@ class WaitTimeoutAgent:
             logger.warning(
                 "[WaitTimeout] hold settle failed for trip #%d: %s", trip.id, e)
 
-        # Credit the driver their 70% share of the no-show fee using the
-        # same 70/30 ledger split as completed-trip fares.
+        # Credit the driver their 60% share of the no-show fee using the
+        # same 60/40 ledger split as completed-trip fares.
         if wait_fee > 0 and trip.driver_id:
             try:
                 from routers.trips import _credit_driver_cancellation_fee

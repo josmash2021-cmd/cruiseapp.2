@@ -23,6 +23,26 @@ class S {
   String get continueButton => _es ? 'Continuar' : 'Continue';
   String get next => _es ? 'Siguiente' : 'Next';
   String get skip => _es ? 'Omitir' : 'Skip';
+  String get navIntroTitle => _es
+      ? 'Navega a donde quieras con Cruise'
+      : 'Navigate anywhere with Cruise';
+  String get navIntroDirectionsTitle => _es
+      ? 'Direcciones dentro de la app'
+      : 'Get directions right in the app';
+  String get navIntroDirectionsBody => _es
+      ? 'Sigue cada giro paso a paso sin salir de Cruise.'
+      : 'Follow turn-by-turn guidance without leaving Cruise.';
+  String get navIntroRideTitle => _es ? 'No pierdas ningún viaje' : 'Never miss a ride';
+  String get navIntroRideBody => _es
+      ? 'Actualizaciones y avisos en tiempo real para llegar siempre a tiempo.'
+      : 'Real-time updates and notifications to keep you on track.';
+  String get navIntroInsightsTitle => _es
+      ? 'Datos en vivo para el driver'
+      : 'See live driver insights';
+  String get navIntroInsightsBody => _es
+      ? 'Tráfico, cambios de ruta y condiciones en tiempo real.'
+      : 'Traffic, route changes, and conditions in real time.';
+  String get navIntroStart => _es ? 'Empezar' : 'Get started';
   String get cancel => _es ? 'Cancelar' : 'Cancel';
   String get delete => _es ? 'Eliminar' : 'Delete';
   String get save => _es ? 'Guardar' : 'Save';

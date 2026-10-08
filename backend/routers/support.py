@@ -70,6 +70,20 @@ def _agent_for_role(role: str) -> str:
     pool = _DRIVER_AGENT_NAMES if (role or "").lower() == "driver" else _RIDER_AGENT_NAMES
     return _rng.choice(pool)
 
+
+def _dispatch_persona_label(chat, lang: str = "en") -> str:
+    """Sender label for a message from the dispatch panel: the persona the
+    operator connected with, else the generic support tag. Chats from before
+    dispatch_persona existed keep the supervisor label off the old flag."""
+    persona = (getattr(chat, "dispatch_persona", None) or "").strip()
+    if not persona and getattr(chat, "supervisor_connected", False):
+        persona = "supervisor"
+    if persona == "agent":
+        return "Agente especializado" if (lang or "en").startswith("es") else "Specialized Agent"
+    if persona == "supervisor":
+        return "Supervisor"
+    return "Soporte Cruise"
+
 _ESCALATION_TRIGGERS = [
     "manager", "supervisor", "gerente", "jefe", "encargado", "superior",
     "speak to your manager", "hablar con el gerente", "hablar con un supervisor",
@@ -1220,172 +1234,9 @@ def _parse_action_markers(response: str) -> tuple[str, list[dict[str, Any]]]:
     return clean, actions
 
 
-# ── Supervisor handoff, on the server's clock ────────────────────────────
-#
-# Seconds from the announcement that a supervisor was coming, to that
-# supervisor appearing; then from their arrival to their first line.
-# The handoff beat, not a hold: the "supervisor" is the same AI with a
-# name, so the join/greet delays exist only to read as a transfer rather
-# than an instant costume change. They were 60/20 when the wait was sold
-# as a real queue; with the queue card gone, a minute of dead air is just
-# bad service.
-# The transfer reads as a person picking the case up, not a hot swap:
-# a beat before the specialist appears, another before they speak
-# (2026-10-04, user spec "no conectar tan rapido los agentes").
-_SUPERVISOR_JOINS_AFTER_S = 15
-_SUPERVISOR_GREETS_AFTER_S = 4
-
-_JOINED_RE = re.compile(r"se ha conectado|joined the chat", re.I)
-
-
 def _aware(dt):
     """Postgres can hand back naive datetimes depending on the driver."""
     return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
-
-
-async def _advance_supervisor_script(chat, db: AsyncSession) -> None:
-    """Walk an escalated chat toward a named supervisor on the server's clock.
-
-    The wait used to be counted on the phone: the client picked its own random
-    duration and decided for itself when an agent had "joined". Nothing was
-    stored, so closing the app erased the handoff, two devices could disagree
-    about the same chat, and a real supervisor opening the ticket in dispatch
-    found a conversation that had never happened.
-
-    Every step here inserts a real row. The timeline survives a restart and a
-    human can take over exactly where the script left off, which is the whole
-    reason for running it on this side.
-
-    Idempotent by inspection: each step looks for the row it would create
-    rather than tracking progress in a column, which is what makes it safe to
-    call from a poll that fires every few seconds.
-    """
-    if not chat or chat.bot_phase != "escalated":
-        return
-    # A real person is already in here. The script must never talk over them.
-    if getattr(chat, "supervisor_connected", False):
-        return
-
-    is_es = (getattr(chat, "locale", "en") or "en").startswith("es")
-
-    _role = "rider"
-    _user_name = ""
-    try:
-        u_r = await db.execute(select(User).where(User.id == chat.user_id))
-        _u = u_r.scalar_one_or_none()
-        if _u:
-            _role = (getattr(_u, "role", None) or "rider").lower()
-            _user_name = (getattr(_u, "first_name", None) or "").strip()
-    except Exception as e:
-        logging.warning("[support] supervisor identity lookup failed: %s", e)
-
-    rows_r = await db.execute(
-        select(SupportMessage)
-        .where(SupportMessage.chat_id == chat.id)
-        .order_by(SupportMessage.created_at.asc())
-    )
-    rows = list(rows_r.scalars().all())
-    if not rows:
-        return
-
-    now = datetime.now(timezone.utc)
-    joined = next(
-        (m for m in rows
-         if m.sender_role == "system" and _JOINED_RE.search(m.message or "")),
-        None,
-    )
-
-    # ── Step 1: the supervisor arrives ──
-    if joined is None:
-        # Anchored on the system row that announced the handoff, NOT on the
-        # last message in the chat: the user often keeps typing while they
-        # wait, and anchoring on "latest" would push their own supervisor
-        # further away every time they did.
-        anchor = next(
-            (m for m in reversed(rows) if m.sender_role == "system"), rows[-1]
-        )
-        if (now - _aware(anchor.created_at)).total_seconds() < _SUPERVISOR_JOINS_AFTER_S:
-            return
-        # The specialist is ANOTHER person from the same crew — never the
-        # assistant's own name back ("Camila se ha conectado" right after
-        # Camila was already talking read as the app talking to itself,
-        # 2026-10-04). Rolled ONCE, here, and stored on the chat: every later
-        # step reads the stored name. Re-rolling per call made the join line
-        # and the greeting two different people (Emilio/Diego/Javier, user
-        # report 2026-10-05).
-        _pool = _DRIVER_AGENT_NAMES if _role == "driver" else _RIDER_AGENT_NAMES
-        _candidates = [n for n in _pool if n != (chat.agent_name or "").strip()]
-        agent = _rng.choice(_candidates or _pool)
-        text = (f"{agent} se ha conectado al chat."
-                if is_es else f"{agent} has joined the chat.")
-        chat.agent_name = agent
-        row = SupportMessage(
-            chat_id=chat.id, sender_id=None, sender_role="system", message=text
-        )
-        db.add(row)
-        await db.commit()
-        if _HAS_FIRESTORE:
-            try:
-                firestore_sync.sync_support_message(
-                    chat.id, row.id, 0, agent, "system", text
-                )
-            except Exception as e:
-                logging.warning("[support] joined sync failed for %s: %s", chat.id, e)
-        return
-
-    # ── Step 2: their opening line ──
-    # Already spoke? Then this is a live conversation, not a script step.
-    if any(
-        m.sender_role == "bot"
-        and _aware(m.created_at) > _aware(joined.created_at)
-        for m in rows
-    ):
-        return
-    if (now - _aware(joined.created_at)).total_seconds() < _SUPERVISOR_GREETS_AFTER_S:
-        return
-
-    # The SAME supervisor who joined speaks — the name stored in step 1,
-    # never a fresh roll. For a chat joined before the name was stored, read
-    # it back off the join line itself.
-    agent = (chat.agent_name or "").strip()
-    if not agent:
-        m_join = re.match(
-            r"([A-ZÁÉÍÓÚÑ][^\s]*)\s+(?:se ha conectado|has joined)",
-            joined.message or "",
-        )
-        agent = m_join.group(1) if m_join else ("Soporte" if is_es else "Support")
-
-    # The specialist's opening line (user spec 2026-10-04): greet, wish
-    # them well, and ask for a moment to review the chat — the analysis
-    # continues from there, not an echo of the user's own words back at
-    # them ("Veo que tienes un problema con 'quiero hablar con un agente'").
-    name = _user_name
-
-    if is_es:
-        hello = f"Hola {name}, soy {agent}." if name else f"Hola, soy {agent}."
-        greeting = (
-            f"{hello} Espero que te encuentres bien. Déjame revisar el chat "
-            "rápidamente para así poder ayudarte mejor, dame un momento."
-        )
-    else:
-        hello = f"Hi {name}, I'm {agent}." if name else f"Hi, I'm {agent}."
-        greeting = (
-            f"{hello} Hope you're doing well. Let me quickly review the chat "
-            "so I can help you better — give me a moment."
-        )
-
-    row = SupportMessage(
-        chat_id=chat.id, sender_id=None, sender_role="bot", message=greeting
-    )
-    db.add(row)
-    await db.commit()
-    if _HAS_FIRESTORE:
-        try:
-            firestore_sync.sync_support_message(
-                chat.id, row.id, 0, agent, "bot", greeting
-            )
-        except Exception as e:
-            logging.warning("[support] greeting sync failed for %s: %s", chat.id, e)
 
 
 async def _hand_chat_to_dispatch(
@@ -1692,8 +1543,8 @@ async def _generate_ai_response(
     messages = []
     for h in history:
         messages.append({
-            "role": h.get("sender_role", "user"),
-            "content": h.get("message", ""),
+            "role": h.get("role", "user"),
+            "content": h.get("content", ""),
         })
     # Add current message
     messages.append({"role": "user", "content": user_msg})
@@ -2059,8 +1910,14 @@ async def _generate_bot_replies(chat, user_msg: str, user_name: str, db: AsyncSe
                 resp = f"Understood, {user_name}. Before I proceed, I need to confirm: do you want to cancel your active trip? Reply 'Yes' to confirm the cancellation or 'No' to keep the trip."
             replies.append({"role": "bot", "message": resp, "sender_name": agent})
 
-        # 4) Thank/closing keywords
-        elif _match_keywords(user_msg, _THANK_KEYWORDS):
+        # 4) Thank/closing keywords — only a genuinely short closing line.
+        # A long message that merely ENDS in "gracias" is a question with
+        # manners, not a goodbye: a dumb substring match was answering those
+        # with a canned closing and the real question never reached the AI
+        # (user report 2026-10-14).
+        elif (len(user_msg.strip()) <= 40 and "?" not in user_msg
+              and "¿" not in user_msg
+              and _match_keywords(user_msg, _THANK_KEYWORDS)):
             closing = _CLOSING_RESPONSES_ES if lang.startswith("es") else _CLOSING_RESPONSES_EN
             close = _rng.choice(closing).format(name=user_name)
             replies.append({"role": "bot", "message": close, "sender_name": agent})
@@ -2138,20 +1995,14 @@ async def _generate_bot_replies(chat, user_msg: str, user_name: str, db: AsyncSe
             replies.append({"role": "bot", "message": resp, "sender_name": agent})
 
     elif phase == "escalated":
-        # If user sends a message while escalated, provide a helpful response
-        if not chat.supervisor_connected:
-            if lang.startswith("es"):
-                resp = _rng.choice([
-                    f"Hola {user_name}, tu caso ya fue escalado a un supervisor. He registrado tu mensaje para que lo revise. Si necesitas ayuda urgente, puedes llamar a soporte.",
-                    f"{user_name}, tu solicitud de supervisor sigue activa. Un supervisor revisara tu caso pronto. Tu mensaje fue registrado.",
-                ])
-            else:
-                resp = _rng.choice([
-                    f"Hi {user_name}, your case has been escalated to a supervisor. I have logged your message for them to review. If you need urgent help, you can call our support line.",
-                    f"{user_name}, your supervisor request is still active. A supervisor will review your case as soon as possible. Your message has been logged.",
-                ])
-            agent = chat.agent_name or ("Agente" if lang.startswith("es") else "Agent")
-            replies.append({"role": "bot", "message": resp, "sender_name": agent})
+        # The chat waits for a HUMAN from dispatch — the bot goes silent.
+        # Answering every message with one of two canned "tu mensaje fue
+        # registrado" variants read as robotic and contradicted the "a
+        # supervisor will join" promise (Francisco's transcript, 2026-10-14).
+        # The one-time escalation texts in the branches above are the last
+        # thing the bot says. The phase stays in _HANDLED_BOT_PHASES so the
+        # repair at the top does not route it back to the bot.
+        pass
 
     return replies
 
@@ -2284,6 +2135,11 @@ async def _check_chat_inactivity(chat_id: int):
             chat = chat_r.scalar_one_or_none()
             if not chat or chat.status != "open":
                 return
+            # A chat waiting for a HUMAN (escalated, taken over, or flagged
+            # for escalation) is never nudged or auto-closed — closing it
+            # would erase the handoff dispatch is about to pick up.
+            if (chat.bot_phase or "") in ("escalated", "dispatch_takeover") or chat.needs_escalation:
+                return
             if chat.last_user_message_at:
                 elapsed = (datetime.now(timezone.utc) - chat.last_user_message_at).total_seconds()
                 if elapsed < 110:
@@ -2335,6 +2191,11 @@ async def _check_chat_inactivity(chat_id: int):
             chat = chat_r.scalar_one_or_none()
             if not chat or chat.status != "open":
                 return
+            # A chat waiting for a HUMAN (escalated, taken over, or flagged
+            # for escalation) is never nudged or auto-closed — closing it
+            # would erase the handoff dispatch is about to pick up.
+            if (chat.bot_phase or "") in ("escalated", "dispatch_takeover") or chat.needs_escalation:
+                return
             if chat.last_user_message_at:
                 elapsed = (datetime.now(timezone.utc) - chat.last_user_message_at).total_seconds()
                 if elapsed < 110:
@@ -2368,6 +2229,11 @@ async def _check_chat_inactivity(chat_id: int):
             chat = chat_r.scalar_one_or_none()
             if not chat or chat.status != "open":
                 return
+            # A chat waiting for a HUMAN (escalated, taken over, or flagged
+            # for escalation) is never nudged or auto-closed — closing it
+            # would erase the handoff dispatch is about to pick up.
+            if (chat.bot_phase or "") in ("escalated", "dispatch_takeover") or chat.needs_escalation:
+                return
             if chat.last_user_message_at:
                 elapsed = (datetime.now(timezone.utc) - chat.last_user_message_at).total_seconds()
                 if elapsed < 55:
@@ -2394,6 +2260,11 @@ async def _check_chat_inactivity(chat_id: int):
             chat_r = await db.execute(select(SupportChat).where(SupportChat.id == chat_id))
             chat = chat_r.scalar_one_or_none()
             if not chat or chat.status != "open":
+                return
+            # A chat waiting for a HUMAN (escalated, taken over, or flagged
+            # for escalation) is never nudged or auto-closed — closing it
+            # would erase the handoff dispatch is about to pick up.
+            if (chat.bot_phase or "") in ("escalated", "dispatch_takeover") or chat.needs_escalation:
                 return
             if chat.last_user_message_at:
                 elapsed = (datetime.now(timezone.utc) - chat.last_user_message_at).total_seconds()
@@ -2617,6 +2488,7 @@ async def list_all_support_chats(db: AsyncSession = Depends(get_db)):
             "unread_count": unread,
             "needs_escalation": bool(c.needs_escalation),
             "supervisor_connected": bool(c.supervisor_connected),
+            "dispatch_persona": c.dispatch_persona,
             "agent_name": c.agent_name,
             "bot_phase": c.bot_phase,
             "last_message": last_msg.message if last_msg else None,
@@ -2893,16 +2765,6 @@ async def get_support_messages(chat_id: int, user: User = Depends(_get_current_u
     if not chat or chat.user_id != user.id:
         raise HTTPException(status_code=403, detail="Not your chat")
 
-    # Move the supervisor handoff along before reading. The client's phase
-    # machine already keys off message text — "has joined the chat" puts it in
-    # the agent phase — so inserting the scripted rows here is all it takes to
-    # own the timeline from this side. Never fatal: a poll that cannot advance
-    # the script still has to return the conversation.
-    try:
-        await _advance_supervisor_script(chat, db)
-    except Exception as e:
-        logging.warning("[support] script advance failed for chat %s: %s", chat_id, e)
-
     result = await db.execute(
         select(SupportMessage).where(SupportMessage.chat_id == chat_id)
         .order_by(SupportMessage.created_at.asc())
@@ -2930,7 +2792,7 @@ async def get_support_messages(chat_id: int, user: User = Depends(_get_current_u
             elif m.sender_role == "system":
                 name = "Sistema" if _chat_lang.startswith("es") else "System"
             elif m.sender_role == "dispatch":
-                name = "Supervisor" if (chat and chat.supervisor_connected) else "Soporte Cruise"
+                name = _dispatch_persona_label(chat, _chat_lang)
             else:
                 name = "Soporte Cruise" if _chat_lang.startswith("es") else "Cruise Support"
         else:
@@ -2974,12 +2836,17 @@ async def get_support_messages_dispatch(chat_id: int, db: AsyncSession = Depends
         u = r.scalar_one_or_none()
         sender_names[sid] = f"{u.first_name} {u.last_name}".strip() if u else "Unknown"
     output = []
+    _chat_lang = getattr(chat, "locale", "en") or "en"
     for m in messages:
-        if m.sender_id == 0:
+        if m.sender_id is None or m.sender_id == 0:
             if m.sender_role == "bot":
-                name = (chat.agent_name if chat else "Agente") + " (Bot)"
+                # The panel already has sender_role to tell the bot apart —
+                # no " (Bot)" badge glued onto the name.
+                name = chat.agent_name if chat and chat.agent_name else "Agente"
             elif m.sender_role == "system":
                 name = "Sistema"
+            elif m.sender_role == "dispatch":
+                name = _dispatch_persona_label(chat, _chat_lang) if chat else "Soporte Cruise"
             else:
                 name = "Soporte Cruise"
         else:
@@ -3195,7 +3062,7 @@ async def send_support_message_dispatch(chat_id: int, request: Request, db: Asyn
     await db.commit()
     await db.refresh(msg)
 
-    sender_label = "Supervisor" if chat.supervisor_connected else "Soporte Cruise"
+    sender_label = _dispatch_persona_label(chat, getattr(chat, "locale", "en") or "en")
 
     # Sync to Firestore
     if _HAS_FIRESTORE:
@@ -3214,8 +3081,13 @@ async def connect_supervisor(chat_id: int, db: AsyncSession = Depends(get_db)):
     if not chat:
         raise HTTPException(404, "Chat not found")
     chat.supervisor_connected = True
+    chat.dispatch_persona = "supervisor"
     chat.bot_phase = "dispatch_takeover"
     chat.updated_at = datetime.now(timezone.utc)
+    # A bot answer still being composed must not land after the human is in.
+    old_reply = _reply_tasks.pop(chat_id, None)
+    if old_reply is not None and not old_reply.done():
+        old_reply.cancel()
     # Cancel any inactivity task
     old_task = _inactivity_tasks.pop(chat_id, None)
     if old_task and not old_task.done():
@@ -3232,6 +3104,41 @@ async def connect_supervisor(chat_id: int, db: AsyncSession = Depends(get_db)):
         except Exception:
             pass
     return {"status": "supervisor_connected", "message_id": sys_msg.id}
+
+@router.post("/support/chats/{chat_id}/connect-agent", dependencies=[Depends(_require_dispatch_auth)])
+async def connect_agent(chat_id: int, db: AsyncSession = Depends(get_db)):
+    """Dispatch connects as a specialized agent — the human takeover without
+    the supervisor title. The bot goes silent for good here."""
+    result = await db.execute(select(SupportChat).where(SupportChat.id == chat_id))
+    chat = result.scalar_one_or_none()
+    if not chat:
+        raise HTTPException(404, "Chat not found")
+    chat.dispatch_persona = "agent"
+    chat.bot_phase = "dispatch_takeover"
+    chat.updated_at = datetime.now(timezone.utc)
+    # A bot answer still being composed must not land after the human is in.
+    old_reply = _reply_tasks.pop(chat_id, None)
+    if old_reply is not None and not old_reply.done():
+        old_reply.cancel()
+    # Cancel any inactivity task
+    old_task = _inactivity_tasks.pop(chat_id, None)
+    if old_task and not old_task.done():
+        old_task.cancel()
+    # System message in the chat's own language, visible to the user.
+    is_es = (getattr(chat, "locale", "en") or "en").startswith("es")
+    text = ("Un agente especializado se ha conectado al chat."
+            if is_es else "A specialized agent has joined the chat.")
+    sys_msg = SupportMessage(chat_id=chat_id, sender_id=None, sender_role="system", message=text)
+    db.add(sys_msg)
+    await db.commit()
+    await db.refresh(sys_msg)
+    if _HAS_FIRESTORE:
+        try:
+            firestore_sync.sync_support_message(
+                chat_id, sys_msg.id, 0, "Sistema" if is_es else "System", "system", text)
+        except Exception:
+            pass
+    return {"status": "agent_connected", "message_id": sys_msg.id}
 
 @router.patch("/support/chats/{chat_id}/close", dependencies=[Depends(_require_dispatch_auth)])
 async def close_support_chat(chat_id: int, db: AsyncSession = Depends(get_db)):

@@ -3722,16 +3722,11 @@ async def web_support_chat(request: Request, db: AsyncSession = Depends(get_db))
 async def web_support_messages(chat_id: int, request: Request, db: AsyncSession = Depends(get_db)):
     """Poll the rider's own support chat. Same ordering and created_at
     (isoformat) as GET /support/chats/{id}/messages in routers/support.py."""
-    from routers.support import _advance_supervisor_script
     user = await _web_jwt_user(request, db)
     chat_r = await db.execute(select(SupportChat).where(SupportChat.id == chat_id))
     chat = chat_r.scalar_one_or_none()
     if not chat or chat.user_id != user.id:
         raise HTTPException(404, "Chat not found")
-    try:
-        await _advance_supervisor_script(chat, db)
-    except Exception as e:
-        logging.warning("[web-support] script advance failed for chat %s: %s", chat_id, e)
     r = await db.execute(
         select(SupportMessage).where(SupportMessage.chat_id == chat_id)
         .order_by(SupportMessage.created_at.asc())

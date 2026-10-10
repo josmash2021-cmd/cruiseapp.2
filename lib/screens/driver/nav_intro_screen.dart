@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../l10n/app_localizations.dart';
+import '../../services/api_service.dart';
 
 /// Nav intro (user mockup 2026-10-08): shown ONCE, the first time a driver
 /// opens in-app navigation toward a pickup (gate lives in
@@ -25,7 +26,22 @@ class NavIntroScreen extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               const Spacer(flex: 2),
-              const _RouteIllustration(),
+              // The design's own hero art (user spec 2026-10-10: "esta página
+              // debe tener esta imagen de esta foto"). Served from the
+              // backend because Shorebird patches never carry new assets;
+              // the code-drawn card below stays as the loading/failure
+              // stand-in so the page never renders broken.
+              ClipRRect(
+                borderRadius: BorderRadius.circular(28),
+                child: Image.network(
+                  '${ApiService.currentBaseUrl}/static/nav_intro_hero.png',
+                  fit: BoxFit.fitWidth,
+                  loadingBuilder: (context, child, progress) =>
+                      progress == null ? child : const _RouteIllustration(),
+                  errorBuilder: (context, error, stack) =>
+                      const _RouteIllustration(),
+                ),
+              ),
               const SizedBox(height: 34),
               Text(
                 s.navIntroTitle,
@@ -128,9 +144,9 @@ class NavIntroScreen extends StatelessWidget {
   }
 }
 
-/// The mockup's hero: a gold route line between a gold pin and a white flag
-/// pin on a navy card — drawn in code so the whole page rides OTA without
-/// any new image asset.
+/// The mockup's hero, drawn in code: the stand-in while the real art
+/// downloads from /static/nav_intro_hero.png (or if it ever fails).
+/// (2026-10-10: la página usa el PNG del diseño — esto queda de respaldo.)
 class _RouteIllustration extends StatelessWidget {
   const _RouteIllustration();
 

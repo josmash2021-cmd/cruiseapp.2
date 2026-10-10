@@ -34,6 +34,18 @@ void main() {
         reason: 'Get started must just close and let the nav open behind');
   });
 
+  test('the hero is the design art served from the backend', () {
+    final s = File('lib/screens/driver/nav_intro_screen.dart')
+        .readAsStringSync();
+    // 2026-10-10: "esta página debe tener esta imagen de esta foto" —
+    // over the wire because OTA patches never carry new assets; the
+    // code-drawn card stays as the stand-in.
+    expect(s, contains('/static/nav_intro_hero.png'));
+    expect(s, contains('Image.network('));
+    expect(s, contains('const _RouteIllustration()'),
+        reason: 'the drawn card remains the loading/failure fallback');
+  });
+
   test('the strings exist in ES and EN', () {
     final s = File('lib/l10n/app_localizations.dart').readAsStringSync();
     expect(s, contains("'Navega a donde quieras con Cruise'"));

@@ -1325,7 +1325,10 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
                         child: CustomPaint(
                           painter: _GoRadarPainter(
                             progress: _goRadarCtrl!.value,
-                            color: glowColor,
+                            // Aros de onda en VERDE (user spec 2026-10-08,
+                            // primer parche OTA de prueba) — el cuerpo, el
+                            // brillo y las letras del GO siguen dorados.
+                            color: const Color(0xFF4CAF50),
                           ),
                         ),
                       ),

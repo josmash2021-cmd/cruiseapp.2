@@ -109,6 +109,10 @@
 		<string>comgooglemaps</string>
 		<string>waze</string>
 		<string>maps</string>
+		<string>fbapi</string>
+		<string>fb-messenger-api</string>
+		<string>fbauth2</string>
+		<string>fbshareextension</string>
 	</array>
 	<key>NSSupportsLiveActivities</key>
 	<true/>
@@ -136,7 +140,19 @@
 				<string>com.googleusercontent.apps.562266680819-p0a7fcer1gtqgfi5h3ucm1vs8ptvq2bu</string>
 			</array>
 		</dict>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>fb4047536632047501</string>
+			</array>
+		</dict>
 	</array>
+	<key>FacebookAppID</key>
+	<string>4047536632047501</string>
+	<key>FacebookDisplayName</key>
+	<string>Cruise in ride</string>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
 	<key>UILaunchStoryboardName</key>

@@ -153,6 +153,8 @@
 	<string>4047536632047501</string>
 	<key>FacebookDisplayName</key>
 	<string>Cruise in ride</string>
+	<key>FacebookClientToken</key>
+	<string>7b80a8427aed432ea68d4125d7940f74</string>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
 	<key>UILaunchStoryboardName</key>

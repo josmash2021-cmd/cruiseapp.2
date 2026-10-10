@@ -3,10 +3,10 @@ import 'package:flutter/foundation.dart';
 
 /// Meta/Facebook App Events — campaign measurement for driver acquisition.
 ///
-/// Android only for now: the Facebook SDK auto-initializes from the manifest
-/// meta-data (App ID in strings.xml, Client Token via the META_CLIENT_TOKEN
-/// manifest placeholder), so there is no Dart-side initialization here.
-/// iOS stays gated off until its Info.plist entries are configured.
+/// Both platforms now: Android auto-initializes from the manifest meta-data
+/// (App ID in strings.xml, Client Token via the META_CLIENT_TOKEN manifest
+/// placeholder), iOS from the Info.plist entries (App ID / Display Name /
+/// Client Token). Web is the only platform gated off.
 class MetaAppEventsService {
   MetaAppEventsService._();
 
@@ -16,7 +16,7 @@ class MetaAppEventsService {
   /// the backend confirmed the last step. Never throws and never blocks
   /// signup: attribution logging failing must not abort registration.
   static Future<void> logDriverRegistrationComplete(String method) async {
-    if (kIsWeb || defaultTargetPlatform != TargetPlatform.android) return;
+    if (kIsWeb) return;
     try {
       await _events.logCompletedRegistration(registrationMethod: method);
     } catch (e) {

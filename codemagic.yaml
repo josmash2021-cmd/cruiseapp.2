@@ -943,8 +943,12 @@ workflows:
           # Android puede no tener release aún — no debe tumbar iOS.
           # --no-codesign: el IPA del parche solo sirve para el diff, jamás
           # se publica — firmar era lo que lo tumbaba (sin keychain aquí).
+          # --allow-asset-diffs: la fuente MaterialIcons-Regular.otf cambia
+          # sola según la versión del engine que compila (el release fue sin
+          # tree-shake y el patch con tree-shake default) — no es un cambio
+          # nuestro; nuestros assets SÍ viajan en el parche.
           shorebird patch android --release-version latest || echo "⚠️ sin release Android aún — solo iOS"
-          shorebird patch ios --release-version latest --no-codesign
+          shorebird patch ios --release-version latest --no-codesign --allow-asset-diffs
     publishing:
       email:
         recipients:

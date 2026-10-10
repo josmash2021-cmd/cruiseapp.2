@@ -910,3 +910,43 @@ workflows:
         notify:
           success: true
           failure: true
+
+  # ────────────────────────────────────────────────────────────────────────────
+  # Shorebird OTA patch — publica cambios Dart a los releases Shorebird ya
+  # instalados, SIN tienda. iOS solo puede parchear desde macOS (por eso
+  # vive aquí y no en la PC). Trigger: MANUAL (botón en Codemagic o API).
+  # ────────────────────────────────────────────────────────────────────────────
+  shorebird-patch:
+    name: Shorebird OTA patch
+    max_build_duration: 60
+    instance_type: mac_mini_m2
+    environment:
+      groups:
+        - Default
+      flutter: 3.38.10
+      xcode: 26.0
+      cocoapods: 1.15.2
+      vars:
+        <<: *shared_vars
+    scripts:
+      - *generate_env
+      - *generate_firebase_configs
+      - *configure_git
+      - *mapbox_auth
+      - *flutter_pub_get
+      - *pod_install
+      - *shorebird_setup
+      - name: Publish OTA patch (Android + iOS)
+        script: |
+          # Patch = diff Dart contra el release instalado; Shorebird usa la
+          # versión de Flutter DEL release automáticamente (3.38.9 hoy).
+          # Android puede no tener release aún — no debe tumbar iOS.
+          shorebird patch android --release-version latest || echo "⚠️ sin release Android aún — solo iOS"
+          shorebird patch ios --release-version latest
+    publishing:
+      email:
+        recipients:
+          - josmash2021@gmail.com
+        notify:
+          success: true
+          failure: true

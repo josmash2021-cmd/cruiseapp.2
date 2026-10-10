@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Header, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from utils.security import _verify_api_key, _require_admin, _require_dispatch_auth, _security_audit_log
 from models.database import get_db, SessionLocal, AppConfig
@@ -392,31 +392,62 @@ async def system_metrics(admin=Depends(_require_admin)):
 
 # ═══════════════════════════════════════════════════════════════════════
 #  Force-update switch — dispatch flips it, the app checks it at boot
-#  (2026-10-10, user spec: a panel button sends every user to the store)
+#  (2026-10-10, user spec: a panel button sends every user to the store;
+#  v2 same day: min build per platform so users who ALREADY updated walk
+#  straight in, and a socket broadcast flips live apps in real time)
 # ═══════════════════════════════════════════════════════════════════════
 
 _FORCE_UPDATE_KEY = "force_update_required"
+_MIN_BUILD_KEYS = {
+    "ios": "force_update_min_build_ios",
+    "android": "force_update_min_build_android",
+}
 _STORE_URLS = {
     "ios": "https://apps.apple.com/app/id6760517086",
     "android": "https://play.google.com/store/apps/details?id=com.cruiseinride.app",
 }
 
 
+async def _read_app_update_state(db) -> tuple[bool, dict]:
+    """(enabled, {platform: min_build}) — raises on DB error; callers decide
+    their failure mode (public endpoint fails OPEN, admin fails LOUD)."""
+    from sqlalchemy import select
+
+    keys = [_FORCE_UPDATE_KEY, *_MIN_BUILD_KEYS.values()]
+    r = await db.execute(
+        select(AppConfig.key, AppConfig.value).where(AppConfig.key.in_(keys)))
+    rows = {k: v for k, v in r.all()}
+
+    def _min_build(platform: str) -> int:
+        try:
+            return int((rows.get(_MIN_BUILD_KEYS[platform]) or "0").strip())
+        except ValueError:
+            return 0
+
+    enabled = (rows.get(_FORCE_UPDATE_KEY) or "").strip() == "1"
+    return enabled, {p: _min_build(p) for p in _MIN_BUILD_KEYS}
+
+
 @router.get("/app-update-status", dependencies=[Depends(_verify_api_key)])
-async def app_update_status(platform: str = "", db=Depends(get_db)):
+async def app_update_status(platform: str = "", build: int = 0,
+                            db=Depends(get_db)):
     """Boot gate for the app: update_required=true means the store page is
     the only screen the user gets.
 
     Fail-open BY DESIGN: a DB hiccup answers update_required=false rather
     than locking every user out of the app over our own outage.
-    """
-    from sqlalchemy import select
 
+    Version-aware: a client on build >= the required minimum is NOT gated
+    (the user who already updated must not loop back to the store page).
+    build=0 (clients too old to report it) and min_build=0 (never set from
+    the panel) both fall back to the plain switch: enabled = everyone gated.
+    """
     required = False
     try:
-        r = await db.execute(
-            select(AppConfig.value).where(AppConfig.key == _FORCE_UPDATE_KEY))
-        required = (r.scalar_one_or_none() or "").strip() == "1"
+        enabled, mins = await _read_app_update_state(db)
+        min_build = mins.get((platform or "").lower(), 0)
+        required = enabled and (
+            min_build <= 0 or build <= 0 or build < min_build)
     except Exception as e:
         logger.warning("[AppUpdate] status read failed: %s", e)
     return {
@@ -428,16 +459,17 @@ async def app_update_status(platform: str = "", db=Depends(get_db)):
 
 class AppUpdateSwitch(BaseModel):
     enabled: bool
+    min_build_ios: int = Field(0, ge=0, le=100000)
+    min_build_android: int = Field(0, ge=0, le=100000)
 
 
 @router.get("/admin/app-update", dependencies=[Depends(_require_dispatch_auth)])
 async def get_app_update_switch(db=Depends(get_db)):
-    from sqlalchemy import select
-
-    r = await db.execute(
-        select(AppConfig.value).where(AppConfig.key == _FORCE_UPDATE_KEY))
+    enabled, mins = await _read_app_update_state(db)
     return {
-        "enabled": (r.scalar_one_or_none() or "").strip() == "1",
+        "enabled": enabled,
+        "min_build_ios": mins["ios"],
+        "min_build_android": mins["android"],
         "store_urls": _STORE_URLS,
     }
 
@@ -447,24 +479,37 @@ async def set_app_update_switch(req: AppUpdateSwitch, request: Request,
                                 db=Depends(get_db)):
     from sqlalchemy import select
 
-    value = "1" if req.enabled else "0"
-    r = await db.execute(
-        select(AppConfig).where(AppConfig.key == _FORCE_UPDATE_KEY))
-    row = r.scalar_one_or_none()
-    if row:
-        row.value = value
-        row.updated_at = datetime.now(timezone.utc)
-    else:
-        db.add(AppConfig(
-            key=_FORCE_UPDATE_KEY,
-            value=value,
-            description="Force-update gate — '1' sends the app to the store",
-        ))
+    async def _upsert(key: str, value: str, description: str) -> None:
+        r = await db.execute(select(AppConfig).where(AppConfig.key == key))
+        row = r.scalar_one_or_none()
+        if row:
+            row.value = value
+            row.updated_at = datetime.now(timezone.utc)
+        else:
+            db.add(AppConfig(key=key, value=value, description=description))
+
+    await _upsert(_FORCE_UPDATE_KEY, "1" if req.enabled else "0",
+                  "Force-update gate — '1' sends the app to the store")
+    await _upsert(_MIN_BUILD_KEYS["ios"], str(req.min_build_ios),
+                  "Min iOS build before the gate applies (0 = all builds)")
+    await _upsert(_MIN_BUILD_KEYS["android"], str(req.min_build_android),
+                  "Min Android build before the gate applies (0 = all builds)")
     await db.commit()
     _security_audit_log(
         "app_update_switch",
         request.client.host if request.client else "unknown",
-        f"enabled={req.enabled}",
+        f"enabled={req.enabled} min_ios={req.min_build_ios} "
+        f"min_android={req.min_build_android}",
     )
     logger.warning("[AppUpdate] force-update switch -> %s", req.enabled)
+
+    # Wake live apps so the gate flips in real time (socket broadcast reaches
+    # every worker via the Redis manager; offline apps catch it at boot, and
+    # the blocked page polls every 15 s as the final fallback).
+    try:
+        from services.socketio_service import sio
+        await sio.emit("app_update_gate_changed", {"required": req.enabled})
+    except Exception as e:
+        logger.warning("[AppUpdate] socket broadcast failed: %s", e)
+
     return {"enabled": req.enabled}

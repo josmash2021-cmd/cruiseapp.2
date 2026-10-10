@@ -61,6 +61,8 @@ class SocketService {
       StreamController<Map<String, dynamic>>.broadcast();
   static var _onboardingItemController =
       StreamController<Map<String, dynamic>>.broadcast();
+  static var _appUpdateGateController =
+      StreamController<Map<String, dynamic>>.broadcast();
 
   /// Stream of driver location updates.
   /// Payload: {trip_id, lat, lng, heading, speed, timestamp}
@@ -99,6 +101,13 @@ class SocketService {
   /// rider finding out on the next app open.
   static Stream<Map<String, dynamic>> get onboardingItemStream =>
       _onboardingItemController.stream;
+
+  /// Ping pushed when dispatch flips the force-update switch.
+  /// Payload: {required: bool}. Listeners RE-CHECK via
+  /// ApiService.getAppUpdateStatus() instead of trusting the payload —
+  /// the event is only a wake-up, the REST answer is the truth.
+  static Stream<Map<String, dynamic>> get appUpdateGateStream =>
+      _appUpdateGateController.stream;
 
   // ── Public API ──────────────────────────────────────────────────────
 
@@ -300,6 +309,12 @@ class SocketService {
       final map = _toMap(data);
       _onboardingItemController.add(map);
       debugPrint('[Socket.io] Onboarding item changed: ${map['item']} → ${map['status']}');
+    });
+
+    _socket!.on('app_update_gate_changed', (data) {
+      final map = _toMap(data);
+      _appUpdateGateController.add(map);
+      debugPrint('[Socket.io] App-update gate changed: ${map['required']}');
     });
 
     // Listen to network recovery to proactively reconnect.
@@ -519,6 +534,9 @@ class SocketService {
       }
       if (_accountStatusController.isClosed) {
         _accountStatusController = StreamController<Map<String, dynamic>>.broadcast();
+      }
+      if (_appUpdateGateController.isClosed) {
+        _appUpdateGateController = StreamController<Map<String, dynamic>>.broadcast();
       }
       if (_connectionHealthController.isClosed) {
         _connectionHealthController = StreamController<bool>.broadcast();

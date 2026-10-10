@@ -7,6 +7,7 @@ import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -1278,14 +1279,22 @@ class ApiService {
   /// Returns `{required: bool, storeUrl: String}` or `null` when the check
   /// couldn't run (offline, timeout, server down). `null` MUST be treated
   /// as "no update": the gate is fail-open so a backend blip never locks
-  /// every user out of the app.
+  /// every user out of the app. The current build number rides along so the
+  /// server lets users who ALREADY updated straight in.
   static Future<Map<String, dynamic>?> getAppUpdateStatus() async {
     if (kIsWeb) return null; // web has no store to send anyone to
     try {
       final platform = Platform.isIOS ? 'ios' : 'android';
+      var build = 0;
+      try {
+        build = int.tryParse(
+                (await PackageInfo.fromPlatform()).buildNumber) ??
+            0;
+      } catch (_) {}
       final res = await http
           .get(
-            Uri.parse('$_baseUrl/app-update-status?platform=$platform'),
+            Uri.parse(
+                '$_baseUrl/app-update-status?platform=$platform&build=$build'),
             headers: _jsonHeaders(),
           )
           .timeout(const Duration(seconds: 4));

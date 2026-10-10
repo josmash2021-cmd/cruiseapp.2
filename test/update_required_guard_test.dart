@@ -17,6 +17,8 @@ void main() {
       File('lib/screens/update_required_screen.dart').readAsStringSync();
   final splash = File('lib/screens/splash_screen.dart').readAsStringSync();
   final api = File('lib/services/api_service.dart').readAsStringSync();
+  final socket = File('lib/services/socket_service.dart').readAsStringSync();
+  final main = File('lib/main.dart').readAsStringSync();
   final l10n = File('lib/l10n/app_localizations.dart').readAsStringSync();
 
   test('the page is blocking — no back, no skip', () {
@@ -78,5 +80,31 @@ void main() {
     expect(screen.contains('_poll?.cancel()'), isTrue,
         reason: 'the timer must die with the widget and after the OFF');
     expect(screen.contains('dispose()'), isTrue);
+  });
+
+  // v2 (2026-10-10): animated in/out, live socket flip, version-aware gate.
+  test('the page animates in and out', () {
+    expect(screen.contains('AnimationController('), isTrue);
+    expect(screen.contains('ScaleTransition('), isTrue,
+        reason: 'hero pops in');
+    expect(screen.contains('FadeTransition('), isTrue);
+    expect(screen.contains('_dismissAnimated'), isTrue,
+        reason: 'OFF reverses the entrance before re-booting');
+  });
+
+  test('live flip: socket ping wakes open apps in both directions', () {
+    expect(socket.contains("'app_update_gate_changed'"), isTrue);
+    expect(socket.contains('appUpdateGateStream'), isTrue);
+    expect(screen.contains('appUpdateGateStream'), isTrue,
+        reason: 'a shown gate hears the OFF ping instantly');
+    expect(main.contains('appUpdateGateStream.listen'), isTrue,
+        reason: 'open apps get the ON ping and push the gate live');
+    expect(main.contains('UpdateRequiredScreen.showing'), isTrue,
+        reason: 'no double-stacked gates');
+  });
+
+  test('the app reports its build so updated users walk in', () {
+    expect(api.contains('PackageInfo.fromPlatform()'), isTrue);
+    expect(api.contains('&build='), isTrue);
   });
 }

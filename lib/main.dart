@@ -28,6 +28,7 @@ import 'config/feature_flags.dart';
 import 'config/route_observers.dart';
 import 'state/accessibility_notifier.dart';
 import 'screens/splash_screen.dart';
+import 'screens/update_required_screen.dart';
 import 'screens/driver/driver_online_screen.dart';
 import 'screens/driver/driver_online_screen.dart';
 import 'screens/driver/driver_pending_review_screen.dart';
@@ -1477,6 +1478,8 @@ class UberCloneApp extends StatefulWidget {
 
 class _UberCloneAppState extends State<UberCloneApp>
     with WidgetsBindingObserver {
+  StreamSubscription<Map<String, dynamic>>? _appUpdateGateSub;
+
   @override
   void initState() {
     super.initState();
@@ -1582,11 +1585,36 @@ class _UberCloneAppState extends State<UberCloneApp>
         (_) => false,
       );
     };
+
+    // Force-update gate flipped while the app is OPEN (dispatch panel →
+    // Administración → Actualización App). The socket ping is only a
+    // wake-up: re-check the REST endpoint (the truth) and, when really ON,
+    // push the blocking store page over whatever is on screen. OFF needs no
+    // work here — a shown gate hears the same ping and dismisses itself.
+    _appUpdateGateSub = SocketService.appUpdateGateStream.listen((_) async {
+      if (UpdateRequiredScreen.showing) return; // the gate re-checks itself
+      final gate = await ApiService.getAppUpdateStatus();
+      if (gate == null || gate['required'] != true) return;
+      final nav = _navigatorKey.currentState;
+      if (nav == null || UpdateRequiredScreen.showing) return;
+      UpdateRequiredScreen.showing = true; // beat the push/initState race
+      nav.push(PageRouteBuilder(
+        pageBuilder: (_, __, ___) => UpdateRequiredScreen(
+          storeUrl: (gate['storeUrl'] as String?) ?? '',
+        ),
+        transitionDuration: const Duration(milliseconds: 350),
+        transitionsBuilder: (_, anim, __, child) => FadeTransition(
+          opacity: CurvedAnimation(parent: anim, curve: Curves.easeOut),
+          child: child,
+        ),
+      ));
+    });
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _appUpdateGateSub?.cancel();
     super.dispose();
   }
 

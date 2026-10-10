@@ -85,3 +85,62 @@ async def test_status_fail_open_on_db_error(client, monkeypatch):
                            headers=_make_auth_headers())
     assert res.status_code == 200, res.text
     assert res.json()["update_required"] is False
+
+
+async def test_min_build_gates_only_outdated_clients(client):
+    """User spec 2026-10-10: a user who ALREADY updated must never see the
+    gate again — the switch carries the minimum accepted build per platform.
+    """
+    dh = lambda: _make_auth_headers("test-dispatch-key")
+    res = await client.post("/admin/app-update", headers=dh(),
+                            json={"enabled": True, "min_build_ios": 734})
+    assert res.status_code == 200, res.text
+
+    # outdated build → gated
+    res = await client.get("/app-update-status?platform=ios&build=733",
+                           headers=_make_auth_headers())
+    assert res.json()["update_required"] is True
+    # exactly at / past the minimum → walks in
+    for b in (734, 900):
+        res = await client.get(f"/app-update-status?platform=ios&build={b}",
+                               headers=_make_auth_headers())
+        assert res.json()["update_required"] is False
+    # client too old to report its build → gated (legacy behavior)
+    res = await client.get("/app-update-status?platform=ios",
+                           headers=_make_auth_headers())
+    assert res.json()["update_required"] is True
+    # a platform without a configured minimum falls back to the plain switch
+    res = await client.get("/app-update-status?platform=android&build=99999",
+                           headers=_make_auth_headers())
+    assert res.json()["update_required"] is True
+
+
+async def test_admin_get_exposes_min_builds(client):
+    dh = lambda: _make_auth_headers("test-dispatch-key")
+    res = await client.post("/admin/app-update", headers=dh(),
+                            json={"enabled": False, "min_build_ios": 734,
+                                  "min_build_android": 120})
+    assert res.status_code == 200, res.text
+    res = await client.get("/admin/app-update", headers=dh())
+    body = res.json()
+    assert body["min_build_ios"] == 734
+    assert body["min_build_android"] == 120
+
+
+async def test_flip_broadcasts_to_live_apps(client, monkeypatch):
+    """The toggle wakes apps that are open RIGHT NOW (the gate flips in real
+    time, not just on the next cold boot)."""
+    import services.socketio_service as sio_mod
+
+    sent = []
+
+    class _FakeSio:
+        async def emit(self, event, data):
+            sent.append((event, data))
+
+    monkeypatch.setattr(sio_mod, "sio", _FakeSio())
+    res = await client.post(
+        "/admin/app-update", headers=_make_auth_headers("test-dispatch-key"),
+        json={"enabled": True})
+    assert res.status_code == 200, res.text
+    assert sent == [("app_update_gate_changed", {"required": True})]

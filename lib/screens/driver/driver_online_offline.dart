@@ -1076,36 +1076,24 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
           // Disabled when docs missing or not verified — sunken neu well.
           final enabled = _isVerified && docsOk;
 
-          // Graphite body, gold lettering — the reverse of the old gold
-          // slab with black type. The gold is now the thing that moves and
-          // glows (the word, the radar, the rim light) against a still,
-          // neutral body, which is what lets the radar read at all: rings
-          // of gold over gold were invisible.
-          //
-          // Still breathing with the pulse, just narrower: a body this dark
-          // shows a large swing as flicker rather than as a heartbeat.
-          // Near-black when it is the disc, a shade lighter as it becomes
-          // the bar.
-          // Black disc closed, gold bar open.
-          //
-          // The disc sits on the map, where a gold puck would compete with
-          // the gold arrow a few centimetres above it; the bar sits at the
-          // foot of a dark sheet, where gold is the only thing that reads as
-          // the one action on the screen.
-          final greyTop1 = Color.lerp(
-              const Color(0xFF0B0B0F), const Color(0xFFF2D45E), morph)!;
-          final greyTop2 = Color.lerp(
-              const Color(0xFF14141A), const Color(0xFFE8C547), morph)!;
-          final greyBot = Color.lerp(
-              const Color(0xFF06060A), const Color(0xFFD4A82A), morph)!;
+          // Green body, black lettering (user spec 2026-10-10: "fondo del GO
+          // verde, ondas negras"). The disc breathes between two greens; the
+          // bar lands on the brighter one. Black reads cleanly on green —
+          // and the wave rings are black to match.
+          final greenTop1 = Color.lerp(
+              const Color(0xFF1B5E20), const Color(0xFF66BB6A), morph)!;
+          final greenTop2 = Color.lerp(
+              const Color(0xFF2E7D32), const Color(0xFF4CAF50), morph)!;
+          final greenBot = Color.lerp(
+              const Color(0xFF145018), const Color(0xFF388E3C), morph)!;
 
-          final topColor = Color.lerp(greyTop1, greyTop2, p)!;
-          final botColor = greyBot;
-          const glowColor = _offlineGold;
+          final topColor = Color.lerp(greenTop1, greenTop2, p)!;
+          final botColor = greenBot;
+          const glowColor = Color(0xFF4CAF50);
 
-          // Gold on black, then black on gold.
+          // Black on green, both shapes.
           final fgColor = enabled
-              ? Color.lerp(_offlineGold, const Color(0xFF0B0B0F), morph)!
+              ? const Color(0xFF0B0B0F)
               : dc.textSecondary;
 
           return ClipRRect(
@@ -1142,7 +1130,7 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
                           // Gone by the time it is the bar — a gold outline
                           // on a gold body is either invisible or a seam.
                           border: Border.all(
-                            color: _offlineGold.withValues(
+                            color: const Color(0xFF1B5E20).withValues(
                                 alpha: 0.55 * (1 - morph).clamp(0.0, 1.0)),
                             width: 1.5,
                           ),
@@ -1325,10 +1313,9 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
                         child: CustomPaint(
                           painter: _GoRadarPainter(
                             progress: _goRadarCtrl!.value,
-                            // Aros de onda en VERDE (user spec 2026-10-08,
-                            // primer parche OTA de prueba) — el cuerpo, el
-                            // brillo y las letras del GO siguen dorados.
-                            color: const Color(0xFF4CAF50),
+                            // Ondas NEGRAS sobre el GO verde (user spec
+                            // 2026-10-10 — evolución del parche de prueba).
+                            color: const Color(0xFF0B0B0F),
                           ),
                         ),
                       ),

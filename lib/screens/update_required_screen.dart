@@ -79,7 +79,9 @@ class _UpdateRequiredScreenState extends State<UpdateRequiredScreen>
     _leaving = true;
     _poll?.cancel();
     try {
-      await _anim.reverse().orElse(() {});
+      await _anim.reverse();
+    } on TickerCanceled {
+      // disposed mid-flight — dispose() owns the rest
     } catch (_) {}
     if (!mounted) return;
     Navigator.of(context).pushReplacementNamed('/');

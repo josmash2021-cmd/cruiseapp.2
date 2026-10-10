@@ -1076,22 +1076,23 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
           // Disabled when docs missing or not verified — sunken neu well.
           final enabled = _isVerified && docsOk;
 
-          // Green body, black lettering (user spec 2026-10-10: "fondo del GO
-          // verde, ondas negras"). The disc breathes between two greens; the
-          // bar lands on the brighter one. Black reads cleanly on green —
-          // and the wave rings are black to match.
-          final greenTop1 = Color.lerp(
-              const Color(0xFF1B5E20), const Color(0xFF66BB6A), morph)!;
-          final greenTop2 = Color.lerp(
-              const Color(0xFF2E7D32), const Color(0xFF4CAF50), morph)!;
-          final greenBot = Color.lerp(
-              const Color(0xFF145018), const Color(0xFF388E3C), morph)!;
+          // Gold body, black lettering (user spec 2026-10-10: "el botón de
+          // GO seguirá dorado con ondas negras" — evolución del verde de
+          // prueba). The disc breathes between two golds; the bar lands on
+          // the brighter one. Black reads cleanly on gold — and the wave
+          // rings stay black to match.
+          final goldTop1 = Color.lerp(
+              const Color(0xFFC9981F), const Color(0xFFF2D45E), morph)!;
+          final goldTop2 = Color.lerp(
+              const Color(0xFFD4A82A), const Color(0xFFF7DF72), morph)!;
+          final goldBot = Color.lerp(
+              const Color(0xFF9A7414), const Color(0xFFD4A82A), morph)!;
 
-          final topColor = Color.lerp(greenTop1, greenTop2, p)!;
-          final botColor = greenBot;
-          const glowColor = Color(0xFF4CAF50);
+          final topColor = Color.lerp(goldTop1, goldTop2, p)!;
+          final botColor = goldBot;
+          const glowColor = Color(0xFFE8C547);
 
-          // Black on green, both shapes.
+          // Black on gold, both shapes.
           final fgColor = enabled
               ? const Color(0xFF0B0B0F)
               : dc.textSecondary;
@@ -1130,7 +1131,7 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
                           // Gone by the time it is the bar — a gold outline
                           // on a gold body is either invisible or a seam.
                           border: Border.all(
-                            color: const Color(0xFF1B5E20).withValues(
+                            color: const Color(0xFF8A6A10).withValues(
                                 alpha: 0.55 * (1 - morph).clamp(0.0, 1.0)),
                             width: 1.5,
                           ),
@@ -2113,10 +2114,10 @@ class _GoRadarPainter extends CustomPainter {
 
     for (int i = 0; i < 3; i++) {
       final t = (progress + i / 3.0) % 1.0;
-      // Ease out: quick at birth, drifting by the time it fades. A ring
-      // travelling at constant speed reads as mechanical; this is what
-      // makes a slow animation feel unhurried rather than merely slow.
-      final e = 1.0 - math.pow(1.0 - t, 2.2).toDouble();
+      // Ease out, softer than before (spec 2026-10-10: "más fluido") — quick
+      // at birth, drifting by the time it fades. A ring travelling at
+      // constant speed reads as mechanical.
+      final e = 1.0 - math.pow(1.0 - t, 1.8).toDouble();
       final r = maxR * (inner + (outer - inner) * e);
 
       // Fade in over the first sliver so a ring never pops into existence
@@ -2126,6 +2127,19 @@ class _GoRadarPainter extends CustomPainter {
       final a = fadeIn * (1.0 - e) * (1.0 - e) * 0.5;
       if (a <= 0.01) continue;
 
+      final w = 1.8 - 0.9 * e;
+      // Soft pass first: a blurred halo under the crisp ring is what makes
+      // it read as a WAVE rolling outward, not a hard growing circle
+      // (user spec 2026-10-10: "un poco de sombra, tipo ondas no aros").
+      canvas.drawCircle(
+        centre,
+        r,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = w + 2.4
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3)
+          ..color = color.withValues(alpha: a * 0.5),
+      );
       canvas.drawCircle(
         centre,
         r,
@@ -2133,7 +2147,7 @@ class _GoRadarPainter extends CustomPainter {
           ..style = PaintingStyle.stroke
           // Thinning as it travels: a ring keeping its weight while it
           // grows looks like it is being drawn, not like it is spreading.
-          ..strokeWidth = 1.8 - 0.9 * e
+          ..strokeWidth = w
           ..color = color.withValues(alpha: a),
       );
     }

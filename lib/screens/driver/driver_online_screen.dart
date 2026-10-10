@@ -1120,9 +1120,10 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
       )..repeat();
       // El radar lleva su propio reloj, más lento que todo lo demás del
       // botón — un radar apurado lee como spinner, no como baliza.
+      // (2026-10-10: 4.2 s → 5.2 s, spec "un poco más fluido/smooth".)
       _goRadarCtrl = AnimationController(
         vsync: this,
-        duration: const Duration(milliseconds: 4200),
+        duration: const Duration(milliseconds: 5200),
       )..repeat();
       _goBtnColorCtrl = AnimationController(
         vsync: this,
@@ -2022,6 +2023,32 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                       ),
                     ],
                   ),
+                ),
+              ),
+
+            // Recentre FAB while OFFLINE (user spec 2026-10-10): the
+            // right-side cluster (safety + recentre) only renders in online
+            // mode, so a driver who dragged the map while offline had no way
+            // back to their own position. Appears exactly when needed —
+            // camera parked off-follow — same _recenterCamera glide as the
+            // online one.
+            if (!_driverOnline &&
+                !isNav &&
+                _acceptedOverlay == null &&
+                !_cameraFollowing)
+              Positioned(
+                bottom: 78 + bot + 14,
+                right: 16,
+                child: _fab(
+                  Icons.gps_fixed_rounded,
+                  44,
+                  fabBg,
+                  fabBorder,
+                  fabIcon,
+                  () {
+                    HapticService.selectionClick();
+                    _recenterCamera();
+                  },
                 ),
               ),
 

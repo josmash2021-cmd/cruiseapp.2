@@ -1,24 +1,61 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../l10n/app_localizations.dart';
+import '../services/api_service.dart';
 
 /// Force-update gate (dispatch-controlled, 2026-10-10).
 ///
 /// Shown as the ONLY route when GET /app-update-status answers
 /// update_required=true — no back button, no skip, no way into the app
 /// until the user updates from the store. The switch lives in the dispatch
-/// panel (/panel/actualizacion.html) and takes effect on the next app boot,
-/// no store release needed to flip it.
-class UpdateRequiredScreen extends StatelessWidget {
+/// panel (Administración → Actualización App) and takes effect without any
+/// store release.
+///
+/// Real-time OFF (user spec): while this page is up it re-checks the switch
+/// every 15 s — the moment dispatch turns it off, the page dismisses itself
+/// and the app boots normally, no app restart needed. A failed poll keeps
+/// the page up (the gate is fail-open at BOOT, not while displayed).
+class UpdateRequiredScreen extends StatefulWidget {
   final String storeUrl;
 
   const UpdateRequiredScreen({super.key, required this.storeUrl});
 
+  @override
+  State<UpdateRequiredScreen> createState() => _UpdateRequiredScreenState();
+}
+
+class _UpdateRequiredScreenState extends State<UpdateRequiredScreen> {
   static const _bg = Color(0xFF0A0E1A);
   static const _gold = Color(0xFFE8C547);
+  static const _pollEvery = Duration(seconds: 15);
+
+  Timer? _poll;
+
+  @override
+  void initState() {
+    super.initState();
+    _poll = Timer.periodic(_pollEvery, (_) => _recheck());
+  }
+
+  @override
+  void dispose() {
+    _poll?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _recheck() async {
+    final gate = await ApiService.getAppUpdateStatus();
+    if (!mounted || gate == null) return; // error = stay put
+    if (gate['required'] == true) return;
+    // Switch turned OFF — hand the app back to the normal boot sequence.
+    _poll?.cancel();
+    Navigator.of(context).pushReplacementNamed('/');
+  }
 
   Future<void> _openStore() async {
-    final uri = Uri.tryParse(storeUrl);
+    final uri = Uri.tryParse(widget.storeUrl);
     if (uri == null) return;
     try {
       await launchUrl(uri, mode: LaunchMode.externalApplication);

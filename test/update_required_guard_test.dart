@@ -67,4 +67,16 @@ void main() {
     expect(l10n.contains('Actualización requerida'), isTrue);
     expect(l10n.contains('Update required'), isTrue);
   });
+
+  test('the page clears itself in real time when the switch turns OFF', () {
+    expect(screen.contains('Timer.periodic('), isTrue);
+    expect(screen.contains('Duration(seconds: 15)'), isTrue,
+        reason: 'poll cadence — light enough for blocked users');
+    expect(screen.contains('ApiService.getAppUpdateStatus()'), isTrue);
+    expect(screen.contains("pushReplacementNamed('/')"), isTrue,
+        reason: 'OFF hands the app back to the splash boot sequence');
+    expect(screen.contains('_poll?.cancel()'), isTrue,
+        reason: 'the timer must die with the widget and after the OFF');
+    expect(screen.contains('dispose()'), isTrue);
+  });
 }

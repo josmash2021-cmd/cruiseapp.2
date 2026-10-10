@@ -828,11 +828,6 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   DateTime? _lastMapPanAt;
   Timer? _reFollowTimer;
 
-  /// While this is in the future the driver's finger is on the map — the
-  /// NATIVE annotation owns the arrow for the drag. See _onCameraMoveStarted.
-  DateTime _mapDragUntil = DateTime(2000);
-  Timer? _dragSettleTimer;
-
   // â”€â”€ Draggable panel â”€â”€
   bool _panelOpen = false;
   double _panelFrac = 0.0; // 0 = collapsed pill, 1 = fully expanded
@@ -1550,7 +1545,6 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     if (_leavingOffline) _gpsService.stopTracking();
     _reFollowTimer?.cancel();
     _followResumeTimer?.cancel();
-    _dragSettleTimer?.cancel();
     _earningsRefreshTimer?.cancel();
     _bgHeartbeatTimer?.cancel();
     _panelAnimCtrl?.dispose();

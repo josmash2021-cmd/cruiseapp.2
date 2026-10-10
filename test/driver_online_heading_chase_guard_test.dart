@@ -140,12 +140,12 @@ void main() {
               'an offline driver watching the map');
     });
 
-    test('the gesture handoff and marker ownership have no mode gate', () {
+    test('the gesture handling and marker ownership have no mode gate', () {
       final body =
           bodyOf(map2, 'void _onCameraMoveStarted() {', maxLen: 2400);
       expect(body.contains('_driverOnline'), isFalse);
       expect(body.contains('_markerFrame.value++;'), isTrue,
-          reason: 'the overlay hides the same frame on every gesture event');
+          reason: 'the overlay repaints synchronously on every gesture event');
       final owns = bodyOf(map2, 'bool get _dotOverlayOwnsMarker', maxLen: 2200);
       expect(owns.contains('_driverOnline'), isFalse,
           reason: 'who draws the arrow is identical in both modes');
@@ -187,19 +187,41 @@ void main() {
           reason: 'no waiting for an indirect caller while parked');
     });
 
-    test('mid-drag the NATIVE annotation owns the arrow (user report '
-        '2026-09-23)', () {
+    test('mid-gesture the overlay KEEPS the arrow — one arrow in every state '
+        '(user report 2026-10-10)', () {
+      // The old handoff to the native annotation mid-drag produced three
+      // visible differences at once: size jump, wrong heading, double-arrow
+      // flicker. The overlay now keeps the marker through the gesture,
+      // projecting per frame from the camera state that arrives with each
+      // rendered frame (onCameraChangeListener) — the same zero-IPC glue as
+      // the ride-request pin labels.
       final body = bodyOf(map, 'void _onCameraMoveStarted() {', maxLen: 2400);
-      expect(body.contains('_mapDragUntil'), isTrue,
-          reason: 'every scroll/zoom event renews the drag latch');
-      expect(body.contains('_dragSettleTimer'), isTrue,
-          reason: 'the settle timer hands the marker back to the overlay '
-              'once the drag parks — a parked driver makes no ticker frames');
+      expect(body.contains('_mapDragUntil'), isFalse,
+          reason: 'the drag latch that handed the arrow to the annotation '
+              'mid-gesture is gone');
+      expect(body.contains('_dragSettleTimer'), isFalse,
+          reason: 'no settle handback either — there is no handoff anymore');
+      expect(body.contains('_markerFrame.value++;'), isTrue,
+          reason: 'the overlay still repaints synchronously per event');
       final owns = bodyOf(map, 'bool get _dotOverlayOwnsMarker', maxLen: 2200);
-      expect(owns.contains('DateTime.now().isBefore(_mapDragUntil)'), isTrue,
-          reason: 'during the drag the overlay steps aside: its projected '
-              'pixel trails the finger over the channel, the GL-rendered '
-              'annotation never does — the arrow stays on the street');
+      expect(owns.contains('_mapDragUntil'), isFalse,
+          reason: 'no drag veto on ownership — the same arrow stays');
+      expect(owns.contains('_dotScreenOffset != null'), isTrue,
+          reason: 'not-following still projects the real pixel');
+      expect(owns.contains('if (_isCardAnimating) return false;'), isTrue,
+          reason: 'the annotation keeps exactly one job: the offer-preview '
+              'programmatic flight, whose events trail the flyTo');
+      // The per-frame camera feed that glues the overlay mid-gesture.
+      expect(widgets.contains('onCameraChangeListener'), isTrue);
+      final listener =
+          bodyOf(widgets, 'onCameraChangeListener: (data) {', maxLen: 500);
+      expect(listener.contains('_onlineCamState = data.cameraState'), isTrue);
+      expect(listener.contains('_markerFrame.value++;'), isTrue);
+      // The field itself is gone from the screen state.
+      final screen =
+          File('lib/screens/driver/driver_online_screen.dart').readAsStringSync();
+      expect(screen.contains('_mapDragUntil'), isFalse);
+      expect(screen.contains('_dragSettleTimer'), isFalse);
     });
   });
 
@@ -228,19 +250,18 @@ void main() {
     final map2 =
         File('lib/screens/driver/driver_online_map.dart').readAsStringSync();
 
-    test('the overlay hides the SAME frame on EVERY gesture event, not only '
-        'on the follow→free transition', () {
+    test('the overlay repaints the SAME frame on EVERY gesture event, not '
+        'only on the follow→free transition', () {
       final body = bodyOf(map2, 'void _onCameraMoveStarted() {', maxLen: 2400);
       final bump = body.indexOf('_markerFrame.value++;');
       final flip = body.indexOf('_updateDriverAnnotation();');
       final followCheck = body.indexOf('if (!_cameraFollowing) return;');
       expect(bump, isNonNegative,
-          reason: 'without the synchronous bump the overlay hid only when '
-              'the lagging camera-change event arrived — it painted at '
-              'trailing pixels mid-gesture');
+          reason: 'without the synchronous bump the overlay would only '
+              'repaint when the lagging camera-change event arrived');
       expect(flip, isNonNegative);
       expect(bump, lessThan(followCheck),
-          reason: 'the hide must not wait for the follow transition');
+          reason: 'the repaint must not wait for the follow transition');
       expect(flip, lessThan(followCheck));
       // El merged screen corre el MISMO handler en ambos modos — con el home
       // muerto ya no hay segundo archivo que pinear (lo cubre el grupo

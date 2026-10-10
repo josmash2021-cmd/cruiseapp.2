@@ -10,7 +10,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Header, Request
 from pydantic import BaseModel
 
-from utils.security import _verify_api_key, _require_admin, _security_audit_log
+from utils.security import _verify_api_key, _require_admin, _require_dispatch_auth, _security_audit_log
 from models.database import get_db, SessionLocal, AppConfig
 from services.query_cache import stats as cache_stats
 from middleware.rate_limit import rate_limiter
@@ -388,3 +388,83 @@ async def system_metrics(admin=Depends(_require_admin)):
         "rate_limiter": rate_limiter.get_stats(),
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
+
+
+# ═══════════════════════════════════════════════════════════════════════
+#  Force-update switch — dispatch flips it, the app checks it at boot
+#  (2026-10-10, user spec: a panel button sends every user to the store)
+# ═══════════════════════════════════════════════════════════════════════
+
+_FORCE_UPDATE_KEY = "force_update_required"
+_STORE_URLS = {
+    "ios": "https://apps.apple.com/app/id6760517086",
+    "android": "https://play.google.com/store/apps/details?id=com.cruiseinride.app",
+}
+
+
+@router.get("/app-update-status", dependencies=[Depends(_verify_api_key)])
+async def app_update_status(platform: str = "", db=Depends(get_db)):
+    """Boot gate for the app: update_required=true means the store page is
+    the only screen the user gets.
+
+    Fail-open BY DESIGN: a DB hiccup answers update_required=false rather
+    than locking every user out of the app over our own outage.
+    """
+    from sqlalchemy import select
+
+    required = False
+    try:
+        r = await db.execute(
+            select(AppConfig.value).where(AppConfig.key == _FORCE_UPDATE_KEY))
+        required = (r.scalar_one_or_none() or "").strip() == "1"
+    except Exception as e:
+        logger.warning("[AppUpdate] status read failed: %s", e)
+    return {
+        "update_required": required,
+        "store_url": _STORE_URLS.get((platform or "").lower(),
+                                     _STORE_URLS["android"]),
+    }
+
+
+class AppUpdateSwitch(BaseModel):
+    enabled: bool
+
+
+@router.get("/admin/app-update", dependencies=[Depends(_require_dispatch_auth)])
+async def get_app_update_switch(db=Depends(get_db)):
+    from sqlalchemy import select
+
+    r = await db.execute(
+        select(AppConfig.value).where(AppConfig.key == _FORCE_UPDATE_KEY))
+    return {
+        "enabled": (r.scalar_one_or_none() or "").strip() == "1",
+        "store_urls": _STORE_URLS,
+    }
+
+
+@router.post("/admin/app-update", dependencies=[Depends(_require_dispatch_auth)])
+async def set_app_update_switch(req: AppUpdateSwitch, request: Request,
+                                db=Depends(get_db)):
+    from sqlalchemy import select
+
+    value = "1" if req.enabled else "0"
+    r = await db.execute(
+        select(AppConfig).where(AppConfig.key == _FORCE_UPDATE_KEY))
+    row = r.scalar_one_or_none()
+    if row:
+        row.value = value
+        row.updated_at = datetime.now(timezone.utc)
+    else:
+        db.add(AppConfig(
+            key=_FORCE_UPDATE_KEY,
+            value=value,
+            description="Force-update gate — '1' sends the app to the store",
+        ))
+    await db.commit()
+    _security_audit_log(
+        "app_update_switch",
+        request.client.host if request.client else "unknown",
+        f"enabled={req.enabled}",
+    )
+    logger.warning("[AppUpdate] force-update switch -> %s", req.enabled)
+    return {"enabled": req.enabled}

@@ -1273,6 +1273,39 @@ class ApiService {
     }
   }
 
+  /// Boot gate for the dispatch-controlled force-update switch.
+  ///
+  /// Returns `{required: bool, storeUrl: String}` or `null` when the check
+  /// couldn't run (offline, timeout, server down). `null` MUST be treated
+  /// as "no update": the gate is fail-open so a backend blip never locks
+  /// every user out of the app.
+  static Future<Map<String, dynamic>?> getAppUpdateStatus() async {
+    if (kIsWeb) return null; // web has no store to send anyone to
+    try {
+      final platform = Platform.isIOS ? 'ios' : 'android';
+      final res = await http
+          .get(
+            Uri.parse('$_baseUrl/app-update-status?platform=$platform'),
+            headers: _jsonHeaders(),
+          )
+          .timeout(const Duration(seconds: 4));
+      if (res.statusCode != 200) return null;
+      final data = jsonDecode(res.body);
+      final storeUrl = (data['store_url'] as String?)?.trim();
+      return {
+        'required': data['update_required'] == true,
+        'storeUrl': (storeUrl != null && storeUrl.isNotEmpty)
+            ? storeUrl
+            : Platform.isIOS
+                ? 'https://apps.apple.com/app/id6760517086'
+                : 'https://play.google.com/store/apps/details?id=com.cruiseinride.app',
+      };
+    } catch (e) {
+      debugPrint('getAppUpdateStatus failed (fail-open): $e');
+      return null;
+    }
+  }
+
   /// Whether the stored session token is still good.
   ///
   ///   * `true`  — the server accepted it.

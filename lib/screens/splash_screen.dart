@@ -7,6 +7,7 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:video_player/video_player.dart';
 import 'welcome_screen.dart';
 import 'home_screen.dart';
+import 'update_required_screen.dart';
 import 'rider_name_screen.dart';
 import 'rider_email_screen.dart';
 import 'driver/driver_email_screen.dart';
@@ -108,6 +109,13 @@ class _SplashScreenState extends State<SplashScreen> {
     // keeps its timing either way.
     unawaited(_requestFirstRunPermissions());
 
+    // ── Force-update gate (dispatch-controlled, /panel/actualizacion.html) ──
+    // Runs in parallel with heavyInit, checked BEFORE any destination
+    // resolve. Fail-open by contract: null/error = the user gets in — the
+    // gate only blocks when the backend clearly says ON, so our own outage
+    // can never lock everyone out of the app.
+    final updateGate = ApiService.getAppUpdateStatus();
+
     // Start heavy init in parallel with the splash animation
     final initFuture = heavyInit().timeout(
       const Duration(seconds: 12),
@@ -133,6 +141,28 @@ class _SplashScreenState extends State<SplashScreen> {
       debugPrint('[Splash] stored-session check failed: $e');
     }
     if (_disposed || !mounted) return;
+
+    // The gate answer landed while the session check ran. When dispatch has
+    // the switch ON, the store page is the only destination — both the
+    // logged-in and the logged-out paths stop here.
+    final gate = await updateGate;
+    if (_disposed || !mounted) return;
+    if (gate != null && gate['required'] == true) {
+      nav.pushReplacement(
+        PageRouteBuilder(
+          pageBuilder: (_, __, ___) => UpdateRequiredScreen(
+            storeUrl: (gate['storeUrl'] as String?) ?? '',
+          ),
+          transitionDuration: const Duration(milliseconds: 400),
+          reverseTransitionDuration: Duration.zero,
+          transitionsBuilder: (_, anim, __, child) => FadeTransition(
+            opacity: CurvedAnimation(parent: anim, curve: Curves.easeIn),
+            child: child,
+          ),
+        ),
+      );
+      return;
+    }
 
     if (loggedIn) {
       // Pre-load in background while we resolve the destination.

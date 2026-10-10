@@ -23,6 +23,14 @@ class S {
   String get continueButton => _es ? 'Continuar' : 'Continue';
   String get next => _es ? 'Siguiente' : 'Next';
   String get skip => _es ? 'Omitir' : 'Skip';
+
+  // ── Force update (dispatch-controlled store gate) ──
+  String get updateRequiredTitle =>
+      _es ? 'Actualización requerida' : 'Update required';
+  String get updateRequiredBody => _es
+      ? 'Trabajamos duro mejorando la app. Hay una actualización de Cruise disponible.'
+      : "We've been hard at work improving the app! An update to the Cruise app is available.";
+  String get updateNowButton => _es ? 'Actualizar' : 'Update';
   String get navIntroTitle => _es
       ? 'Navega a donde quieras con Cruise'
       : 'Navigate anywhere with Cruise';

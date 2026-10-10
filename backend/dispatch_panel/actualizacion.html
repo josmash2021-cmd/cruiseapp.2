@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cruise — Actualización requerida</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: #0A0E1A;
+    color: #fff;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+  }
+  .card {
+    background: #12172B;
+    border: 1px solid rgba(232,197,71,.18);
+    border-radius: 20px;
+    padding: 32px;
+    width: 100%;
+    max-width: 440px;
+  }
+  h1 { font-size: 22px; margin-bottom: 6px; }
+  h1 .dot { color: #E8C547; }
+  .sub { color: #9AA3B8; font-size: 14px; margin-bottom: 24px; }
+  label { display: block; font-size: 13px; color: #9AA3B8; margin: 14px 0 6px; }
+  input {
+    width: 100%;
+    padding: 12px 14px;
+    border-radius: 12px;
+    border: 1px solid #2A3350;
+    background: #0A0E1A;
+    color: #fff;
+    font-size: 15px;
+    outline: none;
+  }
+  input:focus { border-color: #E8C547; }
+  button {
+    width: 100%;
+    padding: 14px;
+    border: none;
+    border-radius: 12px;
+    font-size: 16px;
+    font-weight: 700;
+    cursor: pointer;
+    margin-top: 22px;
+    transition: transform .1s ease, opacity .1s ease;
+  }
+  button:active { transform: scale(.98); }
+  button:disabled { opacity: .5; cursor: default; }
+  .gold { background: #E8C547; color: #0A0E1A; }
+  .danger { background: #E5484D; color: #fff; }
+  .ghost { background: transparent; color: #9AA3B8; font-weight: 500; }
+  .estado {
+    text-align: center;
+    padding: 18px;
+    border-radius: 14px;
+    font-size: 18px;
+    font-weight: 800;
+    letter-spacing: .5px;
+    margin-bottom: 8px;
+  }
+  .on  { background: rgba(229,72,77,.15); color: #E5484D; border: 1px solid rgba(229,72,77,.4); }
+  .off { background: rgba(76,175,80,.12); color: #4CAF50; border: 1px solid rgba(76,175,80,.35); }
+  .warn {
+    background: rgba(232,197,71,.08);
+    border: 1px solid rgba(232,197,71,.25);
+    color: #E8C547;
+    font-size: 13px;
+    line-height: 1.5;
+    border-radius: 12px;
+    padding: 12px 14px;
+    margin-top: 18px;
+  }
+  .urls { margin-top: 18px; font-size: 12px; color: #9AA3B8; line-height: 1.8; word-break: break-all; }
+  .msg { text-align: center; font-size: 14px; margin-top: 14px; min-height: 20px; }
+  .msg.err { color: #E5484D; }
+  .msg.ok { color: #4CAF50; }
+  .hidden { display: none; }
+</style>
+</head>
+<body>
+
+<!-- Login (mismo endpoint que el panel: /dispatch/login) -->
+<div class="card" id="loginCard">
+  <h1>Cruise <span class="dot">·</span> Dispatch</h1>
+  <p class="sub">Inicia sesión de owner para controlar la actualización requerida.</p>
+  <label for="email">Email</label>
+  <input id="email" type="email" autocomplete="username">
+  <label for="password">Contraseña</label>
+  <input id="password" type="password" autocomplete="current-password">
+  <button class="gold" id="loginBtn">Entrar</button>
+  <div class="msg err" id="loginMsg"></div>
+</div>
+
+<!-- Control del switch -->
+<div class="card hidden" id="ctrlCard">
+  <h1>Update required <span class="dot">·</span> App</h1>
+  <p class="sub">Cuando está activo, TODOS los usuarios (riders y drivers) ven la página de
+     "Actualización requerida" al abrir la app y no pueden pasar hasta actualizar
+     desde la tienda.</p>
+  <div class="estado off" id="estadoBox">DESACTIVADO</div>
+  <button class="danger hidden" id="btnOn">Activar update required</button>
+  <button class="gold hidden" id="btnOff">Desactivar</button>
+  <div class="warn">Úsalo solo cuando subas una versión nueva a App Store / Google Play
+    con cambios que no se pueden mandar por actualización automática (cambios nativos).
+    Apágalo en cuanto la mayoría haya actualizado.</div>
+  <div class="urls">
+    iOS → https://apps.apple.com/app/id6760517086<br>
+    Android → https://play.google.com/store/apps/details?id=com.cruiseinride.app
+  </div>
+  <button class="ghost" id="logoutBtn">Cerrar sesión</button>
+  <div class="msg" id="ctrlMsg"></div>
+</div>
+
+<script>
+const TOKEN_KEY = 'dispatch_token';
+const $ = id => document.getElementById(id);
+
+function token() { return localStorage.getItem(TOKEN_KEY) || ''; }
+
+async function api(path, opts = {}) {
+  const res = await fetch(path, {
+    ...opts,
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer ' + token(),
+      ...(opts.headers || {}),
+    },
+  });
+  if (res.status === 401 || res.status === 403) {
+    localStorage.removeItem(TOKEN_KEY);
+    showLogin();
+    throw new Error('Sesión expirada — entra de nuevo.');
+  }
+  return res;
+}
+
+function showLogin() {
+  $('ctrlCard').classList.add('hidden');
+  $('loginCard').classList.remove('hidden');
+}
+function showCtrl() {
+  $('loginCard').classList.add('hidden');
+  $('ctrlCard').classList.remove('hidden');
+}
+
+async function refresh() {
+  $('ctrlMsg').textContent = '';
+  const res = await api('/admin/app-update');
+  const data = await res.json();
+  paint(data.enabled);
+}
+
+function paint(enabled) {
+  const box = $('estadoBox');
+  box.textContent = enabled ? 'ACTIVADO — la app exige actualizar' : 'DESACTIVADO';
+  box.className = 'estado ' + (enabled ? 'on' : 'off');
+  $('btnOn').classList.toggle('hidden', enabled);
+  $('btnOff').classList.toggle('hidden', !enabled);
+}
+
+async function setEnabled(enabled) {
+  $('btnOn').disabled = $('btnOff').disabled = true;
+  try {
+    const res = await api('/admin/app-update', {
+      method: 'POST',
+      body: JSON.stringify({ enabled }),
+    });
+    const data = await res.json();
+    paint(data.enabled);
+    $('ctrlMsg').className = 'msg ok';
+    $('ctrlMsg').textContent = enabled
+      ? 'Activado — los usuarios verán la página de actualización en su próximo arranque.'
+      : 'Desactivado — la app vuelve a abrir normal.';
+  } catch (e) {
+    $('ctrlMsg').className = 'msg err';
+    $('ctrlMsg').textContent = e.message || 'Error — reintenta.';
+  } finally {
+    $('btnOn').disabled = $('btnOff').disabled = false;
+  }
+}
+
+$('loginBtn').onclick = async () => {
+  $('loginMsg').textContent = '';
+  $('loginBtn').disabled = true;
+  try {
+    const res = await fetch('/dispatch/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: $('email').value.trim(),
+        password: $('password').value,
+      }),
+    });
+    if (!res.ok) throw new Error(res.status === 401 ? 'Credenciales inválidas' : 'Error ' + res.status);
+    const data = await res.json();
+    localStorage.setItem(TOKEN_KEY, data.token);
+    showCtrl();
+    refresh();
+  } catch (e) {
+    $('loginMsg').textContent = e.message;
+  } finally {
+    $('loginBtn').disabled = false;
+  }
+};
+
+$('password').addEventListener('keydown', e => { if (e.key === 'Enter') $('loginBtn').click(); });
+$('btnOn').onclick = () => {
+  if (confirm('¿Activar "update required" para TODOS los usuarios?')) setEnabled(true);
+};
+$('btnOff').onclick = () => setEnabled(false);
+$('logoutBtn').onclick = async () => {
+  try { await api('/dispatch/logout', { method: 'POST' }); } catch (_) {}
+  localStorage.removeItem(TOKEN_KEY);
+  showLogin();
+};
+
+// Sesión guardada: entrar directo si el token sigue vivo.
+if (token()) {
+  showCtrl();
+  refresh().catch(() => {});
+}
+</script>
+</body>
+</html>

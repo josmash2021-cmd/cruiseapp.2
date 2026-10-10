@@ -941,8 +941,10 @@ workflows:
           # Patch = diff Dart contra el release instalado; Shorebird usa la
           # versión de Flutter DEL release automáticamente (3.38.9 hoy).
           # Android puede no tener release aún — no debe tumbar iOS.
+          # --no-codesign: el IPA del parche solo sirve para el diff, jamás
+          # se publica — firmar era lo que lo tumbaba (sin keychain aquí).
           shorebird patch android --release-version latest || echo "⚠️ sin release Android aún — solo iOS"
-          shorebird patch ios --release-version latest
+          shorebird patch ios --release-version latest --no-codesign
     publishing:
       email:
         recipients:

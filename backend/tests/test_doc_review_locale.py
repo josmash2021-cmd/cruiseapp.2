@@ -92,39 +92,3 @@ async def test_locale_column_in_model_and_both_migration_lists():
     src = Path("models/database.py").read_text(encoding="utf-8")
     assert 'locale = Column(String(5), default="es")' in src
     assert src.count('("users", "locale", "VARCHAR(5) DEFAULT \'es\'")') == 2
-
-
-# ── The auto-review agent's pushes follow the same locale ────────────────
-
-async def test_auto_agent_pushes_follow_locale(monkeypatch):
-    """The OCR/auto-review agent had its OWN hardcoded-Spanish pushes —
-    sibling paths of the manual review (trampa 7e). Same locale rule."""
-    from document_approval_agent import DocumentApprovalAgent
-    import services.fcm_service as fcm_mod
-
-    sent = []
-    monkeypatch.setattr(
-        fcm_mod, "_send_fcm_push",
-        lambda token, title=None, body=None, data=None, **kw: sent.append((title, body)),
-    )
-    agent = DocumentApprovalAgent()
-    drv_en = _user("en")
-    drv_es = _user("es")
-
-    agent._send_rejection_push(drv_en, "insurance", "No se detectó archivo.",
-                               reason_en="No file detected.")
-    agent._send_rejection_push(drv_es, "insurance", "No se detectó archivo.",
-                               reason_en="No file detected.")
-    assert sent[0] == ("❌ Vehicle insurance rejected", "No file detected.")
-    assert sent[1][0] == "❌ Seguro del vehículo rechazado"
-    assert "No se detectó archivo" in sent[1][1]
-
-    agent._send_approval_push(drv_en, "registration")
-    assert sent[2][0] == "✅ Vehicle registration approved"
-
-    agent._send_all_docs_complete_push(drv_en)
-    assert sent[3][0] == "🚗 Documents complete!"
-
-    # A driver whose phone never reported a locale keeps Spanish (default).
-    agent._send_all_docs_complete_push(_user(None))
-    assert sent[4][0] == "🚗 ¡Documentos completos!"

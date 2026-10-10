@@ -107,3 +107,67 @@ async def test_inbox_row_served_to_the_app(client, db, channels):
     rows = res.json()
     items = rows if isinstance(rows, list) else rows.get("notifications", [])
     assert any("Registración aprobada" in (r.get("title") or "") for r in items)
+
+
+# ── The auto-review agent rides the same multi-channel helper ────────────
+# (2026-10-10, prod docs 96/97: the agent auto-approved insurance +
+# registration with a bare push only when a token existed — no inbox row,
+# no SMS — so those drivers never found out. Same "que no falle" spec.)
+
+async def test_auto_agent_approval_goes_multichannel(db, channels, monkeypatch):
+    from datetime import datetime, timezone
+    import document_approval_agent as agent_mod
+    from models.database import Document, SessionLocal
+
+    u = _user("es", None)
+    db.add(u)
+    await db.commit()
+    await db.refresh(u)
+    doc = Document(user_id=u.id, doc_type="insurance", status="pending",
+                   file_path="https://example.com/insurance.pdf")
+    db.add(doc)
+    await db.commit()
+
+    async def _url_ok(*a, **k):
+        return {"status": "ok"}
+
+    agent = agent_mod.DocumentApprovalAgent()
+    agent.set_db_session_maker(SessionLocal)
+    monkeypatch.setattr(agent, "_smart_url_check", _url_ok)
+    agent_mod._processed.clear()
+    await agent._scan_vehicle_docs(datetime.now(timezone.utc))
+
+    await db.refresh(doc)
+    assert doc.status == "approved"
+    box = await _inbox(db, u.id)
+    assert len(box) == 1
+    assert box[0].title == "✅ Seguro aprobado"
+    assert len(channels["sms"]) == 1
+
+
+async def test_auto_agent_rejection_goes_multichannel(db, channels):
+    from datetime import datetime, timezone
+    import document_approval_agent as agent_mod
+    from models.database import Document, SessionLocal
+
+    u = _user("en", None)
+    db.add(u)
+    await db.commit()
+    await db.refresh(u)
+    doc = Document(user_id=u.id, doc_type="registration", status="pending",
+                   file_path=None)
+    db.add(doc)
+    await db.commit()
+
+    agent = agent_mod.DocumentApprovalAgent()
+    agent.set_db_session_maker(SessionLocal)
+    agent_mod._processed.clear()
+    await agent._scan_vehicle_docs(datetime.now(timezone.utc))
+
+    await db.refresh(doc)
+    assert doc.status == "rejected"
+    box = await _inbox(db, u.id)
+    assert len(box) == 1
+    assert box[0].title == "❌ Registration rejected"
+    assert "No file detected" in box[0].body
+    assert len(channels["sms"]) == 1

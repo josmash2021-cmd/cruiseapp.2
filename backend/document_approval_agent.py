@@ -28,7 +28,7 @@ Phase 1 Flow:
 4. If photo URL exists and is reachable → AUTO-APPROVE
    - Set Document.status = "approved"
    - Set Vehicle.insurance_valid / registration_valid = True
-   - Push notification to driver
+   - Notify the driver on every channel (inbox row always + push/SMS)
    - Sync to Firestore
 5. If photo URL broken → AUTO-REJECT with reason
 
@@ -42,6 +42,8 @@ from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional, Tuple
 
 from sqlalchemy import select, and_, func
+
+from services.driver_approval import notify_document_reviewed
 
 logger = logging.getLogger(__name__)
 
@@ -216,12 +218,13 @@ class DocumentApprovalAgent:
                         doc.doc_type, driver.id,
                     )
 
-                    if driver.fcm_token:
-                        self._send_rejection_push(
-                            driver, doc.doc_type,
-                            "No se detectó archivo. Por favor sube el documento nuevamente.",
-                            reason_en="No file detected. Please upload the document again.",
-                        )
+                    await notify_document_reviewed(
+                        driver, doc.doc_type, False,
+                        reason=("No se detectó archivo. Por favor sube el "
+                                "documento nuevamente." if self._es(driver) else
+                                "No file detected. Please upload the document "
+                                "again."),
+                    )
                     continue
 
                 # ── Validate: photo URL reachable + smart content check ──
@@ -236,12 +239,13 @@ class DocumentApprovalAgent:
                         "[DocApproval] REJECTED %s for driver #%d — URL unreachable: %s",
                         doc.doc_type, driver.id, doc.file_path[:80],
                     )
-                    if driver.fcm_token:
-                        self._send_rejection_push(
-                            driver, doc.doc_type,
-                            "Hubo un error con tu archivo. Por favor súbelo nuevamente.",
-                            reason_en="There was a problem with your file. Please upload it again.",
-                        )
+                    await notify_document_reviewed(
+                        driver, doc.doc_type, False,
+                        reason=("Hubo un error con tu archivo. Por favor "
+                                "súbelo nuevamente." if self._es(driver) else
+                                "There was a problem with your file. Please "
+                                "upload it again."),
+                    )
                     continue
 
                 if url_check["status"] == "invalid_content":
@@ -295,9 +299,11 @@ class DocumentApprovalAgent:
                     doc.doc_type, driver.id, driver.first_name, driver.last_name,
                 )
 
-                # Push notification
-                if driver.fcm_token:
-                    self._send_approval_push(driver, doc.doc_type)
+                # Notify the driver on EVERY channel (2026-10-10: this agent
+                # used to send a bare push only when a token existed — no
+                # inbox row, no SMS — so auto-approved docs never reached
+                # drivers without a live device).
+                await notify_document_reviewed(driver, doc.doc_type, True)
 
                 # Sync to Firestore
                 await self._sync_vehicle_doc_approved(driver, vehicle, doc.doc_type)
@@ -547,54 +553,6 @@ class DocumentApprovalAgent:
     @staticmethod
     def _es(driver) -> bool:
         return (getattr(driver, "locale", None) or "es").lower().startswith("es")
-
-    def _send_approval_push(self, driver, doc_type: str):
-        """Notify driver that a vehicle document was approved."""
-        try:
-            from services.fcm_service import _send_fcm_push
-            es = self._es(driver)
-            doc_names = {
-                "insurance": ("Seguro del vehículo", "Vehicle insurance"),
-                "registration": ("Registro del vehículo", "Vehicle registration"),
-            }
-            doc_name = (doc_names.get(doc_type) or (doc_type, doc_type))[0 if es else 1]
-            _send_fcm_push(
-                driver.fcm_token,
-                title=(f"✅ {doc_name} aprobado" if es else f"✅ {doc_name} approved"),
-                body=(f"Tu {doc_name.lower()} ha sido verificado y aprobado." if es else
-                      f"Your {doc_name.lower()} was verified and approved."),
-                data={
-                    "type": "vehicle_doc_approved",
-                    "doc_type": doc_type,
-                    "driver_id": str(driver.id),
-                },
-            )
-        except Exception as e:
-            logger.warning("[DocApproval] Approval push failed: %s", e)
-
-    def _send_rejection_push(self, driver, doc_type: str, reason: str, reason_en: str | None = None):
-        """Notify driver that a vehicle document was rejected."""
-        try:
-            from services.fcm_service import _send_fcm_push
-            es = self._es(driver)
-            doc_names = {
-                "insurance": ("Seguro del vehículo", "Vehicle insurance"),
-                "registration": ("Registro del vehículo", "Vehicle registration"),
-            }
-            doc_name = (doc_names.get(doc_type) or (doc_type, doc_type))[0 if es else 1]
-            _send_fcm_push(
-                driver.fcm_token,
-                title=(f"❌ {doc_name} rechazado" if es else f"❌ {doc_name} rejected"),
-                body=(reason if es else (reason_en or reason)),
-                data={
-                    "type": "vehicle_doc_rejected",
-                    "doc_type": doc_type,
-                    "reason": reason,
-                    "driver_id": str(driver.id),
-                },
-            )
-        except Exception as e:
-            logger.warning("[DocApproval] Rejection push failed: %s", e)
 
     def _send_all_docs_complete_push(self, driver):
         """Notify driver that ALL vehicle documents are approved — ready to drive."""

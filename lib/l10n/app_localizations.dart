@@ -28,8 +28,8 @@ class S {
   String get updateRequiredTitle =>
       _es ? 'Actualización requerida' : 'Update required';
   String get updateRequiredBody => _es
-      ? 'Trabajamos duro mejorando la app. Hay una actualización de Cruise disponible.'
-      : "We've been hard at work improving the app! An update to the Cruise app is available.";
+      ? 'Trabajamos duro mejorando la app. ¡Una actualización de la app CRUISE IN RIDE ya está disponible!'
+      : "We've been hard at work improving the app! An update to the CRUISE IN RIDE App is available now.";
   String get updateNowButton => _es ? 'Actualizar' : 'Update';
   String get navIntroTitle => _es
       ? 'Navega a donde quieras con Cruise'

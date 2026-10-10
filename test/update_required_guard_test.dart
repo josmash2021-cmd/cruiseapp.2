@@ -92,6 +92,13 @@ void main() {
         reason: 'OFF reverses the entrance before re-booting');
   });
 
+  test('the hero is the mockup art and the copy names CRUISE IN RIDE', () {
+    expect(screen.contains('assets/images/update_required_hero.png'), isTrue,
+        reason: 'user spec 2026-10-10: "el ícono de esta foto tal cual"');
+    expect(l10n.contains('CRUISE IN RIDE App is available now'), isTrue);
+    expect(l10n.contains('CRUISE IN RIDE ya está disponible'), isTrue);
+  });
+
   test('live flip: socket ping wakes open apps in both directions', () {
     expect(socket.contains("'app_update_gate_changed'"), isTrue);
     expect(socket.contains('appUpdateGateStream'), isTrue);

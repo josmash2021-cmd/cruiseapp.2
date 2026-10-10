@@ -34,7 +34,10 @@ class UpdateRequiredScreen extends StatefulWidget {
 
 class _UpdateRequiredScreenState extends State<UpdateRequiredScreen>
     with SingleTickerProviderStateMixin {
-  static const _bg = Color(0xFF0A0E1A);
+  // Pure black like the mockup (2026-10-10, "el ícono de esta foto tal
+  // cual") — the hero art carries its own black baked in, so the page and
+  // the image melt into one surface.
+  static const _bg = Color(0xFF000000);
   static const _gold = Color(0xFFE8C547);
   static const _pollEvery = Duration(seconds: 15);
 
@@ -127,8 +130,10 @@ class _UpdateRequiredScreenState extends State<UpdateRequiredScreen>
             child: Column(
               children: [
                 const Spacer(flex: 2),
-                // Hero: update glyph on a gold-halo circle, popping in with
-                // a soft scale+fade ahead of the text.
+                // Hero: the mockup's own art (phone + hand + refresh coin),
+                // cropped pixel-exact from the design (user spec 2026-10-10,
+                // "el ícono de esta foto tal cual"). Pops in with a soft
+                // scale+fade ahead of the text.
                 ScaleTransition(
                   scale: CurvedAnimation(
                     parent: _anim,
@@ -139,19 +144,10 @@ class _UpdateRequiredScreenState extends State<UpdateRequiredScreen>
                       parent: _anim,
                       curve: const Interval(0, 0.4),
                     ),
-                    child: Container(
-                      width: 148,
-                      height: 148,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: _gold.withValues(alpha: 0.10),
-                        border: Border.all(
-                            color: _gold.withValues(alpha: 0.35), width: 1.5),
-                      ),
-                      child: const Center(
-                        child: Icon(Icons.system_update_alt_rounded,
-                            size: 64, color: _gold),
-                      ),
+                    child: Image.asset(
+                      'assets/images/update_required_hero.png',
+                      width: 260,
+                      fit: BoxFit.contain,
                     ),
                   ),
                 ),

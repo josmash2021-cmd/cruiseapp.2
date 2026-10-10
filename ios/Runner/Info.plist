@@ -155,6 +155,15 @@
 	<string>Cruise in ride</string>
 	<key>FacebookClientToken</key>
 	<string>7b80a8427aed432ea68d4125d7940f74</string>
+	<!-- SKAdNetwork (campañas iOS 14+ de Meta): sin el ID de Meta aquí Apple
+	     jamás manda los postbacks de atribución — la campaña mediría cero. -->
+	<key>SKAdNetworkItems</key>
+	<array>
+		<dict>
+			<key>SKAdNetworkIdentifier</key>
+			<string>v9wttpbfk9.skadnetwork</string>
+		</dict>
+	</array>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
 	<key>UILaunchStoryboardName</key>

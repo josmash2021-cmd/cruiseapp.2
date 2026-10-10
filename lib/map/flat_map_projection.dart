@@ -83,4 +83,73 @@ class FlatMapProjection {
         offset.dx <= viewport.width + margin &&
         offset.dy <= viewport.height + margin;
   }
+
+  /// Same flat Web-Mercator arithmetic as [screenOffsetFlat] but for a
+  /// camera ROTATED by [bearingDeg] (pitch must still be ~zero).
+  ///
+  /// Why this exists (2026-10-10, user report "la flecha cambia de tamaño /
+  /// tiembla / apunta a otro lado al mover el mapa"): the driver searching
+  /// map runs heading-UP, so its bearing is the driver's heading — almost
+  /// never zero. The flat-only variant bailed to null on exactly that map,
+  /// the overlay then refused to draw, and the native bitmap annotation took
+  /// over mid-gesture — a different renderer with a different size, a stale
+  /// rotation and a flicker at every swap. With the rotation applied here the
+  /// overlay keeps the marker through the gesture on a heading-up map too.
+  ///
+  /// The math: bearing B rotates the view so the camera's facing direction
+  /// points screen-up; a world offset vector is rotated by -B (screen
+  /// coords, y down) to land where the rotated map actually draws it.
+  static Offset? screenOffsetHeading({
+    required LatLng target,
+    required LatLng cameraCenter,
+    required double zoom,
+    required double bearingDeg,
+    required double pitchDeg,
+    required Size viewport,
+  }) {
+    if (pitchDeg.abs() > 0.01) return null; // tilt needs Mapbox's matrix
+    // Bearing 0 is exactly the flat case — reuse it.
+    if (bearingDeg.abs() <= 0.01) {
+      return screenOffsetFlat(
+        target: target,
+        cameraCenter: cameraCenter,
+        zoom: zoom,
+        bearingDeg: bearingDeg,
+        pitchDeg: pitchDeg,
+        viewport: viewport,
+      );
+    }
+    if (!zoom.isFinite || zoom < 0 || zoom > 24) return null;
+    if (!viewport.width.isFinite || viewport.width <= 0) return null;
+
+    final worldSize = tileSize * math.pow(2.0, zoom).toDouble();
+    if (!worldSize.isFinite) return null;
+
+    double x(double lng) => (lng + 180.0) / 360.0 * worldSize;
+    double y(double lat) {
+      final clamped = lat.clamp(-85.05112878, 85.05112878);
+      final s = math.sin(clamped * math.pi / 180.0);
+      return (0.5 - math.log((1 + s) / (1 - s)) / (4 * math.pi)) * worldSize;
+    }
+
+    var dx = x(target.longitude) - x(cameraCenter.longitude);
+    if (dx > worldSize / 2) {
+      dx -= worldSize;
+    } else if (dx < -worldSize / 2) {
+      dx += worldSize;
+    }
+    final dy = y(target.latitude) - y(cameraCenter.latitude);
+    if (!dx.isFinite || !dy.isFinite) return null;
+
+    // Rotate the world offset by -bearing (screen coords, y down): at
+    // bearing 90° (camera facing east) a point EAST of centre lands
+    // screen-UP and a point NORTH lands screen-LEFT.
+    final rad = -bearingDeg * math.pi / 180.0;
+    final c = math.cos(rad);
+    final s = math.sin(rad);
+    final rx = dx * c - dy * s;
+    final ry = dx * s + dy * c;
+
+    return Offset(viewport.width / 2 + rx, viewport.height / 2 + ry);
+  }
 }

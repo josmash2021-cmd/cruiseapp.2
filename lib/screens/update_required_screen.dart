@@ -100,6 +100,25 @@ class _UpdateRequiredScreenState extends State<UpdateRequiredScreen>
     }
   }
 
+  /// The gold badge from the first iteration — shown while the hero art
+  /// downloads and if the network copy ever fails.
+  Widget _fallbackBadge() {
+    return Container(
+      width: 148,
+      height: 148,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: _gold.withValues(alpha: 0.10),
+        border:
+            Border.all(color: _gold.withValues(alpha: 0.35), width: 1.5),
+      ),
+      child: const Center(
+        child:
+            Icon(Icons.system_update_alt_rounded, size: 64, color: _gold),
+      ),
+    );
+  }
+
   Widget _fadeSlide(Widget child, double begin, double end,
       {double dy = 24}) {
     final curved = CurvedAnimation(
@@ -130,10 +149,13 @@ class _UpdateRequiredScreenState extends State<UpdateRequiredScreen>
             child: Column(
               children: [
                 const Spacer(flex: 2),
-                // Hero: the mockup's own art (phone + hand + refresh coin),
-                // cropped pixel-exact from the design (user spec 2026-10-10,
-                // "el ícono de esta foto tal cual"). Pops in with a soft
-                // scale+fade ahead of the text.
+                // Hero: the mockup's own art (phone + hand + refresh coin).
+                // Served from the backend, NOT bundled — Shorebird patches
+                // never carry new assets (confirmed in the #5 build log:
+                // "asset changes will not be included"), so an Image.asset
+                // would render nothing on patched phones. While the art
+                // downloads (or if it ever fails) the gold badge from the
+                // first iteration stands in — the page never shows broken.
                 ScaleTransition(
                   scale: CurvedAnimation(
                     parent: _anim,
@@ -144,10 +166,14 @@ class _UpdateRequiredScreenState extends State<UpdateRequiredScreen>
                       parent: _anim,
                       curve: const Interval(0, 0.4),
                     ),
-                    child: Image.asset(
-                      'assets/images/update_required_hero.png',
+                    child: Image.network(
+                      '${ApiService.currentBaseUrl}/static/update_required_hero.png',
                       width: 260,
                       fit: BoxFit.contain,
+                      loadingBuilder: (context, child, progress) =>
+                          progress == null ? child : _fallbackBadge(),
+                      errorBuilder: (context, error, stack) =>
+                          _fallbackBadge(),
                     ),
                   ),
                 ),

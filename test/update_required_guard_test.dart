@@ -93,8 +93,14 @@ void main() {
   });
 
   test('the hero is the mockup art and the copy names CRUISE IN RIDE', () {
-    expect(screen.contains('assets/images/update_required_hero.png'), isTrue,
+    // Served over the wire: Shorebird patches never carry new assets, so a
+    // bundled Image.asset renders nothing on patched phones.
+    expect(screen.contains('Image.network('), isTrue);
+    expect(screen.contains('/static/update_required_hero.png'), isTrue,
         reason: 'user spec 2026-10-10: "el ícono de esta foto tal cual"');
+    expect(screen.contains('_fallbackBadge'), isTrue,
+        reason: 'the page must never render broken while/before the art '
+            'downloads');
     expect(l10n.contains('CRUISE IN RIDE App is available now'), isTrue);
     expect(l10n.contains('CRUISE IN RIDE ya está disponible'), isTrue);
   });

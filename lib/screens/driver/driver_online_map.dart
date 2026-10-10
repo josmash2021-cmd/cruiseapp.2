@@ -2278,7 +2278,7 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     final size = _onlineMapSize;
     if (cam == null || p == null || size == null) return null;
     final c = cam.center.coordinates;
-    final off = FlatMapProjection.screenOffsetFlat(
+    final off = FlatMapProjection.screenOffsetHeading(
       target: p,
       cameraCenter: LatLng(c.lat.toDouble(), c.lng.toDouble()),
       zoom: cam.zoom,

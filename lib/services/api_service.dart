@@ -291,6 +291,10 @@ class ApiService {
   /// In-memory active URL. Always Railway direct.
   static String _activeUrl = _productionUrl;
 
+  /// The base URL the app is actually talking to (public read for screens
+  /// that need backend-hosted statics, e.g. the force-update hero).
+  static String get currentBaseUrl => _activeUrl;
+
   /// Returns the URL currently in use by all API calls.
   static String get activeServerUrl => _activeUrl;
 

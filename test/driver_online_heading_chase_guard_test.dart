@@ -208,6 +208,12 @@ void main() {
           reason: 'no drag veto on ownership — the same arrow stays');
       expect(owns.contains('_dotScreenOffset != null'), isTrue,
           reason: 'not-following still projects the real pixel');
+      // The projection must tolerate the heading-UP map (bearing = driver
+      // heading ≠ 0): the flat-only variant returned null there, the overlay
+      // refused to draw, and the native annotation took over mid-gesture —
+      // the size/direction/flicker the driver reported (2026-10-10).
+      expect(map.contains('FlatMapProjection.screenOffsetHeading('), isTrue,
+          reason: 'the arrow projects on the rotated flat map too');
       expect(owns.contains('if (_isCardAnimating) return false;'), isTrue,
           reason: 'the annotation keeps exactly one job: the offer-preview '
               'programmatic flight, whose events trail the flyTo');

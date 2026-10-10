@@ -148,4 +148,63 @@ void main() {
       );
     });
   });
+
+  group('screenOffsetHeading (bearing-aware flat projection, 2026-10-10)', () {
+    test('bearing zero is exactly the flat case', () {
+      const north = LatLng(33.2957, -86.8097);
+      final flat = FlatMapProjection.screenOffsetFlat(
+        target: north, cameraCenter: pelham, zoom: 15,
+        bearingDeg: 0, pitchDeg: 0, viewport: viewport,
+      );
+      final rotated = FlatMapProjection.screenOffsetHeading(
+        target: north, cameraCenter: pelham, zoom: 15,
+        bearingDeg: 0, pitchDeg: 0, viewport: viewport,
+      );
+      expect(rotated, flat);
+    });
+
+    test('at bearing 90 (camera facing east), east is up and north is left',
+        () {
+      const east = LatLng(33.2857, -86.7997);
+      const north = LatLng(33.2957, -86.8097);
+      final e = FlatMapProjection.screenOffsetHeading(
+        target: east, cameraCenter: pelham, zoom: 15,
+        bearingDeg: 90, pitchDeg: 0, viewport: viewport,
+      )!;
+      final n = FlatMapProjection.screenOffsetHeading(
+        target: north, cameraCenter: pelham, zoom: 15,
+        bearingDeg: 90, pitchDeg: 0, viewport: viewport,
+      )!;
+      expect(e.dy, lessThan(400), reason: 'east of centre lands screen-up');
+      expect(e.dx, closeTo(200, 0.001));
+      expect(n.dx, lessThan(200), reason: 'north of centre lands screen-left');
+      expect(n.dy, closeTo(400, 0.001));
+    });
+
+    test('rotation preserves the distance from centre', () {
+      const away = LatLng(33.3057, -86.7897); // diagonal, ~2 km NE
+      const centre = Offset(200, 400);
+      double dist(Offset o) => (o - centre).distance;
+      for (final b in [0.0, 47.0, 123.0, 269.0]) {
+        final o = FlatMapProjection.screenOffsetHeading(
+          target: away, cameraCenter: pelham, zoom: 15,
+          bearingDeg: b, pitchDeg: 0, viewport: viewport,
+        )!;
+        expect(dist(o), closeTo(dist(FlatMapProjection.screenOffsetHeading(
+          target: away, cameraCenter: pelham, zoom: 15,
+          bearingDeg: 0, pitchDeg: 0, viewport: viewport,
+        )!), 0.001), reason: 'rotation is rigid — bearing $b°');
+      }
+    });
+
+    test('still declines a tilted camera instead of guessing', () {
+      expect(
+        FlatMapProjection.screenOffsetHeading(
+          target: pelham, cameraCenter: pelham, zoom: 16,
+          bearingDeg: 30, pitchDeg: 55, viewport: viewport,
+        ),
+        isNull,
+      );
+    });
+  });
 }

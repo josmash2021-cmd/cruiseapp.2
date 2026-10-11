@@ -31,6 +31,14 @@ class S {
       ? 'Trabajamos duro mejorando la app. ¡Una actualización de la app CRUISE IN RIDE ya está disponible!'
       : "We've been hard at work improving the app! An update to the CRUISE IN RIDE App is available now.";
   String get updateNowButton => _es ? 'Actualizar' : 'Update';
+
+  // ── Maintenance kill page (dispatch-controlled) ──
+  String get maintenanceTitle =>
+      _es ? 'Algo salió mal' : 'Something went wrong';
+  String get maintenanceBody => _es
+      ? 'Inténtalo de nuevo o contacta soporte si el problema continúa.'
+      : 'Please try again or contact support if you continue to have issues.';
+  String get maintenanceRetry => _es ? 'Reintentar' : 'Try again';
   String get navIntroTitle => _es
       ? 'Navega a donde quieras con Cruise'
       : 'Navigate anywhere with Cruise';

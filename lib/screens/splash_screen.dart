@@ -7,6 +7,7 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:video_player/video_player.dart';
 import 'welcome_screen.dart';
 import 'home_screen.dart';
+import 'maintenance_screen.dart';
 import 'update_required_screen.dart';
 import 'rider_name_screen.dart';
 import 'rider_email_screen.dart';
@@ -113,6 +114,7 @@ class _SplashScreenState extends State<SplashScreen> {
       for (final path in const [
         '/static/update_required_hero.png',
         '/static/nav_intro_hero.png',
+        '/static/maintenance_hero.png',
       ]) {
         precacheImage(
           NetworkImage('${ApiService.currentBaseUrl}$path'),
@@ -165,6 +167,23 @@ class _SplashScreenState extends State<SplashScreen> {
     // logged-in and the logged-out paths stop here.
     final gate = await updateGate;
     if (_disposed || !mounted) return;
+    // Maintenance wins over everything — a global kill page for when the
+    // app is having a bad day (dispatch: Actualización App → Modo
+    // mantenimiento).
+    if (gate != null && gate['maintenance'] == true) {
+      nav.pushReplacement(
+        PageRouteBuilder(
+          pageBuilder: (_, __, ___) => const MaintenanceScreen(),
+          transitionDuration: const Duration(milliseconds: 400),
+          reverseTransitionDuration: Duration.zero,
+          transitionsBuilder: (_, anim, __, child) => FadeTransition(
+            opacity: CurvedAnimation(parent: anim, curve: Curves.easeIn),
+            child: child,
+          ),
+        ),
+      );
+      return;
+    }
     if (gate != null && gate['required'] == true) {
       nav.pushReplacement(
         PageRouteBuilder(

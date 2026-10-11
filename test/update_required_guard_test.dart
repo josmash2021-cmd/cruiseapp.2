@@ -132,4 +132,50 @@ void main() {
     expect(api.contains('UserSession.getMode()'), isTrue);
     expect(api.contains('&role='), isTrue);
   });
+
+  // ── Maintenance kill page (2026-10-11, dispatch-controlled) ──
+  group('maintenance page (dispatch kill switch)', () {
+    final maint =
+        File('lib/screens/maintenance_screen.dart').readAsStringSync();
+
+    test('blocking + pop-up entrance + pop-out exit + real-time OFF', () {
+      expect(maint.contains('PopScope('), isTrue);
+      expect(maint.contains('canPop: false'), isTrue);
+      expect(maint.contains('Curves.easeOutBack'), isTrue,
+          reason: 'the entrance pops UP from the centre');
+      expect(maint.contains('_anim.reverse()'), isTrue,
+          reason: 'the exit pops out before re-booting');
+      expect(maint.contains('appUpdateGateStream'), isTrue);
+      expect(maint.contains('Duration(seconds: 15)'), isTrue);
+      expect(maint.contains('/static/maintenance_hero.png'), isTrue,
+          reason: 'the bell art comes from the backend (OTA carries no '
+              'assets)');
+      expect(maint.contains('_fallbackBadge'), isTrue);
+    });
+
+    test('maintenance wins over the update gate at boot AND live', () {
+      expect(splash.contains("gate['maintenance'] == true"), isTrue);
+      expect(
+          splash.indexOf("gate['maintenance'] == true"),
+          lessThan(splash.indexOf("gate['required'] == true")),
+          reason: 'maintenance is checked FIRST at boot');
+      expect(main.contains('MaintenanceScreen('), isTrue,
+          reason: 'the live listener pushes it over whatever is open');
+    });
+
+    test('the strings exist in ES and EN', () {
+      expect(l10n.contains('maintenanceTitle'), isTrue);
+      expect(l10n.contains('maintenanceBody'), isTrue);
+      expect(l10n.contains('maintenanceRetry'), isTrue);
+      expect(l10n.contains('Algo salió mal'), isTrue);
+      expect(l10n.contains('Something went wrong'), isTrue);
+    });
+
+    test('backend carries the maintenance key through the same switch', () {
+      final sys = File('backend/routers/system.py').readAsStringSync();
+      expect(sys.contains('"maintenance_mode"'), isTrue);
+      expect(sys.contains('maintenance_enabled'), isTrue);
+      expect(sys.contains('"maintenance": maintenance'), isTrue);
+    });
+  });
 }

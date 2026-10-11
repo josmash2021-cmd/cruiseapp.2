@@ -228,3 +228,27 @@ async def test_feature_flags_default_off_and_toggle(client):
     res = await client.post("/admin/feature-flags", headers=dh(),
                             json={"key": "nope", "enabled": True})
     assert res.status_code == 400
+
+
+# ── Maintenance kill page (2026-10-11, user spec: dispatch flips it when
+#    the app is having a bad day) ──
+
+async def test_maintenance_switch_gates_everyone(client):
+    dh = lambda: _make_auth_headers("test-dispatch-key")
+    res = await client.post("/admin/app-update", headers=dh(),
+                            json={"maintenance_enabled": True})
+    assert res.status_code == 200, res.text
+    assert res.json()["maintenance_enabled"] is True
+
+    h = lambda: _make_auth_headers()
+    for role in ("driver", "rider", ""):
+        q = f"role={role}" if role else ""
+        res = await client.get(f"/app-update-status?{q}", headers=h())
+        assert res.json()["maintenance"] is True, f"role={role!r}"
+        # maintenance is NOT the update gate — that stays off
+        assert res.json()["update_required"] is False
+
+    await client.post("/admin/app-update", headers=dh(),
+                      json={"maintenance_enabled": False})
+    res = await client.get("/app-update-status", headers=h())
+    assert res.json()["maintenance"] is False

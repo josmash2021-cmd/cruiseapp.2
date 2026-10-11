@@ -5,6 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../l10n/app_localizations.dart';
 import '../services/api_service.dart';
 import '../services/socket_service.dart';
+import 'maintenance_screen.dart';
 
 /// Force-update gate (dispatch-controlled, 2026-10-10).
 ///
@@ -73,6 +74,17 @@ class _UpdateRequiredScreenState extends State<UpdateRequiredScreen>
     if (_leaving) return;
     final gate = await ApiService.getAppUpdateStatus();
     if (!mounted || _leaving || gate == null) return; // error = stay put
+    // The maintenance kill page wins over this one when both are on.
+    if (gate['maintenance'] == true) {
+      _poll?.cancel();
+      Navigator.of(context).pushReplacement(PageRouteBuilder(
+        pageBuilder: (_, __, ___) => const MaintenanceScreen(),
+        transitionDuration: const Duration(milliseconds: 300),
+        transitionsBuilder: (_, anim, __, child) =>
+            FadeTransition(opacity: anim, child: child),
+      ));
+      return;
+    }
     if (gate['required'] == true) return;
     await _dismissAnimated();
   }

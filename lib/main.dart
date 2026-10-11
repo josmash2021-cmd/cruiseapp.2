@@ -28,6 +28,7 @@ import 'config/feature_flags.dart';
 import 'config/route_observers.dart';
 import 'state/accessibility_notifier.dart';
 import 'screens/splash_screen.dart';
+import 'screens/maintenance_screen.dart';
 import 'screens/update_required_screen.dart';
 import 'screens/driver/driver_online_screen.dart';
 import 'screens/driver/driver_online_screen.dart';
@@ -1592,11 +1593,26 @@ class _UberCloneAppState extends State<UberCloneApp>
     // push the blocking store page over whatever is on screen. OFF needs no
     // work here — a shown gate hears the same ping and dismisses itself.
     _appUpdateGateSub = SocketService.appUpdateGateStream.listen((_) async {
-      if (UpdateRequiredScreen.showing) return; // the gate re-checks itself
+      if (UpdateRequiredScreen.showing || MaintenanceScreen.showing) return;
       final gate = await ApiService.getAppUpdateStatus();
-      if (gate == null || gate['required'] != true) return;
+      if (gate == null) return;
       final nav = _navigatorKey.currentState;
-      if (nav == null || UpdateRequiredScreen.showing) return;
+      if (nav == null) return;
+      // Maintenance wins over the update gate — the global kill page.
+      if (gate['maintenance'] == true) {
+        MaintenanceScreen.showing = true; // beat the push/initState race
+        nav.push(PageRouteBuilder(
+          pageBuilder: (_, __, ___) => const MaintenanceScreen(),
+          transitionDuration: const Duration(milliseconds: 350),
+          transitionsBuilder: (_, anim, __, child) => FadeTransition(
+            opacity: CurvedAnimation(parent: anim, curve: Curves.easeOut),
+            child: child,
+          ),
+        ));
+        return;
+      }
+      if (gate['required'] != true) return;
+      if (UpdateRequiredScreen.showing) return;
       UpdateRequiredScreen.showing = true; // beat the push/initState race
       nav.push(PageRouteBuilder(
         pageBuilder: (_, __, ___) => UpdateRequiredScreen(

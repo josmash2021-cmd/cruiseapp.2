@@ -404,6 +404,7 @@ _FORCE_UPDATE_ROLE_KEYS = {
     "driver": "force_update_required_driver",
     "rider": "force_update_required_rider",
 }
+_MAINTENANCE_KEY = "maintenance_mode"  # 2026-10-11: dispatch kill page
 _MIN_BUILD_KEYS = {
     "ios": "force_update_min_build_ios",
     "android": "force_update_min_build_android",
@@ -420,7 +421,7 @@ async def _read_app_update_state(db) -> dict:
     from sqlalchemy import select
 
     keys = [_FORCE_UPDATE_KEY, *_FORCE_UPDATE_ROLE_KEYS.values(),
-            *_MIN_BUILD_KEYS.values()]
+            _MAINTENANCE_KEY, *_MIN_BUILD_KEYS.values()]
     r = await db.execute(
         select(AppConfig.key, AppConfig.value).where(AppConfig.key.in_(keys)))
     rows = {k: v for k, v in r.all()}
@@ -441,6 +442,7 @@ async def _read_app_update_state(db) -> dict:
         "all": legacy,
         "driver": legacy or _on(_FORCE_UPDATE_ROLE_KEYS["driver"]),
         "rider": legacy or _on(_FORCE_UPDATE_ROLE_KEYS["rider"]),
+        "maintenance": _on(_MAINTENANCE_KEY),
         "mins": {p: _min_build(p) for p in _MIN_BUILD_KEYS},
     }
 
@@ -464,8 +466,10 @@ async def app_update_status(platform: str = "", build: int = 0,
     EITHER switch is on — dispatch is forcing that build out of service.
     """
     required = False
+    maintenance = False
     try:
         state = await _read_app_update_state(db)
+        maintenance = state["maintenance"]
         r = (role or "").lower()
         if r == "driver":
             enabled = state["driver"]
@@ -480,6 +484,10 @@ async def app_update_status(platform: str = "", build: int = 0,
         logger.warning("[AppUpdate] status read failed: %s", e)
     return {
         "update_required": required,
+        # Maintenance kill page (2026-10-11): dispatch flips it when the app
+        # is having a bad day; the whole app then shows "Something went
+        # wrong" until it is turned back off. Fail-open with the rest.
+        "maintenance": maintenance,
         "store_url": _STORE_URLS.get((platform or "").lower(),
                                      _STORE_URLS["android"]),
     }
@@ -490,6 +498,7 @@ class AppUpdateSwitch(BaseModel):
     enabled: Optional[bool] = None  # legacy global (everyone)
     driver_enabled: Optional[bool] = None
     rider_enabled: Optional[bool] = None
+    maintenance_enabled: Optional[bool] = None  # the kill page
     min_build_ios: int = Field(0, ge=0, le=100000)
     min_build_android: int = Field(0, ge=0, le=100000)
 
@@ -503,6 +512,7 @@ async def get_app_update_switch(db=Depends(get_db)):
         "enabled": state["all"],
         "driver_enabled": state["driver"],
         "rider_enabled": state["rider"],
+        "maintenance_enabled": state["maintenance"],
         "min_build_ios": state["mins"]["ios"],
         "min_build_android": state["mins"]["android"],
         "store_urls": _STORE_URLS,
@@ -542,6 +552,10 @@ async def set_app_update_switch(req: AppUpdateSwitch, request: Request,
     if wrote_role and req.enabled is None:
         await _upsert(_FORCE_UPDATE_KEY, "0",
                       "Force-update gate — legacy global (everyone)")
+    if req.maintenance_enabled is not None:
+        await _upsert(_MAINTENANCE_KEY, "1" if req.maintenance_enabled else "0",
+                      "Maintenance kill page — '1' = the app shows "
+                      "'Something went wrong'")
     await _upsert(_MIN_BUILD_KEYS["ios"], str(req.min_build_ios),
                   "Min iOS build before the gate applies (0 = all builds)")
     await _upsert(_MIN_BUILD_KEYS["android"], str(req.min_build_android),
@@ -562,7 +576,7 @@ async def set_app_update_switch(req: AppUpdateSwitch, request: Request,
     # every worker via the Redis manager; offline apps catch it at boot, and
     # the blocked page polls every 15 s as the final fallback).
     any_on = bool(req.enabled) or bool(req.driver_enabled) \
-        or bool(req.rider_enabled)
+        or bool(req.rider_enabled) or bool(req.maintenance_enabled)
     try:
         from services.socketio_service import sio
         await sio.emit("app_update_gate_changed", {"required": any_on})
@@ -575,6 +589,7 @@ async def set_app_update_switch(req: AppUpdateSwitch, request: Request,
         "enabled": state["all"],
         "driver_enabled": state["driver"],
         "rider_enabled": state["rider"],
+        "maintenance_enabled": state["maintenance"],
     }
 
 

@@ -411,7 +411,7 @@ void main() {
 
     test('the offline FAB recentres through the shared glide', () {
       expect(screen.contains('!_cameraFollowing'), isTrue);
-      final fabIdx = screen.indexOf('Icons.gps_fixed_rounded');
+      final fabIdx = screen.indexOf('_RecenterFab(');
       expect(fabIdx, isNonNegative);
       final block = screen.substring(fabIdx - 400, fabIdx + 400);
       expect(block.contains('!_driverOnline'), isTrue,
@@ -453,6 +453,26 @@ void main() {
       expect('_offlineRadarDisc()'.allMatches(widgets).length,
           greaterThanOrEqualTo(2),
           reason: 'the panel AND the sheet share the disc (sibling paths)');
+    });
+
+    test('ONE recenter FAB everywhere, blur-in/pop-out (photo style)', () {
+      // User spec 2026-10-11: every recenter button is the photo's dark disc
+      // with the white nav arrow, appearing with blur-in and leaving with
+      // pop-out whenever the camera unlatches follow (finger drag/zoom or
+      // any programmatic move).
+      expect(widgets.contains('class _RecenterFab extends StatefulWidget'),
+          isTrue);
+      expect(widgets.contains('Icons.navigation_rounded'), isTrue);
+      final body = bodyOf(
+          widgets, 'class _RecenterFabState', maxLen: 1800);
+      expect(body.contains('ImageFilter.blur('), isTrue, reason: 'blur-in');
+      expect(body.contains('_ctrl.reverse()'), isTrue, reason: 'pop-out');
+      // All three sites use it: offline FAB, searching cluster, nav phases.
+      expect('_RecenterFab('.allMatches(screen).length,
+          greaterThanOrEqualTo(3),
+          reason: 'offline + searching + nav share the one FAB');
+      expect(screen.contains('const Color(0xFF4285F4)'), isFalse,
+          reason: 'the blue nav recenter died — one photo-style FAB');
     });
   });
 }

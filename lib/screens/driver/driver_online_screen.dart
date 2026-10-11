@@ -2032,26 +2032,21 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                 ),
               ),
 
-            // Recentre FAB while OFFLINE (user spec 2026-10-10): the
+            // Recentre FAB while OFFLINE (user spec 2026-10-10) — the
             // right-side cluster (safety + recentre) only renders in online
             // mode, so a driver who dragged the map while offline had no way
-            // back to their own position. Appears exactly when needed —
-            // camera parked off-follow — same _recenterCamera glide as the
-            // online one.
+            // back to their own position. 2026-10-11: the shared _RecenterFab
+            // (dark disc + white arrow, photo style) with blur-in/pop-out,
+            // alive in the tree and animated by the follow flag.
             if (!_driverOnline &&
                 !isNav &&
-                _acceptedOverlay == null &&
-                !_cameraFollowing)
+                _acceptedOverlay == null)
               Positioned(
                 bottom: 78 + bot + 14,
                 right: 16,
-                child: _fab(
-                  Icons.gps_fixed_rounded,
-                  44,
-                  fabBg,
-                  fabBorder,
-                  fabIcon,
-                  () {
+                child: _RecenterFab(
+                  visible: !_cameraFollowing,
+                  onTap: () {
                     HapticService.selectionClick();
                     _recenterCamera();
                   },
@@ -2395,17 +2390,14 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                     // camera back after ten seconds of stillness — but ten
                     // seconds is a long time to wait for your own position,
                     // and there was no way to ask for it. Now there is.
-                    _fab(
-                      Icons.gps_fixed_rounded,
-                      44,
-                      fabBg,
-                      fabBorder,
-                      fabIcon,
-                      () {
+                    // (2026-10-11: the shared _RecenterFab — dark disc + white
+                    // arrow, blur-in/pop-out, and only while off-follow.)
+                    _RecenterFab(
+                      visible: !_cameraFollowing,
+                      onTap: () {
                         HapticService.selectionClick();
                         _recenterCamera();
                       },
-                      stagger: 2,
                     ),
                   ],
                 ),
@@ -2414,20 +2406,16 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
 
             // â”€â”€ Re-center button during navigation (inTrip / routeSummary) â”€â”€
             // -- Re-center FAB: appears when user pans away during navigation --
-            if (!_cameraFollowing &&
-                (_phase == _Phase.enRouteToPickup ||
-                    _phase == _Phase.inTrip ||
-                    _phase == _Phase.routeSummary))
+            if (_phase == _Phase.enRouteToPickup ||
+                _phase == _Phase.inTrip ||
+                _phase == _Phase.routeSummary)
               Positioned(
                 bottom: _mapBottomPadding + 12,
                 right: 16,
-                child: _fab(
-                  Icons.navigation_rounded,
-                  48,
-                  fabBg,
-                  fabBorder,
-                  const Color(0xFF4285F4),
-                  () {
+                child: _RecenterFab(
+                  visible: !_cameraFollowing,
+                  size: 48,
+                  onTap: () {
                     HapticService.mediumImpact();
                     _recenterCamera();
                   },

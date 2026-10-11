@@ -5038,6 +5038,112 @@ class _OfferBadgeData {
   final Color color;
 }
 
+/// The recenter FAB — ONE look for every recenter button (user spec
+/// 2026-10-11: the photo's dark disc with the white nav arrow, on all of
+/// them). It lives in the tree and animates: blur-in when it appears (the
+/// map was dragged/zoomed or anything unlatched follow), pop-out when the
+/// camera recentres. Never just pops into existence.
+class _RecenterFab extends StatefulWidget {
+  const _RecenterFab({
+    required this.visible,
+    required this.onTap,
+    this.size = 44,
+  });
+
+  final bool visible;
+  final VoidCallback onTap;
+  final double size;
+
+  @override
+  State<_RecenterFab> createState() => _RecenterFabState();
+}
+
+class _RecenterFabState extends State<_RecenterFab>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 280),
+    reverseDuration: const Duration(milliseconds: 200),
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.visible) _ctrl.value = 1.0;
+  }
+
+  @override
+  void didUpdateWidget(_RecenterFab old) {
+    super.didUpdateWidget(old);
+    if (widget.visible != old.visible) {
+      if (widget.visible) {
+        _ctrl.forward();
+      } else {
+        _ctrl.reverse();
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _ctrl,
+      builder: (context, child) {
+        final t = _ctrl.value;
+        if (t == 0) return const SizedBox.shrink();
+        // In: fade + deblur + settle. Out: the same curve backwards reads
+        // as the pop-out.
+        return IgnorePointer(
+          ignoring: !widget.visible,
+          child: Opacity(
+            opacity: t,
+            child: ImageFiltered(
+              imageFilter: ui.ImageFilter.blur(
+                  sigmaX: (1 - t) * 6, sigmaY: (1 - t) * 6),
+              child: Transform.scale(
+                scale: 0.86 + 0.14 * t,
+                child: child,
+              ),
+            ),
+          ),
+        );
+      },
+      child: GestureDetector(
+        onTap: widget.onTap,
+        child: Container(
+          width: widget.size,
+          height: widget.size,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: const Color(0xFF1A1A22),
+            border:
+                Border.all(color: Colors.white.withValues(alpha: 0.2), width: 1.2),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.35),
+                blurRadius: 8,
+                offset: const Offset(0, 3),
+              ),
+            ],
+          ),
+          child: Icon(
+            Icons.navigation_rounded,
+            color: Colors.white,
+            size: widget.size * 0.44,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+
 /// Render a compact pill-shaped badge used on the driver offer card.
 /// The color controls both the border and the translucent fill.
 Widget _buildOfferBadge(_OfferBadgeData b) {

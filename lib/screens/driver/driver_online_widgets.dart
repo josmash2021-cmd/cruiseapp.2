@@ -274,6 +274,10 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
             // Re-apply pin layer properties after style reload —
             // applyNavyGold resets them so they must be re-set here.
             _reapplyManagerLayerProps();
+            // A style reload wipes custom sources/layers — the municipal
+            // zone shading + highlight are recreated on the next sync.
+            _zoneLayersReady = false;
+            _syncZoneLayers(forceHighlight: true);
           }
         },
         onScrollListener: (_) {
@@ -307,6 +311,11 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
   void _onOnlineMapReady(mapbox.MapboxMap ctrl, {required bool isDark}) {
     _map = ctrl;
     _lastStyleDark = isDark;
+    // Municipal zones (2026-10-11): fetch the baked city polygons once per
+    // process, then paint shading + the driver's "FL: <city>" highlight.
+    unawaited(ZoneService.load().then((_) {
+      if (mounted) _syncZoneLayers(forceHighlight: true);
+    }));
     // Increment generation so any stale annotation refs from the old
     // PlatformView are recognized as dead and recreated fresh.
     _mapGeneration++;

@@ -916,6 +916,17 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
     if (!await _ensureLocationReady()) return;
     if (!mounted) return;
 
+    // Municipal zone gate (2026-10-11, user spec: "si el driver está dentro
+    // del cuadro podrá conectarse") — connecting is only allowed inside an
+    // enabled city polygon. FAIL-OPEN while the zone data isn't loaded:
+    // the server's own gate (403 outside_service_area) is the backstop.
+    if (ZoneService.ready && _pos != null &&
+        ZoneService.zoneContaining(_pos!) == null) {
+      HapticService.mediumImpact();
+      _showZoneOutsideDialog();
+      return;
+    }
+
     // _ensureVerified is synchronous in practice — the driver passed the
     // splash/login gates to be standing on this screen at all.
     if (!_isVerified) _setState(() => _isVerified = true);
@@ -949,6 +960,31 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
     // haptic + chime — all owned by _enterOnlineMode. `resuming` is the
     // pref read at boot: a shift that never closed is resumed, not started.
     await _enterOnlineMode(resuming: _driverWasOnlineAtBoot);
+  }
+
+  /// The GO tap outside every enabled city polygon: no connect, just the
+  /// explanation (ES/EN by the phone's language like every user-facing string).
+  void _showZoneOutsideDialog() {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1A1A22),
+        title: Text(
+          S.of(ctx).zoneOutsideTitle,
+          style: const TextStyle(color: Colors.white),
+        ),
+        content: Text(
+          S.of(ctx).zoneOutsideBody,
+          style: TextStyle(color: Colors.white.withValues(alpha: 0.7)),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text(S.of(ctx).gotIt),
+          ),
+        ],
+      ),
+    );
   }
 
   // ═══════════════════════════════════════════════════

@@ -2297,4 +2297,130 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     if (!FlatMapProjection.isOnScreen(off, size)) return null;
     return off;
   }
+
+  // ══════════════════════════════════════════════════════════════════
+  //  MUNICIPAL ZONE LAYERS (2026-10-11, user spec: the Florida map divided
+  //  by real city boundaries like the photo; the driver's zone highlighted
+  //  with its "FL: <city>" label — no city-center dots, per spec).
+  //  The fields live in the state class (extensions can't declare them).
+  // ══════════════════════════════════════════════════════════════════
+
+  /// Idempotent per-fix/per-style-load sync: ensures the sources/layers
+  /// exist, writes visibility (searching only — in a trip they would sit on
+  /// top of the route), and refreshes the highlight when the driver's zone
+  /// changes. Every write is deduped, so a 1 Hz call cadence costs nothing.
+  Future<void> _syncZoneLayers({bool forceHighlight = false}) async {
+    final map = _map;
+    if (map == null || kIsWeb || !_mapStyleLoaded) return;
+    if (!ZoneService.ready) return;
+    final visible = _phase == _Phase.searching;
+    try {
+      if (!_zoneLayersReady) {
+        await _createZoneLayers(map);
+        _zoneLayersReady = true;
+        _zoneLayersVisible = null;
+      }
+      if (_zoneLayersVisible != visible) {
+        _zoneLayersVisible = visible;
+        await _writeZoneVisibility(map, visible);
+      }
+      final z = _pos == null ? null : ZoneService.zoneContaining(_pos!);
+      final name = z?.name;
+      if (forceHighlight || name != _zoneHighlightName) {
+        _zoneHighlightName = name;
+        await _writeZoneHighlight(map, z);
+      }
+    } catch (e) {
+      debugPrint('[Zones] layer sync failed: $e');
+    }
+  }
+
+  Future<void> _createZoneLayers(mapbox.MapboxMap map) async {
+    final allFc = jsonEncode({
+      'type': 'FeatureCollection',
+      'features': ZoneService.features,
+    });
+    final emptyFc =
+        jsonEncode({'type': 'FeatureCollection', 'features': const []});
+    try {
+      await map.style
+          .addSource(mapbox.GeoJsonSource(id: 'zones-src', data: allFc));
+    } catch (_) {}
+    try {
+      await map.style
+          .addSource(mapbox.GeoJsonSource(id: 'zones-hl-src', data: emptyFc));
+    } catch (_) {}
+    // The photo's look: dark red shading everywhere, brighter zone on top.
+    try {
+      await map.style.addLayer(mapbox.FillLayer(
+        id: 'zones-fill',
+        sourceId: 'zones-src',
+        fillColor: 0xFF7A2020,
+        fillOpacity: 0.0,
+      ));
+    } catch (_) {}
+    try {
+      await map.style.addLayer(mapbox.LineLayer(
+        id: 'zones-line',
+        sourceId: 'zones-src',
+        lineColor: 0xFFA83232,
+        lineWidth: 1.2,
+        lineOpacity: 0.0,
+      ));
+    } catch (_) {}
+    try {
+      await map.style.addLayer(mapbox.FillLayer(
+        id: 'zones-hl-fill',
+        sourceId: 'zones-hl-src',
+        fillColor: 0xFFB03030,
+        fillOpacity: 0.0,
+      ));
+    } catch (_) {}
+    try {
+      await map.style.addLayer(mapbox.SymbolLayer(
+        id: 'zones-hl-label',
+        sourceId: 'zones-hl-src',
+        textField: 'FL: {name}',
+        textSize: 13,
+        textColor: 0xFFFFFFFF,
+        textHaloColor: 0xFF000000,
+        textHaloWidth: 1.5,
+        textOpacity: 0.0,
+      ));
+    } catch (_) {}
+  }
+
+  Future<void> _writeZoneVisibility(
+      mapbox.MapboxMap map, bool visible) async {
+    final props = <String, List<Object>>{
+      'zones-fill': ['fill-opacity', 0.22],
+      'zones-line': ['line-opacity', 0.5],
+      'zones-hl-fill': ['fill-opacity', 0.42],
+      'zones-hl-label': ['text-opacity', 1.0],
+    };
+    for (final e in props.entries) {
+      try {
+        await map.style.setStyleLayerProperty(
+            e.key, e.value[0] as String, visible ? e.value[1] : 0.0);
+      } catch (_) {}
+    }
+  }
+
+  Future<void> _writeZoneHighlight(mapbox.MapboxMap map, Zone? zone) async {
+    final feats = zone == null
+        ? <Map<String, dynamic>>[]
+        : ZoneService.features
+            .where((f) =>
+                (((f['properties'] as Map?)?['name']) ?? '') == zone.name)
+            .toList();
+    try {
+      await map.style.setStyleSourceProperty(
+        'zones-hl-src',
+        'data',
+        jsonEncode({'type': 'FeatureCollection', 'features': feats}),
+      );
+    } catch (e) {
+      debugPrint('[Zones] highlight write failed: $e');
+    }
+  }
 }

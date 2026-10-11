@@ -12,6 +12,7 @@ import 'package:flutter/services.dart';
 import '../../services/haptic_service.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' as mapbox;
 import '../../models/lat_lng.dart';
+import '../../services/zone_service.dart';
 import '../../config/mapbox_config.dart';
 import '../../config/map_theme.dart';
 import 'package:geolocator/geolocator.dart';
@@ -1283,6 +1284,12 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   // tap "Go Online". We render a dark placeholder during the transition
   // and mount the real map a few frames after it ends.
   bool _mapMounted = false;
+
+  // Municipal zone layers state (2026-10-11) — the methods live in
+  // driver_online_map.dart, which is an extension and cannot hold fields.
+  bool _zoneLayersReady = false;
+  bool? _zoneLayersVisible;
+  String? _zoneHighlightName;
 
   // ── Go-online chime ──
   Timer? _onlineChimeTimer;

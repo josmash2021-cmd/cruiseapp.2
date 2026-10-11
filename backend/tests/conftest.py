@@ -75,6 +75,21 @@ def reset_rate_limiter():
     yield
 
 
+@pytest.fixture(autouse=True)
+def zone_gate_fail_open(monkeypatch):
+    """The municipal-zone gate (2026-10-11) reads the real FL polygons from
+    static/fl_zones.json, and most suite drivers connect from Birmingham or
+    other out-of-zone coords — with real data loaded, every is_online flip
+    in the suite would 403. Point the loader at a file that does not exist
+    (its fail-open state); test_zone_gate.py forces a real load explicitly."""
+    monkeypatch.setattr("services.zone_polygons._PATH",
+                        "static/__definitely_not_here__.json")
+    monkeypatch.setattr("services.zone_polygons._zones", [])
+    monkeypatch.setattr("services.zone_polygons.ready", False)
+    monkeypatch.setattr("services.zone_polygons._loaded_mtime", None)
+    yield
+
+
 @pytest_asyncio.fixture
 async def db():
     """Provide a clean database session for direct DB operations."""

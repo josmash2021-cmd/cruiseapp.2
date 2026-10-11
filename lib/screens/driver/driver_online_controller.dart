@@ -1439,6 +1439,9 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       onPosition: (pos) {
         if (!mounted) return;
         _diagFixes++;
+        // Municipal zone highlight + visibility follow the driver's zone
+        // and the phase (deduped inside; no-op until zones are loaded).
+        _syncZoneLayers();
         final newLL = LatLng(pos.latitude, pos.longitude);
         // Diagnóstico: distancia y dt real entre fixes consecutivos.
         final prevFix = _diagLastFixLL;

@@ -59,6 +59,13 @@ class S {
   String get send => _es ? 'Enviar' : 'Send';
   String get loading => _es ? 'Cargando...' : 'Loading...';
   String get gotIt => _es ? 'Entendido' : 'Got it';
+
+  // ── Municipal zone gate (driver connect) ──
+  String get zoneOutsideTitle =>
+      _es ? 'Fuera del área de servicio' : 'Outside the service area';
+  String get zoneOutsideBody => _es
+      ? 'Por ahora Cruise conecta dentro de las ciudades habilitadas del sur de Florida.'
+      : 'Cruise currently connects inside the enabled cities of South Florida.';
   String get done => _es ? 'Listo' : 'Done';
   String get back => _es ? 'Atrás' : 'Back';
   String get error => _es ? 'Error' : 'Error';

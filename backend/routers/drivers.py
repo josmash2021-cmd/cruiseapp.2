@@ -287,6 +287,17 @@ async def update_driver_location(driver_id: int, body: DriverLocationIn, user: U
         _driver_locations.pop(driver_id, None)
         raise HTTPException(403, "account_not_approved")
 
+    # Municipal zone gate (2026-10-11, user spec: "si el driver está dentro
+    # del cuadro podrá conectarse") — connecting is only allowed inside an
+    # enabled city polygon. FAIL-OPEN by design: no zone data = no gate, so
+    # a missing/broken file can never lock the whole fleet out. Connect-time
+    # only: an online driver crossing a boundary keeps working.
+    if body.is_online:
+        from services.zone_polygons import is_ready as _zones_ready, zone_containing
+        if _zones_ready() and zone_containing(body.lat, body.lng) is None:
+            _driver_locations.pop(driver_id, None)
+            raise HTTPException(403, "outside_service_area")
+
     # Update in-memory location cache FIRST (instant for nearby reads)
     _now = time.monotonic()
     _driver_locations[driver_id] = {

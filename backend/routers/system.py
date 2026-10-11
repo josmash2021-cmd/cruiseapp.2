@@ -576,3 +576,61 @@ async def set_app_update_switch(req: AppUpdateSwitch, request: Request,
         "driver_enabled": state["driver"],
         "rider_enabled": state["rider"],
     }
+
+
+# ═══════════════════════════════════════════════════════════════════════
+#  Feature flags — tiny remote kill switches (2026-10-11)
+#  Born for the zone layers: the driver map drawing can be switched off
+#  from the server while a live issue is diagnosed, and back on without a
+#  new build or patch.
+# ═══════════════════════════════════════════════════════════════════════
+
+_FLAG_KEYS = {
+    "zones_map_enabled": "Municipal zone shading + highlight on the driver map",
+}
+
+
+@router.get("/feature-flags", dependencies=[Depends(_verify_api_key)])
+async def feature_flags(db=Depends(get_db)):
+    """Public read for the app. Missing key = OFF (a flag that was never
+    written reads as off — fail to the SAFE side)."""
+    from sqlalchemy import select
+
+    r = await db.execute(
+        select(AppConfig.key, AppConfig.value)
+        .where(AppConfig.key.in_(list(_FLAG_KEYS))))
+    rows = {k: v for k, v in r.all()}
+    return {k: (rows.get(k) or "").strip() == "1" for k in _FLAG_KEYS}
+
+
+class FeatureFlagIn(BaseModel):
+    key: str
+    enabled: bool
+
+
+@router.post("/admin/feature-flags",
+             dependencies=[Depends(_require_dispatch_auth)])
+async def set_feature_flag(req: FeatureFlagIn, request: Request,
+                           db=Depends(get_db)):
+    from sqlalchemy import select
+
+    if req.key not in _FLAG_KEYS:
+        raise HTTPException(400, f"unknown flag: {req.key}")
+    r = await db.execute(
+        select(AppConfig).where(AppConfig.key == req.key))
+    row = r.scalar_one_or_none()
+    value = "1" if req.enabled else "0"
+    if row:
+        row.value = value
+        row.updated_at = datetime.now(timezone.utc)
+    else:
+        db.add(AppConfig(key=req.key, value=value,
+                         description=_FLAG_KEYS[req.key]))
+    await db.commit()
+    _security_audit_log(
+        "feature_flag",
+        request.client.host if request.client else "unknown",
+        f"{req.key}={req.enabled}",
+    )
+    logger.warning("[Flags] %s -> %s", req.key, req.enabled)
+    return {"key": req.key, "enabled": req.enabled}

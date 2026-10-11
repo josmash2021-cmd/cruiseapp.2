@@ -207,3 +207,24 @@ async def test_role_write_clears_legacy_global(client):
     res = await client.get("/app-update-status?role=rider",
                            headers=_make_auth_headers())
     assert res.json()["update_required"] is False
+
+
+# ── Feature flags (2026-10-11, remote kill switch for the zone layers) ────
+
+async def test_feature_flags_default_off_and_toggle(client):
+    res = await client.get("/feature-flags", headers=_make_auth_headers())
+    assert res.status_code == 200, res.text
+    assert res.json()["zones_map_enabled"] is False
+
+    dh = lambda: _make_auth_headers("test-dispatch-key")
+    res = await client.post("/admin/feature-flags", headers=dh(),
+                            json={"key": "zones_map_enabled",
+                                  "enabled": True})
+    assert res.status_code == 200, res.text
+    res = await client.get("/feature-flags", headers=_make_auth_headers())
+    assert res.json()["zones_map_enabled"] is True
+
+    # unknown flag rejected — typos must not silently mint new keys
+    res = await client.post("/admin/feature-flags", headers=dh(),
+                            json={"key": "nope", "enabled": True})
+    assert res.status_code == 400

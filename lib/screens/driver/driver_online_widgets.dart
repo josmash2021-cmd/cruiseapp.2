@@ -319,8 +319,23 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
   void _onOnlineMapReady(mapbox.MapboxMap ctrl, {required bool isDark}) {
     _map = ctrl;
     _lastStyleDark = isDark;
+    // Veil watchdog (2026-10-11, black-map report): the snapshot veil can
+    // only strand the driver if onStyleLoaded/onMapIdle never arrive. 6 s
+    // after the surface mounts we lift it regardless — a map still loading
+    // beats a black screen forever.
+    Timer(const Duration(seconds: 6), () {
+      if (!mounted || !_mapMounted) return;
+      if (_mapStyleLoaded && _firstRenderDone) return;
+      debugPrint('[DriverOnline] veil watchdog fired — lifting the veil');
+      _setState(() {
+        _mapStyleLoaded = true;
+        _firstRenderDone = true;
+      });
+    });
     // Municipal zones (2026-10-11): fetch the baked city polygons once per
-    // process, then paint shading + the driver's "FL: <city>" highlight.
+    // process + the remote flags, then paint shading + the driver's
+    // "FL: <city>" highlight (drawing gated by zones_map_enabled server flag).
+    unawaited(FeatureFlags.load());
     unawaited(ZoneService.load().then((_) {
       if (mounted) _syncZoneLayers(forceHighlight: true);
     }));

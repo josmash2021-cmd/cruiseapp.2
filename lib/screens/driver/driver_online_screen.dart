@@ -12,6 +12,7 @@ import 'package:flutter/services.dart';
 import '../../services/haptic_service.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' as mapbox;
 import '../../models/lat_lng.dart';
+import '../../services/feature_flags.dart';
 import '../../services/zone_service.dart';
 import '../../config/mapbox_config.dart';
 import '../../config/map_theme.dart';

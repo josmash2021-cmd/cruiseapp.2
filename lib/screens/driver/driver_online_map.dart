@@ -2313,6 +2313,10 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     final map = _map;
     if (map == null || kIsWeb || !_mapStyleLoaded) return;
     if (!ZoneService.ready) return;
+    // Remote kill switch (2026-10-11, black-map report): while we verify the
+    // zone drawing on a real device, the layers stay off by default — flip
+    // zones_map_enabled server-side to turn them on live.
+    if (!FeatureFlags.zonesMapEnabled) return;
     final visible = _phase == _Phase.searching;
     try {
       if (!_zoneLayersReady) {

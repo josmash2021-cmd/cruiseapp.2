@@ -78,6 +78,24 @@ void main() {
     expect(s, contains('"outside_service_area"'));
   });
 
+  test('zone drawing has a remote kill switch + the veil a watchdog', () {
+    // 2026-10-11 black-map report: the zone layers ride behind
+    // zones_map_enabled (default OFF until verified on a real device), and
+    // the snapshot veil lifts itself after 6 s no matter what.
+    final map =
+        File('lib/screens/driver/driver_online_map.dart').readAsStringSync();
+    expect(map, contains('FeatureFlags.zonesMapEnabled'));
+    final w = File('lib/screens/driver/driver_online_widgets.dart')
+        .readAsStringSync();
+    expect(w, contains('veil watchdog fired'));
+    expect(w, contains('FeatureFlags.load()'));
+    final flags =
+        File('lib/services/feature_flags.dart').readAsStringSync();
+    expect(flags, contains('/feature-flags'));
+    final sys = File('backend/routers/system.py').readAsStringSync();
+    expect(sys, contains('zones_map_enabled'));
+  });
+
   test('user-facing strings exist in ES and EN', () {
     final l10n =
         File('lib/l10n/app_localizations.dart').readAsStringSync();

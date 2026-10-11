@@ -144,3 +144,66 @@ async def test_flip_broadcasts_to_live_apps(client, monkeypatch):
         json={"enabled": True})
     assert res.status_code == 200, res.text
     assert sent == [("app_update_gate_changed", {"required": True})]
+
+
+# ── Per-role switches (2026-10-11, user spec "también para pasajero") ────
+
+async def test_role_switches_gate_independently(client):
+    dh = lambda: _make_auth_headers("test-dispatch-key")
+    res = await client.post("/admin/app-update", headers=dh(),
+                            json={"driver_enabled": True,
+                                  "rider_enabled": False})
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["driver_enabled"] is True
+    assert body["rider_enabled"] is False
+
+    h = lambda: _make_auth_headers()
+    res = await client.get(
+        "/app-update-status?platform=ios&build=999&role=driver", headers=h())
+    assert res.json()["update_required"] is True
+    res = await client.get(
+        "/app-update-status?platform=ios&build=999&role=rider", headers=h())
+    assert res.json()["update_required"] is False
+    # unknown role (logged out): EITHER switch gates
+    res = await client.get("/app-update-status?platform=ios&build=999",
+                           headers=h())
+    assert res.json()["update_required"] is True
+
+
+async def test_rider_switch_gates_riders_and_unknown(client):
+    dh = lambda: _make_auth_headers("test-dispatch-key")
+    res = await client.post("/admin/app-update", headers=dh(),
+                            json={"driver_enabled": False,
+                                  "rider_enabled": True})
+    assert res.status_code == 200, res.text
+
+    h = lambda: _make_auth_headers()
+    res = await client.get("/app-update-status?role=rider", headers=h())
+    assert res.json()["update_required"] is True
+    res = await client.get("/app-update-status?role=driver", headers=h())
+    assert res.json()["update_required"] is False
+    res = await client.get("/app-update-status", headers=h())
+    assert res.json()["update_required"] is True
+
+
+async def test_role_write_clears_legacy_global(client):
+    dh = lambda: _make_auth_headers("test-dispatch-key")
+    await client.post("/admin/app-update", headers=dh(),
+                      json={"enabled": True})
+    res = await client.get("/app-update-status?role=rider",
+                           headers=_make_auth_headers())
+    assert res.json()["update_required"] is True
+
+    # A role write without `enabled` must clear the legacy global behind the
+    # roles, or riders would keep being gated by it.
+    res = await client.post("/admin/app-update", headers=dh(),
+                            json={"driver_enabled": True,
+                                  "rider_enabled": False})
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["all_enabled"] is False
+    assert body["rider_enabled"] is False
+    res = await client.get("/app-update-status?role=rider",
+                           headers=_make_auth_headers())
+    assert res.json()["update_required"] is False

@@ -1295,10 +1295,17 @@ class ApiService {
                 (await PackageInfo.fromPlatform()).buildNumber) ??
             0;
       } catch (_) {}
+      // Role decides WHICH switch applies (2026-10-11: dispatch gates
+      // drivers and riders independently). Unknown role = server gates on
+      // either switch — a logged-out user on a forced build still updates.
+      var role = '';
+      try {
+        role = await UserSession.getMode();
+      } catch (_) {}
       final res = await http
           .get(
             Uri.parse(
-                '$_baseUrl/app-update-status?platform=$platform&build=$build'),
+                '$_baseUrl/app-update-status?platform=$platform&build=$build&role=$role'),
             headers: _jsonHeaders(),
           )
           .timeout(const Duration(seconds: 4));

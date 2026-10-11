@@ -124,4 +124,12 @@ void main() {
     expect(api.contains('PackageInfo.fromPlatform()'), isTrue);
     expect(api.contains('&build='), isTrue);
   });
+
+  test('the app reports its role so dispatch gates per role', () {
+    // 2026-10-11, user spec "también debe salir un botón para pasajero":
+    // the driver switch and the rider switch are independent — the app
+    // tells the server which one applies.
+    expect(api.contains('UserSession.getMode()'), isTrue);
+    expect(api.contains('&role='), isTrue);
+  });
 }

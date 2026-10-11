@@ -392,12 +392,18 @@ async def system_metrics(admin=Depends(_require_admin)):
 
 # ═══════════════════════════════════════════════════════════════════════
 #  Force-update switch — dispatch flips it, the app checks it at boot
-#  (2026-10-10, user spec: a panel button sends every user to the store;
+#  (2026-10-10, user spec: a panel button sends users to the store;
 #  v2 same day: min build per platform so users who ALREADY updated walk
-#  straight in, and a socket broadcast flips live apps in real time)
+#  straight in, and a socket broadcast flips live apps in real time;
+#  v3 2026-10-11: PER-ROLE switches — drivers and riders gate separately,
+#  spec "también debe salir un botón para pasajero")
 # ═══════════════════════════════════════════════════════════════════════
 
-_FORCE_UPDATE_KEY = "force_update_required"
+_FORCE_UPDATE_KEY = "force_update_required"  # legacy global: everyone
+_FORCE_UPDATE_ROLE_KEYS = {
+    "driver": "force_update_required_driver",
+    "rider": "force_update_required_rider",
+}
 _MIN_BUILD_KEYS = {
     "ios": "force_update_min_build_ios",
     "android": "force_update_min_build_android",
@@ -408,15 +414,19 @@ _STORE_URLS = {
 }
 
 
-async def _read_app_update_state(db) -> tuple[bool, dict]:
-    """(enabled, {platform: min_build}) — raises on DB error; callers decide
-    their failure mode (public endpoint fails OPEN, admin fails LOUD)."""
+async def _read_app_update_state(db) -> dict:
+    """Raw + effective gate state. Raises on DB error; callers decide their
+    failure mode (public endpoint fails OPEN, admin fails LOUD)."""
     from sqlalchemy import select
 
-    keys = [_FORCE_UPDATE_KEY, *_MIN_BUILD_KEYS.values()]
+    keys = [_FORCE_UPDATE_KEY, *_FORCE_UPDATE_ROLE_KEYS.values(),
+            *_MIN_BUILD_KEYS.values()]
     r = await db.execute(
         select(AppConfig.key, AppConfig.value).where(AppConfig.key.in_(keys)))
     rows = {k: v for k, v in r.all()}
+
+    def _on(key: str) -> bool:
+        return (rows.get(key) or "").strip() == "1"
 
     def _min_build(platform: str) -> int:
         try:
@@ -424,13 +434,20 @@ async def _read_app_update_state(db) -> tuple[bool, dict]:
         except ValueError:
             return 0
 
-    enabled = (rows.get(_FORCE_UPDATE_KEY) or "").strip() == "1"
-    return enabled, {p: _min_build(p) for p in _MIN_BUILD_KEYS}
+    legacy = _on(_FORCE_UPDATE_KEY)
+    return {
+        # Legacy global switch still gates everyone until the panel clears
+        # it by writing the per-role keys.
+        "all": legacy,
+        "driver": legacy or _on(_FORCE_UPDATE_ROLE_KEYS["driver"]),
+        "rider": legacy or _on(_FORCE_UPDATE_ROLE_KEYS["rider"]),
+        "mins": {p: _min_build(p) for p in _MIN_BUILD_KEYS},
+    }
 
 
 @router.get("/app-update-status", dependencies=[Depends(_verify_api_key)])
 async def app_update_status(platform: str = "", build: int = 0,
-                            db=Depends(get_db)):
+                            role: str = "", db=Depends(get_db)):
     """Boot gate for the app: update_required=true means the store page is
     the only screen the user gets.
 
@@ -441,11 +458,22 @@ async def app_update_status(platform: str = "", build: int = 0,
     (the user who already updated must not loop back to the store page).
     build=0 (clients too old to report it) and min_build=0 (never set from
     the panel) both fall back to the plain switch: enabled = everyone gated.
+
+    Role-aware (v3): the driver switch gates drivers, the rider switch
+    gates riders; a client whose role is unknown (logged out) is gated when
+    EITHER switch is on — dispatch is forcing that build out of service.
     """
     required = False
     try:
-        enabled, mins = await _read_app_update_state(db)
-        min_build = mins.get((platform or "").lower(), 0)
+        state = await _read_app_update_state(db)
+        r = (role or "").lower()
+        if r == "driver":
+            enabled = state["driver"]
+        elif r == "rider":
+            enabled = state["rider"]
+        else:
+            enabled = state["driver"] or state["rider"]
+        min_build = state["mins"].get((platform or "").lower(), 0)
         required = enabled and (
             min_build <= 0 or build <= 0 or build < min_build)
     except Exception as e:
@@ -458,18 +486,25 @@ async def app_update_status(platform: str = "", build: int = 0,
 
 
 class AppUpdateSwitch(BaseModel):
-    enabled: bool
+    # Any flag left null is not touched — the panel sends all three.
+    enabled: Optional[bool] = None  # legacy global (everyone)
+    driver_enabled: Optional[bool] = None
+    rider_enabled: Optional[bool] = None
     min_build_ios: int = Field(0, ge=0, le=100000)
     min_build_android: int = Field(0, ge=0, le=100000)
 
 
 @router.get("/admin/app-update", dependencies=[Depends(_require_dispatch_auth)])
 async def get_app_update_switch(db=Depends(get_db)):
-    enabled, mins = await _read_app_update_state(db)
+    state = await _read_app_update_state(db)
     return {
-        "enabled": enabled,
-        "min_build_ios": mins["ios"],
-        "min_build_android": mins["android"],
+        "all_enabled": state["all"],
+        # Legacy field name kept for the pre-role panel/tests.
+        "enabled": state["all"],
+        "driver_enabled": state["driver"],
+        "rider_enabled": state["rider"],
+        "min_build_ios": state["mins"]["ios"],
+        "min_build_android": state["mins"]["android"],
         "store_urls": _STORE_URLS,
     }
 
@@ -488,8 +523,25 @@ async def set_app_update_switch(req: AppUpdateSwitch, request: Request,
         else:
             db.add(AppConfig(key=key, value=value, description=description))
 
-    await _upsert(_FORCE_UPDATE_KEY, "1" if req.enabled else "0",
-                  "Force-update gate — '1' sends the app to the store")
+    wrote_role = False
+    if req.enabled is not None:
+        await _upsert(_FORCE_UPDATE_KEY, "1" if req.enabled else "0",
+                      "Force-update gate — legacy global (everyone)")
+    if req.driver_enabled is not None:
+        wrote_role = True
+        await _upsert(_FORCE_UPDATE_ROLE_KEYS["driver"],
+                      "1" if req.driver_enabled else "0",
+                      "Force-update gate — drivers")
+    if req.rider_enabled is not None:
+        wrote_role = True
+        await _upsert(_FORCE_UPDATE_ROLE_KEYS["rider"],
+                      "1" if req.rider_enabled else "0",
+                      "Force-update gate — riders")
+    # Role keys are now explicit: the legacy global must not keep gating
+    # everyone from behind them.
+    if wrote_role and req.enabled is None:
+        await _upsert(_FORCE_UPDATE_KEY, "0",
+                      "Force-update gate — legacy global (everyone)")
     await _upsert(_MIN_BUILD_KEYS["ios"], str(req.min_build_ios),
                   "Min iOS build before the gate applies (0 = all builds)")
     await _upsert(_MIN_BUILD_KEYS["android"], str(req.min_build_android),
@@ -498,18 +550,29 @@ async def set_app_update_switch(req: AppUpdateSwitch, request: Request,
     _security_audit_log(
         "app_update_switch",
         request.client.host if request.client else "unknown",
-        f"enabled={req.enabled} min_ios={req.min_build_ios} "
+        f"enabled={req.enabled} driver={req.driver_enabled} "
+        f"rider={req.rider_enabled} min_ios={req.min_build_ios} "
         f"min_android={req.min_build_android}",
     )
-    logger.warning("[AppUpdate] force-update switch -> %s", req.enabled)
+    logger.warning(
+        "[AppUpdate] force-update switch -> all=%s driver=%s rider=%s",
+        req.enabled, req.driver_enabled, req.rider_enabled)
 
     # Wake live apps so the gate flips in real time (socket broadcast reaches
     # every worker via the Redis manager; offline apps catch it at boot, and
     # the blocked page polls every 15 s as the final fallback).
+    any_on = bool(req.enabled) or bool(req.driver_enabled) \
+        or bool(req.rider_enabled)
     try:
         from services.socketio_service import sio
-        await sio.emit("app_update_gate_changed", {"required": req.enabled})
+        await sio.emit("app_update_gate_changed", {"required": any_on})
     except Exception as e:
         logger.warning("[AppUpdate] socket broadcast failed: %s", e)
 
-    return {"enabled": req.enabled}
+    state = await _read_app_update_state(db)
+    return {
+        "all_enabled": state["all"],
+        "enabled": state["all"],
+        "driver_enabled": state["driver"],
+        "rider_enabled": state["rider"],
+    }

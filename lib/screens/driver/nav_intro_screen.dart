@@ -38,8 +38,19 @@ class NavIntroScreen extends StatelessWidget {
                 child: Image.network(
                   '${ApiService.currentBaseUrl}/static/nav_intro_hero.png',
                   fit: BoxFit.fitWidth,
-                  loadingBuilder: (context, child, progress) =>
-                      progress == null ? child : const _RouteIllustration(),
+                  // Same rule as the update gate (2026-10-10): warm cache
+                  // paints with the page; a late frame fades, never pops.
+                  frameBuilder: (context, child, frame, wasSync) {
+                    if (wasSync) return child;
+                    if (frame == null) return const _RouteIllustration();
+                    return TweenAnimationBuilder<double>(
+                      tween: Tween(begin: 0, end: 1),
+                      duration: const Duration(milliseconds: 320),
+                      curve: Curves.easeOut,
+                      builder: (_, v, c) => Opacity(opacity: v, child: c),
+                      child: child,
+                    );
+                  },
                   errorBuilder: (context, error, stack) =>
                       const _RouteIllustration(),
                 ),

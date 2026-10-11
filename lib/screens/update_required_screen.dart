@@ -172,8 +172,21 @@ class _UpdateRequiredScreenState extends State<UpdateRequiredScreen>
                       '${ApiService.currentBaseUrl}/static/update_required_hero.png',
                       width: 260,
                       fit: BoxFit.contain,
-                      loadingBuilder: (context, child, progress) =>
-                          progress == null ? child : _fallbackBadge(),
+                      // A late frame FADES in — never pops (user report
+                      // 2026-10-10: "aparece después de golpe"). A warm
+                      // cache (the splash precache) paints with the page.
+                      frameBuilder: (context, child, frame, wasSync) {
+                        if (wasSync) return child;
+                        if (frame == null) return _fallbackBadge();
+                        return TweenAnimationBuilder<double>(
+                          tween: Tween(begin: 0, end: 1),
+                          duration: const Duration(milliseconds: 320),
+                          curve: Curves.easeOut,
+                          builder: (_, v, c) =>
+                              Opacity(opacity: v, child: c),
+                          child: child,
+                        );
+                      },
                       errorBuilder: (context, error, stack) =>
                           _fallbackBadge(),
                     ),

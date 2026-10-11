@@ -43,13 +43,18 @@ void main() {
       'zones-fill',
       'zones-line',
       'zones-hl-fill',
-      'zones-hl-label',
     ]) {
       expect(s, contains(id), reason: 'layer/source $id missing');
     }
     expect(s, contains('0xFF7A2020'), reason: 'dark red shading (photo)');
     expect(s, contains('0xFFB03030'), reason: 'brighter highlight (photo)');
-    expect(s, contains("'FL: {name}'"), reason: 'the photo label');
+    // The "FL: <city>" label is a FLUTTER OVERLAY, never a native
+    // SymbolLayer — the one unproven native piece in the 2026-10-11
+    // black-map incident. Zero new native style surface.
+    expect(s, isNot(contains('SymbolLayer')),
+        reason: 'no native text layer — the label is a Flutter overlay');
+    expect(s, contains('Widget _zoneLabelOverlay()'));
+    expect(s, contains("'FL: \$name'"), reason: 'the photo label');
     expect(s, contains('_phase == _Phase.searching'),
         reason: 'zones live on the flat searching map only — never on top '
             'of an active trip route');
@@ -57,6 +62,8 @@ void main() {
         .readAsStringSync();
     expect(w, contains('_zoneLayersReady = false'),
         reason: 'style reloads must recreate the custom sources');
+    expect(w, contains('_zoneLabelOverlay()'),
+        reason: 'the label rides the map stack');
   });
 
   test('the GO tap gates the connect client-side, fail-open', () {

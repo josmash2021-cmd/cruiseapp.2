@@ -2333,6 +2333,10 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
       if (forceHighlight || name != _zoneHighlightName) {
         _zoneHighlightName = name;
         await _writeZoneHighlight(map, z);
+        // The Flutter "FL: <city>" label overlay repaints on _markerFrame —
+        // bump it so the label follows the change THIS frame, not on the
+        // next GPS fix.
+        _markerFrame.value++;
       }
     } catch (e) {
       debugPrint('[Zones] layer sync failed: $e');
@@ -2380,18 +2384,10 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
         fillOpacity: 0.0,
       ));
     } catch (_) {}
-    try {
-      await map.style.addLayer(mapbox.SymbolLayer(
-        id: 'zones-hl-label',
-        sourceId: 'zones-hl-src',
-        textField: 'FL: {name}',
-        textSize: 13,
-        textColor: 0xFFFFFFFF,
-        textHaloColor: 0xFF000000,
-        textHaloWidth: 1.5,
-        textOpacity: 0.0,
-      ));
-    } catch (_) {}
+    // NO capa de texto nativa para la etiqueta "FL: <city>" (2026-10-11,
+    // black-map incident): la etiqueta viaja como overlay Flutter en el
+    // centro proyectado de la zona — cero superficie nativa nueva (ver
+    // _zoneLabelOverlay). Fills/lines son el patrón probado de map_picker.
   }
 
   Future<void> _writeZoneVisibility(
@@ -2400,7 +2396,6 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
       'zones-fill': ['fill-opacity', 0.22],
       'zones-line': ['line-opacity', 0.5],
       'zones-hl-fill': ['fill-opacity', 0.42],
-      'zones-hl-label': ['text-opacity', 1.0],
     };
     for (final e in props.entries) {
       try {
@@ -2426,5 +2421,68 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     } catch (e) {
       debugPrint('[Zones] highlight write failed: $e');
     }
+  }
+
+  /// The "FL: <city>" label for the driver's current zone — a Flutter
+  /// overlay, NOT a native style text layer (2026-10-11 black-map incident:
+  /// that was the one unproven piece of the zone stack; this paints zero
+  /// native surface). Glued per frame from the same flat projection the
+  /// arrow uses.
+  Widget _zoneLabelOverlay() {
+    if (kIsWeb) return const SizedBox.shrink();
+    return ListenableBuilder(
+      listenable: _markerFrame,
+      builder: (_, __) {
+        if (!FeatureFlags.zonesMapEnabled) return const SizedBox.shrink();
+        if (_phase != _Phase.searching) return const SizedBox.shrink();
+        final name = _zoneHighlightName;
+        if (name == null) return const SizedBox.shrink();
+        Zone? zone;
+        for (final z in ZoneService.zones) {
+          if (z.name == name) {
+            zone = z;
+            break;
+          }
+        }
+        if (zone == null) return const SizedBox.shrink();
+        final cam = _onlineCamState;
+        final size = _onlineMapSize;
+        if (cam == null || size == null) return const SizedBox.shrink();
+        final c = cam.center.coordinates;
+        final off = FlatMapProjection.screenOffsetHeading(
+          target: zone.center,
+          cameraCenter: LatLng(c.lat.toDouble(), c.lng.toDouble()),
+          zoom: cam.zoom,
+          bearingDeg: cam.bearing,
+          pitchDeg: cam.pitch,
+          viewport: size,
+        );
+        if (off == null) return const SizedBox.shrink();
+        if (!FlatMapProjection.isOnScreen(off, size)) {
+          return const SizedBox.shrink();
+        }
+        return Positioned(
+          left: off.dx,
+          top: off.dy,
+          child: IgnorePointer(
+            child: FractionalTranslation(
+              translation: const Offset(-0.5, -0.5),
+              child: Text(
+                'FL: $name',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w800,
+                  shadows: [
+                    Shadow(color: Colors.black, blurRadius: 3),
+                    Shadow(color: Colors.black, offset: Offset(0, 1)),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
   }
 }

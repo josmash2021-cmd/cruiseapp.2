@@ -7,15 +7,30 @@ import 'package:flutter_test/flutter_test.dart';
 /// once ever (LocalCache flag), dropoff legs never. The whole thing is pure
 /// Dart, so it rides OTA.
 void main() {
-  test('the gate shows the intro once, pickup leg only', () {
+  test('the gate shows the intro on EVERY pickup-leg entry (2026-10-10)', () {
     final s = File('lib/screens/driver/driver_trip_accept_screen.dart')
         .readAsStringSync();
-    expect(s, contains("LocalCache.get<bool>('driver_nav_intro_seen_v1')"));
-    expect(s, contains("LocalCache.set('driver_nav_intro_seen_v1', true)"));
-    // Only before pickup: the ride must not have started and the leg
-    // override must not be dropoff.
+    // User spec 2026-10-10: "primero debe salir esa página siempre" — the
+    // once-per-device flag died; every nav entry toward a pickup shows it.
+    expect(s, isNot(contains('driver_nav_intro_seen_v1')),
+        reason: 'no once-ever flag anymore');
     expect(s, contains('!_rideStarted && toPickup != false'));
     expect(s, contains('NavIntroScreen()'));
+    expect(s.indexOf('_navEntering = true'),
+        lessThan(s.indexOf('NavIntroScreen()')),
+        reason: 'the re-entry guard goes up BEFORE the push — no stacked '
+            'intros from a double-tap');
+  });
+
+  test('the nav morph blooms from the screen CENTRE, not the low card', () {
+    final s =
+        File('lib/widgets/nav_morph_overlay.dart').readAsStringSync();
+    // User spec 2026-10-10: "la navegación no debe salir desde abajo, sino
+    // desde el centro" — the enter bloom lerps from a small rect at screen
+    // centre to full screen instead of scaling in place out of the card.
+    expect(s, contains('Rect.fromCenter('));
+    expect(s, contains('center: screenRect.center'));
+    expect(s, contains('Positioned.fromRect(rect: enterRect, child: framed)'));
   });
 
   test('the intro page is bilingual text + a way forward', () {

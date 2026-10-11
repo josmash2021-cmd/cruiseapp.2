@@ -22,7 +22,6 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../config/mapbox_config.dart';
 import '../../config/map_theme.dart';
 import '../../config/page_transitions.dart';
-import '../../services/local_cache.dart';
 import 'nav_intro_screen.dart';
 import '../../widgets/verified_avatar.dart';
 import '../../widgets/static_route_preview.dart';
@@ -918,19 +917,18 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   /// preview lets go voluntarily here.
   Future<void> _enterNavMode({bool? toPickup}) async {
     if (_navMode || _navEntering) return;
-    // Nav intro (user mockup 2026-10-08): the FIRST time the driver opens
-    // navigation toward a pickup, an intro page goes first. Once ever
-    // (LocalCache flag); dropoff legs never see it.
+    // Nav intro (user mockup 2026-10-08; spec 2026-10-10: EVERY pickup-leg
+    // entry, not once per device — "primero debe salir esa página siempre").
+    // _navEntering goes up BEFORE the push so a double-tap can't stack two
+    // intros; every exit from the page (Get started or back) falls through
+    // to the nav opening below.
     if (!_rideStarted && toPickup != false) {
-      final seen = LocalCache.get<bool>('driver_nav_intro_seen_v1') ?? false;
-      if (!seen) {
-        await LocalCache.set('driver_nav_intro_seen_v1', true);
-        if (!mounted) return;
-        await Navigator.of(context).push(
-          slideFromRightRoute(const NavIntroScreen()),
-        );
-        if (!mounted) return;
-      }
+      _navEntering = true;
+      if (!mounted) return;
+      await Navigator.of(context).push(
+        slideFromRightRoute(const NavIntroScreen()),
+      );
+      if (!mounted) return;
     }
     _navEntering = true;
     // Leg override by address card (user spec 2026-09-19): tapping the

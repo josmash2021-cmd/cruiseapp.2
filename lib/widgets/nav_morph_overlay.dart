@@ -171,6 +171,21 @@ class _NavMorphOverlayState extends State<NavMorphOverlay>
           final featherOpacity = _isEnter ? 1.0 : (1.0 - p);
           final radius = _isEnter ? 18.0 * (1.0 - p) : 0.0;
 
+          // Enter blooms from the CENTRE of the screen (user spec
+          // 2026-10-10: "la navegación no debe salir desde abajo, sino desde
+          // el centro") — the frame starts small at screen centre and grows
+          // to cover, instead of expanding in place out of the low card.
+          final screenRect = Offset.zero & screen;
+          final enterRect = Rect.lerp(
+            Rect.fromCenter(
+              center: screenRect.center,
+              width: rect.width * 0.28,
+              height: rect.height * 0.28,
+            ),
+            screenRect,
+            p,
+          )!;
+
           final image = ImageFiltered(
             imageFilter: ui.ImageFilter.blur(sigmaX: blur, sigmaY: blur),
             child: Image.memory(
@@ -206,21 +221,21 @@ class _NavMorphOverlayState extends State<NavMorphOverlay>
                       child: ColoredBox(color: widget.backgroundColor),
                     ),
                   ),
-                Transform.scale(
-                  scale: scale,
-                  origin: rect.center,
-                  child: Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      // enter: the card's frame, growing until it covers.
-                      // exit: the full-screen nav frame, shrinking home.
-                      if (_isEnter)
-                        Positioned.fromRect(rect: rect, child: framed)
-                      else
+                if (_isEnter)
+                  // enter: the frame grows from the screen centre out.
+                  Positioned.fromRect(rect: enterRect, child: framed)
+                else
+                  // exit: the full-screen nav frame shrinks home to the card.
+                  Transform.scale(
+                    scale: scale,
+                    origin: rect.center,
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: [
                         Positioned.fill(child: framed),
-                    ],
+                      ],
+                    ),
                   ),
-                ),
               ],
             ),
           );

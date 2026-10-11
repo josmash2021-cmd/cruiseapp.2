@@ -918,9 +918,14 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
 
     // Municipal zone gate (2026-10-11, user spec: "si el driver está dentro
     // del cuadro podrá conectarse") — connecting is only allowed inside an
-    // enabled city polygon. FAIL-OPEN while the zone data isn't loaded:
-    // the server's own gate (403 outside_service_area) is the backstop.
-    if (ZoneService.ready && _pos != null &&
+    // enabled city polygon, and only enforced INSIDE the Florida coverage
+    // region: drivers in other states are never gated by a Florida file
+    // (drivers are state-separated — Alabama gets its own sectors later).
+    // FAIL-OPEN while the zone data isn't loaded: the server's own gate
+    // (403 outside_service_area) is the backstop.
+    if (ZoneService.ready &&
+        _pos != null &&
+        ZoneService.insideCoverageArea(_pos!) &&
         ZoneService.zoneContaining(_pos!) == null) {
       HapticService.mediumImpact();
       _showZoneOutsideDialog();

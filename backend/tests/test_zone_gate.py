@@ -50,8 +50,12 @@ async def test_ray_casting_real_boundaries():
     assert zone_polygons.zone_containing(**BIRMINGHAM) is None
 
 
-async def test_online_flip_outside_zone_is_403(client, db, test_driver):
+async def test_online_flip_outside_coverage_is_allowed(
+        client, db, test_driver):
+    """A point outside every zone bbox (open Atlantic) is out of the Florida
+    coverage region entirely → the gate never even looks at it."""
     _force_real_zones()
+    assert zone_polygons.inside_coverage_area(**OCEAN) is False
     driver, token = test_driver
     driver.is_verified = True
     driver.verification_status = "approved"
@@ -62,12 +66,7 @@ async def test_online_flip_outside_zone_is_403(client, db, test_driver):
         headers={**_make_auth_headers(), "Authorization": f"Bearer {token}"},
         json={**OCEAN, "is_online": True},
     )
-    assert res.status_code == 403, res.text
-    assert res.json()["detail"] == "outside_service_area"
-    await db.refresh(driver)
-    # The blocked flip never wrote: the fixture's coords stand (the fixture
-    # seeds is_online=True; what must NOT happen is the ocean write landing).
-    assert driver.lng != OCEAN["lng"]
+    assert res.status_code == 200, res.text
 
 
 async def test_online_flip_inside_zone_passes(client, db, test_driver):
@@ -85,6 +84,62 @@ async def test_online_flip_inside_zone_passes(client, db, test_driver):
     assert res.status_code == 200, res.text
     await db.refresh(driver)
     assert driver.is_online is True
+
+
+async def test_out_of_state_drivers_are_not_gated(client, db, test_driver):
+    """Drivers are state-separated: with REAL Florida data loaded, a driver
+    connecting from Alabama (outside the FL coverage region) is never gated
+    by a Florida file — Alabama's sectors come later (2026-10-11 user
+    decision)."""
+    _force_real_zones()
+    assert zone_polygons.inside_coverage_area(**BIRMINGHAM) is False
+    driver, token = test_driver
+    driver.is_verified = True
+    driver.verification_status = "approved"
+    await db.commit()
+
+    res = await client.patch(
+        f"/drivers/{driver.id}/location",
+        headers={**_make_auth_headers(), "Authorization": f"Bearer {token}"},
+        json={**BIRMINGHAM, "is_online": True},
+    )
+    assert res.status_code == 200, res.text
+    await db.refresh(driver)
+    assert driver.is_online is True
+
+
+async def test_inside_coverage_but_outside_every_city_is_403(
+        client, db, test_driver):
+    """In the coverage region but not inside any municipal polygon (a gap
+    between cities / the water inside a bbox) → blocked."""
+    _force_real_zones()
+    # Find a point inside some zone's bbox but outside its polygon,
+    # deterministically from the real baked data.
+    gap = None
+    for zone in zone_polygons._zones:
+        w, s, e, n = zone["bbox"]
+        for lat, lng in [(s, w), (s, e), (n, w), (n, e),
+                         ((s + n) / 2, (w + e) / 2)]:
+            if (zone_polygons.inside_coverage_area(lat, lng)
+                    and zone_polygons.zone_containing(lat, lng) is None):
+                gap = {"lat": lat, "lng": lng}
+                break
+        if gap:
+            break
+    assert gap, "expected at least one in-coverage gap point in the data"
+
+    driver, token = test_driver
+    driver.is_verified = True
+    driver.verification_status = "approved"
+    await db.commit()
+
+    res = await client.patch(
+        f"/drivers/{driver.id}/location",
+        headers={**_make_auth_headers(), "Authorization": f"Bearer {token}"},
+        json={**gap, "is_online": True},
+    )
+    assert res.status_code == 403, res.text
+    assert res.json()["detail"] == "outside_service_area"
 
 
 async def test_no_zone_data_fails_open(client, db, test_driver):

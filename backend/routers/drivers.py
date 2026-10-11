@@ -289,12 +289,19 @@ async def update_driver_location(driver_id: int, body: DriverLocationIn, user: U
 
     # Municipal zone gate (2026-10-11, user spec: "si el driver está dentro
     # del cuadro podrá conectarse") — connecting is only allowed inside an
-    # enabled city polygon. FAIL-OPEN by design: no zone data = no gate, so
-    # a missing/broken file can never lock the whole fleet out. Connect-time
-    # only: an online driver crossing a boundary keeps working.
+    # enabled city polygon, and only enforced INSIDE the Florida coverage
+    # region: drivers in other states (Alabama until its sectors are built)
+    # are never gated by this file. FAIL-OPEN by design: no zone data = no
+    # gate. Connect-time only: an online driver crossing a boundary keeps
+    # working.
     if body.is_online:
-        from services.zone_polygons import is_ready as _zones_ready, zone_containing
-        if _zones_ready() and zone_containing(body.lat, body.lng) is None:
+        from services.zone_polygons import (
+            is_ready as _zones_ready,
+            inside_coverage_area as _in_coverage,
+            zone_containing,
+        )
+        if (_zones_ready() and _in_coverage(body.lat, body.lng)
+                and zone_containing(body.lat, body.lng) is None):
             _driver_locations.pop(driver_id, None)
             raise HTTPException(403, "outside_service_area")
 

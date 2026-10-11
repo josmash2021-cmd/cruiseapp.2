@@ -66,6 +66,21 @@ def is_ready() -> bool:
     return ready
 
 
+def inside_coverage_area(lat: float, lng: float) -> bool:
+    """Whether the point falls inside the Florida coverage region (the union
+    bbox of every enabled zone). The connect gate only applies INSIDE this
+    region: drivers in other states (Alabama until its sectors are built,
+    2026-10-11 user decision) are never gated by a Florida file."""
+    _load()
+    if not ready:
+        return False
+    for zone in _zones:
+        w, s, e, n = zone["bbox"]
+        if w <= lng <= e and s <= lat <= n:
+            return True
+    return False
+
+
 def _ring_contains(lng: float, lat: float, ring: list[tuple[float, float]]) -> bool:
     """Ray-casting point-in-ring (even-odd)."""
     inside = False

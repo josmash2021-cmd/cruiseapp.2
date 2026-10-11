@@ -62,6 +62,9 @@ void main() {
   test('the GO tap gates the connect client-side, fail-open', () {
     final s = File('lib/screens/driver/driver_online_offline.dart')
         .readAsStringSync();
+    expect(s, contains('ZoneService.insideCoverageArea(_pos!)'),
+        reason: 'out-of-state drivers are never gated by a Florida file — '
+            'drivers are state-separated');
     expect(s, contains('ZoneService.zoneContaining(_pos!) == null'));
     expect(s, contains('_showZoneOutsideDialog()'),
         reason: 'outside a zone the tap explains instead of connecting');

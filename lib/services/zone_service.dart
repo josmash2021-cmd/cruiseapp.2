@@ -132,6 +132,23 @@ class ZoneService {
     }
   }
 
+  /// Whether the point falls inside the Florida coverage region (union of
+  /// every zone bbox). The connect gate only applies INSIDE it — drivers in
+  /// other states are never gated by a Florida file (Alabama's sectors come
+  /// later, 2026-10-11 user decision).
+  static bool insideCoverageArea(LatLng p) {
+    if (!ready) return false;
+    for (final z in zones) {
+      if (p.longitude >= z.bbox[0] &&
+          p.longitude <= z.bbox[2] &&
+          p.latitude >= z.bbox[1] &&
+          p.latitude <= z.bbox[3]) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   /// The zone containing the point, or null. Ray-casting, even-odd rule —
   /// the same math the backend gate uses, so app and server always agree.
   static Zone? zoneContaining(LatLng p) {

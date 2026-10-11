@@ -176,6 +176,10 @@ void main() {
       expect(sys.contains('"maintenance_mode"'), isTrue);
       expect(sys.contains('maintenance_enabled'), isTrue);
       expect(sys.contains('"maintenance": maintenance'), isTrue);
+      // And the APP actually maps it into the gate answer — 2026-10-11 the
+      // page never showed because getAppUpdateStatus dropped the field.
+      expect(api.contains("'maintenance': data['maintenance'] == true"),
+          isTrue);
     });
   });
 }

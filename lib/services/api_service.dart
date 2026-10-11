@@ -1314,6 +1314,11 @@ class ApiService {
       final storeUrl = (data['store_url'] as String?)?.trim();
       return {
         'required': data['update_required'] == true,
+        // The maintenance kill page rides the same response (2026-10-11) —
+        // missing the field here meant the page could NEVER show even with
+        // the switch ON (user report: "la página de mantenimiento no
+        // funciona cuando la activo").
+        'maintenance': data['maintenance'] == true,
         'storeUrl': (storeUrl != null && storeUrl.isNotEmpty)
             ? storeUrl
             : Platform.isIOS

@@ -23,6 +23,12 @@ const double _kOfferCardLift = 12.0;
 // ══════════════════════════════════════════════════════════════
 
 extension _DriverOnlineWidgets on _DriverOnlineScreenState {
+  /// The map anchor when there is no GPS fix yet. The build must never bang
+  /// `_pos!` (2026-10-11: fresh install + a rejected cold fix = driver screen
+  /// all black and a dead recenter). Miami downtown — inside the FL zones.
+  static const _fallbackPos = LatLng(25.7617, -80.1918);
+  LatLng get _mapAnchor => _pos ?? _fallbackPos;
+
   Widget _mapW(bool isDark) {
     // Show a rich skeleton loader when position isn't ready yet.
     // Never show a blank dark blue screen — always have visible feedback.
@@ -82,17 +88,19 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
           fit: StackFit.expand,
           children: [
             Positioned.fill(
-                child: StaticMapSnapshot(center: _pos!, zoom: 16, veilAlpha: 0.60)),
+                child: StaticMapSnapshot(center: _mapAnchor, zoom: 16, veilAlpha: 0.60)),
             Center(child: GoldLocationDotOverlay(bearing: _heading)),
           ],
         ),
       );
     }
-    // Read once, and hand it down. _mapSurface used to reach back for `_pos!`
-    // itself — a bang inside a build method, on a field a dozen callbacks
-    // write. The guard above and that dereference were forty lines apart and
-    // nothing tied them together.
-    final here = _pos!;
+    // Read once, and hand it down. _mapSurface used to reach back for the
+    // raw position itself — a force-unwrap inside a build method, on a field
+    // a dozen callbacks write. The guard above and that dereference were
+    // forty lines apart and nothing tied them together. (2026-10-11: the
+    // unwrap became _mapAnchor — a null fix must never black out the driver
+    // screen again.)
+    final here = _mapAnchor;
     return RepaintBoundary(
       child: LayoutBuilder(
         builder: (context, constraints) {

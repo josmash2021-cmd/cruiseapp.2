@@ -386,6 +386,17 @@ void main() {
           reason: 'the driving course stays RAW — pre-lagging it poisoned '
               'SmoothMotion turn-rate measurement (2026-09-25)');
     });
+    test('the map build never bangs _pos (2026-10-11 black screen)', () {
+      // Fresh install + a cold fix rejected for accuracy → _pos stayed null
+      // → `_pos!` in the map builder threw → driver screen all black AND a
+      // dead recenter. The anchor falls back to Miami downtown instead.
+      final w = File('lib/screens/driver/driver_online_widgets.dart')
+          .readAsStringSync();
+      final mapW = bodyOf(w, 'Widget _mapW(bool isDark) {', maxLen: 2600);
+      expect(mapW.contains('_pos!'), isFalse,
+          reason: 'a missing fix must never crash the map build');
+      expect(mapW.contains('_mapAnchor'), isTrue);
+    });
   });
 
   group('offline recenter FAB + button looks (2026-10-11)', () {

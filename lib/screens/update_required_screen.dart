@@ -113,8 +113,10 @@ class _UpdateRequiredScreenState extends State<UpdateRequiredScreen>
             Border.all(color: _gold.withValues(alpha: 0.35), width: 1.5),
       ),
       child: const Center(
-        child:
-            Icon(Icons.system_update_alt_rounded, size: 64, color: _gold),
+        // refresh_rounded, not system_update_alt_rounded: OTA patches can
+        // only use glyphs that shipped in the store build's icon font —
+        // system_update_alt_rounded wasn't one and rendered as a "?" box.
+        child: Icon(Icons.refresh_rounded, size: 64, color: _gold),
       ),
     );
   }

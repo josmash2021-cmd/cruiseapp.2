@@ -7,30 +7,55 @@ import 'package:flutter_test/flutter_test.dart';
 /// once ever (LocalCache flag), dropoff legs never. The whole thing is pure
 /// Dart, so it rides OTA.
 void main() {
-  test('the gate shows the intro on EVERY pickup-leg entry (2026-10-10)', () {
+  test('the gate shows the intro on EVERY nav entry, both legs', () {
     final s = File('lib/screens/driver/driver_trip_accept_screen.dart')
         .readAsStringSync();
-    // User spec 2026-10-10: "primero debe salir esa página siempre" — the
-    // once-per-device flag died; every nav entry toward a pickup shows it.
+    // User specs 2026-10-10: "primero debe salir esa página siempre" +
+    // "cuando se le da start trip para ir al pickup o dropoff" — the
+    // once-ever flag AND the pickup-only condition both died: every call
+    // to _enterNavMode pushes the intro first.
     expect(s, isNot(contains('driver_nav_intro_seen_v1')),
         reason: 'no once-ever flag anymore');
-    expect(s, contains('!_rideStarted && toPickup != false'));
-    expect(s, contains('NavIntroScreen()'));
-    expect(s.indexOf('_navEntering = true'),
-        lessThan(s.indexOf('NavIntroScreen()')),
+    final bodyStart = s.indexOf('Future<void> _enterNavMode({bool? toPickup})');
+    final bodyEnd = s.indexOf('_navToPickupOverride = toPickup;', bodyStart);
+    final body = s.substring(bodyStart, bodyEnd);
+    expect(body.contains('!_rideStarted'), isFalse,
+        reason: 'no pickup-phase gate');
+    expect(body.contains('toPickup != false'), isFalse,
+        reason: 'no leg gate — dropoff legs see it too');
+    expect(body.contains('NavIntroScreen()'), isTrue);
+    expect(body.indexOf('_navEntering = true'),
+        lessThan(body.indexOf('NavIntroScreen()')),
         reason: 'the re-entry guard goes up BEFORE the push — no stacked '
             'intros from a double-tap');
   });
 
-  test('the nav morph blooms from the screen CENTRE, not the low card', () {
+  test('the nav morph is a pure fade in / fade out', () {
     final s =
         File('lib/widgets/nav_morph_overlay.dart').readAsStringSync();
-    // User spec 2026-10-10: "la navegación no debe salir desde abajo, sino
-    // desde el centro" — the enter bloom lerps from a small rect at screen
-    // centre to full screen instead of scaling in place out of the card.
-    expect(s, contains('Rect.fromCenter('));
-    expect(s, contains('center: screenRect.center'));
-    expect(s, contains('Positioned.fromRect(rect: enterRect, child: framed)'));
+    // User spec 2026-10-10: "que aparezca con fade in y cuando se quite se
+    // quita con fade out" — no bloom, no scale, no origin: the snapshot
+    // cross-fades over the scrim, then onto the live map.
+    expect(s, isNot(contains('Transform.scale(')),
+        reason: 'no growing frame anymore');
+    expect(s, isNot(contains('Rect.fromCenter(')),
+        reason: 'no centre bloom anymore');
+    expect(s, contains('Positioned.fill(child: framed)'));
+    expect(s, contains('_reveal.value'),
+        reason: 'the cross-fade onto the live map stays');
+  });
+
+  test('icons are glyphs that shipped in the store build font', () {
+    final s = File('lib/screens/driver/nav_intro_screen.dart')
+        .readAsStringSync();
+    // OTA patches can only render glyphs already inside the release's
+    // tree-shaken MaterialIcons font — icons first used by a patch render
+    // as "?" boxes (user report 2026-10-10).
+    expect(s, contains('Icons.notifications_outlined'));
+    expect(s, contains('Icons.bar_chart_rounded'));
+    expect(s, contains('Icons.route_rounded'));
+    expect(s, isNot(contains('Icons.traffic_rounded')));
+    expect(s, isNot(contains('Icons.notifications_active_outlined')));
   });
 
   test('the intro page is bilingual text + a way forward', () {

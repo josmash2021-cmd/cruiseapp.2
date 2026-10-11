@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
@@ -140,13 +139,6 @@ class _NavMorphOverlayState extends State<NavMorphOverlay>
 
   @override
   Widget build(BuildContext context) {
-    final screen = MediaQuery.of(context).size;
-    final rect = widget.sourceRect;
-    final coverScale = math.max(
-          screen.width / rect.width,
-          screen.height / rect.height,
-        ) *
-        1.06;
     return GestureDetector(
       // Absorb every touch for the ~1 s the morph owns the screen — a stray
       // tap on a half-dissolved control is a state bug waiting to happen.
@@ -156,35 +148,17 @@ class _NavMorphOverlayState extends State<NavMorphOverlay>
         animation: Listenable.merge([_expand, _reveal]),
         builder: (context, _) {
           final p = _expandAnim.value;
-          final opacity = _isEnter
-              ? 1.0 - _reveal.value
-              : (p / 0.55).clamp(0.0, 1.0);
-          final scale = _isEnter
-              ? 1.0 + (coverScale - 1.0) * p
-              : (1.0 / coverScale) + (1.0 - 1.0 / coverScale) * p;
           final blur = _isEnter ? 4.0 * p : 3.0 * (1.0 - p);
           final scrimOpacity =
               _isEnter ? (p / 0.75).clamp(0.0, 1.0) : 0.0;
-          // The live nav map ends flush with the screen edges, so the exit
-          // frame it hands over carries no feather yet — the dissolve grows
-          // as the contraction proceeds. The mini-map card always has one.
-          final featherOpacity = _isEnter ? 1.0 : (1.0 - p);
-          final radius = _isEnter ? 18.0 * (1.0 - p) : 0.0;
+          final featherOpacity = _isEnter ? (1.0 - _reveal.value) : (1.0 - p);
 
-          // Enter blooms from the CENTRE of the screen (user spec
-          // 2026-10-10: "la navegación no debe salir desde abajo, sino desde
-          // el centro") — the frame starts small at screen centre and grows
-          // to cover, instead of expanding in place out of the low card.
-          final screenRect = Offset.zero & screen;
-          final enterRect = Rect.lerp(
-            Rect.fromCenter(
-              center: screenRect.center,
-              width: rect.width * 0.28,
-              height: rect.height * 0.28,
-            ),
-            screenRect,
-            p,
-          )!;
+          // Fade in / fade out (user spec 2026-10-10: "que aparezca con
+          // fade in y cuando se quite se quita con fade out" — no scale, no
+          // bloom origin): the snapshot cross-fades over a scrim that covers
+          // the trip UI, then the reveal cross-fades onto the live nav map.
+          final opacity =
+              _isEnter ? p * (1.0 - _reveal.value) : p;
 
           final image = ImageFiltered(
             imageFilter: ui.ImageFilter.blur(sigmaX: blur, sigmaY: blur),
@@ -195,18 +169,15 @@ class _NavMorphOverlayState extends State<NavMorphOverlay>
               filterQuality: FilterQuality.medium,
             ),
           );
-          final framed = ClipRRect(
-            borderRadius: BorderRadius.circular(radius),
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                image,
-                Opacity(
-                  opacity: featherOpacity,
-                  child: _Feather(color: widget.backgroundColor),
-                ),
-              ],
-            ),
+          final framed = Stack(
+            fit: StackFit.expand,
+            children: [
+              image,
+              Opacity(
+                opacity: featherOpacity,
+                child: _Feather(color: widget.backgroundColor),
+              ),
+            ],
           );
 
           return Opacity(
@@ -221,21 +192,7 @@ class _NavMorphOverlayState extends State<NavMorphOverlay>
                       child: ColoredBox(color: widget.backgroundColor),
                     ),
                   ),
-                if (_isEnter)
-                  // enter: the frame grows from the screen centre out.
-                  Positioned.fromRect(rect: enterRect, child: framed)
-                else
-                  // exit: the full-screen nav frame shrinks home to the card.
-                  Transform.scale(
-                    scale: scale,
-                    origin: rect.center,
-                    child: Stack(
-                      fit: StackFit.expand,
-                      children: [
-                        Positioned.fill(child: framed),
-                      ],
-                    ),
-                  ),
+                Positioned.fill(child: framed),
               ],
             ),
           );

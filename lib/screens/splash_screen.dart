@@ -103,6 +103,24 @@ class _SplashScreenState extends State<SplashScreen> {
     // Capture context before any awaits (use_build_context_synchronously)
     final nav = Navigator.of(context);
 
+    // Warm the two backend-hosted hero images so the force-update gate and
+    // the nav intro paint WITH their art on the first frame (user report
+    // 2026-10-10: "la foto no sale si no con retraso — debe salir al mismo
+    // tiempo de forma animada"). Fire-and-forget; a failure just leaves the
+    // drawn fallback badge, which is exactly what it's for.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_disposed || !mounted) return;
+      for (final path in const [
+        '/static/update_required_hero.png',
+        '/static/nav_intro_hero.png',
+      ]) {
+        precacheImage(
+          NetworkImage('${ApiService.currentBaseUrl}$path'),
+          context,
+        ).catchError((_) {});
+      }
+    });
+
     // First-run OS permissions, while the animation plays: precise location
     // and notifications. No-ops on later launches (already granted) and on
     // web. Not awaited — the dialogs float over the splash and the sequence

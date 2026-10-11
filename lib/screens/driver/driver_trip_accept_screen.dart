@@ -917,19 +917,17 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
   /// preview lets go voluntarily here.
   Future<void> _enterNavMode({bool? toPickup}) async {
     if (_navMode || _navEntering) return;
-    // Nav intro (user mockup 2026-10-08; spec 2026-10-10: EVERY pickup-leg
-    // entry, not once per device — "primero debe salir esa página siempre").
-    // _navEntering goes up BEFORE the push so a double-tap can't stack two
-    // intros; every exit from the page (Get started or back) falls through
-    // to the nav opening below.
-    if (!_rideStarted && toPickup != false) {
-      _navEntering = true;
-      if (!mounted) return;
-      await Navigator.of(context).push(
-        slideFromRightRoute(const NavIntroScreen()),
-      );
-      if (!mounted) return;
-    }
+    // Nav intro (user mockup 2026-10-08; specs 2026-10-10: "primero debe
+    // salir esa página siempre" + "cuando se le da start trip para ir al
+    // pickup o dropoff" — EVERY nav entry, BOTH legs). _navEntering goes up
+    // BEFORE the push so a double-tap can't stack two intros; every exit
+    // from the page (Get started or back) falls through to the nav below.
+    _navEntering = true;
+    if (!mounted) return;
+    await Navigator.of(context).push(
+      slideFromRightRoute(const NavIntroScreen()),
+    );
+    if (!mounted) return;
     _navEntering = true;
     // Leg override by address card (user spec 2026-09-19): tapping the
     // dropoff card navigates to the DROPOFF even before the ride starts —

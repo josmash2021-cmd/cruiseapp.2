@@ -101,6 +101,10 @@ void main() {
     expect(screen.contains('_fallbackBadge'), isTrue,
         reason: 'the page must never render broken while/before the art '
             'downloads');
+    expect(screen.contains('Icons.refresh_rounded'), isTrue,
+        reason: 'the fallback glyph must be one the store build font '
+            'already ships (OTA can add no new glyphs)');
+    expect(screen, isNot(contains('Icons.system_update_alt_rounded')));
     expect(l10n.contains('CRUISE IN RIDE App is available now'), isTrue);
     expect(l10n.contains('CRUISE IN RIDE ya está disponible'), isTrue);
   });

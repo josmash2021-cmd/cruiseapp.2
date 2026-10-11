@@ -11,7 +11,9 @@ import '../../services/api_service.dart';
 class NavIntroScreen extends StatelessWidget {
   const NavIntroScreen({super.key});
 
-  static const _navy = Color(0xFF14141A);
+  // Exact bg of the hero art (sampled 2026-10-10: RGB 20,21,22) — the card
+  // melts into the page instead of reading as a grey frame around it.
+  static const _navy = Color(0xFF141516);
   static const _gold = Color(0xFFE8C547);
 
   @override
@@ -61,13 +63,17 @@ class NavIntroScreen extends StatelessWidget {
               ),
               const SizedBox(height: 18),
               _feature(
-                Icons.notifications_active_outlined,
+                // notifications_outlined / bar_chart_rounded, not
+                // notifications_active_outlined / traffic_rounded: OTA
+                // patches can only use glyphs that shipped in the store
+                // build's icon font — those two rendered as "?" boxes.
+                Icons.notifications_outlined,
                 s.navIntroRideTitle,
                 s.navIntroRideBody,
               ),
               const SizedBox(height: 18),
               _feature(
-                Icons.traffic_rounded,
+                Icons.bar_chart_rounded,
                 s.navIntroInsightsTitle,
                 s.navIntroInsightsBody,
               ),

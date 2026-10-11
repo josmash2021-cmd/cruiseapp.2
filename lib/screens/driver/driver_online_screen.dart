@@ -311,7 +311,10 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   // already filters the offers this driver gets — the app only displays it.
   String? _destAddress;
 
-  void _animateToPosition(
+  /// Returns whether a flight was actually issued — callers whose UX dies
+  /// silently when it wasn't (the offline recenter FAB, 2026-10-11) fall
+  /// back to the per-frame chase instead of doing nothing.
+  bool _animateToPosition(
     LatLng pos, {
     double zoom = 15.5,
     double bearing = 0,
@@ -342,9 +345,9 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
         pitch: tilt,
         durationMs: _kRecenterFlightMs,
       );
-      return;
+      return _webMap != null;
     }
-    if (!mounted || !_mapMounted) return;
+    if (!mounted || !_mapMounted) return false;
     // Entry zoom ease in progress (driver spec 2026-08-24): while the 16→
     // 15.5 glide runs, the ticker in _onSmoothTick already writes centre and
     // zoom for every frame — any flyTo fired now is redundant and cancels
@@ -357,10 +360,10 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
         _previewingOffer == null &&
         !_isCardAnimating &&
         _cameraFollowing) {
-      return;
+      return false;
     }
     final map = _map;
-    if (map == null) return;
+    if (map == null) return false;
     try {
       map
           .flyTo(
@@ -378,8 +381,10 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
           .catchError((Object e) {
         debugPrint('[DriverOnline] flyTo rejected: $e');
       });
+      return true;
     } catch (e) {
       debugPrint('[DriverOnline] flyTo failed: $e');
+      return false;
     }
   }
 

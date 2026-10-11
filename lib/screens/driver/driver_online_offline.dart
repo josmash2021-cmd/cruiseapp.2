@@ -1056,7 +1056,6 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
   //  FLOATING GO BUTTON — inner pulse glow
   // ═══════════════════════════════════════════════════
   Widget _buildGoButton({double radius = 16.0, double morph = 1.0}) {
-    final dc = DriverColors.of(context);
     return GestureDetector(
       onTap: _isVerified
           ? _onGoTap
@@ -1073,14 +1072,13 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
         builder: (_, __) {
           final p = _goPulseAnim?.value ?? 1.0;
           final docsOk = _vehicleDocsApproved || !_docStatusLoaded;
-          // Disabled when docs missing or not verified — sunken neu well.
-          final enabled = _isVerified && docsOk;
+          // Look NORMAL always (user spec 2026-10-11: "el botón de GO no se
+          // vea desactivado, siempre normal en amarillo") — docs/verification
+          // still gate the TAP (they route to the fix), never the paint.
 
-          // Gold body, black lettering (user spec 2026-10-10: "el botón de
-          // GO seguirá dorado con ondas negras" — evolución del verde de
-          // prueba). The disc breathes between two golds; the bar lands on
-          // the brighter one. Black reads cleanly on gold — and the wave
-          // rings stay black to match.
+          // Gold body, black lettering. The disc breathes between two golds;
+          // the bar lands on the brighter one. Black reads cleanly on gold —
+          // and the wave rings stay black to match.
           final goldTop1 = Color.lerp(
               const Color(0xFFC9981F), const Color(0xFFF2D45E), morph)!;
           final goldTop2 = Color.lerp(
@@ -1093,9 +1091,7 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
           const glowColor = Color(0xFFE8C547);
 
           // Black on gold, both shapes.
-          final fgColor = enabled
-              ? const Color(0xFF0B0B0F)
-              : dc.textSecondary;
+          const fgColor = Color(0xFF0B0B0F);
 
           return ClipRRect(
             borderRadius: BorderRadius.circular(radius),
@@ -1115,8 +1111,7 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
                     horizontal: ui.lerpDouble(0, 28, morph)!,
                     vertical: ui.lerpDouble(0, 13, morph)!,
                   ),
-                  decoration: enabled
-                      ? BoxDecoration(
+                  decoration: BoxDecoration(
                           borderRadius: BorderRadius.circular(radius),
                           // The gold ring, which the disc was described as
                           // having and never had.
@@ -1159,8 +1154,7 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
                             end: Alignment.bottomCenter,
                             colors: [topColor, botColor],
                           ),
-                        )
-                      : neuBox(radius: 16, pressed: true),
+                        ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     // Centred: the button is full-width inside the panel now,
@@ -1189,12 +1183,10 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
                               // Dark well on the gold bar, light one on the
                               // black disc — the fill has to flip with the body
                               // underneath it or the icon disappears into it.
-                              color: enabled
-                                  ? Color.lerp(
-                                      Colors.white.withValues(alpha: 0.10),
-                                      Colors.black.withValues(alpha: 0.16),
-                                      morph)
-                                  : Colors.white.withValues(alpha: 0.08),
+                              color: Color.lerp(
+                                  Colors.white.withValues(alpha: 0.10),
+                                  Colors.black.withValues(alpha: 0.16),
+                                  morph),
                               shape: BoxShape.circle,
                             ),
                             child: _enteringOnline
@@ -1202,9 +1194,7 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
                                     width: 16,
                                     height: 16,
                                     child: CircularProgressIndicator(
-                                      color: enabled
-                                          ? Colors.black87
-                                          : _offlineGold,
+                                      color: Colors.black87,
                                       strokeWidth: 2,
                                     ),
                                   )
@@ -1306,7 +1296,7 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
                 // vanishing at some threshold mid-gesture. Rings on a pill
                 // read as a glitch; rings appearing and disappearing under
                 // the driver's thumb read as a worse one.
-                if (enabled && morph < 0.9 && _goRadarCtrl != null)
+                if (morph < 0.9 && _goRadarCtrl != null)
                   Positioned.fill(
                     child: IgnorePointer(
                       child: Opacity(
@@ -1314,8 +1304,7 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
                         child: CustomPaint(
                           painter: _GoRadarPainter(
                             progress: _goRadarCtrl!.value,
-                            // Ondas NEGRAS sobre el GO verde (user spec
-                            // 2026-10-10 — evolución del parche de prueba).
+                            // Ondas NEGRAS sobre el GO dorado.
                             color: const Color(0xFF0B0B0F),
                           ),
                         ),
@@ -1326,6 +1315,65 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
             ),
           );
         },
+      ),
+    );
+  }
+
+  /// The GO-OFFLINE disc: red body with the GO button's radar waves in black
+  /// (user spec 2026-10-11: "el botón de offline rojo con la misma animación
+  /// del GO pero en vez de amarillo rojo, igual con ondas"). ONE look for
+  /// both go-offline doors (expanded panel + the "Finding trips" sheet).
+  Widget _offlineRadarDisc({double size = 62}) {
+    final waves = _goRadarCtrl;
+    return SizedBox(
+      width: size,
+      height: size,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          Container(
+            decoration: const BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [Color(0xFFE05555), Color(0xFF9E1B1B)],
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Color(0x55CC3333),
+                  blurRadius: 10,
+                  offset: Offset(0, 3),
+                ),
+                BoxShadow(
+                  color: Color(0x47000000),
+                  blurRadius: 8,
+                  offset: Offset(0, 2),
+                ),
+              ],
+            ),
+          ),
+          if (waves != null)
+            Positioned.fill(
+              child: IgnorePointer(
+                child: ClipOval(
+                  child: AnimatedBuilder(
+                    animation: waves,
+                    builder: (_, __) => CustomPaint(
+                      painter: _GoRadarPainter(
+                        progress: waves.value,
+                        color: const Color(0xFF1A0505),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          const Center(
+            child: Icon(Icons.power_settings_new_rounded,
+                color: Colors.white, size: 26),
+          ),
+        ],
       ),
     );
   }

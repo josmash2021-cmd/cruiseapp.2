@@ -2175,12 +2175,19 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     final isNav = _phase == _Phase.enRouteToPickup ||
         _phase == _Phase.inTrip ||
         _phase == _Phase.routeSummary;
-    if (isNav) {
-      _animateToPosition(_pos!, zoom: 17.5, bearing: bearing, tilt: 55);
-    } else {
-      // Searching: flat but HEADING-UP (user spec 2026-09-19) — the same
-      // rotation the per-frame chase keeps writing once follow resumes.
-      _animateToPosition(_pos!, zoom: 15.5, bearing: bearing, tilt: 0);
+    final fired = isNav
+        ? _animateToPosition(_pos!, zoom: 17.5, bearing: bearing, tilt: 55)
+        // Searching: flat but HEADING-UP (user spec 2026-09-19) — the same
+        // rotation the per-frame chase keeps writing once follow resumes.
+        : _animateToPosition(_pos!, zoom: 15.5, bearing: bearing, tilt: 0);
+    if (!fired) {
+      // The glide was vetoed (dead/remounting surface, mid ease) — flip
+      // follow NOW and let the per-frame chase centre the camera on the
+      // next frames. Never silent (user report 2026-10-11: "el botón de
+      // centrar offline no hace nada").
+      _setState(() => _cameraFollowing = true);
+      _updateDriverAnnotation();
+      return;
     }
 
     // The flyTo above runs for _kRecenterFlightMs. A little past that, the

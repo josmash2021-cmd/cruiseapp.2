@@ -387,4 +387,62 @@ void main() {
               'SmoothMotion turn-rate measurement (2026-09-25)');
     });
   });
+
+  group('offline recenter FAB + button looks (2026-10-11)', () {
+    final screen =
+        File('lib/screens/driver/driver_online_screen.dart').readAsStringSync();
+    final map =
+        File('lib/screens/driver/driver_online_map.dart').readAsStringSync();
+    final offline =
+        File('lib/screens/driver/driver_online_offline.dart').readAsStringSync();
+    final widgets =
+        File('lib/screens/driver/driver_online_widgets.dart').readAsStringSync();
+
+    test('the offline FAB recentres through the shared glide', () {
+      expect(screen.contains('!_cameraFollowing'), isTrue);
+      final fabIdx = screen.indexOf('Icons.gps_fixed_rounded');
+      expect(fabIdx, isNonNegative);
+      final block = screen.substring(fabIdx - 400, fabIdx + 400);
+      expect(block.contains('!_driverOnline'), isTrue,
+          reason: 'the FAB is the OFFLINE one');
+      expect(block.contains('_recenterCamera();'), isTrue);
+    });
+
+    test('a vetoed glide never reads as a dead button', () {
+      // User report 2026-10-11: "lo presiono y no hace nada". The flyTo can
+      // be vetoed (dead/remounting surface, zoom ease) — when that happens
+      // follow flips immediately and the per-frame chase centres the map.
+      expect(screen.contains('bool _animateToPosition('), isTrue,
+          reason: 'the flight reports whether it was issued');
+      final recenter =
+          bodyOf(map, 'void _recenterCamera() {', maxLen: 1800);
+      expect(recenter.contains('final fired ='), isTrue);
+      expect(recenter.contains('if (!fired)'), isTrue);
+      expect(recenter.contains('_cameraFollowing = true'), isTrue);
+    });
+
+    test('the GO button never paints disabled', () {
+      final go =
+          bodyOf(offline, 'Widget _buildGoButton(', maxLen: 2400);
+      expect(go.contains('neuBox(radius: 16, pressed: true)'), isFalse,
+          reason: 'no sunken grey well anymore — spec "siempre normal en '
+              'amarillo"');
+      expect(go.contains('const fgColor = Color(0xFF0B0B0F);'), isTrue,
+          reason: 'black lettering on gold, always');
+    });
+
+    test('the go-offline disc is red with the GO radar waves, both doors', () {
+      expect(offline.contains('Widget _offlineRadarDisc('), isTrue);
+      expect(offline.contains('Color(0xFFE05555)'), isTrue,
+          reason: 'red body');
+      expect(offline.contains('_GoRadarPainter('), isTrue,
+          reason: 'same waves as GO');
+      expect('Icons.pan_tool_rounded'.allMatches(widgets).length, 0,
+          reason: 'the old hand icon died');
+      expect('_offlineRadarDisc()'.allMatches(widgets).length,
+          greaterThanOrEqualTo(2),
+          reason: 'the panel AND the sheet share the disc (sibling paths)');
+    });
+  });
 }
+

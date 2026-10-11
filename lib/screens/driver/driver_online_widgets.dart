@@ -1696,7 +1696,8 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                             ],
                           ),
                         ),
-                        // GO OFFLINE button
+                        // GO OFFLINE button — same red radar disc as the
+                        // panel's (one look for both doors).
                         GestureDetector(
                           onTap: () {
                             Navigator.pop(context);
@@ -1704,27 +1705,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                           },
                           child: Column(
                             children: [
-                              Container(
-                                width: 62,
-                                height: 62,
-                                decoration: BoxDecoration(
-                                  shape: BoxShape.circle,
-                                  color: const Color(
-                                    0xFFCC3333,
-                                  ).withValues(alpha: 0.15),
-                                  border: Border.all(
-                                    color: const Color(
-                                      0xFFCC3333,
-                                    ).withValues(alpha: 0.3),
-                                    width: 2,
-                                  ),
-                                ),
-                                child: const Icon(
-                                  Icons.pan_tool_rounded,
-                                  color: Color(0xFFCC3333),
-                                  size: 26,
-                                ),
-                              ),
+                              _offlineRadarDisc(),
                               const SizedBox(height: 6),
                               Text(
                                 S.of(context).goOffline.toUpperCase(),
@@ -4049,42 +4030,14 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                         // shift, so it never reads as another row in the list
                         // above it.
                         const SizedBox(height: 26),
-                        // GO OFFLINE button — raised neu disc, red accent
+                        // GO OFFLINE button — the GO button's radar disc in
+                        // red (user spec 2026-10-11), shared builder.
                         Center(
                           child: GestureDetector(
                             onTap: _goOffline,
                             child: Column(
                               children: [
-                                Container(
-                                  width: 62,
-                                  height: 62,
-                                  alignment: Alignment.center,
-                                  decoration: isDark
-                                      ? neuBox(
-                                          radius: 31,
-                                          borderColor: const Color(
-                                            0xFFCC3333,
-                                          ).withValues(alpha: 0.35),
-                                          borderWidth: 1.5,
-                                        )
-                                      : BoxDecoration(
-                                          shape: BoxShape.circle,
-                                          color: const Color(
-                                            0xFFCC3333,
-                                          ).withValues(alpha: 0.15),
-                                          border: Border.all(
-                                            color: const Color(
-                                              0xFFCC3333,
-                                            ).withValues(alpha: 0.3),
-                                            width: 2,
-                                          ),
-                                        ),
-                                  child: const Icon(
-                                    Icons.pan_tool_rounded,
-                                    color: Color(0xFFCC3333),
-                                    size: 26,
-                                  ),
-                                ),
+                                _offlineRadarDisc(),
                                 const SizedBox(height: 6),
                                 Text(
                                   S.of(context).goOffline.toUpperCase(),

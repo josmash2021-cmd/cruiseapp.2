@@ -302,6 +302,11 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   // alone fires before the street tiles draw, and that gap read as an
   // empty dark map on Go (2026-08-25).
   bool _firstRenderDone = false;
+  // Boot-stage timing breadcrumbs (2026-10-12: mapa negro ~30 s incluso con
+  // las zonas apagadas) — the map_boot event reports which stage ate the
+  // boot: native create → style loaded → first idle render.
+  DateTime? _mapBootAt;
+  int? _mapStyleMs;
   // Monotonically incremented every time onMapCreated fires. Guards against
   // stale annotation refs surviving a PlatformView recreation.
   int _mapGeneration = 0;

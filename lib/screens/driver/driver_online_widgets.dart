@@ -247,6 +247,14 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
         onMapIdleListener: (_) {
           if (!_firstRenderDone && mounted) {
             _setState(() => _firstRenderDone = true);
+            // Boot breadcrumb: how long each stage took on THIS device —
+            // the ~30 s black map survived the zones kill switch, so the
+            // next boot tells us which stage actually eats it.
+            final bootAt = _mapBootAt;
+            if (bootAt != null) {
+              ApiService.logClientEvent('map_boot',
+                  'styleMs=${_mapStyleMs ?? -1} idleMs=${DateTime.now().difference(bootAt).inMilliseconds} zones=${FeatureFlags.zonesMapEnabled} online=$_driverOnline');
+            }
           }
           // The zone layers wait for the map to be rendering (see
           // _syncZoneLayers) — every idle beat is their cue to (re)try.
@@ -276,6 +284,10 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
           // setState, not a bare write: the snapshot overlay over the live
           // surface only fades out when the flag's change triggers a rebuild.
           _setState(() => _mapStyleLoaded = true);
+          final bootAt = _mapBootAt;
+          if (bootAt != null && _mapStyleMs == null) {
+            _mapStyleMs = DateTime.now().difference(bootAt).inMilliseconds;
+          }
           _mapStyleWatchdogTimer?.cancel();
           if (_map != null) {
             await MapTheme.applyNavyGold(_map!);
@@ -345,6 +357,8 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
   void _onOnlineMapReady(mapbox.MapboxMap ctrl, {required bool isDark}) {
     _map = ctrl;
     _lastStyleDark = isDark;
+    _mapBootAt = DateTime.now();
+    _mapStyleMs = null;
     // Veil watchdog (2026-10-11, black-map report): the snapshot veil can
     // only strand the driver if onStyleLoaded/onMapIdle never arrive. 6 s
     // after the surface mounts we lift it regardless — a map still loading
@@ -353,7 +367,9 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
       if (!mounted || !_mapMounted) return;
       if (_mapStyleLoaded && _firstRenderDone) return;
       debugPrint('[DriverOnline] veil watchdog fired — lifting the veil');
-      ApiService.logClientEvent('map_veil_watchdog', '');
+      final bootAt = _mapBootAt;
+      ApiService.logClientEvent('map_veil_watchdog',
+          'styleMs=${_mapStyleMs ?? -1} afterMs=${bootAt == null ? -1 : DateTime.now().difference(bootAt).inMilliseconds} zones=${FeatureFlags.zonesMapEnabled}');
       _setState(() {
         _mapStyleLoaded = true;
         _firstRenderDone = true;

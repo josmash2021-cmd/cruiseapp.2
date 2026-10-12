@@ -792,3 +792,125 @@ async def test_action_reminder_stays_silent_in_takeover(db, test_rider, monkeypa
             SupportMessage.sender_role == "bot",
         ))).scalars().all()
     assert bots == []
+
+
+# ── Escalation must actually escalate (prod chat 83, 2026-10-11) ──────────
+
+
+async def test_escalate_to_human_tool_hands_the_chat_off_for_real(db, test_driver, monkeypatch):
+    """Prod repro: the model called escalate_to_human THREE times while
+    promising a human to Juan — each call filed a dead ticket with empty
+    details and the chat never escalated, because _create_action_request
+    only knew the legacy dashed name. The tool must perform the handoff:
+    phase flips, the ticket carries the reason, and the chat shows the
+    transfer line."""
+    import asyncio
+    from models.database import ActionRequest
+    from routers.support import _generate_bot_replies
+    import services.openai_support_service as ai_svc
+
+    async def _no_sleep(_):
+        return None
+    monkeypatch.setattr(asyncio, "sleep", _no_sleep)
+
+    async def _fake_llm(messages, ctx):
+        return {
+            "response": "Te paso con un agente especializado ahora mismo.",
+            "function_call": {
+                "name": "escalate_to_human",
+                "arguments": {"reason": "revisión estancada", "priority": "high"},
+            },
+            "escalate": False,
+        }
+    monkeypatch.setattr(ai_svc, "generate_support_response", _fake_llm)
+
+    driver, _ = test_driver
+    chat = await _open_chat_in_phase(driver, db, "agent_active")
+    chat.locale = "es"
+    db.add(chat)
+    await db.commit()
+
+    replies = await _generate_bot_replies(chat, "ok", "Juan", db)
+
+    await db.refresh(chat)
+    assert chat.bot_phase == "escalated"
+    assert chat.needs_escalation is True
+    tickets = (await db.execute(
+        select(ActionRequest).where(ActionRequest.chat_id == chat.id)
+    )).scalars().all()
+    assert len(tickets) == 1
+    assert tickets[0].action_type == "escalate_to_human"
+    assert "revisión estancada" in tickets[0].details
+    assert replies[-1]["role"] == "system"
+    assert replies[-1]["message"] == "Un agente especializado se conectará en breve."
+
+
+async def test_escalate_flag_also_hands_off_and_says_so(db, test_rider, monkeypatch):
+    """The text-only escalation signal (escalate=True) used to flip two DB
+    flags and nothing else — no dispatch ping, no chat-visible transfer."""
+    import asyncio
+    from routers.support import _generate_bot_replies
+    import services.openai_support_service as ai_svc
+
+    async def _no_sleep(_):
+        return None
+    monkeypatch.setattr(asyncio, "sleep", _no_sleep)
+
+    async def _fake_llm(messages, ctx):
+        return {"response": "Te conecto con un supervisor ahora mismo.", "escalate": True}
+    monkeypatch.setattr(ai_svc, "generate_support_response", _fake_llm)
+
+    rider, _ = test_rider
+    chat = await _open_chat_in_phase(rider, db, "agent_active")
+    chat.locale = "es"
+    db.add(chat)
+    await db.commit()
+
+    replies = await _generate_bot_replies(chat, "ok", "Ana", db)
+
+    await db.refresh(chat)
+    assert chat.bot_phase == "escalated"
+    assert chat.needs_escalation is True
+    assert replies[-1]["role"] == "system"
+    assert replies[-1]["message"] == "Un agente especializado se conectará en breve."
+
+
+async def test_read_only_tool_calls_file_no_ticket(db, test_rider, monkeypatch):
+    """get_trip_details / get_user_trips have no tool-result round-trip —
+    their data is already in the context block. Filing admin tickets for
+    them is junk in the dispatch queue."""
+    import asyncio
+    from models.database import ActionRequest
+    from routers.support import _generate_bot_replies
+    import services.openai_support_service as ai_svc
+
+    async def _no_sleep(_):
+        return None
+    monkeypatch.setattr(asyncio, "sleep", _no_sleep)
+
+    async def _fake_llm(messages, ctx):
+        return {
+            "response": "Déjame revisar tus viajes.",
+            "function_call": {
+                "name": "get_user_trips",
+                "arguments": {"user_id": 1, "limit": 5},
+            },
+            "escalate": False,
+        }
+    monkeypatch.setattr(ai_svc, "generate_support_response", _fake_llm)
+
+    rider, _ = test_rider
+    chat = await _open_chat_in_phase(rider, db, "agent_active")
+    chat.locale = "es"
+    db.add(chat)
+    await db.commit()
+
+    replies = await _generate_bot_replies(chat, "ok", "Ana", db)
+
+    tickets = (await db.execute(
+        select(ActionRequest).where(ActionRequest.chat_id == chat.id)
+    )).scalars().all()
+    assert tickets == []
+    await db.refresh(chat)
+    assert chat.bot_phase == "agent_active"
+    assert replies[-1]["role"] == "bot"

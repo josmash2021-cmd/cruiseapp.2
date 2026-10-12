@@ -1342,8 +1342,18 @@ async def _create_action_request(
             "amount": float(params[0]) if len(params) > 0 else 5,
             "reason": params[1] if len(params) > 1 else "",
         }
-    elif action_type == "escalate-priority":
-        details = {"reason": params[0] if len(params) > 0 else "User requested priority"}
+    elif action_type in ("escalate-priority", "escalate_to_human"):
+        # Two vocabularies, one action: the legacy text markers are dashed,
+        # the LLM tool is escalate_to_human — and tool arguments arrive as a
+        # dict, marker params as a positional list. (Prod bug, chat 83
+        # 2026-10-11: the model called the tool three times, filed three
+        # dead tickets with empty details, and the chat never escalated —
+        # the bot promised a human and nothing moved.)
+        if isinstance(params, dict):
+            reason = params.get("reason") or ""
+        else:
+            reason = params[0] if len(params) > 0 else ""
+        details = {"reason": reason or "User requested priority"}
         # Hand the chat over for real, not just file a ticket about it.
         await _hand_chat_to_dispatch(chat, user_name, details["reason"], db)
     elif action_type == "request-callback":
@@ -1563,22 +1573,31 @@ async def _generate_ai_response(
     # Try the configured LLM first (Moonshot; OpenAI path dormant)
     try:
         result = await generate_support_response(messages, ctx)
-        
+
         # Handle function calls
         if result.get("function_call"):
             func = result["function_call"]
-            actions.append({
-                "type": func["name"],
-                "params": func["arguments"],
-            })
-        
-        # Handle escalation
-        if result.get("escalate"):
-            chat.needs_escalation = True
-            chat.bot_phase = "escalated"
+            # Read-only lookups (get_trip_details / get_user_trips) have no
+            # tool-result round-trip — their data already lives in the
+            # context block — so filing an admin ticket for one is pure junk
+            # in the dispatch queue.
+            if func["name"] not in _READ_ONLY_TOOL_CALLS:
+                actions.append({
+                    "type": func["name"],
+                    "params": func["arguments"],
+                })
+
+        # Handle escalation — a REAL handoff, not just flags: dispatch gets
+        # the ping and the mirror flips. Flags alone were invisible (prod
+        # chat 83, 2026-10-11: "te paso con un supervisor" y nada se movió).
+        # When the escalate_to_human tool fired in the same turn, the action
+        # below performs the handoff — don't do it twice.
+        if (result.get("escalate")
+                and not any(a["type"] == "escalate_to_human" for a in actions)):
+            await _hand_chat_to_dispatch(chat, user_name, "model escalation", db)
             db.add(chat)
             await db.commit()
-        
+
         return result["response"], actions
 
     except Exception as e:
@@ -1697,6 +1716,11 @@ _HANDLED_BOT_PHASES = {
     "welcome", "awaiting_details", "awaiting_cancel_confirm",
     "agent_active", "escalated",
 }
+
+# LLM tool calls that only READ data — the context block already carries it
+# and there is no tool-result round-trip, so they must never become
+# ActionRequests in the dispatch queue.
+_READ_ONLY_TOOL_CALLS = {"get_trip_details", "get_user_trips"}
 
 
 async def _generate_bot_replies(chat, user_msg: str, user_name: str, db: AsyncSession):
@@ -1995,6 +2019,20 @@ async def _generate_bot_replies(chat, user_msg: str, user_name: str, db: AsyncSe
                         pass
 
             replies.append({"role": "bot", "message": resp, "sender_name": agent})
+
+            # The model just handed the chat to a human this turn (escalate
+            # flag or the escalate_to_human tool): say so IN the chat like
+            # the scripted escalations do, so the transfer is something the
+            # user sees happen — not a promise with nothing behind it.
+            if chat.bot_phase == "escalated":
+                sys_text = ("Un agente especializado se conectará en breve."
+                            if lang.startswith("es")
+                            else "A specialized agent will connect shortly.")
+                replies.append({
+                    "role": "system",
+                    "message": sys_text,
+                    "sender_name": "Sistema" if lang.startswith("es") else "System",
+                })
 
     elif phase == "escalated":
         # The chat waits for a HUMAN from dispatch — the bot goes silent.

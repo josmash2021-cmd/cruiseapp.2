@@ -6,12 +6,14 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../../config/page_transitions.dart';
 import '../../../l10n/app_localizations.dart';
 import '../../../services/api_service.dart';
+import '../../../services/local_data_service.dart';
 import '../../../services/socket_service.dart';
 import '../../../services/user_session.dart';
 import '../../../widgets/feathered_image.dart';
 import '../../../widgets/neu_style.dart';
 import '../../help_screen.dart';
 import '../../splash_screen.dart';
+import '../driver_pending_review_screen.dart';
 import 'doc_capture_screen.dart';
 import 'driver_approved_celebration_screen.dart';
 import 'onboarding_intro_screen.dart';
@@ -127,6 +129,24 @@ class _DriverTodoScreenState extends State<DriverTodoScreen> {
 
   bool _navigatedToApproved = false;
 
+  /// 2026-10-11 (user spec): a driver who ALREADY submitted every document
+  /// and is only waiting on dispatch belongs on the review page — closing
+  /// and reopening the app must land them there, never on the hub (and
+  /// NEVER on the driver home). A rejected account stays here instead: its
+  /// next move is fixing the failed item, which is what this hub is for.
+  bool _routedToReview = false;
+
+  Future<void> _maybeRouteToReview() async {
+    if (_routedToReview || _loading) return;
+    if (_entries.isEmpty || !_entries.every((e) => e.isCompleted)) return;
+    final cached = await LocalDataService.getDriverApprovalStatus();
+    if (!mounted || cached == 'rejected') return;
+    _routedToReview = true;
+    Navigator.of(context).push(
+      onboardingFadeSlideRoute(const DriverPendingReviewScreen()),
+    );
+  }
+
   /// Approved → celebration → first-trip guide → home, exactly once, with
   /// no way back to the hub (the same chain the push-tap path uses).
   void _goApproved() {
@@ -158,6 +178,7 @@ class _DriverTodoScreenState extends State<DriverTodoScreen> {
           ];
           _loading = false;
         });
+        _maybeRouteToReview();
       } else {
         setState(() => _loading = false);
       }

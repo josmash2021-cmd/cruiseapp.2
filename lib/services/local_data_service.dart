@@ -863,21 +863,35 @@ class LocalDataService {
   static Future<bool> wasDriverEverApproved() async {
     final prefs = _p;
 
+    // 2026-10-11 (user report: a driver still waiting for approval reopened
+    // the app and landed on the driver home): store-era builds wrote
+    // driver_onboarding_complete = true when the driver finished SUBMITTING
+    // documents — not when dispatch approved them — and a fallback here
+    // promoted that to 'approved' on the primary key, poisoning the cache
+    // permanently. Decontaminate once: the legacy 'driver_status' key is
+    // only written by the pending-review screen from a REAL server answer,
+    // so it is the trusted witness; an 'approved' it cannot vouch for drops
+    // back to 'pending' and the boot re-verifies live (one slower boot for
+    // a truly approved driver, never a free pass for an unreviewed one).
+    if (prefs.containsKey('driver_onboarding_complete')) {
+      await prefs.remove('driver_onboarding_complete');
+      final primary = prefs.getString(_driverApprovalKey);
+      if (primary == 'approved' &&
+          prefs.getString('driver_status') != 'approved') {
+        await prefs.setString(_driverApprovalKey, 'pending');
+        return false;
+      }
+    }
+
     // Primary key: driver_approval_status_v1
     final status = prefs.getString(_driverApprovalKey);
     if (status == 'approved') return true;
 
-    // Fallback key #1: driver_status (used by driver_pending_review_screen.dart)
+    // Fallback: driver_status (written by the pending-review screen only
+    // after a real server approval).
     final legacyStatus = prefs.getString('driver_status');
     if (legacyStatus == 'approved') {
       // Migrate to primary key for consistency
-      await prefs.setString(_driverApprovalKey, 'approved');
-      return true;
-    }
-
-    // Fallback key #2: driver onboarding completion indicator
-    final onboardingComplete = prefs.getBool('driver_onboarding_complete') ?? false;
-    if (onboardingComplete) {
       await prefs.setString(_driverApprovalKey, 'approved');
       return true;
     }

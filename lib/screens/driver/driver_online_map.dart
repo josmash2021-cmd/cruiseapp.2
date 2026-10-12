@@ -2253,6 +2253,15 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
       final landed = near(settleTarget) || (_pos != null && near(_pos!));
       ApiService.logClientEvent('recenter_settle', 'landed=$landed');
       if (landed) return;
+      // Same discipline as every programmatic flight: suppress the manual-
+      // rotate unlatch and sync the last-written trackers, or THIS write's
+      // camera events read as a finger and the recenter FAB pops back up
+      // the moment the camera lands (user report 2026-10-12).
+      _camFlightUntil = DateTime.now()
+          .add(const Duration(milliseconds: _kRecenterFlightMs + 120));
+      _lastCamWriteCenter = settleTarget;
+      _lastCamWriteBearing = bearing;
+      _lastCamWriteZoom = settleZoom;
       unawaited(map
           .setCamera(mapbox.CameraOptions(
         center: mapbox.Point(
@@ -2264,6 +2273,7 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
       ))
           .catchError((Object e) {
         debugPrint('[DriverOnline] recenter settle setCamera failed: $e');
+        ApiService.logClientEvent('recenter_settle_write', 'failed=$e');
       }));
     });
   }

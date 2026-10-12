@@ -287,6 +287,16 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
               // guarded helper, and it needed its own catch: a style reload
               // can be the last thing a surface does before it is torn down.
               try {
+                // Programmatic, so it must wear the flight suppression and
+                // sync the last-written bearing (user report 2026-10-12,
+                // "el botón de recentrar offline no funciona"): without
+                // both, the next camera event read this snap as a MANUAL
+                // rotate, unlatched follow and raised the recenter FAB with
+                // the camera still on the driver — tapping it flew to where
+                // the camera already was. A dead button by construction.
+                _camFlightUntil = DateTime.now().add(
+                    const Duration(milliseconds: _kRecenterFlightMs + 120));
+                _lastCamWriteBearing = _smoothedBearing;
                 await _map!.flyTo(
                   mapbox.CameraOptions(pitch: 0, bearing: _smoothedBearing),
                   mapbox.MapAnimationOptions(duration: 0),

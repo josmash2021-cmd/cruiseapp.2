@@ -439,6 +439,35 @@ void main() {
       expect(recenter.contains('_cameraFollowing = true'), isTrue);
     });
 
+    test('programmatic bearing writes never trip the manual-rotate unlatch',
+        () {
+      // User report 2026-10-12: "el botón de recentrar offline no funciona".
+      // The style-load flatten flyTo bypassed _camFlightUntil and never
+      // synced _lastCamWriteBearing — the next camera event read it as a
+      // finger rotate, unlatched follow and raised the recenter FAB with
+      // the camera still ON the driver. Tapping it flew to where the
+      // camera already was: nothing visible, a dead button (prod log: six
+      // taps, four landed=true). Both programmatic writes below now wear
+      // the suppression + the bearing sync.
+      final flatten = widgets.indexOf('pitch: 0, bearing: _smoothedBearing');
+      expect(flatten, isNonNegative,
+          reason: 'the style-load flatten flyTo lives here');
+      final around = widgets.substring(
+          flatten - 800 > 0 ? flatten - 800 : 0, flatten);
+      expect(around.contains('_camFlightUntil = DateTime.now()'), isTrue,
+          reason: 'the flatten snap suppresses the rotate unlatch');
+      expect(around.contains('_lastCamWriteBearing = _smoothedBearing'),
+          isTrue,
+          reason: '…and syncs the last-written bearing so the snap reads '
+              'as OUR write, not a finger');
+      final settle = map.indexOf("recenter_settle', 'landed=");
+      expect(settle, isNonNegative);
+      final settleBlock = map.substring(settle, settle + 1400);
+      expect(settleBlock.contains('_lastCamWriteBearing = bearing'), isTrue,
+          reason: 'the dry setCamera fallback wears the same suppression — '
+              'or the FAB pops back up the moment the camera lands');
+    });
+
     test('the GO button never paints disabled', () {
       final go =
           bodyOf(offline, 'Widget _buildGoButton(', maxLen: 2400);

@@ -683,8 +683,20 @@ async def client_event(req: ClientEventIn, request: Request):
 # ═══════════════════════════════════════════════════════════════════════
 
 _SECTOR_DEMAND_KEY = "sector_demand"
+# Live-editable sector map (panel → apps over socket): the GeoJSON rides in
+# app_config, the baked static file is only the seed/fallback until the
+# first PUT. The version is the change signal for the apps.
+_SECTORS_GEOJSON_KEY = "fl_sectors_geojson"
+_SECTORS_VERSION_KEY = "fl_sectors_version"
 _SECTOR_IDS: frozenset = frozenset()
 _sector_demand_cache: tuple = ()  # (monotonic_ts, payload_dict)
+
+
+def _sectors_version_from(raw: Optional[str]) -> int:
+    try:
+        return int((raw or "0").strip())
+    except ValueError:
+        return 0
 
 
 def _load_sector_ids() -> frozenset:
@@ -740,7 +752,9 @@ def _parse_sector_demand(raw: str) -> dict:
 async def zone_demand(db=Depends(get_db)):
     """Public read for the app (drivers): sector -> {level, bonus}.
     Cached 30 s in-process — the app polls it every minute and the value
-    changes by hand, never hot."""
+    changes by hand, never hot. `sectors_version` rides along so the same
+    poll doubles as the change detector for the live sector map when the
+    socket is down (a bump means refetch /zones/sectors)."""
     import time as _time
     global _sector_demand_cache
     now = _time.monotonic()
@@ -748,9 +762,13 @@ async def zone_demand(db=Depends(get_db)):
         return _sector_demand_cache[1]
     from sqlalchemy import select
     r = await db.execute(
-        select(AppConfig.value).where(AppConfig.key == _SECTOR_DEMAND_KEY))
-    raw = r.scalar_one_or_none() or ""
-    payload = {"sectors": _parse_sector_demand(raw)}
+        select(AppConfig.key, AppConfig.value)
+        .where(AppConfig.key.in_([_SECTOR_DEMAND_KEY, _SECTORS_VERSION_KEY])))
+    rows = {k: v for k, v in r.all()}
+    payload = {"sectors": _parse_sector_demand(
+                   rows.get(_SECTOR_DEMAND_KEY) or ""),
+               "sectors_version": _sectors_version_from(
+                   rows.get(_SECTORS_VERSION_KEY))}
     _sector_demand_cache = (now, payload)
     return payload
 
@@ -812,3 +830,239 @@ async def set_zone_demand(req: ZoneDemandIn, request: Request,
                    req.level, req.bonus)
     return {"sector_id": req.sector_id, "level": req.level,
             "bonus": round(req.bonus, 2)}
+
+
+# ═══════════════════════════════════════════════════════════════════════
+#  Live sector map (user spec: dispatch edits the driver-map sectors from
+#  the panel and every app updates over the socket — no redeploy, no app
+#  restart). The edited copy lives in app_config; the baked static file
+#  stays the seed/fallback until the first PUT. A monotonically increasing
+#  version is the change signal: the "zones_updated" socket event live,
+#  /zones/demand's sectors_version as the polling fallback.
+# ═══════════════════════════════════════════════════════════════════════
+
+_SECTORS_FILE = os.path.join(os.path.dirname(__file__), "..", "static",
+                             "fl_sectors.json")
+_SECTOR_MAX_FEATURES = 60
+_SECTOR_MAX_POINTS = 50000
+_sectors_file_cache: tuple = ()  # (mtime, geojson_dict)
+
+
+def _load_sectors_file() -> Optional[dict]:
+    """Baked sectors shipped with the deploy — the seed the panel edits
+    from and the fallback until the first PUT. Cached by mtime."""
+    global _sectors_file_cache
+    try:
+        mtime = os.path.getmtime(_SECTORS_FILE)
+        if _sectors_file_cache and _sectors_file_cache[0] == mtime:
+            return _sectors_file_cache[1]
+        import json as _json
+        with open(_SECTORS_FILE, encoding="utf-8") as fh:
+            data = _json.load(fh)
+        if not isinstance(data, dict) or data.get("type") != "FeatureCollection":
+            raise ValueError("not a FeatureCollection")
+        _sectors_file_cache = (mtime, data)
+        return data
+    except Exception as e:  # the endpoint turns this into a clean 503
+        logger.warning("[Zones] sectors file load failed: %s", e)
+        return None
+
+
+def _clean_position(pos, where: str) -> list:
+    if (not isinstance(pos, (list, tuple)) or len(pos) != 2
+            or any(isinstance(v, bool) or not isinstance(v, (int, float))
+                   for v in pos)):
+        raise HTTPException(400, f"{where}: position must be [lng, lat]")
+    lng, lat = float(pos[0]), float(pos[1])
+    # NaN/inf fall out here: every comparison against them is False.
+    if not (-180.0 <= lng <= 180.0 and -90.0 <= lat <= 90.0):
+        raise HTTPException(400, f"{where}: lng/lat out of range")
+    return [lng, lat]
+
+
+def _clean_ring(ring, where: str) -> list:
+    if not isinstance(ring, list) or len(ring) < 3:
+        raise HTTPException(400, f"{where}: a ring needs >= 3 positions")
+    pts = [_clean_position(p, where) for p in ring]
+    if len({(p[0], p[1]) for p in pts}) < 3:
+        raise HTTPException(400,
+                            f"{where}: a ring needs >= 3 distinct positions")
+    if pts[0] != pts[-1]:
+        pts.append(list(pts[0]))  # close the ring server-side
+    return pts
+
+
+def _slugify_sector(name: str, taken: set) -> str:
+    """id = slug of the name (server-assigned, never client-sent):
+    lowercase, accents stripped, non [a-z0-9] runs -> _, unique via _2, _3…"""
+    import re
+    import unicodedata
+    base = unicodedata.normalize("NFKD", name) \
+        .encode("ascii", "ignore").decode()
+    base = re.sub(r"[^a-z0-9]+", "_", base.lower()).strip("_") or "sector"
+    slug, n = base, 2
+    while slug in taken:
+        slug = f"{base}_{n}"
+        n += 1
+    taken.add(slug)
+    return slug
+
+
+class SectorsGeojsonIn(BaseModel):
+    # The envelope only — the deep ring structure is validated strictly in
+    # _validate_sector_collection (nested lists don't map to field types).
+    type: str
+    features: list
+
+
+def _validate_sector_collection(req: SectorsGeojsonIn) -> list:
+    """Strict structural validation + normalization. Raises 400 with the
+    specific reason on the first violation; returns clean features whose
+    id/bbox/center are ALWAYS recomputed here — the client is never trusted
+    for them. bbox = [w, s, e, n]; center = centroid of the bbox."""
+    if req.type != "FeatureCollection":
+        raise HTTPException(400, "type must be FeatureCollection")
+    features = req.features
+    if not isinstance(features, list) \
+            or not (1 <= len(features) <= _SECTOR_MAX_FEATURES):
+        raise HTTPException(
+            400, f"features must be 1..{_SECTOR_MAX_FEATURES}")
+    out, taken, total = [], set(), 0
+    for i, feat in enumerate(features):
+        where = f"feature {i}"
+        if not isinstance(feat, dict):
+            raise HTTPException(400, f"{where}: not an object")
+        props = feat.get("properties")
+        if not isinstance(props, dict):
+            raise HTTPException(400, f"{where}: properties must be an object")
+        raw_name = props.get("name")
+        if not isinstance(raw_name, str) or not raw_name.strip():
+            raise HTTPException(400, f"{where}: properties.name required")
+        name = raw_name.strip()
+        if len(name) > 100:
+            raise HTTPException(400, f"{where}: properties.name too long")
+        geom = feat.get("geometry")
+        if not isinstance(geom, dict):
+            raise HTTPException(400, f"{where}: geometry must be an object")
+        gtype, coords = geom.get("type"), geom.get("coordinates")
+        if gtype == "Polygon":
+            polys = [coords]
+        elif gtype == "MultiPolygon":
+            if not isinstance(coords, list) or not coords:
+                raise HTTPException(400, f"{where}: empty MultiPolygon")
+            polys = coords
+        else:
+            raise HTTPException(
+                400, f"{where}: geometry must be Polygon|MultiPolygon")
+        clean_polys = []
+        for poly in polys:
+            if not isinstance(poly, list) or not poly:
+                raise HTTPException(400, f"{where}: a polygon needs rings")
+            clean_polys.append([_clean_ring(r, where) for r in poly])
+        total += sum(len(r) for poly in clean_polys for r in poly)
+        if total > _SECTOR_MAX_POINTS:
+            raise HTTPException(
+                400, f"too many points (>{_SECTOR_MAX_POINTS})")
+        pts = [p for poly in clean_polys for ring in poly for p in ring]
+        lngs = [p[0] for p in pts]
+        lats = [p[1] for p in pts]
+        w, s, e, n = min(lngs), min(lats), max(lngs), max(lats)
+        new_props = {k: v for k, v in props.items()
+                     if k not in ("id", "bbox", "center")}
+        new_props["name"] = name
+        new_props["id"] = _slugify_sector(name, taken)
+        new_props["bbox"] = [w, s, e, n]
+        new_props["center"] = [(w + e) / 2, (s + n) / 2]
+        out.append({"type": "Feature", "properties": new_props,
+                    "geometry": {"type": gtype, "coordinates": clean_polys}})
+    return out
+
+
+@router.get("/zones/sectors", dependencies=[Depends(_verify_api_key)])
+async def get_zone_sectors(db=Depends(get_db)):
+    """Live sector map for the apps. The dispatch-edited copy in app_config
+    wins; until the first PUT the baked static file is served. The version
+    is the client's cache key — refetch only when it changes."""
+    import json as _json
+    from sqlalchemy import select
+
+    r = await db.execute(
+        select(AppConfig.key, AppConfig.value)
+        .where(AppConfig.key.in_([_SECTORS_GEOJSON_KEY,
+                                  _SECTORS_VERSION_KEY])))
+    rows = {k: v for k, v in r.all()}
+    geojson = None
+    raw = rows.get(_SECTORS_GEOJSON_KEY)
+    if raw:
+        try:
+            parsed = _json.loads(raw)
+            if isinstance(parsed, dict) \
+                    and parsed.get("type") == "FeatureCollection":
+                geojson = parsed
+        except Exception as e:
+            logger.warning(
+                "[Zones] stored sectors unreadable, serving file: %s", e)
+    if geojson is None:
+        geojson = _load_sectors_file()
+    if geojson is None:
+        raise HTTPException(503, "sector map unavailable")
+    return {"version": _sectors_version_from(rows.get(_SECTORS_VERSION_KEY)),
+            "geojson": geojson}
+
+
+@router.put("/admin/zones/sectors",
+            dependencies=[Depends(_require_dispatch_auth)])
+async def put_zone_sectors(req: SectorsGeojsonIn, request: Request,
+                           db=Depends(get_db)):
+    """Dispatch replaces the whole sector map. Strictly validated, ids and
+    bbox/center recomputed server-side, version bumped, live apps woken over
+    the socket."""
+    import json as _json
+    from sqlalchemy import select
+
+    global _sector_demand_cache, _SECTOR_IDS
+    cleaned = _validate_sector_collection(req)
+    r = await db.execute(
+        select(AppConfig).where(
+            AppConfig.key.in_([_SECTORS_GEOJSON_KEY, _SECTORS_VERSION_KEY])))
+    rows = {row.key: row for row in r.scalars().all()}
+    prev = rows.get(_SECTORS_VERSION_KEY)
+    version = _sectors_version_from(prev.value if prev else None) + 1
+    collection = {"type": "FeatureCollection", "features": cleaned}
+
+    def _upsert(key: str, value: str, description: str) -> None:
+        row = rows.get(key)
+        if row:
+            row.value = value
+            row.updated_at = datetime.now(timezone.utc)
+        else:
+            db.add(AppConfig(key=key, value=value, description=description))
+
+    _upsert(_SECTORS_GEOJSON_KEY,
+            _json.dumps(collection, ensure_ascii=False,
+                        separators=(",", ":")),
+            "Live FL sector map (GeoJSON FeatureCollection)")
+    _upsert(_SECTORS_VERSION_KEY, str(version),
+            "Sector map version — bumped on every PUT")
+    await db.commit()
+    _sector_demand_cache = ()  # sectors_version rides that payload
+    # The heat writer validates sector ids against this set — point it at
+    # the new map this instant or renames would 400 until a restart.
+    _SECTOR_IDS = frozenset(f["properties"]["id"] for f in cleaned)
+    _security_audit_log(
+        "zone_sectors",
+        request.client.host if request.client else "unknown",
+        f"version={version} features={len(cleaned)}",
+    )
+    logger.warning("[Zones] sectors replaced -> v%d (%d features)",
+                   version, len(cleaned))
+
+    # Wake live apps so the map flips in real time (same pattern as the
+    # app-update gate above; offline apps catch the version bump on the
+    # /zones/demand poll).
+    try:
+        from services.socketio_service import sio
+        await sio.emit("zones_updated", {"version": version})
+    except Exception as e:
+        logger.warning("[Zones] socket broadcast failed: %s", e)
+    return {"ok": True, "version": version, "count": len(cleaned)}

@@ -66,7 +66,7 @@ async def test_round_trip_and_validation(client):
     assert "kendall" not in res.json()["sectors"]
 
 
-def test_parser_drops_malformed_entries_one_by_one():
+async def test_parser_drops_malformed_entries_one_by_one():
     from routers.system import _parse_sector_demand
 
     out = _parse_sector_demand(

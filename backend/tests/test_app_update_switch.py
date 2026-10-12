@@ -252,3 +252,28 @@ async def test_maintenance_switch_gates_everyone(client):
                       json={"maintenance_enabled": False})
     res = await client.get("/app-update-status", headers=h())
     assert res.json()["maintenance"] is False
+
+
+async def test_app_consumes_every_status_field():
+    """Cross-side contract (2026-10-11, user complaint: "esas fallas de
+    integración no deben suceder"): every key /app-update-status returns
+    MUST be read by the app's getAppUpdateStatus. Today the server sent
+    `maintenance` and the app dropped it — the page never fired. This walks
+    the endpoint's response dict and asserts each key is consumed."""
+    import pathlib
+    import re
+
+    sys_src = pathlib.Path("routers/system.py").read_text(encoding="utf-8")
+    api_src = pathlib.Path("../lib/services/api_service.dart") \
+        .read_text(encoding="utf-8")
+
+    block = re.search(
+        r'@router\.get\("/app-update-status".*?return\s*\{(.*?)\}',
+        sys_src, re.S)
+    assert block, "endpoint block not found"
+    keys = re.findall(r'"([a-z_]+)":', block.group(1))
+    assert keys, "no response keys parsed"
+    for key in keys:
+        assert f"data['{key}']" in api_src, (
+            f"the app never reads '{key}' — a field added server-side that "
+            f"the app drops is an integration failure by definition")

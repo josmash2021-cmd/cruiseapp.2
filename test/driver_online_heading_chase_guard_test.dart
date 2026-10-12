@@ -79,12 +79,13 @@ void main() {
 
     test('recenter + style-load keep the heading too', () {
       final recenter = bodyOf(map, 'void _recenterCamera() {', maxLen: 1400);
-      expect(
-          recenter.contains(
-              '_animateToPosition(_pos!, zoom: 15.5, bearing: bearing, tilt: 0)'),
-          isTrue,
+      expect(recenter.contains('bearing: bearing'), isTrue,
           reason: 'the 10 s auto-refollow returns to the heading-up chase, '
               'not to north');
+      // Offline + zones on rest at the REGION zoom (2026-10-11 spec), so the
+      // recenter target is mode-aware now — what must stay true is that the
+      // flight carries the heading, whatever the zoom.
+      expect(recenter.contains('zoom:'), isTrue);
       expect(widgets.contains('bearing: _smoothedBearing'), isTrue,
           reason: 'the style-reload flatten must not snap the rotation to '
               'north either');
@@ -135,7 +136,13 @@ void main() {
       expect(body.contains('bearing: camBearing'), isTrue,
           reason: 'the chase rotates with the arrow online AND offline — '
               'same map, same arrow');
-      expect(body.contains('_driverOnline'), isFalse,
+      // The mode may pick the resting ZOOM (2026-10-11: offline + zones =
+      // region view) but must never gate the chase itself — pin the chase
+      // CONDITION intact, not a body that may now mention the mode for zoom.
+      expect(
+          ctrl.contains(
+              'if (_phase == _Phase.searching && !offerActive && _cameraFollowing) {'),
+          isTrue,
           reason: 'gating the chase on the mode would freeze the arrow for '
               'an offline driver watching the map');
     });

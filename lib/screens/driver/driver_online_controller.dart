@@ -1988,16 +1988,21 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     // ignore it, so a driver dragging the map while online was overruled
     // sixty times a second and the view snapped back under their finger.
     if (_phase == _Phase.searching && !offerActive && _cameraFollowing) {
+      // Resting zoom: street level online; the REGION view offline with the
+      // zone layer on (user spec 2026-10-11: "debe ser la vista así con este
+      // zoom, no zoom-in" — the city divisions only read zoomed out).
+      final zoomTarget =
+          (!_driverOnline && FeatureFlags.zonesMapEnabled) ? 10.8 : 15.5;
       // Entry zoom ease: the map opens at zoom 16 (same as home) and
-      // glides to the working 15.5 over ~750ms (easeOutCubic) so there
+      // glides to the working zoom over ~750ms (easeOutCubic) so there
       // is no zoom "pop" when arriving from the home screen.
-      double zoom = 15.5;
+      double zoom = zoomTarget;
       if (!_zoomEaseDone) {
         _zoomEaseStartMs ??= elapsed.inMilliseconds;
         final t = ((elapsed.inMilliseconds - _zoomEaseStartMs!) / 750.0)
             .clamp(0.0, 1.0);
         final e = 1.0 - math.pow(1.0 - t, 3).toDouble();
-        zoom = 16.0 - 0.5 * e;
+        zoom = 16.0 - (16.0 - zoomTarget) * e;
         if (t >= 1.0) _zoomEaseDone = true;
       }
       // Heading-up top-down chase (user spec 2026-09-19): the map stays

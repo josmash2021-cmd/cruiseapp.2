@@ -2179,7 +2179,12 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
         ? _animateToPosition(_pos!, zoom: 17.5, bearing: bearing, tilt: 55)
         // Searching: flat but HEADING-UP (user spec 2026-09-19) — the same
         // rotation the per-frame chase keeps writing once follow resumes.
-        : _animateToPosition(_pos!, zoom: 15.5, bearing: bearing, tilt: 0);
+        // Offline with zones on: rest at the region view (2026-10-11 spec).
+        : _animateToPosition(_pos!,
+            zoom: (!_driverOnline && FeatureFlags.zonesMapEnabled)
+                ? 10.8
+                : 15.5,
+            bearing: bearing, tilt: 0);
     if (!fired) {
       // The glide was vetoed (dead/remounting surface, mid ease) — flip
       // follow NOW and let the per-frame chase centre the camera on the

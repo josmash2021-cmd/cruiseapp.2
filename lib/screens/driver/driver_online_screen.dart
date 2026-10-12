@@ -971,6 +971,9 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
         if (mounted) _syncZoneLayers();
       });
     });
+    // Live boundary edits (2026-10-13): a sectorsChanged ping re-draws the
+    // divisions animated, in place, without closing the app.
+    ZoneService.sectorsChanged.addListener(_onSectorsChanged);
     DriverOnlineScreen.removeOfferNotifier
         .addListener(_applyRemoveInjectedOffer);
     DriverOnlineScreen.shiftEndedNotifier.addListener(_onShiftEndedPush);
@@ -1332,6 +1335,11 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   // else does.
   String? _zoneDemandSig;
   Timer? _zoneDemandTimer;
+  // Live boundary swap (2026-10-13): the sector ids whose sources/layers
+  // exist on the style right now — _animateZoneSwap reconciles the new set
+  // against this list; the latch serializes one swap at a time.
+  List<String> _zoneSectorIds = [];
+  bool _zoneSwapRunning = false;
 
   // ── Go-online chime ──
   Timer? _onlineChimeTimer;
@@ -1573,6 +1581,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   void dispose() {
     mapRouteObserver.unsubscribe(this);
     _zoneDemandTimer?.cancel();
+    ZoneService.sectorsChanged.removeListener(_onSectorsChanged);
     DriverOnlineScreen.mountedCount--;
     WidgetsBinding.instance.removeObserver(this);
     _diagTimer?.cancel();

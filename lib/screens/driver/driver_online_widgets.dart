@@ -335,6 +335,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
             // A style reload wipes custom sources/layers — the municipal
             // zone shading + highlight are recreated on the next sync.
             _zoneLayersReady = false;
+            _zoneSectorIds = [];
             _syncZoneLayers(forceHighlight: true);
           }
         },

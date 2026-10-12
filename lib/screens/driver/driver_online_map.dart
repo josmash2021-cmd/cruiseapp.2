@@ -2402,6 +2402,9 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     // the driver stared at a black map for ~30 s. onMapIdleListener
     // re-triggers this sync the moment the map is actually rendering.
     if (!_firstRenderDone) return;
+    // A live swap paints the CURRENT demand look on its way back in — a
+    // sync landing mid-animation would fight the fade.
+    if (_zoneSwapRunning) return;
     final visible = _phase == _Phase.searching;
     final online = _driverOnline;
     try {
@@ -2472,6 +2475,7 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
           'zones_src_write_failed', 'sectors_failed=$failed');
       throw StateError('$failed sector sources rejected their data');
     }
+    _zoneSectorIds = [for (final s in ZoneService.sectors) s.id];
   }
 
   Future<void> _guardedStyleWrite(Future<void> f) async {
@@ -2603,6 +2607,122 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
       );
     } catch (e) {
       debugPrint('[Zones] sector highlight write failed: $e');
+    }
+  }
+
+  /// Live boundary refresh (2026-10-13, user spec: "instantáneo, que se
+  /// dibuje de forma animada trasladándose en el mapa, sin cerrar la app").
+  /// ZoneService swapped the sector set — fade everything out, reconcile
+  /// sources/layers with the new ids, then stagger the fade back in.
+  void _onSectorsChanged() {
+    if (!_mapStyleLoaded || !_firstRenderDone) return;
+    if (!FeatureFlags.zonesMapEnabled) return;
+    if (!_zoneLayersReady) {
+      // Layers never existed — the normal sync creates them (no animation).
+      _syncZoneLayers(forceHighlight: true);
+      return;
+    }
+    unawaited(_animateZoneSwap());
+  }
+
+  Future<void> _animateZoneSwap() async {
+    final map = _map;
+    if (map == null || kIsWeb || _zoneSwapRunning) return;
+    _zoneSwapRunning = true;
+    try {
+      // a. Fade-out: every sector layer + the highlight to 0 in one batch.
+      await Future.wait([
+        for (final id in _zoneSectorIds) ...[
+          _guardedStyleWrite(map.style.setStyleLayerProperty(
+              'sec-fill-$id', 'fill-opacity', 0.0)),
+          _guardedStyleWrite(map.style.setStyleLayerProperty(
+              'sec-line-$id', 'line-opacity', 0.0)),
+          _guardedStyleWrite(map.style.setStyleLayerProperty(
+              'sec-shadow-$id', 'line-opacity', 0.0)),
+        ],
+        _guardedStyleWrite(map.style.setStyleLayerProperty(
+            'sec-hl-fill', 'fill-opacity', 0.0)),
+      ]);
+      await Future.delayed(const Duration(milliseconds: 200));
+      if (!mounted) return;
+
+      // b. Reconcile sources/layers with the new sector ids: remove the
+      // ones that no longer exist, create the newcomers (born EMPTY, data
+      // enters by setStyleSourceProperty like the bootstrap), then rewrite
+      // every sector's geometry — it may have moved with the id intact.
+      final newIds = [for (final s in ZoneService.sectors) s.id];
+      var reconcileFailed = false;
+      for (final id in _zoneSectorIds.where((id) => !newIds.contains(id))) {
+        try {
+          await map.style.removeStyleLayer('sec-fill-$id');
+        } catch (_) {}
+        try {
+          await map.style.removeStyleLayer('sec-line-$id');
+        } catch (_) {}
+        try {
+          await map.style.removeStyleLayer('sec-shadow-$id');
+        } catch (_) {}
+        try {
+          await map.style.removeStyleSource('sec-src-$id');
+        } catch (e) {
+          reconcileFailed = true;
+          debugPrint('[Zones] stale sector $id removal failed: $e');
+        }
+      }
+      final added = [
+        for (final s in ZoneService.sectors)
+          if (!_zoneSectorIds.contains(s.id)) s
+      ];
+      if (added.isNotEmpty) {
+        final emptyFc =
+            jsonEncode({'type': 'FeatureCollection', 'features': const []});
+        await Future.wait([
+          for (final s in added) _addSectorSource(map, s, emptyFc),
+        ]);
+        await Future.wait([
+          for (final s in added) ..._addSectorLayers(map, s),
+        ]);
+      }
+      _zoneSectorIds = newIds;
+      final writes = await Future.wait([
+        for (final f in ZoneService.sectorFeatures) _writeSectorData(map, f),
+      ]);
+      final failed = writes.where((ok) => !ok).length;
+      if (reconcileFailed || failed > 0) {
+        ApiService.logClientEvent('zones_swap',
+            'reconcile_failed=$reconcileFailed sectors_failed=$failed');
+      }
+      if (!mounted) return;
+
+      // c. Staggered fade-in (~50 ms steps, alphabetical order) back to the
+      // look of the moment — same levels as _writeSectorLook.
+      final visible = _phase == _Phase.searching;
+      final online = _driverOnline;
+      final ordered = [...ZoneService.sectors]
+        ..sort((a, b) => a.id.compareTo(b.id));
+      for (final s in ordered) {
+        if (!mounted) return;
+        unawaited(_writeSectorLook(map, s, visible, online));
+        await Future.delayed(const Duration(milliseconds: 50));
+      }
+      try {
+        await map.style.setStyleLayerProperty(
+            'sec-hl-fill', 'fill-opacity', visible && !online ? 0.50 : 0.0);
+      } catch (_) {}
+      _zoneLayersVisible = visible;
+      _zoneLookOnline = online;
+      _zoneDemandSig = ZoneService.demand.entries
+          .map((e) => '${e.key}:${e.value.level}')
+          .join('|');
+      final hl = _sectorForHighlight;
+      _zoneHighlightName = hl?.id;
+      await _writeZoneHighlight(map, hl);
+      _markerFrame.value++; // the label/pill overlay re-reads the sectors
+    } catch (e) {
+      debugPrint('[Zones] animated swap failed: $e');
+      ApiService.logClientEvent('zones_swap', 'error=$e');
+    } finally {
+      _zoneSwapRunning = false;
     }
   }
 

@@ -7,6 +7,7 @@ import 'package:http/http.dart' as http;
 import '../models/lat_lng.dart';
 import 'api_service.dart';
 import 'local_cache.dart';
+import 'socket_service.dart';
 
 /// One municipal zone from the baked Census boundaries (2026-10-11).
 class Zone {
@@ -69,6 +70,7 @@ class ZoneService {
 
   static const _cacheKey = 'fl_zones_json_v1';
   static const _sectorCacheKey = 'fl_sectors_json_v1';
+  static const _sectorVersionCacheKey = 'fl_sectors_version_v1';
 
   static final List<Zone> zones = [];
 
@@ -83,6 +85,19 @@ class ZoneService {
   static bool sectorsReady = false;
   static bool _sectorsLoading = false;
 
+  /// Live boundary version (2026-10-13): the backend broadcasts
+  /// `zones_updated` and `/zones/demand` carries `sectors_version`; when the
+  /// version moves, the sectors re-download by REST and the driver map
+  /// re-draws animated. Filled from the cache on bootstrap and from the
+  /// server on every live refresh.
+  static int sectorsVersion = 0;
+
+  /// Fires (value++) when a live refresh actually changed the sector set —
+  /// the driver map listens and runs the animated swap.
+  static final ValueNotifier<int> sectorsChanged = ValueNotifier<int>(0);
+
+  static bool _watching = false;
+
   /// Sector demand heat set by dispatch: sector_id → level/bonus. Polled
   /// every minute by the driver screen; missing = all gray.
   static final Map<String, SectorDemand> demand = {};
@@ -94,6 +109,7 @@ class ZoneService {
   /// Load zones + sectors: cached copies first (instant), network refresh
   /// after.
   static Future<void> load() async {
+    watchZoneUpdates();
     unawaited(loadSectors());
     if (ready || _loading) return;
     _loading = true;
@@ -119,6 +135,7 @@ class ZoneService {
     try {
       final cached = LocalCache.get<String>(_sectorCacheKey);
       if (cached != null && cached.length > 100) {
+        sectorsVersion = LocalCache.get<int>(_sectorVersionCacheKey) ?? 0;
         parseSectors(cached);
         if (sectorsReady) {
           unawaited(_refreshSectorsFromNetwork());
@@ -146,6 +163,54 @@ class ZoneService {
     } catch (e) {
       debugPrint('[Zones] sector network load failed (cache applies): $e');
     }
+  }
+
+  /// Live refresh from the backend (2026-10-13): `GET /zones/sectors`
+  /// answers {version, geojson} — a newer version (or the same version with
+  /// a different body) re-parses, updates the cache and pings the map so the
+  /// new boundaries draw animated without closing the app. Fail-open: an old
+  /// backend (404) or a dead network logs and nothing throws.
+  static Future<void> refreshSectorsFromServer() async {
+    try {
+      final res = await http
+          .get(Uri.parse('${ApiService.currentBaseUrl}/zones/sectors'),
+              headers: ApiService.jsonHeaders())
+          .timeout(const Duration(seconds: 8));
+      if (res.statusCode != 200) {
+        debugPrint(
+            '[Zones] live sector refresh skipped (HTTP ${res.statusCode})');
+        return;
+      }
+      final data = jsonDecode(res.body) as Map<String, dynamic>;
+      final version = (data['version'] as num?)?.toInt() ?? 0;
+      final geojson = data['geojson'];
+      if (geojson is! Map<String, dynamic>) return;
+      final body = jsonEncode(geojson);
+      final changed = body != LocalCache.get<String>(_sectorCacheKey);
+      if (version > sectorsVersion || (version == sectorsVersion && changed)) {
+        sectorsVersion = version;
+        parseSectors(body);
+        if (sectorsReady) {
+          unawaited(LocalCache.set(_sectorCacheKey, body));
+          unawaited(LocalCache.set(_sectorVersionCacheKey, version));
+          if (changed) sectorsChanged.value++;
+        }
+      }
+    } catch (e) {
+      debugPrint('[Zones] live sector refresh failed: $e');
+    }
+  }
+
+  /// Subscribe once to the socket wake-up; the truth is always re-downloaded
+  /// by REST (the event carries only a version number). The subscription
+  /// lives for the process — the controller is never closed (same pattern
+  /// as appUpdateGateStream).
+  static void watchZoneUpdates() {
+    if (_watching) return;
+    _watching = true;
+    SocketService.zonesUpdatedStream.listen((_) {
+      unawaited(refreshSectorsFromServer());
+    });
   }
 
   /// Parse the sectors FeatureCollection. Public for the guard test.
@@ -243,6 +308,13 @@ class ZoneService {
           .timeout(const Duration(seconds: 6));
       if (res.statusCode != 200) return;
       final data = jsonDecode(res.body) as Map<String, dynamic>;
+      // Polling fallback for a dead socket (2026-10-13): the demand answer
+      // carries the live sectors version — a newer one re-downloads the
+      // boundaries within this same ≤60 s cadence.
+      final sv = (data['sectors_version'] as num?)?.toInt() ?? 0;
+      if (sv > sectorsVersion) {
+        unawaited(refreshSectorsFromServer());
+      }
       final raw = (data['sectors'] as Map?) ?? {};
       final parsed = <String, SectorDemand>{};
       for (final e in raw.entries) {

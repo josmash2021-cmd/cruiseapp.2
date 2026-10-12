@@ -63,6 +63,8 @@ class SocketService {
       StreamController<Map<String, dynamic>>.broadcast();
   static var _appUpdateGateController =
       StreamController<Map<String, dynamic>>.broadcast();
+  static var _zonesUpdatedController =
+      StreamController<Map<String, dynamic>>.broadcast();
 
   /// Stream of driver location updates.
   /// Payload: {trip_id, lat, lng, heading, speed, timestamp}
@@ -108,6 +110,13 @@ class SocketService {
   /// the event is only a wake-up, the REST answer is the truth.
   static Stream<Map<String, dynamic>> get appUpdateGateStream =>
       _appUpdateGateController.stream;
+
+  /// Wake-up pushed when dispatch edits the sector boundaries.
+  /// Payload: {version: int}. Listeners RE-DOWNLOAD via
+  /// ZoneService.refreshSectorsFromServer() instead of trusting the
+  /// payload — the event is only a wake-up, the REST answer is the truth.
+  static Stream<Map<String, dynamic>> get zonesUpdatedStream =>
+      _zonesUpdatedController.stream;
 
   // ── Public API ──────────────────────────────────────────────────────
 
@@ -315,6 +324,12 @@ class SocketService {
       final map = _toMap(data);
       _appUpdateGateController.add(map);
       debugPrint('[Socket.io] App-update gate changed: ${map['required']}');
+    });
+
+    _socket!.on('zones_updated', (data) {
+      final map = _toMap(data);
+      _zonesUpdatedController.add(map);
+      debugPrint('[Socket.io] Zones updated: v${map['version']}');
     });
 
     // Listen to network recovery to proactively reconnect.
@@ -537,6 +552,9 @@ class SocketService {
       }
       if (_appUpdateGateController.isClosed) {
         _appUpdateGateController = StreamController<Map<String, dynamic>>.broadcast();
+      }
+      if (_zonesUpdatedController.isClosed) {
+        _zonesUpdatedController = StreamController<Map<String, dynamic>>.broadcast();
       }
       if (_connectionHealthController.isClosed) {
         _connectionHealthController = StreamController<bool>.broadcast();

@@ -280,4 +280,58 @@ void main() {
     expect(map, contains('.setCamera(mapbox.CameraOptions('),
         reason: 'the dry write is the guaranteed landing');
   });
+
+  test('live boundary refresh: socket wake-up, REST truth, animated swap',
+      () {
+    // 2026-10-13, user spec: "instantáneo, que se dibuje de forma animada
+    // trasladándose en el mapa, sin cerrar la app". The socket event is only
+    // a wake-up — the truth re-downloads by REST, exactly like the
+    // app-update gate.
+    final sock =
+        File('lib/services/socket_service.dart').readAsStringSync();
+    expect(sock, contains("_socket!.on('zones_updated'"),
+        reason: 'the socket wake-up is wired');
+    expect(sock, contains('zonesUpdatedStream'));
+    expect(sock, contains('_zonesUpdatedController'));
+
+    final zs = File('lib/services/zone_service.dart').readAsStringSync();
+    expect(zs, contains('static int sectorsVersion = 0;'));
+    expect(zs, contains('ValueNotifier<int> sectorsChanged'),
+        reason: 'the map reacts to a real sector change');
+    expect(zs, contains('refreshSectorsFromServer()'));
+    expect(zs, contains('/zones/sectors'),
+        reason: 'the live truth comes from the REST endpoint');
+    expect(zs, contains("data['sectors_version']"),
+        reason: 'the demand poll is the fallback when the socket is dead');
+    expect(zs, contains('watchZoneUpdates()'));
+    expect(zs, contains('SocketService.zonesUpdatedStream.listen'),
+        reason: 'the wake-up re-downloads — the payload is never trusted');
+    expect(zs, contains('_sectorCacheKey'),
+        reason: 'the refreshed body mirrors into the same cache key');
+
+    final map =
+        File('lib/screens/driver/driver_online_map.dart').readAsStringSync();
+    expect(map, contains('void _onSectorsChanged()'));
+    expect(map, contains('Future<void> _animateZoneSwap()'));
+    expect(map, contains('removeStyleLayer('),
+        reason: 'sectors that no longer exist leave the style');
+    expect(map, contains('removeStyleSource('));
+    expect(map, contains('_zoneSectorIds'),
+        reason: 'the swap reconciles against the ids on the style');
+    expect(map, contains("_syncZoneLayers(forceHighlight: true)"),
+        reason: 'no layers yet → the normal sync creates them, no '
+            'animation');
+    expect(map, contains('zones_swap'),
+        reason: 'a failed reconciliation lands in the server log');
+    final scr = File('lib/screens/driver/driver_online_screen.dart')
+        .readAsStringSync();
+    expect(scr, contains('ZoneService.sectorsChanged.addListener(_onSectorsChanged)'));
+    expect(scr,
+        contains('ZoneService.sectorsChanged.removeListener(_onSectorsChanged)'),
+        reason: 'the listener dies with the screen');
+    final w = File('lib/screens/driver/driver_online_widgets.dart')
+        .readAsStringSync();
+    expect(w, contains('_zoneSectorIds = []'),
+        reason: 'a style reload wipes the tracking list with the layers');
+  });
 }

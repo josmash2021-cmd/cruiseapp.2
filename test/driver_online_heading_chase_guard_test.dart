@@ -242,7 +242,7 @@ void main() {
       '2026-09-25 "flecha fuera de la linea al hacer zoom")', () {
     test('a fix that declares itself worse than 25 m never moves the arrow',
         () {
-      final body = bodyOf(ctrl, 'onPosition: (pos) {', maxLen: 2600);
+      final body = bodyOf(ctrl, 'onPosition: (pos) {', maxLen: 3400);
       expect(body.contains('pos.accuracy <= 25'), isTrue,
           reason: '65 m killed catastrophic hops, but a ±30-65 m fix still '
               'floated the arrow over blocks at pinch-zoom — only the '

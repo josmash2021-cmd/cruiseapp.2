@@ -2323,15 +2323,21 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     // zones_map_enabled server-side to turn them on live.
     if (!FeatureFlags.zonesMapEnabled) return;
     final visible = _phase == _Phase.searching;
+    // The look flips with the mode: offline shows fills+boundary+label,
+    // online keeps ONLY the thick gray boundary with its 3D shadow (user
+    // spec 2026-10-11).
+    final online = _driverOnline;
     try {
       if (!_zoneLayersReady) {
         await _createZoneLayers(map);
         _zoneLayersReady = true;
         _zoneLayersVisible = null;
       }
-      if (_zoneLayersVisible != visible) {
+      if (_zoneLayersVisible != visible || _zoneLookOnline != online) {
         _zoneLayersVisible = visible;
-        await _writeZoneVisibility(map, visible);
+        _zoneLookOnline = online;
+        await _writeZoneVisibility(map, visible, online);
+        _markerFrame.value++; // the label overlay hides online
       }
       final z = _pos == null ? null : ZoneService.zoneContaining(_pos!);
       final name = z?.name;
@@ -2363,30 +2369,46 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
       await map.style
           .addSource(mapbox.GeoJsonSource(id: 'zones-hl-src', data: emptyFc));
     } catch (_) {}
-    // The photo's look: dark red shading everywhere, brighter zone on top.
+    // The look per the user's spec (2026-10-11): OFFLINE shows all city
+    // divisions — gold semi-transparent fills, thick GRAY boundaries, the
+    // driver's zone brighter with its "FL: <city>" label. ONLINE keeps only
+    // the thick gray boundary with a shadow under it (a 3D read) — no fills,
+    // no label, nothing on top of the drive.
     try {
       await map.style.addLayer(mapbox.FillLayer(
         id: 'zones-fill',
         sourceId: 'zones-src',
-        fillColor: 0xFF7A2020,
+        fillColor: 0xFFE8C547, // gold, semi-transparent via opacity
         fillOpacity: 0.0,
-      ));
-    } catch (_) {}
-    try {
-      await map.style.addLayer(mapbox.LineLayer(
-        id: 'zones-line',
-        sourceId: 'zones-src',
-        lineColor: 0xFFA83232,
-        lineWidth: 1.2,
-        lineOpacity: 0.0,
       ));
     } catch (_) {}
     try {
       await map.style.addLayer(mapbox.FillLayer(
         id: 'zones-hl-fill',
         sourceId: 'zones-hl-src',
-        fillColor: 0xFFB03030,
+        fillColor: 0xFFE8C547,
         fillOpacity: 0.0,
+      ));
+    } catch (_) {}
+    // The 3D shadow lives UNDER the boundary line (layer order = paint order).
+    try {
+      await map.style.addLayer(mapbox.LineLayer(
+        id: 'zones-shadow',
+        sourceId: 'zones-src',
+        lineColor: 0xFF000000,
+        lineWidth: 3.4,
+        lineOpacity: 0.0,
+        lineTranslate: const [0.0, 2.0],
+        lineTranslateAnchor: mapbox.LineTranslateAnchor.VIEWPORT,
+      ));
+    } catch (_) {}
+    try {
+      await map.style.addLayer(mapbox.LineLayer(
+        id: 'zones-line',
+        sourceId: 'zones-src',
+        lineColor: 0xFF9AA3B8, // gray, thick
+        lineWidth: 2.4,
+        lineOpacity: 0.0,
       ));
     } catch (_) {}
     // NO capa de texto nativa para la etiqueta "FL: <city>" (2026-10-11,
@@ -2396,16 +2418,20 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
   }
 
   Future<void> _writeZoneVisibility(
-      mapbox.MapboxMap map, bool visible) async {
+      mapbox.MapboxMap map, bool visible, bool online) async {
+    final showFills = visible && !online;
     final props = <String, List<Object>>{
-      'zones-fill': ['fill-opacity', 0.22],
-      'zones-line': ['line-opacity', 0.5],
-      'zones-hl-fill': ['fill-opacity', 0.42],
+      // Offline: gold fills read the division; online they would sit on the
+      // drive — only the thick gray boundary + its 3D shadow stay.
+      'zones-fill': ['fill-opacity', showFills ? 0.16 : 0.0],
+      'zones-hl-fill': ['fill-opacity', showFills ? 0.30 : 0.0],
+      'zones-line': ['line-opacity', visible ? 0.85 : 0.0],
+      'zones-shadow': ['line-opacity', visible && online ? 0.35 : 0.0],
     };
     for (final e in props.entries) {
       try {
         await map.style.setStyleLayerProperty(
-            e.key, e.value[0] as String, visible ? e.value[1] : 0.0);
+            e.key, e.value[0] as String, e.value[1]);
       } catch (_) {}
     }
   }
@@ -2439,6 +2465,9 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
       listenable: _markerFrame,
       builder: (_, __) {
         if (!FeatureFlags.zonesMapEnabled) return const SizedBox.shrink();
+        // Offline only — online keeps just the boundary lines (user spec
+        // 2026-10-11: "cuando se conecte solo quedará la línea gris").
+        if (_driverOnline) return const SizedBox.shrink();
         if (_phase != _Phase.searching) return const SizedBox.shrink();
         final name = _zoneHighlightName;
         if (name == null) return const SizedBox.shrink();

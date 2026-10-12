@@ -1290,6 +1290,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   // driver_online_map.dart, which is an extension and cannot hold fields.
   bool _zoneLayersReady = false;
   bool? _zoneLayersVisible;
+  bool? _zoneLookOnline;
   String? _zoneHighlightName;
 
   // ── Go-online chime ──

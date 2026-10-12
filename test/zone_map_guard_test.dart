@@ -34,7 +34,7 @@ void main() {
         ZoneService.zoneContaining(const LatLng(33.5186, -86.8104)), isNull);
   });
 
-  test('the map draws shading + highlight exactly like the photo', () {
+  test('the map draws the spec look: gold fills offline, gray 3D lines', () {
     final s =
         File('lib/screens/driver/driver_online_map.dart').readAsStringSync();
     for (final id in [
@@ -43,17 +43,26 @@ void main() {
       'zones-fill',
       'zones-line',
       'zones-hl-fill',
+      'zones-shadow',
     ]) {
       expect(s, contains(id), reason: 'layer/source $id missing');
     }
-    expect(s, contains('0xFF7A2020'), reason: 'dark red shading (photo)');
-    expect(s, contains('0xFFB03030'), reason: 'brighter highlight (photo)');
-    // The "FL: <city>" label is a FLUTTER OVERLAY, never a native
-    // SymbolLayer — the one unproven native piece in the 2026-10-11
-    // black-map incident. Zero new native style surface.
+    // 2026-10-11 spec: fills are GOLD semi-transparent (never red), the
+    // boundary is a thick GRAY line, and online keeps ONLY the boundary with
+    // its shadow under it (the 3D read).
+    expect(s, contains('0xFFE8C547'), reason: 'gold fills');
+    expect(s, isNot(contains('0xFF7A2020')), reason: 'red died');
+    expect(s, contains('0xFF9AA3B8'), reason: 'gray thick boundary');
+    expect(s, contains('lineTranslate'), reason: 'the 3D shadow under it');
+    expect(s.contains('_zoneLookOnline'), isTrue,
+        reason: 'the look flips with the mode');
+    // The "FL: <city>" label is a FLUTTER OVERLAY, never a native text
+    // layer (2026-10-11 black-map incident), and it hides while online.
     expect(s, isNot(contains('SymbolLayer')),
         reason: 'no native text layer — the label is a Flutter overlay');
     expect(s, contains('Widget _zoneLabelOverlay()'));
+    expect(s, contains('if (_driverOnline) return const SizedBox.shrink();'),
+        reason: 'online keeps only the gray line');
     expect(s, contains("'FL: \$name'"), reason: 'the photo label');
     expect(s, contains('_phase == _Phase.searching'),
         reason: 'zones live on the flat searching map only — never on top '

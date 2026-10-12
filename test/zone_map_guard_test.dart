@@ -119,5 +119,41 @@ void main() {
     expect(l10n, contains('zoneOutsideBody'));
     expect(l10n, contains('Fuera del área de servicio'));
     expect(l10n, contains('Outside the service area'));
+    expect(l10n, contains('zoneSelectHint'));
+    expect(l10n, contains('Selecciona tu zona en el mapa para conectarte'));
+    expect(l10n, contains('Select your zone on the map to go online'));
+  });
+
+  test('tap-to-select ignites the GO; without a zone the GO stays dim', () {
+    // 2026-10-11 spec: offline the driver taps their zone on the map — the
+    // GO ignites with an elastic pop; with no selection the GO is dimmed
+    // and the tap explains instead of connecting.
+    final w = File('lib/screens/driver/driver_online_widgets.dart')
+        .readAsStringSync();
+    expect(w, contains('onTapListener: _onZoneMapTap'),
+        reason: 'map taps feed the zone picker');
+    final map =
+        File('lib/screens/driver/driver_online_map.dart').readAsStringSync();
+    expect(map, contains('void _onZoneMapTap('));
+    expect(map, contains('coords.lat.toDouble()'),
+        reason: 'the tap point feeds the ray-casting lookup');
+    expect(map, contains('_goIgniteCtrl?.forward(from: 0.0)'),
+        reason: 'selecting a zone ignites the GO with the elastic pop');
+    expect(map, contains('Zone? get _zoneForHighlight'),
+        reason: 'the picked zone wins the highlight over the physical one');
+    final scr = File('lib/screens/driver/driver_online_screen.dart')
+        .readAsStringSync();
+    expect(scr, contains('String? _selectedZoneName;'));
+    expect(scr, contains('_goIgniteCtrl?.dispose()'));
+    final off = File('lib/screens/driver/driver_online_offline.dart')
+        .readAsStringSync();
+    expect(off, contains('S.of(context).zoneSelectHint'),
+        reason: 'a dim GO explains itself instead of connecting');
+    expect(off, contains('scale: igniteScale'));
+    final ctrl = File('lib/screens/driver/driver_online_controller.dart')
+        .readAsStringSync();
+    expect(ctrl, contains('_selectedZoneName = null;'),
+        reason: 'the pick is consumed on connect — the next session starts '
+            'fresh');
   });
 }

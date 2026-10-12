@@ -909,6 +909,17 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
   void _onGoTap() async {
     // The mode flip dedups itself; two taps must not run the gates twice.
     if (_enteringOnline || _driverOnline) return;
+    // Zone selection gate (2026-10-11, user spec: "si no ha seleccionado o
+    // tocado una zona se quedará el botón apagado") — with the zone layer
+    // ON, the GO tap needs a tapped city first; the hint says so.
+    if (FeatureFlags.zonesMapEnabled && _selectedZoneName == null) {
+      HapticService.lightImpact();
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(S.of(context).zoneSelectHint),
+        duration: const Duration(seconds: 2),
+      ));
+      return;
+    }
     // Nothing about being online works without a location — dispatch ranks
     // by distance, so a driver with no fix is not "online with a bad map",
     // they are unreachable. This used to be unchecked: the button worked,
@@ -1109,6 +1120,7 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
           if (_goBtnColorAnim != null) _goBtnColorAnim!,
           if (_goGlossCtrl != null) _goGlossCtrl!,
           if (_goRadarCtrl != null) _goRadarCtrl!,
+          if (_goIgniteCtrl != null) _goIgniteCtrl!,
         ]),
         builder: (_, __) {
           final p = _goPulseAnim?.value ?? 1.0;
@@ -1127,14 +1139,32 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
           final goldBot = Color.lerp(
               const Color(0xFF9A7414), const Color(0xFFD4A82A), morph)!;
 
-          final topColor = Color.lerp(goldTop1, goldTop2, p)!;
-          final botColor = goldBot;
+          final topColor0 = Color.lerp(goldTop1, goldTop2, p)!;
+          // Zone selection (user spec 2026-10-11: "si no ha seleccionado una
+          // zona se queda apagado; al seleccionar se enciende animado"):
+          // with the zone layer ON and the driver OFFLINE, the GO reads
+          // dimmed until they tap their city on the map.
+          final dimmed = FeatureFlags.zonesMapEnabled &&
+              _selectedZoneName == null &&
+              !_driverOnline;
+          final topColor = dimmed
+              ? Color.lerp(topColor0, const Color(0xFF6B6B70), 0.55)!
+              : topColor0;
+          final botColor = dimmed
+              ? Color.lerp(goldBot, const Color(0xFF4A4A4F), 0.55)!
+              : goldBot;
           const glowColor = Color(0xFFE8C547);
 
-          // Black on gold, both shapes.
-          const fgColor = Color(0xFF0B0B0F);
+          // Black on gold — muted while dimmed.
+          final fgColor =
+              dimmed ? Colors.white54 : const Color(0xFF0B0B0F);
 
-          return ClipRRect(
+          // The ignite pop when a zone selection lights the GO up.
+          final igniteScale = _goIgniteAnim?.value ?? 1.0;
+
+          return Transform.scale(
+            scale: igniteScale,
+            child: ClipRRect(
             borderRadius: BorderRadius.circular(radius),
             child: Stack(
               // Without this the body never fills its own button.
@@ -1179,7 +1209,8 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
                             BoxShadow(
                               color: glowColor.withValues(
                                   alpha: ui.lerpDouble(
-                                      0.12, 0.3 + 0.15 * p, morph)!),
+                                          0.12, 0.3 + 0.15 * p, morph)! *
+                                      (dimmed ? 0.3 : 1.0)),
                               blurRadius: ui.lerpDouble(8, 16 + 8 * p, morph)!,
                               spreadRadius: 0,
                               offset: const Offset(0, 3),
@@ -1337,7 +1368,7 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
                 // vanishing at some threshold mid-gesture. Rings on a pill
                 // read as a glitch; rings appearing and disappearing under
                 // the driver's thumb read as a worse one.
-                if (morph < 0.9 && _goRadarCtrl != null)
+                if (morph < 0.9 && _goRadarCtrl != null && !dimmed)
                   Positioned.fill(
                     child: IgnorePointer(
                       child: Opacity(
@@ -1354,6 +1385,7 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
                   ),
               ],
             ),
+          ),
           );
         },
       ),

@@ -1037,6 +1037,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       _setState(() {
         _driverOnline = true;
         _isGoingOnline = !resuming;
+        _selectedZoneName = null;
       });
       // GPS pasa a background-capable — el stream se recrea (iOS solo
       // aplica el flag en un request nuevo).

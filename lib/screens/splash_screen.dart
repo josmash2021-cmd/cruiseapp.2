@@ -17,9 +17,11 @@ import 'driver/driver_online_screen.dart';
 import 'driver/driver_pending_review_screen.dart';
 import 'driver/onboarding/driver_todo_screen.dart';
 import '../services/api_service.dart';
+import '../services/feature_flags.dart';
 import '../services/local_data_service.dart';
 import '../services/user_session.dart';
 import '../services/preload_service.dart';
+import '../services/zone_service.dart';
 import '../main.dart' show heavyInit;
 import '../services/firebase_auth_recovery.dart';
 
@@ -104,11 +106,11 @@ class _SplashScreenState extends State<SplashScreen> {
     // Capture context before any awaits (use_build_context_synchronously)
     final nav = Navigator.of(context);
 
-    // Warm the two backend-hosted hero images so the force-update gate and
-    // the nav intro paint WITH their art on the first frame (user report
-    // 2026-10-10: "la foto no sale si no con retraso — debe salir al mismo
-    // tiempo de forma animada"). Fire-and-forget; a failure just leaves the
-    // drawn fallback badge, which is exactly what it's for.
+    // Warm the backend-hosted hero images AND the zone polygons so the
+    // driver map paints its city divisions on the FIRST frame (user report
+    // 2026-10-11: "todo está tardando en cargar las zonas" — the fetch used
+    // to start when the map mounted; now it starts at boot). And the remote
+    // flags, since the zone drawing reads one.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_disposed || !mounted) return;
       for (final path in const [
@@ -121,6 +123,8 @@ class _SplashScreenState extends State<SplashScreen> {
           context,
         ).catchError((_) {});
       }
+      unawaited(FeatureFlags.load());
+      unawaited(ZoneService.load());
     });
 
     // First-run OS permissions, while the animation plays: precise location

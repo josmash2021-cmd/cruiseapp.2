@@ -1140,6 +1140,14 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
       _goFabScale =
           CurvedAnimation(parent: _goFabCtrl!, curve: Curves.elasticOut);
       _goFabCtrl!.forward();
+      _goIgniteCtrl = AnimationController(
+        vsync: this,
+        duration: const Duration(milliseconds: 550),
+      );
+      // Un solo "pop" elástico cuando la selección de zona enciende el GO
+      // (spec 2026-10-11: "se encenderá de forma animada fluida smooth").
+      _goIgniteAnim = Tween<double>(begin: 0.92, end: 1.0).animate(
+          CurvedAnimation(parent: _goIgniteCtrl!, curve: Curves.elasticOut));
 
       // Guards de boot portados del home (antes vivían en
       // driver_home_screen.dart): cuenta, acuerdo, permisos, docs, viaje
@@ -1274,6 +1282,12 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   Animation<double>? _goBtnColorAnim;
   AnimationController? _goGlossCtrl;
   AnimationController? _goRadarCtrl;
+  // One-shot "encendido" del GO al seleccionar zona (2026-10-11 spec: "el
+  // botón de go se encenderá de forma animada fluida smooth").
+  AnimationController? _goIgniteCtrl;
+  Animation<double>? _goIgniteAnim;
+  /// La zona que el driver DECLARÓ con un tap en el mapa (offline only).
+  String? _selectedZoneName;
   AnimationController? _goFabCtrl;
   Animation<double>? _goFabScale;
 
@@ -1584,6 +1598,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     _goGlossCtrl?.dispose();
     _goRadarCtrl?.dispose();
     _goFabCtrl?.dispose();
+    _goIgniteCtrl?.dispose();
     // NOTE: Intentionally do NOT dispose the map here.
     // The MapControllerCache owns the map lifecycle for reuse across screens.
     if (_map != null) MapControllerCache.instance.cache(_map!);

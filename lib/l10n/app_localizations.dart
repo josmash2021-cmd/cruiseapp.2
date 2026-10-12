@@ -74,6 +74,9 @@ class S {
   String get zoneOutsideBody => _es
       ? 'Por ahora Cruise conecta dentro de las ciudades habilitadas del sur de Florida.'
       : 'Cruise currently connects inside the enabled cities of South Florida.';
+  String get zoneSelectHint => _es
+      ? 'Selecciona tu zona en el mapa para conectarte'
+      : 'Select your zone on the map to go online';
   String get done => _es ? 'Listo' : 'Done';
   String get back => _es ? 'Atrás' : 'Back';
   String get error => _es ? 'Error' : 'Error';

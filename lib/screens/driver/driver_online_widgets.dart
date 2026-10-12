@@ -259,6 +259,10 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
           pitch: 0,
         ),
         onMapCreated: (ctrl) => _onOnlineMapReady(ctrl, isDark: isDark),
+        // Zone selection (user spec 2026-10-11: "el driver debe poder
+        // seleccionar las zonas" — tap a city on the map and the GO button
+        // lights up animated; no selection = GO stays off). Offline only.
+        onTapListener: _onZoneMapTap,
         onStyleLoadedListener: (_) async {
           // setState, not a bare write: the snapshot overlay over the live
           // surface only fades out when the flag's change triggers a rebuild.

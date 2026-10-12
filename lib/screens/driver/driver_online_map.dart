@@ -2345,7 +2345,7 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
         await _writeZoneVisibility(map, visible, online);
         _markerFrame.value++; // the label overlay hides online
       }
-      final z = _pos == null ? null : ZoneService.zoneContaining(_pos!);
+      final z = _zoneForHighlight;
       final name = z?.name;
       if (forceHighlight || name != _zoneHighlightName) {
         _zoneHighlightName = name;
@@ -2458,6 +2458,38 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     } catch (e) {
       debugPrint('[Zones] highlight write failed: $e');
     }
+  }
+
+  /// Zone selection by tap (user spec 2026-10-11: "el driver debe poder
+  /// seleccionar las zonas" — a tap on a city lights the GO button with the
+  /// ignite animation; no selection = GO stays off. Offline + searching
+  /// only; a tap outside every zone keeps the current selection, a re-tap on
+  /// the same zone deselects (toggle).
+  void _onZoneMapTap(dynamic ctx) {
+    if (!FeatureFlags.zonesMapEnabled) return;
+    if (_phase != _Phase.searching || _driverOnline) return;
+    final coords = ctx.point.coordinates;
+    final z = ZoneService.zoneContaining(
+        LatLng(coords.lat.toDouble(), coords.lng.toDouble()));
+    if (z == null) return;
+    if (_selectedZoneName == z.name) {
+      _setState(() => _selectedZoneName = null);
+      _syncZoneLayers(forceHighlight: true);
+      return;
+    }
+    _setState(() => _selectedZoneName = z.name);
+    HapticService.selectionClick();
+    _goIgniteCtrl?.forward(from: 0.0);
+    _syncZoneLayers(forceHighlight: true);
+  }
+
+  /// The zone the highlight follows: the driver's SELECTION wins; with no
+  /// selection, their physical zone (the photo behaviour).
+  Zone? get _zoneForHighlight {
+    final sel = _selectedZoneName;
+    if (sel != null) return ZoneService.zoneByName(sel);
+    final p = _pos;
+    return p == null ? null : ZoneService.zoneContaining(p);
   }
 
   /// The "FL: <city>" label for the driver's current zone — a Flutter

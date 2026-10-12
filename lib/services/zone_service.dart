@@ -149,6 +149,15 @@ class ZoneService {
     return false;
   }
 
+  /// Zone by name (for the driver's SELECTION — they tap a zone on the map
+  /// to declare where they work, 2026-10-11).
+  static Zone? zoneByName(String name) {
+    for (final z in zones) {
+      if (z.name == name) return z;
+    }
+    return null;
+  }
+
   /// The zone containing the point, or null. Ray-casting, even-odd rule —
   /// the same math the backend gate uses, so app and server always agree.
   static Zone? zoneContaining(LatLng p) {

@@ -1105,6 +1105,9 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
   bool _uploading = false;
   bool _chatClosed = false;
   bool _isAgentTyping = false;
+  // True while a HUMAN dispatch agent is typing in the panel (polled from
+  // the backend; the bot's own typing stays in _isAgentTyping).
+  bool _isDispatchTyping = false;
   bool _showQuickActions = true;
   Timer? _pollTimer;
   Timer? _typingDebounce;
@@ -1323,9 +1326,20 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
   /// at a time and it stops flapping.
   bool _polling = false;
 
+  /// Polls whether a human dispatch agent is typing in the panel right now.
+  /// Cheap companion of the 3 s message poll; failures read as "not typing".
+  Future<void> _loadDispatchTyping() async {
+    if (_chatId == null) return;
+    final typing = await ApiService.getSupportTyping(_chatId!);
+    if (mounted && typing != _isDispatchTyping) {
+      setState(() => _isDispatchTyping = typing);
+    }
+  }
+
   Future<void> _loadMessages() async {
     if (_chatId == null || _polling) return;
     _polling = true;
+    _loadDispatchTyping();
     try {
       final msgs = await ApiService.getSupportMessages(_chatId!);
       if (!mounted) return;
@@ -2174,7 +2188,7 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
     if (_chatClosed) {
       statusLabel = S.of(context).chatClosed;
       statusColor = Colors.white.withValues(alpha: 0.3);
-    } else if (_isAgentTyping || _sending) {
+    } else if (_isAgentTyping || _isDispatchTyping || _sending) {
       statusLabel = _isSpanish ? 'Escribiendo...' : 'Typing...';
       statusColor = Colors.amber;
     } else if (_phase == _ChatPhase.queue) {
@@ -2455,7 +2469,7 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
     ));
 
     // Typing indicator
-    if (_isAgentTyping) {
+    if (_isAgentTyping || _isDispatchTyping) {
       items.add(Padding(
         padding: const EdgeInsets.only(top: 4, bottom: 8),
         child: TypingBubble(agentName: _agentName),
@@ -2756,27 +2770,31 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
               width: 28,
               height: 28,
               margin: const EdgeInsets.only(right: 6, bottom: 2),
-              decoration: BoxDecoration(
-                gradient: isDispatch
-                    ? const LinearGradient(
-                        colors: [Color(0xFF6A5ACD), Color(0xFF483D8B)],
-                      )
-                    : const LinearGradient(
-                        colors: [Color(0xFFE8C547), Color(0xFFB8921A)],
-                      ),
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [Color(0xFFE8C547), Color(0xFFB8921A)],
+                ),
                 shape: BoxShape.circle,
               ),
               child: Center(
-                child: Text(
-                  (msg.senderName.isNotEmpty && msg.senderName != 'Unknown')
-                      ? msg.senderName[0].toUpperCase()
-                      : (isDispatch ? 'S' : (_agentName != null ? _agentName![0].toUpperCase() : 'C')),
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
+                // The bot signs with the support glyph, never a letter; the
+                // human signs with the chat's agent-name initial ("Diego" →
+                // D) — never the "Agente especializado" label's A.
+                child: isDispatch
+                    ? Text(
+                        (_agentName != null
+                            ? _agentName![0].toUpperCase()
+                            : (msg.senderName.isNotEmpty && msg.senderName != 'Unknown'
+                                ? msg.senderName[0].toUpperCase()
+                                : 'S')),
+                        style: const TextStyle(
+                          color: Color(0xFF0A0800),
+                          fontSize: 11,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      )
+                    : const Icon(Icons.support_agent_rounded,
+                        color: Color(0xFF0A0800), size: 15),
               ),
             ),
           ],
@@ -2797,7 +2815,7 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
                 color: isUser
                     ? null
                     : isDispatch
-                        ? const Color(0xFF1E1A2E)
+                        ? const Color(0xFF2A2210)
                         : neuSurface,
                 borderRadius: BorderRadius.only(
                   topLeft: const Radius.circular(16),
@@ -2806,14 +2824,14 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
                   bottomRight: Radius.circular(isUser ? 3 : 16),
                 ),
                 border: isDispatch
-                    ? Border.all(color: const Color(0xFF6A5ACD).withValues(alpha: 0.4))
+                    ? Border.all(color: const Color(0xFFE8C547).withValues(alpha: 0.35))
                     : null,
                 boxShadow: [
                   BoxShadow(
                     color: isUser
                         ? const Color(0xFFE8C547).withValues(alpha: 0.12)
                         : isDispatch
-                            ? const Color(0xFF6A5ACD).withValues(alpha: 0.1)
+                            ? const Color(0xFFE8C547).withValues(alpha: 0.1)
                             : Colors.black.withValues(alpha: 0.18),
                     blurRadius: 6,
                     offset: const Offset(0, 2),
@@ -2844,7 +2862,7 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
                           fontSize: 10.5,
                           fontWeight: FontWeight.w700,
                           color: isDispatch
-                              ? const Color(0xFF9D8FE8)
+                              ? const Color(0xFFE8C547)
                               : const Color(0xFFE8C547).withValues(alpha: 0.8),
                         ),
                       ),

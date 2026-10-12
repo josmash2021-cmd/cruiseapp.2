@@ -42,13 +42,6 @@ class SupportBadRequest(Exception):
 
 _log = logging.getLogger(__name__)
 
-# Phrases that mean the agent has already offered a human. Shared by both
-# provider paths so "escalate" means the same thing whoever answered.
-_ESCALATION_PHRASES = (
-    "connect you with a human", "supervisor", "human agent",
-    "connect you with a supervisor", "transfer you to",
-)
-
 
 def _localized(lang: str, es: str, en: str) -> str:
     """Pick the string for the conversation's language.
@@ -231,7 +224,12 @@ async def _anthropic_completion(messages: list[dict[str, Any]],
 
     return {
         "response": text,
-        "escalate": any(kw in text.lower() for kw in _ESCALATION_PHRASES),
+        # Text alone never escalates: an OFFER of a human ("si quieres te
+        # paso con un supervisor…") is not a transfer. The model escalates by
+        # calling escalate_to_human (rule 10); the old substring scan fired
+        # on the bot's own mentions and escalated chats nobody asked to
+        # escalate (prod chat 84, 2026-10-11).
+        "escalate": False,
     }
 
 
@@ -288,7 +286,9 @@ async def _openai_completion(messages: list[dict[str, Any]],
     text = (message.content or "").strip()
     return {
         "response": text,
-        "escalate": any(kw in text.lower() for kw in _ESCALATION_PHRASES),
+        # Text alone never escalates (see the Kimi path above) — only the
+        # escalate_to_human tool or the deliberate early returns below do.
+        "escalate": False,
     }
 
 

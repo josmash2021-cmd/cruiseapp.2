@@ -914,3 +914,84 @@ async def test_read_only_tool_calls_file_no_ticket(db, test_rider, monkeypatch):
     await db.refresh(chat)
     assert chat.bot_phase == "agent_active"
     assert replies[-1]["role"] == "bot"
+
+
+async def test_bot_offering_a_supervisor_does_not_escalate(db, test_driver, monkeypatch):
+    """Prod chat 84 (2026-10-11): the bot OFFERED 'si quieres, puedo pasar tu
+    caso a un supervisor humano, solo dime' and the phrase scan on its own
+    text escalated the chat anyway — the user never asked. An offer is not a
+    transfer: plain text never escalates, only the tool call does."""
+    import asyncio
+    from routers.support import _generate_bot_replies
+    import services.openai_support_service as ai_svc
+
+    async def _no_sleep(_):
+        return None
+    monkeypatch.setattr(asyncio, "sleep", _no_sleep)
+
+    async def _fake_llm(messages, ctx):
+        return {
+            "response": ("Si quieres, puedo pasar tu caso a un supervisor "
+                         "humano para que lo revise personalmente, solo dime."),
+            "escalate": False,
+        }
+    monkeypatch.setattr(ai_svc, "generate_support_response", _fake_llm)
+
+    driver, _ = test_driver
+    chat = await _open_chat_in_phase(driver, db, "agent_active")
+    chat.locale = "es"
+    db.add(chat)
+    await db.commit()
+
+    replies = await _generate_bot_replies(chat, "ok", "Jhon", db)
+
+    await db.refresh(chat)
+    assert chat.bot_phase == "agent_active"
+    assert chat.needs_escalation is not True
+    assert all(r["role"] != "system" for r in replies)
+
+
+async def test_dispatch_typing_requires_dispatch_auth(client, db, test_rider):
+    from tests.conftest import _make_auth_headers
+    rider, _ = test_rider
+    chat = await _open_chat_in_phase(rider, db, "dispatch_takeover")
+
+    res = await client.post(f"/support/chats/{chat.id}/dispatch-typing",
+                            json={"typing": True})
+    assert res.status_code in (401, 403)
+    res = await client.post(
+        f"/support/chats/{chat.id}/dispatch-typing",
+        headers=_make_auth_headers(),  # the general mobile key, not dispatch
+        json={"typing": True},
+    )
+    assert res.status_code in (401, 403)
+
+    res = await client.post(
+        f"/support/chats/{chat.id}/dispatch-typing",
+        headers=_make_auth_headers("test-dispatch-key"),
+        json={"typing": True},
+    )
+    assert res.status_code == 200, res.text
+    assert res.json()["ok"] is True
+
+
+async def test_get_typing_defaults_false_and_scopes_to_owner(client, db, test_rider, test_driver):
+    """Without Firestore in tests the flag reads False — and only the chat
+    owner may read it."""
+    from tests.conftest import _make_auth_headers
+    rider, rtoken = test_rider
+    driver, dtoken = test_driver
+    chat = await _open_chat_in_phase(rider, db, "dispatch_takeover")
+
+    res = await client.get(
+        f"/support/chats/{chat.id}/typing",
+        headers={**_make_auth_headers(), "Authorization": f"Bearer {rtoken}"},
+    )
+    assert res.status_code == 200, res.text
+    assert res.json() == {"dispatch_typing": False}
+
+    res = await client.get(
+        f"/support/chats/{chat.id}/typing",
+        headers={**_make_auth_headers(), "Authorization": f"Bearer {dtoken}"},
+    )
+    assert res.status_code == 403

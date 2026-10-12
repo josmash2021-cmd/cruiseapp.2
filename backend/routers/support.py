@@ -1588,8 +1588,10 @@ async def _generate_ai_response(
                 })
 
         # Handle escalation — a REAL handoff, not just flags: dispatch gets
-        # the ping and the mirror flips. Flags alone were invisible (prod
-        # chat 83, 2026-10-11: "te paso con un supervisor" y nada se movió).
+        # the ping and the mirror flips. The flag only arrives from the
+        # deliberate early returns in the service (fraud block, provider
+        # errors) — plain reply text never escalates anymore (an OFFER of a
+        # human is not a transfer; the model escalates via the tool).
         # When the escalate_to_human tool fired in the same turn, the action
         # below performs the handoff — don't do it twice.
         if (result.get("escalate")
@@ -3086,6 +3088,51 @@ async def set_typing_status(chat_id: int, request: Request, user: User = Depends
         except Exception:
             pass
     return {"ok": True}
+
+
+@router.post("/support/chats/{chat_id}/dispatch-typing", dependencies=[Depends(_require_dispatch_auth)])
+async def set_dispatch_typing_status(chat_id: int, request: Request):
+    """Set the DISPATCH agent's typing status — the app shows 'escribiendo…'
+    to the user while a human is writing (panel → REST → Firestore doc)."""
+    body = await request.json()
+    typing = bool(body.get("typing", False))
+    if _HAS_FIRESTORE:
+        try:
+            firestore_sync._fs_db.collection("support_chats").document(str(chat_id)).set(
+                {"dispatch_typing": typing, "dispatch_typing_at": datetime.now(timezone.utc).isoformat()},
+                merge=True,
+            )
+        except Exception:
+            pass
+    return {"ok": True}
+
+
+@router.get("/support/chats/{chat_id}/typing", dependencies=[Depends(_verify_api_key)])
+async def get_typing_status(chat_id: int, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
+    """Read the dispatch agent's typing status (app polls this alongside the
+    message list). Same path as the POST the app writes to — different verb.
+    """
+    chat_result = await db.execute(select(SupportChat).where(SupportChat.id == chat_id))
+    chat = chat_result.scalar_one_or_none()
+    if not chat or chat.user_id != user.id:
+        raise HTTPException(status_code=403, detail="Not your chat")
+    dispatch_typing = False
+    if _HAS_FIRESTORE:
+        try:
+            doc = firestore_sync._fs_db.collection("support_chats").document(str(chat_id)).get()
+            if doc.exists:
+                data = doc.to_dict() or {}
+                # A stale True (panel died mid-typing) self-heals: the flag
+                # only counts if refreshed in the last 10 seconds.
+                updated = data.get("dispatch_typing_at") or ""
+                try:
+                    age = (datetime.now(timezone.utc) - datetime.fromisoformat(updated)).total_seconds()
+                except ValueError:
+                    age = 999
+                dispatch_typing = bool(data.get("dispatch_typing")) and age < 10
+        except Exception:
+            pass
+    return {"dispatch_typing": dispatch_typing}
 
 @router.post("/support/chats/{chat_id}/messages/dispatch", dependencies=[Depends(_require_dispatch_auth)])
 async def send_support_message_dispatch(chat_id: int, request: Request, db: AsyncSession = Depends(get_db)):

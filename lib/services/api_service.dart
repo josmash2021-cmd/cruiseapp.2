@@ -1787,6 +1787,26 @@ class ApiService {
     }
   }
 
+  /// Whether a human dispatch agent is typing in this chat right now
+  /// (written by the panel through the backend). Non-critical: any failure
+  /// reads as "not typing".
+  static Future<bool> getSupportTyping(int chatId) async {
+    final token = await getToken();
+    if (token == null) return false;
+    try {
+      final res = await _client
+          .get(
+            Uri.parse('$_baseUrl/support/chats/$chatId/typing'),
+            headers: _jsonHeaders(token),
+          )
+          .timeout(const Duration(seconds: 5));
+      final data = _parse(res);
+      return data['dispatch_typing'] == true;
+    } catch (_) {
+      return false;
+    }
+  }
+
   /// Get the support voice call phone number.
   static Future<String?> getSupportPhoneNumber() async {
     try {

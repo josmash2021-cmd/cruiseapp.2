@@ -1539,7 +1539,7 @@ def _is_read_poll_path(path: str) -> bool:
         path == "/trips/active"
         or path == "/support/chats"
         or (path.startswith("/trips/") and (path.endswith("/poll") or path.endswith("/chat")))
-        or (path.startswith("/support/chats/") and path.endswith("/messages"))
+        or (path.startswith("/support/chats/") and (path.endswith("/messages") or path.endswith("/typing")))
     )
 
 

@@ -159,3 +159,29 @@ async def test_english_chat_keeps_the_english_fallbacks(monkeypatch):
     )
     assert out["escalate"] is True
     assert out["response"].startswith("I'm having trouble connecting")
+
+
+async def test_plain_text_mentioning_a_supervisor_does_not_escalate(monkeypatch):
+    """An OFFER of a human is not a transfer — the old substring scan on the
+    reply text escalated chats whose bot merely mentioned a supervisor
+    (prod chat 84, 2026-10-11). The tool call is the only model-driven
+    escalation channel now."""
+    from types import SimpleNamespace
+    _reload_with(monkeypatch, OPENAI_API_KEY="sk-test")
+
+    message = SimpleNamespace(
+        content=("Si quieres, puedo pasar tu caso a un supervisor humano "
+                 "para que lo revise personalmente, solo dime."),
+        tool_calls=None,
+    )
+
+    class _FakeCompletions:
+        async def create(self, **_kwargs):
+            return SimpleNamespace(choices=[SimpleNamespace(message=message)])
+
+    monkeypatch.setattr(
+        svc, "_openai_client",
+        SimpleNamespace(chat=SimpleNamespace(completions=_FakeCompletions())))
+
+    out = await svc._openai_completion([{"role": "user", "content": "ok"}], [], "es")
+    assert out["escalate"] is False

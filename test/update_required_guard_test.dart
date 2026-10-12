@@ -150,10 +150,12 @@ void main() {
       expect(maint.contains('assets/images/maintenance_hero.png'), isTrue,
           reason: 'bundled asset — the art paints WITH the page, no network '
               'gap (user spec 2026-10-12: the bell badge flashed while the '
-              'hero downloaded; OTA patches carry assets now)');
+              'hero downloaded)');
+      expect(maint.contains('/static/maintenance_hero.png'), isTrue,
+          reason: 'OTA patches carry no NEW assets — patched builds fall '
+              'back to the network copy (precached at splash)');
       expect(maint.contains('_fallbackBadge'), isFalse,
-          reason: 'no placeholder icon — the bundled asset renders in the '
-              'first frame');
+          reason: 'no placeholder icon — asset first, network fallback');
       expect(maint.contains('notifications_off'), isFalse,
           reason: 'the bell icon is gone from this page');
     });

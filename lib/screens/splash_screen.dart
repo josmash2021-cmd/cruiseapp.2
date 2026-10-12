@@ -116,6 +116,10 @@ class _SplashScreenState extends State<SplashScreen> {
       for (final path in const [
         '/static/update_required_hero.png',
         '/static/nav_intro_hero.png',
+        // Fallback path of the maintenance page when the bundled asset is
+        // missing on patched builds (OTA carries no new assets) — precached
+        // so even the fallback paints instantly.
+        '/static/maintenance_hero.png',
       ]) {
         precacheImage(
           NetworkImage('${ApiService.currentBaseUrl}$path'),

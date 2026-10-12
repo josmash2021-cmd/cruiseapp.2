@@ -113,6 +113,15 @@ class _MaintenanceScreenState extends State<MaintenanceScreen>
                       'assets/images/maintenance_hero.png',
                       width: 240,
                       fit: BoxFit.contain,
+                      // OTA patches don't carry NEW assets — on a patched
+                      // (not store) build the asset is missing, so fall back
+                      // to the network copy (precached at splash). Never the
+                      // bell badge again (user spec 2026-10-12).
+                      errorBuilder: (context, error, stack) => Image.network(
+                        '${ApiService.currentBaseUrl}/static/maintenance_hero.png',
+                        width: 240,
+                        fit: BoxFit.contain,
+                      ),
                     ),
                   ),
                 ),

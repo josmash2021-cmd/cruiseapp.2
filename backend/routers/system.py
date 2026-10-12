@@ -672,3 +672,143 @@ async def client_event(req: ClientEventIn, request: Request):
         request.client.host if request.client else "unknown",
     )
     return {"ok": True}
+
+
+# ═══════════════════════════════════════════════════════════════════════
+#  Sector demand heat (2026-10-12, user spec): the driver map paints big
+#  sectors (not mini-cities) — always visible in gray with their boundary,
+#  and dispatch turns individual sectors "on" in gold, three levels deep
+#  (semi / Ocupado / Muy ocupado) with an optional +$ bonus pill. Phase 1 is
+#  display + control only; the bonus is NOT charged or paid yet.
+# ═══════════════════════════════════════════════════════════════════════
+
+_SECTOR_DEMAND_KEY = "sector_demand"
+_SECTOR_IDS: frozenset = frozenset()
+_sector_demand_cache: tuple = ()  # (monotonic_ts, payload_dict)
+
+
+def _load_sector_ids() -> frozenset:
+    """Sector ids from the baked static file (validated once per process —
+    the file ships with the deploy)."""
+    global _SECTOR_IDS
+    if _SECTOR_IDS:
+        return _SECTOR_IDS
+    try:
+        import json as _json
+        import os as _os
+        path = _os.path.join(_os.path.dirname(__file__), "..", "static",
+                             "fl_sectors.json")
+        with open(path, encoding="utf-8") as fh:
+            data = _json.load(fh)
+        _SECTOR_IDS = frozenset(
+            f["properties"]["id"] for f in data.get("features", []))
+    except Exception as e:  # fail-open: empty set rejects nothing below
+        logger.warning("[Zones] sector id load failed: %s", e)
+        _SECTOR_IDS = frozenset()
+    return _SECTOR_IDS
+
+
+def _parse_sector_demand(raw: str) -> dict:
+    """'{"sunrise_plantation": {"level": 2, "bonus": 1.5}, ...}' → dict.
+    Anything malformed drops out entry by entry — one bad row must never
+    blank the whole heat layer."""
+    import json as _json
+    out = {}
+    try:
+        data = _json.loads(raw) if raw else {}
+    except Exception:
+        return out
+    if not isinstance(data, dict):
+        return out
+    for sid, cfg in data.items():
+        if not isinstance(cfg, dict):
+            continue
+        try:
+            level = int(cfg.get("level", 0))
+            bonus = float(cfg.get("bonus", 0) or 0)
+        except (TypeError, ValueError):
+            continue
+        if level < 0 or level > 3 or bonus < 0 or bonus > 50:
+            continue
+        if level == 0:
+            continue  # level 0 is the gray base — storing it is noise
+        out[sid] = {"level": level, "bonus": round(bonus, 2)}
+    return out
+
+
+@router.get("/zones/demand", dependencies=[Depends(_verify_api_key)])
+async def zone_demand(db=Depends(get_db)):
+    """Public read for the app (drivers): sector -> {level, bonus}.
+    Cached 30 s in-process — the app polls it every minute and the value
+    changes by hand, never hot."""
+    import time as _time
+    global _sector_demand_cache
+    now = _time.monotonic()
+    if _sector_demand_cache and now - _sector_demand_cache[0] < 30:
+        return _sector_demand_cache[1]
+    from sqlalchemy import select
+    r = await db.execute(
+        select(AppConfig.value).where(AppConfig.key == _SECTOR_DEMAND_KEY))
+    raw = r.scalar_one_or_none() or ""
+    payload = {"sectors": _parse_sector_demand(raw)}
+    _sector_demand_cache = (now, payload)
+    return payload
+
+
+class ZoneDemandIn(BaseModel):
+    sector_id: str = Field(min_length=1, max_length=40)
+    level: int = Field(ge=0, le=3)
+    bonus: float = Field(0, ge=0, le=50)
+
+
+@router.get("/admin/zone-demand", dependencies=[Depends(_require_dispatch_auth)])
+async def get_zone_demand(db=Depends(get_db)):
+    """Dispatch read (the panel paints the current heat map)."""
+    from sqlalchemy import select
+    r = await db.execute(
+        select(AppConfig.value).where(AppConfig.key == _SECTOR_DEMAND_KEY))
+    raw = r.scalar_one_or_none() or ""
+    return {"sectors": _parse_sector_demand(raw)}
+
+
+@router.post("/admin/zone-demand", dependencies=[Depends(_require_dispatch_auth)])
+async def set_zone_demand(req: ZoneDemandIn, request: Request,
+                          db=Depends(get_db)):
+    """Dispatch sets/clears one sector's heat. The whole map lives in ONE
+    AppConfig row (JSON) so a write is a read-modify-write — two dispatchers
+    editing at once keep each other's sectors."""
+    import json as _json
+    from sqlalchemy import select
+
+    known = _load_sector_ids()
+    if known and req.sector_id not in known:
+        raise HTTPException(400, f"unknown sector: {req.sector_id}")
+    global _sector_demand_cache
+    r = await db.execute(
+        select(AppConfig).where(AppConfig.key == _SECTOR_DEMAND_KEY))
+    row = r.scalar_one_or_none()
+    current = _parse_sector_demand(row.value if row else "")
+    if req.level == 0:
+        current.pop(req.sector_id, None)
+    else:
+        current[req.sector_id] = {"level": req.level,
+                                  "bonus": round(req.bonus, 2)}
+    value = _json.dumps(current, separators=(",", ":"))
+    if row:
+        row.value = value
+        row.updated_at = datetime.now(timezone.utc)
+    else:
+        db.add(AppConfig(key=_SECTOR_DEMAND_KEY, value=value,
+                         description="Sector heat set by dispatch "
+                                     "{sector_id: {level, bonus}}"))
+    await db.commit()
+    _sector_demand_cache = ()  # bust the read cache this instant
+    _security_audit_log(
+        "zone_demand",
+        request.client.host if request.client else "unknown",
+        f"{req.sector_id}=lvl{req.level}/${req.bonus}",
+    )
+    logger.warning("[Zones] demand %s -> lvl %d, $%.2f", req.sector_id,
+                   req.level, req.bonus)
+    return {"sector_id": req.sector_id, "level": req.level,
+            "bonus": round(req.bonus, 2)}

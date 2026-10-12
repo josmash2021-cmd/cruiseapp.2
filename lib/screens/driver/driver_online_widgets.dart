@@ -353,6 +353,10 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
     unawaited(ZoneService.load().then((_) {
       if (mounted) _syncZoneLayers(forceHighlight: true);
     }));
+    // First paint already carries dispatch's heat when it exists.
+    unawaited(ZoneService.loadDemand(force: true).then((_) {
+      if (mounted) _syncZoneLayers();
+    }));
     // Offline with zones the camera is born at the region view (10.8) — the
     // 16→target entry ease must not drag it back up on the first tick.
     if (!_driverOnline && FeatureFlags.zonesMapEnabled) {

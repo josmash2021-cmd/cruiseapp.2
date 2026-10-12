@@ -954,6 +954,14 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     // the SSE stream is dead in the background, so without this the offer
     // only shows up when the poll happens to run).
     DriverOnlineScreen.deepLinkOfferNotifier.addListener(_applyInjectedOffer);
+    // Sector demand heat (2026-10-12): dispatch's gold sectors land within
+    // a minute of being set; the poll is cheap (the server caches 30 s).
+    _zoneDemandTimer = Timer.periodic(const Duration(seconds: 60), (_) {
+      if (!mounted) return;
+      ZoneService.loadDemand().then((_) {
+        if (mounted) _syncZoneLayers();
+      });
+    });
     DriverOnlineScreen.removeOfferNotifier
         .addListener(_applyRemoveInjectedOffer);
     DriverOnlineScreen.shiftEndedNotifier.addListener(_onShiftEndedPush);
@@ -1310,6 +1318,11 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   bool? _zoneLayersVisible;
   bool? _zoneLookOnline;
   String? _zoneHighlightName;
+  // Sector heat signature (2026-10-12): the demand map's "sid:level|…" the
+  // layers were last painted with — a dispatch change repaints, nothing
+  // else does.
+  String? _zoneDemandSig;
+  Timer? _zoneDemandTimer;
 
   // ── Go-online chime ──
   Timer? _onlineChimeTimer;
@@ -1550,6 +1563,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   @override
   void dispose() {
     mapRouteObserver.unsubscribe(this);
+    _zoneDemandTimer?.cancel();
     DriverOnlineScreen.mountedCount--;
     WidgetsBinding.instance.removeObserver(this);
     _diagTimer?.cancel();

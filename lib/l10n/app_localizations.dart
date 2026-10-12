@@ -77,6 +77,8 @@ class S {
   String get zoneSelectHint => _es
       ? 'Selecciona tu zona en el mapa para conectarte'
       : 'Select your zone on the map to go online';
+  String get zoneBusy => _es ? 'Ocupado' : 'Busy';
+  String get zoneVeryBusy => _es ? 'Muy ocupado' : 'Very busy';
   String get done => _es ? 'Listo' : 'Done';
   String get back => _es ? 'Atrás' : 'Back';
   String get error => _es ? 'Error' : 'Error';

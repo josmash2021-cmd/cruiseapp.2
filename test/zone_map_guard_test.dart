@@ -5,14 +5,17 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:cruise_app/models/lat_lng.dart';
 import 'package:cruise_app/services/zone_service.dart';
 
-/// Guardian for the municipal city zones (2026-10-11, user spec: the
-/// Florida map divided by real city boundaries like the photo — "si el
-/// driver está dentro del cuadro podrá conectarse").
+/// Guardian for the driver SECTORS (2026-10-12, user spec: the Florida map
+/// divided by big sectors like the reference photo — "no de mini ciudad en
+/// mini ciudad si no por sectores" — always visible in gray with thick
+/// boundaries; dispatch turns a sector gold by demand level with a pill).
 void main() {
   final zonesJson =
       File('backend/static/fl_zones.json').readAsStringSync();
+  final sectorsJson =
+      File('backend/static/fl_sectors.json').readAsStringSync();
 
-  test('the baked data parses into real zones', () {
+  test('the baked city data still parses (connect gate data)', () {
     ZoneService.parse(zonesJson);
     expect(ZoneService.ready, isTrue);
     expect(ZoneService.zones.length, greaterThanOrEqualTo(35));
@@ -22,57 +25,98 @@ void main() {
     }
   });
 
-  test('ray-casting matches the real boundaries', () {
-    ZoneService.parse(zonesJson);
-    // Hialeah's baked centroid is inside its polygon.
-    final hialeah = ZoneService.zoneContaining(
-        const LatLng(25.866939, -80.31336));
-    expect(hialeah?.name, 'Hialeah');
-    // The Atlantic and Birmingham are outside every zone.
-    expect(ZoneService.zoneContaining(const LatLng(25.70, -79.90)), isNull);
-    expect(
-        ZoneService.zoneContaining(const LatLng(33.5186, -86.8104)), isNull);
+  test('the baked sectors parse into the big regions', () {
+    ZoneService.parseSectors(sectorsJson);
+    expect(ZoneService.sectorsReady, isTrue);
+    expect(ZoneService.sectors.length, greaterThanOrEqualTo(12));
+    final ids = ZoneService.sectors.map((s) => s.id).toSet();
+    for (final expected in [
+      'sunrise_plantation',
+      'ftl_davie',
+      'miami_core',
+      'kendall',
+    ]) {
+      expect(ids, contains(expected));
+    }
   });
 
-  test('the map draws the spec look: gold fills offline, gray 3D lines', () {
+  test('sector ray-casting matches the dissolved boundaries', () {
+    ZoneService.parseSectors(sectorsJson);
+    // Davie city centre sits inside the Fort Lauderdale / Davie sector.
+    final davie =
+        ZoneService.sectorContaining(const LatLng(26.076, -80.277));
+    expect(davie?.id, 'ftl_davie');
+    // Hialeah → Miami Gardens / Hialeah sector.
+    expect(
+        ZoneService.sectorContaining(const LatLng(25.866939, -80.31336))
+            ?.id,
+        'miami_gardens');
+    // The Atlantic and Birmingham are outside every sector.
+    expect(ZoneService.sectorContaining(const LatLng(25.70, -79.90)),
+        isNull);
+    expect(ZoneService.sectorContaining(const LatLng(33.5186, -86.8104)),
+        isNull);
+  });
+
+  test('the map draws one SMALL source per sector, gray base, gold heat',
+      () {
     final s =
         File('lib/screens/driver/driver_online_map.dart').readAsStringSync();
+    // Per-sector sources/layers — the single 83 KB all-cities source never
+    // materialized on iOS; ~5 KB sources draw (the highlight's size class).
     for (final id in [
-      'zones-src',
-      'zones-hl-src',
-      'zones-fill',
-      'zones-line',
-      'zones-hl-fill',
-      'zones-shadow',
+      'sec-src-',
+      'sec-fill-',
+      'sec-line-',
+      'sec-shadow-',
+      'sec-hl-src',
+      'sec-hl-fill',
     ]) {
-      expect(s, contains(id), reason: 'layer/source $id missing');
+      expect(s, contains(id), reason: 'sector layer/source $id missing');
     }
-    // 2026-10-11 spec: fills are GOLD semi-transparent (never red), the
-    // boundary is a thick GRAY line, and online keeps ONLY the boundary with
-    // its shadow under it (the 3D read).
-    expect(s, contains('0xFFE8C547'), reason: 'gold fills');
-    expect(s, isNot(contains('0xFF7A2020')), reason: 'red died');
+    expect(s, contains('ZoneService.sectors'),
+        reason: 'layers iterate the baked sectors');
+    expect(s, contains('0xFFE8C547'), reason: 'gold heat/selection');
     expect(s, contains('0xFF9AA3B8'), reason: 'gray thick boundary');
-    expect(s, contains('lineTranslate'), reason: 'the 3D shadow under it');
+    expect(s, contains('lineTranslate'), reason: 'the 3D shadow online');
     expect(s.contains('_zoneLookOnline'), isTrue,
         reason: 'the look flips with the mode');
-    // The "FL: <city>" label is a FLUTTER OVERLAY, never a native text
-    // layer (2026-10-11 black-map incident), and it hides while online.
+    // The demand level drives the fill, dispatch-side.
+    expect(s, contains('ZoneService.demand[sid]?.level'));
+    // Labels/pills are FLUTTER OVERLAYS, never a native text layer
+    // (2026-10-11 black-map incident).
     expect(s, isNot(contains('SymbolLayer')),
-        reason: 'no native text layer — the label is a Flutter overlay');
+        reason: 'no native text layer — labels and pills are Flutter');
     expect(s, contains('Widget _zoneLabelOverlay()'));
     expect(s, contains('if (_driverOnline) return const SizedBox.shrink();'),
-        reason: 'online keeps only the gray line');
-    expect(s, contains("'FL: \$name'"), reason: 'the photo label');
+        reason: 'online keeps only the gray boundary lines');
     expect(s, contains('_phase == _Phase.searching'),
-        reason: 'zones live on the flat searching map only — never on top '
-            'of an active trip route');
+        reason: 'sectors live on the flat searching map only — never on '
+            'top of an active trip route');
     final w = File('lib/screens/driver/driver_online_widgets.dart')
         .readAsStringSync();
     expect(w, contains('_zoneLayersReady = false'),
         reason: 'style reloads must recreate the custom sources');
     expect(w, contains('_zoneLabelOverlay()'),
-        reason: 'the label rides the map stack');
+        reason: 'the label/pill layer rides the map stack');
+  });
+
+  test('sector data enters through the proven per-sector write path', () {
+    final map =
+        File('lib/screens/driver/driver_online_map.dart').readAsStringSync();
+    expect(
+      map.contains(
+          "mapbox.GeoJsonSource(id: 'sec-src-\$sid', data: emptyFc)"),
+      isTrue,
+      reason: 'each sector source is born EMPTY — inline data never drew',
+    );
+    expect(map.contains("'sec-src-\$sid'"), isTrue);
+    expect(map.contains('zones_src_write_failed'), isTrue,
+        reason: 'a silent catch here is what hid the divisions for a week');
+    expect(map.contains('sectors_failed'), isTrue);
+    expect(map.contains('rethrow') || map.contains('throw StateError'),
+        isTrue,
+        reason: 'the latch must stay open so the next sync retries');
   });
 
   test('the GO tap gates the connect client-side, fail-open', () {
@@ -83,7 +127,8 @@ void main() {
             'drivers are state-separated');
     expect(s, contains('ZoneService.zoneContaining(_pos!) == null'));
     expect(s, contains('_showZoneOutsideDialog()'),
-        reason: 'outside a zone the tap explains instead of connecting');
+        reason: 'outside the coverage the tap explains instead of '
+            'connecting');
     expect(s, contains('ZoneService.ready'),
         reason: 'no data = no gate (fail-open)');
   });
@@ -94,16 +139,13 @@ void main() {
     expect(s, contains('"outside_service_area"'));
   });
 
-  test('zone drawing has a remote kill switch + the veil a watchdog', () {
-    // 2026-10-11 black-map report: the zone layers ride behind
-    // zones_map_enabled (default OFF until verified on a real device), and
-    // the snapshot veil lifts itself after 6 s no matter what.
+  test('sector drawing has a remote kill switch + the veil a watchdog', () {
     final map =
         File('lib/screens/driver/driver_online_map.dart').readAsStringSync();
     expect(map, contains('FeatureFlags.zonesMapEnabled'));
     final w = File('lib/screens/driver/driver_online_widgets.dart')
         .readAsStringSync();
-    expect(w, contains('veil watchdog fired'));
+    expect(w, contains('map_veil_watchdog'));
     expect(w, contains('FeatureFlags.load()'));
     final flags =
         File('lib/services/feature_flags.dart').readAsStringSync();
@@ -112,29 +154,71 @@ void main() {
     expect(sys, contains('zones_map_enabled'));
   });
 
-  test('zone data rides the proven write path, not inline addSource', () {
-    // 2026-10-11 (user report: only the highlighted zone painted — no other
-    // city, no gray boundary): the source built with all 42 geometries
-    // inline never materialized on iOS, while the highlight — born empty
-    // and fed via setStyleSourceProperty — drew fine. ALL data now enters
-    // through that same proven path, and a failed write keeps the latch
-    // open (retry on the next sync) and reports to the server log.
+  test('demand heat: poll in the app, endpoints on the server', () {
+    final zs = File('lib/services/zone_service.dart').readAsStringSync();
+    expect(zs, contains('/zones/demand'));
+    expect(zs, contains('class SectorDemand'));
+    final scr = File('lib/screens/driver/driver_online_screen.dart')
+        .readAsStringSync();
+    expect(scr, contains('_zoneDemandTimer'),
+        reason: 'the 60 s poll keeps the heat fresh while the map lives');
+    expect(scr, contains('_zoneDemandTimer?.cancel()'));
+    final sys = File('backend/routers/system.py').readAsStringSync();
+    expect(sys, contains('/zones/demand'));
+    expect(sys, contains('/admin/zone-demand'),
+        reason: 'dispatch sets the heat from the panel');
+    expect(sys, contains('_parse_sector_demand'),
+        reason: 'malformed rows drop out one by one — never blank the '
+            'whole layer');
+  });
+
+  test('user-facing strings exist in ES and EN', () {
+    final l10n =
+        File('lib/l10n/app_localizations.dart').readAsStringSync();
+    expect(l10n, contains('zoneOutsideTitle'));
+    expect(l10n, contains('zoneOutsideBody'));
+    expect(l10n, contains('Fuera del área de servicio'));
+    expect(l10n, contains('Outside the service area'));
+    expect(l10n, contains('zoneSelectHint'));
+    expect(l10n, contains('Selecciona tu zona en el mapa para conectarte'));
+    expect(l10n, contains('Select your zone on the map to go online'));
+    expect(l10n, contains('zoneBusy'));
+    expect(l10n, contains('Ocupado'));
+    expect(l10n, contains('zoneVeryBusy'));
+    expect(l10n, contains('Muy ocupado'));
+  });
+
+  test('tap-to-select ignites the GO; without a zone the GO stays dim', () {
+    // 2026-10-11/12 spec: offline the driver taps their sector on the map —
+    // the GO ignites with an elastic pop; with no selection the GO is dimmed
+    // and the tap explains instead of connecting.
+    final w = File('lib/screens/driver/driver_online_widgets.dart')
+        .readAsStringSync();
+    expect(w, contains('onTapListener: _onZoneMapTap'),
+        reason: 'map taps feed the sector picker');
     final map =
         File('lib/screens/driver/driver_online_map.dart').readAsStringSync();
-    expect(
-      map.contains(
-          "addSource(mapbox.GeoJsonSource(id: 'zones-src', data: emptyFc))"),
-      isTrue,
-      reason: 'the base source must be born EMPTY — inline data never drew',
-    );
-    expect(
-      map.contains("setStyleSourceProperty('zones-src', 'data', allFc)"),
-      isTrue,
-    );
-    expect(map.contains('zones_src_write_failed'), isTrue,
-        reason: 'a silent catch here is what hid the missing divisions');
-    expect(map.contains('rethrow;'), isTrue,
-        reason: 'the latch must stay open so the next sync retries');
+    expect(map, contains('void _onZoneMapTap('));
+    expect(map, contains('ZoneService.sectorContaining('),
+        reason: 'the tap point feeds the sector ray-casting lookup');
+    expect(map, contains('_goIgniteCtrl?.forward(from: 0.0)'),
+        reason: 'selecting a sector ignites the GO with the elastic pop');
+    expect(map, contains('Sector? get _sectorForHighlight'),
+        reason: 'the picked sector wins the highlight over the physical one');
+    final scr = File('lib/screens/driver/driver_online_screen.dart')
+        .readAsStringSync();
+    expect(scr, contains('String? _selectedZoneName;'));
+    expect(scr, contains('_goIgniteCtrl?.dispose()'));
+    final off = File('lib/screens/driver/driver_online_offline.dart')
+        .readAsStringSync();
+    expect(off, contains('S.of(context).zoneSelectHint'),
+        reason: 'a dim GO explains itself instead of connecting');
+    expect(off, contains('scale: igniteScale'));
+    final ctrl = File('lib/screens/driver/driver_online_controller.dart')
+        .readAsStringSync();
+    expect(ctrl, contains('_selectedZoneName = null;'),
+        reason: 'the pick is consumed on connect — the next session starts '
+            'fresh');
   });
 
   test('the camera is born at the region view offline and glides on flips',
@@ -175,50 +259,5 @@ void main() {
         reason: 'a fresh grab must abort the settle — never fight the finger');
     expect(map, contains('.setCamera(mapbox.CameraOptions('),
         reason: 'the dry write is the guaranteed landing');
-  });
-
-  test('user-facing strings exist in ES and EN', () {
-    final l10n =
-        File('lib/l10n/app_localizations.dart').readAsStringSync();
-    expect(l10n, contains('zoneOutsideTitle'));
-    expect(l10n, contains('zoneOutsideBody'));
-    expect(l10n, contains('Fuera del área de servicio'));
-    expect(l10n, contains('Outside the service area'));
-    expect(l10n, contains('zoneSelectHint'));
-    expect(l10n, contains('Selecciona tu zona en el mapa para conectarte'));
-    expect(l10n, contains('Select your zone on the map to go online'));
-  });
-
-  test('tap-to-select ignites the GO; without a zone the GO stays dim', () {
-    // 2026-10-11 spec: offline the driver taps their zone on the map — the
-    // GO ignites with an elastic pop; with no selection the GO is dimmed
-    // and the tap explains instead of connecting.
-    final w = File('lib/screens/driver/driver_online_widgets.dart')
-        .readAsStringSync();
-    expect(w, contains('onTapListener: _onZoneMapTap'),
-        reason: 'map taps feed the zone picker');
-    final map =
-        File('lib/screens/driver/driver_online_map.dart').readAsStringSync();
-    expect(map, contains('void _onZoneMapTap('));
-    expect(map, contains('coords.lat.toDouble()'),
-        reason: 'the tap point feeds the ray-casting lookup');
-    expect(map, contains('_goIgniteCtrl?.forward(from: 0.0)'),
-        reason: 'selecting a zone ignites the GO with the elastic pop');
-    expect(map, contains('Zone? get _zoneForHighlight'),
-        reason: 'the picked zone wins the highlight over the physical one');
-    final scr = File('lib/screens/driver/driver_online_screen.dart')
-        .readAsStringSync();
-    expect(scr, contains('String? _selectedZoneName;'));
-    expect(scr, contains('_goIgniteCtrl?.dispose()'));
-    final off = File('lib/screens/driver/driver_online_offline.dart')
-        .readAsStringSync();
-    expect(off, contains('S.of(context).zoneSelectHint'),
-        reason: 'a dim GO explains itself instead of connecting');
-    expect(off, contains('scale: igniteScale'));
-    final ctrl = File('lib/screens/driver/driver_online_controller.dart')
-        .readAsStringSync();
-    expect(ctrl, contains('_selectedZoneName = null;'),
-        reason: 'the pick is consumed on connect — the next session starts '
-            'fresh');
   });
 }

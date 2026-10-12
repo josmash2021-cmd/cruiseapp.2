@@ -2351,29 +2351,31 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     return off;
   }
 
+
   // ══════════════════════════════════════════════════════════════════
-  //  MUNICIPAL ZONE LAYERS (2026-10-11, user spec: the Florida map divided
-  //  by real city boundaries like the photo; the driver's zone highlighted
-  //  with its "FL: <city>" label — no city-center dots, per spec).
+  //  SECTOR LAYERS (2026-10-12, user spec: big SECTORS — "no de mini
+  //  ciudad en mini ciudad si no por sectores" — always visible in gray
+  //  with thick gray boundaries; dispatch turns a sector gold by demand
+  //  level with an optional +$ bonus pill; the driver's tap selection
+  //  paints brighter). ONE small source per sector — the single 83 KB
+  //  all-cities source never materialized on iOS, while ~5 KB sources
+  //  draw fine (the size class of the proven highlight source).
   //  The fields live in the state class (extensions can't declare them).
   // ══════════════════════════════════════════════════════════════════
 
-  /// Idempotent per-fix/per-style-load sync: ensures the sources/layers
-  /// exist, writes visibility (searching only — in a trip they would sit on
-  /// top of the route), and refreshes the highlight when the driver's zone
-  /// changes. Every write is deduped, so a 1 Hz call cadence costs nothing.
+  /// Idempotent per-fix/per-style-load sync: ensures the per-sector
+  /// sources/layers exist, writes visibility + demand look (searching only
+  /// — in a trip they would sit on top of the route), and refreshes the
+  /// selection highlight. Every write is deduped behind signatures, so a
+  /// 1 Hz call cadence costs nothing.
   Future<void> _syncZoneLayers({bool forceHighlight = false}) async {
     final map = _map;
     if (map == null || kIsWeb || !_mapStyleLoaded) return;
-    if (!ZoneService.ready) return;
-    // Remote kill switch (2026-10-11, black-map report): while we verify the
-    // zone drawing on a real device, the layers stay off by default — flip
-    // zones_map_enabled server-side to turn them on live.
+    if (!ZoneService.sectorsReady) return;
+    // Remote kill switch (2026-10-11, black-map report): while we verify
+    // the zone drawing on a real device, the layers stay off by default.
     if (!FeatureFlags.zonesMapEnabled) return;
     final visible = _phase == _Phase.searching;
-    // The look flips with the mode: offline shows fills+boundary+label,
-    // online keeps ONLY the thick gray boundary with its 3D shadow (user
-    // spec 2026-10-11).
     final online = _driverOnline;
     try {
       if (!_zoneLayersReady) {
@@ -2381,237 +2383,317 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
         _zoneLayersReady = true;
         _zoneLayersVisible = null;
       }
-      if (_zoneLayersVisible != visible || _zoneLookOnline != online) {
+      final demandSig = ZoneService.demand.entries
+          .map((e) => '${e.key}:${e.value.level}')
+          .join('|');
+      if (_zoneLayersVisible != visible ||
+          _zoneLookOnline != online ||
+          _zoneDemandSig != demandSig) {
         _zoneLayersVisible = visible;
         _zoneLookOnline = online;
+        _zoneDemandSig = demandSig;
         await _writeZoneVisibility(map, visible, online);
-        _markerFrame.value++; // the label overlay hides online
+        _markerFrame.value++; // the pill overlay repaints with the look
       }
-      final z = _zoneForHighlight;
-      final name = z?.name;
-      if (forceHighlight || name != _zoneHighlightName) {
-        _zoneHighlightName = name;
-        await _writeZoneHighlight(map, z);
-        // The Flutter "FL: <city>" label overlay repaints on _markerFrame —
-        // bump it so the label follows the change THIS frame, not on the
-        // next GPS fix.
+      final s = _sectorForHighlight;
+      final id = s?.id;
+      if (forceHighlight || id != _zoneHighlightName) {
+        _zoneHighlightName = id;
+        await _writeZoneHighlight(map, s);
         _markerFrame.value++;
       }
     } catch (e) {
-      debugPrint('[Zones] layer sync failed: $e');
+      debugPrint('[Zones] sector sync failed: $e');
     }
   }
 
   Future<void> _createZoneLayers(mapbox.MapboxMap map) async {
-    final allFc = jsonEncode({
-      'type': 'FeatureCollection',
-      'features': ZoneService.features,
-    });
     final emptyFc =
         jsonEncode({'type': 'FeatureCollection', 'features': const []});
-    // 2026-10-11 (user report: solo se pinta la zona resaltada, ninguna
-    // otra ni el borde gris): el source creado con las 42 geometrías inline
-    // nunca se materializó en iOS — el highlight, que nace vacío y recibe
-    // su data por setStyleSourceProperty, sí se veía. Toda la data entra
-    // ahora por esa misma vía probada.
+    for (final s in ZoneService.sectors) {
+      final sid = s.id;
+      try {
+        await map.style.addSource(
+            mapbox.GeoJsonSource(id: 'sec-src-$sid', data: emptyFc));
+      } catch (_) {}
+      // The look per the user's spec (2026-10-12): offline every sector is
+      // gray with a THICK gray boundary; dispatch heat turns the fill gold
+      // (three levels); online keeps only the boundary with its 3D shadow.
+      try {
+        await map.style.addLayer(mapbox.FillLayer(
+          id: 'sec-fill-$sid',
+          sourceId: 'sec-src-$sid',
+          fillColor: 0xFF9AA3B8, // gray base — heat rewrites it gold
+          fillOpacity: 0.0,
+        ));
+      } catch (_) {}
+      try {
+        await map.style.addLayer(mapbox.LineLayer(
+          id: 'sec-shadow-$sid',
+          sourceId: 'sec-src-$sid',
+          lineColor: 0xFF000000,
+          lineWidth: 3.4,
+          lineOpacity: 0.0,
+          lineTranslate: const [0.0, 2.0],
+          lineTranslateAnchor: mapbox.LineTranslateAnchor.VIEWPORT,
+        ));
+      } catch (_) {}
+      try {
+        await map.style.addLayer(mapbox.LineLayer(
+          id: 'sec-line-$sid',
+          sourceId: 'sec-src-$sid',
+          lineColor: 0xFF9AA3B8, // gray, thick — the divisions always read
+          lineWidth: 2.4,
+          lineOpacity: 0.0,
+        ));
+      } catch (_) {}
+    }
+    // The selection highlight: one shared source, rewritten with the picked
+    // sector — brighter than any demand level ("si seleccionan uno se debe
+    // poner mas amarillo").
     try {
       await map.style
-          .addSource(mapbox.GeoJsonSource(id: 'zones-src', data: emptyFc));
-    } catch (_) {}
-    try {
-      await map.style
-          .addSource(mapbox.GeoJsonSource(id: 'zones-hl-src', data: emptyFc));
-    } catch (_) {}
-    // The look per the user's spec (2026-10-11): OFFLINE shows all city
-    // divisions — gold semi-transparent fills, thick GRAY boundaries, the
-    // driver's zone brighter with its "FL: <city>" label. ONLINE keeps only
-    // the thick gray boundary with a shadow under it (a 3D read) — no fills,
-    // no label, nothing on top of the drive.
-    try {
-      await map.style.addLayer(mapbox.FillLayer(
-        id: 'zones-fill',
-        sourceId: 'zones-src',
-        fillColor: 0xFFE8C547, // gold, semi-transparent via opacity
-        fillOpacity: 0.0,
-      ));
+          .addSource(mapbox.GeoJsonSource(id: 'sec-hl-src', data: emptyFc));
     } catch (_) {}
     try {
       await map.style.addLayer(mapbox.FillLayer(
-        id: 'zones-hl-fill',
-        sourceId: 'zones-hl-src',
+        id: 'sec-hl-fill',
+        sourceId: 'sec-hl-src',
         fillColor: 0xFFE8C547,
         fillOpacity: 0.0,
       ));
     } catch (_) {}
-    // The 3D shadow lives UNDER the boundary line (layer order = paint order).
-    try {
-      await map.style.addLayer(mapbox.LineLayer(
-        id: 'zones-shadow',
-        sourceId: 'zones-src',
-        lineColor: 0xFF000000,
-        lineWidth: 3.4,
-        lineOpacity: 0.0,
-        lineTranslate: const [0.0, 2.0],
-        lineTranslateAnchor: mapbox.LineTranslateAnchor.VIEWPORT,
-      ));
-    } catch (_) {}
-    try {
-      await map.style.addLayer(mapbox.LineLayer(
-        id: 'zones-line',
-        sourceId: 'zones-src',
-        lineColor: 0xFF9AA3B8, // gray, thick
-        lineWidth: 2.4,
-        lineOpacity: 0.0,
-      ));
-    } catch (_) {}
-    // NO capa de texto nativa para la etiqueta "FL: <city>" (2026-10-11,
-    // black-map incident): la etiqueta viaja como overlay Flutter en el
-    // centro proyectado de la zona — cero superficie nativa nueva (ver
-    // _zoneLabelOverlay). Fills/lines son el patrón probado de map_picker.
-    // La data real entra DESPUÉS de crear las capas, por la vía probada;
-    // si falla, el latch de _zoneLayersReady no se arma y el próximo sync
-    // reintenta (y el server lo ve — un catch silencioso aquí fue lo que
-    // dejó el mapa sin divisiones toda la semana).
-    try {
-      await map.style.setStyleSourceProperty('zones-src', 'data', allFc);
-    } catch (e) {
-      debugPrint('[Zones] base data write failed: $e');
-      ApiService.logClientEvent('zones_src_write_failed', '$e');
-      rethrow;
+    // Data enters AFTER the layers exist, one small write per sector — the
+    // proven path. A failed write keeps the latch OPEN so the next sync
+    // retries, and reports to the server (a silent catch here is what hid
+    // the divisions for a week).
+    var failed = 0;
+    for (final f in ZoneService.sectorFeatures) {
+      final sid = ((f['properties'] as Map?)?['id']) ?? '';
+      if (sid.isEmpty) continue;
+      try {
+        await map.style.setStyleSourceProperty(
+          'sec-src-$sid',
+          'data',
+          jsonEncode({
+            'type': 'FeatureCollection',
+            'features': [f],
+          }),
+        );
+      } catch (e) {
+        failed++;
+        debugPrint('[Zones] sector $sid data write failed: $e');
+      }
+    }
+    if (failed > 0) {
+      ApiService.logClientEvent(
+          'zones_src_write_failed', 'sectors_failed=$failed');
+      throw StateError('$failed sector sources rejected their data');
     }
   }
 
+  /// Fill/line visibility + color per sector. Base (no dispatch heat): thin
+  /// gray wash + the thick gray boundary. Level 1: gold semi-transparent.
+  /// Level 2 ("Ocupado"): more solid. Level 3 ("Muy ocupado"): fully solid.
+  /// Online keeps ONLY the boundary + its 3D shadow, per spec.
   Future<void> _writeZoneVisibility(
       mapbox.MapboxMap map, bool visible, bool online) async {
-    final showFills = visible && !online;
-    final props = <String, List<Object>>{
-      // Offline: gold fills read the division; online they would sit on the
-      // drive — only the thick gray boundary + its 3D shadow stay.
-      'zones-fill': ['fill-opacity', showFills ? 0.16 : 0.0],
-      'zones-hl-fill': ['fill-opacity', showFills ? 0.30 : 0.0],
-      'zones-line': ['line-opacity', visible ? 0.85 : 0.0],
-      'zones-shadow': ['line-opacity', visible && online ? 0.35 : 0.0],
-    };
-    for (final e in props.entries) {
+    for (final s in ZoneService.sectors) {
+      final sid = s.id;
+      final level = visible && !online
+          ? (ZoneService.demand[sid]?.level ?? 0)
+          : 0;
+      final fillColor = level == 0 ? 0xFF9AA3B8 : 0xFFE8C547;
+      final fillOpacity = !visible || online
+          ? 0.0
+          : level == 0
+              ? 0.07
+              : level == 1
+                  ? 0.18
+                  : level == 2
+                      ? 0.32
+                      : 0.48;
       try {
+        await map.style
+            .setStyleLayerProperty('sec-fill-$sid', 'fill-color', fillColor);
         await map.style.setStyleLayerProperty(
-            e.key, e.value[0] as String, e.value[1]);
+            'sec-fill-$sid', 'fill-opacity', fillOpacity);
+        await map.style.setStyleLayerProperty(
+            'sec-line-$sid', 'line-opacity', visible ? 0.85 : 0.0);
+        await map.style.setStyleLayerProperty('sec-shadow-$sid',
+            'line-opacity', visible && online ? 0.35 : 0.0);
       } catch (_) {}
     }
+    // The selection highlight only reads offline (online is drive mode).
+    try {
+      await map.style.setStyleLayerProperty(
+          'sec-hl-fill', 'fill-opacity', visible && !online ? 0.50 : 0.0);
+    } catch (_) {}
   }
 
-  Future<void> _writeZoneHighlight(mapbox.MapboxMap map, Zone? zone) async {
-    final feats = zone == null
+  Future<void> _writeZoneHighlight(mapbox.MapboxMap map, Sector? sec) async {
+    final feats = sec == null
         ? <Map<String, dynamic>>[]
-        : ZoneService.features
+        : ZoneService.sectorFeatures
             .where((f) =>
-                (((f['properties'] as Map?)?['name']) ?? '') == zone.name)
+                (((f['properties'] as Map?)?['id']) ?? '') == sec.id)
             .toList();
     try {
       await map.style.setStyleSourceProperty(
-        'zones-hl-src',
+        'sec-hl-src',
         'data',
         jsonEncode({'type': 'FeatureCollection', 'features': feats}),
       );
     } catch (e) {
-      debugPrint('[Zones] highlight write failed: $e');
+      debugPrint('[Zones] sector highlight write failed: $e');
     }
   }
 
-  /// Zone selection by tap (user spec 2026-10-11: "el driver debe poder
-  /// seleccionar las zonas" — a tap on a city lights the GO button with the
-  /// ignite animation; no selection = GO stays off. Offline + searching
-  /// only; a tap outside every zone keeps the current selection, a re-tap on
-  /// the same zone deselects (toggle).
+  /// Sector selection by tap (user spec 2026-10-11/12: tap a sector and the
+  /// GO button lights up animated; no selection = GO stays dim. A tap
+  /// outside every sector keeps the current selection, a re-tap on the same
+  /// sector deselects — toggle). Offline + searching only.
   void _onZoneMapTap(dynamic ctx) {
     if (!FeatureFlags.zonesMapEnabled) return;
     if (_phase != _Phase.searching || _driverOnline) return;
     final coords = ctx.point.coordinates;
-    final z = ZoneService.zoneContaining(
+    final s = ZoneService.sectorContaining(
         LatLng(coords.lat.toDouble(), coords.lng.toDouble()));
-    if (z == null) return;
-    if (_selectedZoneName == z.name) {
+    if (s == null) return;
+    if (_selectedZoneName == s.id) {
       _setState(() => _selectedZoneName = null);
       _syncZoneLayers(forceHighlight: true);
       return;
     }
-    _setState(() => _selectedZoneName = z.name);
+    _setState(() => _selectedZoneName = s.id);
     HapticService.selectionClick();
     _goIgniteCtrl?.forward(from: 0.0);
     _syncZoneLayers(forceHighlight: true);
   }
 
-  /// The zone the highlight follows: the driver's SELECTION wins; with no
-  /// selection, their physical zone (the photo behaviour).
-  Zone? get _zoneForHighlight {
+  /// The sector the highlight follows: the driver's SELECTION wins; with no
+  /// selection, their physical sector (the photo behaviour).
+  Sector? get _sectorForHighlight {
     final sel = _selectedZoneName;
-    if (sel != null) return ZoneService.zoneByName(sel);
+    if (sel != null) return ZoneService.sectorById(sel);
     final p = _pos;
-    return p == null ? null : ZoneService.zoneContaining(p);
+    return p == null ? null : ZoneService.sectorContaining(p);
   }
 
-  /// The "FL: <city>" label for the driver's current zone — a Flutter
-  /// overlay, NOT a native style text layer (2026-10-11 black-map incident:
-  /// that was the one unproven piece of the zone stack; this paints zero
-  /// native surface). Glued per frame from the same flat projection the
-  /// arrow uses.
+  /// Sector labels + demand pills — Flutter overlays glued per frame from
+  /// the same flat projection the arrow uses (NEVER a native text layer:
+  /// the 2026-10-11 black-map incident). Offline + searching only; online
+  /// keeps just the boundary lines, per spec.
   Widget _zoneLabelOverlay() {
     if (kIsWeb) return const SizedBox.shrink();
     return ListenableBuilder(
       listenable: _markerFrame,
       builder: (_, __) {
         if (!FeatureFlags.zonesMapEnabled) return const SizedBox.shrink();
-        // Offline only — online keeps just the boundary lines (user spec
-        // 2026-10-11: "cuando se conecte solo quedará la línea gris").
         if (_driverOnline) return const SizedBox.shrink();
         if (_phase != _Phase.searching) return const SizedBox.shrink();
-        final name = _zoneHighlightName;
-        if (name == null) return const SizedBox.shrink();
-        Zone? zone;
-        for (final z in ZoneService.zones) {
-          if (z.name == name) {
-            zone = z;
-            break;
-          }
-        }
-        if (zone == null) return const SizedBox.shrink();
         final cam = _onlineCamState;
         final size = _onlineMapSize;
         if (cam == null || size == null) return const SizedBox.shrink();
         final c = cam.center.coordinates;
-        final off = FlatMapProjection.screenOffsetHeading(
-          target: zone.center,
-          cameraCenter: LatLng(c.lat.toDouble(), c.lng.toDouble()),
-          zoom: cam.zoom,
-          bearingDeg: cam.bearing,
-          pitchDeg: cam.pitch,
-          viewport: size,
-        );
-        if (off == null) return const SizedBox.shrink();
-        if (!FlatMapProjection.isOnScreen(off, size)) {
-          return const SizedBox.shrink();
+        final camCenter = LatLng(c.lat.toDouble(), c.lng.toDouble());
+        Offset? project(LatLng t) {
+          final off = FlatMapProjection.screenOffsetHeading(
+            target: t,
+            cameraCenter: camCenter,
+            zoom: cam.zoom,
+            bearingDeg: cam.bearing,
+            pitchDeg: cam.pitch,
+            viewport: size,
+          );
+          if (off == null || !FlatMapProjection.isOnScreen(off, size)) {
+            return null;
+          }
+          return off;
         }
-        return Positioned(
-          left: off.dx,
-          top: off.dy,
-          child: IgnorePointer(
-            child: FractionalTranslation(
-              translation: const Offset(-0.5, -0.5),
-              child: Text(
-                'FL: $name',
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w800,
-                  shadows: [
-                    Shadow(color: Colors.black, blurRadius: 3),
-                    Shadow(color: Colors.black, offset: Offset(0, 1)),
-                  ],
+
+        final children = <Widget>[];
+        // The highlighted sector's name (selection wins, else physical).
+        final hl = _sectorForHighlight;
+        if (hl != null) {
+          final off = project(hl.center);
+          if (off != null) {
+            children.add(Positioned(
+              left: off.dx,
+              top: off.dy,
+              child: IgnorePointer(
+                child: FractionalTranslation(
+                  translation: const Offset(-0.5, -0.5),
+                  child: Text(
+                    hl.name,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w800,
+                      shadows: [
+                        Shadow(color: Colors.black, blurRadius: 3),
+                        Shadow(color: Colors.black, offset: Offset(0, 1)),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ));
+          }
+        }
+        // Demand pills on the hot sectors (level ≥ 2 gets the pill; level 1
+        // is just the gold fill).
+        for (final s in ZoneService.sectors) {
+          final d = ZoneService.demand[s.id];
+          if (d == null || d.level < 2) continue;
+          if (hl != null && s.id == hl.id) {
+            // The pill rides slightly above the name label.
+          }
+          final off = project(s.center);
+          if (off == null) continue;
+          final isMax = d.level >= 3;
+          final label = isMax
+              ? S.of(context).zoneVeryBusy
+              : S.of(context).zoneBusy;
+          final bonus = d.bonus > 0
+              ? '  ·  +\$${d.bonus.toStringAsFixed(2)}'
+              : '';
+          children.add(Positioned(
+            left: off.dx,
+            top: off.dy + (hl != null && s.id == hl.id ? -26 : 0),
+            child: IgnorePointer(
+              child: FractionalTranslation(
+                translation: const Offset(-0.5, -0.5),
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                  decoration: BoxDecoration(
+                    color: isMax
+                        ? const Color(0xFFE8C547)
+                        : const Color(0xFF14141A),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                        color: const Color(0xFFE8C547), width: 1.2),
+                    boxShadow: const [
+                      BoxShadow(color: Colors.black54, blurRadius: 6),
+                    ],
+                  ),
+                  child: Text(
+                    '$label$bonus',
+                    style: TextStyle(
+                      color:
+                          isMax ? Colors.black : const Color(0xFFE8C547),
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
                 ),
               ),
             ),
-          ),
-        );
+          ));
+        }
+        if (children.isEmpty) return const SizedBox.shrink();
+        return Stack(children: children);
       },
     );
   }

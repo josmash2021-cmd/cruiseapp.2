@@ -26,6 +26,37 @@ class Zone {
   });
 }
 
+/// One demand-heat entry set by dispatch (2026-10-12 spec): level 1 = gold
+/// semi-transparent, 2 = more solid + "Ocupado" pill, 3 = fully solid +
+/// "Muy ocupado" pill. [bonus] rides the pill as "+$X.XX" (display only in
+/// phase 1 — the charge/pay pipeline is phase 2).
+class SectorDemand {
+  final int level;
+  final double bonus;
+  const SectorDemand(this.level, this.bonus);
+}
+
+/// One large driver SECTOR (2026-10-12 spec: "no de mini ciudad en mini
+/// ciudad si no por sectores") — the dissolve of several Census cities into
+/// a big region, painted always in gray with its boundary; dispatch turns
+/// it gold by demand level.
+class Sector {
+  final String id;
+  final String name;
+  final LatLng center;
+  final List<double> bbox; // [west, south, east, north]
+
+  /// [poly][ring][point] — same shape as [Zone.polys].
+  final List<List<List<LatLng>>> polys;
+
+  const Sector({
+    required this.id,
+    required this.name,
+    required this.center,
+    required this.bbox,
+    required this.polys,
+  });
+}
 /// Municipal zone polygons (2026-10-11, user spec: the driver map divided by
 /// city like the photo, and connecting only inside a zone).
 ///
@@ -37,17 +68,33 @@ class ZoneService {
   ZoneService._();
 
   static const _cacheKey = 'fl_zones_json_v1';
+  static const _sectorCacheKey = 'fl_sectors_json_v1';
 
   static final List<Zone> zones = [];
 
   /// Raw GeoJSON features, kept so the map can build its sources verbatim.
   static final List<Map<String, dynamic>> features = [];
 
+  /// The big SECTORS (2026-10-12 spec) and their raw features — one small
+  /// GeoJSON source per sector on the map (the single all-cities source
+  /// never materialized on iOS; per-sector sources are the size that draws).
+  static final List<Sector> sectors = [];
+  static final List<Map<String, dynamic>> sectorFeatures = [];
+  static bool sectorsReady = false;
+  static bool _sectorsLoading = false;
+
+  /// Sector demand heat set by dispatch: sector_id → level/bonus. Polled
+  /// every minute by the driver screen; missing = all gray.
+  static final Map<String, SectorDemand> demand = {};
+  static DateTime? _demandFetchedAt;
+
   static bool ready = false;
   static bool _loading = false;
 
-  /// Load zones: cached copy first (instant), network refresh after.
+  /// Load zones + sectors: cached copies first (instant), network refresh
+  /// after.
   static Future<void> load() async {
+    unawaited(loadSectors());
     if (ready || _loading) return;
     _loading = true;
     try {
@@ -62,6 +109,155 @@ class ZoneService {
       await _refreshFromNetwork();
     } finally {
       _loading = false;
+    }
+  }
+
+  /// Same load discipline as the cities file.
+  static Future<void> loadSectors() async {
+    if (sectorsReady || _sectorsLoading) return;
+    _sectorsLoading = true;
+    try {
+      final cached = LocalCache.get<String>(_sectorCacheKey);
+      if (cached != null && cached.length > 100) {
+        parseSectors(cached);
+        if (sectorsReady) {
+          unawaited(_refreshSectorsFromNetwork());
+          return;
+        }
+      }
+      await _refreshSectorsFromNetwork();
+    } finally {
+      _sectorsLoading = false;
+    }
+  }
+
+  static Future<void> _refreshSectorsFromNetwork() async {
+    try {
+      final res = await http
+          .get(Uri.parse(
+              '${ApiService.currentBaseUrl}/static/fl_sectors.json'))
+          .timeout(const Duration(seconds: 8));
+      if (res.statusCode == 200 && res.body.length > 100) {
+        parseSectors(res.body);
+        if (sectorsReady) {
+          unawaited(LocalCache.set(_sectorCacheKey, res.body));
+        }
+      }
+    } catch (e) {
+      debugPrint('[Zones] sector network load failed (cache applies): $e');
+    }
+  }
+
+  /// Parse the sectors FeatureCollection. Public for the guard test.
+  static void parseSectors(String body) {
+    try {
+      final data = jsonDecode(body) as Map<String, dynamic>;
+      final feats = (data['features'] as List?) ?? [];
+      final parsed = <Sector>[];
+      final rawFeats = <Map<String, dynamic>>[];
+      for (final feat in feats) {
+        final f = feat as Map<String, dynamic>;
+        final props = (f['properties'] as Map?) ?? {};
+        final geom = (f['geometry'] as Map?) ?? {};
+        final gtype = geom['type'] as String?;
+        final coords = geom['coordinates'] as List? ?? [];
+        final rawPolys = gtype == 'MultiPolygon' ? coords : [coords];
+        final polys = <List<List<LatLng>>>[];
+        for (final poly in rawPolys) {
+          final rings = <List<LatLng>>[
+            for (final ring in (poly as List))
+              [
+                for (final pt in (ring as List))
+                  LatLng((pt[1] as num).toDouble(), (pt[0] as num).toDouble())
+              ]
+          ];
+          if (rings.isNotEmpty && rings.first.length >= 4) polys.add(rings);
+        }
+        final bbox = ((props['bbox'] as List?) ?? [])
+            .map((v) => (v as num).toDouble())
+            .toList();
+        final center = (props['center'] as List?) ?? [0, 0];
+        final id = (props['id'] ?? '').toString();
+        if (polys.isEmpty || bbox.length < 4 || id.isEmpty) continue;
+        parsed.add(Sector(
+          id: id,
+          name: (props['name'] ?? '').toString(),
+          center: LatLng((center[1] as num).toDouble(),
+              (center[0] as num).toDouble()),
+          bbox: bbox,
+          polys: polys,
+        ));
+        rawFeats.add(f);
+      }
+      sectors
+        ..clear()
+        ..addAll(parsed);
+      sectorFeatures
+        ..clear()
+        ..addAll(rawFeats);
+      sectorsReady = sectors.isNotEmpty;
+    } catch (e) {
+      debugPrint('[Zones] sector parse failed: $e');
+    }
+  }
+
+  /// The sector containing the point, or null. Same ray-casting as the
+  /// cities — tap-to-select works on sectors (2026-10-12).
+  static Sector? sectorContaining(LatLng p) {
+    if (!sectorsReady) return null;
+    for (final s in sectors) {
+      final w = s.bbox[0], so = s.bbox[1], e = s.bbox[2], n = s.bbox[3];
+      if (p.longitude < w || p.longitude > e) continue;
+      if (p.latitude < so || p.latitude > n) continue;
+      for (final rings in s.polys) {
+        if (!_ringContains(p.longitude, p.latitude, rings[0])) continue;
+        final inHole = rings
+            .skip(1)
+            .any((hole) => _ringContains(p.longitude, p.latitude, hole));
+        if (!inHole) return s;
+      }
+    }
+    return null;
+  }
+
+  static Sector? sectorById(String id) {
+    for (final s in sectors) {
+      if (s.id == id) return s;
+    }
+    return null;
+  }
+
+  /// Pull the dispatch-set demand heat. 60 s cadence from the driver map.
+  static Future<void> loadDemand({bool force = false}) async {
+    final last = _demandFetchedAt;
+    if (!force &&
+        last != null &&
+        DateTime.now().difference(last).inSeconds < 55) {
+      return;
+    }
+    _demandFetchedAt = DateTime.now();
+    try {
+      final res = await http
+          .get(Uri.parse('${ApiService.currentBaseUrl}/zones/demand'),
+              headers: ApiService.jsonHeaders())
+          .timeout(const Duration(seconds: 6));
+      if (res.statusCode != 200) return;
+      final data = jsonDecode(res.body) as Map<String, dynamic>;
+      final raw = (data['sectors'] as Map?) ?? {};
+      final parsed = <String, SectorDemand>{};
+      for (final e in raw.entries) {
+        final cfg = (e.value as Map?) ?? {};
+        final level = (cfg['level'] as num?)?.toInt() ?? 0;
+        final bonus = (cfg['bonus'] as num?)?.toDouble() ?? 0;
+        if (level >= 1 && level <= 3) {
+          parsed[e.key.toString()] = SectorDemand(level, bonus);
+        }
+      }
+      demand
+        ..clear()
+        ..addAll(parsed);
+    } catch (e) {
+      debugPrint('[Zones] demand load failed (last values stay): $e');
     }
   }
 

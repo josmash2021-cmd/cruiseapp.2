@@ -277,3 +277,15 @@ async def test_app_consumes_every_status_field():
         assert f"data['{key}']" in api_src, (
             f"the app never reads '{key}' — a field added server-side that "
             f"the app drops is an integration failure by definition")
+
+
+async def test_client_event_breadcrumb(client):
+    res = await client.post(
+        "/diag/client-event",
+        headers=_make_auth_headers(),
+        json={"event": "recenter_tap", "detail": "online=False"},
+    )
+    assert res.status_code == 200, res.text
+    assert res.json()["ok"] is True
+    res = await client.post("/diag/client-event", json={"event": "x"})
+    assert res.status_code in (401, 403, 422)

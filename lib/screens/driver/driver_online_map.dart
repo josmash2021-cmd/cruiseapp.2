@@ -2158,6 +2158,11 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
   /// really is, not because it was told to be.
   void _recenterCamera() {
     if (!mounted) return;
+    // Diag breadcrumb (2026-10-11, "el botón de recentrar no funciona"):
+    // the tap + the flight outcome land in the server log — visible without
+    // the device. Removed once the chain is proven healthy on prod.
+    ApiService.logClientEvent('recenter_tap',
+        'online=$_driverOnline phase=$_phase hasPos=${_pos != null} mapMounted=$_mapMounted hasMap=${_map != null}');
     _reFollowTimer?.cancel();
     _followResumeTimer?.cancel();
     // An offer preview owns the frame: the route (driver → pickup →
@@ -2185,6 +2190,7 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
                 ? 10.8
                 : 15.5,
             bearing: bearing, tilt: 0);
+    ApiService.logClientEvent('recenter_fired', '$fired');
     if (!fired) {
       // The glide was vetoed (dead/remounting surface, mid ease) — flip
       // follow NOW and let the per-frame chase centre the camera on the

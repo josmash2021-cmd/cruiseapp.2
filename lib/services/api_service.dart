@@ -1278,6 +1278,23 @@ class ApiService {
     }
   }
 
+  /// Fire-and-forget diag breadcrumb → server log (2026-10-11: a dead
+  /// button on a user's phone becomes visible in the Railway logs without
+  /// needing the device). Never throws, never blocks UI.
+  static void logClientEvent(String event, [String detail = '']) {
+    unawaited(() async {
+      try {
+        await http
+            .post(
+              Uri.parse('$_baseUrl/diag/client-event'),
+              headers: _jsonHeaders(),
+              body: jsonEncode({'event': event, 'detail': detail}),
+            )
+            .timeout(const Duration(seconds: 5));
+      } catch (_) {}
+    }());
+  }
+
   /// Boot gate for the dispatch-controlled force-update switch.
   ///
   /// Returns `{required: bool, storeUrl: String}` or `null` when the check

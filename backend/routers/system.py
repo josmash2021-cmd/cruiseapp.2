@@ -649,3 +649,26 @@ async def set_feature_flag(req: FeatureFlagIn, request: Request,
     )
     logger.warning("[Flags] %s -> %s", req.key, req.enabled)
     return {"key": req.key, "enabled": req.enabled}
+
+
+# ═══════════════════════════════════════════════════════════════════════
+#  Client breadcrumbs — the app's taps report to the server log so a dead
+#  button on a phone is diagnosable WITHOUT the device (2026-10-11, born
+#  for the offline recenter FAB that "does nothing" on the user's phone)
+# ═══════════════════════════════════════════════════════════════════════
+
+class ClientEventIn(BaseModel):
+    event: str = Field(min_length=1, max_length=60)
+    detail: Optional[str] = Field(None, max_length=300)
+
+
+@router.post("/diag/client-event", dependencies=[Depends(_verify_api_key)])
+async def client_event(req: ClientEventIn, request: Request):
+    # A log line, nothing else — this is a diag instrument, not a data pipe.
+    logger.warning(
+        "[ClientEvent] %s | %s | %s",
+        req.event,
+        req.detail or "",
+        request.client.host if request.client else "unknown",
+    )
+    return {"ok": True}

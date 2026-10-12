@@ -116,7 +116,6 @@ class _SplashScreenState extends State<SplashScreen> {
       for (final path in const [
         '/static/update_required_hero.png',
         '/static/nav_intro_hero.png',
-        '/static/maintenance_hero.png',
       ]) {
         precacheImage(
           NetworkImage('${ApiService.currentBaseUrl}$path'),

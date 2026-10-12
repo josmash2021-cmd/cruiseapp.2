@@ -147,10 +147,15 @@ void main() {
           reason: 'the exit pops out before re-booting');
       expect(maint.contains('appUpdateGateStream'), isTrue);
       expect(maint.contains('Duration(seconds: 15)'), isTrue);
-      expect(maint.contains('/static/maintenance_hero.png'), isTrue,
-          reason: 'the bell art comes from the backend (OTA carries no '
-              'assets)');
-      expect(maint.contains('_fallbackBadge'), isTrue);
+      expect(maint.contains('assets/images/maintenance_hero.png'), isTrue,
+          reason: 'bundled asset — the art paints WITH the page, no network '
+              'gap (user spec 2026-10-12: the bell badge flashed while the '
+              'hero downloaded; OTA patches carry assets now)');
+      expect(maint.contains('_fallbackBadge'), isFalse,
+          reason: 'no placeholder icon — the bundled asset renders in the '
+              'first frame');
+      expect(maint.contains('notifications_off'), isFalse,
+          reason: 'the bell icon is gone from this page');
     });
 
     test('maintenance wins over the update gate at boot AND live', () {

@@ -85,22 +85,6 @@ class _MaintenanceScreenState extends State<MaintenanceScreen>
     Navigator.of(context).pushReplacementNamed('/');
   }
 
-  /// The bell badge while the art downloads (or if it ever fails).
-  Widget _fallbackBadge() {
-    return Container(
-      width: 148,
-      height: 148,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        color: _gold.withValues(alpha: 0.10),
-        border: Border.all(color: _gold.withValues(alpha: 0.35), width: 1.5),
-      ),
-      child: const Center(
-        child: Icon(Icons.notifications_off_rounded, size: 64, color: _gold),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     return PopScope(
@@ -125,17 +109,10 @@ class _MaintenanceScreenState extends State<MaintenanceScreen>
                       parent: _anim,
                       curve: const Interval(0, 0.45),
                     ),
-                    child: Image.network(
-                      '${ApiService.currentBaseUrl}/static/maintenance_hero.png',
+                    child: Image.asset(
+                      'assets/images/maintenance_hero.png',
                       width: 240,
                       fit: BoxFit.contain,
-                      frameBuilder: (context, child, frame, wasSync) {
-                        if (wasSync) return child;
-                        if (frame == null) return _fallbackBadge();
-                        return child; // already fading with the page
-                      },
-                      errorBuilder: (context, error, stack) =>
-                          _fallbackBadge(),
                     ),
                   ),
                 ),

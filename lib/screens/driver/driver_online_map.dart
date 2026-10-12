@@ -2375,6 +2375,12 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     // Remote kill switch (2026-10-11, black-map report): while we verify
     // the zone drawing on a real device, the layers stay off by default.
     if (!FeatureFlags.zonesMapEnabled) return;
+    // First render FIRST (2026-10-12, black-map report): the writes below
+    // are ~120 native style mutations that share the render thread with
+    // the first tile paint — fired during style load they starved it and
+    // the driver stared at a black map for ~30 s. onMapIdleListener
+    // re-triggers this sync the moment the map is actually rendering.
+    if (!_firstRenderDone) return;
     final visible = _phase == _Phase.searching;
     final online = _driverOnline;
     try {
@@ -2410,85 +2416,106 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
   Future<void> _createZoneLayers(mapbox.MapboxMap map) async {
     final emptyFc =
         jsonEncode({'type': 'FeatureCollection', 'features': const []});
-    for (final s in ZoneService.sectors) {
-      final sid = s.id;
-      try {
-        await map.style.addSource(
-            mapbox.GeoJsonSource(id: 'sec-src-$sid', data: emptyFc));
-      } catch (_) {}
-      // The look per the user's spec (2026-10-12): offline every sector is
-      // gray with a THICK gray boundary; dispatch heat turns the fill gold
-      // (three levels); online keeps only the boundary with its 3D shadow.
-      try {
-        await map.style.addLayer(mapbox.FillLayer(
-          id: 'sec-fill-$sid',
-          sourceId: 'sec-src-$sid',
-          fillColor: 0xFF9AA3B8, // gray base — heat rewrites it gold
-          fillOpacity: 0.0,
-        ));
-      } catch (_) {}
-      try {
-        await map.style.addLayer(mapbox.LineLayer(
-          id: 'sec-shadow-$sid',
-          sourceId: 'sec-src-$sid',
-          lineColor: 0xFF000000,
-          lineWidth: 3.4,
-          lineOpacity: 0.0,
-          lineTranslate: const [0.0, 2.0],
-          lineTranslateAnchor: mapbox.LineTranslateAnchor.VIEWPORT,
-        ));
-      } catch (_) {}
-      try {
-        await map.style.addLayer(mapbox.LineLayer(
-          id: 'sec-line-$sid',
-          sourceId: 'sec-src-$sid',
-          lineColor: 0xFF9AA3B8, // gray, thick — the divisions always read
-          lineWidth: 2.4,
-          lineOpacity: 0.0,
-        ));
-      } catch (_) {}
-    }
-    // The selection highlight: one shared source, rewritten with the picked
-    // sector — brighter than any demand level ("si seleccionan uno se debe
-    // poner mas amarillo").
-    try {
-      await map.style
-          .addSource(mapbox.GeoJsonSource(id: 'sec-hl-src', data: emptyFc));
-    } catch (_) {}
-    try {
-      await map.style.addLayer(mapbox.FillLayer(
+    // Parallel batches instead of a ~120-link serial await chain
+    // (2026-10-12 black-map report): every awaited platform call yields
+    // the event loop, and the serial version kept the render thread busy
+    // for tens of seconds. Order only matters BETWEEN batches — sources,
+    // then the layers referencing them, then the data.
+    await Future.wait([
+      for (final s in ZoneService.sectors) _addSectorSource(map, s, emptyFc),
+      _guardedStyleWrite(map.style
+          .addSource(mapbox.GeoJsonSource(id: 'sec-hl-src', data: emptyFc))),
+    ]);
+    await Future.wait([
+      for (final s in ZoneService.sectors) ..._addSectorLayers(map, s),
+      // The selection highlight: one shared source, rewritten with the
+      // picked sector — brighter than any demand level ("si seleccionan
+      // uno se debe poner mas amarillo").
+      _guardedStyleWrite(map.style.addLayer(mapbox.FillLayer(
         id: 'sec-hl-fill',
         sourceId: 'sec-hl-src',
         fillColor: 0xFFE8C547,
         fillOpacity: 0.0,
-      ));
-    } catch (_) {}
+      ))),
+    ]);
     // Data enters AFTER the layers exist, one small write per sector — the
     // proven path. A failed write keeps the latch OPEN so the next sync
     // retries, and reports to the server (a silent catch here is what hid
     // the divisions for a week).
-    var failed = 0;
-    for (final f in ZoneService.sectorFeatures) {
-      final sid = ((f['properties'] as Map?)?['id']) ?? '';
-      if (sid.isEmpty) continue;
-      try {
-        await map.style.setStyleSourceProperty(
-          'sec-src-$sid',
-          'data',
-          jsonEncode({
-            'type': 'FeatureCollection',
-            'features': [f],
-          }),
-        );
-      } catch (e) {
-        failed++;
-        debugPrint('[Zones] sector $sid data write failed: $e');
-      }
-    }
+    final writes = await Future.wait([
+      for (final f in ZoneService.sectorFeatures) _writeSectorData(map, f),
+    ]);
+    final failed = writes.where((ok) => !ok).length;
     if (failed > 0) {
       ApiService.logClientEvent(
           'zones_src_write_failed', 'sectors_failed=$failed');
       throw StateError('$failed sector sources rejected their data');
+    }
+  }
+
+  Future<void> _guardedStyleWrite(Future<void> f) async {
+    try {
+      await f;
+    } catch (_) {}
+  }
+
+  Future<void> _addSectorSource(
+      mapbox.MapboxMap map, Sector s, String emptyFc) {
+    final sid = s.id;
+    return _guardedStyleWrite(map.style.addSource(
+        mapbox.GeoJsonSource(id: 'sec-src-$sid', data: emptyFc)));
+  }
+
+  /// The look per the user's spec (2026-10-12): offline every sector is
+  /// gray with a THICK gray boundary; dispatch heat turns the fill gold
+  /// (three levels); online keeps only the boundary with its 3D shadow.
+  List<Future<void>> _addSectorLayers(mapbox.MapboxMap map, Sector s) {
+    final sid = s.id;
+    return [
+      _guardedStyleWrite(map.style.addLayer(mapbox.FillLayer(
+        id: 'sec-fill-$sid',
+        sourceId: 'sec-src-$sid',
+        fillColor: 0xFF9AA3B8, // gray base — heat rewrites it gold
+        fillOpacity: 0.0,
+      ))),
+      _guardedStyleWrite(map.style.addLayer(mapbox.LineLayer(
+        id: 'sec-shadow-$sid',
+        sourceId: 'sec-src-$sid',
+        lineColor: 0xFF000000,
+        lineWidth: 3.4,
+        lineOpacity: 0.0,
+        lineTranslate: const [0.0, 2.0],
+        lineTranslateAnchor: mapbox.LineTranslateAnchor.VIEWPORT,
+      ))),
+      _guardedStyleWrite(map.style.addLayer(mapbox.LineLayer(
+        id: 'sec-line-$sid',
+        sourceId: 'sec-src-$sid',
+        lineColor: 0xFF9AA3B8, // gray, thick — the divisions always read
+        lineWidth: 2.4,
+        lineOpacity: 0.0,
+      ))),
+    ];
+  }
+
+  /// One sector's GeoJSON payload; false on failure so the caller counts
+  /// it and keeps the retry latch open.
+  Future<bool> _writeSectorData(
+      mapbox.MapboxMap map, Map<String, dynamic> f) async {
+    final sid = ((f['properties'] as Map?)?['id']) ?? '';
+    if (sid.isEmpty) return true;
+    try {
+      await map.style.setStyleSourceProperty(
+        'sec-src-$sid',
+        'data',
+        jsonEncode({
+          'type': 'FeatureCollection',
+          'features': [f],
+        }),
+      );
+      return true;
+    } catch (e) {
+      debugPrint('[Zones] sector $sid data write failed: $e');
+      return false;
     }
   }
 
@@ -2498,36 +2525,45 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
   /// Online keeps ONLY the boundary + its 3D shadow, per spec.
   Future<void> _writeZoneVisibility(
       mapbox.MapboxMap map, bool visible, bool online) async {
-    for (final s in ZoneService.sectors) {
-      final sid = s.id;
-      final level = visible && !online
-          ? (ZoneService.demand[sid]?.level ?? 0)
-          : 0;
-      final fillColor = level == 0 ? 0xFF9AA3B8 : 0xFFE8C547;
-      final fillOpacity = !visible || online
-          ? 0.0
-          : level == 0
-              ? 0.07
-              : level == 1
-                  ? 0.18
-                  : level == 2
-                      ? 0.32
-                      : 0.48;
-      try {
-        await map.style
-            .setStyleLayerProperty('sec-fill-$sid', 'fill-color', fillColor);
-        await map.style.setStyleLayerProperty(
-            'sec-fill-$sid', 'fill-opacity', fillOpacity);
-        await map.style.setStyleLayerProperty(
-            'sec-line-$sid', 'line-opacity', visible ? 0.85 : 0.0);
-        await map.style.setStyleLayerProperty('sec-shadow-$sid',
-            'line-opacity', visible && online ? 0.35 : 0.0);
-      } catch (_) {}
-    }
+    // One parallel batch — the serial per-property awaits were part of the
+    // render-thread pile-up (2026-10-12 black-map report).
+    await Future.wait([
+      for (final s in ZoneService.sectors)
+        _writeSectorLook(map, s, visible, online),
+    ]);
     // The selection highlight only reads offline (online is drive mode).
     try {
       await map.style.setStyleLayerProperty(
           'sec-hl-fill', 'fill-opacity', visible && !online ? 0.50 : 0.0);
+    } catch (_) {}
+  }
+
+  Future<void> _writeSectorLook(
+      mapbox.MapboxMap map, Sector s, bool visible, bool online) async {
+    final sid = s.id;
+    final level =
+        visible && !online ? (ZoneService.demand[sid]?.level ?? 0) : 0;
+    final fillColor = level == 0 ? 0xFF9AA3B8 : 0xFFE8C547;
+    final fillOpacity = !visible || online
+        ? 0.0
+        : level == 0
+            ? 0.07
+            : level == 1
+                ? 0.18
+                : level == 2
+                    ? 0.32
+                    : 0.48;
+    try {
+      await Future.wait([
+        map.style
+            .setStyleLayerProperty('sec-fill-$sid', 'fill-color', fillColor),
+        map.style.setStyleLayerProperty(
+            'sec-fill-$sid', 'fill-opacity', fillOpacity),
+        map.style.setStyleLayerProperty(
+            'sec-line-$sid', 'line-opacity', visible ? 0.85 : 0.0),
+        map.style.setStyleLayerProperty('sec-shadow-$sid', 'line-opacity',
+            visible && online ? 0.35 : 0.0),
+      ]);
     } catch (_) {}
   }
 

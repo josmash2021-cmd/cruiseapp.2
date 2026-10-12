@@ -119,6 +119,26 @@ void main() {
         reason: 'the latch must stay open so the next sync retries');
   });
 
+  test('zone style writes wait for the first render and run batched', () {
+    // 2026-10-12 black-map report: ~120 serial awaited style mutations
+    // fired during style load starved the render thread — the driver
+    // stared at a black map for ~30 s at every boot. The work now waits
+    // for the first real render and runs in parallel batches.
+    final map =
+        File('lib/screens/driver/driver_online_map.dart').readAsStringSync();
+    expect(map, contains('if (!_firstRenderDone) return;'),
+        reason: 'zone sync must wait for the first rendered frame');
+    expect(map, contains('Future.wait(['),
+        reason: 'style writes batch in parallel, never a serial chain');
+    final w = File('lib/screens/driver/driver_online_widgets.dart')
+        .readAsStringSync();
+    final idle = RegExp(r'onMapIdleListener: \(_\) \{(.*?)\},\n',
+        dotAll: true);
+    final block = idle.firstMatch(w)?.group(1) ?? '';
+    expect(block, contains('_syncZoneLayers()'),
+        reason: 'every idle beat re-triggers the deferred zone sync');
+  });
+
   test('the GO tap gates the connect client-side, fail-open', () {
     final s = File('lib/screens/driver/driver_online_offline.dart')
         .readAsStringSync();

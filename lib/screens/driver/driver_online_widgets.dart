@@ -248,6 +248,9 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
           if (!_firstRenderDone && mounted) {
             _setState(() => _firstRenderDone = true);
           }
+          // The zone layers wait for the map to be rendering (see
+          // _syncZoneLayers) — every idle beat is their cue to (re)try.
+          _syncZoneLayers();
         },
         styleUri: MapboxConfig.styleDark,
         cameraOptions: mapbox.CameraOptions(

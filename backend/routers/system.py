@@ -868,27 +868,38 @@ def _load_sectors_file() -> Optional[dict]:
         return None
 
 
-def _clean_position(pos, where: str) -> list:
+def _clean_position(pos, label: str) -> list:
     if (not isinstance(pos, (list, tuple)) or len(pos) != 2
             or any(isinstance(v, bool) or not isinstance(v, (int, float))
                    for v in pos)):
-        raise HTTPException(400, f"{where}: position must be [lng, lat]")
+        raise HTTPException(
+            400, f"{label}: anillo inválido — cada posición debe ser "
+                 "[lng, lat]")
     lng, lat = float(pos[0]), float(pos[1])
     # NaN/inf fall out here: every comparison against them is False.
     if not (-180.0 <= lng <= 180.0 and -90.0 <= lat <= 90.0):
-        raise HTTPException(400, f"{where}: lng/lat out of range")
+        raise HTTPException(
+            400, f"{label}: anillo inválido — coordenada fuera de rango")
     return [lng, lat]
 
 
-def _clean_ring(ring, where: str) -> list:
+def _clean_ring(ring, label: str) -> list:
+    """A valid ring ends closed (first == last — auto-closed here when the
+    editor left it open) with >= 4 positions and >= 3 DISTINCT ones. The
+    1-position and repeated-point rings are all degenerate by that rule.
+    Messages go in Spanish with the sector name: the dispatch panel shows
+    them verbatim."""
     if not isinstance(ring, list) or len(ring) < 3:
-        raise HTTPException(400, f"{where}: a ring needs >= 3 positions")
-    pts = [_clean_position(p, where) for p in ring]
-    if len({(p[0], p[1]) for p in pts}) < 3:
-        raise HTTPException(400,
-                            f"{where}: a ring needs >= 3 distinct positions")
+        raise HTTPException(
+            400, f"{label}: anillo inválido — un anillo necesita al menos "
+                 "3 posiciones")
+    pts = [_clean_position(p, label) for p in ring]
     if pts[0] != pts[-1]:
         pts.append(list(pts[0]))  # close the ring server-side
+    if len(pts) < 4 or len({(p[0], p[1]) for p in pts}) < 3:
+        raise HTTPException(
+            400, f"{label}: anillo inválido — un anillo necesita al menos "
+                 "3 posiciones distintas")
     return pts
 
 
@@ -929,36 +940,45 @@ def _validate_sector_collection(req: SectorsGeojsonIn) -> list:
             400, f"features must be 1..{_SECTOR_MAX_FEATURES}")
     out, taken, total = [], set(), 0
     for i, feat in enumerate(features):
-        where = f"feature {i}"
+        # Label for error messages: the panel shows them verbatim, so once
+        # the name is known it identifies the sector ("sector 'Doral'...");
+        # before that, the 1-based index ("sector #2: ...").
+        label = f"sector #{i + 1}"
         if not isinstance(feat, dict):
-            raise HTTPException(400, f"{where}: not an object")
+            raise HTTPException(400, f"{label}: no es un objeto")
         props = feat.get("properties")
         if not isinstance(props, dict):
-            raise HTTPException(400, f"{where}: properties must be an object")
+            raise HTTPException(
+                400, f"{label}: properties debe ser un objeto")
         raw_name = props.get("name")
         if not isinstance(raw_name, str) or not raw_name.strip():
-            raise HTTPException(400, f"{where}: properties.name required")
+            raise HTTPException(
+                400, f"{label}: properties.name es requerido")
         name = raw_name.strip()
         if len(name) > 100:
-            raise HTTPException(400, f"{where}: properties.name too long")
+            raise HTTPException(
+                400, f"{label}: el nombre es demasiado largo")
+        label = f"sector '{name}'"
         geom = feat.get("geometry")
         if not isinstance(geom, dict):
-            raise HTTPException(400, f"{where}: geometry must be an object")
+            raise HTTPException(400, f"{label}: geometry debe ser un objeto")
         gtype, coords = geom.get("type"), geom.get("coordinates")
+        if not isinstance(coords, list) or not coords:
+            raise HTTPException(
+                400, f"{label}: geometry.coordinates vacío o ausente")
         if gtype == "Polygon":
             polys = [coords]
         elif gtype == "MultiPolygon":
-            if not isinstance(coords, list) or not coords:
-                raise HTTPException(400, f"{where}: empty MultiPolygon")
             polys = coords
         else:
             raise HTTPException(
-                400, f"{where}: geometry must be Polygon|MultiPolygon")
+                400, f"{label}: geometry debe ser Polygon|MultiPolygon")
         clean_polys = []
         for poly in polys:
             if not isinstance(poly, list) or not poly:
-                raise HTTPException(400, f"{where}: a polygon needs rings")
-            clean_polys.append([_clean_ring(r, where) for r in poly])
+                raise HTTPException(
+                    400, f"{label}: un polígono necesita al menos un anillo")
+            clean_polys.append([_clean_ring(r, label) for r in poly])
         total += sum(len(r) for poly in clean_polys for r in poly)
         if total > _SECTOR_MAX_POINTS:
             raise HTTPException(
@@ -973,8 +993,13 @@ def _validate_sector_collection(req: SectorsGeojsonIn) -> list:
         new_props["id"] = _slugify_sector(name, taken)
         new_props["bbox"] = [w, s, e, n]
         new_props["center"] = [(w + e) / 2, (s + n) / 2]
+        # GeoJSON nesting differs by type: Polygon coordinates are the list
+        # of rings itself, MultiPolygon wraps one list per polygon. Storing
+        # the working list verbatim wrote MultiPolygon-shaped coordinates
+        # under a Polygon type — invalid GeoJSON the apps can't render.
+        stored_coords = clean_polys[0] if gtype == "Polygon" else clean_polys
         out.append({"type": "Feature", "properties": new_props,
-                    "geometry": {"type": gtype, "coordinates": clean_polys}})
+                    "geometry": {"type": gtype, "coordinates": stored_coords}})
     return out
 
 
@@ -982,7 +1007,12 @@ def _validate_sector_collection(req: SectorsGeojsonIn) -> list:
 async def get_zone_sectors(db=Depends(get_db)):
     """Live sector map for the apps. The dispatch-edited copy in app_config
     wins; until the first PUT the baked static file is served. The version
-    is the client's cache key — refetch only when it changes."""
+    is the client's cache key — refetch only when it changes.
+
+    The stored row is re-validated with the SAME rules the PUT applies
+    before it is served: a bypass write (SQL console, hand edit) must never
+    reach the apps. Garbage falls back to the baked file at the FILE's
+    version (0), never the corrupt row's."""
     import json as _json
     from sqlalchemy import select
 
@@ -992,22 +1022,25 @@ async def get_zone_sectors(db=Depends(get_db)):
                                   _SECTORS_VERSION_KEY])))
     rows = {k: v for k, v in r.all()}
     geojson = None
+    version = 0
     raw = rows.get(_SECTORS_GEOJSON_KEY)
     if raw:
         try:
             parsed = _json.loads(raw)
-            if isinstance(parsed, dict) \
-                    and parsed.get("type") == "FeatureCollection":
-                geojson = parsed
+            _validate_sector_collection(SectorsGeojsonIn(
+                type=parsed.get("type", ""),
+                features=parsed.get("features", [])))
+            geojson = parsed
+            version = _sectors_version_from(rows.get(_SECTORS_VERSION_KEY))
         except Exception as e:
             logger.warning(
-                "[Zones] stored sectors unreadable, serving file: %s", e)
+                "[Zones] stored sectors invalid, serving the baked file: %s",
+                getattr(e, "detail", e))
     if geojson is None:
-        geojson = _load_sectors_file()
+        geojson = _load_sectors_file()  # version stays 0 — the file's
     if geojson is None:
         raise HTTPException(503, "sector map unavailable")
-    return {"version": _sectors_version_from(rows.get(_SECTORS_VERSION_KEY)),
-            "geojson": geojson}
+    return {"version": version, "geojson": geojson}
 
 
 @router.put("/admin/zones/sectors",

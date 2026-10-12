@@ -8,8 +8,12 @@ Pinned:
 - the server owns id (unique slug of the name), bbox and center (bbox
   centroid) — client-sent values are always recomputed,
 - every write bumps the version and broadcasts "zones_updated",
-- /zones/demand carries sectors_version as the polling fallback.
+- /zones/demand carries sectors_version as the polling fallback,
+- a corrupt app_config row (bypass write) never reaches the apps: GET
+  re-validates it and falls back to the baked file at version 0.
 """
+
+import json
 
 import pytest
 
@@ -110,7 +114,12 @@ async def test_ring_gets_closed_server_side(client):
                                                      open_ring)))
     assert res.status_code == 200, res.text
     res = await client.get("/zones/sectors", headers=_make_auth_headers())
-    ring = res.json()["geojson"]["features"][0]["geometry"]["coordinates"][0]
+    coords = res.json()["geojson"]["features"][0]["geometry"]["coordinates"]
+    # GeoJSON Polygon nesting: coordinates = [ring, ...] — one level LESS
+    # than MultiPolygon. coords[0] is the ring itself.
+    assert isinstance(coords[0][0][0], float)  # ring of positions, no extra []
+    ring = coords[0]
+    assert len(ring) == 5  # the open square, closed server-side
     assert ring[0] == ring[-1]
 
 
@@ -182,3 +191,126 @@ async def test_demand_carries_sectors_version(client):
     version = res.json()["version"]
     res = await client.get("/zones/demand", headers=_make_auth_headers())
     assert res.json()["sectors_version"] == version
+
+
+# ── Ring hardening (prod incident: garbage one-position rings reached
+#    app_config and blanked the sector map) ──
+
+async def test_incident_one_point_rings_rejected(client):
+    """The exact prod payload: '1 zone'..'4 zone', each a Polygon whose ring
+    is ONE position. 400, the message names the sector for the panel, and
+    NOTHING is written (the apps keep the last good map)."""
+    dh = lambda: _make_auth_headers("test-dispatch-key")
+    garbage = _collection(*[
+        {"type": "Feature", "properties": {"name": f"{n} zone"},
+         "geometry": {"type": "Polygon",
+                      "coordinates": [[[-80.1 - n * 0.01, 26.2]]]}}
+        for n in range(1, 5)])
+    res = await client.put("/admin/zones/sectors", headers=dh(),
+                           json=garbage)
+    assert res.status_code in (400, 422), res.text
+    assert "sector '1 zone'" in res.json()["detail"]
+
+    res = await client.get("/zones/sectors", headers=_make_auth_headers())
+    body = res.json()
+    assert body["version"] == 0  # untouched: still the baked file
+    assert len(body["geojson"]["features"]) == 13
+
+
+async def test_unclosed_ring_three_distinct_auto_closes(client):
+    """3 distinct positions left open by the editor = a real triangle: the
+    server closes it (first == last, 4 stored positions) and accepts."""
+    dh = lambda: _make_auth_headers("test-dispatch-key")
+    triangle = [[-80.20, 26.20], [-80.10, 26.20], [-80.15, 26.30]]
+    res = await client.put("/admin/zones/sectors", headers=dh(),
+                           json=_collection(_feature("Triangulo", triangle)))
+    assert res.status_code == 200, res.text
+    res = await client.get("/zones/sectors", headers=_make_auth_headers())
+    coords = res.json()["geojson"]["features"][0]["geometry"]["coordinates"]
+    ring = coords[0]  # Polygon: coordinates = [ring]
+    assert len(ring) == 4
+    assert ring[0] == ring[-1]
+
+
+async def test_ring_with_only_two_distinct_positions_rejected(client):
+    dh = lambda: _make_auth_headers("test-dispatch-key")
+    # closed but only 2 distinct points
+    res = await client.put("/admin/zones/sectors", headers=dh(),
+                           json=_collection(_feature(
+                               "X", [[-80.2, 26.2], [-80.1, 26.3],
+                                     [-80.2, 26.2]])))
+    assert res.status_code in (400, 422), res.text
+    # repeated points that auto-close into the same degenerate shape
+    res = await client.put("/admin/zones/sectors", headers=dh(),
+                           json=_collection(_feature(
+                               "X", [[-80.2, 26.2], [-80.1, 26.3],
+                                     [-80.1, 26.3]])))
+    assert res.status_code in (400, 422), res.text
+    # fully degenerate: the same point 4 times
+    res = await client.put("/admin/zones/sectors", headers=dh(),
+                           json=_collection(_feature(
+                               "X", [[-80.2, 26.2]] * 4)))
+    assert res.status_code in (400, 422), res.text
+
+
+async def test_empty_coordinates_rejected(client):
+    dh = lambda: _make_auth_headers("test-dispatch-key")
+    for geom in ({"type": "Polygon", "coordinates": []},
+                 {"type": "MultiPolygon", "coordinates": []},
+                 {"type": "Polygon", "coordinates": [[]]},
+                 {"type": "Polygon"},  # coordinates absent
+                 ):
+        res = await client.put(
+            "/admin/zones/sectors", headers=dh(),
+            json=_collection({"type": "Feature",
+                              "properties": {"name": "X"},
+                              "geometry": geom}))
+        assert res.status_code in (400, 422), f"{geom} -> {res.text}"
+
+
+# ── Read-side guard: garbage in app_config never reaches the apps ──
+
+async def test_corrupt_db_row_falls_back_to_static_file(client, db):
+    """A bypass write (SQL console, hand edit) must never blank the apps:
+    an invalid app_config row → GET re-validates, warns, and serves the
+    baked file at the FILE's version (0), not the corrupt row's."""
+    from models.database import AppConfig
+    from routers.system import _SECTORS_GEOJSON_KEY, _SECTORS_VERSION_KEY
+
+    db.add(AppConfig(
+        key=_SECTORS_GEOJSON_KEY,
+        value='{"type":"FeatureCollection","features":['
+              '{"type":"Feature","properties":{"name":"1 zone"},'
+              '"geometry":{"type":"Polygon",'
+              '"coordinates":[[[-80.1, 26.2]]]}}]}'))
+    db.add(AppConfig(key=_SECTORS_VERSION_KEY, value="7"))
+    await db.commit()
+
+    res = await client.get("/zones/sectors", headers=_make_auth_headers())
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["version"] == 0  # the file's, not the corrupt row's 7
+    assert len(body["geojson"]["features"]) == 13  # the baked fl_sectors.json
+
+
+async def test_valid_db_row_is_served_as_stored(client, db):
+    """The guard only rejects garbage: a valid stored row (valid but NOT
+    written through the PUT — unclosed ring, unsorted keys) is served."""
+    from models.database import AppConfig
+    from routers.system import _SECTORS_GEOJSON_KEY, _SECTORS_VERSION_KEY
+
+    triangle = [[-80.20, 26.20], [-80.10, 26.20], [-80.15, 26.30]]
+    db.add(AppConfig(
+        key=_SECTORS_GEOJSON_KEY,
+        value=json.dumps(_collection(_feature("Semilla", triangle))))
+    )
+    db.add(AppConfig(key=_SECTORS_VERSION_KEY, value="3"))
+    await db.commit()
+
+    res = await client.get("/zones/sectors", headers=_make_auth_headers())
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["version"] == 3
+    feats = body["geojson"]["features"]
+    assert len(feats) == 1
+    assert feats[0]["properties"]["name"] == "Semilla"

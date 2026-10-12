@@ -253,8 +253,14 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
         cameraOptions: mapbox.CameraOptions(
           center: mapbox.Point(
               coordinates: mapbox.Position(pos.longitude, pos.latitude)),
-          zoom:
-              16.0, // match home screen zoom — glides to 15.5 via _onSmoothTick
+          // Offline with the zone layer on the map is BORN at the region
+          // view (user spec 2026-10-11: "cuando se abre la app sale con
+          // zoom in en vez del zoom out de la foto") — the entry ease only
+          // runs while the ticker ticks, and the ticker parks when the
+          // parked driver needs the wide view the most.
+          zoom: (!_driverOnline && FeatureFlags.zonesMapEnabled)
+              ? 10.8
+              : 16.0, // match home screen zoom — glides to 15.5 via _onSmoothTick
           bearing: 0,
           pitch: 0,
         ),
@@ -346,6 +352,11 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
     unawaited(ZoneService.load().then((_) {
       if (mounted) _syncZoneLayers(forceHighlight: true);
     }));
+    // Offline with zones the camera is born at the region view (10.8) — the
+    // 16→target entry ease must not drag it back up on the first tick.
+    if (!_driverOnline && FeatureFlags.zonesMapEnabled) {
+      _zoomEaseDone = true;
+    }
     // Increment generation so any stale annotation refs from the old
     // PlatformView are recognized as dead and recreated fresh.
     _mapGeneration++;

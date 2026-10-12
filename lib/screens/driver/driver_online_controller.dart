@@ -1042,6 +1042,18 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       // GPS pasa a background-capable — el stream se recrea (iOS solo
       // aplica el flag en un request nuevo).
       _syncPosStreamMode();
+      // Zoom back IN fluido (user spec 2026-10-11: "no debe hacer zoom de
+      // golpe si no fluida"): con follow vivo el chase easea desde el zoom
+      // actual; con el mapa corrido por el dedo, un flyTo recentra y acerca.
+      if (FeatureFlags.zonesMapEnabled) {
+        _zoomEaseFrom = _onlineCamState?.zoom ?? 10.8;
+        _zoomEaseDone = false;
+        _zoomEaseStartMs = null;
+        if (!_cameraFollowing && _pos != null) {
+          _animateToPosition(_pos!,
+              zoom: 15.5, bearing: _smoothedBearing, tilt: 0);
+        }
+      }
       PrefsCache.instance.then((p) => p.setBool('driver_was_online', true));
       // 12 h shift cap (user spec 2026-09-27): the ghost agent caps the
       // shift server-side off online_since even with the app dead; this
@@ -1159,6 +1171,13 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     _shiftCapTimer = null;
     _shiftStartedAt = null;
     _syncOfferLiveActivity();
+    // Glide OUT to the region view (user spec 2026-10-11: "no debe hacer
+    // zoom de golpe si no fluida alejandose") — the offline chase barely
+    // ticks for a parked driver, so the zoom change cannot ride it.
+    if (FeatureFlags.zonesMapEnabled && _pos != null) {
+      _animateToPosition(_pos!,
+          zoom: 10.8, bearing: _smoothedBearing, tilt: 0);
+    }
   }
 
   /// The server-side half of the 12 h cap landing while the app is OPEN
@@ -2003,7 +2022,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
         final t = ((elapsed.inMilliseconds - _zoomEaseStartMs!) / 750.0)
             .clamp(0.0, 1.0);
         final e = 1.0 - math.pow(1.0 - t, 3).toDouble();
-        zoom = 16.0 - (16.0 - zoomTarget) * e;
+        zoom = _zoomEaseFrom - (_zoomEaseFrom - zoomTarget) * e;
         if (t >= 1.0) _zoomEaseDone = true;
       }
       // Heading-up top-down chase (user spec 2026-09-19): the map stays

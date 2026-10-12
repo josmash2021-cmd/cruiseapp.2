@@ -433,7 +433,7 @@ void main() {
       expect(screen.contains('bool _animateToPosition('), isTrue,
           reason: 'the flight reports whether it was issued');
       final recenter =
-          bodyOf(map, 'void _recenterCamera() {', maxLen: 1800);
+          bodyOf(map, 'void _recenterCamera() {', maxLen: 2800);
       expect(recenter.contains('final fired ='), isTrue);
       expect(recenter.contains('if (!fired)'), isTrue);
       expect(recenter.contains('_cameraFollowing = true'), isTrue);
@@ -445,8 +445,16 @@ void main() {
       expect(go.contains('neuBox(radius: 16, pressed: true)'), isFalse,
           reason: 'no sunken grey well anymore — spec "siempre normal en '
               'amarillo"');
-      expect(go.contains('const fgColor = Color(0xFF0B0B0F);'), isTrue,
-          reason: 'black lettering on gold, always');
+      // 2026-10-11 spec change: the ONLY dimmed GO is the deliberate
+      // zone-selection state (zones flag on + offline + no pick) — never
+      // an accidental disabled look.
+      expect(
+          offline.contains(
+              'dimmed ? Colors.white54 : const Color(0xFF0B0B0F)'),
+          isTrue,
+          reason: 'black lettering on gold, always — the lone exception is '
+              'the deliberate zone-selection dim');
+      expect(offline.contains('_selectedZoneName == null'), isTrue);
     });
 
     test('the go-offline disc is red with the GO radar waves, both doors', () {

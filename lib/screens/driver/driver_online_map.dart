@@ -2224,6 +2224,48 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
         _updateDriverAnnotation();
       },
     );
+
+    // Settle check (2026-10-11: prod log shows recenter_fired=true yet the
+    // camera never moves — the native flyTo is issued and goes nowhere on
+    // this device). One beat after the flight we compare where the camera
+    // ACTUALLY sits: if it never arrived, a dry setCamera always lands — a
+    // dead button is worse than an unanimated jump, and the server log now
+    // carries the real outcome.
+    final settleTarget = _pos!;
+    final settleZoom = isNav
+        ? 17.5
+        : ((!_driverOnline && FeatureFlags.zonesMapEnabled) ? 10.8 : 15.5);
+    final settleTilt = isNav ? 55.0 : 0.0;
+    final tapAt = DateTime.now();
+    Timer(Duration(milliseconds: _kRecenterFlightMs + 200), () {
+      if (!mounted || kIsWeb) return;
+      final map = _map;
+      if (map == null || !_mapMounted) return;
+      // The driver grabbed the map again mid-flight — never fight the finger.
+      final lastPan = _lastMapPanAt;
+      if (lastPan != null && lastPan.isAfter(tapAt)) return;
+      final cam = _onlineCamState;
+      if (cam == null) return;
+      final c = cam.center.coordinates;
+      bool near(LatLng t) =>
+          (c.lat.toDouble() - t.latitude).abs() < 0.0005 &&
+          (c.lng.toDouble() - t.longitude).abs() < 0.0005;
+      final landed = near(settleTarget) || (_pos != null && near(_pos!));
+      ApiService.logClientEvent('recenter_settle', 'landed=$landed');
+      if (landed) return;
+      unawaited(map
+          .setCamera(mapbox.CameraOptions(
+        center: mapbox.Point(
+            coordinates: mapbox.Position(
+                settleTarget.longitude, settleTarget.latitude)),
+        zoom: settleZoom,
+        bearing: bearing,
+        pitch: settleTilt,
+      ))
+          .catchError((Object e) {
+        debugPrint('[DriverOnline] recenter settle setCamera failed: $e');
+      }));
+    });
   }
 
   /// True while the marker is the Flutter overlay rather than the Mapbox
@@ -2367,9 +2409,14 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     });
     final emptyFc =
         jsonEncode({'type': 'FeatureCollection', 'features': const []});
+    // 2026-10-11 (user report: solo se pinta la zona resaltada, ninguna
+    // otra ni el borde gris): el source creado con las 42 geometrías inline
+    // nunca se materializó en iOS — el highlight, que nace vacío y recibe
+    // su data por setStyleSourceProperty, sí se veía. Toda la data entra
+    // ahora por esa misma vía probada.
     try {
       await map.style
-          .addSource(mapbox.GeoJsonSource(id: 'zones-src', data: allFc));
+          .addSource(mapbox.GeoJsonSource(id: 'zones-src', data: emptyFc));
     } catch (_) {}
     try {
       await map.style
@@ -2421,6 +2468,17 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     // black-map incident): la etiqueta viaja como overlay Flutter en el
     // centro proyectado de la zona — cero superficie nativa nueva (ver
     // _zoneLabelOverlay). Fills/lines son el patrón probado de map_picker.
+    // La data real entra DESPUÉS de crear las capas, por la vía probada;
+    // si falla, el latch de _zoneLayersReady no se arma y el próximo sync
+    // reintenta (y el server lo ve — un catch silencioso aquí fue lo que
+    // dejó el mapa sin divisiones toda la semana).
+    try {
+      await map.style.setStyleSourceProperty('zones-src', 'data', allFc);
+    } catch (e) {
+      debugPrint('[Zones] base data write failed: $e');
+      ApiService.logClientEvent('zones_src_write_failed', '$e');
+      rethrow;
+    }
   }
 
   Future<void> _writeZoneVisibility(

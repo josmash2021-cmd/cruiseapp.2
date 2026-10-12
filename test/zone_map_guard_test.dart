@@ -112,6 +112,71 @@ void main() {
     expect(sys, contains('zones_map_enabled'));
   });
 
+  test('zone data rides the proven write path, not inline addSource', () {
+    // 2026-10-11 (user report: only the highlighted zone painted — no other
+    // city, no gray boundary): the source built with all 42 geometries
+    // inline never materialized on iOS, while the highlight — born empty
+    // and fed via setStyleSourceProperty — drew fine. ALL data now enters
+    // through that same proven path, and a failed write keeps the latch
+    // open (retry on the next sync) and reports to the server log.
+    final map =
+        File('lib/screens/driver/driver_online_map.dart').readAsStringSync();
+    expect(
+      map.contains(
+          "addSource(mapbox.GeoJsonSource(id: 'zones-src', data: emptyFc))"),
+      isTrue,
+      reason: 'the base source must be born EMPTY — inline data never drew',
+    );
+    expect(
+      map.contains("setStyleSourceProperty('zones-src', 'data', allFc)"),
+      isTrue,
+    );
+    expect(map.contains('zones_src_write_failed'), isTrue,
+        reason: 'a silent catch here is what hid the missing divisions');
+    expect(map.contains('rethrow;'), isTrue,
+        reason: 'the latch must stay open so the next sync retries');
+  });
+
+  test('the camera is born at the region view offline and glides on flips',
+      () {
+    // 2026-10-11 (user report: the app opens zoomed-in instead of the
+    // region view, and mode flips jump instead of gliding). The entry ease
+    // only runs while the ticker ticks, and the ticker parks for a parked
+    // offline driver — so offline the camera is BORN at 10.8, and the flips
+    // carry an explicit ease/flight.
+    final w = File('lib/screens/driver/driver_online_widgets.dart')
+        .readAsStringSync();
+    expect(w, contains('zoom: (!_driverOnline && FeatureFlags.zonesMapEnabled)'),
+        reason: 'offline + zones: the map is born at the region view');
+    expect(w, contains('_zoomEaseDone = true;'),
+        reason: 'a camera born at the target must not ease back to 16');
+    final ctrl = File('lib/screens/driver/driver_online_controller.dart')
+        .readAsStringSync();
+    expect(ctrl, contains('_zoomEaseFrom'),
+        reason: 'the entry ease origin is the live camera zoom, not a '
+            'hardcoded 16 — mode flips glide instead of jumping');
+    expect(
+        ctrl, contains('zoom = _zoomEaseFrom - (_zoomEaseFrom - zoomTarget) * e;'));
+    final scr = File('lib/screens/driver/driver_online_screen.dart')
+        .readAsStringSync();
+    expect(scr, contains('double _zoomEaseFrom = 16.0;'));
+  });
+
+  test('the offline recenter proves it landed — or writes the camera dry',
+      () {
+    // 2026-10-11: prod breadcrumb showed recenter_fired=true with the camera
+    // never moving. One beat after the flight, the actual camera state is
+    // compared; a miss writes the camera directly and both outcomes land in
+    // the server log.
+    final map =
+        File('lib/screens/driver/driver_online_map.dart').readAsStringSync();
+    expect(map, contains('recenter_settle'));
+    expect(map, contains('lastPan.isAfter(tapAt)'),
+        reason: 'a fresh grab must abort the settle — never fight the finger');
+    expect(map, contains('.setCamera(mapbox.CameraOptions('),
+        reason: 'the dry write is the guaranteed landing');
+  });
+
   test('user-facing strings exist in ES and EN', () {
     final l10n =
         File('lib/l10n/app_localizations.dart').readAsStringSync();

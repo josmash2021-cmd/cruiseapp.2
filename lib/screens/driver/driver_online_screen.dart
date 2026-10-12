@@ -813,8 +813,11 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
 
   // First-tick zoom ease: camera opens at zoom 16 (same as home) and
   // glides to the working 15.5 over ~750ms — no zoom "pop" on entry.
+  // _zoomEaseFrom is the ease's origin: 16 at boot; the live camera zoom on
+  // the offline→online flip (user spec 2026-10-11, "fluida, nunca de golpe").
   int? _zoomEaseStartMs;
   bool _zoomEaseDone = false;
+  double _zoomEaseFrom = 16.0;
 
   // â”€â”€ Slide confirm â”€â”€
   double _slideVal = 0;

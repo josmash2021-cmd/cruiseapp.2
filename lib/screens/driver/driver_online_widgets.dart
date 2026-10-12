@@ -340,6 +340,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
       if (!mounted || !_mapMounted) return;
       if (_mapStyleLoaded && _firstRenderDone) return;
       debugPrint('[DriverOnline] veil watchdog fired — lifting the veil');
+      ApiService.logClientEvent('map_veil_watchdog', '');
       _setState(() {
         _mapStyleLoaded = true;
         _firstRenderDone = true;
@@ -410,6 +411,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
         _mapStyleWatchdogRetried = true;
         debugPrint('[DriverOnline] style never loaded — remounting '
             'map surface');
+        ApiService.logClientEvent('map_style_watchdog_remount', '');
         _releaseMapSurface();
         unawaited(_remountMapSurface());
       });

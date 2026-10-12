@@ -124,5 +124,31 @@ void main() {
               'used to auto-enter online on login; now it only feeds the '
               'RESUME label, and an offer push is the way back without a tap');
     });
+
+    test('returning to the screen always reclaims the map surface', () {
+      // User report 2026-10-12: "después de ir a otra página y regresar al
+      // home del driver el mapa se queda en negro". The handoff relied on
+      // every push site remembering `_remountMapSurface()` in its `.then` —
+      // one forgotten push left the surface revoked forever. Now the route
+      // observer calls it on ANY return, and the style watchdog's retry is
+      // per-mount again so a remount whose style never loads self-heals.
+      final scr = File('lib/screens/driver/driver_online_screen.dart')
+          .readAsStringSync();
+      expect(
+          scr.contains(
+              'with TickerProviderStateMixin, WidgetsBindingObserver, RouteAware'),
+          isTrue);
+      expect(scr.contains('void didPopNext()'), isTrue);
+      expect(scr.contains('mapRouteObserver.subscribe(this, route)'), isTrue);
+      expect(scr.contains('mapRouteObserver.unsubscribe(this)'), isTrue);
+      expect(scr.contains("logClientEvent('map_remount'"), isTrue);
+      final w = File('lib/screens/driver/driver_online_widgets.dart')
+          .readAsStringSync();
+      expect(w, contains("logClientEvent('map_veil_watchdog'"),
+          reason: 'the veil lifts itself and the server sees it');
+      expect(w, contains("logClientEvent('map_style_watchdog_remount'"),
+          reason: 'a mount whose style never loads remounts itself, once per '
+              'mount');
+    });
   });
 }

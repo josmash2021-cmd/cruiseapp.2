@@ -4007,6 +4007,11 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     // stale clock here would start it mid-curve (or skip it entirely).
     _zoomEaseStartMs = null;
     _zoomEaseDone = false;
+    // The style watchdog's one retry is PER MOUNT (2026-10-12, black map
+    // after returning from another page): without this reset, the first
+    // remount whose style never loaded had no watchdog left and the driver
+    // stared at a dead map until process death.
+    _mapStyleWatchdogRetried = false;
     _map = null;
     // _mapStyleLoaded resets with the surface too: on remount the overlay
     // still has to cover the fresh PlatformView's first frames until the

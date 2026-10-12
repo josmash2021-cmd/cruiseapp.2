@@ -21,6 +21,7 @@ import 'package:permission_handler/permission_handler.dart'
     show openAppSettings;
 import 'package:http/http.dart' as http;
 import '../../services/masked_call_service.dart';
+import '../../config/route_observers.dart';
 import '../../config/page_transitions.dart';
 import '../../services/api_service.dart';
 import '../../services/navigation_service.dart';
@@ -231,7 +232,7 @@ const int _kRerouteCooldownSec = 10;
 const int _kRerouteFadeMs = 350;
 
 class _DriverOnlineScreenState extends State<DriverOnlineScreen>
-    with TickerProviderStateMixin, WidgetsBindingObserver {
+    with TickerProviderStateMixin, WidgetsBindingObserver, RouteAware {
   void _setState(VoidCallback fn) {
     if (mounted) setState(fn);
   }
@@ -1520,8 +1521,35 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     }
   }
 
+  /// Route safety net (user report 2026-10-12: "después de ir a otra página
+  /// y regresar al home del driver el mapa se queda en negro"). The map
+  /// handoff used to rely on EVERY push site remembering to call
+  /// `_remountMapSurface()` in its `.then` — one forgotten push (or a route
+  /// that never returns a future, like a fade route awaiting a result that
+  /// never comes) left the surface revoked forever: black map. When this
+  /// route becomes current again and our surface is gone, we claim it back
+  /// ourselves. `_remountMapSurface` is idempotent, so the sites that do
+  /// remember lose nothing.
+  @override
+  void didPopNext() {
+    if (mounted && !_mapMounted) {
+      ApiService.logClientEvent('map_remount', 'via=didPopNext');
+      unawaited(_remountMapSurface());
+    }
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final route = ModalRoute.of(context);
+    if (route is PageRoute) {
+      mapRouteObserver.subscribe(this, route);
+    }
+  }
+
   @override
   void dispose() {
+    mapRouteObserver.unsubscribe(this);
     DriverOnlineScreen.mountedCount--;
     WidgetsBinding.instance.removeObserver(this);
     _diagTimer?.cancel();

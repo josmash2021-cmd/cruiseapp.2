@@ -2117,6 +2117,17 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
   /// true coordinates, so a driver who has panned away still sees exactly
   /// where they are, off to the side of the view or off screen entirely.
   void _onCameraMoveStarted() {
+    // Phantom-gesture guard (2026-10-12, "el botón de recentrar no hace
+    // nada" — prod: taps landed=true y el FAB jamás se iba): durante un
+    // vuelo PROGRAMÁTICO el plugin puede escupir callbacks de scroll/zoom
+    // sin dedo encima — el propio flyTo del recentrado des-latchaba el
+    // follow y cancelaba el resume, dejando el FAB arriba para siempre con
+    // la cámara ya en casa. Sin dedo y dentro de la ventana de vuelo = no
+    // es un gesto. Un dedo REAL mid-flight (pointers > 0) siempre gana.
+    if (_mapPointers == 0 && DateTime.now().isBefore(_camFlightUntil)) {
+      _phantomGestureEvents++;
+      return;
+    }
     _lastMapPanAt = DateTime.now();
     _reFollowTimer?.cancel();
     // A recentre in flight is abandoned the moment the driver grabs the map
@@ -2163,6 +2174,7 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     // the device. Removed once the chain is proven healthy on prod.
     ApiService.logClientEvent('recenter_tap',
         'online=$_driverOnline phase=$_phase hasPos=${_pos != null} mapMounted=$_mapMounted hasMap=${_map != null}');
+    _phantomGestureEvents = 0;
     _reFollowTimer?.cancel();
     _followResumeTimer?.cancel();
     // An offer preview owns the frame: the route (driver → pickup →
@@ -2251,7 +2263,8 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
           (c.lat.toDouble() - t.latitude).abs() < 0.0005 &&
           (c.lng.toDouble() - t.longitude).abs() < 0.0005;
       final landed = near(settleTarget) || (_pos != null && near(_pos!));
-      ApiService.logClientEvent('recenter_settle', 'landed=$landed');
+      ApiService.logClientEvent(
+          'recenter_settle', 'landed=$landed phantoms=$_phantomGestureEvents');
       if (landed) return;
       // Same discipline as every programmatic flight: suppress the manual-
       // rotate unlatch and sync the last-written trackers, or THIS write's

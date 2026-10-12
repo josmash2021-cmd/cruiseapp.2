@@ -468,6 +468,28 @@ void main() {
               'or the FAB pops back up the moment the camera lands');
     });
 
+    test('gesture listeners ignore phantom scrolls during programmatic flights',
+        () {
+      // Same user report (2026-10-12): taps landed=true yet the FAB never
+      // left — during the recenter flyTo the plugin can emit scroll/zoom
+      // callbacks with NO finger down (iOS), and each one unlatched follow
+      // and cancelled the follow-resume: an infinite dead-FAB loop. The
+      // gesture handler now ignores fingerless events inside flight windows
+      // and the settle breadcrumb counts them (proof from prod).
+      expect(screen.contains('int _mapPointers = 0;'), isTrue,
+          reason: 'the map counts fingers — no finger, no gesture');
+      expect(screen.contains('int _phantomGestureEvents = 0;'), isTrue);
+      expect(widgets.contains('onPointerDown: (_) => _mapPointers++'), isTrue,
+          reason: 'the Listener wraps the MapWidget (nav-view pattern)');
+      final handler = bodyOf(map, 'void _onCameraMoveStarted()', maxLen: 900);
+      expect(handler.contains('_mapPointers == 0'), isTrue);
+      expect(handler.contains('isBefore(_camFlightUntil)'), isTrue,
+          reason: 'phantoms are only ignored during programmatic flights — '
+              'a real finger mid-flight always wins');
+      expect(map.contains('phantoms='), isTrue,
+          reason: 'the settle breadcrumb carries the phantom count');
+    });
+
     test('the GO button never paints disabled', () {
       final go =
           bodyOf(offline, 'Widget _buildGoButton(', maxLen: 2400);

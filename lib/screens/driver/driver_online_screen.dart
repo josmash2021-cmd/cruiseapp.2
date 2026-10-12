@@ -307,6 +307,10 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   // boot: native create → style loaded → first idle render.
   DateTime? _mapBootAt;
   int? _mapStyleMs;
+  // Fingers currently on the driver map (Listener around MapWidget) + the
+  // phantom-gesture counter — see _onCameraMoveStarted (2026-10-12).
+  int _mapPointers = 0;
+  int _phantomGestureEvents = 0;
   // Monotonically incremented every time onMapCreated fires. Guards against
   // stale annotation refs surviving a PlatformView recreation.
   int _mapGeneration = 0;

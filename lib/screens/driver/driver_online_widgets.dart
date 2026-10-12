@@ -239,7 +239,19 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
       );
     }
     return RepaintBoundary(
-      child: mapbox.MapWidget(
+      // Finger count around the map (same Listener pattern the nav view
+      // uses): the phantom-gesture guard in _onCameraMoveStarted needs to
+      // know whether a real finger is down when a scroll/zoom callback
+      // arrives during a programmatic flight.
+      child: Listener(
+        onPointerDown: (_) => _mapPointers++,
+        onPointerUp: (_) {
+          if (_mapPointers > 0) _mapPointers--;
+        },
+        onPointerCancel: (_) {
+          if (_mapPointers > 0) _mapPointers--;
+        },
+        child: mapbox.MapWidget(
         key: _mapKey,
         textureView: true,
         // First full render (tiles drawn, camera idle) lifts the snapshot
@@ -347,6 +359,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
           // unlatch follow here or the chase fights the twist every frame.
           _maybeUnlatchOnManualRotate(data.cameraState);
         },
+        ),
       ),
     );
   }

@@ -1037,8 +1037,14 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       _setState(() {
         _driverOnline = true;
         _isGoingOnline = !resuming;
-        _selectedZoneName = null;
+        // The picked zone PERSISTS as the working zone (user spec
+        // 2026-10-12: "cuando el driver se conecta a la zona que
+        // seleccionó, en online solo aparece marcada esa zona") — the
+        // spotlight reads it; it is no longer consumed on connect.
       });
+      // Mode flip rewrites the zone look NOW (the GPS-fix sync can be
+      // minutes away for a parked driver): online + selection = spotlight.
+      unawaited(_syncZoneLayers());
       // GPS pasa a background-capable — el stream se recrea (iOS solo
       // aplica el flag en un request nuevo).
       _syncPosStreamMode();
@@ -1164,6 +1170,9 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     });
     unawaited(_clearAllAnnotations().catchError((_) {}));
     unawaited(_sweepPreviewOrphans());
+    // Drop the spotlight NOW, not on the next GPS fix (parked drivers can
+    // go minutes without one): offline = every sector visible again.
+    unawaited(_syncZoneLayers());
     _syncPosStreamMode(); // foreground-only
     PrefsCache.instance.then((p) => p.setBool('driver_was_online', false));
     PrefsCache.instance.then((p) => p.remove('driver_went_online_at'));

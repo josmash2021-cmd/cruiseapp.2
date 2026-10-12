@@ -2192,16 +2192,15 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     final isNav = _phase == _Phase.enRouteToPickup ||
         _phase == _Phase.inTrip ||
         _phase == _Phase.routeSummary;
+    // Recenter = the SAME in every mode (user spec 2026-10-12: "que funcione
+    // igual que cuando el driver está activo"): centre the arrow at street
+    // zoom, heading-up. The offline region view (10.8) stays as the resting
+    // state at boot/mode-flip — but this button means "take me to my arrow".
     final fired = isNav
         ? _animateToPosition(_pos!, zoom: 17.5, bearing: bearing, tilt: 55)
         // Searching: flat but HEADING-UP (user spec 2026-09-19) — the same
         // rotation the per-frame chase keeps writing once follow resumes.
-        // Offline with zones on: rest at the region view (2026-10-11 spec).
-        : _animateToPosition(_pos!,
-            zoom: (!_driverOnline && FeatureFlags.zonesMapEnabled)
-                ? 10.8
-                : 15.5,
-            bearing: bearing, tilt: 0);
+        : _animateToPosition(_pos!, zoom: 15.5, bearing: bearing, tilt: 0);
     ApiService.logClientEvent('recenter_fired', '$fired');
     if (!fired) {
       // The glide was vetoed (dead/remounting surface, mid ease) — flip
@@ -2244,9 +2243,8 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     // dead button is worse than an unanimated jump, and the server log now
     // carries the real outcome.
     final settleTarget = _pos!;
-    final settleZoom = isNav
-        ? 17.5
-        : ((!_driverOnline && FeatureFlags.zonesMapEnabled) ? 10.8 : 15.5);
+    // Same target as the flight above: online parity (2026-10-12 spec).
+    final settleZoom = isNav ? 17.5 : 15.5;
     final settleTilt = isNav ? 55.0 : 0.0;
     final tapAt = DateTime.now();
     Timer(Duration(milliseconds: _kRecenterFlightMs + 200), () {

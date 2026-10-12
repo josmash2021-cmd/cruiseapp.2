@@ -78,13 +78,17 @@ void main() {
     });
 
     test('recenter + style-load keep the heading too', () {
-      final recenter = bodyOf(map, 'void _recenterCamera() {', maxLen: 1400);
+      final recenter = bodyOf(map, 'void _recenterCamera() {', maxLen: 2200);
       expect(recenter.contains('bearing: bearing'), isTrue,
           reason: 'the 10 s auto-refollow returns to the heading-up chase, '
               'not to north');
-      // Offline + zones on rest at the REGION zoom (2026-10-11 spec), so the
-      // recenter target is mode-aware now — what must stay true is that the
-      // flight carries the heading, whatever the zoom.
+      // Recenter = online parity (2026-10-12 spec: "que funcione igual que
+      // cuando el driver está activo") — centre the arrow at street zoom in
+      // EVERY mode; the offline region view stays as the resting state only.
+      expect(recenter.contains('zoom: 15.5, bearing: bearing, tilt: 0'),
+          isTrue,
+          reason: 'offline recenter centres the arrow at street zoom, same '
+              'as online');
       expect(recenter.contains('zoom:'), isTrue);
       expect(widgets.contains('bearing: _smoothedBearing'), isTrue,
           reason: 'the style-reload flatten must not snap the rotation to '

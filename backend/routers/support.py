@@ -1438,7 +1438,9 @@ async def _action_request_reminder(request_id: int, chat_id: int, user_name: str
             # Tell user their request is being reviewed
             chat_r = await db.execute(select(SupportChat).where(SupportChat.id == chat_id))
             chat = chat_r.scalar_one_or_none()
-            if chat and chat.status == "open":
+            # A chat waiting for or owned by a human keeps the bot silent.
+            if (chat and chat.status == "open"
+                    and (chat.bot_phase or "") not in ("escalated", "dispatch_takeover")):
                 lang = getattr(chat, "locale", "en") or "en"
                 agent = chat.agent_name or "Agente"
                 if lang.startswith("es"):
@@ -2537,6 +2539,11 @@ def _doc_match_from_text(text: str) -> str | None:
 
 
 async def _bot_say(chat, db: AsyncSession, text: str) -> None:
+    # A chat waiting for or owned by a human keeps the bot SILENT (the pinned
+    # escalation rule) — the caller's work (e.g. filing a document) still
+    # happens, only the chat message is suppressed.
+    if (getattr(chat, "bot_phase", "") or "") in ("escalated", "dispatch_takeover"):
+        return
     msg = SupportMessage(chat_id=chat.id, sender_id=None, sender_role="bot", message=text)
     db.add(msg)
     await db.commit()
@@ -2891,7 +2898,9 @@ async def send_support_message(chat_id: int, request: Request, user: User = Depe
     if old_task and not old_task.done():
         old_task.cancel()
 
-    # Check if user is responding to a "still online?" prompt
+    # Check if user is responding to a "still online?" prompt — but once the
+    # chat waits for or belongs to a human, the bot stays SILENT (the pinned
+    # escalation rule), so the canned confirm must not fire either.
     last_bot_r = await db.execute(
         select(SupportMessage).where(
             SupportMessage.chat_id == chat_id,
@@ -2901,7 +2910,8 @@ async def send_support_message(chat_id: int, request: Request, user: User = Depe
     last_bot_msg = last_bot_r.scalar_one_or_none()
     last_msg_text = (last_bot_msg.message or "").lower() if last_bot_msg else ""
     is_still_online_prompt = "sigues en l" in last_msg_text or "still there" in last_msg_text
-    if last_bot_msg and is_still_online_prompt:
+    if (last_bot_msg and is_still_online_prompt
+            and (chat.bot_phase or "") not in ("escalated", "dispatch_takeover")):
         agent = chat.agent_name or "Agente"
         lang = getattr(chat, "locale", "en") or "en"
         if lang.startswith("es"):

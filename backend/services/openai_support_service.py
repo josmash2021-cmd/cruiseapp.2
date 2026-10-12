@@ -49,6 +49,16 @@ _ESCALATION_PHRASES = (
     "connect you with a supervisor", "transfer you to",
 )
 
+
+def _localized(lang: str, es: str, en: str) -> str:
+    """Pick the string for the conversation's language.
+
+    Every canned fallback below ships ES/EN — a hardcoded English string is
+    how a Spanish chat got "I'll help you with that right away." mid
+    conversation (prod, chat 83, 2026-10-11).
+    """
+    return es if (lang or "en").startswith("es") else en
+
 # ── Provider ─────────────────────────────────────────────────────────
 # OpenAI (GPT) leads; Kimi stands by. Product call 2026-08-31: the support
 # agent runs on GPT — the Kimi Code endpoint is a coding subscription
@@ -136,7 +146,8 @@ def _anthropic_tools(tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 async def _anthropic_completion(messages: list[dict[str, Any]],
-                                tools: list[dict[str, Any]]) -> dict[str, Any]:
+                                tools: list[dict[str, Any]],
+                                lang: str = "en") -> dict[str, Any]:
     """One turn against an Anthropic-format endpoint (Kimi Code).
 
     Kimi Code speaks the Anthropic Messages protocol, not OpenAI's, so this
@@ -208,7 +219,9 @@ async def _anthropic_completion(messages: list[dict[str, Any]],
         if isinstance(b, dict) and b.get("type") == "tool_use":
             _log.info("[Support AI] kimi tool call: %s", b.get("name"))
             return {
-                "response": text or "I'll help you with that right away.",
+                "response": text or _localized(
+                    lang, "Te ayudo con eso ahora mismo.",
+                    "I'll help you with that right away."),
                 "function_call": {
                     "name": b.get("name", ""),
                     "arguments": b.get("input") or {},
@@ -223,7 +236,8 @@ async def _anthropic_completion(messages: list[dict[str, Any]],
 
 
 async def _openai_completion(messages: list[dict[str, Any]],
-                             tools: list[dict[str, Any]]) -> dict[str, Any]:
+                             tools: list[dict[str, Any]],
+                             lang: str = "en") -> dict[str, Any]:
     """One turn against OpenAI's chat completions.
 
     Returns the same {response, function_call?, escalate} dict the Kimi
@@ -261,7 +275,9 @@ async def _openai_completion(messages: list[dict[str, Any]],
         call = message.tool_calls[0]
         _log.info("[Support AI] openai tool call: %s", call.function.name)
         return {
-            "response": message.content or "I'll help you with that right away.",
+            "response": message.content or _localized(
+                lang, "Te ayudo con eso ahora mismo.",
+                "I'll help you with that right away."),
             "function_call": {
                 "name": call.function.name,
                 "arguments": json.loads(call.function.arguments or "{}"),
@@ -277,12 +293,13 @@ async def _openai_completion(messages: list[dict[str, Any]],
 
 
 async def _completion(messages: list[dict[str, Any]],
-                      tools: list[dict[str, Any]]) -> dict[str, Any]:
+                      tools: list[dict[str, Any]],
+                      lang: str = "en") -> dict[str, Any]:
     """The active provider answers one turn. Both paths return the same
     dict, so switching providers mid-process (demote) is invisible here."""
     if _PROVIDER == "kimi":
-        return await _anthropic_completion(messages, tools)
-    return await _openai_completion(messages, tools)
+        return await _anthropic_completion(messages, tools, lang)
+    return await _openai_completion(messages, tools, lang)
 
 
 def _demote_primary(reason: str) -> bool:
@@ -804,23 +821,32 @@ async def generate_support_response(
     Returns:
         Dict with 'response' (str), 'function_call' (optional), 'escalate' (bool)
     """
+    # The conversation's language, reported by the router on every turn —
+    # every canned fallback below answers in it, never in hardcoded English.
+    lang = (user_context.get("lang") or "en")
     # Gate on the provider, not on the client object: the Kimi path talks
     # raw HTTP and legitimately has no client. Checking _openai_client here
     # silently escalated every rider even with a working Kimi key.
     if _PROVIDER == "none":
         _log.error("[Support AI] no provider configured — set OPENAI_API_KEY or MOONSHOT_API_KEY")
         return {
-            "response": "I'm having trouble connecting to my knowledge base. Let me connect you with a human agent who can help you right away.",
+            "response": _localized(
+                lang,
+                "Tengo problemas para conectar con mi base de conocimientos. Te conecto con un agente humano que puede ayudarte ahora mismo.",
+                "I'm having trouble connecting to my knowledge base. Let me connect you with a human agent who can help you right away."),
             "escalate": True,
         }
 
     # Check for fraud patterns
     is_fraud, fraud_reason = await _check_fraud_patterns(user_context)
     if is_fraud:
-        _log.warning("[FRAUD] Blocked action for user %s: %s", 
+        _log.warning("[FRAUD] Blocked action for user %s: %s",
                     user_context.get("user", {}).get("id"), fraud_reason)
         return {
-            "response": "I understand your concern. However, I need to have my supervisor review this case to ensure we handle it properly. Let me connect you with a human agent who can assist you further.",
+            "response": _localized(
+                lang,
+                "Entiendo tu preocupación. Sin embargo, necesito que mi supervisor revise este caso para asegurarnos de manejarlo correctamente. Te conecto con un agente humano que te ayudará.",
+                "I understand your concern. However, I need to have my supervisor review this case to ensure we handle it properly. Let me connect you with a human agent who can assist you further."),
             "escalate": True,
         }
 
@@ -853,25 +879,31 @@ async def generate_support_response(
 
     try:
         try:
-            return await _completion(openai_messages, role_tools)
+            return await _completion(openai_messages, role_tools, lang)
         except (SupportAuthError, openai.AuthenticationError,
                 openai.RateLimitError) as e:
             # A rejected key or an exhausted quota demotes the primary for
             # the life of the process, and the standby answers this turn.
             if _demote_primary(str(e)[:120]):
-                return await _completion(openai_messages, role_tools)
+                return await _completion(openai_messages, role_tools, lang)
             raise
     except (SupportAuthError, openai.AuthenticationError,
             openai.RateLimitError):
         _log.warning("[Support AI] credentials/quota rejected on every provider")
         return {
-            "response": "I'm experiencing high demand right now. Please try again in a moment, or I can connect you with a human agent.",
+            "response": _localized(
+                lang,
+                "Estoy experimentando alta demanda en este momento. Intenta de nuevo en un momento, o puedo conectarte con un agente humano.",
+                "I'm experiencing high demand right now. Please try again in a moment, or I can connect you with a human agent."),
             "escalate": True,
         }
     except Exception as e:
         _log.error("[Support AI] %s error: %s", _PROVIDER, e)
         return {
-            "response": "I'm having technical difficulties. Let me connect you with a human agent who can assist you.",
+            "response": _localized(
+                lang,
+                "Estoy teniendo dificultades técnicas. Te conecto con un agente humano que pueda ayudarte.",
+                "I'm having technical difficulties. Let me connect you with a human agent who can assist you."),
             "escalate": True,
         }
 

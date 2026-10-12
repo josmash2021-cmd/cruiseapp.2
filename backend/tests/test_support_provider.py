@@ -77,10 +77,10 @@ async def test_rejected_primary_still_gets_an_llm_answer(monkeypatch):
 
     calls = []
 
-    async def _boom(_messages, _tools):
+    async def _boom(_messages, _tools, _lang="en"):
         raise svc.SupportAuthError("openai rejected the key")
 
-    async def _ok(_messages, _tools):
+    async def _ok(_messages, _tools, _lang="en"):
         calls.append("kimi")
         return {"response": "hola", "escalate": False}
 
@@ -96,3 +96,66 @@ async def test_rejected_primary_still_gets_an_llm_answer(monkeypatch):
     assert calls == ["kimi"]
     # Demoted for every later turn too — one bad key, paid for once.
     assert svc._PROVIDER == "kimi"
+
+
+async def test_tool_call_fallback_speaks_the_chats_language(monkeypatch):
+    """Prod bug (chat 83, 2026-10-11): the model answered with a tool call
+    and no text, so the rider read the hardcoded English fallback — inside a
+    Spanish conversation. The fallback now follows the chat's language."""
+    from types import SimpleNamespace
+    _reload_with(monkeypatch, OPENAI_API_KEY="sk-test")
+
+    tool_call = SimpleNamespace(
+        function=SimpleNamespace(name="escalate_to_human", arguments="{}"))
+    message = SimpleNamespace(content=None, tool_calls=[tool_call])
+
+    class _FakeCompletions:
+        async def create(self, **_kwargs):
+            return SimpleNamespace(choices=[SimpleNamespace(message=message)])
+
+    monkeypatch.setattr(
+        svc, "_openai_client",
+        SimpleNamespace(chat=SimpleNamespace(completions=_FakeCompletions())))
+
+    out = await svc._openai_completion([{"role": "user", "content": "ok"}], [], "es")
+    assert out["response"] == "Te ayudo con eso ahora mismo."
+    assert out["function_call"]["name"] == "escalate_to_human"
+
+    out = await svc._openai_completion([{"role": "user", "content": "ok"}], [], "en")
+    assert out["response"] == "I'll help you with that right away."
+
+
+async def test_no_provider_fallback_speaks_spanish(monkeypatch):
+    _reload_with(monkeypatch)
+    out = await svc.generate_support_response(
+        [{"role": "user", "content": "hola"}],
+        {"user": {"id": 1}, "messages": [], "lang": "es"},
+    )
+    assert out["escalate"] is True
+    assert "agente humano" in out["response"]
+
+
+async def test_provider_error_fallback_speaks_spanish(monkeypatch):
+    _reload_with(monkeypatch, MOONSHOT_API_KEY="sk-ki-test")
+
+    async def _boom(_messages, _tools, _lang="en"):
+        raise RuntimeError("kimi down")
+
+    monkeypatch.setattr(svc, "_anthropic_completion", _boom)
+    out = await svc.generate_support_response(
+        [{"role": "user", "content": "hola"}],
+        {"user": {"id": 1}, "messages": [], "lang": "es"},
+    )
+    assert out["escalate"] is True
+    assert "dificultades técnicas" in out["response"]
+
+
+async def test_english_chat_keeps_the_english_fallbacks(monkeypatch):
+    """Control: nothing changes for English conversations."""
+    _reload_with(monkeypatch)
+    out = await svc.generate_support_response(
+        [{"role": "user", "content": "hello"}],
+        {"user": {"id": 1}, "messages": [], "lang": "en"},
+    )
+    assert out["escalate"] is True
+    assert out["response"].startswith("I'm having trouble connecting")

@@ -679,3 +679,116 @@ async def test_chats_all_exposes_dispatch_persona(client, db, test_rider):
     assert res.status_code == 200, res.text
     row = [c for c in res.json() if c["id"] == chat.id][0]
     assert row["dispatch_persona"] == "agent"
+
+
+
+async def test_takeover_silences_the_still_online_confirm(client, db, test_rider):
+    """User report 2026-10-11: after dispatch connects, the bot must not
+    speak — but the "still online?" confirm branch answered anyway whenever
+    the last bot line happened to be the inactivity prompt."""
+    from tests.conftest import _make_auth_headers
+    rider, token = test_rider
+    chat = await _open_chat_in_phase(rider, db, "dispatch_takeover")
+    chat.locale = "es"
+    db.add(chat)
+    db.add(SupportMessage(chat_id=chat.id, sender_id=None, sender_role="bot",
+                          message="¿Aún sigue en línea conmigo?"))
+    await db.commit()
+
+    res = await client.post(
+        f"/support/chats/{chat.id}/messages",
+        headers={**_make_auth_headers(), "Authorization": f"Bearer {token}"},
+        json={"message": "sí, sigo aquí"},
+    )
+    assert res.status_code == 200, res.text
+    bots = (await db.execute(
+        select(SupportMessage).where(
+            SupportMessage.chat_id == chat.id,
+            SupportMessage.sender_role == "bot",
+        ))).scalars().all()
+    assert [b.message for b in bots] == ["¿Aún sigue en línea conmigo?"]
+
+
+async def test_escalated_also_silences_the_still_online_confirm(client, db, test_rider):
+    """Same canned reply, one phase earlier: a chat waiting for the human is
+    already under the 'bot goes SILENT' rule."""
+    from tests.conftest import _make_auth_headers
+    rider, token = test_rider
+    chat = await _open_chat_in_phase(rider, db, "escalated")
+    chat.locale = "es"
+    chat.needs_escalation = True
+    db.add(chat)
+    db.add(SupportMessage(chat_id=chat.id, sender_id=None, sender_role="bot",
+                          message="¿Aún sigue en línea conmigo?"))
+    await db.commit()
+
+    res = await client.post(
+        f"/support/chats/{chat.id}/messages",
+        headers={**_make_auth_headers(), "Authorization": f"Bearer {token}"},
+        json={"message": "sí, sigo aquí"},
+    )
+    assert res.status_code == 200, res.text
+    bots = (await db.execute(
+        select(SupportMessage).where(
+            SupportMessage.chat_id == chat.id,
+            SupportMessage.sender_role == "bot",
+        ))).scalars().all()
+    assert [b.message for b in bots] == ["¿Aún sigue en línea conmigo?"]
+
+
+async def test_bot_say_stays_silent_once_a_human_owns_the_chat(db, test_rider):
+    """The document-filing flow speaks through _bot_say — without the guard a
+    driver attaching a document mid-takeover would get bot lines interleaved
+    with the human's. Filing still happens; only the voice goes away."""
+    from routers.support import _bot_say
+    rider, _ = test_rider
+    chat = await _open_chat_in_phase(rider, db, "dispatch_takeover")
+
+    await _bot_say(chat, db, "Recibí tu licencia — ya quedó en tu perfil.")
+    bots = (await db.execute(
+        select(SupportMessage).where(
+            SupportMessage.chat_id == chat.id,
+            SupportMessage.sender_role == "bot",
+        ))).scalars().all()
+    assert bots == []
+
+    # Control: while the bot owns the chat, _bot_say speaks normally.
+    chat.bot_phase = "agent_active"
+    db.add(chat)
+    await db.commit()
+    await _bot_say(chat, db, "Recibí tu licencia — ya quedó en tu perfil.")
+    bots = (await db.execute(
+        select(SupportMessage).where(
+            SupportMessage.chat_id == chat.id,
+            SupportMessage.sender_role == "bot",
+        ))).scalars().all()
+    assert len(bots) == 1
+
+
+async def test_action_reminder_stays_silent_in_takeover(db, test_rider, monkeypatch):
+    """The 15-min action-request nudge is a bot line too — it must not land
+    in the middle of the human's conversation."""
+    import asyncio
+    from models.database import ActionRequest
+    from routers import support as support_router
+    rider, _ = test_rider
+    chat = await _open_chat_in_phase(rider, db, "dispatch_takeover")
+    ar = ActionRequest(chat_id=chat.id, user_id=rider.id, user_name="Test",
+                       agent_name="Test", action_type="refund",
+                       status="pending_admin")
+    db.add(ar)
+    await db.commit()
+    await db.refresh(ar)
+
+    async def _no_sleep(_):
+        return None
+    monkeypatch.setattr(asyncio, "sleep", _no_sleep)
+
+    await support_router._action_request_reminder(ar.id, chat.id, "Test")
+
+    bots = (await db.execute(
+        select(SupportMessage).where(
+            SupportMessage.chat_id == chat.id,
+            SupportMessage.sender_role == "bot",
+        ))).scalars().all()
+    assert bots == []

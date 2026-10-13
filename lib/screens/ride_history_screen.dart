@@ -359,7 +359,7 @@ class _RideHistoryScreenState extends State<RideHistoryScreen> {
                             _tierAsset(trip.rideName)
                                     .endsWith('car_electric.png')
                                 ? Image.asset(
-                                    'assets/images/car_suv.png',
+                                    'assets/images/cruisert_compact.png',
                                     fit: BoxFit.contain,
                                     errorBuilder: (_, __, ___) =>
                                         const SizedBox.shrink(),

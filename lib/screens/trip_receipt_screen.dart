@@ -436,13 +436,13 @@ class _TripReceiptScreenState extends State<TripReceiptScreen>
                                         alignment: Alignment(-0.45, 0),
                                         // OTA rule: car_electric.png is not
                                         // in older bundles — fall back to
-                                        // the SUV render first.
+                                        // the compact SUV side-profile.
                                         errorBuilder: (_, __, ___) =>
                                             _tierAsset(trip.rideName)
                                                     .endsWith(
                                                         'car_electric.png')
                                                 ? Image.asset(
-                                                    'assets/images/car_suv.png',
+                                                    'assets/images/cruisert_compact.png',
                                                     fit: BoxFit.contain,
                                                     alignment:
                                                         Alignment(-0.45, 0),

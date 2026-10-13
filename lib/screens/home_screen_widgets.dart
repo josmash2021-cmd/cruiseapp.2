@@ -1461,7 +1461,7 @@ extension _HomeScreenWidgets on _HomeScreenState {
                               // bundled SUV render, then the icon.
                               fallback: v['rideId'] == 'electric_pro'
                                   ? Image.asset(
-                                      'assets/images/car_suv.png',
+                                      'assets/images/cruisert_compact.png',
                                       fit: BoxFit.contain,
                                       alignment: Alignment.bottomCenter,
                                       errorBuilder: (_, __, ___) => Icon(

@@ -1078,7 +1078,7 @@ extension _RideRequestController on _RideRequestScreenState {
                                 if (optName.contains('electric')) {
                                   asset = 'assets/images/car_electric.png';
                                 } else if (optName.contains('suburban') || optName.contains('vip') || optName.contains('suv')) {
-                                  asset = 'assets/images/car_suv.png';
+                                  asset = 'assets/images/cruisert_compact.png';
                                 } else if (optName.contains('camry') || optName.contains('premium') || optName.contains('sedan')) {
                                   asset = 'assets/images/car_sedan.png';
                                 }

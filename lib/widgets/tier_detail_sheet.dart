@@ -109,7 +109,7 @@ class TierDetailSheet extends StatelessWidget {
                 errorBuilder: (_, __, ___) =>
                     carAssetPath.endsWith('car_electric.png')
                         ? Image.asset(
-                            'assets/images/car_suv.png',
+                            'assets/images/cruisert_compact.png',
                             height: 110,
                             fit: BoxFit.contain,
                             errorBuilder: (_, __, ___) => Icon(

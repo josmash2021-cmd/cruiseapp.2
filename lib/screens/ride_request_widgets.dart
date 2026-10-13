@@ -874,7 +874,7 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                                 // bundled SUV render, then the icon.
                                 fallback: opt.id == 'electric_pro'
                                     ? Image.asset(
-                                        'assets/images/car_suv.png',
+                                        'assets/images/cruisert_compact.png',
                                         fit: BoxFit.contain,
                                         errorBuilder: (_, __, ___) => Icon(
                                           Icons.directions_car_rounded,
@@ -1321,7 +1321,7 @@ extension _RideRequestWidgets on _RideRequestScreenState {
     // Same three pre-cropped renders as the home "Choose a ride" cards.
     final key = name.trim().toLowerCase();
     // Electric Pro carries its own render (car_electric.png) — every
-    // Image.asset of it falls back to car_suv.png (OTA rule 2026-10-13).
+    // Image.asset of it falls back to cruisert_compact.png (OTA rule 2026-10-13).
     if (key.contains('electric')) return 'assets/images/car_electric.png';
     if (key.contains('suv xl')) return 'assets/images/cruisert_suvxl.png';
     if (key.contains('vip') || key.contains('suburban')) return 'assets/images/cruisert1.png';

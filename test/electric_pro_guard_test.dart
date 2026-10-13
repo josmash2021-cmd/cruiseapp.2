@@ -99,9 +99,12 @@ void main() {
       expect(block, contains('car_electric.png'));
     });
 
-    test('every Image.asset of it errorBuilder-falls to car_suv.png', () {
+    test('every card render of it errorBuilder-falls to cruisert_compact', () {
       // Booking tier row (CarImage3D fallback).
       expect(widgets, contains("opt.id == 'electric_pro'"));
+      expect(widgets, contains('cruisert_compact.png'),
+          reason: 'the booking card falls back to the SIDE-PROFILE compact '
+              'SUV — never the top-down map sprite (user report 2026-10-13)');
       // Home fleet card, Meet-tier sheet, ride summary, tracking card.
       final sites = <String, String>{
         'home fleet card': home,
@@ -111,17 +114,25 @@ void main() {
         'tracking driver card':
             File('lib/widgets/tracking/driver_info_card.dart')
                 .readAsStringSync(),
+        'trip receipt':
+            File('lib/screens/trip_receipt_screen.dart').readAsStringSync(),
+        'ride history':
+            File('lib/screens/ride_history_screen.dart').readAsStringSync(),
       };
       for (final e in sites.entries) {
         expect(e.value, contains('car_electric.png'),
             reason: '${e.key} never renders the electric PNG');
-        expect(e.value, contains('car_suv.png'),
-            reason: '${e.key}: the OTA fallback to the bundled SUV is gone');
+        expect(e.value, contains('cruisert_compact.png'),
+            reason: '${e.key}: the OTA fallback is not the side-profile '
+                'compact SUV');
       }
     });
 
-    test('the rootBundle map-icon loaders fall back to the SUV too', () {
-      final needles = {
+    test('map markers use the top-down SUV for electric, never the profile', () {
+      // A map marker is a TOP-DOWN sprite: car_electric.png is a card
+      // render (side profile) and would be wrong even after the store build
+      // carries it — the marker spots use car_suv.png outright.
+      final markers = {
         'lib/widgets/tracking/tracking_map_view.dart':
             "rideName.contains('electric')",
         'lib/map/tracking_map_car.dart':
@@ -129,19 +140,22 @@ void main() {
         'lib/screens/rider_confirm_pickup_screen.dart':
             "rideName.contains('electric')",
       };
-      for (final e in needles.entries) {
+      for (final e in markers.entries) {
         final src = File(e.key).readAsStringSync();
         expect(src, contains(e.value),
-            reason: '${e.key} does not pick the electric render');
-        expect(src, contains("carAsset.contains('car_electric')"),
-            reason:
-                '${e.key}: electric must fall back to car_suv, not economy');
+            reason: '${e.key} does not branch on electric');
+        final i = src.indexOf(e.value);
+        final window = src.substring(i, i + 400);
+        expect(window, contains('car_suv.png'),
+            reason: '${e.key}: the electric map marker is not the top-down SUV');
+        expect(window, isNot(contains('car_electric.png')),
+            reason: '${e.key}: the side profile must never be the map marker');
       }
     });
 
     test('the asset exists in the repo and the fallback is long-bundled', () {
       expect(File('assets/images/car_electric.png').existsSync(), isTrue);
-      expect(File('assets/images/car_suv.png').existsSync(), isTrue);
+      expect(File('assets/images/cruisert_compact.png').existsSync(), isTrue);
       // Bundled wholesale — no pubspec entry to forget.
       expect(File('pubspec.yaml').readAsStringSync(),
           contains('- assets/images/'));

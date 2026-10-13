@@ -47,7 +47,7 @@ extension _RiderTrackingDriverInfoCard on _RiderTrackingScreenState {
       {double? width, double? height}) {
     if (!_vehicleAsset.endsWith('car_electric.png')) return icon;
     return Image.asset(
-      'assets/images/car_suv.png',
+      'assets/images/cruisert_compact.png',
       width: width,
       height: height,
       fit: BoxFit.contain,

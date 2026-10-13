@@ -203,7 +203,10 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
     String carAsset;
 
     if (rideName.contains('electric')) {
-      carAsset = 'assets/images/car_electric.png';
+      // Map markers are TOP-DOWN sprites — the electric card render is a
+      // side profile (wrong on the map even once the store build carries
+      // it). The top-down SUV stands in for Electric Pro.
+      carAsset = 'assets/images/car_suv.png';
     } else if (rideName.contains('vip') || rideName.contains('suv') || rideName.contains('suburban') || rideName.contains('luxury')) {
       carAsset = 'assets/images/car_suv.png';
     } else if (rideName.contains('sedan') || rideName.contains('premium') || rideName.contains('fusion')) {
@@ -219,13 +222,8 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
       debugPrint('[CarIcon] loaded ${_carPngBytes!.length} PNG bytes');
     } catch (e) {
       debugPrint('[CarIcon] FAILED to load $carAsset: $e');
-      // car_electric.png is not in older bundles (OTA rule 2026-10-13) —
-      // its fallback is the bundled SUV, everyone else falls to economy.
-      final fallback = carAsset.contains('car_electric')
-          ? 'assets/images/car_suv.png'
-          : 'assets/images/car_economy.png';
       try {
-        final raw = await rootBundle.load(fallback);
+        final raw = await rootBundle.load('assets/images/car_economy.png');
         _carPngBytes = await _resizePngForMap(raw.buffer.asUint8List(), maxDim: 240);
       } catch (e) {
         debugPrint('[CarIcon] Fallback car load failed: $e');

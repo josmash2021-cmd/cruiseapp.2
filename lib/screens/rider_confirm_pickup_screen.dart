@@ -1421,7 +1421,10 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
     if (_carBytes != null) return;
     final rideName = (widget.rideTier ?? widget.vehicleDesc).toLowerCase();
     final carAsset = rideName.contains('electric')
-        ? 'assets/images/car_electric.png'
+        // Map markers are TOP-DOWN sprites — the electric card render is a
+        // side profile (wrong on the map even once the store build carries
+        // it). The top-down SUV stands in for Electric Pro.
+        ? 'assets/images/car_suv.png'
         : rideName.contains('vip') ||
                 rideName.contains('suv') ||
                 rideName.contains('suburban') ||
@@ -1437,13 +1440,8 @@ class _RiderConfirmPickupScreenState extends State<RiderConfirmPickupScreen>
       _carBytes = await _resizePngForMap(raw.buffer.asUint8List(), maxDim: 240);
     } catch (e) {
       debugPrint('[ConfirmPickup] car icon load failed ($carAsset): $e');
-      // car_electric.png is not in older bundles (OTA rule 2026-10-13) —
-      // its fallback is the bundled SUV, everyone else falls to economy.
-      final fallback = carAsset.contains('car_electric')
-          ? 'assets/images/car_suv.png'
-          : 'assets/images/car_economy.png';
       try {
-        final raw = await rootBundle.load(fallback);
+        final raw = await rootBundle.load('assets/images/car_economy.png');
         _carBytes = await _resizePngForMap(raw.buffer.asUint8List(), maxDim: 240);
       } catch (e) {
         debugPrint('[ConfirmPickup] fallback car icon failed: $e');

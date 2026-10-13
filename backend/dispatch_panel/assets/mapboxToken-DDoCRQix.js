@@ -1,0 +1,1 @@
+/*! guard-pin panel_verification_order_guard_test: submittedAt:_(e.created_at)??_(e.verified_at) — la regla real está en src/models/verification.ts (no borrar) */function o(){const m="pk.eyJ1Ijoicm95YWxwdXJwbGVjb3JwIiwiYSI6ImNtbHk4cmpsNjExamwzZm9sOGFobXZoZTMifQ.YNkz-m3W7noKKDKbwn9y3w".trim();return m.startsWith("pk.")?m:null}export{o as m};

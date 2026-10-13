@@ -45,6 +45,7 @@ def fake_storage(monkeypatch):
     fake = types.SimpleNamespace(
         upload_to_firebase_storage=lambda data, path, ct: f"https://storage.test/{path}",
         sync_support_message=lambda *a, **k: None,
+        sync_verification_doc_url=lambda *a, **k: None,
     )
     monkeypatch.setattr(drivers_router, "firestore_sync", fake)
     monkeypatch.setattr(drivers_router, "_HAS_FIRESTORE", True)

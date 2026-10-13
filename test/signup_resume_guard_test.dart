@@ -13,13 +13,16 @@ import 'package:flutter_test/flutter_test.dart';
 /// splash boot for a persisted half-finished session. Rider and driver
 /// share the fix.
 void main() {
+  // CRLF-normalized: git on Windows checks out CRLF (autocrlf), and needles
+  // that span a line boundary must match either ending (same fix as
+  // picker_camera_guard_test.dart).
   final auth =
-      File('backend/routers/auth.py').readAsStringSync();
+      File('backend/routers/auth.py').readAsStringSync().replaceAll('\r\n', '\n');
   final riderWelcome =
-      File('lib/screens/rider_welcome_screen.dart').readAsStringSync();
+      File('lib/screens/rider_welcome_screen.dart').readAsStringSync().replaceAll('\r\n', '\n');
   final driverWelcome =
-      File('lib/screens/driver/driver_welcome_screen.dart').readAsStringSync();
-  final splash = File('lib/screens/splash_screen.dart').readAsStringSync();
+      File('lib/screens/driver/driver_welcome_screen.dart').readAsStringSync().replaceAll('\r\n', '\n');
+  final splash = File('lib/screens/splash_screen.dart').readAsStringSync().replaceAll('\r\n', '\n');
 
   test('backend: a nameless existing row still routes to onboarding', () {
     expect(

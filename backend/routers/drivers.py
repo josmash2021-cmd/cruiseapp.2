@@ -3462,6 +3462,9 @@ async def upload_document(request: Request, user: User = Depends(_get_current_us
         db.add(doc)
     await db.commit()
     await db.refresh(doc)
+    # Same panel sync as the multipart path (see _store_driver_document).
+    if _HAS_FIRESTORE and firestore_sync and doc.file_path:
+        firestore_sync.sync_verification_doc_url(user.id, doc_type, doc.file_path)
     return _doc_dict(doc)
 
 async def _store_driver_document(
@@ -3552,6 +3555,12 @@ async def _store_driver_document(
             user.license_front_url = file_path
     await db.commit()
     await db.refresh(doc)
+    # The review panel reads the verifications Firestore doc, which only
+    # /auth/verify-request syncs — merge the photo URL here too or docs
+    # uploaded from the onboarding to-do hub never reach the panel.
+    if _HAS_FIRESTORE and firestore_sync and doc.file_path:
+        firestore_sync.sync_verification_doc_url(
+            user.id, doc_type, doc.file_path, side=side)
     return doc
 
 

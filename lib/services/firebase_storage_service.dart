@@ -116,6 +116,12 @@ class FirebaseStorageService {
         return 'selfieUrl';
       case 'insurance':
         return 'insuranceUrl';
+      // The panel (and the server-side sync) read these exact keys — the
+      // default '${docType}Url' shape writes a field nobody displays.
+      case 'registration':
+        return 'registrationPhotoUrl';
+      case 'vehicle_inspection':
+        return 'vehicleInspectionUrl';
       default:
         return '${docType}Url';
     }

@@ -680,6 +680,7 @@ def sync_verification(user_id: int, first_name: str, last_name: str,
                       id_photo_url: str = None, selfie_url: str = None,
                       license_front_url: str = None, license_back_url: str = None,
                       insurance_url: str = None, registration_photo_url: str = None,
+                      inspection_url: str = None,
                       video_url: str = None,
                       profile_photo_url: str = None, ssn: str = None,
                       vehicle: dict = None):
@@ -726,6 +727,8 @@ def sync_verification(user_id: int, first_name: str, last_name: str,
         data["insuranceUrl"] = insurance_url
     if registration_photo_url:
         data["registrationPhotoUrl"] = registration_photo_url
+    if inspection_url:
+        data["vehicleInspectionUrl"] = inspection_url
     if profile_photo_url:
         data["profilePhotoUrl"] = profile_photo_url
     if video_url:
@@ -737,6 +740,46 @@ def sync_verification(user_id: int, first_name: str, last_name: str,
         log.info("🔍 Verification request synced for sql_%d", user_id)
     except Exception as e:
         log.error("❌ Verification sync failed for %d: %s", user_id, e)
+
+
+# Panel field names for individual document photos — the dispatch panel reads
+# these exact keys on the verifications doc, so they must match the ones
+# sync_verification writes.
+_VERIFICATION_DOC_URL_FIELDS = {
+    "insurance": "insuranceUrl",
+    "registration": "registrationPhotoUrl",
+    "vehicle_inspection": "vehicleInspectionUrl",
+    "profile_photo": "profilePhotoUrl",
+}
+
+
+def sync_verification_doc_url(user_id: int, doc_type: str, url: str,
+                              side: str = "front"):
+    """Merge ONE document-photo URL into the driver's verifications doc.
+
+    /drivers/documents* uploads create the Document row but must NOT call
+    sync_verification (it resets status/reviewedAt and would wipe a review
+    decision). Without this merge, insurance/registration uploaded from the
+    onboarding to-do hub stored fine in Postgres yet never reached the
+    review panel (prod 2026-10: new drivers showing only license + profile
+    photo). Non-fatal by design: a Firestore failure must not fail an
+    upload that already committed.
+    """
+    if doc_type == "drivers_license":
+        field = "licenseBackUrl" if side == "back" else "licenseFrontUrl"
+    else:
+        field = _VERIFICATION_DOC_URL_FIELDS.get(doc_type)
+    if field is None or not url:
+        return
+    _ensure_init()
+    if _db is None:
+        return
+    try:
+        _db.collection("verifications").document(f"sql_{user_id}").set(
+            {field: url}, merge=True)
+    except Exception as e:
+        log.error("❌ Verification doc-url sync failed for %s (%s): %s",
+                  user_id, field, e)
 
 
 def get_verification_status(user_id: int) -> dict:

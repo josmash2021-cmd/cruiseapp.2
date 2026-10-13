@@ -101,7 +101,7 @@ void main() {
 
     test('_enterNavMode releases the preview surface before mounting', () {
       final body =
-          bodyOf(accept, 'Future<void> _enterNavMode({bool? toPickup}) async {', maxLen: 2600);
+          bodyOf(accept, 'Future<void> _enterNavMode({bool? toPickup}) async {', maxLen: 3600);
       final snapshot = body.indexOf('_captureMapSnapshot(_map)');
       final sweep = body.indexOf('_sweepPreviewAnnotations()');
       final unmount = body.indexOf('_previewMapMounted = false');

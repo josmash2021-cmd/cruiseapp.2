@@ -884,6 +884,10 @@ async def admin_list_verifications(
         "video_url": u.video_url,
         "is_verified": u.is_verified,
         "verified_at": u.verified_at.isoformat() if u.verified_at else None,
+        # The panel sorts its verification queue by submission date; without
+        # the account creation date these rows carried submittedAt=null and
+        # sank to the bottom of the list regardless of how recent they were.
+        "created_at": u.created_at.isoformat() if u.created_at else None,
     } for u in users]
 
 

@@ -39,6 +39,15 @@ class S {
       ? 'Inténtalo de nuevo o contacta soporte si el problema continúa.'
       : 'Please try again or contact support if you continue to have issues.';
   String get maintenanceRetry => _es ? 'Reintentar' : 'Try again';
+
+  // ── Driver waitlist ──
+  String get waitlistTitle =>
+      _es ? 'Estás en lista de espera' : "You're on the waitlist!";
+  String get waitlistBody => _es
+      ? 'Tu cuenta está actualmente en revisión. Nuestro equipo está trabajando para completar tu verificación. Te notificaremos en cuanto tu cuenta sea aprobada.'
+      : "Your account is currently under review. Our team is working to complete your verification. We'll notify you as soon as your account is approved.";
+  String get waitlistSupport => _es ? 'Soporte' : 'Support';
+  String get waitlistExitHint => _es ? 'Salir' : 'Exit';
   String get navIntroTitle => _es
       ? 'Navega a donde quieras con Cruise'
       : 'Navigate anywhere with Cruise';

@@ -13,6 +13,7 @@ import '../../services/user_session.dart';
 import '../welcome_screen.dart';
 import 'onboarding/driver_approved_celebration_screen.dart';
 import 'onboarding/driver_todo_screen.dart';
+import 'driver_waitlist_screen.dart';
 import '../../l10n/app_localizations.dart';
 import '../../services/firebase_auth_recovery.dart';
 
@@ -24,6 +25,11 @@ import '../../services/firebase_auth_recovery.dart';
 /// ([DriverTodoScreen], which already shows "In review"). This screen stays
 /// as the live status/transitional view; approval detected here goes to the
 /// new celebration flow.
+///
+/// Waitlist branch (2026-10-13): if any channel reports the dispatch
+/// `waitlist` status, this screen hands off to [DriverWaitlistScreen]
+/// (pushReplacement — the waitlist page hands BACK here if the status
+/// leaves waitlist without an approval, so the stack never ping-pongs).
 class DriverPendingReviewScreen extends StatefulWidget {
   const DriverPendingReviewScreen({super.key});
 
@@ -246,6 +252,13 @@ class _DriverPendingReviewScreenState extends State<DriverPendingReviewScreen>
             approvalStatus == 'rejected' ||
             verificationStatus == 'rejected');
 
+    final isWaitlisted = !isApproved &&
+        !isRejected &&
+        (driverStatus == 'waitlist' ||
+            status == 'waitlist' ||
+            approvalStatus == 'waitlist' ||
+            verificationStatus == 'waitlist');
+
     if (isApproved && _status != 'approved') {
       debugPrint('[PendingReview] ✅ APPROVED detected — navigating');
       _handleApproved();
@@ -255,6 +268,9 @@ class _DriverPendingReviewScreenState extends State<DriverPendingReviewScreen>
           (mounted ? S.of(context).applicationNotApproved : 'Application not approved');
       debugPrint('[PendingReview] ❌ REJECTED detected — reason: $reason');
       _handleRejected(reason);
+    } else if (isWaitlisted) {
+      debugPrint('[PendingReview] ⏳ WAITLISTED detected — navigating');
+      _handleWaitlisted();
     }
   }
 
@@ -280,6 +296,20 @@ class _DriverPendingReviewScreenState extends State<DriverPendingReviewScreen>
     }
   }
 
+  /// Dispatch moved the account to the waitlist — hand off to the waitlist
+  /// page (it polls and comes BACK here if the status leaves waitlist
+  /// without an approval, so replace instead of stacking).
+  void _handleWaitlisted() {
+    if (_navigating || !mounted) return;
+    _navigating = true;
+    _pollTimer?.cancel();
+    LocalDataService.setDriverApprovalStatus('waitlist');
+    _saveStatusToPrefs('waitlist');
+    Navigator.of(context).pushReplacement(
+      onboardingFadeSlideRoute(const DriverWaitlistScreen()),
+    );
+  }
+
   /// Check the backend REST API once.
   Future<void> _checkApiOnce() async {
     // Try primary endpoint
@@ -300,6 +330,9 @@ class _DriverPendingReviewScreenState extends State<DriverPendingReviewScreen>
             result['reason'] as String? ??
             S.of(context).applicationNotApproved;
         _handleRejected(reason);
+        return;
+      } else if (status == 'waitlist') {
+        _handleWaitlisted();
         return;
       }
     } catch (e) {
@@ -325,6 +358,8 @@ class _DriverPendingReviewScreenState extends State<DriverPendingReviewScreen>
             result2['reason'] as String? ??
             S.of(context).applicationNotApproved;
         _handleRejected(reason);
+      } else if (status2 == 'waitlist') {
+        _handleWaitlisted();
       }
     } catch (e) {
       debugPrint('[PendingReview] API verification-status error: $e');

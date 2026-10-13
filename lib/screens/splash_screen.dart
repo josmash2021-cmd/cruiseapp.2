@@ -15,6 +15,7 @@ import 'driver/driver_email_screen.dart';
 import 'driver/driver_name_screen.dart';
 import 'driver/driver_online_screen.dart';
 import 'driver/driver_pending_review_screen.dart';
+import 'driver/driver_waitlist_screen.dart';
 import 'driver/onboarding/driver_todo_screen.dart';
 import '../services/api_service.dart';
 import '../services/feature_flags.dart';
@@ -388,6 +389,9 @@ class _SplashScreenState extends State<SplashScreen> {
           } else if (liveStatus == 'rejected') {
             await LocalDataService.setDriverApprovalStatus('rejected');
             return const DriverPendingReviewScreen();
+          } else if (liveStatus == 'waitlist') {
+            await LocalDataService.setDriverApprovalStatus('waitlist');
+            return const DriverWaitlistScreen();
           }
         } catch (e) {
           debugPrint('[SplashScreen] Live approval check failed, using cache: $e');
@@ -431,6 +435,10 @@ class _SplashScreenState extends State<SplashScreen> {
         await LocalDataService.setDriverApprovalStatus('rejected');
         return const DriverPendingReviewScreen();
       }
+      if (fsStatus == 'waitlist') {
+        await LocalDataService.setDriverApprovalStatus('waitlist');
+        return const DriverWaitlistScreen();
+      }
 
       // 2) Firestore says pending → confirm with backend API
       try {
@@ -447,6 +455,8 @@ class _SplashScreenState extends State<SplashScreen> {
         if (_isApprovedStatus(status)) {
           unawaited(_backgroundProfileSync());
           return const DriverOnlineScreen();
+        } else if (status == 'waitlist') {
+          return const DriverWaitlistScreen();
         } else {
           return const DriverTodoScreen();
         }
@@ -582,6 +592,7 @@ class _SplashScreenState extends State<SplashScreen> {
         final d = driversDoc.data() ?? {};
         if (_isApprovedData(d)) return 'approved';
         if (_isRejectedData(d)) return 'rejected';
+        if (_isWaitlistData(d)) return 'waitlist';
       }
 
       // Fall back to verifications doc — cache-first
@@ -602,6 +613,7 @@ class _SplashScreenState extends State<SplashScreen> {
         final d = verDoc.data() ?? {};
         if (_isApprovedData(d)) return 'approved';
         if (_isRejectedData(d)) return 'rejected';
+        if (_isWaitlistData(d)) return 'waitlist';
       }
     } catch (e) {
       debugPrint('[SplashScreen] Firestore driver check failed: $e');
@@ -630,6 +642,12 @@ class _SplashScreenState extends State<SplashScreen> {
       d['driver_status'] == 'rejected' ||
       d['status'] == 'rejected' ||
       d['approvalStatus'] == 'rejected';
+
+  bool _isWaitlistData(Map<String, dynamic> d) =>
+      d['driver_status'] == 'waitlist' ||
+      d['status'] == 'waitlist' ||
+      d['verificationStatus'] == 'waitlist' ||
+      d['approvalStatus'] == 'waitlist';
 
   /// Refresh approval status in background for already-approved drivers.
   /// Keeps the local cache fresh without blocking navigation.

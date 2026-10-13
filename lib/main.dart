@@ -33,6 +33,7 @@ import 'screens/update_required_screen.dart';
 import 'screens/driver/driver_online_screen.dart';
 import 'screens/driver/driver_online_screen.dart';
 import 'screens/driver/driver_pending_review_screen.dart';
+import 'screens/driver/driver_waitlist_screen.dart';
 import 'screens/driver/onboarding/driver_approved_celebration_screen.dart';
 import 'screens/driver/driver_trip_accept_screen.dart';
 import 'screens/driver/scheduled_rides_map_screen.dart';
@@ -103,6 +104,7 @@ String _riderNotifTitle(String type) {
     'level_up'           => isEs ? '¡Subiste de Nivel!' : 'Level Up!',
     'level_down'         => isEs ? 'Actualización de Nivel' : 'Level Update',
     'instant_cashout'    => isEs ? 'Retiro Instantáneo' : 'Instant Cashout',
+    'driver_waitlisted'  => isEs ? 'Estás en lista de espera' : "You're on the waitlist!",
     _ => 'Cruise',
   };
 }
@@ -135,6 +137,7 @@ String _riderNotifBody(String type) {
     'level_up'           => isEs ? '¡Felicidades! Subiste de nivel en Cruise.' : 'Congratulations! You leveled up in Cruise.',
     'level_down'         => isEs ? 'Tu nivel de conductor ha cambiado. Revisa la app.' : 'Your driver level has changed. Check the app for details.',
     'instant_cashout'    => isEs ? 'Tu retiro instantáneo se procesó exitosamente.' : 'Your instant cashout has been processed successfully.',
+    'driver_waitlisted'  => isEs ? 'Tu cuenta está en revisión. Te notificaremos en cuanto sea aprobada.' : 'Your account is under review. We will notify you as soon as it is approved.',
     _ => '',
   };
 }
@@ -192,6 +195,7 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
     'level_up',
     'level_down',
     'instant_cashout',
+    'driver_waitlisted',
   };
   if (riderTypes.contains(type)) {
     final title = message.notification?.title ?? message.data['title'] ?? _riderNotifTitle(type);
@@ -562,6 +566,13 @@ void _handleNotificationTap(RemoteMessage message) {
     return;
   }
 
+  // Driver: dispatch moved the account to the waitlist (user spec
+  // 2026-10-13) — open the waitlist page.
+  if (type == 'driver_waitlisted') {
+    _handleDriverWaitlisted();
+    return;
+  }
+
   // Rider: scheduled ride starting → fetch trip and open tracking
   if (type == 'scheduled_trip_starting' || type == 'scheduled_claimed') {
     final tripId = int.tryParse(message.data['trip_id'] ?? '');
@@ -620,6 +631,21 @@ void _handleScheduledRidePush(RemoteMessage message) {
     nav.push(MaterialPageRoute(
       builder: (_) => ScheduledRidesMapScreen(initialTripId: tripId),
     ));
+  });
+}
+
+/// Driver tapped a "driver_waitlisted" push: dispatch moved the account to
+/// the waitlist (backend `verification_status == 'waitlist'`). Cache the
+/// status so the next boot routes the same way, then open the waitlist
+/// page. Role-gated like every driver push — the tap handler never trusts
+/// the backend targeting.
+void _handleDriverWaitlisted() {
+  UserSession.getMode().then((mode) {
+    if (mode != 'driver') return;
+    LocalDataService.setDriverApprovalStatus('waitlist');
+    final nav = _navigatorKey.currentState;
+    if (nav == null) return;
+    nav.push(MaterialPageRoute(builder: (_) => const DriverWaitlistScreen()));
   });
 }
 

@@ -871,16 +871,20 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                                 // OTA rule (2026-10-13): car_electric.png is
                                 // not in older bundles (Shorebird patches
                                 // carry no new assets) — fall back to the
-                                // bundled SUV render, then the icon.
+                                // backend-hosted copy, then the bundled SUV
+                                // render, then the icon.
                                 fallback: opt.id == 'electric_pro'
-                                    ? Image.asset(
-                                        'assets/images/cruisert_compact.png',
-                                        fit: BoxFit.contain,
-                                        errorBuilder: (_, __, ___) => Icon(
-                                          Icons.directions_car_rounded,
-                                          color: const Color(0xFFE8C547)
-                                              .withValues(alpha: 0.5),
-                                          size: 30,
+                                    ? otaImageFallback(
+                                        'car_electric.png',
+                                        Image.asset(
+                                          'assets/images/cruisert_compact.png',
+                                          fit: BoxFit.contain,
+                                          errorBuilder: (_, __, ___) => Icon(
+                                            Icons.directions_car_rounded,
+                                            color: const Color(0xFFE8C547)
+                                                .withValues(alpha: 0.5),
+                                            size: 30,
+                                          ),
                                         ),
                                       )
                                     : Icon(

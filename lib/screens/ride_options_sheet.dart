@@ -7,6 +7,7 @@ import '../l10n/app_localizations.dart';
 import '../state/rider_trip_controller.dart';
 import '../utils/vehicle_tier_style.dart';
 import '../widgets/car_image_3d.dart';
+import '../widgets/ota_image.dart';
 import '../widgets/vehicle_tier_badge.dart';
 
 /// Premium ride options bottom sheet with card-based layout.
@@ -361,11 +362,27 @@ class RideOptionsSheet extends StatelessWidget {
                         assetPath: 'assets/images/$carImage',
                         cacheWidth: 360,
                         selected: isSelected,
-                        fallback: Icon(
-                          Icons.directions_car_rounded,
-                          color: _gold.withValues(alpha: 0.5),
-                          size: 40,
-                        ),
+                        // OTA rule (2026-10-13): car_electric.png is not in
+                        // older bundles — backend-hosted copy, then the
+                        // bundled compact SUV, then the icon.
+                        fallback: carImage == 'car_electric.png'
+                            ? otaImageFallback(
+                                'car_electric.png',
+                                Image.asset(
+                                  'assets/images/cruisert_compact.png',
+                                  fit: BoxFit.contain,
+                                  errorBuilder: (_, __, ___) => Icon(
+                                    Icons.directions_car_rounded,
+                                    color: _gold.withValues(alpha: 0.5),
+                                    size: 40,
+                                  ),
+                                ),
+                              )
+                            : Icon(
+                                Icons.directions_car_rounded,
+                                color: _gold.withValues(alpha: 0.5),
+                                size: 40,
+                              ),
                       ),
                     ),
                     const SizedBox(height: 6),

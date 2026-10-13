@@ -6,7 +6,6 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../../config/page_transitions.dart';
 import '../../../l10n/app_localizations.dart';
 import '../../../services/api_service.dart';
-import '../../../services/local_data_service.dart';
 import '../../../services/socket_service.dart';
 import '../../../services/user_session.dart';
 import '../../../widgets/feathered_image.dart';
@@ -97,13 +96,17 @@ class _DriverTodoScreenState extends State<DriverTodoScreen> {
 
   /// Dispatch decision over the socket. The admin endpoint sends the raw
   /// action ("approve"/"reject"), the rider auto-verify sends "approved" —
-  /// accept both spellings.
+  /// accept both spellings. "waitlist" flips the hub to the waitlist page
+  /// live — the ONLY way that page opens (user spec 2026-10-13: uploading
+  /// every document must NOT open it; it belongs to the dispatch button).
   void _onStatusPush(Map<String, dynamic> data) {
     final status = (data['status'] ?? '').toString().toLowerCase();
     if (status == 'approve' || status == 'approved') {
       _goApproved();
     } else if (status == 'reject' || status == 'rejected') {
       _load(); // re-list with the rejection reasons on the cards
+    } else if (status == 'waitlist') {
+      _goWaitlisted();
     }
   }
 
@@ -123,27 +126,23 @@ class _DriverTodoScreenState extends State<DriverTodoScreen> {
         _goApproved();
       } else if (s == 'rejected') {
         _load();
+      } else if (s == 'waitlist') {
+        _goWaitlisted();
       }
     } catch (_) {}
   }
 
   bool _navigatedToApproved = false;
+  bool _navigatedToWaitlist = false;
 
-  /// 2026-10-11 (user spec): a driver who ALREADY submitted every document
-  /// and is only waiting on dispatch belongs on the review page — closing
-  /// and reopening the app must land them there, never on the hub (and
-  /// NEVER on the driver home). A rejected account stays here instead: its
-  /// next move is fixing the failed item, which is what this hub is for.
-  /// (2026-10-13: the review page IS the waitlist screen now — the old
-  /// pending-review page was retired.)
-  bool _routedToReview = false;
-
-  Future<void> _maybeRouteToReview() async {
-    if (_routedToReview || _loading) return;
-    if (_entries.isEmpty || !_entries.every((e) => e.isCompleted)) return;
-    final cached = await LocalDataService.getDriverApprovalStatus();
-    if (!mounted || cached == 'rejected') return;
-    _routedToReview = true;
+  /// Dispatch moved the account to the waitlist — open the waitlist page
+  /// once. A driver who merely SUBMITTED every document stays on the hub,
+  /// whose "In review" card is that state (the auto-route to the waitlist
+  /// page on docs-complete died 2026-10-13: the page opens only when
+  /// dispatch presses the waitlist button).
+  void _goWaitlisted() {
+    if (_navigatedToWaitlist || _navigatedToApproved || !mounted) return;
+    _navigatedToWaitlist = true;
     Navigator.of(context).push(
       onboardingFadeSlideRoute(const DriverWaitlistScreen()),
     );
@@ -180,7 +179,6 @@ class _DriverTodoScreenState extends State<DriverTodoScreen> {
           ];
           _loading = false;
         });
-        _maybeRouteToReview();
       } else {
         setState(() => _loading = false);
       }

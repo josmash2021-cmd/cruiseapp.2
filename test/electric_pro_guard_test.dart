@@ -7,9 +7,10 @@ import 'package:cruise_app/utils/vehicle_tier_style.dart';
 /// Guardian for the Electric Pro tier (user spec 2026-10-13):
 ///   1. The rate card is the exact Standard↔Premium midpoint.
 ///   2. The booking sheet lists it between SUV XL and Sedan, capacity 5, ⚡.
-///   3. Every render of car_electric.png falls back to car_suv.png — the
-///      OTA rule: Shorebird patches carry no new assets, so the PNG only
-///      exists in bundles from the store release that ships it.
+///   3. Every render of car_electric.png falls back in a chain: bundled
+///      asset → backend-hosted /static copy (OTA rule: Shorebird patches
+///      carry no new assets, so patched phones stream it from the
+///      backend) → the long-bundled side-profile render.
 ///   4. The "Meet Electric Pro" sheet has its own copy (ES/EN).
 ///   5. vehicle_tier_style knows the tier (key, photo, colour, icon).
 ///   6. The request sends the option NAME ('Electric Pro'), which the
@@ -118,14 +119,42 @@ void main() {
             File('lib/screens/trip_receipt_screen.dart').readAsStringSync(),
         'ride history':
             File('lib/screens/ride_history_screen.dart').readAsStringSync(),
+        'ride options sheet':
+            File('lib/screens/ride_options_sheet.dart').readAsStringSync(),
       };
       for (final e in sites.entries) {
         expect(e.value, contains('car_electric.png'),
             reason: '${e.key} never renders the electric PNG');
+        expect(e.value, contains('otaImageFallback('),
+            reason: '${e.key}: the /static network rung (OTA photos, user '
+                'spec 2026-10-13) is missing');
         expect(e.value, contains('cruisert_compact.png'),
             reason: '${e.key}: the OTA fallback is not the side-profile '
                 'compact SUV');
       }
+    });
+
+    test('the OTA image chain helper + the backend-hosted twins exist', () {
+      final ota = File('lib/widgets/ota_image.dart').readAsStringSync();
+      expect(ota, contains('ApiService.currentBaseUrl'));
+      expect(ota, contains('/static/'));
+      expect(ota, contains('Image.network'));
+      for (final f in [
+        'car_electric.png',
+        'bolt_badge.png',
+        'driver_tier_electric.png',
+      ]) {
+        expect(File('backend/static/$f').existsSync(), isTrue,
+            reason: '$f must ride the backend deploy or patched phones '
+                'have nothing to stream');
+      }
+      final badge =
+          File('lib/widgets/electric_bolt_badge.dart').readAsStringSync();
+      expect(badge, contains("otaImageFallback("),
+          reason: 'the bolt badge streams from /static on patched builds');
+      final splash = File('lib/screens/splash_screen.dart').readAsStringSync();
+      expect(splash, contains("'/static/car_electric.png'"),
+          reason: 'precached at boot so the fallback paints instantly');
     });
 
     test('map markers use the top-down SUV for electric, never the profile', () {

@@ -40,18 +40,23 @@ extension _RiderTrackingDriverInfoCard on _RiderTrackingScreenState {
   }
 
   /// errorBuilder for [_vehicleAsset] renders: the electric PNG is not in
-  /// older bundles (Shorebird patches carry no new assets), so it falls
-  /// back to the SUV render bundled since release — every other asset
-  /// falls straight to [icon].
+  /// older bundles (Shorebird patches carry no new assets), so it tries the
+  /// backend-hosted copy (/static) and then the SUV render bundled since
+  /// release — every other asset falls straight to [icon].
   Widget _vehicleImageFallback(Widget icon,
       {double? width, double? height}) {
     if (!_vehicleAsset.endsWith('car_electric.png')) return icon;
-    return Image.asset(
-      'assets/images/cruisert_compact.png',
+    return otaImageFallback(
+      'car_electric.png',
+      Image.asset(
+        'assets/images/cruisert_compact.png',
+        width: width,
+        height: height,
+        fit: BoxFit.contain,
+        errorBuilder: (_, __, ___) => icon,
+      ),
       width: width,
       height: height,
-      fit: BoxFit.contain,
-      errorBuilder: (_, __, ___) => icon,
     );
   }
 

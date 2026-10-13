@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../utils/vehicle_tier_style.dart';
 import '../../widgets/neu_style.dart';
+import '../../widgets/ota_image.dart';
 import 'driver_vehicle_detail_screen.dart';
 import 'add_vehicle_screen.dart';
 import '../../services/haptic_service.dart';
@@ -349,11 +350,23 @@ class _DriverVehicleScreenState extends State<DriverVehicleScreen> {
                     child: Image.asset(
                       carImage,
                       fit: BoxFit.contain,
-                      errorBuilder: (_, __, ___) => Icon(
-                        Icons.directions_car_rounded,
-                        color: _gold.withValues(alpha: 0.5),
-                        size: 40,
-                      ),
+                      // driver_tier_electric.png is not in older bundles
+                      // (OTA rule) — backend-hosted copy, then the icon.
+                      errorBuilder: (_, __, ___) =>
+                          carImage.endsWith('driver_tier_electric.png')
+                              ? otaImageFallback(
+                                  'driver_tier_electric.png',
+                                  Icon(
+                                    Icons.directions_car_rounded,
+                                    color: _gold.withValues(alpha: 0.5),
+                                    size: 40,
+                                  ),
+                                )
+                              : Icon(
+                                  Icons.directions_car_rounded,
+                                  color: _gold.withValues(alpha: 0.5),
+                                  size: 40,
+                                ),
                     ),
                   ),
                 ],

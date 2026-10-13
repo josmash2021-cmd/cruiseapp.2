@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../l10n/app_localizations.dart';
+import 'ota_image.dart';
 
 /// Lyft-style "Meet {tier}" detail sheet (2026-08-25): tapping a tier card
 /// in the choose-a-ride sheet opens this modal — car render, title, tagline,
@@ -105,19 +106,24 @@ class TierDetailSheet extends StatelessWidget {
                 height: 110,
                 fit: BoxFit.contain,
                 // OTA rule (2026-10-13): car_electric.png is not in older
-                // bundles — fall back to the bundled SUV render first.
+                // bundles — backend-hosted copy first, then the bundled
+                // SUV render.
                 errorBuilder: (_, __, ___) =>
                     carAssetPath.endsWith('car_electric.png')
-                        ? Image.asset(
-                            'assets/images/cruisert_compact.png',
-                            height: 110,
-                            fit: BoxFit.contain,
-                            errorBuilder: (_, __, ___) => Icon(
-                              Icons.directions_car_rounded,
-                              color:
-                                  const Color(0xFFE8C547).withValues(alpha: 0.5),
-                              size: 64,
+                        ? otaImageFallback(
+                            'car_electric.png',
+                            Image.asset(
+                              'assets/images/cruisert_compact.png',
+                              height: 110,
+                              fit: BoxFit.contain,
+                              errorBuilder: (_, __, ___) => Icon(
+                                Icons.directions_car_rounded,
+                                color:
+                                    const Color(0xFFE8C547).withValues(alpha: 0.5),
+                                size: 64,
+                              ),
                             ),
+                            height: 110,
                           )
                         : Icon(
                             Icons.directions_car_rounded,

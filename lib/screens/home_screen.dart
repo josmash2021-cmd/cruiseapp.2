@@ -23,6 +23,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:flutter/foundation.dart' show kDebugMode, kIsWeb;
 import '../utils/mapbox_safe.dart';
+import '../widgets/ota_image.dart';
 import '../utils/driver_location_settings.dart';
 import 'biometric_consent_screen.dart';
 import 'identity_verification_screen.dart';

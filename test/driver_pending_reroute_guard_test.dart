@@ -12,9 +12,11 @@ import 'package:flutter_test/flutter_test.dart';
 /// approved them — and `wasDriverEverApproved()` promoted that flag to
 /// 'approved' on the primary cache key, poisoning it permanently.
 ///
-/// (2026-10-13: the "review page" these pins route to IS the waitlist
-/// screen now — the old pending-review page was retired and the waitlist
-/// screen owns pending/waitlist/rejected.)
+/// (2026-10-13, user report: the hub auto-routed a fully-submitted driver
+/// to the WAITLIST page even though dispatch never pressed the waitlist
+/// button. That auto-route is dead: docs-complete shows the hub's "In
+/// review" card, and the waitlist page opens only when the server says
+/// `verification_status == 'waitlist'` — socket, poll, splash, push tap.)
 void main() {
   final lds = File('lib/services/local_data_service.dart').readAsStringSync();
   final todo = File('lib/screens/driver/onboarding/driver_todo_screen.dart')
@@ -42,21 +44,25 @@ void main() {
     );
   });
 
-  test('the hub routes a fully-submitted driver to the waitlist page', () {
-    expect(todo.contains('Future<void> _maybeRouteToReview()'), isTrue);
-    expect(
-      todo.contains('_entries.every((e) => e.isCompleted)'),
-      isTrue,
-      reason: 'everything submitted + waiting on dispatch = the waitlist '
-          'page, on every reopen',
-    );
-    expect(todo.contains('const DriverWaitlistScreen()'), isTrue);
-    expect(
-      todo.contains("cached == 'rejected'"),
-      isTrue,
-      reason: 'a rejected account stays on the hub — its next move is '
-          'fixing the failed item, not staring at the waitlist page',
-    );
+  test('the hub NEVER auto-routes on docs-complete (dispatch button only)', () {
+    expect(todo.contains('_maybeRouteToReview'), isFalse,
+        reason: 'died 2026-10-13 (user report): uploading every document '
+            'must NOT open the waitlist page — that state is the hub\'s '
+            '"In review" card');
+    expect(todo, contains('_allInReviewCard'),
+        reason: 'everything submitted + waiting on dispatch = the hub\'s '
+            'In review card');
+    expect(todo, contains('void _goWaitlisted()'),
+        reason: 'the waitlist page opens when the server says waitlist');
+    expect(todo, contains("status == 'waitlist'"),
+        reason: 'the socket push flips the hub live');
+    expect(todo, contains("s == 'waitlist'"),
+        reason: 'the 25 s poll is the dead-socket fallback');
+    final signup = File('lib/screens/driver/driver_signup_screen.dart')
+        .readAsStringSync();
+    expect(signup, contains('const DriverTodoScreen()'),
+        reason: 'a freshly submitted application lands on the hub');
+    expect(signup.contains('const DriverWaitlistScreen()'), isFalse);
   });
 
   test('the splash keeps its pending/rejected gates', () {

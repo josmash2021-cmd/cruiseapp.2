@@ -5,6 +5,7 @@ import '../../l10n/app_localizations.dart';
 import '../../services/api_service.dart';
 import '../../services/haptic_service.dart';
 import '../../widgets/neu_style.dart';
+import '../../widgets/ota_image.dart';
 import 'driver_documents_screen.dart';
 
 /// One vehicle, in full.
@@ -157,11 +158,23 @@ class DriverVehicleDetailScreen extends StatelessWidget {
                 child: Image.asset(
                   carImage,
                   fit: BoxFit.contain,
-                  errorBuilder: (_, __, ___) => Icon(
-                    Icons.directions_car_rounded,
-                    color: _gold.withValues(alpha: 0.5),
-                    size: 44,
-                  ),
+                  // driver_tier_electric.png is not in older bundles (OTA
+                  // rule) — backend-hosted copy, then the icon.
+                  errorBuilder: (_, __, ___) =>
+                      carImage.endsWith('driver_tier_electric.png')
+                          ? otaImageFallback(
+                              'driver_tier_electric.png',
+                              Icon(
+                                Icons.directions_car_rounded,
+                                color: _gold.withValues(alpha: 0.5),
+                                size: 44,
+                              ),
+                            )
+                          : Icon(
+                              Icons.directions_car_rounded,
+                              color: _gold.withValues(alpha: 0.5),
+                              size: 44,
+                            ),
                 ),
               ),
             ],

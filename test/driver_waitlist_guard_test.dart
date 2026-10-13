@@ -5,18 +5,23 @@ import 'package:flutter_test/flutter_test.dart';
 /// Guardian for the driver waitlist page (user spec 2026-10-13): when
 /// dispatch moves a driver to the waitlist (backend
 /// `verification_status == 'waitlist'`), the app shows the "Navy and Gold
-/// Waitlist Verification Screen" mock — gold hourglass + ID card over a
-/// dark-blue cloud. The same screen ALSO owns the rejected state: the old
-/// pending-review page was retired the same day ("esa página de under
-/// review elimínala ya que es vieja") and every route to it now lands
-/// here.
+/// Waitlist Verification Screen" mock — the REAL mock illustration (gold
+/// hourglass + ID card over the dark-blue cloud) above the text. The same
+/// screen ALSO owns the rejected state: the old pending-review page was
+/// retired the same day ("esa página de under review elimínala ya que es
+/// vieja") and every route to it now lands here.
 ///
-/// Pins: widget-only mock art (OTA patches carry no new assets — the
-/// maintenance_hero lesson), the exact hero intervals of the
-/// update-required page, support top-LEFT / exit X top-RIGHT, the rejected
-/// variant (soft red, dispatch reason, support as primary action), the
-/// verbatim mock copy ES/EN, the retired file DELETED with zero references
-/// left in lib/, and the 10 s auto-exit poll cancelled in dispose.
+/// Pins: the hero image chain (bundled waitlist_hero.png → backend-hosted
+/// /static/waitlist_hero.png — OTA patches carry no new assets, the
+/// maintenance_hero pattern → the drawn widget art offline), the exact
+/// hero intervals of the update-required page, support top-LEFT / exit X
+/// top-RIGHT, the rejected variant (soft red, dispatch reason, support as
+/// primary action), the verbatim mock copy ES/EN, the retired file DELETED
+/// with zero references left in lib/, the 10 s auto-exit poll cancelled in
+/// dispose — and the routing rule: the page opens ONLY on a dispatch
+/// waitlist decision (push tap, socket, poll, splash live-status), NEVER
+/// on documents-complete (user report 2026-10-13: "se abre la página de
+/// waitlist sin que yo haya presionado el botón de waitlist").
 void main() {
   final screen =
       File('lib/screens/driver/driver_waitlist_screen.dart').readAsStringSync();
@@ -25,14 +30,30 @@ void main() {
   final mainDart = File('lib/main.dart').readAsStringSync();
   final l10n = File('lib/l10n/app_localizations.dart').readAsStringSync();
 
-  group('mock art — widgets only, cloud + hourglass + ID card', () {
-    test('no image assets or network art (OTA-safe)', () {
-      expect(screen.contains('Image.asset'), isFalse,
-          reason: 'Shorebird OTA patches do not carry new assets');
-      expect(screen.contains('Image.network'), isFalse);
+  group('mock art — real illustration, OTA image chain', () {
+    test('hero is the mock illustration: asset → /static → drawn widgets', () {
+      expect(screen, contains("'assets/images/waitlist_hero.png'"),
+          reason: 'the bundled mock illustration is the first rung');
+      expect(screen, contains('/static/waitlist_hero.png'),
+          reason: 'OTA patches carry no new assets — the backend-hosted '
+              'copy (maintenance_hero pattern) covers patched builds');
+      expect(screen, contains('Image.network'));
+      expect(screen, contains('_rejected ? _buildHeroArt() : _buildHeroImage()'),
+          reason: 'the waitlist variant wears the illustration; the '
+              'rejected variant keeps the drawn red-accent art');
+      final img = screen.substring(screen.indexOf('Widget _buildHeroImage()'));
+      expect(img, contains('errorBuilder'),
+          reason: 'each network/asset rung falls through to the next');
+      expect(img, contains('_buildHeroArt()'),
+          reason: 'the drawn widget art is the offline last resort');
+      expect(
+          File('assets/images/waitlist_hero.png').existsSync(), isTrue);
+      expect(
+          File('backend/static/waitlist_hero.png').existsSync(), isTrue,
+          reason: 'the backend-hosted twin must ship with the deploy');
     });
 
-    test('gold hourglass + ID card with person glyph over a composed cloud',
+    test('drawn art survives: gold hourglass + ID card over composed cloud',
         () {
       expect(screen, contains('Icons.hourglass_top_rounded'),
           reason: 'the gold hourglass of the mock');
@@ -136,18 +157,26 @@ void main() {
           mainDart, contains("import 'screens/driver/driver_waitlist_screen.dart'"));
     });
 
-    test('signup / welcome / to-do hub route here', () {
+    test('docs-complete NEVER opens the page — only the dispatch button does',
+        () {
       final signup = File('lib/screens/driver/driver_signup_screen.dart')
           .readAsStringSync();
       final welcome = File('lib/screens/driver/driver_welcome_screen.dart')
           .readAsStringSync();
       final todo = File('lib/screens/driver/onboarding/driver_todo_screen.dart')
           .readAsStringSync();
-      expect(signup, contains('const DriverWaitlistScreen()'),
-          reason: 'freshly submitted application = under review = waitlist');
+      expect(todo.contains('_maybeRouteToReview'), isFalse,
+          reason: 'the docs-complete auto-route died 2026-10-13 (user '
+              'report: the page opened without dispatch pressing waitlist)');
+      expect(signup, contains('const DriverTodoScreen()'),
+          reason: 'a freshly submitted application lands on the hub, whose '
+              '"In review" card owns that state');
+      expect(signup.contains('const DriverWaitlistScreen()'), isFalse);
       expect(welcome, contains('const DriverWaitlistScreen.rejected()'));
-      expect(todo, contains('const DriverWaitlistScreen()'),
-          reason: '_maybeRouteToReview lands on the waitlist page');
+      expect(todo, contains('void _goWaitlisted()'),
+          reason: 'the page opens when the socket/poll sees the waitlist '
+              'status from the server');
+      expect(todo, contains('const DriverWaitlistScreen()'));
     });
   });
 

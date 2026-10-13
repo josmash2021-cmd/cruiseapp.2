@@ -16,13 +16,15 @@ import 'onboarding/driver_approved_celebration_screen.dart';
 /// REJECTED state — the old pending-review page was retired the same day
 /// ("esa página de under review elimínala ya que es vieja").
 ///
-/// Matches the "Navy and Gold Waitlist Verification Screen" mock: a gold
-/// hourglass + a little ID card over a dark-blue CLOUD (organic blob
-/// composed from overlapping circles — never the stock cloud glyph), all
-/// WIDGETS ONLY: Shorebird OTA patches don't carry new assets
-/// (maintenance_hero lesson), so no bundled or network images here — ever.
-/// The hero pops in with the exact entrance of the update-required page
-/// (scale Interval(0, 0.55, easeOutBack) + fade Interval(0, 0.4)).
+/// Matches the "Navy and Gold Waitlist Verification Screen" mock: the real
+/// mock illustration (gold hourglass + ID card over the dark-blue cloud)
+/// rides above the text. Image chain (user spec 2026-10-13, "que por OTA
+/// funcionen las fotos"): bundled `waitlist_hero.png` → backend-hosted
+/// `/static/waitlist_hero.png` (OTA patches carry no new assets — the
+/// maintenance_hero pattern) → the drawn widget art as the offline last
+/// resort. The hero pops in with the exact entrance of the
+/// update-required page (scale Interval(0, 0.55, easeOutBack) + fade
+/// Interval(0, 0.4)).
 ///
 /// Two variants via the constructor:
 ///  - [DriverWaitlistScreen.new] — waitlist (gold accent).
@@ -202,7 +204,7 @@ class _DriverWaitlistScreenState extends State<DriverWaitlistScreen>
                         parent: _anim,
                         curve: const Interval(0, 0.4),
                       ),
-                      child: _buildHeroArt(),
+                      child: _rejected ? _buildHeroArt() : _buildHeroImage(),
                     ),
                   ),
                   const SizedBox(height: 40),
@@ -324,9 +326,28 @@ class _DriverWaitlistScreenState extends State<DriverWaitlistScreen>
     );
   }
 
+  /// The mock illustration as the waitlist hero. Bundled asset first; on
+  /// patched builds (OTA carries no new assets) the backend-hosted copy;
+  /// if both are missing (offline, old bundle), the drawn widget art.
+  Widget _buildHeroImage() {
+    final heroWidth = MediaQuery.sizeOf(context).width * 0.72;
+    return Image.asset(
+      'assets/images/waitlist_hero.png',
+      width: heroWidth,
+      fit: BoxFit.contain,
+      errorBuilder: (_, __, ___) => Image.network(
+        '${ApiService.currentBaseUrl}/static/waitlist_hero.png',
+        width: heroWidth,
+        fit: BoxFit.contain,
+        errorBuilder: (_, __, ___) => _buildHeroArt(),
+      ),
+    );
+  }
+
   /// The mock's hero, widgets only: a dark-blue cloud (organic blob from
   /// overlapping circles — never the stock cloud glyph) with the big gold
-  /// hourglass in front and the little ID card at its side.
+  /// hourglass in front and the little ID card at its side. Rejected
+  /// variant art (red accent) and offline fallback of the waitlist image.
   Widget _buildHeroArt() {
     return SizedBox(
       width: 260,

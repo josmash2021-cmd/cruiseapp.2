@@ -120,6 +120,11 @@ class _SplashScreenState extends State<SplashScreen> {
         // missing on patched builds (OTA carries no new assets) — precached
         // so even the fallback paints instantly.
         '/static/maintenance_hero.png',
+        // Same OTA rule (2026-10-13): the waitlist mock illustration and
+        // the Electric Pro render stream from the backend on patched
+        // builds.
+        '/static/waitlist_hero.png',
+        '/static/car_electric.png',
       ]) {
         precacheImage(
           NetworkImage('${ApiService.currentBaseUrl}$path'),

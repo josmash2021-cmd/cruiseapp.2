@@ -11,6 +11,7 @@ import '../services/api_service.dart';
 import '../services/places_service.dart';
 import '../utils/vehicle_tier_style.dart';
 import '../widgets/neu_style.dart';
+import '../widgets/ota_image.dart';
 import 'trip_receipt_screen.dart';
 
 class RideHistoryScreen extends StatefulWidget {
@@ -354,15 +355,19 @@ class _RideHistoryScreenState extends State<RideHistoryScreen> {
                         _tierAsset(trip.rideName),
                         fit: BoxFit.contain,
                         // OTA rule: car_electric.png is not in older
-                        // bundles — fall back to the SUV render first.
+                        // bundles — backend-hosted copy first, then the
+                        // bundled SUV render.
                         errorBuilder: (_, __, ___) =>
                             _tierAsset(trip.rideName)
                                     .endsWith('car_electric.png')
-                                ? Image.asset(
-                                    'assets/images/cruisert_compact.png',
-                                    fit: BoxFit.contain,
-                                    errorBuilder: (_, __, ___) =>
-                                        const SizedBox.shrink(),
+                                ? otaImageFallback(
+                                    'car_electric.png',
+                                    Image.asset(
+                                      'assets/images/cruisert_compact.png',
+                                      fit: BoxFit.contain,
+                                      errorBuilder: (_, __, ___) =>
+                                          const SizedBox.shrink(),
+                                    ),
                                   )
                                 : const SizedBox.shrink(),
                       ),

@@ -1091,18 +1091,24 @@ extension _RideRequestController on _RideRequestScreenState {
                                   isAntiAlias: true,
                                   cacheWidth: 256,
                                   // car_electric.png is not in older bundles
-                                  // (OTA rule) — fall back to the SUV first.
+                                  // (OTA rule) — backend-hosted copy first,
+                                  // then the bundled SUV.
                                   errorBuilder: (_, __, ___) => asset.contains('car_electric')
-                                      ? Image.asset(
-                                          'assets/images/car_suv.png',
+                                      ? otaImageFallback(
+                                          'car_electric.png',
+                                          Image.asset(
+                                            'assets/images/car_suv.png',
+                                            width: 40,
+                                            height: 40,
+                                            fit: BoxFit.contain,
+                                            errorBuilder: (_, __, ___) => Icon(
+                                              Icons.directions_car_rounded,
+                                              color: c.gold,
+                                              size: 28,
+                                            ),
+                                          ),
                                           width: 40,
                                           height: 40,
-                                          fit: BoxFit.contain,
-                                          errorBuilder: (_, __, ___) => Icon(
-                                            Icons.directions_car_rounded,
-                                            color: c.gold,
-                                            size: 28,
-                                          ),
                                         )
                                       : Icon(
                                           Icons.directions_car_rounded,

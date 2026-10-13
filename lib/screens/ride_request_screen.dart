@@ -39,6 +39,7 @@ import '../services/haptic_service.dart';
 import '../services/places_service.dart';
 import '../services/map_controller_cache.dart';
 import '../state/rider_trip_controller.dart';
+import '../widgets/ota_image.dart';
 import 'credit_card_screen.dart';
 import 'payment_accounts_screen.dart';
 import 'paypal_checkout_screen.dart';

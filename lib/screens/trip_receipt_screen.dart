@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../config/app_theme.dart';
 import '../widgets/neu_style.dart';
+import '../widgets/ota_image.dart';
 import '../l10n/app_localizations.dart';
 import '../config/api_keys.dart';
 import '../services/api_service.dart';
@@ -435,21 +436,28 @@ class _TripReceiptScreenState extends State<TripReceiptScreen>
                                         // so dead-centre reads as right.
                                         alignment: Alignment(-0.45, 0),
                                         // OTA rule: car_electric.png is not
-                                        // in older bundles — fall back to
-                                        // the compact SUV side-profile.
+                                        // in older bundles — backend-hosted
+                                        // copy first, then the compact SUV
+                                        // side-profile.
                                         errorBuilder: (_, __, ___) =>
                                             _tierAsset(trip.rideName)
                                                     .endsWith(
                                                         'car_electric.png')
-                                                ? Image.asset(
-                                                    'assets/images/cruisert_compact.png',
-                                                    fit: BoxFit.contain,
-                                                    alignment:
+                                                ? otaImageFallback(
+                                                    'car_electric.png',
+                                                    Image.asset(
+                                                      'assets/images/cruisert_compact.png',
+                                                      fit: BoxFit.contain,
+                                                      alignment:
                                                         Alignment(-0.45, 0),
-                                                    errorBuilder: (_,
-                                                            __, ___) =>
+                                                      errorBuilder: (_,
+                                                              __, ___) =>
                                                         const SizedBox
                                                             .shrink(),
+                                                    ),
+                                                    alignment:
+                                                        const Alignment(
+                                                            -0.45, 0),
                                                   )
                                                 : const SizedBox.shrink(),
                                       ),

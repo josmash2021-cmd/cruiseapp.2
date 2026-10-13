@@ -1458,17 +1458,22 @@ extension _HomeScreenWidgets on _HomeScreenState {
                               alignment: Alignment.bottomCenter,
                               // OTA rule (2026-10-13): car_electric.png is
                               // not in older bundles — fall back to the
-                              // bundled SUV render, then the icon.
+                              // backend-hosted copy, then the bundled SUV
+                              // render, then the icon.
                               fallback: v['rideId'] == 'electric_pro'
-                                  ? Image.asset(
-                                      'assets/images/cruisert_compact.png',
-                                      fit: BoxFit.contain,
-                                      alignment: Alignment.bottomCenter,
-                                      errorBuilder: (_, __, ___) => Icon(
-                                        Icons.directions_car_rounded,
-                                        color: _gold.withValues(alpha: 0.5),
-                                        size: 56,
+                                  ? otaImageFallback(
+                                      'car_electric.png',
+                                      Image.asset(
+                                        'assets/images/cruisert_compact.png',
+                                        fit: BoxFit.contain,
+                                        alignment: Alignment.bottomCenter,
+                                        errorBuilder: (_, __, ___) => Icon(
+                                          Icons.directions_car_rounded,
+                                          color: _gold.withValues(alpha: 0.5),
+                                          size: 56,
+                                        ),
                                       ),
+                                      alignment: Alignment.bottomCenter,
                                     )
                                   : Icon(
                                       Icons.directions_car_rounded,

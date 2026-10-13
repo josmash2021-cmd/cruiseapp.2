@@ -63,6 +63,7 @@ SCHEDULED_CANCEL_FREE_WINDOW_MIN = 60
 SCHEDULED_CANCEL_FEE_BY_TIER = {
     "compact": 10.0,
     "standard": 15.0,
+    "electric_pro": 20.0,
     "premium": 25.0,
     "black": 35.0,
 }

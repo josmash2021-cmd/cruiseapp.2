@@ -200,6 +200,7 @@ async def routing_preview(
     # Base rates by vehicle type
     rates = {
         "comfort": {"base": 2.50, "per_mile": 1.50, "per_minute": 0.25, "min_fare": 8.00},
+        "electric_pro": {"base": 2.50, "per_mile": 1.40, "per_minute": 0.25, "min_fare": 10.00},
         "premium": {"base": 3.00, "per_mile": 2.00, "per_minute": 0.35, "min_fare": 12.00},
         "vip":     {"base": 5.00, "per_mile": 3.00, "per_minute": 0.50, "min_fare": 20.00},
     }
@@ -350,6 +351,7 @@ async def estimate_fare(
     # Base rates by vehicle type
     rates = {
         "comfort": {"base": 2.50, "per_mile": 1.50, "per_minute": 0.25, "min_fare": 8.00},
+        "electric_pro": {"base": 2.50, "per_mile": 1.40, "per_minute": 0.25, "min_fare": 10.00},
         "premium": {"base": 3.00, "per_mile": 2.00, "per_minute": 0.35, "min_fare": 12.00},
         "vip":     {"base": 5.00, "per_mile": 3.00, "per_minute": 0.50, "min_fare": 20.00},
     }
@@ -426,15 +428,19 @@ _TIER_ALIASES_PRICING = {
     "standard": "standard", "comfort": "standard", "sedan": "standard",
     "economy": "standard",
     "compact": "compact", "suv": "compact",
+    "electric_pro": "electric_pro",
     "premium": "premium", "suv_xl": "premium",
     "black": "black", "vip": "black", "luxury": "black",
 }
 
 # (base, per_mile, per_minute, booking_fee, min_fare) — cheaper-of-two
-# published composite per tier, 2026 rate cards.
+# published composite per tier, 2026 rate cards. Electric Pro is our own
+# card, not a composite (user spec 2026-10-13): the clean midpoint
+# between Standard and Premium.
 _ANCHOR_RATES = {
     "standard": (2.00, 1.00, 0.20, 2.50, 8.00),
     "compact":  (2.50, 1.15, 0.22, 2.50, 9.00),
+    "electric_pro": (2.50, 1.40, 0.25, 2.60, 10.00),
     "premium":  (3.00, 1.75, 0.30, 2.75, 12.00),
     "black":    (7.50, 2.75, 0.50, 3.00, 20.00),
 }

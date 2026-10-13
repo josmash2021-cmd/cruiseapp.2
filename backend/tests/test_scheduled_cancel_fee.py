@@ -2,9 +2,10 @@
 
 The rider-facing policy page promises: free while the pickup is more than
 one hour out or while no driver has been found; inside the last hour with
-a driver assigned, the tier fee ($10 compact / $15 standard / $25 premium /
-$35 black), capped by the upfront fare. The endpoint must charge exactly
-that — and a double cancel must never capture twice.
+a driver assigned, the tier fee ($10 compact / $15 standard /
+$20 electric pro / $25 premium / $35 black), capped by the upfront fare.
+The endpoint must charge exactly that — and a double cancel must never
+capture twice.
 """
 
 from datetime import datetime, timedelta, timezone
@@ -89,6 +90,7 @@ def test_free_when_no_driver_found():
 def test_tier_fees_inside_the_window():
     assert _fee(vehicle_type="compact") == 10.0
     assert _fee(vehicle_type="standard") == 15.0
+    assert _fee(vehicle_type="electric_pro") == 20.0
     assert _fee(vehicle_type="premium") == 25.0
     assert _fee(vehicle_type="black") == 35.0
 
@@ -109,6 +111,7 @@ def test_constants_match_the_policy_page():
     assert SCHEDULED_CANCEL_FEE_BY_TIER == {
         "compact": 10.0,
         "standard": 15.0,
+        "electric_pro": 20.0,
         "premium": 25.0,
         "black": 35.0,
     }

@@ -1,9 +1,19 @@
 """What tier a car is, decided in one place.
 
-Standard / Compact / Premium / Black. The tier is derived from the
-vehicle — body, seats, year — and a driver never picks it. It decides
-which requests they are offered and what share of the fare they keep,
-so it is worth more than a `if` in the middle of an endpoint.
+Standard / Compact / Electric Pro / Premium / Black. The tier is derived
+from the vehicle — body, seats, year — and a driver never picks it. It
+decides which requests they are offered and what share of the fare they
+keep, so it is worth more than a `if` in the middle of an endpoint.
+
+Electric Pro (2026-10-13, user spec) is the battery-electric tier: a BEV
+on the `_ELECTRIC_MODELS` list classifies here no matter what the
+body/seats/year rule below would have said, and it prices between
+Standard and Premium. Eligibility is symmetric — an EV is offered
+Electric Pro requests ONLY (it leaves its natural tier's pool), and an
+Electric Pro request can ONLY be served by an EV. Battery electrics
+only: plain hybrids stay in their natural tier, and PHEVs ("Prius
+Prime", "RAV4 Prime") are deliberately NOT on the list — a car that
+burns gasoline is not an Electric Pro car.
 
 Pure. No database, no clock, no network. See docs/vehicle_tiers.md for
 the agreed rule and backend/tests/test_vehicle_tiers.py for it written
@@ -41,10 +51,11 @@ import re
 # apps.
 TIER_STANDARD = "standard"
 TIER_COMPACT = "compact"
+TIER_ELECTRIC_PRO = "electric_pro"
 TIER_PREMIUM = "premium"
 TIER_BLACK = "black"
 
-TIERS = (TIER_STANDARD, TIER_COMPACT, TIER_PREMIUM, TIER_BLACK)
+TIERS = (TIER_STANDARD, TIER_COMPACT, TIER_ELECTRIC_PRO, TIER_PREMIUM, TIER_BLACK)
 
 # Ordered worst to best. Used for "did this go up or down" comparisons;
 # do not reorder without checking the callers.
@@ -67,6 +78,7 @@ SEDAN_PREMIUM_MIN_YEAR = 2021
 COMMISSION = {
     TIER_STANDARD: (0.40, 0.60),
     TIER_COMPACT: (0.40, 0.60),
+    TIER_ELECTRIC_PRO: (0.40, 0.60),
     TIER_PREMIUM: (0.40, 0.60),
     TIER_BLACK: (0.40, 0.60),
 }
@@ -189,6 +201,72 @@ _add(
 )
 
 
+# ── Battery-electric models ───────────────────────────────────────────
+# Electric Pro (2026-10-13): the US-market BEVs. A model on this list is
+# Electric Pro no matter what body/seats/year would have said — the check
+# runs first in classify(), ahead of the table above (which is why
+# "model y"/"model 3" staying in those tables is harmless). BEV only:
+# the Prius, the RAV4 Hybrid and the Prime PHEVs are NOT here and keep
+# their natural tier. The EV-only brands (Tesla, Rivian, Lucid, Polestar)
+# are listed as brands too, so a driver who types the make where the
+# model goes still classifies right. Polestar 1 (a 2019-21 PHEV halo,
+# ~1,500 built) is ignored — it is not a car anyone drives for Cruise.
+_ELECTRIC_MODELS = {
+    _norm(m)
+    for m in (
+        # Tesla — these names also sit in the SUV/sedan tables above;
+        # the EV check wins.
+        "model 3", "model y", "model s", "model x", "cybertruck",
+        # EV-only brands, as brand keys (same make-field rule as lookup).
+        "tesla", "rivian", "lucid", "polestar",
+        "rivian r1s", "rivian r1t", "r1s", "r1t", "lucid air",
+        "polestar 2", "polestar 3",
+        # Ford / GM
+        "mustang mach-e", "mach-e", "f-150 lightning", "lightning",
+        "blazer ev", "equinox ev", "silverado ev", "bolt", "bolt euv",
+        "lyriq",
+        # Hyundai / Kia
+        "ioniq 5", "ioniq 6", "ev6", "ev9",
+        # Volkswagen
+        "id.4", "id. buzz",
+        # Toyota / Subaru / Honda
+        "bz4x", "solterra", "prologue",
+        # Nissan
+        "leaf", "ariya",
+        # Audi
+        "e-tron", "e-tron gt", "q4 e-tron",
+        # Mercedes
+        "eqb", "eqe", "eqe suv", "eqs",
+        # BMW
+        "i4", "ix", "i7",
+        # Porsche
+        "taycan",
+    )
+}
+
+
+def _is_electric(make: str | None, model: str | None) -> bool:
+    """True when the vehicle is a listed BEV.
+
+    The same matching discipline as lookup(): the full normalised model
+    first, then every run of consecutive words longest-first ("blazer ev"
+    before "blazer"), then the make alone for the EV-only brands.
+    """
+    full = _norm(model)
+    if full and full in _ELECTRIC_MODELS:
+        return True
+
+    tokens = [t for t in re.split(r"[^a-z0-9]+", (model or "").lower()) if t]
+    for size in range(len(tokens), 0, -1):
+        for start in range(0, len(tokens) - size + 1):
+            key = "".join(tokens[start:start + size])
+            if len(key) >= 2 and key in _ELECTRIC_MODELS:
+                return True
+
+    make_key = _norm(make)
+    return bool(make_key) and make_key in _ELECTRIC_MODELS
+
+
 def lookup(make: str | None, model: str | None) -> tuple[str, int] | None:
     """(body, seats) for a model name, or None if it is not on the list.
 
@@ -233,7 +311,16 @@ def classify(
 
     `seats` and `body` override the table when the real values are
     known — pass them the day the vehicle record starts carrying them.
+    The one thing they do not override is Electric Pro: a listed BEV is
+    Electric Pro whatever seats it has.
     """
+    # Electric Pro first (product rule 2026-10-13): a listed BEV leaves
+    # its natural tier entirely — a Model Y is not Compact, a Model S is
+    # not Premium. EVs only see Electric Pro requests, and those requests
+    # only see EVs.
+    if _is_electric(make, model):
+        return TIER_ELECTRIC_PRO
+
     try:
         year = int(year or 0)
     except (TypeError, ValueError):
@@ -312,9 +399,15 @@ _TIER_ALIASES: dict[str, tuple[str, ...]] = {
 # go to a Standard or a Compact car, a Compact request to Compact cars
 # only, a Premium request to Premium or Black cars, a Black request to
 # Black cars only.
+#
+# Electric Pro (2026-10-13) is closed on both sides: an Electric Pro
+# request goes to Electric Pro cars only, and no other request reaches
+# them — since every EV classifies AS electric_pro, leaving them out of
+# the other tuples is what takes EVs out of their natural tiers' pools.
 _REQUEST_RULE: dict[str, tuple[str, ...]] = {
     TIER_STANDARD: (TIER_STANDARD, TIER_COMPACT),
     TIER_COMPACT: (TIER_COMPACT,),
+    TIER_ELECTRIC_PRO: (TIER_ELECTRIC_PRO,),
     TIER_PREMIUM: (TIER_PREMIUM, TIER_BLACK),
     TIER_BLACK: (TIER_BLACK,),
 }

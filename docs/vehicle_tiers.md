@@ -155,3 +155,38 @@ gets Compact + Standard, Standard gets Standard only. This replaces the older
 "own tier or one rung up" ladder. The rule lives in
 `backend/services/vehicle_tiers.py` (`_REQUEST_RULE`) and is pinned by
 `backend/tests/test_vehicle_tiers.py`.
+
+
+## Electric Pro (added 2026-10-13, user spec)
+
+A fifth tier, **electric_pro**, sits between Compact and Premium on the
+ladder: Standard < Compact < Electric Pro < Premium < Black.
+
+- **Eligibility — closed on both sides.** A listed battery-electric
+  vehicle classifies as Electric Pro no matter what body/seats/year
+  would have said: the EV check runs first in `classify()`, ahead of the
+  model table (which is why `model y`/`model 3` staying in that table is
+  harmless). EVs are offered Electric Pro requests ONLY — they leave
+  their natural tier's pool — and an Electric Pro request can ONLY be
+  served by an EV: `_REQUEST_RULE[TIER_ELECTRIC_PRO] =
+  (TIER_ELECTRIC_PRO,)` and no other rule names it. Since every EV
+  classifies AS `electric_pro`, that alone removes them from the other
+  tiers' pools; every eligibility path reads `eligible_tiers()`, so no
+  dispatch change is needed.
+- **The list.** US-market BEVs in `_ELECTRIC_MODELS`, matched with the
+  same normalised longest-match discipline as `lookup()` ("blazer ev"
+  before "blazer"). The EV-only brands (Tesla, Rivian, Lucid, Polestar)
+  also match as bare makes. Hybrids and PHEVs (Prius, Prius Prime, RAV4
+  Prime...) are deliberately absent — a car that burns gasoline keeps
+  its natural tier.
+- **Price.** Between Standard and Premium: base $2.50, per-mile $1.40,
+  per-minute $0.25, booking fee $2.60, minimum $10.00 — in
+  `_ANCHOR_RATES` in `backend/routers/misc.py`, same shape as every
+  other tier. The scheduled-cancel fee is $20 (the Standard/Premium
+  midpoint), in `SCHEDULED_CANCEL_FEE_BY_TIER` and its app mirror
+  `kScheduledCancelFeesUsd`.
+- **Commission.** The same flat 60/40 as every tier.
+
+Existing EVs reclassify the next time `classify()` runs for them
+(vehicle save / tier re-eval) — no data migration is needed for the rule
+to be correct.

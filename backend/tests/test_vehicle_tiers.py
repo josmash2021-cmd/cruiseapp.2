@@ -54,7 +54,38 @@ CASES = [
     ("a 2020 RAV4 is Compact", tier("Toyota", "RAV4", 2020), vt.TIER_COMPACT),
     ("a 2016 CR-V is Compact", tier("Honda", "CR-V", 2016), vt.TIER_COMPACT),
     ("a 2015 CR-V is Standard", tier("Honda", "CR-V", 2015), vt.TIER_STANDARD),
-    ("a 2025 Model Y is Compact", tier("Tesla", "Model Y", 2025), vt.TIER_COMPACT),
+
+    # ── Electric Pro: a listed BEV, checked before body/seats (2026-10-13) ──
+    ("a Tesla Model Y is Electric Pro", tier("Tesla", "Model Y", 2024), vt.TIER_ELECTRIC_PRO),
+    ("a 2025 Model Y is Electric Pro, not the Compact the SUV table says",
+     tier("Tesla", "Model Y", 2025), vt.TIER_ELECTRIC_PRO),
+    ("a Model 3 is Electric Pro, not a sedan",
+     tier("Tesla", "Model 3", 2023), vt.TIER_ELECTRIC_PRO),
+    ("a Model X is Electric Pro even though the SUV table lists it",
+     tier("Tesla", "Model X", 2024), vt.TIER_ELECTRIC_PRO),
+    ("a Mustang Mach-E is Electric Pro",
+     tier("Ford", "Mustang Mach-E", 2023), vt.TIER_ELECTRIC_PRO),
+    ("a gas Mustang stays a sedan", tier("Ford", "Mustang", 2023), vt.TIER_PREMIUM),
+    ("a Blazer EV is Electric Pro", tier("Chevrolet", "Blazer EV", 2024), vt.TIER_ELECTRIC_PRO),
+    ("a gas Blazer stays Compact", tier("Chevrolet", "Blazer", 2024), vt.TIER_COMPACT),
+    ("an Ioniq 5 is Electric Pro", tier("Hyundai", "Ioniq 5", 2024), vt.TIER_ELECTRIC_PRO),
+    ("an F-150 Lightning is Electric Pro",
+     tier("Ford", "F-150 Lightning", 2024), vt.TIER_ELECTRIC_PRO),
+    ("an unlisted EV falls back to Standard, not Electric Pro",
+     tier("Fiat", "Qubo Electric", 2023), vt.TIER_STANDARD),
+    ("the EV-only brand in the make field is enough",
+     tier("Rivian", "", 2024), vt.TIER_ELECTRIC_PRO),
+    ("the brand leading the model field works too",
+     tier("", "Tesla Model 3", 2024), vt.TIER_ELECTRIC_PRO),
+    # The EV check runs before body/seats — stated seats do not pull a
+    # BEV back into its natural tier.
+    ("stated seven seats do not make an EV Black",
+     tier("Rivian", "R1S", 2024, seats=7, body="suv"), vt.TIER_ELECTRIC_PRO),
+    # Hybrids and PHEVs are NOT Electric Pro — they keep their natural tier.
+    ("a Prius is not Electric Pro", tier("Toyota", "Prius", 2023), vt.TIER_PREMIUM),
+    ("a Prius Prime is not Electric Pro either",
+     tier("Toyota", "Prius Prime", 2023), vt.TIER_PREMIUM),
+    ("a RAV4 Prime is not Electric Pro", tier("Toyota", "RAV4 Prime", 2023), vt.TIER_COMPACT),
 
     # ── Standard: older cars, and everything unrecognised ─────────────
     ("a 2018 Camry is Standard", tier("Toyota", "Camry", 2018), vt.TIER_STANDARD),
@@ -87,15 +118,19 @@ CASES = [
     ("a stated sedan body reaches Premium on year alone",
      tier("Toyota", "Camry", 2023, seats=5, body="sedan"), vt.TIER_PREMIUM),
     ("an unlisted SUV with stated seats is classified",
-     tier("Rivian", "R1S", 2024, seats=7, body="suv"), vt.TIER_BLACK),
+     tier("Chevrolet", "Trax", 2024, seats=7, body="suv"), vt.TIER_BLACK),
 
     # ── Commission ────────────────────────────────────────────────────
     ("Standard pays the driver 60%", vt.driver_share(vt.TIER_STANDARD), 0.60),
     ("Compact pays 60%", vt.driver_share(vt.TIER_COMPACT), 0.60),
+    ("Electric Pro pays 60%", vt.driver_share(vt.TIER_ELECTRIC_PRO), 0.60),
     ("Premium pays 60%", vt.driver_share(vt.TIER_PREMIUM), 0.60),
     ("Black pays 60%", vt.driver_share(vt.TIER_BLACK), 0.60),
+    ("Electric Pro's commission tuple is the flat 40/60",
+     vt.commission(vt.TIER_ELECTRIC_PRO), (0.40, 0.60)),
     ("the two shares of a fare add up to one",
-     [round(sum(v), 10) for v in vt.COMMISSION.values()], [1.0, 1.0, 1.0, 1.0]),
+     [round(sum(v), 10) for v in vt.COMMISSION.values()],
+     [1.0] * len(vt.COMMISSION)),
 
     # ── Old rows get the same flat rate ───────────────────────────────
     ("comfort pays the flat 60%", vt.driver_share("comfort"), 0.60),
@@ -104,14 +139,18 @@ CASES = [
     ("an unknown tier pays the Standard rate", vt.driver_share("banana"), 0.60),
     ("no tier at all pays the Standard rate", vt.driver_share(None), 0.60),
 
-    # ── Old tier strings map onto the four ────────────────────────────
+    # ── Old tier strings map onto the five ────────────────────────────
     ("comfort becomes Standard", vt.normalize_tier("comfort"), vt.TIER_STANDARD),
     ("vip becomes Black", vt.normalize_tier("vip"), vt.TIER_BLACK),
     # A Traverse is a six-seater. Black is the seven-seat tier.
     ("suv_xl becomes Premium", vt.normalize_tier("suv_xl"), vt.TIER_PREMIUM),
     ("premium keeps its name", vt.normalize_tier("premium"), vt.TIER_PREMIUM),
+    ("electric_pro keeps its name",
+     vt.normalize_tier("electric_pro"), vt.TIER_ELECTRIC_PRO),
     ("a dash reads the same as an underscore",
      vt.normalize_tier("SUV-XL"), vt.TIER_PREMIUM),
+    ("Electric-Pro reads the same as electric_pro",
+     vt.normalize_tier("Electric-Pro"), vt.TIER_ELECTRIC_PRO),
     ("nothing at all becomes Standard", vt.normalize_tier(None), vt.TIER_STANDARD),
 
     # ── Up the ladder ─────────────────────────────────────────────────
@@ -121,6 +160,14 @@ CASES = [
      vt.is_upgrade(vt.TIER_BLACK, vt.TIER_STANDARD), False),
     ("Compact to Premium is an upgrade",
      vt.is_upgrade(vt.TIER_COMPACT, vt.TIER_PREMIUM), True),
+    ("Compact to Electric Pro is an upgrade",
+     vt.is_upgrade(vt.TIER_COMPACT, vt.TIER_ELECTRIC_PRO), True),
+    ("Electric Pro to Premium is an upgrade",
+     vt.is_upgrade(vt.TIER_ELECTRIC_PRO, vt.TIER_PREMIUM), True),
+    ("Premium to Electric Pro is not (Electric Pro sits below Premium)",
+     vt.is_upgrade(vt.TIER_PREMIUM, vt.TIER_ELECTRIC_PRO), False),
+    ("Electric Pro to Compact is not",
+     vt.is_upgrade(vt.TIER_ELECTRIC_PRO, vt.TIER_COMPACT), False),
     ("standing still is not an upgrade",
      vt.is_upgrade(vt.TIER_PREMIUM, vt.TIER_PREMIUM), False),
     ("comfort to standard is not an upgrade, it is a rename",
@@ -148,6 +195,21 @@ CASES = [
      vt.TIER_COMPACT in vt.eligible_tiers(vt.TIER_PREMIUM), False),
     ("a Black request reaches Black only",
      set(vt.eligible_tiers(vt.TIER_BLACK)) & set(vt.TIERS), {vt.TIER_BLACK}),
+    # Electric Pro (2026-10-13): closed on both sides — only EVs serve an
+    # Electric Pro request, and EVs serve nothing else.
+    ("an Electric Pro request reaches Electric Pro cars only",
+     set(vt.eligible_tiers(vt.TIER_ELECTRIC_PRO)) & set(vt.TIERS),
+     {vt.TIER_ELECTRIC_PRO}),
+    ("an Electric Pro request reaches no legacy string either",
+     set(vt.eligible_tiers(vt.TIER_ELECTRIC_PRO)), {vt.TIER_ELECTRIC_PRO}),
+    ("a Standard request does not reach EVs",
+     vt.TIER_ELECTRIC_PRO in vt.eligible_tiers(vt.TIER_STANDARD), False),
+    ("a Compact request does not reach EVs",
+     vt.TIER_ELECTRIC_PRO in vt.eligible_tiers(vt.TIER_COMPACT), False),
+    ("a Premium request does not reach EVs",
+     vt.TIER_ELECTRIC_PRO in vt.eligible_tiers(vt.TIER_PREMIUM), False),
+    ("a Black request does not reach EVs",
+     vt.TIER_ELECTRIC_PRO in vt.eligible_tiers(vt.TIER_BLACK), False),
     # The list has to match rows the migration has not reached yet.
     ("a Standard request still matches a 'comfort' row",
      "comfort" in vt.eligible_tiers(vt.TIER_STANDARD), True),

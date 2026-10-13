@@ -3264,6 +3264,61 @@ async def dispatch_reject_driver(user_id: int, request: Request, db: AsyncSessio
     return {"ok": True, "message": f"Driver {user_id} rejected", "status": "rejected", "approval_status": "rejected"}
 
 
+@router.post("/auth/dispatch-waitlist/{user_id}", dependencies=[Depends(_verify_dispatch_key)])
+async def dispatch_waitlist_driver(user_id: int, db: AsyncSession = Depends(get_db)):
+    """Dispatch puts a driver on the waitlist — not a rejection: the account
+    stays under review and the driver is notified when a slot opens."""
+    logging.info("[DISPATCH-WAITLIST] Waitlisting driver user_id=%d", user_id)
+    result = await db.execute(select(User).where(User.id == user_id, User.role == "driver"))
+    db_user = result.scalar_one_or_none()
+    if not db_user:
+        raise HTTPException(404, "Driver not found")
+    # verification_reason is NOT touched — the waitlist is not a rejection.
+    db_user.verification_status = "waitlist"
+    await db.commit()
+    logging.info("[DISPATCH-WAITLIST] DB updated for user %d: status=waitlist", user_id)
+    # Atomic batch write to ALL 3 Firestore collections
+    if _HAS_FIRESTORE:
+        try:
+            ok = firestore_sync.write_approval(user_id, "waitlist")
+            logging.info("[DISPATCH-WAITLIST] Firestore write_approval result: %s", ok)
+        except Exception as e:
+            logging.warning("[DISPATCH-WAITLIST] Firestore waitlist sync failed: %s", e)
+    else:
+        logging.warning("[DISPATCH-WAITLIST] _HAS_FIRESTORE=False - Firestore sync skipped")
+    # ── Send real-time Socket.IO push + FCM to the waitlisted driver ──
+    es = user_lang(db_user) == "es"
+    try:
+        await notify_user(
+            user_id,
+            "account_status_changed",
+            {
+                "status": "waitlist",
+                "role": "driver",
+                "message": ("Tu cuenta está en lista de espera. Te avisaremos cuando sea aprobada." if es
+                            else "Your account is on the waitlist. We'll notify you as soon as it's approved."),
+            },
+        )
+        logging.info("[DISPATCH-WAITLIST] Socket.IO push sent to user %d", user_id)
+    except Exception as e:
+        logging.warning("[DISPATCH-WAITLIST] Socket.IO push failed: %s", e)
+
+    try:
+        if db_user.fcm_token:
+            await _send_fcm_push_async(
+                db_user.fcm_token,
+                "Estás en lista de espera" if es else "You're on the waitlist",
+                ("Tu cuenta está en revisión. Te avisaremos cuando sea aprobada." if es
+                 else "Your account is under review. We'll notify you as soon as it's approved."),
+                {"type": "driver_waitlisted", "user_id": str(user_id)},
+            )
+            logging.info("[DISPATCH-WAITLIST] FCM push sent to user %d", user_id)
+    except Exception as e:
+        logging.warning("[DISPATCH-WAITLIST] FCM push failed: %s", e)
+
+    return {"ok": True, "message": f"Driver {user_id} waitlisted", "status": "waitlist", "approval_status": "waitlist"}
+
+
 @router.get("/auth/account-status", dependencies=[Depends(_verify_api_key)])
 async def account_status(user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
     """Check if account is active, blocked, or deleted (dispatch can change this via Firestore)."""

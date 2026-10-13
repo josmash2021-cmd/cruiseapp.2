@@ -429,15 +429,24 @@ void main() {
 
     test('the offline FAB recentres through the shared glide', () {
       expect(screen.contains('!_cameraFollowing'), isTrue);
-      final fabIdx = screen.indexOf('_RecenterFab(');
+      // The offline FAB is the LAST _RecenterFab in the build — it comes
+      // after the morphing GO button in the Stack (2026-10-13, "el botón de
+      // recentrar no funciona cuando el sheet está cerrado": the GO's
+      // invisible full-width box covered it and swallowed its taps).
+      final fabIdx = screen.lastIndexOf('_RecenterFab(');
       expect(fabIdx, isNonNegative);
-      final block = screen.substring(fabIdx - 800, fabIdx + 400);
+      final block = screen.substring(fabIdx - 900, fabIdx + 400);
       expect(block.contains('!_driverOnline'), isTrue,
           reason: 'the FAB is the OFFLINE one');
       expect(block.contains('_recenterCamera();'), isTrue);
       expect(block.contains('_panelFrac'), isTrue,
           reason: 'it floats above the sheet at its CURRENT height — the '
               'sheet now rests half-open (2026-10-13 spec)');
+      final goIdx = screen.indexOf('_buildMorphingGoButton(');
+      expect(goIdx, isNonNegative);
+      expect(fabIdx, greaterThan(goIdx),
+          reason: 'the offline recenter FAB paints ON TOP of the GO box or '
+              'the collapsed sheet leaves it untappable');
     });
 
     test('the pill GO: 62% width, Cruise logo, radar always on, zone label',

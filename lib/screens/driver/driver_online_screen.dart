@@ -2128,27 +2128,6 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
             // back to their own position. 2026-10-11: the shared _RecenterFab
             // (dark disc + white arrow, photo style) with blur-in/pop-out,
             // alive in the tree and animated by the follow flag.
-            if (!_driverOnline &&
-                !isNav &&
-                _acceptedOverlay == null)
-              Positioned(
-                // Above the sheet's CURRENT top — it now rests half-open
-                // (2026-10-13 spec), not always collapsed.
-                bottom: (78 + bot) +
-                    ((MediaQuery.of(context).size.height * 0.82 -
-                            (78 + bot)) *
-                        _panelFrac.clamp(0.0, 1.0)) +
-                    14,
-                right: 16,
-                child: _RecenterFab(
-                  visible: !_cameraFollowing,
-                  onTap: () {
-                    HapticService.selectionClick();
-                    _recenterCamera();
-                  },
-                ),
-              ),
-
             // â”€â”€ Side floating buttons (only when searching with no offers) â”€â”€
             // ── Scheduled rides badge (top-right, always visible, hidden during nav) ──
             if (!isNav && !_offerOnScreen && _acceptedOverlay == null)
@@ -2639,6 +2618,35 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                 _acceptedOverlay == null)
               _buildMorphingGoButton(MediaQuery.of(context).padding,
                   hidden: _driverOnline),
+
+            // Recentre FAB while OFFLINE (user spec 2026-10-10) — shared
+            // _RecenterFab (dark disc + white arrow) with blur-in/pop-out.
+            // AFTER the morphing GO button in the Stack (2026-10-13, "el
+            // botón de recentrar no funciona cuando el sheet está cerrado"):
+            // with the sheet collapsed, the GO button's invisible full-width
+            // box covers the FAB's spot exactly (both bottoms align at the
+            // collapsed sheet's top + lift) and its transparent body was
+            // swallowing the FAB's taps. On top of it, every tap lands.
+            if (!_driverOnline &&
+                !isNav &&
+                _acceptedOverlay == null)
+              Positioned(
+                // Above the sheet's CURRENT top — it now rests half-open
+                // (2026-10-13 spec), not always collapsed.
+                bottom: (78 + bot) +
+                    ((MediaQuery.of(context).size.height * 0.82 -
+                            (78 + bot)) *
+                        _panelFrac.clamp(0.0, 1.0)) +
+                    14,
+                right: 16,
+                child: _RecenterFab(
+                  visible: !_cameraFollowing,
+                  onTap: () {
+                    HapticService.selectionClick();
+                    _recenterCamera();
+                  },
+                ),
+              ),
 
             // ── "Viaje cancelado" notice ──
             // Centred on a semi-dark wash, ~5 s, fluid fade both ways. It

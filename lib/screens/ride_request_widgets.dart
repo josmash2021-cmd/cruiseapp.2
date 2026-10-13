@@ -964,15 +964,32 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                               crossAxisAlignment: CrossAxisAlignment.end,
                               children: [
                                 // Price crossfades dash → real fare instead
-                                // of popping.
-                                AnimatedSwitcher(
-                                  duration: const Duration(milliseconds: 250),
-                                  child: Text(
-                                    promo.priceText,
-                                    key: ValueKey(
-                                        'tierPrice_${opt.id}_${promo.priceText}'),
-                                    style: priceStyle,
-                                  ),
+                                // of popping. The Electric Pro bolt badge
+                                // anchors at the price — the card's
+                                // top-right corner (user spec 2026-10-13).
+                                Stack(
+                                  clipBehavior: Clip.none,
+                                  children: [
+                                    AnimatedSwitcher(
+                                      duration: const Duration(milliseconds: 250),
+                                      child: Text(
+                                        promo.priceText,
+                                        key: ValueKey(
+                                            'tierPrice_${opt.id}_${promo.priceText}'),
+                                        style: priceStyle,
+                                      ),
+                                    ),
+                                    if (opt.id == 'electric_pro')
+                                      Positioned(
+                                        // 8px above the card's top edge in
+                                        // both states (16/10 vertical
+                                        // padding), 2px past its right edge.
+                                        top: selected ? -24 : -18,
+                                        right: -14,
+                                        child: const ElectricBoltBadge(
+                                            size: 30),
+                                      ),
+                                  ],
                                 ),
                                 // Lyft layout: the "in X min · H:MM" line
                                 // sits right under the price, plain grey —

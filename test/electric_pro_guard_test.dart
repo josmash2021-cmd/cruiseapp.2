@@ -15,6 +15,9 @@ import 'package:cruise_app/utils/vehicle_tier_style.dart';
 ///   6. The request sends the option NAME ('Electric Pro'), which the
 ///      backend normalises to `electric_pro`.
 ///   7. The scheduled-cancel fee is $20 in both mirrored sources.
+///   8. The gold-bolt badge (bolt_badge.png, with the widget-composed OTA
+///      fallback) marks the tier's card top-right — home fleet carousel AND
+///      booking tier row, Electric Pro only.
 ///
 /// Source-grep style, like schedule_hub_guard_test.dart.
 void main() {
@@ -208,6 +211,57 @@ void main() {
       expect(home, contains("'rideId': 'electric_pro'"));
       expect(home,
           contains("'electric_pro' => ('Electric Pro', 'electric_pro')"));
+    });
+  });
+
+  group('the bolt badge (user spec 2026-10-13)', () {
+    final badge =
+        File('lib/widgets/electric_bolt_badge.dart').readAsStringSync();
+
+    test('is ONE reusable widget, with the widget-composed OTA fallback', () {
+      expect(badge, contains('class ElectricBoltBadge'));
+      expect(badge, contains("'assets/images/bolt_badge.png'"));
+      // No broken image on phones without the asset: the errorBuilder
+      // composes the same badge from widgets — dark ring, gold bolt.
+      expect(badge, contains('errorBuilder'));
+      expect(badge, contains('0xFF1A1A22'), reason: 'the dark ring');
+      expect(badge, contains('Icons.bolt_rounded'));
+      expect(badge, contains('0xFFE8C547'), reason: 'the gold bolt');
+      expect(badge, contains('IgnorePointer'),
+          reason: 'decorative — it must never eat the card tap');
+      expect(File('assets/images/bolt_badge.png').existsSync(), isTrue);
+    });
+
+    test('rides the home fleet card, top-right, Electric Pro only', () {
+      final start = home.indexOf('Widget _buildFleetStack(');
+      final block = home.substring(start, start + 10500);
+      expect(block, contains('ElectricBoltBadge('));
+      // The single badge site is gated on the tier id — the other four
+      // cards never wear it.
+      expect('ElectricBoltBadge('.allMatches(block).length, 1,
+          reason: 'one badge site in the carousel, not one per card');
+      final i = block.indexOf('ElectricBoltBadge(');
+      expect(block.substring(i - 400, i),
+          contains("v['rideId'] == 'electric_pro'"));
+      expect(block.substring(i - 400, i), contains('Positioned('));
+      expect(block.substring(i - 400, i), contains(RegExp(r'top: -\d')));
+      expect(block.substring(i - 400, i), contains(RegExp(r'right: -\d')),
+          reason: 'a small negative offset so it sticks out of the corner');
+    });
+
+    test('rides the booking tier row, top-right, Electric Pro only', () {
+      final start = widgets.indexOf('Widget _buildTierRow(');
+      final end = widgets.indexOf('Widget _buildTierExpandedDetail(');
+      final block = widgets.substring(start, end);
+      expect(block, contains('ElectricBoltBadge('));
+      expect('ElectricBoltBadge('.allMatches(block).length, 1,
+          reason: 'one badge site in the row, not one per tier');
+      final i = block.indexOf('ElectricBoltBadge(');
+      expect(block.substring(i - 500, i),
+          contains("opt.id == 'electric_pro'"));
+      expect(block.substring(i - 500, i), contains('Positioned('));
+      expect(block.substring(i - 500, i), contains(RegExp(r'top: ')));
+      expect(block.substring(i - 500, i), contains(RegExp(r'right: -\d')));
     });
   });
 

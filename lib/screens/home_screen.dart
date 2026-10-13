@@ -51,6 +51,7 @@ import 'rider_permissions_screen.dart';
 import '../widgets/neu_style.dart';
 import '../widgets/gold_location_dot.dart';
 import '../widgets/car_image_3d.dart';
+import '../widgets/electric_bolt_badge.dart';
 import '../widgets/offline_banner.dart';
 import '../widgets/tier_detail_sheet.dart';
 import 'package:firebase_database/firebase_database.dart';

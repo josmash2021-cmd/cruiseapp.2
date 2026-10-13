@@ -1376,7 +1376,10 @@ extension _HomeScreenWidgets on _HomeScreenState {
     // (Was 0.74 → 0.62 — two passes read too big, the car art dominated.)
     final cardW = (screenW * 0.54).clamp(190.0, 265.0);
     return SizedBox(
-      height: 167,
+      // 167 for the cards + 10 of headroom: the Electric Pro bolt badge
+      // floats slightly above its card's top-right corner (user spec
+      // 2026-10-13), and the ListView's own clip would cut it off.
+      height: 177,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         // The 24 aligns card #1 with the page margins; the right side gets
@@ -1387,7 +1390,7 @@ extension _HomeScreenWidgets on _HomeScreenState {
         separatorBuilder: (_, __) => const SizedBox(width: 12),
         itemBuilder: (ctx, i) {
           final v = vehicles[i];
-          return IgnorePointer(
+          final card = IgnorePointer(
             ignoring: active,
             child: Opacity(
               opacity: active ? 0.45 : 1.0,
@@ -1444,7 +1447,7 @@ extension _HomeScreenWidgets on _HomeScreenState {
                       // leave a taller photo band on that card, which is
                       // why Premium/Compact rendered visibly bigger than
                       // Black/Standard (user report 2026-08-22). Same band
-                      // on all four cards = same size car on all four.
+                      // on all five cards = same size car on all five.
                       Expanded(
                         child: Center(
                           child: AspectRatio(
@@ -1524,6 +1527,23 @@ extension _HomeScreenWidgets on _HomeScreenState {
                   ),
                 ),
               ),
+            ),
+          );
+          return Padding(
+            // The badge's headroom: it sticks out above the card's
+            // top-right corner, Lyft-mock style. Electric Pro only.
+            padding: const EdgeInsets.only(top: 10),
+            child: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                card,
+                if (v['rideId'] == 'electric_pro')
+                  const Positioned(
+                    top: -6,
+                    right: -6,
+                    child: ElectricBoltBadge(size: 38),
+                  ),
+              ],
             ),
           );
         },

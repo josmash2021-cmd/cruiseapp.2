@@ -2673,15 +2673,18 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     final level =
         visible && !online ? (ZoneService.demand[sid]?.level ?? 0) : 0;
     final fillColor = level == 0 ? 0xFF9AA3B8 : 0xFFE8C547;
+    // Heat ladder (user spec 2026-10-13): Apagado = GRAY wash, Busy = gold
+    // ALMOST solid, Ocupado = more, Muy ocupado = 100% solid gold. Gray is
+    // only for "off" — a busy zone must never read gray.
     final fillOpacity = !visible || online
         ? 0.0
         : level == 0
             ? 0.07
             : level == 1
-                ? 0.35 // Dorado: semitransparente pero legible (era 0.18 = gris)
+                ? 0.80
                 : level == 2
-                    ? 0.55
-                    : 1.0; // Muy ocupado = dorado 100% sólido (2026-10-12 spec)
+                    ? 0.90
+                    : 1.0;
     try {
       await Future.wait([
         map.style

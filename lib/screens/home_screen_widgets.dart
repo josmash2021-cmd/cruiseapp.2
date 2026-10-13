@@ -1489,14 +1489,24 @@ extension _HomeScreenWidgets on _HomeScreenState {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(
-                              v['displayName'] as String,
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 16,
-                                fontWeight: FontWeight.w800,
-                                letterSpacing: 0.6,
-                              ),
+                            Row(
+                              children: [
+                                Text(
+                                  v['displayName'] as String,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w800,
+                                    letterSpacing: 0.6,
+                                  ),
+                                ),
+                                // The bolt rides to the RIGHT of the title
+                                // (user spec 2026-10-13) — Electric Pro only.
+                                if (v['rideId'] == 'electric_pro') ...[
+                                  const SizedBox(width: 6),
+                                  const ElectricBoltBadge(size: 20),
+                                ],
+                              ],
                             ),
                             const SizedBox(height: 4),
                             // Fixed two-line box: the band above (and with
@@ -1534,23 +1544,7 @@ extension _HomeScreenWidgets on _HomeScreenState {
               ),
             ),
           );
-          return Padding(
-            // The badge's headroom: it sticks out above the card's
-            // top-right corner, Lyft-mock style. Electric Pro only.
-            padding: const EdgeInsets.only(top: 10),
-            child: Stack(
-              clipBehavior: Clip.none,
-              children: [
-                card,
-                if (v['rideId'] == 'electric_pro')
-                  const Positioned(
-                    top: -6,
-                    right: -6,
-                    child: ElectricBoltBadge(size: 38),
-                  ),
-              ],
-            ),
-          );
+          return card;
         },
       ),
     );

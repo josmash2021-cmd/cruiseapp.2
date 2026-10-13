@@ -121,8 +121,9 @@ void main() {
     // Wide enough to reach the Continue label past the AspectRatio band
     // (the window was 5600 and the shared-frame box pushed it out; the
     // Meet-{tier} sheet wiring pushed it further — 7600 then, 9000 with
-    // the Electric Pro card of 2026-10-13).
-    final block = widgets.substring(start, start + 9000);
+    // the Electric Pro card of 2026-10-13; 10500 once the bolt moved into
+    // the title row, right of ELECTRIC PRO).
+    final block = widgets.substring(start, start + 10500);
 
     test('is a horizontal carousel with peek, not the quarter-width row', () {
       expect(block, contains('ListView.separated('));

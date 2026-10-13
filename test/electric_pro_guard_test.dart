@@ -275,7 +275,7 @@ void main() {
       expect(File('assets/images/bolt_badge.png').existsSync(), isTrue);
     });
 
-    test('rides the home fleet card, top-right, Electric Pro only', () {
+    test('rides the home fleet TITLE, right of ELECTRIC PRO (user spec)', () {
       final start = home.indexOf('Widget _buildFleetStack(');
       final block = home.substring(start, start + 10500);
       expect(block, contains('ElectricBoltBadge('));
@@ -284,12 +284,13 @@ void main() {
       expect('ElectricBoltBadge('.allMatches(block).length, 1,
           reason: 'one badge site in the carousel, not one per card');
       final i = block.indexOf('ElectricBoltBadge(');
-      expect(block.substring(i - 400, i),
-          contains("v['rideId'] == 'electric_pro'"));
-      expect(block.substring(i - 400, i), contains('Positioned('));
-      expect(block.substring(i - 400, i), contains(RegExp(r'top: -\d')));
-      expect(block.substring(i - 400, i), contains(RegExp(r'right: -\d')),
-          reason: 'a small negative offset so it sticks out of the corner');
+      final before = block.substring(i - 800, i);
+      expect(before, contains("v['rideId'] == 'electric_pro'"));
+      expect(before, contains("v['displayName']"),
+          reason: 'the badge lives in the title row, immediately right of '
+              'the ELECTRIC PRO text (user spec 2026-10-13)');
+      expect(before, isNot(contains('Positioned(')),
+          reason: 'no longer floating off the card corner');
     });
 
     test('rides the booking tier row, top-right, Electric Pro only', () {

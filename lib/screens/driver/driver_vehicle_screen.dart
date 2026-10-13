@@ -101,6 +101,11 @@ class _DriverVehicleScreenState extends State<DriverVehicleScreen> {
         return 'assets/images/driver_tier_premium.png';
       case kTierCompact:
         return 'assets/images/driver_tier_compact.png';
+      case kTierElectricPro:
+        // The EV side-profile (2026-10-13, Electric Pro) — on patched
+        // phones without the asset yet, the errorBuilder below shows the
+        // car icon until the next store build carries it.
+        return 'assets/images/car_electric.png';
       default:
         return 'assets/images/driver_tier_standard.png';
     }

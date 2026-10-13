@@ -71,6 +71,15 @@ const double _kGoPillH = 56.0;
 const double _kGoCircleD = 74.0;
 const double _kGoSideInset = 20.0;
 
+/// Resting sheet position while OFFLINE (user spec 2026-10-13: "el sheet
+/// debe estar un poco más abierto y el botón aparecerá abajo de forma
+/// píldora… si el driver desliza hacia abajo, aparece el GO normal"):
+/// three snap points now — 0 collapsed (circle GO), this rest (pill
+/// "Go online" fully formed at the sheet floor), 1 fully open.
+/// Top-level, not a static on the extension: part-file access to extension
+/// constants has failed the iOS build before.
+const double _kSheetRestFrac = 0.5;
+
 /// The offline chrome's gold (home's `_gold`). This library's top-level
 /// `_gold` is a different shade (0xFFD4A843) that belongs to the online
 /// chrome — the ported widgets below keep the colour they were drawn in.
@@ -1017,10 +1026,12 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
   /// Both are the same widget travelling, not two widgets swapping. Every
   /// property — width, height, corner radius, height above the screen floor,
   /// and which of the two labels is showing — is read straight off
-  /// `_panelFrac`, the merged screen's 0-to-1 panel fraction (home read its
-  /// VelocityAwarePanelMixin's `panelExtent`; the mixin was not ported).
+  /// `_panelFrac`, the merged screen's 0-to-1 panel fraction — remapped so
+  /// the morph COMPLETES at the resting position: the button is a full pill
+  /// by the time the sheet rests (2026-10-13 spec), not a half-formed
+  /// in-between.
   Widget _buildMorphingGoButton(EdgeInsets pad, {bool hidden = false}) {
-    final t = _panelFrac.clamp(0.0, 1.0); // 0 = closed circle, 1 = open pill
+    final t = (_panelFrac / _kSheetRestFrac).clamp(0.0, 1.0);
     final height = ui.lerpDouble(_kGoCircleD, _kGoPillH, t)!;
     final radius = ui.lerpDouble(_kGoCircleD / 2, 16.0, t)!;
 

@@ -3895,7 +3895,11 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
           } else if (velocity > 300) {
             target = 0.0; // fast swipe down → close
           } else {
-            target = _panelFrac > 0.35 ? 1.0 : 0.0; // finger position snap
+            // Three snap points (2026-10-13 spec): collapsed / resting /
+            // open — the resting position is where the pill GO lives.
+            const snaps = [0.0, _kSheetRestFrac, 1.0];
+            target = snaps.reduce((a, b) =>
+                (_panelFrac - a).abs() <= (_panelFrac - b).abs() ? a : b);
           }
           _animatePanelTo(target);
         },

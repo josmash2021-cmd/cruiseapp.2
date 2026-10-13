@@ -1049,6 +1049,9 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       // Mode flip rewrites the zone look NOW (the GPS-fix sync can be
       // minutes away for a parked driver): online + selection = spotlight.
       unawaited(_syncZoneLayers());
+      // The online sheet starts collapsed ("Finding trips"); the pill GO
+      // belongs to the offline resting position (2026-10-13 spec).
+      _animatePanelTo(0.0);
       // GPS pasa a background-capable — el stream se recrea (iOS solo
       // aplica el flag en un request nuevo).
       _syncPosStreamMode();
@@ -1192,6 +1195,9 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     if (FeatureFlags.zonesMapEnabled) {
       unawaited(_fitAllZones());
     }
+    // Offline the sheet rests half-open with the pill "Go online" at its
+    // floor (2026-10-13 spec); the swipe down collapses it to the circle.
+    _animatePanelTo(_kSheetRestFrac);
   }
 
   /// The 10 s auto-refollow exists ONLINE (and with the zone layer off) —

@@ -424,10 +424,37 @@ void main() {
       expect(screen.contains('!_cameraFollowing'), isTrue);
       final fabIdx = screen.indexOf('_RecenterFab(');
       expect(fabIdx, isNonNegative);
-      final block = screen.substring(fabIdx - 400, fabIdx + 400);
+      final block = screen.substring(fabIdx - 800, fabIdx + 400);
       expect(block.contains('!_driverOnline'), isTrue,
           reason: 'the FAB is the OFFLINE one');
       expect(block.contains('_recenterCamera();'), isTrue);
+      expect(block.contains('_panelFrac'), isTrue,
+          reason: 'it floats above the sheet at its CURRENT height — the '
+              'sheet now rests half-open (2026-10-13 spec)');
+    });
+
+    test('the offline sheet rests half-open with the pill GO, three snaps',
+        () {
+      // User spec 2026-10-13: "el sheet debe estar un poco más abierto y el
+      // botón aparecerá abajo de forma píldora… si el driver desliza hacia
+      // abajo, aparece el GO normal". Rest = half-open with the pill fully
+      // formed at the sheet floor; swipe down = collapsed circle GO.
+      expect(offline, contains('_kSheetRestFrac'),
+          reason: 'the resting position constant');
+      expect(offline, contains('_panelFrac / _kSheetRestFrac'),
+          reason: 'the morph completes AT the resting position — a full '
+              'pill, never a half-formed in-between');
+      expect(widgets, contains('const snaps = [0.0, _kSheetRestFrac, 1.0];'),
+          reason: 'collapsed / resting / open — three snap points');
+      expect(screen,
+          contains('if (mounted && !_driverOnline) _animatePanelTo(_kSheetRestFrac);'),
+          reason: 'the boot rests half-open when offline');
+      final ctrl = File('lib/screens/driver/driver_online_controller.dart')
+          .readAsStringSync();
+      expect(ctrl, contains('_animatePanelTo(_kSheetRestFrac)'),
+          reason: 'going offline rests the sheet half-open');
+      expect(ctrl, contains('_animatePanelTo(0.0)'),
+          reason: 'going online collapses it back to the searching pill');
     });
 
     test('a vetoed glide never reads as a dead button', () {

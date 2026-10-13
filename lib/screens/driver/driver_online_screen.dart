@@ -936,6 +936,12 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
         if (mounted) _showCancelledNotice();
       });
     }
+    // Offline the sheet RESTS half-open with the pill "Go online" at its
+    // floor (user spec 2026-10-13) — the swipe down collapses it to the
+    // circle GO. Set it once the first frame is down.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && !_driverOnline) _animatePanelTo(_kSheetRestFrac);
+    });
     // The offer the driver tapped in the notification, down the same path SSE
     // and the poll use: the card, the alert and the route preview then behave
     // exactly as if the stream had delivered it, and the offer the tap was
@@ -2124,7 +2130,13 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                 !isNav &&
                 _acceptedOverlay == null)
               Positioned(
-                bottom: 78 + bot + 14,
+                // Above the sheet's CURRENT top — it now rests half-open
+                // (2026-10-13 spec), not always collapsed.
+                bottom: (78 + bot) +
+                    ((MediaQuery.of(context).size.height * 0.82 -
+                            (78 + bot)) *
+                        _panelFrac.clamp(0.0, 1.0)) +
+                    14,
                 right: 16,
                 child: _RecenterFab(
                   visible: !_cameraFollowing,

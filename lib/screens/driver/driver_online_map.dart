@@ -2651,9 +2651,9 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
         : level == 0
             ? 0.07
             : level == 1
-                ? 0.18
+                ? 0.35 // Dorado: semitransparente pero legible (era 0.18 = gris)
                 : level == 2
-                    ? 0.32
+                    ? 0.55
                     : 1.0; // Muy ocupado = dorado 100% sólido (2026-10-12 spec)
     try {
       await Future.wait([
@@ -2824,10 +2824,15 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     if (s == null) return;
     if (_selectedZoneName == s.id) {
       _setState(() => _selectedZoneName = null);
+      PrefsCache.instance.then((p) => p.remove('driver_selected_zone'));
       _syncZoneLayers(forceHighlight: true);
       return;
     }
     _setState(() => _selectedZoneName = s.id);
+    // The working zone survives app restarts (user spec 2026-10-13: "la zona
+    // debe mantenerse cuando se cierra y se abre la app").
+    PrefsCache.instance
+        .then((p) => p.setString('driver_selected_zone', s.id));
     HapticService.selectionClick();
     _goIgniteCtrl?.forward(from: 0.0);
     _syncZoneLayers(forceHighlight: true);

@@ -393,7 +393,18 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
     // process + the remote flags, then paint shading + the driver's
     // "FL: <city>" highlight (drawing gated by zones_map_enabled server flag).
     unawaited(FeatureFlags.load());
-    unawaited(ZoneService.load().then((_) {
+    unawaited(ZoneService.load().then((_) async {
+      if (!mounted) return;
+      // Restore the working zone picked in a previous session (user spec
+      // 2026-10-13: "la zona debe mantenerse cuando se cierra y se abre la
+      // app") — never over a fresh tap from THIS session.
+      if (_selectedZoneName == null) {
+        final prefs = await PrefsCache.instance;
+        final saved = prefs.getString('driver_selected_zone');
+        if (saved != null && ZoneService.sectorById(saved) != null) {
+          _setState(() => _selectedZoneName = saved);
+        }
+      }
       if (mounted) _syncZoneLayers(forceHighlight: true);
     }));
     // First paint already carries dispatch's heat when it exists.

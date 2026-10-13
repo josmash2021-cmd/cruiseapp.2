@@ -267,6 +267,24 @@ void main() {
         reason: 'the flip itself syncs — not the next GPS fix');
   });
 
+  test('the working zone survives app restarts (prefs)', () {
+    // User spec 2026-10-13: "la zona debe de mantenerse cuando se cierra y
+    // se abre la app". The pick is written to prefs on tap and restored at
+    // boot (never over a fresh tap of the current session).
+    final map =
+        File('lib/screens/driver/driver_online_map.dart').readAsStringSync();
+    expect(map, contains("p.setString('driver_selected_zone', s.id)"),
+        reason: 'the tap persists the pick');
+    expect(map, contains("p.remove('driver_selected_zone')"),
+        reason: 'the deselect clears it');
+    final w = File('lib/screens/driver/driver_online_widgets.dart')
+        .readAsStringSync();
+    expect(w, contains("prefs.getString('driver_selected_zone')"),
+        reason: 'the boot restores the working zone');
+    expect(w, contains('ZoneService.sectorById(saved) != null'),
+        reason: 'a stale id (edited sectors) never restores garbage');
+  });
+
   test('the camera is born at the region view offline and glides on flips',
       () {
     // 2026-10-11 (user report: the app opens zoomed-in instead of the

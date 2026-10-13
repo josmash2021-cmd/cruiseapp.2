@@ -2003,6 +2003,12 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
 
     // tick() devuelve si posición O rumbo cambiaron este frame.
     final frameMoved = _motion.tick(dtSec);
+    // Rolling re-engages the chase by itself (2026-10-13 spec): the zone
+    // recenter views are for a parked driver looking at zones — once the
+    // car moves, follow comes back without any button.
+    if (!_cameraFollowing && _driverOnline && _motion.speedMps > 2.2) {
+      _setState(() => _cameraFollowing = true);
+    }
     // Re-project the engine's output onto the active line (route or matched
     // road line) — the fix-level snap alone left the extrapolated lead
     // running off the road between fixes (see _snapRenderedToLine).

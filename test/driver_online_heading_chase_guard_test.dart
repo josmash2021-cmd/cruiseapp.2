@@ -78,7 +78,7 @@ void main() {
     });
 
     test('recenter + style-load keep the heading too', () {
-      final recenter = bodyOf(map, 'void _recenterCamera() {', maxLen: 2200);
+      final recenter = bodyOf(map, 'void _recenterCamera() {', maxLen: 3200);
       expect(recenter.contains('bearing: bearing'), isTrue,
           reason: 'the 10 s auto-refollow returns to the heading-up chase, '
               'not to north');
@@ -89,6 +89,13 @@ void main() {
           isTrue,
           reason: 'offline recenter centres the arrow at street zoom, same '
               'as online');
+      // Recenter by mode (2026-10-13 spec): offline = all zones, online with
+      // a chosen zone = that zone; both free views until the car rolls.
+      expect(recenter.contains('_fitAllZones()'), isTrue,
+          reason: 'offline recenter frames the whole coverage');
+      expect(recenter.contains('_fitZone(sec)'), isTrue,
+          reason: 'online recenter frames the working zone');
+      expect(recenter.contains("recenter_fit"), isTrue);
       expect(recenter.contains('zoom:'), isTrue);
       expect(widgets.contains('bearing: _smoothedBearing'), isTrue,
           reason: 'the style-reload flatten must not snap the rotation to '
@@ -455,6 +462,19 @@ void main() {
           reason: 'going offline rests the sheet half-open');
       expect(ctrl, contains('_animatePanelTo(0.0)'),
           reason: 'going online collapses it back to the searching pill');
+      // The pill must paint ON TOP of the sheet (2026-10-13, "cuando el
+      // sheet está abierto no aparece el botón de Go online"): painted
+      // before it, the sheet covered the button at the floor.
+      final goIdx = screen.indexOf('_buildMorphingGoButton(');
+      final panelIdx = screen.indexOf('_floatingPanel(');
+      expect(goIdx, isNonNegative);
+      expect(panelIdx, isNonNegative);
+      expect(goIdx, greaterThan(panelIdx),
+          reason: 'the GO pill is the sheet footer — it must come AFTER the '
+              'sheet in the Stack or the sheet covers it');
+      // Rolling re-engages the chase after a zone recenter (2026-10-13).
+      expect(ctrl, contains('_motion.speedMps > 2.2'),
+          reason: 'driving re-engages follow by itself — no button needed');
     });
 
     test('a vetoed glide never reads as a dead button', () {
@@ -464,7 +484,7 @@ void main() {
       expect(screen.contains('bool _animateToPosition('), isTrue,
           reason: 'the flight reports whether it was issued');
       final recenter =
-          bodyOf(map, 'void _recenterCamera() {', maxLen: 2800);
+          bodyOf(map, 'void _recenterCamera() {', maxLen: 3400);
       expect(recenter.contains('final fired ='), isTrue);
       expect(recenter.contains('if (!fired)'), isTrue);
       expect(recenter.contains('_cameraFollowing = true'), isTrue);

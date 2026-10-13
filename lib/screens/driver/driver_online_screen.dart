@@ -2577,17 +2577,6 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                 ),
               ),
 
-            // â”€â”€ Bottom: Phase-specific panel â”€â”€
-            // GO button (modo offline) — el hero del home sobre el mismo
-            // mapa (mapa único 2026-09-26). Online se esconde con morph;
-            // con ofertas/preview encima no existe.
-            if (_phase == _Phase.searching &&
-                _pendingOffers.isEmpty &&
-                _previewingOffer == null &&
-                _acceptedOverlay == null)
-              _buildMorphingGoButton(MediaQuery.of(context).padding,
-                  hidden: _driverOnline),
-
             if (_phase == _Phase.searching)
               Positioned.fill(
                 child: AnimatedSlide(
@@ -2632,6 +2621,22 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                   shadowC,
                 ),
               ),
+
+            // â”€â”€ Bottom: Phase-specific panel â”€â”€
+            // GO button (modo offline) — el hero del home sobre el mismo
+            // mapa (mapa único 2026-09-26). Online se esconde con morph;
+            // con ofertas/preview encima no existe.
+            //
+            // AFTER the sheet chain in the Stack (2026-10-13, "cuando el
+            // sheet está abierto no aparece el botón de Go online"): the
+            // pill is the sheet's footer — painted before it, the sheet
+            // covered the button whenever it reached the floor.
+            if (_phase == _Phase.searching &&
+                _pendingOffers.isEmpty &&
+                _previewingOffer == null &&
+                _acceptedOverlay == null)
+              _buildMorphingGoButton(MediaQuery.of(context).padding,
+                  hidden: _driverOnline),
 
             // ── "Viaje cancelado" notice ──
             // Centred on a semi-dark wash, ~5 s, fluid fade both ways. It

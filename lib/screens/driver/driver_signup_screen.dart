@@ -22,7 +22,7 @@ import '../face_liveness_screen.dart';
 import '../biometric_consent_screen.dart';
 import '../privacy_policy_screen.dart';
 import 'driver_agreement_screen.dart';
-import 'driver_pending_review_screen.dart';
+import 'driver_waitlist_screen.dart';
 import '../../utils/ssn_validator.dart';
 import 'license_guidelines_screen.dart';
 
@@ -978,7 +978,7 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
     if (!mounted) return;
 
     Navigator.of(context).pushAndRemoveUntil(
-      slideFromRightRoute(const DriverPendingReviewScreen()),
+      slideFromRightRoute(const DriverWaitlistScreen()),
       (_) => false,
     );
   }

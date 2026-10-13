@@ -14,7 +14,6 @@ import 'rider_email_screen.dart';
 import 'driver/driver_email_screen.dart';
 import 'driver/driver_name_screen.dart';
 import 'driver/driver_online_screen.dart';
-import 'driver/driver_pending_review_screen.dart';
 import 'driver/driver_waitlist_screen.dart';
 import 'driver/onboarding/driver_todo_screen.dart';
 import '../services/api_service.dart';
@@ -388,7 +387,10 @@ class _SplashScreenState extends State<SplashScreen> {
             return const DriverOnlineScreen();
           } else if (liveStatus == 'rejected') {
             await LocalDataService.setDriverApprovalStatus('rejected');
-            return const DriverPendingReviewScreen();
+            return DriverWaitlistScreen.rejected(
+              rejectedReason: approvalResult['rejection_reason'] as String? ??
+                  approvalResult['reason'] as String?,
+            );
           } else if (liveStatus == 'waitlist') {
             await LocalDataService.setDriverApprovalStatus('waitlist');
             return const DriverWaitlistScreen();
@@ -433,7 +435,7 @@ class _SplashScreenState extends State<SplashScreen> {
       }
       if (fsStatus == 'rejected') {
         await LocalDataService.setDriverApprovalStatus('rejected');
-        return const DriverPendingReviewScreen();
+        return const DriverWaitlistScreen.rejected();
       }
       if (fsStatus == 'waitlist') {
         await LocalDataService.setDriverApprovalStatus('waitlist');

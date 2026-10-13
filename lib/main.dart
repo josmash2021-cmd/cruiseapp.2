@@ -32,7 +32,6 @@ import 'screens/maintenance_screen.dart';
 import 'screens/update_required_screen.dart';
 import 'screens/driver/driver_online_screen.dart';
 import 'screens/driver/driver_online_screen.dart';
-import 'screens/driver/driver_pending_review_screen.dart';
 import 'screens/driver/driver_waitlist_screen.dart';
 import 'screens/driver/onboarding/driver_approved_celebration_screen.dart';
 import 'screens/driver/driver_trip_accept_screen.dart';
@@ -837,18 +836,19 @@ void _handleAccountApproved(bool isDriver) {
   debugPrint('[FCM] Navigated to ${isDriver ? "DriverApprovedCelebrationScreen" : "HomeScreen"} after approval');
 }
 
-/// Navigate to pending-review screen after account rejection.
+/// Navigate to the waitlist screen (rejected variant) after account
+/// rejection — the pending-review page was retired 2026-10-13.
 void _handleAccountRejected(bool isDriver) {
-  if (!isDriver) return; // riders don't have a pending-review screen
+  if (!isDriver) return; // riders don't have a waitlist screen
 
   final nav = _navigatorKey.currentState;
   if (nav == null) return;
 
   nav.pushAndRemoveUntil(
-    MaterialPageRoute(builder: (_) => const DriverPendingReviewScreen()),
+    MaterialPageRoute(builder: (_) => const DriverWaitlistScreen.rejected()),
     (r) => false,
   );
-  debugPrint('[FCM] Navigated to DriverPendingReviewScreen after rejection');
+  debugPrint('[FCM] Navigated to DriverWaitlistScreen after rejection');
 }
 
 void main() async {

@@ -13,7 +13,7 @@ import '../../../widgets/feathered_image.dart';
 import '../../../widgets/neu_style.dart';
 import '../../help_screen.dart';
 import '../../splash_screen.dart';
-import '../driver_pending_review_screen.dart';
+import '../driver_waitlist_screen.dart';
 import 'doc_capture_screen.dart';
 import 'driver_approved_celebration_screen.dart';
 import 'onboarding_intro_screen.dart';
@@ -134,6 +134,8 @@ class _DriverTodoScreenState extends State<DriverTodoScreen> {
   /// and reopening the app must land them there, never on the hub (and
   /// NEVER on the driver home). A rejected account stays here instead: its
   /// next move is fixing the failed item, which is what this hub is for.
+  /// (2026-10-13: the review page IS the waitlist screen now — the old
+  /// pending-review page was retired.)
   bool _routedToReview = false;
 
   Future<void> _maybeRouteToReview() async {
@@ -143,7 +145,7 @@ class _DriverTodoScreenState extends State<DriverTodoScreen> {
     if (!mounted || cached == 'rejected') return;
     _routedToReview = true;
     Navigator.of(context).push(
-      onboardingFadeSlideRoute(const DriverPendingReviewScreen()),
+      onboardingFadeSlideRoute(const DriverWaitlistScreen()),
     );
   }
 

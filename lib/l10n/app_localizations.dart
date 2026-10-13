@@ -43,9 +43,12 @@ class S {
   // ── Driver waitlist ──
   String get waitlistTitle =>
       _es ? 'Estás en lista de espera' : "You're on the waitlist!";
+  // Verbatim mock copy (2026-10-13) — the blank line is part of the mock.
   String get waitlistBody => _es
-      ? 'Tu cuenta está actualmente en revisión. Nuestro equipo está trabajando para completar tu verificación. Te notificaremos en cuanto tu cuenta sea aprobada.'
-      : "Your account is currently under review. Our team is working to complete your verification. We'll notify you as soon as your account is approved.";
+      ? 'Tu cuenta está actualmente en revisión. Nuestro equipo está trabajando para completar tu verificación.\n\nTe notificaremos en cuanto tu cuenta sea aprobada.'
+      : "Your account is currently under review. Our team is working to complete your verification.\n\nWe'll notify you as soon as your account is approved.";
+  String get waitlistRejectedTitle =>
+      _es ? 'Solicitud no aprobada' : 'Application not approved';
   String get waitlistSupport => _es ? 'Soporte' : 'Support';
   String get waitlistExitHint => _es ? 'Salir' : 'Exit';
   String get navIntroTitle => _es

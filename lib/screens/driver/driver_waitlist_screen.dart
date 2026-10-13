@@ -9,28 +9,51 @@ import '../../services/local_data_service.dart';
 import '../../services/user_session.dart';
 import '../help_screen.dart';
 import '../welcome_screen.dart';
-import 'driver_pending_review_screen.dart';
 import 'onboarding/driver_approved_celebration_screen.dart';
 
 /// Waitlist page (user spec 2026-10-13): dispatch moved the driver to the
-/// waitlist (backend `verification_status == 'waitlist'`).
+/// waitlist (backend `verification_status == 'waitlist'`). Also owns the
+/// REJECTED state — the old pending-review page was retired the same day
+/// ("esa página de under review elimínala ya que es vieja").
 ///
-/// Navy/gold kill-page family — same pop-up entrance as the maintenance
-/// page. The art is composed from WIDGETS ONLY: Shorebird OTA patches don't
-/// carry new assets (maintenance_hero lesson), so no bundled or network
-/// images here — ever.
+/// Matches the "Navy and Gold Waitlist Verification Screen" mock: a gold
+/// hourglass + a little ID card over a dark-blue CLOUD (organic blob
+/// composed from overlapping circles — never the stock cloud glyph), all
+/// WIDGETS ONLY: Shorebird OTA patches don't carry new assets
+/// (maintenance_hero lesson), so no bundled or network images here — ever.
+/// The hero pops in with the exact entrance of the update-required page
+/// (scale Interval(0, 0.55, easeOutBack) + fade Interval(0, 0.4)).
 ///
-/// NOT a prison (same rule as pending review, 2026-08-24): back works, and
-/// the X mirrors pending review's explicit exit (logout → welcome). The
+/// Two variants via the constructor:
+///  - [DriverWaitlistScreen.new] — waitlist (gold accent).
+///  - [DriverWaitlistScreen.rejected] — application not approved: soft-red
+///    accent, the dispatch reason when known, and support as the primary
+///    action. The variant is STATE, seeded by the constructor: the 10 s
+///    poll flips it in place (rejected ↔ waitlist) instead of stacking
+///    routes.
+///
+/// NOT a prison (same rule as the retired pending review, 2026-08-24):
+/// back works, and the X mirrors its explicit exit (logout → welcome). The
 /// screen can be the ROOT route when the splash routes here, so a bare pop
 /// is not a safe exit — that's why the X logs out instead.
 ///
 /// Auto-exit: polls the approval status every 10 s — approved → the same
-/// celebration the pending-review poll lands on; anything else (rejected /
-/// back to plain pending) → DriverPendingReviewScreen, which owns those
-/// states and keeps its own watcher.
+/// celebration chain the retired page used (pending→approved still lands on
+/// DriverApprovedCelebrationScreen); rejected ↔ waitlist flips the variant.
 class DriverWaitlistScreen extends StatefulWidget {
-  const DriverWaitlistScreen({super.key});
+  /// Waitlist variant (gold).
+  const DriverWaitlistScreen({super.key})
+      : startsRejected = false,
+        rejectedReason = null;
+
+  /// Rejected variant (soft red): dispatch denied the application.
+  /// [rejectedReason] is the dispatch note when the caller has it — the
+  /// 10 s poll refreshes it from the API either way.
+  const DriverWaitlistScreen.rejected({super.key, this.rejectedReason})
+      : startsRejected = true;
+
+  final bool startsRejected;
+  final String? rejectedReason;
 
   @override
   State<DriverWaitlistScreen> createState() => _DriverWaitlistScreenState();
@@ -39,8 +62,11 @@ class DriverWaitlistScreen extends StatefulWidget {
 class _DriverWaitlistScreenState extends State<DriverWaitlistScreen>
     with SingleTickerProviderStateMixin {
   static const _bg = Color(0xFF0A1322); // navy black, like the mock
-  static const _navy = Color(0xFF16263F); // soft navy disc
+  static const _cloudDark = Color(0xFF1A2A44); // cloud base
+  static const _cloudLight = Color(0xFF223753); // cloud bumps
+  static const _cardNavy = Color(0xFF1D3050); // little ID card
   static const _gold = Color(0xFFE8C547);
+  static const _red = Color(0xFFE57373); // soft red — rejected accent
   static const _pollEvery = Duration(seconds: 10);
 
   late final AnimationController _anim = AnimationController(
@@ -50,11 +76,22 @@ class _DriverWaitlistScreenState extends State<DriverWaitlistScreen>
 
   Timer? _poll;
   bool _navigating = false; // guard against double-navigation
+  late bool _rejected;
+  String? _reason;
+
+  Color get _accent => _rejected ? _red : _gold;
 
   @override
   void initState() {
     super.initState();
+    _rejected = widget.startsRejected;
+    _reason = widget.rejectedReason;
     _poll = Timer.periodic(_pollEvery, (_) => _recheck());
+    // Rejected routes often arrive without the dispatch note (Firestore
+    // branch, push tap) — grab it on the first tick, not 10 s in.
+    if (_rejected && (_reason == null || _reason!.isEmpty)) {
+      _recheck();
+    }
   }
 
   @override
@@ -77,27 +114,51 @@ class _DriverWaitlistScreenState extends State<DriverWaitlistScreen>
     if (!mounted || _navigating) return;
     final status = result['approval_status'] as String? ??
         result['status'] as String? ??
-        'waitlist';
-    if (status == 'waitlist') return;
-    _navigating = true;
-    _poll?.cancel();
-    await LocalDataService.setDriverApprovalStatus(status);
-    if (!mounted) return;
+        '';
+    if (status.isEmpty) return;
+
     if (status == 'approved') {
-      // Same landing the pending-review poll uses on approval.
+      // The approved→celebration chain the retired pending-review page
+      // owned — pending/waitlist/rejected all land here on approval.
+      _navigating = true;
+      _poll?.cancel();
+      await LocalDataService.setDriverApprovalStatus('approved');
+      if (!mounted) return;
       Navigator.of(context).pushAndRemoveUntil(
         onboardingFadeSlideRoute(const DriverApprovedCelebrationScreen()),
         (_) => false,
       );
-    } else {
-      // Rejected (or back to plain pending) — the live status screen owns it.
-      Navigator.of(context).pushReplacement(
-        onboardingFadeSlideRoute(const DriverPendingReviewScreen()),
-      );
+      return;
+    }
+
+    await LocalDataService.setDriverApprovalStatus(status);
+    if (!mounted) return;
+
+    if (status == 'rejected') {
+      final reason = result['rejection_reason'] as String? ??
+          result['verification_reason'] as String? ??
+          result['reason'] as String?;
+      if (!_rejected ||
+          (reason != null && reason.isNotEmpty && reason != _reason)) {
+        setState(() {
+          _rejected = true;
+          if (reason != null && reason.isNotEmpty) _reason = reason;
+        });
+      }
+      return;
+    }
+
+    // waitlist / pending / anything else → the waitlist variant owns it
+    // (the pending-review page is gone — pending IS the waitlist page).
+    if (_rejected) {
+      setState(() {
+        _rejected = false;
+        _reason = null;
+      });
     }
   }
 
-  /// X (top right): pending review's explicit exit — logout, back to the
+  /// X (top right): the retired page's explicit exit — logout, back to the
   /// welcome flow. Never a bare pop (see class doc: can be the root route).
   Future<void> _exit() async {
     _poll?.cancel();
@@ -110,7 +171,8 @@ class _DriverWaitlistScreenState extends State<DriverWaitlistScreen>
     );
   }
 
-  /// Support (top left): the existing dispatch support chat.
+  /// Support (top left, and the rejected variant's primary action): the
+  /// existing dispatch support chat.
   void _openSupport() {
     Navigator.of(context).push(slideFromRightRoute(const HelpScreen()));
   }
@@ -128,25 +190,27 @@ class _DriverWaitlistScreenState extends State<DriverWaitlistScreen>
               child: Column(
                 children: [
                   const Spacer(flex: 3),
-                  // Pop-up entrance: scale from the centre with a soft back
-                  // ease, ahead of the text — same family as maintenance.
+                  // Hero entrance — the EXACT intervals of the
+                  // update-required page (user spec 2026-10-13).
                   ScaleTransition(
                     scale: CurvedAnimation(
                       parent: _anim,
-                      curve: const Interval(0, 0.6, curve: Curves.easeOutBack),
+                      curve: const Interval(0, 0.55, curve: Curves.easeOutBack),
                     ),
                     child: FadeTransition(
                       opacity: CurvedAnimation(
                         parent: _anim,
-                        curve: const Interval(0, 0.45),
+                        curve: const Interval(0, 0.4),
                       ),
-                      child: _buildArt(),
+                      child: _buildHeroArt(),
                     ),
                   ),
                   const SizedBox(height: 40),
                   _fadeSlide(
                     Text(
-                      S.of(context).waitlistTitle,
+                      _rejected
+                          ? S.of(context).waitlistRejectedTitle
+                          : S.of(context).waitlistTitle,
                       textAlign: TextAlign.center,
                       style: const TextStyle(
                         color: Colors.white,
@@ -154,13 +218,15 @@ class _DriverWaitlistScreenState extends State<DriverWaitlistScreen>
                         fontWeight: FontWeight.w800,
                       ),
                     ),
-                    0.25,
-                    0.7,
+                    0.3,
+                    0.75,
                   ),
                   const SizedBox(height: 14),
                   _fadeSlide(
                     Text(
-                      S.of(context).waitlistBody,
+                      _rejected
+                          ? S.of(context).rejectionDescription
+                          : S.of(context).waitlistBody,
                       textAlign: TextAlign.center,
                       style: const TextStyle(
                         color: Color(0xFF9AA3B8),
@@ -168,10 +234,67 @@ class _DriverWaitlistScreenState extends State<DriverWaitlistScreen>
                         height: 1.5,
                       ),
                     ),
-                    0.4,
-                    0.85,
+                    0.45,
+                    0.9,
                   ),
+                  // Dispatch note, when there is one (rejected variant).
+                  if (_rejected &&
+                      _reason != null &&
+                      _reason!.isNotEmpty) ...[
+                    const SizedBox(height: 18),
+                    _fadeSlide(
+                      Container(
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                          color: _red.withValues(alpha: 0.08),
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(
+                            color: _red.withValues(alpha: 0.25),
+                          ),
+                        ),
+                        child: Text(
+                          _reason!,
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.7),
+                            fontSize: 13,
+                            height: 1.45,
+                          ),
+                        ),
+                      ),
+                      0.5,
+                      0.95,
+                    ),
+                  ],
                   const Spacer(flex: 4),
+                  // Rejected variant: support is the PRIMARY action.
+                  if (_rejected)
+                    _fadeSlide(
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton.icon(
+                          onPressed: _openSupport,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: _gold,
+                            foregroundColor: _bg,
+                            padding: const EdgeInsets.symmetric(vertical: 15),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                          ),
+                          icon: const Icon(Icons.support_agent_rounded,
+                              size: 20),
+                          label: Text(
+                            S.of(context).waitlistSupport,
+                            style: const TextStyle(
+                                fontSize: 16, fontWeight: FontWeight.w800),
+                          ),
+                        ),
+                      ),
+                      0.6,
+                      1.0,
+                    ),
+                  if (_rejected) const SizedBox(height: 24),
                 ],
               ),
             ),
@@ -201,61 +324,90 @@ class _DriverWaitlistScreenState extends State<DriverWaitlistScreen>
     );
   }
 
-  /// Hourglass over a soft navy disc with a little ID card — the "Navy and
-  /// Gold Waitlist" mock, composed from widgets only (no assets, OTA-safe).
-  Widget _buildArt() {
+  /// The mock's hero, widgets only: a dark-blue cloud (organic blob from
+  /// overlapping circles — never the stock cloud glyph) with the big gold
+  /// hourglass in front and the little ID card at its side.
+  Widget _buildHeroArt() {
     return SizedBox(
-      width: 220,
+      width: 260,
       height: 220,
       child: Stack(
         alignment: Alignment.center,
         children: [
-          Container(
-            width: 200,
-            height: 200,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: _navy,
-              border: Border.all(
-                color: _gold.withValues(alpha: 0.25),
-                width: 1.5,
+          // Cloud — behind, lower half.
+          Positioned(
+            bottom: 6,
+            child: SizedBox(
+              width: 250,
+              height: 130,
+              child: Stack(
+                alignment: Alignment.bottomCenter,
+                children: [
+                  Container(
+                    width: 230,
+                    height: 78,
+                    decoration: BoxDecoration(
+                      color: _cloudDark,
+                      borderRadius: BorderRadius.circular(39),
+                      boxShadow: [
+                        BoxShadow(
+                          color: _accent.withValues(alpha: 0.10),
+                          blurRadius: 44,
+                          spreadRadius: 4,
+                        ),
+                      ],
+                    ),
+                  ),
+                  Positioned(left: 26, bottom: 34, child: _cloudPuff(84)),
+                  Positioned(left: 92, bottom: 52, child: _cloudPuff(102)),
+                  Positioned(right: 28, bottom: 36, child: _cloudPuff(76)),
+                ],
               ),
-              boxShadow: [
-                BoxShadow(
-                  color: _gold.withValues(alpha: 0.12),
-                  blurRadius: 48,
-                  spreadRadius: 6,
-                ),
-              ],
             ),
           ),
-          const Icon(
-            Icons.hourglass_top_rounded,
-            color: _gold,
-            size: 110,
-          ),
+          // Hourglass — front and centre.
           Positioned(
-            right: 8,
-            bottom: 24,
+            top: 0,
+            child: Icon(
+              Icons.hourglass_top_rounded,
+              color: _accent,
+              size: 120,
+            ),
+          ),
+          // Little ID card — at the cloud's right edge.
+          Positioned(
+            right: 4,
+            bottom: 34,
             child: Container(
-              width: 58,
-              height: 44,
+              width: 60,
+              height: 46,
               decoration: BoxDecoration(
-                color: const Color(0xFF1D3050),
+                color: _cardNavy,
                 borderRadius: BorderRadius.circular(10),
                 border: Border.all(
-                  color: _gold.withValues(alpha: 0.5),
+                  color: _accent.withValues(alpha: 0.55),
                   width: 1.2,
                 ),
               ),
-              child: const Icon(
-                Icons.badge_outlined,
-                color: _gold,
+              child: Icon(
+                Icons.person_outline_rounded,
+                color: _accent,
                 size: 26,
               ),
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _cloudPuff(double size) {
+    return Container(
+      width: size,
+      height: size,
+      decoration: const BoxDecoration(
+        shape: BoxShape.circle,
+        color: _cloudLight,
       ),
     );
   }
@@ -269,7 +421,7 @@ class _DriverWaitlistScreenState extends State<DriverWaitlistScreen>
       onPressed: onPressed,
       tooltip: tooltip,
       style: IconButton.styleFrom(
-        backgroundColor: _navy.withValues(alpha: 0.6),
+        backgroundColor: _cloudDark.withValues(alpha: 0.6),
         foregroundColor: Colors.white.withValues(alpha: 0.75),
       ),
       icon: Icon(icon, size: 22),

@@ -11,7 +11,7 @@ import '../verify_code_screen.dart';
 import 'driver_email_screen.dart';
 import 'driver_online_screen.dart';
 import 'driver_name_screen.dart';
-import 'driver_pending_review_screen.dart';
+import 'driver_waitlist_screen.dart';
 import 'onboarding/driver_todo_screen.dart';
 
 /// Driver phone onboarding — step 1 ("Welcome aboard", Lyft-style).
@@ -76,7 +76,7 @@ class DriverWelcomeScreen extends StatefulWidget {
       );
     } else if (s == 'rejected') {
       Navigator.of(context).pushAndRemoveUntil(
-        slideFromRightRoute(const DriverPendingReviewScreen()),
+        slideFromRightRoute(const DriverWaitlistScreen.rejected()),
         (_) => false,
       );
     } else {

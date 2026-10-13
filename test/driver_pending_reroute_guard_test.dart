@@ -11,6 +11,10 @@ import 'package:flutter_test/flutter_test.dart';
 /// when the driver finished SUBMITTING documents — not when dispatch
 /// approved them — and `wasDriverEverApproved()` promoted that flag to
 /// 'approved' on the primary cache key, poisoning it permanently.
+///
+/// (2026-10-13: the "review page" these pins route to IS the waitlist
+/// screen now — the old pending-review page was retired and the waitlist
+/// screen owns pending/waitlist/rejected.)
 void main() {
   final lds = File('lib/services/local_data_service.dart').readAsStringSync();
   final todo = File('lib/screens/driver/onboarding/driver_todo_screen.dart')
@@ -38,20 +42,20 @@ void main() {
     );
   });
 
-  test('the hub routes a fully-submitted driver to the review page', () {
+  test('the hub routes a fully-submitted driver to the waitlist page', () {
     expect(todo.contains('Future<void> _maybeRouteToReview()'), isTrue);
     expect(
       todo.contains('_entries.every((e) => e.isCompleted)'),
       isTrue,
-      reason: 'everything submitted + waiting on dispatch = the review '
+      reason: 'everything submitted + waiting on dispatch = the waitlist '
           'page, on every reopen',
     );
-    expect(todo.contains('const DriverPendingReviewScreen()'), isTrue);
+    expect(todo.contains('const DriverWaitlistScreen()'), isTrue);
     expect(
       todo.contains("cached == 'rejected'"),
       isTrue,
       reason: 'a rejected account stays on the hub — its next move is '
-          'fixing the failed item, not staring at the review page',
+          'fixing the failed item, not staring at the waitlist page',
     );
   });
 
@@ -62,9 +66,13 @@ void main() {
       reason: 'the ever-approved fast path is the first gate — it must '
           'stay backed by the decontaminated service',
     );
-    expect(splash.contains('const DriverPendingReviewScreen()'), isTrue);
+    expect(splash.contains('const DriverWaitlistScreen()'), isTrue,
+        reason: 'the waitlist gate');
+    expect(splash.contains('DriverWaitlistScreen.rejected('), isTrue,
+        reason: 'the rejected gate → the rejected variant of the waitlist '
+            'page');
     expect(splash.contains('const DriverTodoScreen()'), isTrue,
         reason: 'an unfinished onboarding resumes on the hub, not the '
-            'review page and never the home');
+            'waitlist page and never the home');
   });
 }

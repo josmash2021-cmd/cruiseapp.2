@@ -475,6 +475,17 @@ void main() {
       // Rolling re-engages the chase after a zone recenter (2026-10-13).
       expect(ctrl, contains('_motion.speedMps > 2.2'),
           reason: 'driving re-engages follow by itself — no button needed');
+      // The sheet moves ONLY from its header strip (2026-10-13 spec: "el
+      // sheet solamente se puede abrir o cerrar tocando o deslizando desde
+      // donde dice You're offline/online").
+      expect(widgets, contains('_kSheetHeaderStripH'),
+          reason: 'the header strip height constant');
+      expect(widgets, contains('_onSheetHeaderTap'),
+          reason: 'the header tap toggle (resting ↔ open)');
+      expect(screen, contains('_sheetDragStartDy'),
+          reason: 'drags are gated on WHERE the finger started — the strip');
+      expect(widgets, contains('onVerticalDragStart'),
+          reason: 'the drag gate records the finger start position');
     });
 
     test('a vetoed glide never reads as a dead button', () {

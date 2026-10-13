@@ -853,6 +853,8 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   double _panelFrac = 0.0; // 0 = collapsed pill, 1 = fully expanded
   AnimationController? _panelAnimCtrl;
   Animation<double>? _panelAnim;
+  // Where the finger started on the sheet (header-strip gate, 2026-10-13).
+  double? _sheetDragStartDy;
 
   // ── Finding trips bar visibility ──
   bool _hideFindingBar = false;

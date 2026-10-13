@@ -18,6 +18,12 @@ const double _kOfferStopH = 34.0;
 /// to touch if it wants nudging again.
 const double _kOfferCardLift = 12.0;
 
+/// Height of the sheet's header strip (grab handle + status row) — the ONLY
+/// zone whose taps/drags move the sheet (user spec 2026-10-13: "el sheet
+/// solamente se puede abrir o cerrar tocando o deslizando desde donde dice
+/// You're offline/online").
+const double _kSheetHeaderStripH = 80.0;
+
 // ══════════════════════════════════════════════════════════════
 //  WIDGETS — UI builders, panels, overlays, cards, sheets
 // ══════════════════════════════════════════════════════════════
@@ -3807,6 +3813,20 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
     _animatePanelTo(_panelOpen ? 0.0 : 1.0);
   }
 
+  /// Sheet open/close ONLY from the header strip (user spec 2026-10-13: "el
+  /// sheet solamente se puede abrir o cerrar tocando o deslizando desde
+  /// donde dice You're offline/online"). Tap cycles collapsed → resting →
+  /// open → resting…; the downward swipe still collapses it to the circle.
+  void _onSheetHeaderTap() {
+    if (_panelFrac > 0.75) {
+      _animatePanelTo(_kSheetRestFrac);
+    } else if (_panelFrac < 0.25) {
+      _animatePanelTo(_kSheetRestFrac);
+    } else {
+      _animatePanelTo(1.0);
+    }
+  }
+
   void _animatePanelTo(double target) {
     final from = _panelFrac;
     final dist = (target - from).abs();
@@ -3879,7 +3899,14 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
       right: 0,
       height: currentH,
       child: GestureDetector(
+        // The sheet moves ONLY from the header strip (user spec 2026-10-13:
+        // "el sheet solamente se puede abrir o cerrar tocando o deslizando
+        // desde donde dice You're offline/online") — drags that start below
+        // the strip are the map's / the list's, never the sheet's.
+        onVerticalDragStart: (d) =>
+            _sheetDragStartDy = d.localPosition.dy,
         onVerticalDragUpdate: (d) {
+          if ((_sheetDragStartDy ?? 999) > _kSheetHeaderStripH) return;
           // Finger controls: dragging up increases frac, down decreases
           final delta = -d.delta.dy / (expandedH - collapsedH);
           _setState(() {
@@ -3887,6 +3914,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
           });
         },
         onVerticalDragEnd: (d) {
+          if ((_sheetDragStartDy ?? 999) > _kSheetHeaderStripH) return;
           // Velocity-aware snap: fast flick snaps immediately
           final velocity = d.primaryVelocity ?? 0;
           double target;
@@ -3950,7 +3978,9 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                     ],
             ),
             clipBehavior: Clip.antiAlias,
-            child: Column(
+            child: Stack(
+              children: [
+                Column(
               children: [
                 const SizedBox(height: 8),
                 _handle(isDark),
@@ -4175,6 +4205,24 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                     ),
                   ),
                 ],
+              ],
+            ),
+            // The header strip is the ONLY place that opens/closes the sheet
+            // (user spec 2026-10-13: "el sheet solamente se puede abrir o
+            // cerrar tocando o deslizando desde donde dice You're offline/
+            // online") — tap toggles resting ↔ open; drags from the strip
+            // pass the sheet's drag gate below.
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              height: _kSheetHeaderStripH,
+              child: GestureDetector(
+                behavior: HitTestBehavior.translucent,
+                onTap: _onSheetHeaderTap,
+                child: const SizedBox.expand(),
+              ),
+            ),
               ],
             ),
           ),

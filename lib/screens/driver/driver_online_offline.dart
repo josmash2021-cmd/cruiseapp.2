@@ -1088,7 +1088,9 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
               child: LayoutBuilder(
                 builder: (context, box) => Center(
                   child: SizedBox(
-                    width: ui.lerpDouble(_kGoCircleD, box.maxWidth, t),
+                    // The pill is a bit more than half the width, NOT side
+                    // to side (user spec 2026-10-13).
+                    width: ui.lerpDouble(_kGoCircleD, box.maxWidth * 0.62, t),
                     height: height,
                     child: _buildGoButton(radius: radius, morph: t),
                   ),
@@ -1281,16 +1283,27 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
                                       strokeWidth: 2,
                                     ),
                                   )
-                                : Icon(
-                                    !docsOk
-                                        ? (_hasExpiredDocs ||
-                                                _plateChangePending
+                                : !docsOk
+                                    ? Icon(
+                                        _hasExpiredDocs || _plateChangePending
                                             ? Icons.warning_amber_rounded
-                                            : Icons.upload_file_rounded)
-                                        : Icons.power_settings_new_rounded,
-                                    color: fgColor,
-                                    size: 16,
-                                  ),
+                                            : Icons.upload_file_rounded,
+                                        color: fgColor,
+                                        size: 16,
+                                      )
+                                    // Cruise logo next to "Go online" (user
+                                    // spec 2026-10-13) — rendered in the
+                                    // button's own foreground so it reads on
+                                    // the gold body.
+                                    : ColorFiltered(
+                                        colorFilter: ColorFilter.mode(
+                                            fgColor, BlendMode.srcIn),
+                                        child: Image.asset(
+                                          'assets/images/cruise_logo.png',
+                                          width: 18,
+                                          height: 18,
+                                        ),
+                                      ),
                           ),
                         ),
                         const SizedBox(width: 10),
@@ -1335,17 +1348,18 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
                               child: Text(
                                 _enteringOnline
                                     ? 'GOING ONLINE...'
-                                    : _isVerified
-                                        ? (!docsOk
-                                            // A plate change is the driver's
-                                            // own doing and has one fix, so
-                                            // the button names the problem
-                                            // rather than the folder.
-                                            ? S.of(context).viewIssue
-                                            : _goShowsResume
-                                                ? S.of(context).resumeOnline
-                                                : S.of(context).goOnline)
-                                        : S.of(context).verifyFirst,
+                                    // No zone picked yet (verified driver,
+                                    // zones on): the button names the task —
+                                    // "Select zone" (user spec 2026-10-13).
+                                    : dimmed && _isVerified
+                                        ? S.of(context).zoneSelectAction
+                                        : _isVerified
+                                            ? (!docsOk
+                                                ? S.of(context).viewIssue
+                                                : _goShowsResume
+                                                    ? S.of(context).resumeOnline
+                                                    : S.of(context).goOnline)
+                                            : S.of(context).verifyFirst,
                                 maxLines: 1,
                                 overflow: TextOverflow.clip,
                                 style: TextStyle(
@@ -1362,34 +1376,18 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
                     ],
                   ),
                 ),
-                // Radar sweep — only while the button is the round GO.
-                //
-                // Painted after the body, not before it. Underneath, it was
-                // invisible from the moment the body started filling the disc
-                // the way it should: an opaque gradient covering the whole
-                // 74 px leaves nothing of a layer below it.
-                //
-                // Over the top it never reaches the word. The painter keeps
-                // its rings between 62% and 90% of the radius — outside the
-                // lettering, inside the rim — so there is no pass where a
-                // ring and the O are the same gold in the same place.
-                //
-                // Faded out by `morph` rather than switched off, so it thins
-                // away as the circle stretches into the pill instead of
-                // vanishing at some threshold mid-gesture. Rings on a pill
-                // read as a glitch; rings appearing and disappearing under
-                // the driver's thumb read as a worse one.
-                if (morph < 0.9 && _goRadarCtrl != null && !dimmed)
+                // Radar sweep — same animation on the circle AND the pill
+                // (user spec 2026-10-13: the pill must carry the same
+                // animation as the circular GO). The pill's ClipRRect trims
+                // the rings to its shape.
+                if (_goRadarCtrl != null && !dimmed)
                   Positioned.fill(
                     child: IgnorePointer(
-                      child: Opacity(
-                        opacity: (1 - morph).clamp(0.0, 1.0),
-                        child: CustomPaint(
-                          painter: _GoRadarPainter(
-                            progress: _goRadarCtrl!.value,
-                            // Ondas NEGRAS sobre el GO dorado.
-                            color: const Color(0xFF0B0B0F),
-                          ),
+                      child: CustomPaint(
+                        painter: _GoRadarPainter(
+                          progress: _goRadarCtrl!.value,
+                          // Ondas NEGRAS sobre el GO dorado.
+                          color: const Color(0xFF0B0B0F),
                         ),
                       ),
                     ),

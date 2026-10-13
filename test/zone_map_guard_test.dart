@@ -350,6 +350,24 @@ void main() {
         reason: 'the dry write is the guaranteed landing');
   });
 
+  test('the boot refresh never clobbers newer cached sectors', () {
+    // 2026-10-13 (user report: "cierro la app y las zonas salen diferentes
+    // al dispatch"): with a cache in hand, loadSectors() refreshed from the
+    // STATIC file — the baked seed — and overwrote the newer panel-edited
+    // sectors on every cold start. The versioned endpoint is now the only
+    // refresh once a cache exists; the static file is just the first seed.
+    final zs = File('lib/services/zone_service.dart').readAsStringSync();
+    final load = RegExp(r'static Future<void> loadSectors\(\) async \{(.*?)\n  \}',
+        dotAll: true);
+    final body = load.firstMatch(zs)?.group(1) ?? '';
+    expect(body, isNotEmpty);
+    expect(body.indexOf('unawaited(refreshSectorsFromServer())'),
+        lessThan(body.indexOf('_refreshSectorsFromNetwork()')),
+        reason: 'cached path refreshes via /zones/sectors; the static file '
+            'is only the first-ever seed');
+    expect(zs, contains('_sectorVersionCacheKey'));
+  });
+
   test('live boundary refresh: socket wake-up, REST truth, animated swap',
       () {
     // 2026-10-13, user spec: "instantáneo, que se dibuje de forma animada

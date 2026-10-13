@@ -440,6 +440,35 @@ void main() {
               'sheet now rests half-open (2026-10-13 spec)');
     });
 
+    test('the pill GO: 62% width, Cruise logo, radar always on, zone label',
+        () {
+      // User spec 2026-10-13: the pill is "un poquito más de la mitad" (not
+      // side to side), the icon beside "Go online" is the Cruise logo, the
+      // radar animation runs on the pill too, and with no zone picked the
+      // label reads "Select zone" (never "Verify first" for a verified
+      // driver).
+      expect(offline, contains('box.maxWidth * 0.62'),
+          reason: 'pill ≈62% of the width');
+      expect(offline, contains('assets/images/cruise_logo.png'),
+          reason: 'the Cruise logo beside the label');
+      expect(offline, contains('BlendMode.srcIn'),
+          reason: 'the logo is rendered in the button foreground so it '
+              'reads on gold');
+      final radarIdx = offline.indexOf('_GoRadarPainter(');
+      expect(radarIdx, isNonNegative);
+      final around = offline.substring(
+          radarIdx - 500 > 0 ? radarIdx - 500 : 0, radarIdx + 300);
+      expect(around.contains('morph < 0.9'), isFalse,
+          reason: 'the radar no longer fades out on the pill');
+      expect(offline, contains('S.of(context).zoneSelectAction'),
+          reason: 'no zone picked → the label names the task');
+      final l10n =
+          File('lib/l10n/app_localizations.dart').readAsStringSync();
+      expect(l10n, contains('zoneSelectAction'));
+      expect(l10n, contains('Selecciona zona'));
+      expect(l10n, contains('Select zone'));
+    });
+
     test('the offline sheet rests half-open with the pill GO, three snaps',
         () {
       // User spec 2026-10-13: "el sheet debe estar un poco más abierto y el

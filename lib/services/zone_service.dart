@@ -138,7 +138,11 @@ class ZoneService {
         sectorsVersion = LocalCache.get<int>(_sectorVersionCacheKey) ?? 0;
         parseSectors(cached);
         if (sectorsReady) {
-          unawaited(_refreshSectorsFromNetwork());
+          // With a cache in hand the ONLY refresh is the versioned endpoint
+          // (2026-10-13, "cierro la app y las zonas salen diferentes"): the
+          // static-file refresh below clobbered the newer panel-edited
+          // cache with the baked seed on every cold start.
+          unawaited(refreshSectorsFromServer());
           return;
         }
       }

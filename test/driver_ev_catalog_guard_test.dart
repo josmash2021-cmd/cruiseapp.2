@@ -22,7 +22,7 @@ void main() {
     'Ariya', 'bZ4X', 'Solterra', 'EQB', 'EQE', 'i4', 'i7', 'iX', 'Q4 e-tron',
     'e-tron GT', 'R1S', 'R1T', 'Air', 'Polestar 2', 'Polestar 3', 'Taycan',
     'Cybertruck', 'Blazer EV', 'Equinox EV', 'Silverado EV', 'Bolt EUV',
-    'ID. Buzz', 'Prologue', 'RZ', 'Lyriq',
+    'ID. Buzz', 'Prologue', 'RZ', 'Lyriq', 'Optiq',
   ];
 
   test('EV makes are in all three registration sources', () {
@@ -54,6 +54,7 @@ void main() {
       'mustang mach-e', 'ioniq 5', 'ev9', 'ariya', 'bz4x', 'r1s', 'r1t',
       'polestar 2', 'taycan', 'cybertruck', 'lightning', 'lucid air',
       'solterra', 'id. buzz', 'blazer ev', 'equinox ev', 'silverado ev',
+      'optiq',
     ]) {
       expect(tiersPy, contains(model),
           reason: '_ELECTRIC_MODELS in vehicle_tiers.py missing $model — a '

@@ -54,7 +54,7 @@ const Map<String, List<String>> vehicleModels = {
   'Audi': ['A3', 'A4', 'A5', 'A6', 'e-tron', 'e-tron GT', 'Q3', 'Q4 e-tron', 'Q5', 'Q7', 'Q8'],
   'BMW': ['2 Series', '3 Series', '4 Series', '5 Series', 'i4', 'i7', 'iX', 'X1', 'X3', 'X5', 'X7'],
   'Buick': ['Encore', 'Encore GX', 'Enclave', 'Envision'],
-  'Cadillac': ['CT4', 'CT5', 'Escalade', 'Lyriq', 'XT4', 'XT5', 'XT6'],
+  'Cadillac': ['CT4', 'CT5', 'Escalade', 'Lyriq', 'Optiq', 'XT4', 'XT5', 'XT6'],
   'Chevrolet': [
     'Blazer', 'Blazer EV', 'Bolt EUV', 'Bolt EV', 'Camaro', 'Colorado',
     'Equinox', 'Equinox EV', 'Impala', 'Malibu', 'Silverado 1500',

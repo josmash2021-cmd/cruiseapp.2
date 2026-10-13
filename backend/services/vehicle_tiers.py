@@ -224,7 +224,7 @@ _ELECTRIC_MODELS = {
         # Ford / GM
         "mustang mach-e", "mach-e", "f-150 lightning", "lightning",
         "blazer ev", "equinox ev", "silverado ev", "bolt", "bolt euv",
-        "lyriq",
+        "lyriq", "optiq",
         # Hyundai / Kia
         "ioniq 5", "ioniq 6", "ev6", "ev9",
         # Volkswagen

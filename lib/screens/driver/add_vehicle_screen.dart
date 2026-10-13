@@ -46,7 +46,7 @@ class _AddVehicleScreenState extends State<AddVehicleScreen> {
     'Audi': ['A3', 'A4', 'A5', 'A6', 'A7', 'A8', 'e-tron', 'e-tron GT', 'Q3', 'Q4 e-tron', 'Q5', 'Q7', 'Q8', 'TT'],
     'BMW': ['2 Series', '3 Series', '4 Series', '5 Series', '7 Series', 'i4', 'i7', 'iX', 'X1', 'X2', 'X3', 'X4', 'X5', 'X6', 'X7', 'Z4'],
     'Buick': ['Enclave', 'Encore', 'Envision', 'Envista'],
-    'Cadillac': ['CT4', 'CT5', 'Escalade', 'Lyriq', 'XT4', 'XT5', 'XT6'],
+    'Cadillac': ['CT4', 'CT5', 'Escalade', 'Lyriq', 'Optiq', 'XT4', 'XT5', 'XT6'],
     'Chevrolet': ['Blazer', 'Blazer EV', 'Bolt EUV', 'Bolt EV', 'Camaro', 'Colorado', 'Corvette', 'Equinox', 'Equinox EV', 'Impala', 'Malibu', 'Silverado', 'Silverado EV', 'Suburban', 'Tahoe', 'Trailblazer', 'Traverse', 'Trax'],
     'Chrysler': ['300', 'Pacifica', 'Voyager'],
     'Dodge': ['Challenger', 'Charger', 'Durango', 'Hornet'],

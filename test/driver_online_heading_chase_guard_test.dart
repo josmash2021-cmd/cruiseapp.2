@@ -89,13 +89,28 @@ void main() {
           isTrue,
           reason: 'offline recenter centres the arrow at street zoom, same '
               'as online');
-      // Recenter by mode (2026-10-13 spec): offline = all zones, online with
-      // a chosen zone = that zone; both free views until the car rolls.
+      // Recenter by mode (2026-10-13 spec): OFFLINE = all zones; ONLINE =
+      // the ARROW — the zone frame moved to the LEFT compass FAB.
       expect(recenter.contains('_fitAllZones()'), isTrue,
           reason: 'offline recenter frames the whole coverage');
-      expect(recenter.contains('_fitZone(sec)'), isTrue,
-          reason: 'online recenter frames the working zone');
+      expect(recenter.contains('_fitZone('), isFalse,
+          reason: 'online recenter centres the ARROW — the zone frame is '
+              'the compass button’s job, not the recenter FAB’s');
       expect(recenter.contains("recenter_fit"), isTrue);
+      // The compass (LEFT FAB) frames the zone NORTH-UP (2026-10-13 spec:
+      // "de forma recta, no de lado"); the zone view is never rotated.
+      expect(map, contains('void _onZoneCompassTap()'));
+      final fitZone = bodyOf(map, 'Future<void> _fitZone(', maxLen: 900);
+      expect(fitZone.contains('bearing: 0'), isTrue,
+          reason: 'the zone frame is always north-up');
+      expect(fitZone.contains('bearing: _smoothedBearing'), isFalse);
+      // …and the LEFT cluster carries it online with a chosen zone.
+      final scr = File('lib/screens/driver/driver_online_screen.dart')
+          .readAsStringSync();
+      final leftCluster = scr.indexOf('_onZoneCompassTap');
+      expect(leftCluster, isNonNegative);
+      expect(scr, contains('Icons.explore_rounded'),
+          reason: 'the left FAB is a compass');
       expect(recenter.contains('zoom:'), isTrue);
       expect(widgets.contains('bearing: _smoothedBearing'), isTrue,
           reason: 'the style-reload flatten must not snap the rotation to '

@@ -2307,6 +2307,27 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                 left: 16,
                 child: Column(
                   children: [
+                    // Zone compass (user spec 2026-10-13: "el botón de
+                    // recentrar de la izquierda será una brújula para ver la
+                    // zona completa de forma recta") — online with a chosen
+                    // zone: frames the whole working zone north-up.
+                    if (_driverOnline &&
+                        !isNav &&
+                        FeatureFlags.zonesMapEnabled &&
+                        _selectedZoneName != null &&
+                        _pendingOffers.isEmpty &&
+                        _acceptedOverlay == null) ...[
+                      _fab(
+                        Icons.explore_rounded,
+                        44,
+                        fabBg,
+                        fabBorder,
+                        fabIcon,
+                        _onZoneCompassTap,
+                        stagger: 0,
+                      ),
+                      const SizedBox(height: 10),
+                    ],
                     Stack(
                       clipBehavior: Clip.none,
                       children: [

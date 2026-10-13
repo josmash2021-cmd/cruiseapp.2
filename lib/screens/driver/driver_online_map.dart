@@ -2184,24 +2184,16 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     // after a pan must not yank the camera back onto the driver and leave
     // the route behind. The driver explores freely until the offer closes.
     if (_previewingOffer != null) return;
-    // Recenter by mode (user spec 2026-10-13): OFFLINE = show ALL the zones
-    // again ("para que centre todas las zonas mostrándolas"); ONLINE with a
-    // chosen zone = frame THAT zone ("centre la zona donde está activo").
-    // Both are free views — the FAB stays up, and driving re-engages the
-    // chase by itself (see _onSmoothTick).
-    if (_phase == _Phase.searching && FeatureFlags.zonesMapEnabled) {
-      if (!_driverOnline) {
-        ApiService.logClientEvent('recenter_fit', 'scope=all_zones');
-        unawaited(_fitAllZones());
-        return;
-      }
-      final sel = _selectedZoneName;
-      final sec = sel != null ? ZoneService.sectorById(sel) : null;
-      if (sec != null) {
-        ApiService.logClientEvent('recenter_fit', 'scope=zone:${sec.id}');
-        unawaited(_fitZone(sec));
-        return;
-      }
+    // Recenter by mode (user specs 2026-10-13): OFFLINE = show ALL the zones
+    // again ("para que centre todas las zonas mostrándolas"); ONLINE = centre
+    // the ARROW ("el de la derecha será para centrar en la flecha") — the
+    // zone frame lives on the LEFT compass FAB (_onZoneCompassTap).
+    if (_phase == _Phase.searching &&
+        FeatureFlags.zonesMapEnabled &&
+        !_driverOnline) {
+      ApiService.logClientEvent('recenter_fit', 'scope=all_zones');
+      unawaited(_fitAllZones());
+      return;
     }
     final bearing = _smoothedBearing;
     _cameraBearing = bearing; // sync for sprite selection
@@ -2882,9 +2874,10 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     }
   }
 
-  /// Frame ONE sector — the online recenter with a chosen zone (2026-10-13
-  /// spec: "online el recentrar centra la zona donde está activo"). A free
-  /// view: follow stays off until the driver starts rolling.
+  /// Frame ONE sector NORTH-UP (user spec 2026-10-13: "ver la zona completa
+  /// de forma recta, no de lado") — the zone compass view is always bearing
+  /// 0, never rotated to the driver's heading. A free view: follow stays off
+  /// until the driver starts rolling.
   Future<void> _fitZone(Sector sec) async {
     final map = _map;
     if (map == null || kIsWeb) return;
@@ -2895,7 +2888,7 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
           mapbox.Point(coordinates: mapbox.Position(b[0], b[1])),
           mapbox.Point(coordinates: mapbox.Position(b[2], b[3])),
         ],
-        mapbox.CameraOptions(pitch: 0, bearing: _smoothedBearing),
+        mapbox.CameraOptions(pitch: 0, bearing: 0),
         mapbox.MbxEdgeInsets(top: 130, left: 50, bottom: 210, right: 50),
         null,
         null,
@@ -2908,6 +2901,19 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     } catch (e) {
       debugPrint('[Zones] fit-zone failed: $e');
     }
+  }
+
+  /// The LEFT online FAB (user spec 2026-10-13: "el botón de recentrar de la
+  /// izquierda será una brújula para ver la zona completa de forma recta… y
+  /// el de la derecha para centrar la flecha"): frames the whole working
+  /// zone north-up. The right FAB keeps centering the arrow.
+  void _onZoneCompassTap() {
+    final sel = _selectedZoneName;
+    final sec = sel != null ? ZoneService.sectorById(sel) : null;
+    if (sec == null) return;
+    HapticService.selectionClick();
+    ApiService.logClientEvent('recenter_fit', 'scope=zone:${sec.id}');
+    unawaited(_fitZone(sec));
   }
 
   /// Sector selection by tap (user spec 2026-10-11/12: tap a sector and the

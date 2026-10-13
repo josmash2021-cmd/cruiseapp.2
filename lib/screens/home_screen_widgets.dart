@@ -1332,9 +1332,9 @@ extension _HomeScreenWidgets on _HomeScreenState {
   //
   // Was a row of four narrow cards squeezed to quarter width; now a
   // horizontal carousel of full-size cards, the next one peeking past the
-  // screen edge. Same tiers, same order (BLACK → PREMIUM → COMPACT →
-  // STANDARD), same car art, same way in (`_openSearchThenRide`) — only
-  // the reading changed.
+  // screen edge. Same tiers, same order (BLACK → PREMIUM → ELECTRIC PRO →
+  // COMPACT → STANDARD — Electric Pro added 2026-10-13), same way in
+  // (`_openSearchThenRide`) — only the reading changed.
   Widget _buildFleetStack(double screenW) {
     final active = _activeRide != null;
     final s = S.of(context);
@@ -1350,6 +1350,12 @@ extension _HomeScreenWidgets on _HomeScreenState {
         'desc': s.fleetPremiumDesc,
         'image': 'cruisert_suvxl.png',
         'rideId': 'suv_xl',
+      },
+      {
+        'displayName': 'ELECTRIC PRO',
+        'desc': s.fleetElectricProDesc,
+        'image': 'car_electric.png',
+        'rideId': 'electric_pro',
       },
       {
         'displayName': 'COMPACT',
@@ -1394,6 +1400,7 @@ extension _HomeScreenWidgets on _HomeScreenState {
                   final (tierName, tierKey) = switch (rideId) {
                     'suburban' => ('Black', 'black'),
                     'suv_xl' => ('Premium', 'premium'),
+                    'electric_pro' => ('Electric Pro', 'electric_pro'),
                     'fusion' => ('Standard', 'standard'),
                     _ => ('Compact', 'compact'),
                   };
@@ -1446,11 +1453,25 @@ extension _HomeScreenWidgets on _HomeScreenState {
                               assetPath: 'assets/images/${v['image']}',
                               cacheWidth: 640,
                               alignment: Alignment.bottomCenter,
-                              fallback: Icon(
-                                Icons.directions_car_rounded,
-                                color: _gold.withValues(alpha: 0.5),
-                                size: 56,
-                              ),
+                              // OTA rule (2026-10-13): car_electric.png is
+                              // not in older bundles — fall back to the
+                              // bundled SUV render, then the icon.
+                              fallback: v['rideId'] == 'electric_pro'
+                                  ? Image.asset(
+                                      'assets/images/car_suv.png',
+                                      fit: BoxFit.contain,
+                                      alignment: Alignment.bottomCenter,
+                                      errorBuilder: (_, __, ___) => Icon(
+                                        Icons.directions_car_rounded,
+                                        color: _gold.withValues(alpha: 0.5),
+                                        size: 56,
+                                      ),
+                                    )
+                                  : Icon(
+                                      Icons.directions_car_rounded,
+                                      color: _gold.withValues(alpha: 0.5),
+                                      size: 56,
+                                    ),
                             ),
                           ),
                         ),

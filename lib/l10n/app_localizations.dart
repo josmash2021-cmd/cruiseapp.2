@@ -2420,6 +2420,8 @@ class S {
       _es ? 'Un mejor viaje, garantizado' : 'A nicer ride, guaranteed';
   String get tierDescBlack =>
       _es ? 'Lujo total, chofer profesional' : 'Full luxury, professional driver';
+  String get tierDescElectricPro =>
+      _es ? 'Eléctrico • Cero emisiones • Viaje silencioso' : 'Electric • Zero emissions • Silent ride';
 
   // "Meet {tier}" detail sheet (2026-08-25, Lyft-style): tagline + three
   // benefit bullets per tier. The tier NAME itself is a brand word and
@@ -2465,6 +2467,16 @@ class S {
   String get tierBulletBlack3 => _es
       ? 'Choferes profesionales mejor calificados'
       : 'Professional, top-rated drivers';
+  String get tierTaglineElectricPro => _es
+      ? 'Eléctrico, silencioso y cero emisiones'
+      : 'Electric, silent and zero-emission';
+  String get tierBulletElectricPro1 => _es
+      ? 'Carros eléctricos como Tesla Model Y o Mustang Mach-E'
+      : 'Electric cars like Tesla Model Y or Mustang Mach-E';
+  String get tierBulletElectricPro2 =>
+      _es ? 'Viaje silencioso y suave' : 'A silent, smooth ride';
+  String get tierBulletElectricPro3 =>
+      _es ? 'Cero emisiones, hasta 5 pasajeros' : 'Zero emissions, up to 5 riders';
   String get bestBadge => _es ? 'MEJOR' : 'BEST';
   String get premiumBadge => 'PREMIUM';
   String get economyBadge => _es ? 'CONFORT' : 'COMFORT';
@@ -5023,6 +5035,9 @@ class S {
   String get fleetStandardDesc => _es
       ? 'Sedán de todos los días, al mejor precio'
       : 'Everyday sedan rides at our lowest price';
+  String get fleetElectricProDesc => _es
+      ? 'Eléctrico y silencioso, cero emisiones'
+      : 'Electric and silent, zero emissions';
   String get continueArrow => _es ? 'Continuar →' : 'Continue →';
   // Exact texts from the Shopify widget's __vrSearchMsgs rotation
   // (snippets-ride-request-airport.liquid:286).

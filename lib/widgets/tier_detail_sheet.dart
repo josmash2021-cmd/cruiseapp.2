@@ -12,7 +12,8 @@ class TierDetailSheet extends StatelessWidget {
   /// "Premium", "Compact", "Standard") — brand names, not localized.
   final String tierName;
 
-  /// Tier key for the copy: 'black' | 'premium' | 'standard' | 'compact'.
+  /// Tier key for the copy: 'black' | 'premium' | 'standard' | 'compact' |
+  /// 'electric_pro'.
   final String tierKey;
 
   /// Same car render the card uses, so the sheet feels like the card
@@ -103,11 +104,27 @@ class TierDetailSheet extends StatelessWidget {
                 carAssetPath,
                 height: 110,
                 fit: BoxFit.contain,
-                errorBuilder: (_, __, ___) => Icon(
-                  Icons.directions_car_rounded,
-                  color: const Color(0xFFE8C547).withValues(alpha: 0.5),
-                  size: 64,
-                ),
+                // OTA rule (2026-10-13): car_electric.png is not in older
+                // bundles — fall back to the bundled SUV render first.
+                errorBuilder: (_, __, ___) =>
+                    carAssetPath.endsWith('car_electric.png')
+                        ? Image.asset(
+                            'assets/images/car_suv.png',
+                            height: 110,
+                            fit: BoxFit.contain,
+                            errorBuilder: (_, __, ___) => Icon(
+                              Icons.directions_car_rounded,
+                              color:
+                                  const Color(0xFFE8C547).withValues(alpha: 0.5),
+                              size: 64,
+                            ),
+                          )
+                        : Icon(
+                            Icons.directions_car_rounded,
+                            color:
+                                const Color(0xFFE8C547).withValues(alpha: 0.5),
+                            size: 64,
+                          ),
               ),
             ),
             const SizedBox(height: 16),
@@ -202,6 +219,8 @@ class TierDetailSheet extends StatelessWidget {
         return s.tierTaglineBlack;
       case 'premium':
         return s.tierTaglinePremium;
+      case 'electric_pro':
+        return s.tierTaglineElectricPro;
       case 'standard':
         return s.tierTaglineStandard;
       default:
@@ -222,6 +241,12 @@ class TierDetailSheet extends StatelessWidget {
           (Icons.directions_car_rounded, s.tierBulletPremium1),
           (Icons.airline_seat_legroom_extra_rounded, s.tierBulletPremium2),
           (Icons.workspace_premium_rounded, s.tierBulletPremium3),
+        ];
+      case 'electric_pro':
+        return [
+          (Icons.electric_car_rounded, s.tierBulletElectricPro1),
+          (Icons.volume_off_rounded, s.tierBulletElectricPro2),
+          (Icons.eco_rounded, s.tierBulletElectricPro3),
         ];
       case 'standard':
         return [

@@ -563,10 +563,14 @@ extension _RiderTrackingEtaDisplay on _RiderTrackingScreenState {
             filterQuality: FilterQuality.high,
             isAntiAlias: true,
             cacheWidth: 320,
-            errorBuilder: (_, __, ___) => Icon(
-              Icons.directions_car_rounded,
-              size: 36,
-              color: Colors.white.withValues(alpha: 0.3),
+            errorBuilder: (_, __, ___) => _vehicleImageFallback(
+              Icon(
+                Icons.directions_car_rounded,
+                size: 36,
+                color: Colors.white.withValues(alpha: 0.3),
+              ),
+              width: 80,
+              height: 50,
             ),
           ),
         ),

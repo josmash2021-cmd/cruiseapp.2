@@ -690,6 +690,10 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
           return (7.50, 2.75, 0.50, 3.00, 20.00);
         case 'premium':
           return (3.00, 1.75, 0.30, 2.75, 12.00);
+        // Electric Pro (2026-10-13): the midpoint between Standard and
+        // Premium — only electric vehicles serve it (backend eligibility).
+        case 'electric_pro':
+          return (2.50, 1.40, 0.25, 2.60, 10.00);
         case 'compact':
           return (2.50, 1.15, 0.22, 2.50, 9.00);
         default: // standard
@@ -753,6 +757,16 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
         etaMinutes: baseDuration + 2,
         icon: '🚙',
         capacity: 6,
+        surgeMultiplier: surge,
+      ),
+      RideOption(
+        id: 'electric_pro',
+        name: 'Electric Pro',
+        description: 'Electric • Zero emissions • Silent ride',
+        priceEstimate: _round(flDiscount(withAirport(anchoredTotal('electric_pro')) * surge)),
+        etaMinutes: baseDuration + 2,
+        icon: '⚡',
+        capacity: 5,
         surgeMultiplier: surge,
       ),
       RideOption(

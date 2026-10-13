@@ -82,12 +82,13 @@ class _ScheduleHubScreenState extends State<ScheduleHubScreen> {
             dt.year, dt.month, dt.day, dt.hour, dt.minute, dt.second);
   }
 
-  /// Display name in the CURRENT four-tier catalogue (Compact / Standard /
-  /// Premium / Black) — tripTierKey normalises legacy booking names
-  /// ("comfort" -> Standard, "SUV XL" -> Premium, "vip" -> Black) the same
-  /// way the booking sheet named them.
+  /// Display name in the CURRENT tier catalogue (Compact / Standard /
+  /// Electric Pro / Premium / Black) — tripTierKey normalises legacy
+  /// booking names ("comfort" -> Standard, "SUV XL" -> Premium, "vip" ->
+  /// Black) the same way the booking sheet named them.
   static String _tierLabel(dynamic vehicleType) {
     final k = tripTierKey(vehicleType as String?);
+    if (k == kTierElectricPro) return 'Electric Pro';
     return k[0].toUpperCase() + k.substring(1);
   }
 
@@ -102,7 +103,9 @@ class _ScheduleHubScreenState extends State<ScheduleHubScreen> {
     final sa = _parseSchedAt(t);
     if (sa != null && sa.difference(DateTime.now()).inMinutes > 60) return 0;
     final feeTier = tierKey(t['vehicle_type'] as String?);
-    final feeLabel = feeTier[0].toUpperCase() + feeTier.substring(1);
+    final feeLabel = feeTier == kTierElectricPro
+        ? 'Electric Pro'
+        : feeTier[0].toUpperCase() + feeTier.substring(1);
     final fee = (kScheduledCancelFeesUsd[feeLabel] ?? 15).toDouble();
     final fare = (t['fare'] as num?)?.toDouble() ?? 0;
     return fare > 0 && fare < fee ? fare : fee;

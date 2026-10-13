@@ -240,12 +240,13 @@ extension _RideRequestWidgets on _RideRequestScreenState {
     final bool faresReady = displayOptions.isNotEmpty;
     if (!faresReady) displayOptions = _placeholderTiers();
 
-    // Fixed top→bottom tier order (user spec 2026-08-22): Black, Premium,
-    // Compact, Standard. The controller already builds them in this order;
+    // Fixed top→bottom tier order (user spec 2026-08-22; Electric Pro added
+    // 2026-10-13): Black, Premium, Electric Pro, Compact, Standard. The
+    // controller already builds them in this order;
     // the sort pins it IN THE SHEET (prices and every other consumer of
     // rideOptions keep their own order untouched), so nothing upstream can
     // reshuffle the rider's list. Unknown ids sink to the bottom, stable.
-    const tierOrder = ['suburban', 'suv_xl', 'camry', 'fusion'];
+    const tierOrder = ['suburban', 'suv_xl', 'electric_pro', 'camry', 'fusion'];
     displayOptions = [...displayOptions]..sort((a, b) {
       final ia = tierOrder.indexOf(a.id);
       final ib = tierOrder.indexOf(b.id);
@@ -763,7 +764,7 @@ extension _RideRequestWidgets on _RideRequestScreenState {
     return Column(
       key: const ValueKey('tierSkeletons'),
       mainAxisSize: MainAxisSize.min,
-      children: [row(), row(), row(), row()],
+      children: [row(), row(), row(), row(), row()],
     );
   }
 
@@ -775,12 +776,15 @@ extension _RideRequestWidgets on _RideRequestScreenState {
     final isSuv = opt.id == 'suburban';
     final isFusion = opt.id == 'fusion';
     final isSuvXl = opt.id == 'suv_xl';
-    final isPremium = !isSuv && !isSuvXl && !isFusion;
+    final isElectric = opt.id == 'electric_pro';
+    final isPremium = !isSuv && !isSuvXl && !isFusion && !isElectric;
     return isSuv
         ? 'Black'
         : isSuvXl
             ? 'Premium'
-            : (isPremium ? 'Compact' : 'Standard');
+            : isElectric
+                ? 'Electric Pro'
+                : (isPremium ? 'Compact' : 'Standard');
   }
 
   Widget _buildTierRow(AppColors c, RideOption opt, bool selected,
@@ -864,12 +868,27 @@ extension _RideRequestWidgets on _RideRequestScreenState {
                                 assetPath: _carAssetForOption(opt.name),
                                 cacheWidth: 640,
                                 alignment: Alignment.center,
-                                fallback: Icon(
-                                  Icons.directions_car_rounded,
-                                  color: const Color(0xFFE8C547)
-                                      .withValues(alpha: 0.5),
-                                  size: 30,
-                                ),
+                                // OTA rule (2026-10-13): car_electric.png is
+                                // not in older bundles (Shorebird patches
+                                // carry no new assets) — fall back to the
+                                // bundled SUV render, then the icon.
+                                fallback: opt.id == 'electric_pro'
+                                    ? Image.asset(
+                                        'assets/images/car_suv.png',
+                                        fit: BoxFit.contain,
+                                        errorBuilder: (_, __, ___) => Icon(
+                                          Icons.directions_car_rounded,
+                                          color: const Color(0xFFE8C547)
+                                              .withValues(alpha: 0.5),
+                                          size: 30,
+                                        ),
+                                      )
+                                    : Icon(
+                                        Icons.directions_car_rounded,
+                                        color: const Color(0xFFE8C547)
+                                            .withValues(alpha: 0.5),
+                                        size: 30,
+                                      ),
                               ),
                             ),
                             const SizedBox(width: 12),
@@ -1057,6 +1076,8 @@ extension _RideRequestWidgets on _RideRequestScreenState {
         return s.tierDescBlack;
       case 'suv_xl':
         return s.tierDescPremium;
+      case 'electric_pro':
+        return s.tierDescElectricPro;
       case 'camry':
         return s.tierDescCompact;
       default:
@@ -1282,6 +1303,9 @@ extension _RideRequestWidgets on _RideRequestScreenState {
   String _carAssetForOption(String name) {
     // Same three pre-cropped renders as the home "Choose a ride" cards.
     final key = name.trim().toLowerCase();
+    // Electric Pro carries its own render (car_electric.png) — every
+    // Image.asset of it falls back to car_suv.png (OTA rule 2026-10-13).
+    if (key.contains('electric')) return 'assets/images/car_electric.png';
     if (key.contains('suv xl')) return 'assets/images/cruisert_suvxl.png';
     if (key.contains('vip') || key.contains('suburban')) return 'assets/images/cruisert1.png';
     // The camry tier shows as COMPACT, so it carries the compact SUV render
@@ -1335,6 +1359,8 @@ extension _RideRequestWidgets on _RideRequestScreenState {
         return 'black';
       case 'suv_xl':
         return 'premium';
+      case 'electric_pro':
+        return 'electric_pro';
       case 'fusion':
         return 'standard';
       default:
@@ -1934,7 +1960,7 @@ extension _RideRequestWidgets on _RideRequestScreenState {
     );
   }
 
-  /// The four tiers with everything the route decides left out.
+  /// The five tiers with everything the route decides left out.
   ///
   /// Ids and names match what [_generateRideOptions] builds, because the same
   /// card widgets read them to pick the badge, the label and the car. A price
@@ -1958,6 +1984,15 @@ extension _RideRequestWidgets on _RideRequestScreenState {
           etaMinutes: 0,
           icon: '🚙',
           capacity: 6,
+        ),
+        RideOption(
+          id: 'electric_pro',
+          name: 'Electric Pro',
+          description: 'Electric • Zero emissions • Silent ride',
+          priceEstimate: 0,
+          etaMinutes: 0,
+          icon: '⚡',
+          capacity: 5,
         ),
         RideOption(
           id: 'camry',

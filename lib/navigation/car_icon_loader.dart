@@ -110,7 +110,8 @@ class CarIconLoader {
   /// Sedan -> 3D black sedan render
   static Future<Uint8List?> loadForRideBytes(String rideName) async {
     final key = rideName.trim().toLowerCase();
-    if (key.contains('suv') || key.contains('suburban')) {
+    // Electric Pro's art is a dark SUV — the black SUV render is its shape.
+    if (key.contains('electric') || key.contains('suv') || key.contains('suburban')) {
       return loadUberBytes(rideType: 'suv');
     } else if (key.contains('comfort')) {
       return loadUberBytes(rideType: 'comfort');
@@ -148,7 +149,7 @@ class CarIconLoader {
   }) async {
     final key = rideName.trim().toLowerCase();
     final String typeKey;
-    if (key.contains('suv') || key.contains('suburban')) {
+    if (key.contains('electric') || key.contains('suv') || key.contains('suburban')) {
       typeKey = 'suv_black';
     } else if (key.contains('comfort')) {
       typeKey = 'white';
@@ -219,7 +220,7 @@ class CarIconLoader {
     final key = rideName.trim().toLowerCase();
     final String cacheKey;
     String rideType;
-    if (key.contains('suv') || key.contains('suburban')) {
+    if (key.contains('electric') || key.contains('suv') || key.contains('suburban')) {
       cacheKey = 'card_suv';
       rideType = 'suv';
     } else if (key.contains('comfort')) {

@@ -13,6 +13,9 @@ import 'package:flutter_test/flutter_test.dart';
 /// _carAssetForOption in lib/screens/ride_request_widgets.dart
 String pickerAsset(String name) {
   final key = name.trim().toLowerCase();
+  if (key.contains('electric')) {
+    return 'assets/images/car_electric.png';
+  }
   if (key.contains('vip') || key.contains('suburban')) {
     return 'assets/images/cruisert1.png';
   }
@@ -26,6 +29,9 @@ String pickerAsset(String name) {
 String trackingAsset({required String rideName, required String model}) {
   final rn = rideName.toLowerCase();
   final m = model.toLowerCase();
+  if (rn.contains('electric')) {
+    return 'assets/images/car_electric.png';
+  }
   if (rn.contains('vip') || rn.contains('black') ||
       rn.contains('suv') || rn.contains('suburban') ||
       m.contains('suburban')) {
@@ -49,6 +55,7 @@ void main() {
       'sedan': ['Toyota Camry', 'Camry'],
       'premium': ['Toyota Camry', 'Camry'],
       'comfort': ['Ford Fusion', 'Fusion'],
+      'electric_pro': ['Tesla Model Y', 'Electric Pro'],
     };
 
     cases.forEach((vehicleType, pair) {

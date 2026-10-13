@@ -1075,7 +1075,9 @@ extension _RideRequestController on _RideRequestScreenState {
                               builder: (_) {
                                 final optName = (option.name).toLowerCase();
                                 String asset = 'assets/images/car_economy.png';
-                                if (optName.contains('suburban') || optName.contains('vip') || optName.contains('suv')) {
+                                if (optName.contains('electric')) {
+                                  asset = 'assets/images/car_electric.png';
+                                } else if (optName.contains('suburban') || optName.contains('vip') || optName.contains('suv')) {
                                   asset = 'assets/images/car_suv.png';
                                 } else if (optName.contains('camry') || optName.contains('premium') || optName.contains('sedan')) {
                                   asset = 'assets/images/car_sedan.png';
@@ -1088,11 +1090,25 @@ extension _RideRequestController on _RideRequestScreenState {
                                   filterQuality: FilterQuality.high,
                                   isAntiAlias: true,
                                   cacheWidth: 256,
-                                  errorBuilder: (_, __, ___) => Icon(
-                                    Icons.directions_car_rounded,
-                                    color: c.gold,
-                                    size: 28,
-                                  ),
+                                  // car_electric.png is not in older bundles
+                                  // (OTA rule) — fall back to the SUV first.
+                                  errorBuilder: (_, __, ___) => asset.contains('car_electric')
+                                      ? Image.asset(
+                                          'assets/images/car_suv.png',
+                                          width: 40,
+                                          height: 40,
+                                          fit: BoxFit.contain,
+                                          errorBuilder: (_, __, ___) => Icon(
+                                            Icons.directions_car_rounded,
+                                            color: c.gold,
+                                            size: 28,
+                                          ),
+                                        )
+                                      : Icon(
+                                          Icons.directions_car_rounded,
+                                          color: c.gold,
+                                          size: 28,
+                                        ),
                                 );
                               },
                             ),

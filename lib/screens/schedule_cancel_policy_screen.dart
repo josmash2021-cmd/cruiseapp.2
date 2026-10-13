@@ -10,6 +10,7 @@ import '../widgets/neu_style.dart';
 const Map<String, int> kScheduledCancelFeesUsd = {
   'Compact': 10,
   'Standard': 15,
+  'Electric Pro': 20,
   'Premium': 25,
   'Black': 35,
 };

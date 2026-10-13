@@ -4,9 +4,9 @@ import '../widgets/steering_wheel_icon.dart';
 
 /// How a vehicle tier looks, in one place.
 ///
-/// Standard / Compact / Premium / Black. The backend decides which tier a
-/// car earns (`backend/services/vehicle_tiers.py`); this decides what the
-/// rider and the driver see when it does.
+/// Standard / Compact / Electric Pro / Premium / Black. The backend decides
+/// which tier a car earns (`backend/services/vehicle_tiers.py`); this decides
+/// what the rider and the driver see when it does.
 ///
 /// It exists because the mapping was written twice — once in the rider's
 /// ride picker and once on the driver's vehicle page — and had already
@@ -16,15 +16,19 @@ import '../widgets/steering_wheel_icon.dart';
 /// Every function here takes the raw `vehicle_type` string and normalises
 /// it first, so the old names keep working until the rows are migrated.
 
-/// The four canonical keys, worst to best.
+/// The canonical keys, worst to best. Electric Pro (2026-10-13) slots
+/// between Compact and Premium — the price midpoint between Standard and
+/// Premium, served only by electric vehicles.
 const kTierStandard = 'standard';
 const kTierCompact = 'compact';
+const kTierElectricPro = 'electric_pro';
 const kTierPremium = 'premium';
 const kTierBlack = 'black';
 
 const kVehicleTiers = <String>[
   kTierStandard,
   kTierCompact,
+  kTierElectricPro,
   kTierPremium,
   kTierBlack,
 ];
@@ -35,6 +39,7 @@ const _aliases = <String, String>{
   'comfort': kTierStandard,
   'sedan': kTierStandard,
   'economy': kTierStandard,
+  'electric': kTierElectricPro,
   'suv': kTierCompact,
   'rav4': kTierCompact,
   // A Traverse: three rows, six seats. Premium, not Black — Black is the
@@ -54,6 +59,7 @@ const _aliases = <String, String>{
 const _textTokens = <(String, String)>[
   ('suv_xl', kTierPremium),
   ('suvxl', kTierPremium),
+  ('electric', kTierElectricPro),
   ('suburban', kTierBlack),
   ('escalade', kTierBlack),
   ('luxury', kTierBlack),
@@ -95,17 +101,23 @@ String tierKey(String? raw) {
 /// picture is the whole promise — and the driver has to see the same
 /// shape on their own vehicle page.
 ///
-/// All four are the `cruisert*` set: the same side profile, the same
+/// Four are the `cruisert*` set: the same side profile, the same
 /// black-and-gold render, shot from the same angle. The older `cruise_3`
 /// / `cruise_6` / `cruise_7` files are three-quarter views, so mixing
 /// them in meant Standard and Black faced the camera while Compact and
 /// Premium stood side-on, in a row where they sit next to each other.
+/// Electric Pro is the exception: its own `car_electric.png` render.
 String tierCarImage(String? raw) {
   switch (tierKey(raw)) {
     case kTierBlack:
       return 'assets/images/cruisert1.png'; // Tahoe / Suburban
     case kTierPremium:
       return 'assets/images/cruisert_suvxl.png'; // Traverse, three rows
+    // Dark electric SUV with gold trim. NOT in the cruisert set — and not
+    // in older bundles: Shorebird patches carry no new assets, so every
+    // render of it must errorBuilder-fall back to car_suv.png (OTA rule).
+    case kTierElectricPro:
+      return 'assets/images/car_electric.png';
     case kTierCompact:
       return 'assets/images/cruisert_compact.png'; // RAV4
     default:
@@ -114,7 +126,9 @@ String tierCarImage(String? raw) {
 }
 
 /// Uppercase, because every place that shows it shows it uppercase.
-String tierLabel(String? raw) => tierKey(raw).toUpperCase();
+/// ('electric_pro' is the one multi-word key — the underscore never shows.)
+String tierLabel(String? raw) =>
+    tierKey(raw).replaceAll('_', ' ').toUpperCase();
 
 /// What a TRIP's `vehicle_type` means for display. Trip rows store the
 /// booking option's display name, not a car class — and the picker sold
@@ -128,6 +142,7 @@ String tripTierKey(String? raw) {
       .replaceAll(RegExp(r'[ \-]'), '_');
   if (k.isEmpty) return kTierStandard;
   if (kVehicleTiers.contains(k)) return k;
+  if (k.contains('electric')) return kTierElectricPro;
   // "suv" first: "SUV XL" must not fall into the vip/black branch.
   if (k.contains('suv')) return kTierPremium;
   if (k.contains('vip') ||
@@ -147,14 +162,16 @@ String tripTierKey(String? raw) {
   return kTierStandard;
 }
 
-/// Premium and Black keep the colours they have always had. The two new
-/// tiers take the gap below them.
+/// Premium and Black keep the colours they have always had. The tiers
+/// below them take the gap — Electric Pro the electric cyan.
 Color tierColor(String? raw) {
   switch (tierKey(raw)) {
     case kTierBlack:
       return const Color(0xFFD4A843);
     case kTierPremium:
       return const Color(0xFFB0BEC5);
+    case kTierElectricPro:
+      return const Color(0xFF4DD0E1);
     case kTierCompact:
       return const Color(0xFF66BB6A);
     default:
@@ -182,6 +199,8 @@ IconData tierIcon(String? raw) {
       return Icons.star_rounded;
     case kTierPremium:
       return Icons.diamond_rounded;
+    case kTierElectricPro:
+      return Icons.bolt_rounded;
     case kTierCompact:
       return Icons.eco_rounded;
     default:

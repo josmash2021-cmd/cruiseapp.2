@@ -120,8 +120,9 @@ void main() {
     final start = widgets.indexOf('Widget _buildFleetStack(');
     // Wide enough to reach the Continue label past the AspectRatio band
     // (the window was 5600 and the shared-frame box pushed it out; the
-    // Meet-{tier} sheet wiring pushed it further — 7600 now).
-    final block = widgets.substring(start, start + 7600);
+    // Meet-{tier} sheet wiring pushed it further — 7600 then, 9000 with
+    // the Electric Pro card of 2026-10-13).
+    final block = widgets.substring(start, start + 9000);
 
     test('is a horizontal carousel with peek, not the quarter-width row', () {
       expect(block, contains('ListView.separated('));
@@ -130,14 +131,17 @@ void main() {
           reason: 'the four-across Row was replaced by the carousel');
     });
 
-    test('four tiers in BLACK → PREMIUM → COMPACT → STANDARD order', () {
+    test('five tiers in BLACK → PREMIUM → ELECTRIC PRO → COMPACT → STANDARD '
+        'order', () {
       final black = block.indexOf("'BLACK'");
       final premium = block.indexOf("'PREMIUM'");
+      final electric = block.indexOf("'ELECTRIC PRO'");
       final compact = block.indexOf("'COMPACT'");
       final standard = block.indexOf("'STANDARD'");
       expect(black, greaterThan(-1));
       expect(black, lessThan(premium));
-      expect(premium, lessThan(compact));
+      expect(premium, lessThan(electric));
+      expect(electric, lessThan(compact));
       expect(compact, lessThan(standard));
     });
 
@@ -145,6 +149,7 @@ void main() {
       for (final key in [
         'fleetBlackDesc',
         'fleetPremiumDesc',
+        'fleetElectricProDesc',
         'fleetCompactDesc',
         'fleetStandardDesc',
       ]) {
@@ -175,6 +180,8 @@ void main() {
       ]) {
         expect(block, contains(asset), reason: 'missing $asset');
       }
+      // Electric Pro (2026-10-13) is the one card outside the cruisert set.
+      expect(block, contains('car_electric.png'));
     });
 
     test('the card top fades so the car floats on the page', () {

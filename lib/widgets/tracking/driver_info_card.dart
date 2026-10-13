@@ -20,6 +20,10 @@ extension _RiderTrackingDriverInfoCard on _RiderTrackingScreenState {
   String get _vehicleAsset {
     final rn = widget.rideName.toLowerCase();
     final m = widget.vehicleModel.toLowerCase();
+    // Electric Pro's own render. Every Image.asset of it falls back to
+    // car_suv.png on older bundles (OTA rule 2026-10-13) — that wiring
+    // lives in [_vehicleImageFallback], used by both render sites.
+    if (rn.contains('electric')) return 'assets/images/car_electric.png';
     if (rn.contains('vip') || rn.contains('black') ||
         rn.contains('suv') || rn.contains('suburban') ||
         m.contains('suburban')) {
@@ -33,6 +37,22 @@ extension _RiderTrackingDriverInfoCard on _RiderTrackingScreenState {
     // branch above: the picker sends the Fusion here too, and the whole
     // point is that both screens show the rider the same car.
     return 'assets/images/cruisert3.png';
+  }
+
+  /// errorBuilder for [_vehicleAsset] renders: the electric PNG is not in
+  /// older bundles (Shorebird patches carry no new assets), so it falls
+  /// back to the SUV render bundled since release — every other asset
+  /// falls straight to [icon].
+  Widget _vehicleImageFallback(Widget icon,
+      {double? width, double? height}) {
+    if (!_vehicleAsset.endsWith('car_electric.png')) return icon;
+    return Image.asset(
+      'assets/images/car_suv.png',
+      width: width,
+      height: height,
+      fit: BoxFit.contain,
+      errorBuilder: (_, __, ___) => icon,
+    );
   }
 
   Widget _driverInitial() => Container(
@@ -1584,10 +1604,14 @@ extension _RiderTrackingDriverInfoCard on _RiderTrackingScreenState {
             width: double.infinity,
             height: h,
             fit: BoxFit.contain,
-            errorBuilder: (_, __, ___) => Icon(
-              Icons.directions_car_rounded,
-              color: AppColors.kGold.withValues(alpha: 0.5),
-              size: Responsive.sp(22),
+            errorBuilder: (_, __, ___) => _vehicleImageFallback(
+              Icon(
+                Icons.directions_car_rounded,
+                color: AppColors.kGold.withValues(alpha: 0.5),
+                size: Responsive.sp(22),
+              ),
+              width: double.infinity,
+              height: h,
             ),
           ),
         ],

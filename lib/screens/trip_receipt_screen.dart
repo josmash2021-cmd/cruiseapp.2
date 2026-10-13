@@ -182,6 +182,7 @@ class _TripReceiptScreenState extends State<TripReceiptScreen>
   /// every receipt comes back BLACK.
   String _tierLabel(String vehicleType) {
     final n = vehicleType.toLowerCase();
+    if (n.contains('electric')) return 'ELECTRIC PRO';
     if (n.contains('suv')) return 'PREMIUM';
     if (n.contains('vip') || n.contains('suburban') || n.contains('black')) {
       return 'BLACK';
@@ -192,9 +193,10 @@ class _TripReceiptScreenState extends State<TripReceiptScreen>
     return 'STANDARD';
   }
 
-  /// The car that goes with it — the same four renders the booking sheet uses.
+  /// The car that goes with it — the same renders the booking sheet uses.
   String _tierAsset(String vehicleType) {
     final n = vehicleType.toLowerCase();
+    if (n.contains('electric')) return 'assets/images/car_electric.png';
     if (n.contains('suv')) return 'assets/images/cruisert_suvxl.png';
     if (n.contains('vip') || n.contains('suburban') || n.contains('black')) {
       return 'assets/images/cruisert1.png';
@@ -432,8 +434,24 @@ class _TripReceiptScreenState extends State<TripReceiptScreen>
                                         // render's cabin mass sits right,
                                         // so dead-centre reads as right.
                                         alignment: Alignment(-0.45, 0),
+                                        // OTA rule: car_electric.png is not
+                                        // in older bundles — fall back to
+                                        // the SUV render first.
                                         errorBuilder: (_, __, ___) =>
-                                            const SizedBox.shrink(),
+                                            _tierAsset(trip.rideName)
+                                                    .endsWith(
+                                                        'car_electric.png')
+                                                ? Image.asset(
+                                                    'assets/images/car_suv.png',
+                                                    fit: BoxFit.contain,
+                                                    alignment:
+                                                        Alignment(-0.45, 0),
+                                                    errorBuilder: (_,
+                                                            __, ___) =>
+                                                        const SizedBox
+                                                            .shrink(),
+                                                  )
+                                                : const SizedBox.shrink(),
                                       ),
                                     ),
                                   ],

@@ -272,11 +272,14 @@ class _RideHistoryScreenState extends State<RideHistoryScreen> {
   /// booking-name mapping (a "Sedan" booking was sold as Compact), not the
   /// vehicle classification in tierKey.
   static String _tierLabel(String vehicleType) =>
-      tripTierKey(vehicleType).toUpperCase();
+      tripTierKey(vehicleType).replaceAll('_', ' ').toUpperCase();
 
-  /// The car that goes with it — the same four renders the booking sheet uses.
+  /// The car that goes with it — the same renders the booking sheet uses.
   static String _tierAsset(String vehicleType) {
     final n = vehicleType.toLowerCase();
+    // Renders with the OTA fallback below (car_electric is not in older
+    // bundles): electric falls to the SUV, everything else to nothing.
+    if (n.contains('electric')) return 'assets/images/car_electric.png';
     if (n.contains('suv')) return 'assets/images/cruisert_suvxl.png';
     if (n.contains('vip') || n.contains('suburban') || n.contains('black')) {
       return 'assets/images/cruisert1.png';
@@ -350,7 +353,18 @@ class _RideHistoryScreenState extends State<RideHistoryScreen> {
                       child: Image.asset(
                         _tierAsset(trip.rideName),
                         fit: BoxFit.contain,
-                        errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                        // OTA rule: car_electric.png is not in older
+                        // bundles — fall back to the SUV render first.
+                        errorBuilder: (_, __, ___) =>
+                            _tierAsset(trip.rideName)
+                                    .endsWith('car_electric.png')
+                                ? Image.asset(
+                                    'assets/images/car_suv.png',
+                                    fit: BoxFit.contain,
+                                    errorBuilder: (_, __, ___) =>
+                                        const SizedBox.shrink(),
+                                  )
+                                : const SizedBox.shrink(),
                       ),
                     ),
                   ],

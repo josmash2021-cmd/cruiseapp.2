@@ -8,17 +8,20 @@ import 'package:cruise_app/utils/vehicle_tier_style.dart';
 /// about to pay for, and it matches on substrings, which is the kind of
 /// rule that breaks quietly. Mirrors backend/tests/test_vehicle_tiers.py.
 void main() {
-  group('the four canonical keys', () {
+  group('the canonical keys', () {
     test('pass through untouched', () {
       expect(tierKey('standard'), kTierStandard);
       expect(tierKey('compact'), kTierCompact);
       expect(tierKey('premium'), kTierPremium);
       expect(tierKey('black'), kTierBlack);
+      expect(tierKey('electric_pro'), kTierElectricPro);
     });
 
     test('are case and separator insensitive', () {
       expect(tierKey('BLACK'), kTierBlack);
       expect(tierKey('  Premium  '), kTierPremium);
+      expect(tierKey('Electric Pro'), kTierElectricPro);
+      expect(tierKey('electric-pro'), kTierElectricPro);
     });
   });
 
@@ -64,9 +67,14 @@ void main() {
       expect(tierCarImage('black'), 'assets/images/cruisert1.png');
     });
 
-    test('are four different pictures', () {
+    test('Electric Pro carries its own render', () {
+      expect(tierCarImage('electric_pro'), 'assets/images/car_electric.png');
+      expect(tierCarImage('Electric Pro'), 'assets/images/car_electric.png');
+    });
+
+    test('are five different pictures', () {
       final seen = kVehicleTiers.map(tierCarImage).toSet();
-      expect(seen.length, 4);
+      expect(seen.length, 5);
     });
 
     test('none of them is from the old three-quarter set', () {
@@ -106,12 +114,12 @@ void main() {
     });
     test('each tier is its own colour', () {
       final colours = kVehicleTiers.map(tierColor).toSet();
-      expect(colours.length, 4);
+      expect(colours.length, 5);
     });
 
     test('each tier is its own icon', () {
       final icons = kVehicleTiers.map(tierIcon).toSet();
-      expect(icons.length, 4);
+      expect(icons.length, 5);
     });
   });
 
@@ -124,6 +132,7 @@ void main() {
       expect(tripTierKey('Sedan'), kTierCompact);
       expect(tripTierKey('SUV XL'), kTierPremium);
       expect(tripTierKey('VIP'), kTierBlack);
+      expect(tripTierKey('Electric Pro'), kTierElectricPro);
     });
 
     test('canonical keys pass through', () {
@@ -131,6 +140,7 @@ void main() {
       expect(tripTierKey('compact'), kTierCompact);
       expect(tripTierKey('premium'), kTierPremium);
       expect(tripTierKey('black'), kTierBlack);
+      expect(tripTierKey('electric_pro'), kTierElectricPro);
     });
 
     test('nothing to go on is Standard', () {

@@ -35,7 +35,7 @@ void main() {
       expect(start, greaterThan(-1));
       final block = policy.substring(start, policy.indexOf('};', start));
       final out = <String, int>{};
-      for (final m in RegExp(r"'(\w+)': (\d+)").allMatches(block)) {
+      for (final m in RegExp(r"'([\w ]+)': (\d+)").allMatches(block)) {
         out[m.group(1)!] = int.parse(m.group(2)!);
       }
       return out;
@@ -52,13 +52,25 @@ void main() {
       return out;
     }
 
-    test('both sources define the same four tiers at the same price', () {
+    test('both sources define the same five tiers at the same price', () {
       final dart = parseDartTable();
       final py = parsePyTable();
-      expect(dart, {'Compact': 10, 'Standard': 15, 'Premium': 25, 'Black': 35});
-      expect(py, {'compact': 10.0, 'standard': 15.0, 'premium': 25.0, 'black': 35.0});
+      expect(dart, {
+        'Compact': 10,
+        'Standard': 15,
+        'Electric Pro': 20,
+        'Premium': 25,
+        'Black': 35,
+      });
+      expect(py, {
+        'compact': 10.0,
+        'standard': 15.0,
+        'electric_pro': 20.0,
+        'premium': 25.0,
+        'black': 35.0,
+      });
       for (final e in dart.entries) {
-        final key = e.key.toLowerCase();
+        final key = e.key.toLowerCase().replaceAll(' ', '_');
         expect(py[key], e.value.toDouble(),
             reason: '${e.key}: page says \$${e.value}, backend captures \$${py[key]}');
       }

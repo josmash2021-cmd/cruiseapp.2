@@ -79,7 +79,9 @@ class TrackingMapCar {
     final rideNameLower = rideName.toLowerCase();
     String carAsset;
 
-    if (rideNameLower.contains('vip') || rideNameLower.contains('suv') ||
+    if (rideNameLower.contains('electric')) {
+      carAsset = 'assets/images/car_electric.png';
+    } else if (rideNameLower.contains('vip') || rideNameLower.contains('suv') ||
         rideNameLower.contains('suburban') || rideNameLower.contains('luxury')) {
       carAsset = 'assets/images/car_suv.png';
     } else if (rideNameLower.contains('sedan') || rideNameLower.contains('premium') ||
@@ -97,8 +99,13 @@ class TrackingMapCar {
       debugPrint('[TrackingMapCar] loaded ${_carPngBytes!.length} PNG bytes');
     } catch (e) {
       debugPrint('[TrackingMapCar] FAILED to load $carAsset: $e');
+      // car_electric.png is not in older bundles (OTA rule 2026-10-13) —
+      // its fallback is the bundled SUV, everyone else falls to economy.
+      final fallback = carAsset.contains('car_electric')
+          ? 'assets/images/car_suv.png'
+          : 'assets/images/car_economy.png';
       try {
-        final raw = await rootBundle.load('assets/images/car_economy.png');
+        final raw = await rootBundle.load(fallback);
         _carPngBytes = await _resizePngForMap(raw.buffer.asUint8List(), maxDim: 240);
       } catch (e) {
         debugPrint('[TrackingMapCar] Fallback car load failed: $e');

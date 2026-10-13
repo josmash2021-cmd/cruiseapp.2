@@ -73,6 +73,17 @@ class TierInfo {
           isComfort: false,
           isCompact: true,
         );
+      case kTierElectricPro:
+        return const TierInfo._(
+          bgGradient: [Color(0xFF9EE7F5), Color(0xFF2AABBE)],
+          textColor: Color(0xFF07333B),
+          label: 'Electric Pro',
+          icon: Icons.bolt_rounded,
+          isVIP: false,
+          isPremium: false,
+          isComfort: false,
+          isCompact: false,
+        );
       default:
         return const TierInfo._(
           bgGradient: [Color(0xFFE8E8E8), Color(0xFFB0B0B0)],
@@ -101,6 +112,7 @@ class TierInfo {
   /// "VIP" -> "Black", "Sedan" -> "Compact".
   static String displayTitle(String rideName) {
     final k = tripTierKey(rideName);
+    if (k == kTierElectricPro) return 'Electric Pro';
     return k[0].toUpperCase() + k.substring(1);
   }
 }

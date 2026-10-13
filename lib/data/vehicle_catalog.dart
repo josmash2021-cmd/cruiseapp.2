@@ -2,10 +2,10 @@
 /// capture screen. Keep small and stable — no network dependency.
 library;
 
-/// Model years allowed by platform policy (2012 or newer, up to next year).
+/// Model years allowed by platform policy (2018 or newer, up to next year).
 List<int> vehicleYears() {
   final max = DateTime.now().year + 1;
-  return [for (var y = max; y >= 2012; y--) y];
+  return [for (var y = max; y >= 2018; y--) y];
 }
 
 /// ~30 common US makes.

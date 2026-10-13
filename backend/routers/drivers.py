@@ -3258,6 +3258,8 @@ async def add_vehicle(body: VehicleIn, user: User = Depends(_get_current_user), 
     result = await db.execute(select(Vehicle).where(Vehicle.user_id == user.id))
     existing = result.scalars().all()
     is_first = len(existing) == 0
+    if body.year is not None and body.year < 2018:
+        raise HTTPException(400, "Vehicle year must be 2018 or newer")
 
     vehicle = Vehicle(
         user_id=user.id,

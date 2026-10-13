@@ -87,8 +87,9 @@ class _AddVehicleScreenState extends State<AddVehicleScreen> {
   ];
 
   static List<String> get _years {
+    // Piso 2018 (user spec 2026-10-13): nada más viejo es seleccionable.
     final current = DateTime.now().year;
-    return List.generate(current - 2011, (i) => (current - i).toString());
+    return List.generate(current - 2017, (i) => (current - i).toString());
   }
 
   static const List<int> _doorsOptions = [2, 3, 4, 5];

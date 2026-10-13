@@ -415,7 +415,7 @@ class _DriverSignupScreenState extends State<DriverSignupScreen>
     final year = int.tryParse(_yearCtrl.text.trim()) ?? 0;
     return _makeCtrl.text.trim().isNotEmpty &&
         _modelCtrl.text.trim().isNotEmpty &&
-        year >= 2000 &&
+        year >= 2018 &&
         year <= DateTime.now().year + 1 &&
         _colorCtrl.text.trim().isNotEmpty &&
         _plateCtrl.text.trim().isNotEmpty;

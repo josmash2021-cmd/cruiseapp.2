@@ -7,7 +7,7 @@ Pins the contract the app builds against:
   users.onboarding_items layer on top.
 - POST plate/ssn/vehicle/background persist the data and mark the item
   "submitted".
-- Vehicle year < 2012 → 400.
+- Vehicle year < 2018 → 400 (floor moved from 2012, user spec 2026-10-13).
 - dispatch-reject with item+reason writes a "rejected" override and pushes
   "Documento rechazado" via FCM.
 - resubmit moves an item back to "pending" and clears the reason; a fresh
@@ -223,18 +223,18 @@ async def test_post_vehicle_classifies_tier_on_submit(client, db, test_driver):
     resp = await client.post(
         "/auth/onboarding-items/vehicle",
         headers=_hdrs(token),
-        json={"year": 2013, "make": "Toyota", "model": "Camry", "color": "White"},
+        json={"year": 2018, "make": "Toyota", "model": "Camry", "color": "White"},
     )
     assert resp.status_code == 200, resp.text
     await db.refresh(veh)
     assert veh.vehicle_type == "standard"
 
 
-async def test_post_vehicle_year_under_2012_is_400(client, db, test_driver):
+async def test_post_vehicle_year_under_2018_is_400(client, db, test_driver):
     resp = await client.post(
         "/auth/onboarding-items/vehicle",
         headers=_hdrs(test_driver[1]),
-        json={"year": 2011, "make": "Toyota", "model": "Camry", "color": "White"},
+        json={"year": 2017, "make": "Toyota", "model": "Camry", "color": "White"},
     )
     assert resp.status_code == 400, resp.text
 

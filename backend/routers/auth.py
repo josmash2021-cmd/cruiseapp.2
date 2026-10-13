@@ -4423,8 +4423,8 @@ async def submit_onboarding_ssn(body: _OnboardingSsnIn, user: User = Depends(_ge
 
 @router.post("/auth/onboarding-items/vehicle", dependencies=[Depends(_verify_api_key)])
 async def submit_onboarding_vehicle(body: _OnboardingVehicleIn, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
-    if body.year < 2012:
-        raise HTTPException(400, "Vehicle year must be 2012 or newer")
+    if body.year < 2018:
+        raise HTTPException(400, "Vehicle year must be 2018 or newer")
     result = await db.execute(select(User).where(User.id == user.id))
     db_user = result.scalar_one_or_none()
     if not db_user:

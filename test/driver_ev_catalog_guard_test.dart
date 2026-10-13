@@ -71,13 +71,31 @@ void main() {
   test('the garage shows the EV art for electric_pro vehicles', () {
     expect(garage, contains('case kTierElectricPro'),
         reason: 'the tier switch must know electric_pro');
-    expect(garage, contains('assets/images/car_electric.png'),
-        reason: 'the garage art for electric_pro is the EV side-profile');
+    expect(garage, contains('assets/images/driver_tier_electric.png'),
+        reason: 'the garage art for electric_pro is the EV three-quarter '
+            'view (the user’s photo 10)');
     expect(
-        File('assets/images/car_electric.png').existsSync(), isTrue,
+        File('assets/images/driver_tier_electric.png').existsSync(), isTrue,
         reason: 'the asset must exist');
     expect(garage, contains('errorBuilder'),
         reason: 'OTA fallback — patched phones without the asset yet must '
             'not render a broken image');
+  });
+
+  test('vehicle year floor is 2018 everywhere (user spec 2026-10-13)', () {
+    // Nothing older than 2018: no dropdown option, no client-side pass, and
+    // the backend rejects it too — old brands/years never appear.
+    expect(catalog, contains('y >= 2018'),
+        reason: 'vehicle_catalog year list floors at 2018');
+    expect(addVehicle, contains('current - 2017'),
+        reason: 'add_vehicle year list floors at 2018');
+    expect(signup, contains('year >= 2018'),
+        reason: 'signup vehicle form gates years below 2018');
+    final authPy = File('backend/routers/auth.py').readAsStringSync();
+    expect(authPy, contains('Vehicle year must be 2018 or newer'),
+        reason: 'the onboarding endpoint rejects < 2018');
+    final driversPy = File('backend/routers/drivers.py').readAsStringSync();
+    expect(driversPy, contains('Vehicle year must be 2018 or newer'),
+        reason: 'the add-vehicle endpoint rejects < 2018 too');
   });
 }

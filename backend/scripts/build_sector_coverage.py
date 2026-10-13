@@ -29,6 +29,43 @@ URBAN_BUFFER_DEG = 0.05      # ~5.5 km alrededor del conjunto de ciudades
 SIMPLIFY_DEG = 0.0006        # ~65 m — bordes limpios sin romper geografía
 MIN_GAP_KM2 = 0.5            # componentes de hueco más chicos se ignoran
 KM2_PER_DEG2 = 111.0 ** 2    # lat ~26 — aprox suficiente para el umbral
+CHAIKIN_ITERS = 2            # suavizado de bordes (look orgánico DoorDash)
+
+
+def _chaikin_ring(ring, ratio=0.25):
+    """Corner-cutting de Chaikin sobre un anillo cerrado — convierte los
+    vértices angulosos en curvas suaves (los bordes 'orgánicos' del heatmap
+    de DoorDash, spec usuario 2026-10-13). Como los dos lados de un borde
+    compartido tienen las MISMAS coordenadas, ambos suavizan idéntico y la
+    partición queda sin huecos."""
+    pts = [(p[0], p[1]) for p in ring[:-1]]
+    for _ in range(CHAIKIN_ITERS):
+        nxt = []
+        n = len(pts)
+        for i in range(n):
+            x0, y0 = pts[i]
+            x1, y1 = pts[(i + 1) % n]
+            nxt.append((x0 * (1 - ratio) + x1 * ratio,
+                        y0 * (1 - ratio) + y1 * ratio))
+            nxt.append((x0 * ratio + x1 * (1 - ratio),
+                        y0 * ratio + y1 * (1 - ratio)))
+        pts = nxt
+    pts.append(pts[0])
+    return pts
+
+
+def _chaikin_geom(g):
+    """Aplica Chaikin a todos los anillos (exterior + huecos) de un
+    Polygon/MultiPolygon."""
+    def poly(p):
+        ext = _chaikin_ring(list(p.exterior.coords))
+        holes = [_chaikin_ring(list(r.coords)) for r in p.interiors]
+        return Polygon(ext, holes)
+    if g.geom_type == "Polygon":
+        return poly(g)
+    if g.geom_type == "MultiPolygon":
+        return MultiPolygon([poly(p) for p in g.geoms])
+    return g
 
 
 def fetch_land_mask():
@@ -103,6 +140,8 @@ def main():
     out_features = []
     for d in sector_defs:
         g = d["geom"].simplify(SIMPLIFY_DEG, preserve_topology=True)
+        g = _chaikin_geom(g)  # bordes orgánicos (DoorDash), espec 2026-10-13
+        g = g.buffer(0)  # Chaikin puede dejar micro-auto-intersecciones
         g = g.intersection(region)
         if g.is_empty:
             print("!! sector vacío tras el clip:", d["id"])

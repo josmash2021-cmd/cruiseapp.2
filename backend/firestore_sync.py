@@ -837,7 +837,7 @@ def write_approval(user_id: int, action: str, reason: str = None,
     doc_id = f"sql_{user_id}"
     is_approved = action == "approve"
     status_str = {"approve": "approved", "reject": "rejected",
-                  "waitlist": "waitlist"}.get(action, "rejected")
+                  "waitlist": "waitlist", "unwaitlist": "pending"}.get(action, "rejected")
     ts = _ts()
     payload = {
         "status": status_str,

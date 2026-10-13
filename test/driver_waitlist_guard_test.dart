@@ -74,6 +74,34 @@ void main() {
       expect(screen, contains('const Interval(0, 0.4)'),
           reason: 'fade interval of update_required_screen.dart');
     });
+
+    test('full update-required parity: black surface + 700 ms + fade-in', () {
+      expect(screen, contains('static const _bg = Color(0xFF000000)'),
+          reason: 'pure black, the update-required surface (user spec '
+              '2026-10-13: "mismo color de fondo")');
+      expect(screen, contains('Duration(milliseconds: 700)'),
+          reason: 'the update-required controller duration');
+      final img =
+          screen.substring(screen.indexOf('Widget _buildHeroImage()'));
+      expect(img, contains('frameBuilder'),
+          reason: 'a late hero frame FADES in over the drawn art — never '
+              'pops (the update-required rule, user report 2026-10-10)');
+      expect(img, contains('TweenAnimationBuilder<double>'));
+    });
+  });
+
+  group('the un-waitlist exit (panel button, 2026-10-13)', () {
+    test('pending pulls the driver OUT of the page, back to the hub', () {
+      expect(screen, contains("if (status == 'pending')"),
+          reason: 'dispatch un-waitlisting sets pending — the page must '
+              'hand the driver back to the hub so a document can be '
+              're-uploaded');
+      expect(screen, contains('const DriverTodoScreen()'));
+      expect(screen, contains("setDriverApprovalStatus('pending')"));
+      expect(screen, contains('_navigating = true'),
+          reason: 'the nav guard arms before the async gap, like the '
+              'approved chain');
+    });
   });
 
   group('corner buttons + not a prison', () {

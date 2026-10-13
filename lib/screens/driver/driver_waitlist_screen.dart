@@ -10,6 +10,7 @@ import '../../services/user_session.dart';
 import '../help_screen.dart';
 import '../welcome_screen.dart';
 import 'onboarding/driver_approved_celebration_screen.dart';
+import 'onboarding/driver_todo_screen.dart';
 
 /// Waitlist page (user spec 2026-10-13): dispatch moved the driver to the
 /// waitlist (backend `verification_status == 'waitlist'`). Also owns the
@@ -63,7 +64,7 @@ class DriverWaitlistScreen extends StatefulWidget {
 
 class _DriverWaitlistScreenState extends State<DriverWaitlistScreen>
     with SingleTickerProviderStateMixin {
-  static const _bg = Color(0xFF0A1322); // navy black, like the mock
+  static const _bg = Color(0xFF000000); // pure black — same surface as the update-required page (user spec 2026-10-13)
   static const _cloudDark = Color(0xFF1A2A44); // cloud base
   static const _cloudLight = Color(0xFF223753); // cloud bumps
   static const _cardNavy = Color(0xFF1D3050); // little ID card
@@ -73,7 +74,9 @@ class _DriverWaitlistScreenState extends State<DriverWaitlistScreen>
 
   late final AnimationController _anim = AnimationController(
     vsync: this,
-    duration: const Duration(milliseconds: 550),
+    // Same 700 ms controller as the update-required page (user spec
+    // 2026-10-13: "animación como la de update required").
+    duration: const Duration(milliseconds: 700),
   )..forward();
 
   Timer? _poll;
@@ -133,6 +136,21 @@ class _DriverWaitlistScreenState extends State<DriverWaitlistScreen>
       return;
     }
 
+    if (status == 'pending') {
+      // Dispatch pulled the account OUT of the waitlist (the panel's
+      // un-waitlist button, 2026-10-13) — back to the to-do hub so the
+      // driver can fix and re-upload a document.
+      _navigating = true;
+      _poll?.cancel();
+      await LocalDataService.setDriverApprovalStatus('pending');
+      if (!mounted) return;
+      Navigator.of(context).pushAndRemoveUntil(
+        onboardingFadeSlideRoute(const DriverTodoScreen()),
+        (_) => false,
+      );
+      return;
+    }
+
     await LocalDataService.setDriverApprovalStatus(status);
     if (!mounted) return;
 
@@ -150,8 +168,8 @@ class _DriverWaitlistScreenState extends State<DriverWaitlistScreen>
       return;
     }
 
-    // waitlist / pending / anything else → the waitlist variant owns it
-    // (the pending-review page is gone — pending IS the waitlist page).
+    // waitlist / anything else → the waitlist variant owns it (pending
+    // LEAVES the page — the un-waitlist exit above).
     if (_rejected) {
       setState(() {
         _rejected = false;
@@ -329,16 +347,32 @@ class _DriverWaitlistScreenState extends State<DriverWaitlistScreen>
   /// The mock illustration as the waitlist hero. Bundled asset first; on
   /// patched builds (OTA carries no new assets) the backend-hosted copy;
   /// if both are missing (offline, old bundle), the drawn widget art.
+  /// A late frame FADES in over the drawn art — never pops (the
+  /// update-required rule, user report 2026-10-10).
   Widget _buildHeroImage() {
     final heroWidth = MediaQuery.sizeOf(context).width * 0.72;
+    Widget fadeIn(BuildContext _, Widget child, int? frame, bool wasSync) {
+      if (wasSync) return child;
+      if (frame == null) return _buildHeroArt();
+      return TweenAnimationBuilder<double>(
+        tween: Tween(begin: 0, end: 1),
+        duration: const Duration(milliseconds: 320),
+        curve: Curves.easeOut,
+        builder: (_, v, c) => Opacity(opacity: v, child: c),
+        child: child,
+      );
+    }
+
     return Image.asset(
       'assets/images/waitlist_hero.png',
       width: heroWidth,
       fit: BoxFit.contain,
+      frameBuilder: fadeIn,
       errorBuilder: (_, __, ___) => Image.network(
         '${ApiService.currentBaseUrl}/static/waitlist_hero.png',
         width: heroWidth,
         fit: BoxFit.contain,
+        frameBuilder: fadeIn,
         errorBuilder: (_, __, ___) => _buildHeroArt(),
       ),
     );

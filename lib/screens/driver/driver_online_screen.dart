@@ -1327,6 +1327,8 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   // Municipal zone layers state (2026-10-11) — the methods live in
   // driver_online_map.dart, which is an extension and cannot hold fields.
   bool _zoneLayersReady = false;
+  // One-shot latch for the offline fit-all-zones frame (2026-10-13 spec).
+  bool _offlineZonesFitDone = false;
   bool? _zoneLayersVisible;
   bool? _zoneLookOnline;
   String? _zoneHighlightName;

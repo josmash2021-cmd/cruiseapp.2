@@ -493,7 +493,11 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       _setState(() => _pos = ll);
       // While the entry ease owns the camera the ticker centres on _pos
       // every frame — a flyTo now would cut the glide. Just seed the fix.
-      if (_phase != _Phase.searching || _zoomEaseDone) _moveToLatLng(ll);
+      // Offline with the zone layer the fit-all view owns the camera (user
+      // spec 2026-10-13) — a late fix must NOT fly it back to the driver.
+      if (_driverOnline || !FeatureFlags.zonesMapEnabled) {
+        if (_phase != _Phase.searching || _zoomEaseDone) _moveToLatLng(ll);
+      }
     } catch (_) {}
   }
 
@@ -1180,14 +1184,24 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     _shiftCapTimer = null;
     _shiftStartedAt = null;
     _syncOfferLiveActivity();
-    // Glide OUT to the region view (user spec 2026-10-11: "no debe hacer
-    // zoom de golpe si no fluida alejandose") — the offline chase barely
-    // ticks for a parked driver, so the zoom change cannot ride it.
-    if (FeatureFlags.zonesMapEnabled && _pos != null) {
-      _animateToPosition(_pos!,
-          zoom: 10.8, bearing: _smoothedBearing, tilt: 0);
+    // Offline with the zone layer: glide OUT to the FIT-ALL view (user spec
+    // 2026-10-13: "la vista será así con este zoom out mostrando todas las
+    // zonas") — the camera frames the whole coverage, then stays FREE: no
+    // follow, no auto-recenter.
+    _reFollowTimer?.cancel();
+    if (FeatureFlags.zonesMapEnabled) {
+      unawaited(_fitAllZones());
     }
   }
+
+  /// The 10 s auto-refollow exists ONLINE (and with the zone layer off) —
+  /// offline with the zone layer the driver EXPLORES the zones and the
+  /// camera stays where they left it (user spec 2026-10-13: "elimina el
+  /// recentrar automático de esta parte"); only the manual FAB recentres.
+  /// Kept out of `_onCameraMoveStarted` so the gesture path stays
+  /// mode-gate-free (single-map parity).
+  bool get _autoRecenterEnabled =>
+      _driverOnline || !FeatureFlags.zonesMapEnabled;
 
   /// The server-side half of the 12 h cap landing while the app is OPEN
   /// (user spec 2026-09-27): the ghost agent flipped the shift off and
@@ -2017,11 +2031,10 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     // ignore it, so a driver dragging the map while online was overruled
     // sixty times a second and the view snapped back under their finger.
     if (_phase == _Phase.searching && !offerActive && _cameraFollowing) {
-      // Resting zoom: street level online; the REGION view offline with the
-      // zone layer on (user spec 2026-10-11: "debe ser la vista así con este
-      // zoom, no zoom-in" — the city divisions only read zoomed out).
-      final zoomTarget =
-          (!_driverOnline && FeatureFlags.zonesMapEnabled) ? 10.8 : 15.5;
+      // Resting zoom: street level everywhere (2026-10-13 spec — the
+      // offline resting view is the fit-all-zones frame with follow OFF, so
+      // the chase only ever runs in FAB/online mode = street zoom parity).
+      final zoomTarget = 15.5;
       // Entry zoom ease: the map opens at zoom 16 (same as home) and
       // glides to the working zoom over ~750ms (easeOutCubic) so there
       // is no zoom "pop" when arriving from the home screen.

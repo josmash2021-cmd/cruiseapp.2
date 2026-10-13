@@ -285,6 +285,31 @@ void main() {
         reason: 'a stale id (edited sectors) never restores garbage');
   });
 
+  test('offline view = fit-all-zones, free camera, NO auto-recenter', () {
+    // User spec 2026-10-13: "cuando el driver esté offline la vista será así
+    // con este zoom out mostrando todas estas zonas … y elimina el recentrar
+    // automático de esta parte". The camera frames the whole coverage once,
+    // then stays free — only the manual FAB recentres (online parity 15.5).
+    final map =
+        File('lib/screens/driver/driver_online_map.dart').readAsStringSync();
+    expect(map, contains('_fitAllZones('), reason: 'the fit-all frame');
+    expect(map, contains('_offlineZonesFitDone = true'),
+        reason: 'one-shot the first time the offline zone view exists');
+    final ctrl = File('lib/screens/driver/driver_online_controller.dart')
+        .readAsStringSync();
+    expect(ctrl, contains('unawaited(_fitAllZones());'),
+        reason: 'the offline flip glides out to the whole coverage');
+    expect(ctrl, contains('final zoomTarget = 15.5;'),
+        reason: 'chase zoom = street parity everywhere — the fit-all owns '
+            'the offline resting view, the chase only follows at street zoom');
+    const gate = '_driverOnline || !FeatureFlags.zonesMapEnabled';
+    final hits = gate.allMatches(map).length + gate.allMatches(ctrl).length;
+    expect(hits, greaterThanOrEqualTo(2),
+        reason: 'BOTH auto-movers are gated OFF offline+zones: the 10 s '
+            'auto-refollow (_autoRecenterEnabled) and the late-GPS-fix '
+            'camera flight');
+  });
+
   test('the camera is born at the region view offline and glides on flips',
       () {
     // 2026-10-11 (user report: the app opens zoomed-in instead of the

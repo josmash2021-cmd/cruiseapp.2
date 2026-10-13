@@ -2138,7 +2138,9 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     // Auto-resume ten seconds after the last drag, not ten seconds after the
     // first: a driver still moving the map around should not have it yanked
     // out from under them mid-gesture.
-    _reFollowTimer = Timer(const Duration(seconds: 10), _recenterCamera);
+    if (_autoRecenterEnabled) {
+      _reFollowTimer = Timer(const Duration(seconds: 10), _recenterCamera);
+    }
     // ONE arrow, always (user report 2026-10-10: "que la flecha sea la misma
     // cuando hace zoom o mueve el mapa que cuando está normal" — size jump,
     // wrong heading and a double-arrow flicker on every gesture). The overlay
@@ -2412,6 +2414,12 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
         await _createZoneLayers(map);
         _zoneLayersReady = true;
         _zoneLayersVisible = null;
+        // The first time the offline zone view exists, frame the WHOLE
+        // coverage once (2026-10-13 spec) — after that the camera is free.
+        if (!_offlineZonesFitDone && !_driverOnline) {
+          _offlineZonesFitDone = true;
+          unawaited(_fitAllZones(animated: false));
+        }
       }
       final demandSig = ZoneService.demand.entries
           .map((e) => '${e.key}:${e.value.level}')
@@ -2808,6 +2816,47 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
       ApiService.logClientEvent('zones_swap', 'error=$e');
     } finally {
       _zoneSwapRunning = false;
+    }
+  }
+
+  /// Offline resting view with the zone layer on (user spec 2026-10-13:
+  /// "cuando el driver esté offline la vista será así con este zoom out
+  /// mostrando todas las zonas"): the WHOLE coverage framed once — then
+  /// the camera is free. No follow, no auto-recenter.
+  Future<void> _fitAllZones({bool animated = true}) async {
+    final map = _map;
+    if (map == null || kIsWeb || !ZoneService.sectorsReady) return;
+    var w = 999.0, s = 999.0, e = -999.0, n = -999.0;
+    for (final sec in ZoneService.sectors) {
+      w = math.min(w, sec.bbox[0]);
+      s = math.min(s, sec.bbox[1]);
+      e = math.max(e, sec.bbox[2]);
+      n = math.max(n, sec.bbox[3]);
+    }
+    if (w > e || s > n) return;
+    try {
+      final cam = await map.cameraForCoordinatesPadding(
+        [
+          mapbox.Point(coordinates: mapbox.Position(w, s)),
+          mapbox.Point(coordinates: mapbox.Position(e, n)),
+        ],
+        mapbox.CameraOptions(pitch: 0, bearing: 0),
+        // Top clears the earnings pill, bottom the offline sheet + GO.
+        mapbox.MbxEdgeInsets(top: 130, left: 30, bottom: 210, right: 30),
+        null,
+        null,
+      );
+      // Programmatic — wear the suppression so the flight's own camera
+      // events never read as a manual rotate/gesture.
+      _camFlightUntil = DateTime.now()
+          .add(const Duration(milliseconds: _kRecenterFlightMs + 320));
+      await map.flyTo(
+          cam,
+          mapbox.MapAnimationOptions(
+              duration: animated ? _kRecenterFlightMs : 0));
+      if (mounted) _setState(() => _cameraFollowing = false);
+    } catch (e) {
+      debugPrint('[Zones] fit-all failed: $e');
     }
   }
 

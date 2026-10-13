@@ -457,6 +457,8 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
     _mapStyleWatchdogTimer?.cancel();
     _mapStyleLoaded = false;
     _firstRenderDone = false;
+    // A remount loses the camera — the fit-all frame runs again at sync.
+    _offlineZonesFitDone = false;
     if (!_mapStyleWatchdogRetried) {
       final watchGen = _mapGeneration;
       _mapStyleWatchdogTimer = Timer(const Duration(seconds: 7), () {

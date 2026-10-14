@@ -2399,6 +2399,19 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
   //  The fields live in the state class (extensions can't declare them).
   // ══════════════════════════════════════════════════════════════════
 
+  /// Ids of the sectors THIS driver may see — their state's set (2026-10-14
+  /// user spec: a driver only sees the zones of their own state; the
+  /// fail-open for a state with no sectors lives in
+  /// [ZoneService.visibleSectorsFor]).
+  Set<String> _zoneVisibleIds() {
+    final p = _pos;
+    return {
+      for (final s in ZoneService.visibleSectorsFor(
+          p == null ? null : ZoneService.stateOfPoint(p)))
+        s.id,
+    };
+  }
+
   /// Idempotent per-fix/per-style-load sync: ensures the per-sector
   /// sources/layers exist, writes visibility + demand look (searching only
   /// — in a trip they would sit on top of the route), and refreshes the
@@ -2441,13 +2454,19 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
       final demandSig = ZoneService.demand.entries
           .map((e) => '${e.key}:${e.value.level}')
           .join('|');
+      // The visible-state set rides the signature: crossing a state line
+      // (or the first fix landing) repaints the look for the new state.
+      final visibleIds = _zoneVisibleIds();
+      final visibleSig = visibleIds.join('|');
       if (_zoneLayersVisible != visible ||
           _zoneLookOnline != online ||
-          _zoneDemandSig != demandSig) {
+          _zoneDemandSig != demandSig ||
+          _zoneLookVisibleSig != visibleSig) {
         _zoneLayersVisible = visible;
         _zoneLookOnline = online;
         _zoneDemandSig = demandSig;
-        await _writeZoneVisibility(map, visible, online);
+        _zoneLookVisibleSig = visibleSig;
+        await _writeZoneVisibility(map, visible, online, visibleIds);
         _markerFrame.value++; // the pill overlay repaints with the look
       }
       final s = _sectorForHighlight;
@@ -2641,13 +2660,15 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
   /// calor" debajo del mapa) — the fills live below the road network since
   /// creation, so the streets and the boundary lines read on top of the
   /// gold. The old dark spotlight died with that spec.
-  Future<void> _writeZoneVisibility(
-      mapbox.MapboxMap map, bool visible, bool online) async {
+  Future<void> _writeZoneVisibility(mapbox.MapboxMap map, bool visible,
+      bool online, Set<String> visibleIds) async {
     // One parallel batch — the serial per-property awaits were part of the
-    // render-thread pile-up (2026-10-12 black-map report).
+    // render-thread pile-up (2026-10-12 black-map report). A sector outside
+    // the driver's state keeps its layers but paints at opacity 0
+    // (2026-10-14 spec: state-separated visibility without layer churn).
     await Future.wait([
       for (final s in ZoneService.sectors)
-        _writeSectorLook(map, s, visible, online),
+        _writeSectorLook(map, s, visible && visibleIds.contains(s.id), online),
     ]);
     // The selection highlight: strong offline, a softer gold under the
     // roads online, off otherwise. Never while an offer preview owns the
@@ -2806,14 +2827,17 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
       if (!mounted) return;
 
       // c. Staggered fade-in (~50 ms steps, alphabetical order) back to the
-      // look of the moment — same levels as _writeSectorLook.
+      // look of the moment — same levels as _writeSectorLook, same
+      // state-visibility filter as _writeZoneVisibility.
       final visible = _phase == _Phase.searching;
       final online = _driverOnline;
+      final visibleIds = _zoneVisibleIds();
       final ordered = [...ZoneService.sectors]
         ..sort((a, b) => a.id.compareTo(b.id));
       for (final s in ordered) {
         if (!mounted) return;
-        unawaited(_writeSectorLook(map, s, visible, online));
+        unawaited(_writeSectorLook(
+            map, s, visible && visibleIds.contains(s.id), online));
         await Future.delayed(const Duration(milliseconds: 50));
       }
       // The selection highlight re-reads the state of the moment (the dim
@@ -2831,6 +2855,7 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
       } catch (_) {}
       _zoneLayersVisible = visible;
       _zoneLookOnline = online;
+      _zoneLookVisibleSig = visibleIds.join('|');
       _zoneDemandSig = ZoneService.demand.entries
           .map((e) => '${e.key}:${e.value.level}')
           .join('|');
@@ -3024,6 +3049,16 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     final s = ZoneService.sectorContaining(
         LatLng(coords.lat.toDouble(), coords.lng.toDouble()));
     if (s == null) return;
+    // State separation (2026-10-14 user spec): a driver selects only a zone
+    // of THEIR state — the other state's sectors are invisible anyway, so a
+    // tap on one (e.g. at a border) must not arm the GO. Fail-open when the
+    // driver's state has no sectors of its own (visibleSectorsFor).
+    final p = _pos;
+    if (!ZoneService.visibleSectorsFor(
+            p == null ? null : ZoneService.stateOfPoint(p))
+        .any((v) => v.id == s.id)) {
+      return;
+    }
     if (_selectedZoneName == s.id) {
       _setState(() => _selectedZoneName = null);
       PrefsCache.instance.then((p) => p.remove('driver_selected_zone'));
@@ -3111,8 +3146,11 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
           }
         }
         // Demand pills on the hot sectors (level ≥ 2 gets the pill; level 1
-        // is just the gold fill).
-        for (final s in ZoneService.sectors) {
+        // is just the gold fill). Only the driver's OWN state (2026-10-14
+        // spec: the other state's zones are neither drawn nor labelled).
+        final p = _pos;
+        for (final s in ZoneService.visibleSectorsFor(
+            p == null ? null : ZoneService.stateOfPoint(p))) {
           final d = ZoneService.demand[s.id];
           if (d == null || d.level < 2) continue;
           if (hl != null && s.id == hl.id) {

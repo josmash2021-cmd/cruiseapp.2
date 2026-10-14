@@ -1343,6 +1343,9 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   bool _offlineZonesRefitPending = false;
   bool? _zoneLayersVisible;
   bool? _zoneLookOnline;
+  // The state-visibility set the look was painted with (2026-10-14 spec: a
+  // driver only sees their own state's sectors) — a border crossing repaints.
+  String? _zoneLookVisibleSig;
   String? _zoneHighlightName;
   // Sector heat signature (2026-10-12): the demand map's "sid:level|…" the
   // layers were last painted with — a dispatch change repaints, nothing

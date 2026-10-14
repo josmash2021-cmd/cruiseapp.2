@@ -292,6 +292,18 @@ class ZoneService {
     ];
   }
 
+  /// The sectors a driver in [state] may SEE and select (2026-10-14 user
+  /// spec: "el driver no puede ver las zonas de florida a menos que esté en
+  /// florida, y viceversa"). Fail-open: unknown driver state, or a state
+  /// with no sectors of its own yet, → every sector (a state without
+  /// sectors must never lock its drivers out of zone selection — Alabama
+  /// keeps working until its first sector is drawn in the panel).
+  static List<Sector> visibleSectorsFor(String? state) {
+    final own = sectorsForState(state);
+    if (state != null && own.isEmpty) return List.unmodifiable(sectors);
+    return own;
+  }
+
   /// Whether the point falls inside the coverage region of the SECTOR map
   /// (union of sector bboxes). The connect gate applies inside it — with
   /// sectors drawn in both states (panel-edited), Florida AND Alabama

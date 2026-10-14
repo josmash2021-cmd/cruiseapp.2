@@ -41,6 +41,39 @@ void main() {
         reason: 'unknown driver state → union fit fallback');
   });
 
+  test('a driver sees and selects only their own state sectors', () {
+    // 2026-10-14 spec: "el driver no puede ver las zonas de florida a menos
+    // que esté en florida, y viceversa". Fail-open: a state with no sectors
+    // of its own (or no GPS fix) sees everything — Alabama keeps working
+    // until its first sector is drawn in the panel.
+    ZoneService.parseSectors(sectorsJson);
+    expect(ZoneService.visibleSectorsFor('FL').length,
+        ZoneService.sectors.length);
+    expect(ZoneService.visibleSectorsFor('AL').length,
+        ZoneService.sectors.length,
+        reason: 'fail-open while Alabama has no drawn sectors');
+    expect(ZoneService.visibleSectorsFor(null).length,
+        ZoneService.sectors.length);
+
+    final map =
+        File('lib/screens/driver/driver_online_map.dart').readAsStringSync();
+    expect(map, contains('_zoneVisibleIds()'),
+        reason: 'per-sector visibility by driver state');
+    expect(map, contains('visible && visibleIds.contains(s.id)'),
+        reason: 'the other state paints at opacity 0 — no layer churn');
+    expect(map, contains('_zoneLookVisibleSig'),
+        reason: 'a border crossing repaints the look');
+    expect(map, contains('ZoneService.visibleSectorsFor('),
+        reason: 'tap selection and the label overlay share the filter');
+    final off = File('lib/screens/driver/driver_online_offline.dart')
+        .readAsStringSync();
+    expect(off, contains('ZoneService.sectorById(_selectedZoneName!)'),
+        reason: 'the GO tap clears a stale cross-state pick');
+    final scr = File('lib/screens/driver/driver_online_screen.dart')
+        .readAsStringSync();
+    expect(scr, contains('_zoneLookVisibleSig'));
+  });
+
   test('the baked sectors parse into the big regions', () {
     ZoneService.parseSectors(sectorsJson);
     expect(ZoneService.sectorsReady, isTrue);

@@ -921,6 +921,21 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
     // Zone selection gate (2026-10-11, user spec: "si no ha seleccionado o
     // tocado una zona se quedará el botón apagado") — with the zone layer
     // ON, the GO tap needs a tapped city first; the hint says so.
+    //
+    // State separation (2026-10-14): a stale pick from the OTHER state
+    // (saved before the split, or before crossing a border) is not a working
+    // zone — clear it and fall into the no-selection hint below.
+    final selSector = _selectedZoneName != null
+        ? ZoneService.sectorById(_selectedZoneName!)
+        : null;
+    if (selSector != null &&
+        !ZoneService.visibleSectorsFor(
+                _pos == null ? null : ZoneService.stateOfPoint(_pos!))
+            .any((v) => v.id == selSector.id)) {
+      _setState(() => _selectedZoneName = null);
+      PrefsCache.instance.then((p) => p.remove('driver_selected_zone'));
+      _syncZoneLayers(forceHighlight: true);
+    }
     if (FeatureFlags.zonesMapEnabled && _selectedZoneName == null) {
       HapticService.lightImpact();
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(

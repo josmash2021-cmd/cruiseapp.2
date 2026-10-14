@@ -492,22 +492,25 @@ void main() {
       expect(offline, contains('BlendMode.srcIn'),
           reason: 'the logo is rendered in the button foreground so it '
               'reads on gold');
-      // The heartbeat, not the radar, on the GO button.
+      // The heartbeat on the OPEN PILL, the radar of old on the CLOSED disc.
       expect(offline, contains('_goThrobAnim'),
           reason: 'the button throbs while lit');
-      expect(offline, contains('igniteScale * throb'),
-          reason: 'throb and the zone-select ignite pop compose');
+      expect(offline, contains('dimmed || morph <= 0.5'),
+          reason: '2026-10-14 spec: throb is pill-only — the closed disc '
+              'carries the radar instead');
+      expect(offline, contains('!dimmed && morph <= 0.5'),
+          reason: 'the radar rings live on the closed disc only ("la '
+              'animación que tenía antes")');
+      expect(offline, contains('_GoRadarPainter('),
+          reason: 'the radar painter is back on the disc');
+      expect(offline, contains('Colors.white, BlendMode.srcIn'),
+          reason: '"el carrito blanco" — the badge icon is white in its '
+              'dark well');
       expect(offline, contains('const goldTop1 = Color(0xFFC9981F)'),
-          reason: '2026-10-14 spec: ONE gold in every shape — the open pill '
-              'wears the disc’s deep gold, no morph lerp');
+          reason: 'ONE gold in every shape — the open pill wears the disc’s '
+              'deep gold, no morph lerp');
       expect(offline.contains('goldBot = Color.lerp('), isFalse,
           reason: 'the gold morph lerp is dead');
-      final btnBlock = offline.substring(
-          offline.indexOf('Widget _buildGoButton('),
-          offline.indexOf('_offlineRadarDisc'));
-      expect(btnBlock.contains('_GoRadarPainter'), isFalse,
-          reason: 'the radar rings died on the GO button — the red '
-              'go-offline disc keeps them (its own spec)');
       expect(offline, contains('S.of(context).zoneSelectAction'),
           reason: 'no zone picked → the label names the task');
       final l10n =

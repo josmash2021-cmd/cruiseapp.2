@@ -1218,10 +1218,13 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
           // The ignite pop when a zone selection lights the GO up.
           final igniteScale = _goIgniteAnim?.value ?? 1.0;
 
-          // The heartbeat (2026-10-14 user spec: "un palpitar del botón" —
-          // the radar rings died on this button): a soft 1.0→1.04 throb
-          // while lit; a dimmed button (no zone picked) stays still.
-          final throb = dimmed ? 1.0 : (_goThrobAnim?.value ?? 1.0);
+          // The heartbeat lives on the OPEN PILL only (2026-10-14 user spec:
+          // with the sheet closed and the button just "GO", it carries the
+          // radar of old instead) — a soft 1.0→1.04 throb while lit; a
+          // dimmed button (no zone picked) stays still.
+          final throb = (dimmed || morph <= 0.5)
+              ? 1.0
+              : (_goThrobAnim?.value ?? 1.0);
 
           // The pill label (user spec 2026-10-14: "no debe decir verify
           // first, debe decir selecciona una zona, y al seleccionarla
@@ -1362,12 +1365,12 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
                                         size: 16,
                                       )
                                     // Cruise logo next to "Go online" (user
-                                    // spec 2026-10-13) — rendered in the
-                                    // button's own foreground so it reads on
-                                    // the gold body.
+                                    // specs 2026-10-13/14) — WHITE inside
+                                    // the dark badge well ("el carrito
+                                    // blanco"), never in the label ink.
                                     : ColorFiltered(
                                         colorFilter: ColorFilter.mode(
-                                            fgColor, BlendMode.srcIn),
+                                            Colors.white, BlendMode.srcIn),
                                         child: Image.asset(
                                           'assets/images/cruise_logo.png',
                                           width: 18,
@@ -1459,6 +1462,22 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
                     ],
                   ),
                 ),
+                // Radar sweep — SOLO en el disco cerrado (user spec
+                // 2026-10-14: "cuando el sheet esté cerrado y el botón
+                // solo diga GO, la animación que tenía antes"). El
+                // pill abierto palpita.
+                if (_goRadarCtrl != null && !dimmed && morph <= 0.5)
+                  Positioned.fill(
+                    child: IgnorePointer(
+                      child: CustomPaint(
+                        painter: _GoRadarPainter(
+                          progress: _goRadarCtrl!.value,
+                          // Ondas NEGRAS sobre el GO dorado.
+                          color: const Color(0xFF0B0B0F),
+                        ),
+                      ),
+                    ),
+                  ),
               ],
             ),
           ),

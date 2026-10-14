@@ -1011,7 +1011,6 @@ class S {
 
   // ── Driver Home / Online ──────────────────────────────────────────────────
   String get goOnline => _es ? 'Conectarse' : 'GO ONLINE';
-  String get verifyFirst => _es ? 'VERIFICA PRIMERO' : 'VERIFY FIRST';
   String get goOffline => _es ? 'Desconectarse' : 'Go Offline';
   String get youreOffline => _es ? 'Estás desconectado' : "You're offline";
   String get goOnlineToEarn =>

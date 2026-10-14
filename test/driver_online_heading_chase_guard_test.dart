@@ -464,15 +464,22 @@ void main() {
               'the collapsed sheet leaves it untappable');
     });
 
-    test('the pill GO: 62% width, Cruise logo, radar always on, zone label',
+    test('the pill GO: left half, Cruise logo, radar always on, zone label',
         () {
-      // User spec 2026-10-13: the pill is "un poquito más de la mitad" (not
-      // side to side), the icon beside "Go online" is the Cruise logo, the
-      // radar animation runs on the pill too, and with no zone picked the
-      // label reads "Select zone" (never "Verify first" for a verified
-      // driver).
-      expect(offline, contains('box.maxWidth * 0.62'),
-          reason: 'pill ≈62% of the width');
+      // User spec 2026-10-14: with the sheet open the pill hugs the LEFT and
+      // reaches the screen's middle ("a la izquierda hasta la mitad, no en
+      // el centro"), keeping the same morph/radar animation; with no zone
+      // picked the label reads "Selecciona zona" — NEVER "Verify first" —
+      // and picking a zone crossfades it into "GO ONLINE".
+      expect(offline, contains('box.maxWidth * 0.5'),
+          reason: 'the open pill occupies the LEFT HALF of the row');
+      expect(offline, contains('Alignment.centerLeft'),
+          reason: 'the alignment travels centre → left with the morph, so '
+              'the closed disc stays centred and the open pill hugs the left');
+      expect(offline.contains('verifyFirst'), isFalse,
+          reason: '"VERIFY FIRST" is dead — no zone picked names the task');
+      expect(offline, contains('AnimatedSwitcher'),
+          reason: 'the fluid "Select zone" → "GO ONLINE" crossfade');
       expect(offline, contains('assets/images/cruise_logo.png'),
           reason: 'the Cruise logo beside the label');
       expect(offline, contains('BlendMode.srcIn'),

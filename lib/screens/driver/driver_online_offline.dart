@@ -1047,8 +1047,9 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
     final bottomClosed = _offlinePanelCollapsedH + 40 + insetShortfall;
     final bottom = ui.lerpDouble(bottomClosed, 0, t)!;
 
-    // Inset on both sides and centred inside whatever that leaves, rather
-    // than positioned from the screen's width.
+    // Inset on both sides; inside, the button travels from centred (closed
+    // disc) to the LEFT half (open pill — user spec 2026-10-14: "a la
+    // izquierda hasta la mitad, no en el centro").
     return Positioned(
       bottom: bottom,
       left: ui.lerpDouble(_kGoSideInset, 0, t)!,
@@ -1086,11 +1087,15 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
                 ],
               ),
               child: LayoutBuilder(
-                builder: (context, box) => Center(
+                builder: (context, box) => Align(
+                  // Closed, the disc floats centred; as the sheet opens the
+                  // alignment itself travels left and the pill ends up in the
+                  // left HALF of the row — with the 20 pt side padding its
+                  // right edge lands exactly on the screen's middle.
+                  alignment: Alignment.lerp(
+                      Alignment.center, Alignment.centerLeft, t)!,
                   child: SizedBox(
-                    // The pill is a bit more than half the width, NOT side
-                    // to side (user spec 2026-10-13).
-                    width: ui.lerpDouble(_kGoCircleD, box.maxWidth * 0.62, t),
+                    width: ui.lerpDouble(_kGoCircleD, box.maxWidth * 0.5, t),
                     height: height,
                     child: _buildGoButton(radius: radius, morph: t),
                   ),
@@ -1175,6 +1180,22 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
           // The ignite pop when a zone selection lights the GO up.
           final igniteScale = _goIgniteAnim?.value ?? 1.0;
 
+          // The pill label (user spec 2026-10-14: "no debe decir verify
+          // first, debe decir selecciona una zona, y al seleccionarla
+          // transiciona fluido a GO ONLINE"). VERIFY FIRST is dead: with no
+          // zone picked the button names the task; verification and docs
+          // keep gating the TAP (they route to the fix), never the paint
+          // (2026-10-11 spec).
+          final pillLabel = _enteringOnline
+              ? 'GOING ONLINE...'
+              : dimmed
+                  ? S.of(context).zoneSelectAction
+                  : !docsOk
+                      ? S.of(context).viewIssue
+                      : _goShowsResume
+                          ? S.of(context).resumeOnline
+                          : S.of(context).goOnline;
+
           return Transform.scale(
             scale: igniteScale,
             child: ClipRRect(
@@ -1192,7 +1213,8 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
               children: [
                 Container(
                   padding: EdgeInsets.symmetric(
-                    horizontal: ui.lerpDouble(0, 28, morph)!,
+                    // Slimmer at half width: the label needs the room.
+                    horizontal: ui.lerpDouble(0, 16, morph)!,
                     vertical: ui.lerpDouble(0, 13, morph)!,
                   ),
                   decoration: BoxDecoration(
@@ -1345,28 +1367,37 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
                             ),
                             Opacity(
                               opacity: ((morph - 0.35) / 0.65).clamp(0.0, 1.0),
-                              child: Text(
-                                _enteringOnline
-                                    ? 'GOING ONLINE...'
-                                    // No zone picked yet (verified driver,
-                                    // zones on): the button names the task —
-                                    // "Select zone" (user spec 2026-10-13).
-                                    : dimmed && _isVerified
-                                        ? S.of(context).zoneSelectAction
-                                        : _isVerified
-                                            ? (!docsOk
-                                                ? S.of(context).viewIssue
-                                                : _goShowsResume
-                                                    ? S.of(context).resumeOnline
-                                                    : S.of(context).goOnline)
-                                            : S.of(context).verifyFirst,
-                                maxLines: 1,
-                                overflow: TextOverflow.clip,
-                                style: TextStyle(
-                                  color: fgColor,
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w900,
-                                  letterSpacing: 1.2,
+                              // Half-width pill + a long label ("SELECCIONA
+                              // ZONA") — scale down, never clip.
+                              child: FittedBox(
+                                fit: BoxFit.scaleDown,
+                                // The fluid swap: picking a zone crossfades
+                                // "Selecciona zona" into "GO ONLINE" instead
+                                // of popping the string (same 2026-10-14
+                                // spec; the ignite scale-pop fires on the
+                                // same tap).
+                                child: AnimatedSwitcher(
+                                  duration: const Duration(milliseconds: 280),
+                                  transitionBuilder: (child, anim) =>
+                                      FadeTransition(
+                                    opacity: anim,
+                                    child: ScaleTransition(
+                                      scale: anim.drive(Tween<double>(
+                                          begin: 0.92, end: 1.0)),
+                                      child: child,
+                                    ),
+                                  ),
+                                  child: Text(
+                                    pillLabel,
+                                    key: ValueKey<String>(pillLabel),
+                                    maxLines: 1,
+                                    style: TextStyle(
+                                      color: fgColor,
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w900,
+                                      letterSpacing: 1.2,
+                                    ),
+                                  ),
                                 ),
                               ),
                             ),

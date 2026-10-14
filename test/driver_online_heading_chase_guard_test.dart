@@ -482,6 +482,11 @@ void main() {
           reason: '"VERIFY FIRST" is dead — no zone picked names the task');
       expect(offline, contains('AnimatedSwitcher'),
           reason: 'the fluid "Select zone" → "GO ONLINE" crossfade');
+      expect(offline, contains('MainAxisAlignment.start'),
+          reason: '2026-10-14 spec: the open pill’s icon+label run left-to-'
+              'right from the left edge, never centred');
+      expect(offline, contains('Alignment.centerLeft'),
+          reason: 'the label stack aligns left on the pill too');
       expect(offline, contains('assets/images/cruise_logo.png'),
           reason: 'the Cruise logo beside the label');
       expect(offline, contains('BlendMode.srcIn'),

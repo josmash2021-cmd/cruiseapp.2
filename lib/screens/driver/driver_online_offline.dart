@@ -1282,9 +1282,14 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
                         ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
-                    // Centred: the button is full-width inside the panel now,
-                    // and a min-size Row in a stretched box hugs the left edge.
-                    mainAxisAlignment: MainAxisAlignment.center,
+                    // Left-aligned on the open pill (user spec 2026-10-14:
+                    // "el texto del botón go online cuando el sheet esté
+                    // abierto estará de izquierda a derecha, no centrado") —
+                    // centred on the closed disc, where the word GO is all
+                    // there is.
+                    mainAxisAlignment: morph > 0.5
+                        ? MainAxisAlignment.start
+                        : MainAxisAlignment.center,
                     children: [
                       // A power symbol, in its own disc, to the left of the
                       // label.
@@ -1359,7 +1364,11 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
                       // the row as it fades.
                       Flexible(
                         child: Stack(
-                          alignment: Alignment.center,
+                          // Left on the pill (same 2026-10-14 spec), centred
+                          // on the disc.
+                          alignment: morph > 0.5
+                              ? Alignment.centerLeft
+                              : Alignment.center,
                           children: [
                             Opacity(
                               opacity: (1 - morph * 1.6).clamp(0.0, 1.0),

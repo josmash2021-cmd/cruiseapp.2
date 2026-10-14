@@ -311,40 +311,28 @@ void main() {
             're-tap toggle clears it (_onZoneMapTap)');
   });
 
-  test('online: heated sectors gold UNDER the roads, no dark spotlight', () {
-    // User spec 2026-10-14: "cuando se conecte, ese dorado se colocará
-    // debajo del mapa y las líneas estarán encima de ese dorado… todas las
-    // zonas con calor" — online, EVERY heated sector keeps its gold fill,
-    // the fills live BELOW the road network, and the 2026-10-12 dark
-    // spotlight mask is dead. OFFLINE the colors ride ON TOP (same spec:
-    // "cuando el driver está offline el color está encima de todo… excepto
-    // el nombre del sector") — the fills move with the mode flip, no
-    // recreate.
+  test('online: heat under the roads AND the dark focus around the zone', () {
+    // User specs 2026-10-14: "cuando se conecte, ese dorado debajo del mapa
+    // y las líneas encima" + "sí" (revive el foco oscuro: "se pone oscuro
+    // alrededor y solo se ve la zona donde está conectado"). Coexisten:
+    // online, las zonas con calor pintan dorado bajo las calles Y, con zona
+    // elegida, todo lo de fuera se atenúa — la zona queda limpia por el
+    // hueco de la máscara. Sin selección online no hay máscara.
     final map =
         File('lib/screens/driver/driver_online_map.dart').readAsStringSync();
-    expect(map, contains('addLayerAt'),
-        reason: 'the fills insert at a position, not on top of the style');
-    expect(map, contains('mapbox.LayerPosition(below: fillBelowId)'),
-        reason: 'gold born under the roads');
-    expect(map, contains('_zoneRoadAnchor'),
-        reason: 'the anchor is the style’s lowest road/tunnel layer');
-    expect(map, contains('_restackZoneFills'),
-        reason: 'mode flips move the fills: under the roads online, on top '
+    expect(map, contains('sec-dim-src'), reason: 'the mask source is back');
+    expect(map, contains("'sec-dim'"), reason: 'the mask layer is back');
+    expect(map, contains('_writeZoneDim'), reason: 'the mask writer is back');
+    expect(map, contains('visible && online && sel != null'),
+        reason: 'spotlight = online + searching + a chosen zone');
+    expect(map, contains('_previewingOffer == null'),
+        reason: 'an offer preview kills the dim — the route must read');
+    expect(map, contains('moveStyleLayer'),
+        reason: 'fills move with the mode flip — under roads online, on top '
             'offline');
-    expect(map, contains('map.style.moveStyleLayer'),
-        reason: 'moveStyleLayer — no recreate, no paint-prop loss');
-    expect(map, contains("mapbox.LayerPosition(below: 'sec-shadow-"),
-        reason: 'offline restack: fills back above the roads, tucked under '
-            'their boundary lines');
-    expect(map, contains('fill-opacity-transition'),
-        reason: 'smooth native transitions on every repaint ("se transiciona '
-            'de forma animada y fluida")');
-    expect(map.contains('sec-dim'), isFalse,
-        reason: 'the dark spotlight mask is dead');
-    expect(map.contains('_writeZoneDim'), isFalse);
     // Heat online: the level no longer force-zeros when online.
     expect(map.contains('visible && !online ? (ZoneService.demand'), isFalse,
-        reason: 'heat used to die online — now it paints under the roads');
+        reason: 'heat paints online too, under the roads');
     expect(map, contains(': 1.0;'),
         reason: 'Muy ocupado = dorado 100% sólido (spec 2026-10-12)');
     // Both mode flips rewrite the zone look immediately (a parked driver

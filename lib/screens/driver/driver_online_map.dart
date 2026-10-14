@@ -2499,11 +2499,25 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
       for (final s in ZoneService.sectors) _addSectorSource(map, s, emptyFc),
       _guardedStyleWrite(map.style
           .addSource(mapbox.GeoJsonSource(id: 'sec-hl-src', data: emptyFc))),
+      // The spotlight mask (user spec 2026-10-12, REVIVED 2026-10-14: online
+      // the driver sees their working zone and the rest dims): a world ring
+      // with the chosen sector's outer rings as holes.
+      _guardedStyleWrite(map.style
+          .addSource(mapbox.GeoJsonSource(id: 'sec-dim-src', data: emptyFc))),
     ]);
     await Future.wait([
       for (final s in ZoneService.sectors)
         ..._addSectorLayers(map, s, fillBelowId),
     ]);
+    // Stacking order matters: the dim sits ABOVE the roads (it darkens the
+    // street network outside the zone) and BELOW the selection highlight in
+    // stacking terms (the chosen zone keeps its gold through the hole).
+    await _guardedStyleWrite(map.style.addLayer(mapbox.FillLayer(
+      id: 'sec-dim',
+      sourceId: 'sec-dim-src',
+      fillColor: 0xFF000000,
+      fillOpacity: 0.0,
+    )));
     // The selection highlight: one shared source, rewritten with the
     // picked sector — brighter than any demand level ("si seleccionan
     // uno se debe poner mas amarillo"). A fill: it goes under the roads
@@ -2530,6 +2544,8 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
       for (final s in ZoneService.sectors) ..._sectorTransitionWrites(map, s),
       _guardedStyleWrite(map.style.setStyleLayerProperty(
           'sec-hl-fill', 'fill-opacity-transition', _kZonePaintTransition)),
+      _guardedStyleWrite(map.style.setStyleLayerProperty(
+          'sec-dim', 'fill-opacity-transition', _kZonePaintTransition)),
     ]);
     // Data enters AFTER the layers exist, one small write per sector — the
     // proven path. A failed write keeps the latch OPEN so the next sync
@@ -2718,6 +2734,13 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     // roads online, off otherwise. Never while an offer preview owns the
     // frame — the route must read.
     final sel = _selectedZoneName;
+    // The spotlight (user spec 2026-10-12, REVIVED 2026-10-14 "sí"): online
+    // + a chosen zone → everything OUTSIDE the zone dims to barely-visible;
+    // the zone keeps its heat gold through the hole. No selection → no mask
+    // (all heated zones read, the 2026-10-14 heat-online spec intact).
+    final spotlight =
+        visible && online && sel != null && _previewingOffer == null;
+    await _writeZoneDim(map, spotlight ? ZoneService.sectorById(sel) : null);
     try {
       await map.style.setStyleLayerProperty(
           'sec-hl-fill',
@@ -2728,6 +2751,59 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
                   ? 0.50
                   : (sel != null && _previewingOffer == null ? 0.30 : 0.0)));
     } catch (_) {}
+  }
+
+  /// The spotlight mask: a world-sized polygon with the chosen sector's
+  /// outer rings as holes. `null` = mask off (every sector visible).
+  Future<void> _writeZoneDim(mapbox.MapboxMap map, Sector? sec) async {
+    var fc = <String, dynamic>{
+      'type': 'FeatureCollection',
+      'features': const [],
+    };
+    if (sec != null) {
+      // Ring 0 of each poly is the sector's outer boundary — each becomes a
+      // hole in the world ring (the sector's own holes stay dimmed: they
+      // are not part of the zone either).
+      final holes = [
+        for (final poly in sec.polys)
+          [
+            for (final p in poly.first)
+              [p.longitude, p.latitude]
+          ]
+      ];
+      if (holes.isNotEmpty) {
+        fc = {
+          'type': 'FeatureCollection',
+          'features': [
+            {
+              'type': 'Feature',
+              'properties': const {},
+              'geometry': {
+                'type': 'Polygon',
+                'coordinates': [
+                  const [
+                    [-179.9, -85.0],
+                    [179.9, -85.0],
+                    [179.9, 85.0],
+                    [-179.9, 85.0],
+                    [-179.9, -85.0]
+                  ],
+                  ...holes,
+                ],
+              },
+            }
+          ],
+        };
+      }
+    }
+    try {
+      await map.style
+          .setStyleSourceProperty('sec-dim-src', 'data', jsonEncode(fc));
+      await map.style.setStyleLayerProperty(
+          'sec-dim', 'fill-opacity', sec == null ? 0.0 : 0.70);
+    } catch (e) {
+      debugPrint('[Zones] dim write failed: $e');
+    }
   }
 
   Future<void> _writeSectorLook(
@@ -2814,6 +2890,8 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
         ],
         _guardedStyleWrite(map.style.setStyleLayerProperty(
             'sec-hl-fill', 'fill-opacity', 0.0)),
+        _guardedStyleWrite(map.style
+            .setStyleLayerProperty('sec-dim', 'fill-opacity', 0.0)),
       ]);
       await Future.delayed(const Duration(milliseconds: 200));
       if (!mounted) return;
@@ -2894,9 +2972,12 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
             map, s, visible && visibleIds.contains(s.id), online));
         await Future.delayed(const Duration(milliseconds: 50));
       }
-      // The selection highlight re-reads the state of the moment (the dim
-      // spotlight is dead — 2026-10-14 spec).
+      // The spotlight mask rewrites too — the sector geometry it holes out
+      // may have moved, and the online/selection state is of this moment.
       final sel = _selectedZoneName;
+      final spotlight =
+          visible && online && sel != null && _previewingOffer == null;
+      await _writeZoneDim(map, spotlight ? ZoneService.sectorById(sel) : null);
       try {
         await map.style.setStyleLayerProperty(
             'sec-hl-fill',

@@ -316,18 +316,29 @@ void main() {
     // debajo del mapa y las líneas estarán encima de ese dorado… todas las
     // zonas con calor" — online, EVERY heated sector keeps its gold fill,
     // the fills live BELOW the road network, and the 2026-10-12 dark
-    // spotlight mask is dead.
+    // spotlight mask is dead. OFFLINE the colors ride ON TOP (same spec:
+    // "cuando el driver está offline el color está encima de todo… excepto
+    // el nombre del sector") — the fills move with the mode flip, no
+    // recreate.
     final map =
         File('lib/screens/driver/driver_online_map.dart').readAsStringSync();
     expect(map, contains('addLayerAt'),
         reason: 'the fills insert at a position, not on top of the style');
     expect(map, contains('mapbox.LayerPosition(below: fillBelowId)'),
-        reason: 'gold under the roads');
+        reason: 'gold born under the roads');
     expect(map, contains('_zoneRoadAnchor'),
         reason: 'the anchor is the style’s lowest road/tunnel layer');
+    expect(map, contains('_restackZoneFills'),
+        reason: 'mode flips move the fills: under the roads online, on top '
+            'offline');
+    expect(map, contains('map.style.moveStyleLayer'),
+        reason: 'moveStyleLayer — no recreate, no paint-prop loss');
+    expect(map, contains("mapbox.LayerPosition(below: 'sec-shadow-"),
+        reason: 'offline restack: fills back above the roads, tucked under '
+            'their boundary lines');
     expect(map, contains('fill-opacity-transition'),
-        reason: 'smooth native transitions on every repaint (same spec: '
-            '"se transiciona de forma animada y fluida")');
+        reason: 'smooth native transitions on every repaint ("se transiciona '
+            'de forma animada y fluida")');
     expect(map.contains('sec-dim'), isFalse,
         reason: 'the dark spotlight mask is dead');
     expect(map.contains('_writeZoneDim'), isFalse);

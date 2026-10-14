@@ -1361,6 +1361,9 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   // The state-visibility set the look was painted with (2026-10-14 spec: a
   // driver only sees their own state's sectors) — a border crossing repaints.
   String? _zoneLookVisibleSig;
+  // The mode the zone fills are STACKED for (true = under the roads): the
+  // flips move them, not recreate them (moveStyleLayer).
+  bool? _zoneFillStackedOnline;
   String? _zoneHighlightName;
   // Sector heat signature (2026-10-12): the demand map's "sid:level|…" the
   // layers were last painted with — a dispatch change repaints, nothing

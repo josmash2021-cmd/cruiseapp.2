@@ -2545,6 +2545,9 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
       throw StateError('$failed sector sources rejected their data');
     }
     _zoneSectorIds = [for (final s in ZoneService.sectors) s.id];
+    // The fills were just born BELOW the road network — the restack latch
+    // starts there so an offline boot moves them on top exactly once.
+    _zoneFillStackedOnline = true;
   }
 
   /// The style's lowest road/tunnel layer id — the anchor that parks the
@@ -2652,6 +2655,44 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     }
   }
 
+  /// Fill stacking follows the mode (2026-10-14 user spec): OFFLINE the
+  /// zone colors ride ON TOP of everything (only the Flutter label overlay
+  /// reads above them); ONLINE they slide UNDER the road network so the
+  /// streets and names read while driving. moveStyleLayer — no recreate,
+  /// no paint-prop loss.
+  Future<void> _restackZoneFills(mapbox.MapboxMap map, bool online) async {
+    if (_zoneFillStackedOnline == online) return;
+    _zoneFillStackedOnline = online;
+    try {
+      if (online) {
+        final anchor = await _zoneRoadAnchor(map);
+        if (anchor == null) return;
+        await Future.wait([
+          for (final s in ZoneService.sectors)
+            _guardedStyleWrite(map.style.moveStyleLayer(
+                'sec-fill-${s.id}', mapbox.LayerPosition(below: anchor))),
+          _guardedStyleWrite(map.style.moveStyleLayer(
+              'sec-hl-fill', mapbox.LayerPosition(below: anchor))),
+        ]);
+      } else {
+        // Back on top: each fill above the roads again, tucked under its own
+        // boundary line — the creation order of old.
+        final lastId =
+            ZoneService.sectors.isEmpty ? null : ZoneService.sectors.last.id;
+        await Future.wait([
+          for (final s in ZoneService.sectors)
+            _guardedStyleWrite(map.style.moveStyleLayer('sec-fill-${s.id}',
+                mapbox.LayerPosition(below: 'sec-shadow-${s.id}'))),
+          if (lastId != null)
+            _guardedStyleWrite(map.style.moveStyleLayer('sec-hl-fill',
+                mapbox.LayerPosition(above: 'sec-line-$lastId'))),
+        ]);
+      }
+    } catch (e) {
+      debugPrint('[Zones] fill restack failed: $e');
+    }
+  }
+
   /// Fill/line visibility + color per sector. Base (no dispatch heat): thin
   /// gray wash offline, invisible online + the thick gray boundary. Level 1
   /// ("Dorado"): gold semi-transparent. Level 2 ("Ocupado"): more gold.
@@ -2662,6 +2703,9 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
   /// gold. The old dark spotlight died with that spec.
   Future<void> _writeZoneVisibility(mapbox.MapboxMap map, bool visible,
       bool online, Set<String> visibleIds) async {
+    // The fill stacking follows the mode (offline on top / online under the
+    // roads) — restack BEFORE repainting so a flip never flashes wrong.
+    await _restackZoneFills(map, online);
     // One parallel batch — the serial per-property awaits were part of the
     // render-thread pile-up (2026-10-12 black-map report). A sector outside
     // the driver's state keeps its layers but paints at opacity 0
@@ -2814,6 +2858,16 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
         await Future.wait([
           for (final s in added) ..._sectorTransitionWrites(map, s),
         ]);
+        // Newcomers are born below the roads (the creation rule) — if the
+        // stack is currently offline (fills on top), move JUST these up to
+        // match.
+        if (_zoneFillStackedOnline == false) {
+          await Future.wait([
+            for (final s in added)
+              _guardedStyleWrite(map.style.moveStyleLayer('sec-fill-${s.id}',
+                  mapbox.LayerPosition(below: 'sec-shadow-${s.id}'))),
+          ]);
+        }
       }
       _zoneSectorIds = newIds;
       final writes = await Future.wait([

@@ -10,19 +10,35 @@ import 'package:cruise_app/services/zone_service.dart';
 /// mini ciudad si no por sectores" — always visible in gray with thick
 /// boundaries; dispatch turns a sector gold by demand level with a pill).
 void main() {
-  final zonesJson =
-      File('backend/static/fl_zones.json').readAsStringSync();
   final sectorsJson =
       File('backend/static/fl_sectors.json').readAsStringSync();
 
-  test('the baked city data still parses (connect gate data)', () {
-    ZoneService.parse(zonesJson);
-    expect(ZoneService.ready, isTrue);
-    expect(ZoneService.zones.length, greaterThanOrEqualTo(35));
-    final names = ZoneService.zones.map((z) => z.name).toSet();
-    for (final expected in ['Hialeah', 'Miami', 'Miami Beach', 'Doral']) {
-      expect(names, contains(expected));
-    }
+  test('the state outlines resolve FL/AL points (the fit grouping)', () {
+    // 2026-10-14 (user report: "estoy en alabama y la app abre mostrando las
+    // zonas de florida"): the zone fit frames the driver's STATE, grouped by
+    // the embedded Census outlines — no geocoder, no network.
+    expect(ZoneService.stateOfPoint(const LatLng(25.7617, -80.1918)), 'FL',
+        reason: 'Miami');
+    expect(ZoneService.stateOfPoint(const LatLng(28.5383, -81.3792)), 'FL',
+        reason: 'Orlando');
+    expect(ZoneService.stateOfPoint(const LatLng(30.6944, -88.0430)), 'AL',
+        reason: 'Mobile');
+    expect(ZoneService.stateOfPoint(const LatLng(33.5186, -86.8104)), 'AL',
+        reason: 'Birmingham');
+    expect(ZoneService.stateOfPoint(const LatLng(33.7490, -84.3880)), isNull,
+        reason: 'Atlanta is in no served state yet');
+    expect(ZoneService.stateOfPoint(const LatLng(30.4213, -87.2169)), 'FL',
+        reason: 'Pensacola — the panhandle is FL, not AL');
+    // State-scoped fit: with the FL-only baked file, AL gets nothing and a
+    // null state gets the union (the fail-open pre-grouping behaviour).
+    ZoneService.parseSectors(sectorsJson);
+    expect(
+        ZoneService.sectorsForState('FL').length, ZoneService.sectors.length);
+    expect(ZoneService.sectorsForState('AL'), isEmpty,
+        reason: 'no Alabama sectors until dispatch draws them in the panel');
+    expect(ZoneService.sectorsForState(null).length,
+        ZoneService.sectors.length,
+        reason: 'unknown driver state → union fit fallback');
   });
 
   test('the baked sectors parse into the big regions', () {
@@ -142,21 +158,31 @@ void main() {
   test('the GO tap gates the connect client-side, fail-open', () {
     final s = File('lib/screens/driver/driver_online_offline.dart')
         .readAsStringSync();
-    expect(s, contains('ZoneService.insideCoverageArea(_pos!)'),
-        reason: 'out-of-state drivers are never gated by a Florida file — '
-            'drivers are state-separated');
-    expect(s, contains('ZoneService.zoneContaining(_pos!) == null'));
+    // 2026-10-14 spec: the gate moved from the FL-only cities file to the
+    // SECTORS (one live dataset — the one the panel edits, Florida AND
+    // Alabama). The zones kill switch kills the gate with the drawing.
+    expect(s, contains('FeatureFlags.zonesMapEnabled'),
+        reason: 'the kill switch fails the gate open with the drawing off');
+    expect(s, contains('ZoneService.insideSectorCoverage(_pos!)'),
+        reason: 'out-of-coverage drivers are never gated — drivers are '
+            'state-separated');
+    expect(s, contains('ZoneService.sectorContaining(_pos!) == null'));
     expect(s, contains('_showZoneOutsideDialog()'),
         reason: 'outside the coverage the tap explains instead of '
             'connecting');
-    expect(s, contains('ZoneService.ready'),
+    expect(s, contains('ZoneService.sectorsReady'),
         reason: 'no data = no gate (fail-open)');
   });
 
   test('the server enforces the same gate', () {
     final s = File('backend/routers/drivers.py').readAsStringSync();
-    expect(s, contains('zone_containing(body.lat, body.lng)'));
+    expect(s, contains('sector_gate_blocks(db, body.lat, body.lng)'));
     expect(s, contains('"outside_service_area"'));
+    // The gate reads the LIVE sector map (app_config), not just the baked
+    // file — the panel's Alabama sectors gate from the moment they save.
+    final zp = File('backend/services/zone_polygons.py').readAsStringSync();
+    expect(zp, contains('fl_sectors_geojson'));
+    expect(zp, contains('_TTL_S'), reason: 'the hot PATCH path is cached');
   });
 
   test('sector drawing has a remote kill switch + the veil a watchdog', () {
@@ -285,23 +311,31 @@ void main() {
         reason: 'a stale id (edited sectors) never restores garbage');
   });
 
-  test('offline view = fit-all-zones, free camera, NO auto-recenter', () {
-    // User spec 2026-10-13: "cuando el driver esté offline la vista será así
-    // con este zoom out mostrando todas estas zonas … y elimina el recentrar
-    // automático de esta parte". The camera frames the whole coverage once,
-    // then stays free — only the manual FAB recentres (online parity 15.5).
+  test('offline view = home-state zones, free camera, NO auto-recenter', () {
+    // User specs 2026-10-13 + 2026-10-14 ("me abre mostrando las zonas de
+    // florida estando en alabama — debe abrir donde está el driver"): the
+    // camera frames the zones of the DRIVER'S STATE once, then stays free —
+    // only the manual FAB recentres (online parity 15.5).
     final map =
         File('lib/screens/driver/driver_online_map.dart').readAsStringSync();
-    expect(map, contains('_fitAllZones('), reason: 'the fit-all frame');
+    expect(map, contains('_fitHomeZones('), reason: 'the home-state frame');
+    expect(map, contains('_fitSectors(ZoneService.sectorsForState('),
+        reason: 'state-scoped sector pick via the embedded outlines');
     expect(map, contains('_offlineZonesFitDone = true'),
         reason: 'one-shot the first time the offline zone view exists');
+    expect(map, contains('_offlineZonesRefitPending'),
+        reason: 'a boot fit with no fix re-runs state-scoped on the first '
+            'real fix');
     final ctrl = File('lib/screens/driver/driver_online_controller.dart')
         .readAsStringSync();
-    expect(ctrl, contains('unawaited(_fitAllZones());'),
-        reason: 'the offline flip glides out to the whole coverage');
+    expect(ctrl, contains('unawaited(_fitHomeZones());'),
+        reason: 'the offline flip glides out to the driver-state zones');
+    expect(ctrl, contains('_fitHomeZones(at: newLL)'),
+        reason: 'the first-fix refit uses the fix itself, not a stale _pos');
     expect(ctrl, contains('final zoomTarget = 15.5;'),
-        reason: 'chase zoom = street parity everywhere — the fit-all owns '
-            'the offline resting view, the chase only follows at street zoom');
+        reason: 'chase zoom = street parity everywhere — the home-state fit '
+            'owns the offline resting view, the chase only follows at street '
+            'zoom');
     const gate = '_driverOnline || !FeatureFlags.zonesMapEnabled';
     final hits = gate.allMatches(map).length + gate.allMatches(ctrl).length;
     expect(hits, greaterThanOrEqualTo(2),

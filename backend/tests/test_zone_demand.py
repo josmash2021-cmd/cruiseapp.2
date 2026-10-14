@@ -68,7 +68,6 @@ async def test_round_trip_and_validation(client):
 
 async def test_parser_drops_malformed_entries_one_by_one():
     from routers.system import _parse_sector_demand
-
     out = _parse_sector_demand(
         '{"kendall": {"level": 2, "bonus": 1.5},'
         ' "bad_level": {"level": 9},'
@@ -79,3 +78,37 @@ async def test_parser_drops_malformed_entries_one_by_one():
     assert _parse_sector_demand("") == {}
     assert _parse_sector_demand("not json") == {}
     assert _parse_sector_demand("[1,2]") == {}
+
+
+async def test_live_only_sector_accepts_heat_after_restart(client):
+    """2026-10-14 (Alabama zones from the panel): the demand writer used to
+    validate ids against the BAKED fl_sectors.json only — a panel-added
+    sector (say, Birmingham) 400'd after every server restart until the next
+    PUT re-primed _SECTOR_IDS. The validation now reads the LIVE map
+    (app_config wins, baked file fallback)."""
+    import routers.system as sys_mod
+
+    dh = lambda: _make_auth_headers("test-dispatch-key")
+    square = [[-87.0, 33.3], [-86.5, 33.3], [-86.5, 33.7],
+              [-87.0, 33.7], [-87.0, 33.3]]
+    body = {"type": "FeatureCollection", "features": [
+        {"type": "Feature", "properties": {"name": "Birmingham"},
+         "geometry": {"type": "Polygon", "coordinates": [square]}}]}
+    res = await client.put("/admin/zones/sectors", headers=dh(), json=body)
+    assert res.status_code == 200, res.text
+
+    # Simulate the restart: the process-global id cache is empty and the
+    # baked file has never heard of "birmingham".
+    saved = sys_mod._SECTOR_IDS
+    sys_mod._SECTOR_IDS = frozenset()
+    try:
+        res = await client.post("/admin/zone-demand", headers=dh(),
+                                json={"sector_id": "birmingham", "level": 2,
+                                      "bonus": 1.0})
+        assert res.status_code == 200, res.text
+        res = await client.get("/zones/demand",
+                               headers=_make_auth_headers())
+        assert res.json()["sectors"]["birmingham"] == \
+            {"level": 2, "bonus": 1.0}
+    finally:
+        sys_mod._SECTOR_IDS = saved

@@ -1337,6 +1337,10 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   bool _zoneLayersReady = false;
   // One-shot latch for the offline fit-all-zones frame (2026-10-13 spec).
   bool _offlineZonesFitDone = false;
+  // The boot fit ran with no fix and fell back to the union view: re-run it
+  // state-scoped when the first real fix lands (2026-10-14 spec — the map
+  // must open on the driver's state, Florida or Alabama, never the union).
+  bool _offlineZonesRefitPending = false;
   bool? _zoneLayersVisible;
   bool? _zoneLookOnline;
   String? _zoneHighlightName;

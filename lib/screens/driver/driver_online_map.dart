@@ -2184,15 +2184,17 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     // after a pan must not yank the camera back onto the driver and leave
     // the route behind. The driver explores freely until the offer closes.
     if (_previewingOffer != null) return;
-    // Recenter by mode (user specs 2026-10-13): OFFLINE = show ALL the zones
-    // again ("para que centre todas las zonas mostrándolas"); ONLINE = centre
-    // the ARROW ("el de la derecha será para centrar en la flecha") — the
-    // zone frame lives on the LEFT compass FAB (_onZoneCompassTap).
+    // Recenter by mode (user specs 2026-10-13/14): OFFLINE = show the zones
+    // of the driver's STATE again ("para que centre todas las zonas
+    // mostrándolas" — Florida or Alabama, the driver's own, never the
+    // two-state union); ONLINE = centre the ARROW ("el de la derecha será
+    // para centrar en la flecha") — the zone frame lives on the LEFT
+    // compass FAB (_onZoneCompassTap).
     if (_phase == _Phase.searching &&
         FeatureFlags.zonesMapEnabled &&
         !_driverOnline) {
-      ApiService.logClientEvent('recenter_fit', 'scope=all_zones');
-      unawaited(_fitAllZones());
+      ApiService.logClientEvent('recenter_fit', 'scope=home_zones');
+      unawaited(_fitHomeZones());
       return;
     }
     final bearing = _smoothedBearing;
@@ -2425,11 +2427,15 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
         await _createZoneLayers(map);
         _zoneLayersReady = true;
         _zoneLayersVisible = null;
-        // The first time the offline zone view exists, frame the WHOLE
-        // coverage once (2026-10-13 spec) — after that the camera is free.
+        // The first time the offline zone view exists, frame the driver's
+        // STATE once (2026-10-14 spec) — after that the camera is free. A
+        // null fix at this instant falls back to the union view and re-runs
+        // when the first real fix lands (_offlineZonesRefitPending).
         if (!_offlineZonesFitDone && !_driverOnline) {
           _offlineZonesFitDone = true;
-          unawaited(_fitAllZones(animated: false));
+          unawaited(_fitHomeZones(animated: false).then((landed) {
+            _offlineZonesRefitPending = !landed;
+          }));
         }
       }
       final demandSig = ZoneService.demand.entries
@@ -2833,15 +2839,39 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     }
   }
 
-  /// Offline resting view with the zone layer on (user spec 2026-10-13:
-  /// "cuando el driver esté offline la vista será así con este zoom out
-  /// mostrando todas las zonas"): the WHOLE coverage framed once — then
-  /// the camera is free. No follow, no auto-recenter.
-  Future<void> _fitAllZones({bool animated = true}) async {
+  /// The union fit — every sector of every state. Only a fallback now: the
+  /// offline resting view is [_fitHomeZones] (the driver's STATE,
+  /// 2026-10-14); this frames everything when no fix exists to group by.
+  Future<void> _fitAllZones({bool animated = true}) =>
+      _fitSectors(ZoneService.sectors, animated: animated);
+
+  /// The home fit (2026-10-14, user spec: "yo estoy en alabama y la app me
+  /// abre mostrando las zonas de florida — debe abrir donde está el
+  /// driver"): the zones of the driver's STATE (Florida or Alabama, from
+  /// the embedded outlines), never the two-state union. No position or a
+  /// point outside both states → the union fallback.
+  ///
+  /// Returns false when it fell back for lack of a position — the caller
+  /// (boot) re-runs it once the first real fix lands, so a cold GPS never
+  /// strands the resting view on the wrong state.
+  Future<bool> _fitHomeZones({bool animated = true, LatLng? at}) async {
+    final pos = at ?? _pos;
+    if (pos == null) {
+      await _fitAllZones(animated: animated);
+      return false;
+    }
+    await _fitSectors(ZoneService.sectorsForState(
+        ZoneService.stateOfPoint(pos)), animated: animated);
+    return true;
+  }
+
+  Future<void> _fitSectors(List<Sector> sectors,
+      {bool animated = true}) async {
     final map = _map;
     if (map == null || kIsWeb || !ZoneService.sectorsReady) return;
+    if (sectors.isEmpty) return;
     var w = 999.0, s = 999.0, e = -999.0, n = -999.0;
-    for (final sec in ZoneService.sectors) {
+    for (final sec in sectors) {
       w = math.min(w, sec.bbox[0]);
       s = math.min(s, sec.bbox[1]);
       e = math.max(e, sec.bbox[2]);

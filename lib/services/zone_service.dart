@@ -8,24 +8,7 @@ import '../models/lat_lng.dart';
 import 'api_service.dart';
 import 'local_cache.dart';
 import 'socket_service.dart';
-
-/// One municipal zone from the baked Census boundaries (2026-10-11).
-class Zone {
-  final String name;
-  final LatLng center;
-  final List<double> bbox; // [west, south, east, north]
-
-  /// [poly][ring][point] — ring 0 of each poly is the outer boundary, the
-  /// rest are holes. Same shape the backend's zone_polygons.py consumes.
-  final List<List<List<LatLng>>> polys;
-
-  const Zone({
-    required this.name,
-    required this.center,
-    required this.bbox,
-    required this.polys,
-  });
-}
+import 'state_outlines.dart';
 
 /// One demand-heat entry set by dispatch (2026-10-12 spec): level 1 = gold
 /// semi-transparent, 2 = more solid + "Ocupado" pill, 3 = fully solid +
@@ -58,24 +41,22 @@ class Sector {
     required this.polys,
   });
 }
-/// Municipal zone polygons (2026-10-11, user spec: the driver map divided by
-/// city like the photo, and connecting only inside a zone).
+/// Driver SECTOR map (2026-10-12 spec: big regions, "no de mini ciudad en
+/// mini ciudad") — the ONLY zone dataset the app uses: drawing, tap-to-
+/// select, demand heat AND the connect gate (2026-10-14 spec: sectors of
+/// Florida AND Alabama, one dataset, the one the panel edits; the old
+/// per-city file died with the gate's move to sectors).
 ///
-/// Data comes from `${base}/static/fl_zones.json` (real Census TIGER
-/// boundaries), fetched once per process and mirrored into LocalCache so the
-/// map works without network. Fail-open everywhere: no data → `ready=false`
-/// → no gate and no drawing, never a lockout over our own data file.
+/// Data comes from `${base}/static/fl_sectors.json` (the baked seed) and
+/// the live `/zones/sectors` endpoint (the panel-edited map), mirrored into
+/// LocalCache so the map works without network. Fail-open everywhere: no
+/// data → `sectorsReady=false` → no gate and no drawing, never a lockout
+/// over our own data file.
 class ZoneService {
   ZoneService._();
 
-  static const _cacheKey = 'fl_zones_json_v1';
   static const _sectorCacheKey = 'fl_sectors_json_v1';
   static const _sectorVersionCacheKey = 'fl_sectors_version_v1';
-
-  static final List<Zone> zones = [];
-
-  /// Raw GeoJSON features, kept so the map can build its sources verbatim.
-  static final List<Map<String, dynamic>> features = [];
 
   /// The big SECTORS (2026-10-12 spec) and their raw features — one small
   /// GeoJSON source per sector on the map (the single all-cities source
@@ -103,29 +84,12 @@ class ZoneService {
   static final Map<String, SectorDemand> demand = {};
   static DateTime? _demandFetchedAt;
 
-  static bool ready = false;
-  static bool _loading = false;
-
-  /// Load zones + sectors: cached copies first (instant), network refresh
-  /// after.
+  /// Load the sector map: cached copy first (instant), live network refresh
+  /// after. Awaited so callers' `.then` runs with sectors READY (the boot
+  /// zone-restore raced the old fire-and-forget and could miss its id).
   static Future<void> load() async {
     watchZoneUpdates();
-    unawaited(loadSectors());
-    if (ready || _loading) return;
-    _loading = true;
-    try {
-      final cached = LocalCache.get<String>(_cacheKey);
-      if (cached != null && cached.length > 100) {
-        parse(cached);
-        if (ready) {
-          unawaited(_refreshFromNetwork());
-          return;
-        }
-      }
-      await _refreshFromNetwork();
-    } finally {
-      _loading = false;
-    }
+    await loadSectors();
   }
 
   /// Same load discipline as the cities file.
@@ -296,6 +260,71 @@ class ZoneService {
     return null;
   }
 
+  // ── State grouping (2026-10-14, user spec: the app opens framing the
+  // zones of the STATE the driver is in — Florida and Alabama for now) ──
+
+  /// 'FL' | 'AL' | null — the state containing the point, from the embedded
+  /// Census outlines (build-time data, no geocoder, works offline at boot).
+  static String? stateOfPoint(LatLng p) {
+    for (final ring in kStateOutlineFl) {
+      if (_flatRingContains(p.longitude, p.latitude, ring)) return 'FL';
+    }
+    for (final ring in kStateOutlineAl) {
+      if (_flatRingContains(p.longitude, p.latitude, ring)) return 'AL';
+    }
+    return null;
+  }
+
+  /// The state a sector belongs to: its center's state. Null = unknown
+  /// (border-straddling hand-drawn geometry, a future state not yet
+  /// outlined) — those sectors ride along in EVERY state fit (fail-open: a
+  /// sector the panel saved must never vanish from the map view).
+  static String? sectorState(Sector s) => stateOfPoint(s.center);
+
+  /// The sectors the zone FIT frames for a driver in [state]: the state's
+  /// own + the state-unknown ones. Null/unknown driver state → every
+  /// sector (the union fit, the pre-2026-10-14 behaviour).
+  static List<Sector> sectorsForState(String? state) {
+    if (state == null) return List.unmodifiable(sectors);
+    return [
+      for (final s in sectors)
+        if (sectorState(s) == null || sectorState(s) == state) s,
+    ];
+  }
+
+  /// Whether the point falls inside the coverage region of the SECTOR map
+  /// (union of sector bboxes). The connect gate applies inside it — with
+  /// sectors drawn in both states (panel-edited), Florida AND Alabama
+  /// drivers are gated by the same single dataset.
+  static bool insideSectorCoverage(LatLng p) {
+    if (!sectorsReady) return false;
+    for (final s in sectors) {
+      if (p.longitude >= s.bbox[0] &&
+          p.longitude <= s.bbox[2] &&
+          p.latitude >= s.bbox[1] &&
+          p.latitude <= s.bbox[3]) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /// Ray-casting on a flat [lng, lat, lng, lat, ...] ring (the generated
+  /// state outlines) — same even-odd rule as [_ringContains].
+  static bool _flatRingContains(double lng, double lat, List<double> ring) {
+    var inside = false;
+    var j = ring.length - 2;
+    for (var i = 0; i < ring.length; i += 2) {
+      final xi = ring[i], yi = ring[i + 1];
+      final xj = ring[j], yj = ring[j + 1];
+      if ((yi > lat) != (yj > lat)) {
+        if (lng < (xj - xi) * (lat - yi) / (yj - yi) + xi) inside = !inside;
+      }
+      j = i;
+    }
+    return inside;
+  }
+
   /// Pull the dispatch-set demand heat. 60 s cadence from the driver map.
   static Future<void> loadDemand({bool force = false}) async {
     final last = _demandFetchedAt;
@@ -335,119 +364,6 @@ class ZoneService {
     } catch (e) {
       debugPrint('[Zones] demand load failed (last values stay): $e');
     }
-  }
-
-  static Future<void> _refreshFromNetwork() async {
-    try {
-      final res = await http
-          .get(Uri.parse(
-              '${ApiService.currentBaseUrl}/static/fl_zones.json'))
-          .timeout(const Duration(seconds: 8));
-      if (res.statusCode == 200 && res.body.length > 100) {
-        parse(res.body);
-        if (ready) unawaited(LocalCache.set(_cacheKey, res.body));
-      }
-    } catch (e) {
-      debugPrint('[Zones] network load failed (cache still applies): $e');
-    }
-  }
-
-  /// Parse the FeatureCollection. Public for the guard test.
-  static void parse(String body) {
-    try {
-      final data = jsonDecode(body) as Map<String, dynamic>;
-      final feats = (data['features'] as List?) ?? [];
-      final parsed = <Zone>[];
-      final rawFeats = <Map<String, dynamic>>[];
-      for (final feat in feats) {
-        final f = feat as Map<String, dynamic>;
-        final props = (f['properties'] as Map?) ?? {};
-        final geom = (f['geometry'] as Map?) ?? {};
-        final gtype = geom['type'] as String?;
-        final coords = geom['coordinates'] as List? ?? [];
-        final rawPolys =
-            gtype == 'MultiPolygon' ? coords : [coords];
-        final polys = <List<List<LatLng>>>[];
-        for (final poly in rawPolys) {
-          final rings = <List<LatLng>>[
-            for (final ring in (poly as List))
-              [
-                for (final pt in (ring as List))
-                  LatLng((pt[1] as num).toDouble(), (pt[0] as num).toDouble())
-              ]
-          ];
-          if (rings.isNotEmpty && rings.first.length >= 4) polys.add(rings);
-        }
-        final bbox = ((props['bbox'] as List?) ?? [])
-            .map((v) => (v as num).toDouble())
-            .toList();
-        final center = (props['center'] as List?) ?? [0, 0];
-        if (polys.isEmpty || bbox.length < 4) continue;
-        parsed.add(Zone(
-          name: (props['name'] ?? '').toString(),
-          center: LatLng((center[1] as num).toDouble(),
-              (center[0] as num).toDouble()),
-          bbox: bbox,
-          polys: polys,
-        ));
-        rawFeats.add(f);
-      }
-      zones
-        ..clear()
-        ..addAll(parsed);
-      features
-        ..clear()
-        ..addAll(rawFeats);
-      ready = zones.isNotEmpty;
-    } catch (e) {
-      debugPrint('[Zones] parse failed: $e');
-    }
-  }
-
-  /// Whether the point falls inside the Florida coverage region (union of
-  /// every zone bbox). The connect gate only applies INSIDE it — drivers in
-  /// other states are never gated by a Florida file (Alabama's sectors come
-  /// later, 2026-10-11 user decision).
-  static bool insideCoverageArea(LatLng p) {
-    if (!ready) return false;
-    for (final z in zones) {
-      if (p.longitude >= z.bbox[0] &&
-          p.longitude <= z.bbox[2] &&
-          p.latitude >= z.bbox[1] &&
-          p.latitude <= z.bbox[3]) {
-        return true;
-      }
-    }
-    return false;
-  }
-
-  /// Zone by name (for the driver's SELECTION — they tap a zone on the map
-  /// to declare where they work, 2026-10-11).
-  static Zone? zoneByName(String name) {
-    for (final z in zones) {
-      if (z.name == name) return z;
-    }
-    return null;
-  }
-
-  /// The zone containing the point, or null. Ray-casting, even-odd rule —
-  /// the same math the backend gate uses, so app and server always agree.
-  static Zone? zoneContaining(LatLng p) {
-    if (!ready) return null;
-    for (final zone in zones) {
-      final w = zone.bbox[0], s = zone.bbox[1];
-      final e = zone.bbox[2], n = zone.bbox[3];
-      if (p.longitude < w || p.longitude > e) continue;
-      if (p.latitude < s || p.latitude > n) continue;
-      for (final rings in zone.polys) {
-        if (!_ringContains(p.longitude, p.latitude, rings[0])) continue;
-        final inHole = rings
-            .skip(1)
-            .any((hole) => _ringContains(p.longitude, p.latitude, hole));
-        if (!inHole) return zone;
-      }
-    }
-    return null;
   }
 
   static bool _ringContains(double lng, double lat, List<LatLng> ring) {

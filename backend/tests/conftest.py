@@ -77,16 +77,17 @@ def reset_rate_limiter():
 
 @pytest.fixture(autouse=True)
 def zone_gate_fail_open(monkeypatch):
-    """The municipal-zone gate (2026-10-11) reads the real FL polygons from
-    static/fl_zones.json, and most suite drivers connect from Birmingham or
-    other out-of-zone coords — with real data loaded, every is_online flip
-    in the suite would 403. Point the loader at a file that does not exist
-    (its fail-open state); test_zone_gate.py forces a real load explicitly."""
+    """The sector connect gate (2026-10-14) reads the live sector map
+    (app_config) with the baked static/fl_sectors.json as fallback, and most
+    suite drivers connect from Birmingham or other out-of-sector coords —
+    with real data loaded, every is_online flip in the suite would 403.
+    Point the baked-file loader at a file that does not exist and empty the
+    in-process cache (its fail-open state); test_zone_gate.py forces a real
+    load explicitly."""
     monkeypatch.setattr("services.zone_polygons._PATH",
                         "static/__definitely_not_here__.json")
-    monkeypatch.setattr("services.zone_polygons._zones", [])
-    monkeypatch.setattr("services.zone_polygons.ready", False)
-    monkeypatch.setattr("services.zone_polygons._loaded_mtime", None)
+    monkeypatch.setattr("services.zone_polygons._sectors", [])
+    monkeypatch.setattr("services.zone_polygons._cache_ts", 0.0)
     yield
 
 

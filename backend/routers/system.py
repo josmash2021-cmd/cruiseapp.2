@@ -720,6 +720,32 @@ def _load_sector_ids() -> frozenset:
     return _SECTOR_IDS
 
 
+async def _live_sector_ids(db) -> frozenset:
+    """Ids of the LIVE sector map: the panel-edited app_config copy wins,
+    the baked file is the fallback. The demand writer validates against
+    this — validating against the baked file alone 400'd the heat of
+    panel-added sectors (e.g. Alabama's) after every server restart until
+    the next PUT re-primed _SECTOR_IDS."""
+    from sqlalchemy import select
+    r = await db.execute(
+        select(AppConfig.value).where(AppConfig.key == _SECTORS_GEOJSON_KEY))
+    raw = r.scalar_one_or_none()
+    if raw:
+        try:
+            import json as _json
+            data = _json.loads(raw)
+            ids = frozenset(
+                str((f.get("properties") or {}).get("id") or "")
+                for f in data.get("features", []))
+            ids = frozenset(i for i in ids if i)
+            if ids:
+                return ids
+        except Exception as e:
+            logger.warning("[Zones] stored sectors unreadable for id "
+                           "validation, baked file applies: %s", e)
+    return _load_sector_ids()
+
+
 def _parse_sector_demand(raw: str) -> dict:
     """'{"sunrise_plantation": {"level": 2, "bonus": 1.5}, ...}' → dict.
     Anything malformed drops out entry by entry — one bad row must never
@@ -798,7 +824,7 @@ async def set_zone_demand(req: ZoneDemandIn, request: Request,
     import json as _json
     from sqlalchemy import select
 
-    known = _load_sector_ids()
+    known = await _live_sector_ids(db)
     if known and req.sector_id not in known:
         raise HTTPException(400, f"unknown sector: {req.sector_id}")
     global _sector_demand_cache
@@ -1053,7 +1079,7 @@ async def put_zone_sectors(req: SectorsGeojsonIn, request: Request,
     import json as _json
     from sqlalchemy import select
 
-    global _sector_demand_cache, _SECTOR_IDS
+    global _sector_demand_cache
     cleaned = _validate_sector_collection(req)
     r = await db.execute(
         select(AppConfig).where(
@@ -1079,9 +1105,9 @@ async def put_zone_sectors(req: SectorsGeojsonIn, request: Request,
             "Sector map version — bumped on every PUT")
     await db.commit()
     _sector_demand_cache = ()  # sectors_version rides that payload
-    # The heat writer validates sector ids against this set — point it at
-    # the new map this instant or renames would 400 until a restart.
-    _SECTOR_IDS = frozenset(f["properties"]["id"] for f in cleaned)
+    # No _SECTOR_IDS priming here anymore: the heat writer validates against
+    # _live_sector_ids (the app_config row this PUT just wrote), so a stale
+    # process-global set can neither 400 a rename nor leak into other maps.
     _security_audit_log(
         "zone_sectors",
         request.client.host if request.client else "unknown",

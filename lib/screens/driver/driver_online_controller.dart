@@ -1187,13 +1187,14 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     _shiftCapTimer = null;
     _shiftStartedAt = null;
     _syncOfferLiveActivity();
-    // Offline with the zone layer: glide OUT to the FIT-ALL view (user spec
-    // 2026-10-13: "la vista será así con este zoom out mostrando todas las
-    // zonas") — the camera frames the whole coverage, then stays FREE: no
-    // follow, no auto-recenter.
+    // Offline with the zone layer: glide OUT to the home-state zones view
+    // (user specs 2026-10-13/14: "la vista será así con este zoom out
+    // mostrando todas las zonas" — the zones of the DRIVER'S state, Florida
+    // or Alabama) — the camera frames them, then stays FREE: no follow, no
+    // auto-recenter.
     _reFollowTimer?.cancel();
     if (FeatureFlags.zonesMapEnabled) {
-      unawaited(_fitAllZones());
+      unawaited(_fitHomeZones());
     }
     // Offline the sheet rests half-open with the pill "Go online" at its
     // floor (2026-10-13 spec); the swipe down collapses it to the circle.
@@ -1492,6 +1493,15 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
         // and the phase (deduped inside; no-op until zones are loaded).
         _syncZoneLayers();
         final newLL = LatLng(pos.latitude, pos.longitude);
+        // The boot zone fit fell back to the two-state union for lack of a
+        // fix: this first fix re-frames the resting view on the driver's
+        // state, once (2026-10-14 spec — open where the driver IS).
+        if (_offlineZonesRefitPending &&
+            !_driverOnline &&
+            _phase == _Phase.searching) {
+          _offlineZonesRefitPending = false;
+          unawaited(_fitHomeZones(at: newLL));
+        }
         // Diagnóstico: distancia y dt real entre fixes consecutivos.
         final prevFix = _diagLastFixLL;
         if (prevFix != null) {

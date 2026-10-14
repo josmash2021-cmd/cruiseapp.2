@@ -1,10 +1,13 @@
-"""Municipal zone connect gate (2026-10-11, user spec "si el driver está
-dentro del cuadro podrá conectarse"): real Census city polygons decide who
-may flip online. Connect-time only, fail-open with no data.
+"""Sector connect gate (2026-10-14, user spec: "dentro del cuadro podrá
+conectarse" — Florida AND Alabama sectors, ONE live dataset, the one the
+panel edits): the sector polygons decide who may flip online. Connect-time
+only, fail-open with no data. Replaced the per-city gate (2026-10-11) whose
+Florida-only file could never cover Alabama.
 """
 
 import json
 import os
+import time
 
 import pytest
 
@@ -13,49 +16,51 @@ from tests.conftest import _make_auth_headers
 
 pytestmark = pytest.mark.asyncio
 
-# Hialeah's baked centroid (inside its polygon) and two certainly-outside
-# points: the Atlantic and Birmingham (where most suite drivers "live").
+# Inside the baked miami_gardens sector, plus two certainly-outside points:
+# the Atlantic and Birmingham (no Alabama sectors baked — the panel draws
+# them; until then Birmingham is OUTSIDE the coverage and never gated).
 HIALEAH = {"lat": 25.866939, "lng": -80.31336}
 OCEAN = {"lat": 25.70, "lng": -79.90}
 BIRMINGHAM = {"lat": 33.5186, "lng": -86.8104}
 
 
-def _force_real_zones():
-    # The autouse conftest shim points the loader at a nonexistent file for
-    # the whole test — restore the real path before forcing the load.
+def _force_real_sectors():
+    """The autouse conftest shim points the baked-file loader at a
+    nonexistent path for the whole suite — restore the real file and prime
+    the in-process cache so the gate runs on the real baked sectors."""
     zone_polygons._PATH = os.path.join(
         os.path.dirname(zone_polygons.__file__), "..", "static",
-        "fl_zones.json")
-    zone_polygons._loaded_mtime = None
-    zone_polygons._load(force=True)
-    assert zone_polygons.ready, "fl_zones.json should load in the repo"
+        "fl_sectors.json")
+    zone_polygons._sectors = zone_polygons._load_file()
+    zone_polygons._cache_ts = time.monotonic()
+    assert zone_polygons._sectors, "fl_sectors.json should load in the repo"
 
 
-async def test_committed_json_integrity():
+async def test_committed_sectors_json_integrity():
     path = os.path.join(
-        os.path.dirname(__file__), "..", "static", "fl_zones.json")
+        os.path.dirname(__file__), "..", "static", "fl_sectors.json")
     with open(path, encoding="utf-8") as f:
         data = json.load(f)
-    names = {feat["properties"]["name"] for feat in data["features"]}
-    assert len(names) >= 35
-    for expected in ("Hialeah", "Miami", "Miami Beach", "Doral",
-                     "Fort Lauderdale", "Pembroke Pines"):
-        assert expected in names
+    ids = {feat["properties"]["id"] for feat in data["features"]}
+    assert len(ids) >= 12
+    for expected in ("sunrise_plantation", "ftl_davie", "miami_core",
+                     "kendall", "miami_gardens"):
+        assert expected in ids
 
 
-async def test_ray_casting_real_boundaries():
-    _force_real_zones()
-    assert zone_polygons.zone_containing(**HIALEAH) == "Hialeah"
-    assert zone_polygons.zone_containing(**OCEAN) is None
-    assert zone_polygons.zone_containing(**BIRMINGHAM) is None
+async def test_gate_math_real_boundaries():
+    _force_real_sectors()
+    # Inside a sector → not blocked.
+    assert await zone_polygons.sector_gate_blocks(None, **HIALEAH) is False
+    # Outside every bbox (open Atlantic / Birmingham) = outside the coverage
+    # region entirely → the gate never even looks at it.
+    assert await zone_polygons.sector_gate_blocks(None, **OCEAN) is False
+    assert await zone_polygons.sector_gate_blocks(None, **BIRMINGHAM) is False
 
 
 async def test_online_flip_outside_coverage_is_allowed(
         client, db, test_driver):
-    """A point outside every zone bbox (open Atlantic) is out of the Florida
-    coverage region entirely → the gate never even looks at it."""
-    _force_real_zones()
-    assert zone_polygons.inside_coverage_area(**OCEAN) is False
+    _force_real_sectors()
     driver, token = test_driver
     driver.is_verified = True
     driver.verification_status = "approved"
@@ -69,8 +74,8 @@ async def test_online_flip_outside_coverage_is_allowed(
     assert res.status_code == 200, res.text
 
 
-async def test_online_flip_inside_zone_passes(client, db, test_driver):
-    _force_real_zones()
+async def test_online_flip_inside_sector_passes(client, db, test_driver):
+    _force_real_sectors()
     driver, token = test_driver
     driver.is_verified = True
     driver.verification_status = "approved"
@@ -87,12 +92,11 @@ async def test_online_flip_inside_zone_passes(client, db, test_driver):
 
 
 async def test_out_of_state_drivers_are_not_gated(client, db, test_driver):
-    """Drivers are state-separated: with REAL Florida data loaded, a driver
-    connecting from Alabama (outside the FL coverage region) is never gated
-    by a Florida file — Alabama's sectors come later (2026-10-11 user
-    decision)."""
-    _force_real_zones()
-    assert zone_polygons.inside_coverage_area(**BIRMINGHAM) is False
+    """Drivers are state-separated: with REAL Florida sectors loaded, a
+    driver connecting from Alabama (outside the sector coverage region) is
+    never gated — Alabama gets gated once its sectors exist (drawn in the
+    panel), by this same dataset (2026-10-14 user decision)."""
+    _force_real_sectors()
     driver, token = test_driver
     driver.is_verified = True
     driver.verification_status = "approved"
@@ -108,20 +112,19 @@ async def test_out_of_state_drivers_are_not_gated(client, db, test_driver):
     assert driver.is_online is True
 
 
-async def test_inside_coverage_but_outside_every_city_is_403(
+async def test_inside_coverage_but_outside_every_sector_is_403(
         client, db, test_driver):
-    """In the coverage region but not inside any municipal polygon (a gap
-    between cities / the water inside a bbox) → blocked."""
-    _force_real_zones()
-    # Find a point inside some zone's bbox but outside its polygon,
+    """In the coverage region but not inside any sector polygon (a gap
+    between sectors / the water inside a bbox) → blocked."""
+    _force_real_sectors()
+    # Find a point inside some sector's bbox but outside its polygon,
     # deterministically from the real baked data.
     gap = None
-    for zone in zone_polygons._zones:
-        w, s, e, n = zone["bbox"]
+    for sector in zone_polygons._sectors:
+        w, s, e, n = sector["bbox"]
         for lat, lng in [(s, w), (s, e), (n, w), (n, e),
                          ((s + n) / 2, (w + e) / 2)]:
-            if (zone_polygons.inside_coverage_area(lat, lng)
-                    and zone_polygons.zone_containing(lat, lng) is None):
+            if await zone_polygons.sector_gate_blocks(None, lat, lng):
                 gap = {"lat": lat, "lng": lng}
                 break
         if gap:
@@ -142,10 +145,10 @@ async def test_inside_coverage_but_outside_every_city_is_403(
     assert res.json()["detail"] == "outside_service_area"
 
 
-async def test_no_zone_data_fails_open(client, db, test_driver):
-    # The autouse conftest shim leaves the loader empty — from Birmingham
-    # (outside every FL zone) the flip must still pass: missing data can
-    # never lock the fleet out.
+async def test_no_sector_data_fails_open(client, db, test_driver):
+    # The autouse conftest shim leaves the loader empty (no app_config row,
+    # no baked file) — from Birmingham the flip must still pass: missing
+    # data can never lock the fleet out.
     driver, token = test_driver
     driver.is_verified = True
     driver.verification_status = "approved"
@@ -159,3 +162,46 @@ async def test_no_zone_data_fails_open(client, db, test_driver):
     assert res.status_code == 200, res.text
     await db.refresh(driver)
     assert driver.is_online is True
+
+
+async def test_gate_follows_the_live_panel_map(client, db, test_driver):
+    """The gate reads the LIVE sector map (the panel's PUT), not the baked
+    file: with an Alabama square saved from dispatch, Birmingham connects
+    and the baked Florida sectors no longer apply."""
+    _SQUARE = [[-87.0, 33.3], [-86.5, 33.3], [-86.5, 33.7],
+               [-87.0, 33.7], [-87.0, 33.3]]
+    body = {"type": "FeatureCollection", "features": [
+        {"type": "Feature", "properties": {"name": "Birmingham"},
+         "geometry": {"type": "Polygon", "coordinates": [_SQUARE]}}]}
+    dh = lambda: _make_auth_headers("test-dispatch-key")
+    res = await client.put("/admin/zones/sectors", headers=dh(), json=body)
+    assert res.status_code == 200, res.text
+    # The gate caches 60 s in-process — the live map lands on the next read.
+    zone_polygons._sectors = []
+    zone_polygons._cache_ts = 0.0
+
+    driver, token = test_driver
+    driver.is_verified = True
+    driver.verification_status = "approved"
+    await db.commit()
+
+    res = await client.patch(
+        f"/drivers/{driver.id}/location",
+        headers={**_make_auth_headers(), "Authorization": f"Bearer {token}"},
+        json={**BIRMINGHAM, "is_online": True},
+    )
+    assert res.status_code == 200, res.text
+    await db.refresh(driver)
+    assert driver.is_online is True
+
+    # And the inverse: outside the Alabama square but inside its bbox corner
+    # is impossible for a square — so assert the baked-map flip side: a
+    # Miami point is OUTSIDE the live coverage now (map replaced) → allowed.
+    driver.is_online = False
+    await db.commit()
+    res = await client.patch(
+        f"/drivers/{driver.id}/location",
+        headers={**_make_auth_headers(), "Authorization": f"Bearer {token}"},
+        json={**HIALEAH, "is_online": True},
+    )
+    assert res.status_code == 200, res.text

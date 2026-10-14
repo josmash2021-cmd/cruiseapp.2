@@ -1,84 +1,104 @@
-"""Municipal zone polygons for the driver connect gate (2026-10-11).
+"""Sector polygons for the driver connect gate (2026-10-14).
 
-Source of truth: `static/fl_zones.json` — real Census TIGER boundaries
-baked by `scripts/build_fl_zone_polygons.py`. Loaded once from disk with an
-mtime check, fail-open EVERYWHERE (missing/broken file → ready=False → no
-gate at all; we never lock every driver out over our own data file).
+Source of truth: the LIVE sector map — the dispatch-edited copy in
+app_config (`fl_sectors_geojson`) wins; the baked `static/fl_sectors.json`
+is the seed/fallback until the first PUT (same rule as GET /zones/sectors).
+One dataset, the one the panel edits, covering Florida AND Alabama. The old
+per-city file (`fl_zones.json`) died as a gate input with the move to
+sectors; it remains only as the build source of scripts/build_fl_sectors.py.
+
+Fail-open EVERYWHERE: no/invalid data → not ready → no gate at all; we
+never lock every driver out over our own data. Parsed polygons are cached
+60 s in-process — the location PATCH is hot (1 Hz per driver) and the map
+changes by hand, never hot.
 """
 
 import json
 import logging
 import os
+import time
 
 logger = logging.getLogger(__name__)
 
 _PATH = os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "..", "static", "fl_zones.json")
+    os.path.dirname(os.path.abspath(__file__)), "..", "static",
+    "fl_sectors.json")
 
-# Each zone: {name, bbox, center, polys}
-# polys = [ [outer_ring, hole_ring, ...], ... ]  ring = [(lng, lat), ...]
-_zones: list[dict] = []
-_loaded_mtime: float | None = None
-ready: bool = False
+# Each sector: {"bbox": [w, s, e, n], "polys": [[[lng, lat], ...], ...]}
+# (outer ring only per polygon — sector holes are not a gate concept).
+_sectors: list[dict] = []
+_cache_ts: float = 0.0
+_TTL_S = 60.0
 
 
-def _load(force: bool = False) -> None:
-    global _zones, _loaded_mtime, ready
-    try:
-        mtime = os.path.getmtime(_PATH)
-    except OSError:
-        return
-    if not force and _loaded_mtime == mtime:
-        return
+def _parse_collection(data) -> list[dict]:
+    """FeatureCollection -> [{bbox, polys}]. Anything malformed raises — the
+    callers catch and fall back to the baked file / no gate."""
+    out = []
+    for feat in data.get("features", []):
+        geom = feat.get("geometry") or {}
+        gtype = geom.get("type")
+        coords = geom.get("coordinates") or []
+        raw_polys = coords if gtype == "MultiPolygon" else [coords]
+        polys = []
+        for poly in raw_polys:
+            if not poly:
+                continue
+            ring = [(p[0], p[1]) for p in poly[0]]
+            if len(ring) >= 4:
+                polys.append(ring)
+        if not polys:
+            continue
+        pts = [p for ring in polys for p in ring]
+        lngs = [p[0] for p in pts]
+        lats = [p[1] for p in pts]
+        out.append({
+            "bbox": [min(lngs), min(lats), max(lngs), max(lats)],
+            "polys": polys,
+        })
+    return out
+
+
+def _load_file() -> list[dict]:
+    """The baked seed. Missing/broken file = empty (fail-open)."""
     try:
         with open(_PATH, encoding="utf-8") as f:
-            data = json.load(f)
-        zones = []
-        for feat in data.get("features", []):
-            props = feat.get("properties") or {}
-            geom = feat.get("geometry") or {}
-            gtype = geom.get("type")
-            coords = geom.get("coordinates") or []
-            raw_polys = coords if gtype == "MultiPolygon" else [coords]
-            polys = []
-            for poly in raw_polys:
-                rings = [[(p[0], p[1]) for p in ring] for ring in poly]
-                if rings and len(rings[0]) >= 4:
-                    polys.append(rings)
-            if polys:
-                zones.append({
-                    "name": props.get("name") or "",
-                    "bbox": props.get("bbox"),
-                    "center": props.get("center"),
-                    "polys": polys,
-                })
-        _zones = zones
-        _loaded_mtime = mtime
-        ready = bool(zones)
-        logger.info("[Zones] %d municipal zones loaded", len(zones))
+            return _parse_collection(json.load(f))
     except Exception as e:
-        logger.warning("[Zones] load failed: %s", e)
-        ready = False
+        logger.warning("[Zones] baked sector file unreadable: %s", e)
+        return []
 
 
-def is_ready() -> bool:
-    _load()
-    return ready
+async def _live_sectors(db) -> list[dict]:
+    """The panel-edited map from app_config, re-validated structurally; any
+    garbage falls back to the baked file (a bypass write must never gate)."""
+    from sqlalchemy import select
+    from models.database import AppConfig
+    r = await db.execute(
+        select(AppConfig.value).where(AppConfig.key == "fl_sectors_geojson"))
+    raw = r.scalar_one_or_none()
+    if raw:
+        try:
+            parsed = _parse_collection(json.loads(raw))
+            if parsed:
+                return parsed
+        except Exception as e:
+            logger.warning(
+                "[Zones] stored sectors unreadable for the gate, baked file "
+                "applies: %s", e)
+    return _load_file()
 
 
-def inside_coverage_area(lat: float, lng: float) -> bool:
-    """Whether the point falls inside the Florida coverage region (the union
-    bbox of every enabled zone). The connect gate only applies INSIDE this
-    region: drivers in other states (Alabama until its sectors are built,
-    2026-10-11 user decision) are never gated by a Florida file."""
-    _load()
-    if not ready:
-        return False
-    for zone in _zones:
-        w, s, e, n = zone["bbox"]
-        if w <= lng <= e and s <= lat <= n:
-            return True
-    return False
+async def _sectors_cached(db) -> list[dict]:
+    global _sectors, _cache_ts
+    now = time.monotonic()
+    if _sectors and now - _cache_ts < _TTL_S:
+        return _sectors
+    parsed = await _live_sectors(db)
+    if parsed:
+        _sectors = parsed
+        _cache_ts = now
+    return _sectors
 
 
 def _ring_contains(lng: float, lat: float, ring: list[tuple[float, float]]) -> bool:
@@ -95,19 +115,23 @@ def _ring_contains(lng: float, lat: float, ring: list[tuple[float, float]]) -> b
     return inside
 
 
-def zone_containing(lat: float, lng: float) -> str | None:
-    """Name of the municipal zone containing the point, or None."""
-    _load()
-    if not ready:
-        return None
-    for zone in _zones:
-        w, s, e, n = zone["bbox"]
-        if lng < w or lng > e or lat < s or lat > n:
+async def sector_gate_blocks(db, lat: float, lng: float) -> bool:
+    """True = refuse the connect (403 outside_service_area): the sector map
+    is loaded AND the point is inside its union coverage bbox AND no sector
+    polygon contains it. Outside the coverage (a state/region with no
+    sectors yet) or with no data → False — fail-open, never a lockout."""
+    sectors = await _sectors_cached(db)
+    if not sectors:
+        return False
+    in_coverage = any(
+        b[0] <= lng <= b[2] and b[1] <= lat <= b[3]
+        for b in (s["bbox"] for s in sectors))
+    if not in_coverage:
+        return False
+    for s in sectors:
+        w, so, e, n = s["bbox"]
+        if lng < w or lng > e or lat < so or lat > n:
             continue
-        for rings in zone["polys"]:
-            if not _ring_contains(lng, lat, rings[0]):
-                continue
-            # outer ring contains; holes exclude
-            if not any(_ring_contains(lng, lat, hole) for hole in rings[1:]):
-                return zone["name"]
-    return None
+        if any(_ring_contains(lng, lat, ring) for ring in s["polys"]):
+            return False
+    return True

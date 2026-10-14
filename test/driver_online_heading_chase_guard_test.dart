@@ -89,10 +89,11 @@ void main() {
           isTrue,
           reason: 'offline recenter centres the arrow at street zoom, same '
               'as online');
-      // Recenter by mode (2026-10-13 spec): OFFLINE = all zones; ONLINE =
-      // the ARROW — the zone frame moved to the LEFT compass FAB.
-      expect(recenter.contains('_fitAllZones()'), isTrue,
-          reason: 'offline recenter frames the whole coverage');
+      // Recenter by mode (2026-10-13/14 specs): OFFLINE = the zones of the
+      // driver's STATE (Florida or Alabama — never the two-state union);
+      // ONLINE = the ARROW — the zone frame moved to the LEFT compass FAB.
+      expect(recenter.contains('_fitHomeZones()'), isTrue,
+          reason: 'offline recenter frames the driver-state zones');
       expect(recenter.contains('_fitZone('), isFalse,
           reason: 'online recenter centres the ARROW — the zone frame is '
               'the compass button’s job, not the recenter FAB’s');

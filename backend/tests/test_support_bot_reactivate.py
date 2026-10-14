@@ -123,3 +123,19 @@ async def test_endpoints_are_dispatch_gated(client):
     res = await client.post("/support/bot-reactivate",
                             headers=_make_auth_headers(), json={})
     assert res.status_code in (401, 403)
+
+
+def test_boot_sweep_wired_in_lifespan():
+    """The same sweep runs ONCE per boot (scheduler leader only) — the user
+    asked the bot to attend pending chats without waiting for a panel click
+    ("activa para que atienda a las personas que han escrito")."""
+    import pathlib
+    s = (pathlib.Path(__file__).parent.parent / "main.py").read_text(
+        encoding="utf-8")
+    assert "_support_bot_boot_sweep" in s
+    assert "sweep_stuck_bot_chats" in s
+    assert "_is_scheduler_leader" in s, "multi-worker safe: leader only"
+    src = (pathlib.Path(__file__).parent.parent / "routers" / "support.py")
+    body = src.read_text(encoding="utf-8")
+    assert "async def sweep_stuck_bot_chats" in body
+    assert "return await sweep_stuck_bot_chats(db, chat_id)" in body

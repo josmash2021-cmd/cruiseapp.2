@@ -3333,23 +3333,11 @@ async def support_bot_status(db: AsyncSession = Depends(get_db)):
     }
 
 
-@router.post("/support/bot-reactivate", dependencies=[Depends(_require_dispatch_auth)])
-async def support_bot_reactivate(request: Request, db: AsyncSession = Depends(get_db)):
-    """Hand stuck chats back to the bot AND answer the pending message now.
-
-    Body {"chat_id": N} targets one chat; an empty/absent body sweeps every
-    stuck chat. Chats a human actually wrote in stay with the human
-    (skipped, listed). Reactivated chats land in agent_active — the phase
-    the bot answers in.
-    """
-    body = {}
-    try:
-        body = await request.json()
-    except Exception:
-        pass
-    chat_id = body.get("chat_id")
-    chat_id = int(chat_id) if chat_id is not None else None
-
+async def sweep_stuck_bot_chats(db: AsyncSession,
+                                chat_id: int | None = None) -> dict:
+    """Hand every stuck chat (or one, by id) back to the bot and answer the
+    pending user message immediately. Chats a human actually wrote in stay
+    with the human. Shared by the dispatch endpoint and the boot sweep."""
     reactivated, skipped_attended = [], []
     for chat, last_msg, attended in await _stuck_bot_chats(db, chat_id):
         if attended:
@@ -3373,6 +3361,25 @@ async def support_bot_reactivate(request: Request, db: AsyncSession = Depends(ge
 
     return {"reactivated": reactivated,
             "skipped_attended_by_human": skipped_attended}
+
+
+@router.post("/support/bot-reactivate", dependencies=[Depends(_require_dispatch_auth)])
+async def support_bot_reactivate(request: Request, db: AsyncSession = Depends(get_db)):
+    """Hand stuck chats back to the bot AND answer the pending message now.
+
+    Body {"chat_id": N} targets one chat; an empty/absent body sweeps every
+    stuck chat. Chats a human actually wrote in stay with the human
+    (skipped, listed). Reactivated chats land in agent_active — the phase
+    the bot answers in.
+    """
+    body = {}
+    try:
+        body = await request.json()
+    except Exception:
+        pass
+    chat_id = body.get("chat_id")
+    chat_id = int(chat_id) if chat_id is not None else None
+    return await sweep_stuck_bot_chats(db, chat_id)
 
 
 @router.patch("/support/chats/{chat_id}/close-user", dependencies=[Depends(_verify_api_key)])

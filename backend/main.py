@@ -894,6 +894,27 @@ async def _start_scheduler_agents() -> None:
     await chat_retention_agent.start()
     logging.info("[Lifespan] Class-based agents started")
 
+    # Support-bot boot sweep (2026-10-14, user report: "activa para que
+    # atienda a las personas que han escrito" — without waiting for dispatch
+    # to press the panel button): once per boot, the scheduler leader hands
+    # every chat left silent by a phantom escalation back to the bot, which
+    # answers the pending message on the spot.
+    async def _support_bot_boot_sweep():
+        await asyncio.sleep(75)  # let the app warm first
+        if not _is_scheduler_leader:
+            return
+        try:
+            from routers.support import sweep_stuck_bot_chats
+            async with SessionLocal() as db:
+                res = await sweep_stuck_bot_chats(db)
+            if res["reactivated"]:
+                logging.warning(
+                    "[SupportBot] boot sweep reactivated chats %s",
+                    res["reactivated"])
+        except Exception as e:
+            logging.warning("[SupportBot] boot sweep failed: %s", e)
+    _safe_create_task(_support_bot_boot_sweep())
+
     _spawn_background(_cache_sweep(), "cache_sweep")
 
     logging.info("🚀 Cruise backend FULLY OPERATIONAL — all agents active")

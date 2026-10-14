@@ -73,6 +73,14 @@ void main() {
           reason: 'scale interval of update_required_screen.dart');
       expect(screen, contains('const Interval(0, 0.4)'),
           reason: 'fade interval of update_required_screen.dart');
+      // 2026-10-14 user report ("de golpe aparece todo incluso el texto"):
+      // the controller must start on the FIRST PAINTED frame — fired from
+      // the lazy field initializer, the entrance could be consumed while
+      // the route was still transitioning in.
+      expect(screen, contains('addPostFrameCallback'),
+          reason: 'forward() runs post-frame, not at field init');
+      expect(screen.contains(')..forward();'), isFalse,
+          reason: 'the eager cascade-forward is dead');
     });
 
     test('full update-required parity: black surface + 700 ms + fade-in', () {
@@ -101,6 +109,18 @@ void main() {
       expect(screen, contains('_navigating = true'),
           reason: 'the nav guard arms before the async gap, like the '
               'approved chain');
+    });
+
+    test('the socket ping dismisses instantly, the poll is the fallback', () {
+      // User report 2026-10-14: "cuando lo quito de lista de espera la
+      // página no se quita como la de update required" — update-required
+      // dismisses on the gate's socket ping; this page must hear
+      // account_status_changed the same way (the backend emits it on
+      // un-waitlist), not wait out the 10 s poll.
+      expect(screen, contains('SocketService.accountStatusStream.listen'),
+          reason: 'the socket wake-up drives _recheck instantly');
+      expect(screen, contains('_statusSub?.cancel()'),
+          reason: 'the listener dies with the screen');
     });
   });
 

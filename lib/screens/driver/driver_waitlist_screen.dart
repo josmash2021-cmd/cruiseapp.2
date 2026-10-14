@@ -6,6 +6,7 @@ import '../../config/page_transitions.dart';
 import '../../l10n/app_localizations.dart';
 import '../../services/api_service.dart';
 import '../../services/local_data_service.dart';
+import '../../services/socket_service.dart';
 import '../../services/user_session.dart';
 import '../help_screen.dart';
 import '../welcome_screen.dart';
@@ -77,9 +78,15 @@ class _DriverWaitlistScreenState extends State<DriverWaitlistScreen>
     // Same 700 ms controller as the update-required page (user spec
     // 2026-10-13: "animación como la de update required").
     duration: const Duration(milliseconds: 700),
-  )..forward();
+  );
 
   Timer? _poll;
+  // The socket wake-up (2026-10-14 user report: "cuando lo quito de lista
+  // de espera la página no se quita como la de update required") — the
+  // update-required page dismisses the instant the gate's socket ping lands;
+  // this page must hear `account_status_changed` the same way instead of
+  // waiting out the 10 s poll. The poll stays as the dead-socket fallback.
+  StreamSubscription<Map<String, dynamic>>? _statusSub;
   bool _navigating = false; // guard against double-navigation
   late bool _rejected;
   String? _reason;
@@ -91,7 +98,15 @@ class _DriverWaitlistScreenState extends State<DriverWaitlistScreen>
     super.initState();
     _rejected = widget.startsRejected;
     _reason = widget.rejectedReason;
+    // The entrance starts on the FIRST PAINTED frame, not at field-init
+    // (2026-10-14 user report: "de golpe aparece todo incluso el texto") —
+    // fired from the lazy field initializer, the controller could consume
+    // the animation while the route was still transitioning in.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _anim.forward();
+    });
     _poll = Timer.periodic(_pollEvery, (_) => _recheck());
+    _statusSub = SocketService.accountStatusStream.listen((_) => _recheck());
     // Rejected routes often arrive without the dispatch note (Firestore
     // branch, push tap) — grab it on the first tick, not 10 s in.
     if (_rejected && (_reason == null || _reason!.isEmpty)) {
@@ -102,6 +117,7 @@ class _DriverWaitlistScreenState extends State<DriverWaitlistScreen>
   @override
   void dispose() {
     _poll?.cancel();
+    _statusSub?.cancel();
     _anim.dispose();
     super.dispose();
   }

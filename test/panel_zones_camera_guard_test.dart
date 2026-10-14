@@ -75,6 +75,31 @@ void main() {
         reason: 'the baked list survives only as the offline fallback');
   });
 
+  test('the demand SAVE path diffs against the live list too', () {
+    // User report 2026-10-14: "no me deja colocar las zona dorada ocupada y
+    // muy ocupada" — the rows rendered from the live list but the dirty-diff
+    // (nt) and the heat normalizer (as) still walked the BAKED Florida list,
+    // so editing any panel-drawn sector never counted as a change and
+    // "Guardar" stayed dead.
+    final demandChunk = Directory('backend/dispatch_panel/assets')
+        .listSync()
+        .whereType<File>()
+        .where((f) => f.path.contains('index-') && f.path.endsWith('.js'))
+        .map((f) => f.readAsStringSync())
+        .firstWhere((s) => s.contains('Sectores del mapa'),
+            orElse: () => '');
+    expect(demandChunk, isNotEmpty);
+    expect(demandChunk, contains('function nt(e,a,l){return(l??ve).filter('),
+        reason: 'the dirty-diff walks the live list, not the baked one');
+    expect(demandChunk, contains('nt(e,s,liveSectorRows??ve)'),
+        reason: 'both diff call sites pass the live list');
+    expect(demandChunk,
+        contains('function as(e,l){const a={};for(const s of (l??ve)){'),
+        reason: 'the heat prefill normalizes against the live list');
+    expect(demandChunk, contains('[m,liveSectorRows]'),
+        reason: 'the heat effect re-runs when the live list lands');
+  });
+
   test('the state selector frames Florida or Alabama on demand', () {
     // User spec 2026-10-14: "en el dispatch debe salirme para seleccionar
     // florida y seleccionar alabama… que me muestre todo lo que ya he

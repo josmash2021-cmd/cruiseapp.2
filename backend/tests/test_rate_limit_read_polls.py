@@ -19,7 +19,7 @@ limiter.
 import pytest
 from httpx import AsyncClient
 
-from main import _is_read_poll_path
+from main import _is_read_poll_path, _is_static_get_path
 from .conftest import _make_auth_headers
 
 
@@ -44,6 +44,26 @@ class TestReadPollPathClassification:
         # Plain trip fetch, trip writes, cancel — all counted.
         assert not _is_read_poll_path("/trips/625")
         assert not _is_read_poll_path("/trips/625/status")
+
+
+class TestStaticGetPathClassification:
+    """2026-10-14 user report: the dispatch PANEL PAGE itself answered 429
+    ("Too many requests") on load — panel HTML/bundles and /static files
+    were eating the 100/min API tier. Static GETs skip the tier."""
+
+    def test_static_gets_are_exempt(self):
+        assert _is_static_get_path("/panel")
+        assert _is_static_get_path("/panel/")
+        assert _is_static_get_path("/panel/assets/index-abc123.js")
+        assert _is_static_get_path("/static/fl_sectors.json")
+        assert _is_static_get_path("/static/waitlist_hero.png")
+        assert _is_static_get_path("/uploads/whatever.jpg")
+        assert _is_static_get_path("/dispatch")
+
+    def test_api_paths_are_not_static(self):
+        assert not _is_static_get_path("/trips/active")
+        assert not _is_static_get_path("/auth/me")
+        assert not _is_static_get_path("/zones/demand")
 
 
 @pytest.mark.asyncio

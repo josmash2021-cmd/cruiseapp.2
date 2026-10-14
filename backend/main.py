@@ -1543,6 +1543,20 @@ def _is_read_poll_path(path: str) -> bool:
     )
 
 
+# Browser-facing static content: the dispatch panel's page + bundles and the
+# backend-hosted /static files (zone maps, hero images). NOT API traffic —
+# a busy operator IP reloading the panel used to eat the 100/min API tier
+# and the PANEL PAGE ITSELF answered 429 (user report 2026-10-14). Like the
+# read polls, these GETs skip the tier but stay under the global DDoS cap.
+def _is_static_get_path(path: str) -> bool:
+    return (
+        path.startswith("/panel")
+        or path.startswith("/static/")
+        or path.startswith("/uploads")
+        or path.startswith("/dispatch")
+    )
+
+
 # -- LAYER 3: Rate Limiting (per-IP, anti-DDoS) --------
 _RATE_LIMIT = 3000        # max requests per IP per window (1500+ users + SSE + polling)
 _RATE_WINDOW = 60         # per this many seconds
@@ -1574,7 +1588,8 @@ async def _rate_limit_check(path: str, method: str, client_ip: str) -> tuple[int
     # and for read-only poll GETs (they skip the 100/min tier but STAY under
     # the global DDoS cap below).
     if path not in ("/ping", "/docs", "/openapi.json") and not (
-        method == "GET" and _is_read_poll_path(path)
+        method == "GET"
+        and (_is_read_poll_path(path) or _is_static_get_path(path))
     ):
         # ── Tiered rate limiting (stricter for auth, moderate for general API) ──
         # This runs BEFORE the global DDoS cap below and provides per-category limits.

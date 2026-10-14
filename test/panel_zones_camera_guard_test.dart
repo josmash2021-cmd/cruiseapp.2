@@ -96,8 +96,15 @@ void main() {
     expect(demandChunk,
         contains('function as(e,l){const a={};for(const s of (l??ve)){'),
         reason: 'the heat prefill normalizes against the live list');
-    expect(demandChunk, contains('[m,liveSectorRows]'),
-        reason: 'the heat effect re-runs when the live list lands');
+    expect(demandChunk, contains('[m,liveSectorRows]'), isFalse,
+        reason: 'deps [m, liveSectorRows] looped forever (the effect itself '
+            're-set liveSectorRows → re-fired → refetched → re-fired): '
+            'skeletons eternos y tormenta 429 (user report 2026-10-14)');
+    expect(demandChunk, contains('y.then(C=>tr().then('),
+        reason: 'the heat fetch normalizes AFTER the sectors land, with '
+            'that same list');
+    expect(demandChunk, contains('}},[m]);'),
+        reason: 'the load effect depends on the retry counter only');
   });
 
   test('the state selector frames Florida or Alabama on demand', () {

@@ -2119,6 +2119,19 @@ async def _background_bot_reply(chat_id: int, user_msg: str, user_name: str, bot
                 await asyncio.sleep(extra_delay)
 
             replies = await _generate_bot_replies(chat, user_msg, user_name, db)
+            # NUNCA silencio (2026-10-14, user mandate: "si 50 o 100 personas
+            # escriben, el robot debe responder sin fallas silenciosas"): a
+            # zero-reply branch owes the user an answer — same copy as the
+            # final fallback of the AI path. The escalated branch DID speak
+            # (the transfer lines), so it stays exempt.
+            if not replies and (chat.bot_phase or "") != "escalated":
+                _lang0 = (getattr(chat, "locale", "en") or "en")
+                _fb0 = (f"Entiendo, {user_name}. Podria darme un poco mas de "
+                        "detalle sobre lo que necesita?" if _lang0.startswith("es")
+                        else f"I understand, {user_name}. Could you give me a "
+                             "bit more detail?")
+                replies = [{"role": "bot", "message": _fb0,
+                            "sender_name": chat.agent_name or "Cruise AI"}]
             for idx, r in enumerate(replies):
                 # Add human-like typing delay between messages (simulates agent typing)
                 # System messages (join/escalation notices) appear faster
@@ -2161,7 +2174,30 @@ async def _background_bot_reply(chat_id: int, user_msg: str, user_name: str, bot
                         except Exception:
                             pass
     except Exception as e:
-        logging.error("Background bot reply failed for chat %d: %s", chat_id, e)
+        logging.error("[SupportBot] reply task CRASHED for chat %d: %s",
+                      chat_id, e, exc_info=True)
+        # Nunca silencio (2026-10-14): even a crashed pipeline owes the user
+        # an answer — write the guaranteed fallback directly. A human-owned
+        # chat (dispatch_takeover) stays silent by design.
+        try:
+            async with SessionLocal() as db2:
+                chat2 = (await db2.execute(
+                    select(SupportChat).where(SupportChat.id == chat_id))
+                ).scalar_one_or_none()
+                if (chat2 and chat2.status == "open"
+                        and (chat2.bot_phase or "") != "dispatch_takeover"):
+                    _lang2 = (getattr(chat2, "locale", "en") or "en")
+                    _fb2 = (f"Entiendo, {user_name}. Podria darme un poco mas "
+                            "de detalle sobre lo que necesita?"
+                            if _lang2.startswith("es")
+                            else f"I understand, {user_name}. Could you give "
+                                 "me a bit more detail?")
+                    db2.add(SupportMessage(chat_id=chat_id, sender_id=None,
+                                           sender_role="bot", message=_fb2))
+                    await db2.commit()
+        except Exception as e2:
+            logging.error("[SupportBot] even the fallback write failed for "
+                          "chat %d: %s", chat_id, e2)
 
 
 async def _check_chat_inactivity(chat_id: int):
@@ -3278,14 +3314,29 @@ async def _stuck_bot_chats(db: AsyncSession, chat_id: int | None = None):
     """Open chats whose LAST message is from the user (nobody answered),
     in a silent phase (escalated/dispatch_takeover or anything unhandled),
     with NO dispatch message ever written (a human never actually joined).
-    Those are safe to hand back to the bot."""
+    Those are safe to hand back to the bot.
+
+    Anti-double-answer (2026-10-14): a chat quiet for <3 min belongs to the
+    live debounce, and a chat with an in-flight reply task in THIS process
+    is already being answered — both skip. The manual endpoint (chat_id)
+    bypasses the grace: dispatch means NOW."""
     q = select(SupportChat).where(SupportChat.status == "open")
     if chat_id is not None:
         q = q.where(SupportChat.id == chat_id)
     chats = (await db.execute(q.order_by(SupportChat.updated_at.desc()))
              ).scalars().all()
     out = []
+    cutoff = datetime.now(timezone.utc) - timedelta(minutes=3)
     for c in chats:
+        upd = c.updated_at
+        if upd is not None and upd.tzinfo is None:
+            upd = upd.replace(tzinfo=timezone.utc)  # SQLite returns naive
+        if chat_id is None and upd and upd > cutoff:
+            continue  # fresh — the live debounce owns it
+        if chat_id is None:
+            live = _reply_tasks.get(c.id)
+            if live is not None and not live.done():
+                continue  # being composed in this process
         last = (await db.execute(
             select(SupportMessage).where(SupportMessage.chat_id == c.id)
             .order_by(SupportMessage.created_at.desc()).limit(1))

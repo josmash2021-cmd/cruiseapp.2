@@ -50,6 +50,9 @@ async def test_switch_is_reversible(db, test_driver, monkeypatch):
     await db.commit()
     await db.refresh(doc)
 
+    # The module-level reprocess cache persists across tests in a full run —
+    # an earlier scan's cooldown would skip this doc id.
+    mod._processed.clear()
     monkeypatch.setattr(mod, "MANUAL_REVIEW_ONLY", False)
     agent = mod.DocumentApprovalAgent()
     agent.set_db_session_maker(SessionLocal)

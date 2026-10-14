@@ -20,7 +20,8 @@ def _dh():
     return _make_auth_headers("test-dispatch-key")
 
 
-async def _mkchat(db, user_id, phase, *, with_human=False, last_user=True):
+async def _mkchat(db, user_id, phase, *, with_human=False, last_user=True,
+                  age_minutes=10):
     chat = SupportChat(user_id=user_id, subject="ayuda", status="open",
                        bot_phase=phase)
     db.add(chat)
@@ -37,6 +38,11 @@ async def _mkchat(db, user_id, phase, *, with_human=False, last_user=True):
     else:
         db.add(SupportMessage(chat_id=chat.id, sender_id=None,
                               sender_role="bot", message="ya te leí"))
+    await db.commit()
+    # Past the 3-min debounce grace — the sweep owns old silent chats.
+    from datetime import datetime, timedelta, timezone
+    chat.updated_at = datetime.now(timezone.utc) - timedelta(
+        minutes=age_minutes)
     await db.commit()
     return chat
 
@@ -132,10 +138,63 @@ def test_boot_sweep_wired_in_lifespan():
     import pathlib
     s = (pathlib.Path(__file__).parent.parent / "main.py").read_text(
         encoding="utf-8")
-    assert "_support_bot_boot_sweep" in s
+    assert "_support_bot_watchdog" in s
     assert "sweep_stuck_bot_chats" in s
     assert "_is_scheduler_leader" in s, "multi-worker safe: leader only"
+    assert "await asyncio.sleep(600)" in s, "the 10-min loop"
     src = (pathlib.Path(__file__).parent.parent / "routers" / "support.py")
     body = src.read_text(encoding="utf-8")
     assert "async def sweep_stuck_bot_chats" in body
     assert "return await sweep_stuck_bot_chats(db, chat_id)" in body
+
+
+async def test_reply_task_crash_still_answers(db, test_rider, monkeypatch):
+    """The pipeline exploding mid-reply must still land a message."""
+    import routers.support as support
+
+    rider, _ = test_rider
+    chat = await _mkchat(db, rider.id, "agent_active")
+
+    async def _boom(*a, **k):
+        raise RuntimeError("LLM down mid-turn")
+
+    monkeypatch.setattr(support, "_generate_bot_replies", _boom)
+    await support._background_bot_reply(chat.id, "hola", "Test", "agent_active")
+
+    from sqlalchemy import select as _sel
+    last = (await db.execute(
+        _sel(SupportMessage).where(SupportMessage.chat_id == chat.id)
+        .order_by(SupportMessage.created_at.desc()).limit(1))
+    ).scalar_one()
+    assert last.sender_role == "bot"
+    assert "detalle" in last.message or "more detail" in last.message
+
+
+async def test_empty_replies_still_answers(db, test_rider, monkeypatch):
+    """A zero-reply branch owes the user the fallback line."""
+    import asyncio as _asyncio
+    import routers.support as support
+
+    rider, _ = test_rider
+    chat = await _mkchat(db, rider.id, "agent_active")
+
+    async def _empty(*a, **k):
+        return []
+
+    real_sleep = _asyncio.sleep
+
+    async def _fast_sleep(_s):
+        await real_sleep(0)
+
+    monkeypatch.setattr(support, "_generate_bot_replies", _empty)
+    monkeypatch.setattr(support.asyncio, "sleep", _fast_sleep)
+    await support._background_bot_reply(chat.id, "hola", "Test",
+                                        "agent_active")
+
+    from sqlalchemy import select as _sel
+    last = (await db.execute(
+        _sel(SupportMessage).where(SupportMessage.chat_id == chat.id)
+        .order_by(SupportMessage.created_at.desc()).limit(1))
+    ).scalar_one()
+    assert last.sender_role == "bot"
+    assert "detalle" in last.message or "more detail" in last.message

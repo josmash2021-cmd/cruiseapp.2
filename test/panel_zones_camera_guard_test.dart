@@ -96,7 +96,7 @@ void main() {
     expect(demandChunk,
         contains('function as(e,l){const a={};for(const s of (l??ve)){'),
         reason: 'the heat prefill normalizes against the live list');
-    expect(demandChunk, contains('[m,liveSectorRows]'), isFalse,
+    expect(demandChunk.contains('[m,liveSectorRows]'), isFalse,
         reason: 'deps [m, liveSectorRows] looped forever (the effect itself '
             're-set liveSectorRows → re-fired → refetched → re-fired): '
             'skeletons eternos y tormenta 429 (user report 2026-10-14)');

@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 import 'dart:convert';
+import 'dart:io' show Platform;
 import 'dart:math' as math;
 import 'dart:ui' show PlatformDispatcher;
 import 'package:flutter/material.dart';
@@ -1217,14 +1218,20 @@ Future<void> heavyInit() async {
       }
     }(),
 
-    // ── Notification language ──
+    // ── Notification language + device platform ──
     // The phone's locale decides the language of pushes (doc review, etc.).
     // Reported on every cold start; the backend keeps the last one seen.
+    // Platform + OS version ride along (2026-10-14, dispatch install split:
+    // "quiero saber todos los que tienen android y todos los que tienen ios").
     () async {
       try {
         if (!kIsWeb && await ApiService.getToken() != null) {
           final lc = PlatformDispatcher.instance.locale.languageCode;
-          await ApiService.updateMe({'locale': lc.startsWith('es') ? 'es' : 'en'});
+          await ApiService.updateMe({
+            'locale': lc.startsWith('es') ? 'es' : 'en',
+            'platform': Platform.operatingSystem, // 'android' | 'ios'
+            'os_version': Platform.operatingSystemVersion,
+          });
         }
       } catch (e) {
         debugPrint('[Locale] report failed: $e');

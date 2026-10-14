@@ -2182,6 +2182,41 @@ async def delete_promo(promo_id: str):
     return {"status": "ok"}
 
 
+@router.get("/admin/platform-stats", dependencies=[Depends(_require_dispatch_auth)])
+async def admin_platform_stats(db: AsyncSession = Depends(get_db)):
+    """Install split by device platform (2026-10-14 user request: "quiero
+    saber en dispatch todos los que tienen android y todos los que tienen
+    ios"). Counts come from the app-reported users.platform (every boot,
+    PATCH /auth/me); NULL = never reported yet (pre-patch installs, web).
+    Anything that is not literally android/ios counts as unknown."""
+    from sqlalchemy import select
+    rows = (await db.execute(
+        select(User.id, User.first_name, User.last_name, User.phone,
+               User.role, User.platform, User.device_model, User.os_version,
+               User.app_version, User.last_active_at)
+        .order_by(User.platform.is_(None), User.platform.asc(), User.id.asc())
+    )).all()
+    counts = {"android": 0, "ios": 0, "unknown": 0}
+    users = []
+    for r in rows:
+        p = (r.platform or "").strip().lower() or None
+        counts[p if p in ("android", "ios") else "unknown"] += 1
+        users.append({
+            "id": r.id,
+            "first_name": r.first_name,
+            "last_name": r.last_name,
+            "phone": r.phone,
+            "role": r.role,
+            "platform": p,
+            "device_model": r.device_model,
+            "os_version": r.os_version,
+            "app_version": r.app_version,
+            "last_active_at":
+                r.last_active_at.isoformat() if r.last_active_at else None,
+        })
+    return {"counts": counts, "users": users}
+
+
 @router.post("/admin/firestore/prune-trips", dependencies=[Depends(_require_dispatch_auth)])
 async def admin_prune_firestore_trips(db: AsyncSession = Depends(get_db)):
     """Delete Firestore `trips` mirrors whose backend row no longer exists.

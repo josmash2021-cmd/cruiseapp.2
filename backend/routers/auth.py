@@ -1765,7 +1765,7 @@ async def update_me(request: Request, user: User = Depends(_get_current_user), d
     # Only allow safe fields - NEVER role, is_verified, verification_status
     _SAFE_SELF_UPDATE_FIELDS = ("first_name", "last_name", "email", "phone", "photo_url", "id_document_type")
     # Device tracking fields (always allowed)
-    _DEVICE_FIELDS = ("app_version", "device_model", "os_version")
+    _DEVICE_FIELDS = ("app_version", "device_model", "os_version", "platform")
     # Privacy preference fields (always allowed)
     _PRIVACY_FIELDS = ("privacy_location", "privacy_analytics", "privacy_ads")
     # Driver onboarding fields (drive city/state + survey JSON, always allowed)
@@ -1804,10 +1804,30 @@ async def update_me(request: Request, user: User = Depends(_get_current_user), d
             if key == "photo_url" and (not val or not isinstance(val, str) or not val.startswith("http")):
                 continue
             setattr(db_user, key, val)
-    # Update device tracking fields
+    # Update device tracking fields (platform normalized like locale — the
+    # app reports Platform.operatingSystem verbatim; 2026-10-14 dispatch
+    # install split).
+    _DEVICE_FIELD_CAPS = {"app_version": 30, "device_model": 100,
+                          "os_version": 50, "platform": 10}
     for key in _DEVICE_FIELDS:
         if key in updates:
-            setattr(db_user, key, updates[key])
+            val = str(updates[key] or "")[:_DEVICE_FIELD_CAPS[key]]
+            setattr(db_user, key,
+                    val.strip().lower() if key == "platform" else val)
+    # Mirror the device block to the Firestore user doc — the panel's
+    # directory pages read Firestore, not REST.
+    if "platform" in updates and _HAS_FIRESTORE:
+        try:
+            _collection = "drivers" if (db_user.role or "") == "driver" else "clients"
+            firestore_sync.db.collection(_collection).document(
+                f"sql_{db_user.id}").set({
+                    "platform": db_user.platform,
+                    "osVersion": db_user.os_version,
+                    "deviceModel": db_user.device_model,
+                    "appVersion": db_user.app_version,
+                }, merge=True)
+        except Exception as e:
+            logging.warning("[auth] platform firestore mirror failed: %s", e)
     # Notification language (2026-10-05, user spec): the app reports the
     # device locale at boot; normalized to the two languages we ship copy in.
     if "locale" in updates and updates["locale"] is not None:

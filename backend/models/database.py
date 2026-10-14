@@ -196,6 +196,10 @@ class User(Base):
     app_version = Column(String(30), nullable=True)
     device_model = Column(String(100), nullable=True)
     os_version = Column(String(50), nullable=True)
+    # Device platform as the app reports it (android/ios) — the dispatch
+    # install split (2026-10-14 user request: "quiero saber en dispatch
+    # todos los que tienen android y todos los que tienen ios").
+    platform = Column(String(10), nullable=True)
     last_active_at = Column(DateTime(timezone=True), nullable=True)
     privacy_location = Column(Boolean, default=True)
     privacy_analytics = Column(Boolean, default=True)
@@ -1078,6 +1082,7 @@ async def migrate_add_columns(conn):
         ("users", "app_version", "VARCHAR(30)"),
         ("users", "device_model", "VARCHAR(100)"),
         ("users", "os_version", "VARCHAR(50)"),
+        ("users", "platform", "VARCHAR(10)"),
         ("users", "last_active_at", "DATETIME"),
         ("users", "privacy_location", "BOOLEAN DEFAULT 1"),
         ("users", "privacy_analytics", "BOOLEAN DEFAULT 1"),
@@ -1206,6 +1211,7 @@ async def migrate_postgres(conn):
         ("users", "app_version", "VARCHAR(30)"),
         ("users", "device_model", "VARCHAR(100)"),
         ("users", "os_version", "VARCHAR(50)"),
+        ("users", "platform", "VARCHAR(10)"),
         ("users", "last_active_at", "TIMESTAMP WITH TIME ZONE"),
         ("users", "privacy_location", "BOOLEAN DEFAULT TRUE"),
         ("users", "privacy_analytics", "BOOLEAN DEFAULT TRUE"),

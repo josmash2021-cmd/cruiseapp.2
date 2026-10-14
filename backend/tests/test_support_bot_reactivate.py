@@ -1,0 +1,125 @@
+"""Support bot diagnostics + reactivation (2026-10-14 user report: "el
+soporte no funciona — revisa qué le pasó al robot y activa para que atienda
+a las personas que han escrito").
+
+Chats stuck in a silent phase (escalated / phantom dispatch_takeover) with
+no human message ever written wait forever. Dispatch can now SEE them
+(/support/bot-status) and hand them back to the bot with an immediate
+answer (/support/bot-reactivate).
+"""
+
+import pytest
+
+from models.database import SupportChat, SupportMessage, User
+from tests.conftest import _make_auth_headers
+
+pytestmark = pytest.mark.asyncio
+
+
+def _dh():
+    return _make_auth_headers("test-dispatch-key")
+
+
+async def _mkchat(db, user_id, phase, *, with_human=False, last_user=True):
+    chat = SupportChat(user_id=user_id, subject="ayuda", status="open",
+                       bot_phase=phase)
+    db.add(chat)
+    await db.commit()
+    await db.refresh(chat)
+    if with_human:
+        db.add(SupportMessage(chat_id=chat.id, sender_id=None,
+                              sender_role="dispatch", message="te leo"))
+        await db.commit()
+        await __import__("asyncio").sleep(0.01)  # distinct created_at
+    if last_user:
+        db.add(SupportMessage(chat_id=chat.id, sender_id=user_id,
+                              sender_role="user", message="hola, ayuda"))
+    else:
+        db.add(SupportMessage(chat_id=chat.id, sender_id=None,
+                              sender_role="bot", message="ya te leí"))
+    await db.commit()
+    return chat
+
+
+async def test_status_reports_stuck_chats(client, db, test_rider):
+    rider, _ = test_rider
+    await _mkchat(db, rider.id, "escalated")
+
+    res = await client.get("/support/bot-status", headers=_dh())
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["provider"] in ("openai", "kimi", "none")
+    waiting = [w["chat_id"] for w in body["waiting_on_answer"]]
+    assert body["by_phase"].get("escalated", 0) >= 1
+    assert waiting, "the stuck chat must be listed"
+
+
+async def test_reactivate_hands_chat_back_to_bot(client, db, test_rider,
+                                                 monkeypatch):
+    import routers.support as support
+
+    rider, _ = test_rider
+    chat = await _mkchat(db, rider.id, "escalated")
+
+    fired = []
+
+    async def _fake_reply(chat_id, user_msg, user_name, phase):
+        fired.append((chat_id, phase))
+
+    monkeypatch.setattr(support, "_background_bot_reply", _fake_reply)
+    # _safe_create_task wraps the coroutine — the fake returns a coroutine
+    # too, which the task runner will just run.
+    res = await client.post("/support/bot-reactivate", headers=_dh(),
+                            json={"chat_id": chat.id})
+    assert res.status_code == 200, res.text
+    assert res.json()["reactivated"] == [chat.id]
+    assert res.json()["skipped_attended_by_human"] == []
+
+    await db.refresh(chat)
+    assert chat.bot_phase == "agent_active"
+    await __import__("asyncio").sleep(0.05)
+    assert fired and fired[0][0] == chat.id and fired[0][1] == "agent_active"
+
+
+async def test_reactivate_skips_chats_a_human_attended(client, db, test_rider):
+    rider, _ = test_rider
+    chat = await _mkchat(db, rider.id, "dispatch_takeover", with_human=True)
+    res = await client.post("/support/bot-reactivate", headers=_dh(),
+                            json={"chat_id": chat.id})
+    assert res.status_code == 200, res.text
+    assert res.json()["reactivated"] == []
+    assert res.json()["skipped_attended_by_human"] == [chat.id]
+    await db.refresh(chat)
+    assert chat.bot_phase == "dispatch_takeover"
+
+
+async def test_reactivate_sweep_covers_all_stuck(client, db, test_rider,
+                                                 monkeypatch):
+    import routers.support as support
+    rider, _ = test_rider
+    a = await _mkchat(db, rider.id, "escalated")
+    b = await _mkchat(db, rider.id, "dispatch_takeover")
+    # one already fine — a bot message answered last
+    ok = await _mkchat(db, rider.id, "agent_active", last_user=False)
+
+    monkeypatch.setattr(support, "_background_bot_reply",
+                        lambda *args: _noop(*args))
+
+    async def _noop(*args):
+        return None
+
+    res = await client.post("/support/bot-reactivate", headers=_dh(), json={})
+    assert res.status_code == 200, res.text
+    ids = set(res.json()["reactivated"])
+    assert ids == {a.id, b.id}
+    await db.refresh(ok)
+    assert ok.bot_phase == "agent_active"
+
+
+async def test_endpoints_are_dispatch_gated(client):
+    res = await client.get("/support/bot-status",
+                           headers=_make_auth_headers())
+    assert res.status_code in (401, 403)
+    res = await client.post("/support/bot-reactivate",
+                            headers=_make_auth_headers(), json={})
+    assert res.status_code in (401, 403)

@@ -3259,6 +3259,122 @@ async def close_support_chat(chat_id: int, db: AsyncSession = Depends(get_db)):
 
     return {"status": "closed"}
 
+
+# ── Dispatch bot diagnostics + reactivation (2026-10-14, user report: "el
+# soporte no funciona — revisa qué le pasó al robot y activa para que
+# atienda a las personas que han escrito") ──
+#
+# The bot is silent on a chat by DESIGN in two phases: "escalated" (a human
+# was promised) and "dispatch_takeover" (a human owns it). A chat stuck in
+# either with NO dispatch message ever written is a phantom handoff — the
+# user waits forever. These two endpoints let dispatch SEE that state and
+# hand those chats back to the bot, answering the pending message on the
+# spot.
+
+_USER_MSG_ROLES = ("user", "rider", "driver")
+
+
+async def _stuck_bot_chats(db: AsyncSession, chat_id: int | None = None):
+    """Open chats whose LAST message is from the user (nobody answered),
+    in a silent phase (escalated/dispatch_takeover or anything unhandled),
+    with NO dispatch message ever written (a human never actually joined).
+    Those are safe to hand back to the bot."""
+    q = select(SupportChat).where(SupportChat.status == "open")
+    if chat_id is not None:
+        q = q.where(SupportChat.id == chat_id)
+    chats = (await db.execute(q.order_by(SupportChat.updated_at.desc()))
+             ).scalars().all()
+    out = []
+    for c in chats:
+        last = (await db.execute(
+            select(SupportMessage).where(SupportMessage.chat_id == c.id)
+            .order_by(SupportMessage.created_at.desc()).limit(1))
+        ).scalar_one_or_none()
+        if not last or last.sender_role not in _USER_MSG_ROLES:
+            continue
+        human_msgs = (await db.execute(
+            select(func.count()).select_from(SupportMessage).where(
+                SupportMessage.chat_id == c.id,
+                SupportMessage.sender_role == "dispatch"))
+        ).scalar_one()
+        out.append((c, last, human_msgs > 0))
+    return out
+
+
+@router.get("/support/bot-status", dependencies=[Depends(_require_dispatch_auth)])
+async def support_bot_status(db: AsyncSession = Depends(get_db)):
+    """Bot health for dispatch: the live provider, the open-chat phase map,
+    and the chats waiting on an answer (with whether a human ever joined)."""
+    from services import openai_support_service as _ai
+
+    open_chats = (await db.execute(
+        select(SupportChat).where(SupportChat.status == "open"))
+    ).scalars().all()
+    by_phase: dict[str, int] = {}
+    for c in open_chats:
+        phase = c.bot_phase or "welcome"
+        by_phase[phase] = by_phase.get(phase, 0) + 1
+
+    stuck = await _stuck_bot_chats(db)
+    return {
+        "provider": _ai._PROVIDER,
+        "model": _ai._MODEL,
+        "open_chats": len(open_chats),
+        "by_phase": by_phase,
+        "waiting_on_answer": [
+            {
+                "chat_id": c.id,
+                "bot_phase": c.bot_phase or "welcome",
+                "attended_by_human": attended,
+                "updated_at": c.updated_at.isoformat() if c.updated_at else None,
+            }
+            for c, _last, attended in stuck
+        ],
+    }
+
+
+@router.post("/support/bot-reactivate", dependencies=[Depends(_require_dispatch_auth)])
+async def support_bot_reactivate(request: Request, db: AsyncSession = Depends(get_db)):
+    """Hand stuck chats back to the bot AND answer the pending message now.
+
+    Body {"chat_id": N} targets one chat; an empty/absent body sweeps every
+    stuck chat. Chats a human actually wrote in stay with the human
+    (skipped, listed). Reactivated chats land in agent_active — the phase
+    the bot answers in.
+    """
+    body = {}
+    try:
+        body = await request.json()
+    except Exception:
+        pass
+    chat_id = body.get("chat_id")
+    chat_id = int(chat_id) if chat_id is not None else None
+
+    reactivated, skipped_attended = [], []
+    for chat, last_msg, attended in await _stuck_bot_chats(db, chat_id):
+        if attended:
+            skipped_attended.append(chat.id)
+            continue
+        chat.bot_phase = "agent_active"
+        db.add(chat)
+        await db.commit()
+        await db.refresh(chat)
+        reactivated.append(chat.id)
+        # Answer the pending message NOW — the user already wrote and got
+        # nothing; waiting for their next message is not "attending" them.
+        user_r = await db.execute(select(User).where(User.id == chat.user_id))
+        u = user_r.scalar_one_or_none()
+        _reply_tasks.pop(chat.id, None)
+        _reply_tasks[chat.id] = _safe_create_task(_background_bot_reply(
+            chat.id, last_msg.message or "",
+            (u.first_name if u else None) or "Cliente", "agent_active"))
+        logging.warning("[SupportBot] chat %s reactivated by dispatch — "
+                        "bot answers the pending message", chat.id)
+
+    return {"reactivated": reactivated,
+            "skipped_attended_by_human": skipped_attended}
+
+
 @router.patch("/support/chats/{chat_id}/close-user", dependencies=[Depends(_verify_api_key)])
 async def close_support_chat_user(chat_id: int, user: User = Depends(_get_current_user), db: AsyncSession = Depends(get_db)):
     """Close a support chat (user-facing  only the chat owner can close)."""

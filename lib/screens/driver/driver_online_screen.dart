@@ -1038,9 +1038,10 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     // whole screen — live map included — to change something nobody could
     // see.
     _statusLineTimer = Timer.periodic(const Duration(seconds: 5), (_) {
-      // Modo único: offline no hay línea de búsqueda que alternar — el tick
-      // solo reconstruía la pantalla cada 5 s para nada.
-      if (!mounted || _phase != _Phase.searching || !_driverOnline) return;
+      // Offline también alterna (user spec 2026-10-14): el header del sheet
+      // cruza "You're offline" ↔ "No estás en línea" suave — el tick ya no
+      // es solo del modo online.
+      if (!mounted || _phase != _Phase.searching) return;
       _setState(() => _statusLine = _statusLine == 0 ? 1 : 0);
     });
     _searchPulseVal = Tween<double>(begin: 0.0, end: 1.0).animate(

@@ -1028,6 +1028,12 @@ class S {
   String get goOnline => _es ? 'Conectarse' : 'GO ONLINE';
   String get goOffline => _es ? 'Desconectarse' : 'Go Offline';
   String get youreOffline => _es ? 'Estás desconectado' : "You're offline";
+  // The offline header alternates smoothly between the two phrasings (user
+  // spec 2026-10-14), and the subtitle below states the consequence.
+  String get notOnline => _es ? 'No estás en línea' : "You're not online";
+  String get offlineNoRideRequests => _es
+      ? 'No recibirás ningún pedido de viaje'
+      : "You won't receive any ride requests";
   String get goOnlineToEarn =>
       _es ? 'Conéctate para empezar a ganar' : 'Go online to start earning';
   String get tapGoForTrips => _es

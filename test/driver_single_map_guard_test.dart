@@ -151,4 +151,53 @@ void main() {
               'mount');
     });
   });
+
+  group('offline header — smooth alternating status + subtitle + wheel', () {
+    // User spec 2026-10-14: the "You're offline" line alternates smoothly
+    // with "No estás en línea", the subtitle "No recibirás ningún pedido de
+    // viaje" sits under it (sheet open), and a steering-wheel badge rides to
+    // the right of the open GO pill.
+    final off = File('lib/screens/driver/driver_online_offline.dart')
+        .readAsStringSync();
+    final scr = File('lib/screens/driver/driver_online_screen.dart')
+        .readAsStringSync();
+    final l10n = File('lib/l10n/app_localizations.dart').readAsStringSync();
+
+    test('the status clock flips in BOTH modes now', () {
+      final i = scr.indexOf('_statusLineTimer = Timer.periodic(');
+      expect(i, isNonNegative);
+      final block = scr.substring(i, i + 700);
+      expect(block.contains('!_driverOnline'), isFalse,
+          reason: 'the tick used to be online-only — the offline header '
+              'alternates on the same clock now');
+      expect(block, contains('_statusLine = _statusLine == 0 ? 1 : 0'));
+    });
+
+    test('the header swaps smoothly and the subtitle gates on the open sheet',
+        () {
+      expect(off, contains('_SequentialSwapLabel('),
+          reason: 'the header reuses the sequential fade swap');
+      expect(off, contains('s.youreOffline : s.notOnline'),
+          reason: 'the two phrasings alternate');
+      expect(off, contains('s.offlineNoRideRequests'),
+          reason: 'the subtitle under the status line');
+      expect(off, contains('panelFrac > 0.6'),
+          reason: 'the subtitle collapses with the sheet — the collapsed '
+              'strip keeps its height');
+      expect(l10n, contains('No estás en línea'));
+      expect(l10n, contains('No recibirás ningún pedido de viaje'));
+      expect(l10n, contains("You won't receive any ride requests"));
+    });
+
+    test('a steering-wheel badge rides right of the open GO pill', () {
+      expect(off, contains('_GoWheelBadge()'),
+          reason: 'the wheel badge is mounted beside the pill');
+      expect(off, contains('Alignment.centerRight'),
+          reason: 'it hugs the right edge of the GO row');
+      expect(off, contains('class _GoWheelPainter extends CustomPainter'),
+          reason: 'hand-painted wheel (no glyph in Material)');
+      expect(off, contains('IgnorePointer'),
+          reason: 'decorative — the pill owns the tap');
+    });
+  });
 }

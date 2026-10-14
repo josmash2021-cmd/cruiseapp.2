@@ -1106,19 +1106,39 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
                 ],
               ),
               child: LayoutBuilder(
-                builder: (context, box) => Align(
-                  // Closed, the disc floats centred; as the sheet opens the
-                  // alignment itself travels left and the pill ends up in the
-                  // left of the row, a bit OVER half wide (user specs
-                  // 2026-10-14: "a la izquierda hasta la mitad" → "un poco
-                  // más de la mitad").
-                  alignment: Alignment.lerp(
-                      Alignment.center, Alignment.centerLeft, t)!,
-                  child: SizedBox(
-                    width: ui.lerpDouble(_kGoCircleD, box.maxWidth * 0.62, t),
-                    height: height,
-                    child: _buildGoButton(radius: radius, morph: t),
-                  ),
+                builder: (context, box) => Stack(
+                  children: [
+                    Align(
+                      // Closed, the disc floats centred; as the sheet opens
+                      // the alignment itself travels left and the pill ends
+                      // up in the left of the row, a bit OVER half wide
+                      // (user specs 2026-10-14: "a la izquierda hasta la
+                      // mitad" → "un poco más de la mitad").
+                      alignment: Alignment.lerp(
+                          Alignment.center, Alignment.centerLeft, t)!,
+                      child: SizedBox(
+                        width:
+                            ui.lerpDouble(_kGoCircleD, box.maxWidth * 0.62, t),
+                        height: height,
+                        child: _buildGoButton(radius: radius, morph: t),
+                      ),
+                    ),
+                    // El volante al lado DERECHO del pill (user spec
+                    // 2026-10-14: "al lado del botón go online quiero que
+                    // tenga un icono de volante") — decorativo, aparece con
+                    // la forma pill.
+                    Positioned.fill(
+                      child: Align(
+                        alignment: Alignment.centerRight,
+                        child: IgnorePointer(
+                          child: Opacity(
+                            opacity: t,
+                            child: const _GoWheelBadge(),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -1542,30 +1562,78 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
           child: Row(
             children: [
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Container(
-                    width: 8,
-                    height: 8,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: dc.text.withValues(alpha: 0.3),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          width: 8,
+                          height: 8,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: dc.text.withValues(alpha: 0.3),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        // The status line alternates smoothly (user spec
+                        // 2026-10-14: "irá cambiando de forma smooth y
+                        // animada") — "You're offline" ↔ "No estás en línea"
+                        // on the 5 s status clock, sequential fade swap like
+                        // the searching label.
+                        Flexible(
+                          child: _SequentialSwapLabel(
+                            textKey: _statusLine,
+                            builder: () => Text(
+                              _statusLine == 0 ? s.youreOffline : s.notOnline,
+                              maxLines: 1,
+                              overflow: TextOverflow.clip,
+                              style: TextStyle(
+                                color: dc.text,
+                                fontSize: 21,
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: -0.2,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    s.youreOffline,
-                    style: TextStyle(
-                      color: dc.text,
-                      fontSize: 21,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: -0.2,
+                    // The consequence, under the status line (same spec:
+                    // "abajo de ese texto dirá 'no recibirás ningún pedido
+                    // de viaje'") — a sheet-open read: collapses away with
+                    // the sheet so the collapsed strip keeps its 52 pt.
+                    AnimatedSize(
+                      duration: const Duration(milliseconds: 250),
+                      curve: Curves.easeInOut,
+                      alignment: Alignment.topCenter,
+                      child: panelFrac > 0.6
+                          ? Padding(
+                              padding:
+                                  const EdgeInsets.only(left: 16, top: 3),
+                              child: AnimatedOpacity(
+                                duration: const Duration(milliseconds: 250),
+                                opacity: panelFrac > 0.6 ? 1.0 : 0.0,
+                                child: Text(
+                                  s.offlineNoRideRequests,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.clip,
+                                  style: TextStyle(
+                                    color: dc.textSecondary,
+                                    fontSize: 12.5,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ),
+                            )
+                          : const SizedBox.shrink(),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-              const Spacer(),
               // The chevron that says there is more below. Tap is a no-op on
               // purpose: the sheet's own handle takes the gesture.
               GestureDetector(
@@ -2333,4 +2401,72 @@ class _GoRadarPainter extends CustomPainter {
   @override
   bool shouldRepaint(_GoRadarPainter old) =>
       old.progress != progress || old.color != color;
+}
+
+
+/// The steering-wheel badge riding to the RIGHT of the open GO pill (user
+/// spec 2026-10-14: "al lado del botón go online quiero que tenga un icono
+/// de volante"). Decorative — the pill owns the tap (IgnorePointer).
+class _GoWheelBadge extends StatelessWidget {
+  const _GoWheelBadge();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 46,
+      height: 46,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: const Color(0xFF141420),
+        border: Border.all(color: _offlineGold.withValues(alpha: 0.4)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.35),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
+      child: const Center(
+        child: SizedBox(
+          width: 24,
+          height: 24,
+          child: CustomPaint(painter: _GoWheelPainter(color: _offlineGold)),
+        ),
+      ),
+    );
+  }
+}
+
+/// Hand-painted steering wheel (Material has no steering-wheel glyph) — the
+/// same construction as the welcome screen's role button: rim, three spokes
+/// at 90°/210°/330°, hub.
+class _GoWheelPainter extends CustomPainter {
+  const _GoWheelPainter({required this.color});
+
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final c = Offset(size.width / 2, size.height / 2);
+    final r = size.width / 2 - 0.8;
+    final p = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = size.width * 0.115
+      ..strokeCap = StrokeCap.round;
+    canvas.drawCircle(c, r, p);
+    for (final deg in [90.0, 210.0, 330.0]) {
+      final a = deg * math.pi / 180;
+      canvas.drawLine(
+        c + Offset(math.cos(a), math.sin(a)) * (r * 0.45),
+        c + Offset(math.cos(a), math.sin(a)) * (r * 0.88),
+        p,
+      );
+    }
+    canvas.drawCircle(c, size.width * 0.15, Paint()..color = color);
+  }
+
+  @override
+  bool shouldRepaint(_GoWheelPainter old) => old.color != color;
 }

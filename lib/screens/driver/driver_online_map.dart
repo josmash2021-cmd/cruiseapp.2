@@ -2465,6 +2465,12 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
   Future<void> _createZoneLayers(mapbox.MapboxMap map) async {
     final emptyFc =
         jsonEncode({'type': 'FeatureCollection', 'features': const []});
+    // The gold goes UNDER the road network with the lines on top (2026-10-14
+    // user spec: "ese dorado se colocará debajo del mapa y las líneas estarán
+    // encima de ese dorado"): pin every fill below the style's lowest
+    // road/tunnel layer. A style without roads falls back to the top (the
+    // pre-change behaviour).
+    final fillBelowId = await _zoneRoadAnchor(map);
     // Parallel batches instead of a ~120-link serial await chain
     // (2026-10-12 black-map report): every awaited platform call yields
     // the event loop, and the serial version kept the render thread busy
@@ -2474,33 +2480,38 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
       for (final s in ZoneService.sectors) _addSectorSource(map, s, emptyFc),
       _guardedStyleWrite(map.style
           .addSource(mapbox.GeoJsonSource(id: 'sec-hl-src', data: emptyFc))),
-      // The spotlight mask (user spec 2026-10-12): a world ring with the
-      // chosen sector's outer rings as holes — online, everything OUTSIDE
-      // the zone dims to barely-visible.
-      _guardedStyleWrite(map.style
-          .addSource(mapbox.GeoJsonSource(id: 'sec-dim-src', data: emptyFc))),
     ]);
     await Future.wait([
-      for (final s in ZoneService.sectors) ..._addSectorLayers(map, s),
+      for (final s in ZoneService.sectors)
+        ..._addSectorLayers(map, s, fillBelowId),
     ]);
-    // Stacking order matters: the dim sits ABOVE the sector layers (it
-    // covers them) and BELOW the selection highlight (the chosen zone keeps
-    // its gold) — so these two are sequential, never batched.
-    await _guardedStyleWrite(map.style.addLayer(mapbox.FillLayer(
-      id: 'sec-dim',
-      sourceId: 'sec-dim-src',
-      fillColor: 0xFF000000,
-      fillOpacity: 0.0,
-    )));
     // The selection highlight: one shared source, rewritten with the
     // picked sector — brighter than any demand level ("si seleccionan
-    // uno se debe poner mas amarillo").
-    await _guardedStyleWrite(map.style.addLayer(mapbox.FillLayer(
-      id: 'sec-hl-fill',
-      sourceId: 'sec-hl-src',
-      fillColor: 0xFFE8C547,
-      fillOpacity: 0.0,
-    )));
+    // uno se debe poner mas amarillo"). A fill: it goes under the roads
+    // with the heat gold.
+    await _guardedStyleWrite(fillBelowId == null
+        ? map.style.addLayer(mapbox.FillLayer(
+            id: 'sec-hl-fill',
+            sourceId: 'sec-hl-src',
+            fillColor: 0xFFE8C547,
+            fillOpacity: 0.0,
+          ))
+        : map.style.addLayerAt(
+            mapbox.FillLayer(
+              id: 'sec-hl-fill',
+              sourceId: 'sec-hl-src',
+              fillColor: 0xFFE8C547,
+              fillOpacity: 0.0,
+            ),
+            mapbox.LayerPosition(below: fillBelowId)));
+    // Smooth native paint transitions (2026-10-14 user spec: "se transiciona
+    // de forma animada y fluida y smooth") — every repaint (heat change,
+    // mode flip, selection, swap fade) interpolates instead of snapping.
+    await Future.wait([
+      for (final s in ZoneService.sectors) ..._sectorTransitionWrites(map, s),
+      _guardedStyleWrite(map.style.setStyleLayerProperty(
+          'sec-hl-fill', 'fill-opacity-transition', _kZonePaintTransition)),
+    ]);
     // Data enters AFTER the layers exist, one small write per sector — the
     // proven path. A failed write keeps the latch OPEN so the next sync
     // retries, and reports to the server (a silent catch here is what hid
@@ -2517,6 +2528,39 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     _zoneSectorIds = [for (final s in ZoneService.sectors) s.id];
   }
 
+  /// The style's lowest road/tunnel layer id — the anchor that parks the
+  /// zone fills under the whole road network (labels included).
+  Future<String?> _zoneRoadAnchor(mapbox.MapboxMap map) async {
+    try {
+      final layers = await map.style.getStyleLayers();
+      for (final l in layers) {
+        final id = l?.id ?? '';
+        if (id.startsWith('road-') || id.startsWith('tunnel-')) return id;
+      }
+    } catch (e) {
+      debugPrint('[Zones] style layer scan failed (fills go on top): $e');
+    }
+    return null;
+  }
+
+  /// The paint transition every zone layer carries (450 ms, no delay).
+  static const _kZonePaintTransition = {'duration': 450, 'delay': 0};
+
+  List<Future<void>> _sectorTransitionWrites(
+      mapbox.MapboxMap map, Sector s) {
+    final sid = s.id;
+    return [
+      _guardedStyleWrite(map.style.setStyleLayerProperty(
+          'sec-fill-$sid', 'fill-opacity-transition', _kZonePaintTransition)),
+      _guardedStyleWrite(map.style.setStyleLayerProperty(
+          'sec-fill-$sid', 'fill-color-transition', _kZonePaintTransition)),
+      _guardedStyleWrite(map.style.setStyleLayerProperty(
+          'sec-line-$sid', 'line-opacity-transition', _kZonePaintTransition)),
+      _guardedStyleWrite(map.style.setStyleLayerProperty(
+          'sec-shadow-$sid', 'line-opacity-transition', _kZonePaintTransition)),
+    ];
+  }
+
   Future<void> _guardedStyleWrite(Future<void> f) async {
     try {
       await f;
@@ -2530,18 +2574,24 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
         mapbox.GeoJsonSource(id: 'sec-src-$sid', data: emptyFc)));
   }
 
-  /// The look per the user's spec (2026-10-12): offline every sector is
+  /// The look per the user's specs (2026-10-12/14): offline every sector is
   /// gray with a THICK gray boundary; dispatch heat turns the fill gold
-  /// (three levels); online keeps only the boundary with its 3D shadow.
-  List<Future<void>> _addSectorLayers(mapbox.MapboxMap map, Sector s) {
+  /// (three levels); online the heated sectors keep their gold UNDER the
+  /// roads and only the boundary + its 3D shadow sit on top.
+  List<Future<void>> _addSectorLayers(mapbox.MapboxMap map, Sector s,
+      [String? fillBelowId]) {
     final sid = s.id;
+    final fill = mapbox.FillLayer(
+      id: 'sec-fill-$sid',
+      sourceId: 'sec-src-$sid',
+      fillColor: 0xFF9AA3B8, // gray base — heat rewrites it gold
+      fillOpacity: 0.0,
+    );
     return [
-      _guardedStyleWrite(map.style.addLayer(mapbox.FillLayer(
-        id: 'sec-fill-$sid',
-        sourceId: 'sec-src-$sid',
-        fillColor: 0xFF9AA3B8, // gray base — heat rewrites it gold
-        fillOpacity: 0.0,
-      ))),
+      _guardedStyleWrite(fillBelowId == null
+          ? map.style.addLayer(fill)
+          : map.style
+              .addLayerAt(fill, mapbox.LayerPosition(below: fillBelowId))),
       _guardedStyleWrite(map.style.addLayer(mapbox.LineLayer(
         id: 'sec-shadow-$sid',
         sourceId: 'sec-src-$sid',
@@ -2584,10 +2634,13 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
   }
 
   /// Fill/line visibility + color per sector. Base (no dispatch heat): thin
-  /// gray wash + the thick gray boundary. Level 1 ("Dorado"): gold
-  /// semi-transparent. Level 2 ("Ocupado"): more gold. Level 3 ("Muy
-  /// ocupado"): 100% solid gold (user spec 2026-10-12). Online keeps ONLY
-  /// the boundary + its 3D shadow, per spec.
+  /// gray wash offline, invisible online + the thick gray boundary. Level 1
+  /// ("Dorado"): gold semi-transparent. Level 2 ("Ocupado"): more gold.
+  /// Level 3 ("Muy ocupado"): 100% solid gold (user spec 2026-10-12).
+  /// ONLINE the heat keeps painting (2026-10-14 spec: "todas las zonas con
+  /// calor" debajo del mapa) — the fills live below the road network since
+  /// creation, so the streets and the boundary lines read on top of the
+  /// gold. The old dark spotlight died with that spec.
   Future<void> _writeZoneVisibility(
       mapbox.MapboxMap map, bool visible, bool online) async {
     // One parallel batch — the serial per-property awaits were part of the
@@ -2596,88 +2649,37 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
       for (final s in ZoneService.sectors)
         _writeSectorLook(map, s, visible, online),
     ]);
-    // Spotlight (user spec 2026-10-12: "al conectarse a la zona seleccionada,
-    // en online solo esa zona queda marcada y el resto del mapa oscuro que
-    // casi no se vea"). Never while an offer preview owns the frame — the
-    // route must read.
+    // The selection highlight: strong offline, a softer gold under the
+    // roads online, off otherwise. Never while an offer preview owns the
+    // frame — the route must read.
     final sel = _selectedZoneName;
-    final spotlight =
-        visible && online && sel != null && _previewingOffer == null;
-    await _writeZoneDim(map, spotlight ? ZoneService.sectorById(sel) : null);
-    // The selection highlight: strong offline, a softer gold marking the
-    // zone inside the online spotlight, off otherwise.
     try {
-      await map.style.setStyleLayerProperty('sec-hl-fill', 'fill-opacity',
-          !visible ? 0.0 : (!online ? 0.50 : (spotlight ? 0.30 : 0.0)));
-    } catch (_) {}
-  }
-
-  /// The spotlight mask: a world-sized polygon with the chosen sector's
-  /// outer rings as holes. `null` = mask off (every sector visible).
-  Future<void> _writeZoneDim(mapbox.MapboxMap map, Sector? sec) async {
-    var fc = <String, dynamic>{
-      'type': 'FeatureCollection',
-      'features': const [],
-    };
-    if (sec != null) {
-      // Ring 0 of each poly is the sector's outer boundary — each becomes a
-      // hole in the world ring (the sector's own holes stay dimmed: they
-      // are not part of the zone either).
-      final holes = [
-        for (final poly in sec.polys)
-          [
-            for (final p in poly.first)
-              [p.longitude, p.latitude]
-          ]
-      ];
-      if (holes.isNotEmpty) {
-        fc = {
-          'type': 'FeatureCollection',
-          'features': [
-            {
-              'type': 'Feature',
-              'properties': const {},
-              'geometry': {
-                'type': 'Polygon',
-                'coordinates': [
-                  const [
-                    [-179.9, -85.0],
-                    [179.9, -85.0],
-                    [179.9, 85.0],
-                    [-179.9, 85.0],
-                    [-179.9, -85.0]
-                  ],
-                  ...holes,
-                ],
-              },
-            }
-          ],
-        };
-      }
-    }
-    try {
-      await map.style
-          .setStyleSourceProperty('sec-dim-src', 'data', jsonEncode(fc));
       await map.style.setStyleLayerProperty(
-          'sec-dim', 'fill-opacity', sec == null ? 0.0 : 0.70);
-    } catch (e) {
-      debugPrint('[Zones] dim write failed: $e');
-    }
+          'sec-hl-fill',
+          'fill-opacity',
+          !visible
+              ? 0.0
+              : (!online
+                  ? 0.50
+                  : (sel != null && _previewingOffer == null ? 0.30 : 0.0)));
+    } catch (_) {}
   }
 
   Future<void> _writeSectorLook(
       mapbox.MapboxMap map, Sector s, bool visible, bool online) async {
     final sid = s.id;
-    final level =
-        visible && !online ? (ZoneService.demand[sid]?.level ?? 0) : 0;
+    // Heat paints in BOTH modes now (2026-10-14 spec): online it fills under
+    // the road network; offline it fills on top as before.
+    final level = visible ? (ZoneService.demand[sid]?.level ?? 0) : 0;
     final fillColor = level == 0 ? 0xFF9AA3B8 : 0xFFE8C547;
-    // Heat ladder (user spec 2026-10-13): Apagado = GRAY wash, Busy = gold
-    // ALMOST solid, Ocupado = more, Muy ocupado = 100% solid gold. Gray is
-    // only for "off" — a busy zone must never read gray.
-    final fillOpacity = !visible || online
+    // Heat ladder (user spec 2026-10-13): Apagado = GRAY wash (offline only —
+    // online an unheated sector paints nothing over the driving map), Busy =
+    // gold ALMOST solid, Ocupado = more, Muy ocupado = 100% solid gold. Gray
+    // is only for "off" — a busy zone must never read gray.
+    final fillOpacity = !visible
         ? 0.0
         : level == 0
-            ? 0.07
+            ? (online ? 0.0 : 0.07)
             : level == 1
                 ? 0.80
                 : level == 2
@@ -2747,8 +2749,6 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
         ],
         _guardedStyleWrite(map.style.setStyleLayerProperty(
             'sec-hl-fill', 'fill-opacity', 0.0)),
-        _guardedStyleWrite(map.style
-            .setStyleLayerProperty('sec-dim', 'fill-opacity', 0.0)),
       ]);
       await Future.delayed(const Duration(milliseconds: 200));
       if (!mounted) return;
@@ -2786,8 +2786,12 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
         await Future.wait([
           for (final s in added) _addSectorSource(map, s, emptyFc),
         ]);
+        final fillBelowId = await _zoneRoadAnchor(map);
         await Future.wait([
-          for (final s in added) ..._addSectorLayers(map, s),
+          for (final s in added) ..._addSectorLayers(map, s, fillBelowId),
+        ]);
+        await Future.wait([
+          for (final s in added) ..._sectorTransitionWrites(map, s),
         ]);
       }
       _zoneSectorIds = newIds;
@@ -2812,15 +2816,18 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
         unawaited(_writeSectorLook(map, s, visible, online));
         await Future.delayed(const Duration(milliseconds: 50));
       }
-      // The spotlight mask rewrites too — the sector geometry it holes out
-      // may have moved, and the online/selection state is of this moment.
+      // The selection highlight re-reads the state of the moment (the dim
+      // spotlight is dead — 2026-10-14 spec).
       final sel = _selectedZoneName;
-      final spotlight =
-          visible && online && sel != null && _previewingOffer == null;
-      await _writeZoneDim(map, spotlight ? ZoneService.sectorById(sel) : null);
       try {
-        await map.style.setStyleLayerProperty('sec-hl-fill', 'fill-opacity',
-            !visible ? 0.0 : (!online ? 0.50 : (spotlight ? 0.30 : 0.0)));
+        await map.style.setStyleLayerProperty(
+            'sec-hl-fill',
+            'fill-opacity',
+            !visible
+                ? 0.0
+                : (!online
+                    ? 0.50
+                    : (sel != null && _previewingOffer == null ? 0.30 : 0.0)));
       } catch (_) {}
       _zoneLayersVisible = visible;
       _zoneLookOnline = online;

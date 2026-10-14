@@ -1044,10 +1044,12 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
         // The picked zone PERSISTS as the working zone (user spec
         // 2026-10-12: "cuando el driver se conecta a la zona que
         // seleccionó, en online solo aparece marcada esa zona") — the
-        // spotlight reads it; it is no longer consumed on connect.
+        // selection highlight reads it; it is no longer consumed on connect.
       });
       // Mode flip rewrites the zone look NOW (the GPS-fix sync can be
-      // minutes away for a parked driver): online + selection = spotlight.
+      // minutes away for a parked driver): online, every heated sector paints
+      // its gold UNDER the roads (2026-10-14 spec) and the transition
+      // interpolates the change.
       unawaited(_syncZoneLayers());
       // The online sheet starts collapsed ("Finding trips"); the pill GO
       // belongs to the offline resting position (2026-10-13 spec).
@@ -1177,8 +1179,8 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     });
     unawaited(_clearAllAnnotations().catchError((_) {}));
     unawaited(_sweepPreviewOrphans());
-    // Drop the spotlight NOW, not on the next GPS fix (parked drivers can
-    // go minutes without one): offline = every sector visible again.
+    // Rewrite the zone look NOW, not on the next GPS fix (parked drivers can
+    // go minutes without one): offline = the gray wash/heat on top again.
     unawaited(_syncZoneLayers());
     _syncPosStreamMode(); // foreground-only
     PrefsCache.instance.then((p) => p.setBool('driver_was_online', false));

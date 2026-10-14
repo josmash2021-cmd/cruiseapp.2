@@ -83,9 +83,24 @@ class S {
   // ── Municipal zone gate (driver connect) ──
   String get zoneOutsideTitle =>
       _es ? 'Fuera del área de servicio' : 'Outside the service area';
-  String get zoneOutsideBody => _es
-      ? 'Por ahora Cruise conecta dentro de las ciudades habilitadas del sur de Florida.'
-      : 'Cruise currently connects inside the enabled cities of South Florida.';
+  // State-aware (2026-10-14 user report: an Alabama driver read "South
+  // Florida" — the zones now live in more than one state). [state] is the
+  // ZoneService.stateOfPoint code ('FL'/'AL'/null).
+  String zoneOutsideBody(String? state) {
+    if (state == 'AL') {
+      return _es
+          ? 'Por ahora Cruise conecta dentro de las zonas habilitadas de Alabama.'
+          : 'Cruise currently connects inside the enabled zones of Alabama.';
+    }
+    if (state == 'FL') {
+      return _es
+          ? 'Por ahora Cruise conecta dentro de las zonas habilitadas del sur de Florida.'
+          : 'Cruise currently connects inside the enabled cities of South Florida.';
+    }
+    return _es
+        ? 'Por ahora Cruise conecta dentro de las zonas habilitadas de tu estado.'
+        : 'Cruise currently connects inside the enabled zones of your state.';
+  }
   String get zoneSelectHint => _es
       ? 'Selecciona tu zona en el mapa para conectarte'
       : 'Select your zone on the map to go online';

@@ -265,6 +265,16 @@ void main() {
     expect(l10n, contains('Ocupado'));
     expect(l10n, contains('zoneVeryBusy'));
     expect(l10n, contains('Muy ocupado'));
+    // 2026-10-14 (user report: an Alabama driver read "South Florida") —
+    // the outside-area body names the DRIVER'S state.
+    expect(l10n, contains('zonas habilitadas de Alabama'));
+    expect(l10n, contains('enabled zones of Alabama'));
+    expect(l10n, contains('zonas habilitadas del sur de Florida'));
+    final off = File('lib/screens/driver/driver_online_offline.dart')
+        .readAsStringSync();
+    expect(off, contains('zoneOutsideBody('),
+        reason: 'the dialog passes the driver state to the copy');
+    expect(off, contains('ZoneService.stateOfPoint('));
   });
 
   test('tap-to-select ignites the GO; without a zone the GO stays dim', () {

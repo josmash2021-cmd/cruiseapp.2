@@ -466,15 +466,15 @@ void main() {
               'the collapsed sheet leaves it untappable');
     });
 
-    test('the pill GO: left half, Cruise logo, radar always on, zone label',
-        () {
-      // User spec 2026-10-14: with the sheet open the pill hugs the LEFT and
-      // reaches the screen's middle ("a la izquierda hasta la mitad, no en
-      // el centro"), keeping the same morph/radar animation; with no zone
-      // picked the label reads "Selecciona zona" — NEVER "Verify first" —
-      // and picking a zone crossfades it into "GO ONLINE".
-      expect(offline, contains('box.maxWidth * 0.5'),
-          reason: 'the open pill occupies the LEFT HALF of the row');
+    test('the pill GO: left ~62%, Cruise logo, heartbeat, zone label', () {
+      // User specs 2026-10-14: with the sheet open the pill hugs the LEFT, a
+      // bit over half wide ("un poco más de la mitad"), the radar rings on
+      // the button died for a heartbeat ("cámbialo por un palpitar del
+      // botón"); with no zone picked the label reads "Selecciona zona" —
+      // NEVER "Verify first" — and picking a zone crossfades it into
+      // "GO ONLINE".
+      expect(offline, contains('box.maxWidth * 0.62'),
+          reason: 'the open pill occupies the left ~62% of the row');
       expect(offline, contains('Alignment.centerLeft'),
           reason: 'the alignment travels centre → left with the morph, so '
               'the closed disc stays centred and the open pill hugs the left');
@@ -492,12 +492,17 @@ void main() {
       expect(offline, contains('BlendMode.srcIn'),
           reason: 'the logo is rendered in the button foreground so it '
               'reads on gold');
-      final radarIdx = offline.indexOf('_GoRadarPainter(');
-      expect(radarIdx, isNonNegative);
-      final around = offline.substring(
-          radarIdx - 500 > 0 ? radarIdx - 500 : 0, radarIdx + 300);
-      expect(around.contains('morph < 0.9'), isFalse,
-          reason: 'the radar no longer fades out on the pill');
+      // The heartbeat, not the radar, on the GO button.
+      expect(offline, contains('_goThrobAnim'),
+          reason: 'the button throbs while lit');
+      expect(offline, contains('igniteScale * throb'),
+          reason: 'throb and the zone-select ignite pop compose');
+      final btnBlock = offline.substring(
+          offline.indexOf('Widget _buildGoButton('),
+          offline.indexOf('_offlineRadarDisc'));
+      expect(btnBlock.contains('_GoRadarPainter'), isFalse,
+          reason: 'the radar rings died on the GO button — the red '
+              'go-offline disc keeps them (its own spec)');
       expect(offline, contains('S.of(context).zoneSelectAction'),
           reason: 'no zone picked → the label names the task');
       final l10n =

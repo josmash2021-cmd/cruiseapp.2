@@ -1156,10 +1156,21 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
       // El radar lleva su propio reloj, más lento que todo lo demás del
       // botón — un radar apurado lee como spinner, no como baliza.
       // (2026-10-10: 4.2 s → 5.2 s, spec "un poco más fluido/smooth".)
+      // 2026-10-14: el radar quedó SOLO para el disco rojo de go-offline —
+      // el GO button palpita (_goThrobCtrl).
       _goRadarCtrl = AnimationController(
         vsync: this,
         duration: const Duration(milliseconds: 5200),
       )..repeat();
+      // El palpitar del GO (2026-10-14, user spec: "cámbialo por un palpitar
+      // del botón" — las ondas de radar en el botón murieron): un latido
+      // suave 1.0→1.04 que respira mientras el botón está encendido.
+      _goThrobCtrl = AnimationController(
+        vsync: this,
+        duration: const Duration(milliseconds: 1300),
+      )..repeat(reverse: true);
+      _goThrobAnim = Tween<double>(begin: 1.0, end: 1.04).animate(
+          CurvedAnimation(parent: _goThrobCtrl!, curve: Curves.easeInOut));
       _goBtnColorCtrl = AnimationController(
         vsync: this,
         duration: const Duration(milliseconds: 1200),
@@ -1315,6 +1326,9 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   Animation<double>? _goBtnColorAnim;
   AnimationController? _goGlossCtrl;
   AnimationController? _goRadarCtrl;
+  // The GO button's heartbeat (2026-10-14 spec: throb replaces the radar).
+  AnimationController? _goThrobCtrl;
+  Animation<double>? _goThrobAnim;
   // One-shot "encendido" del GO al seleccionar zona (2026-10-11 spec: "el
   // botón de go se encenderá de forma animada fluida smooth").
   AnimationController? _goIgniteCtrl;
@@ -1675,6 +1689,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     _docApprovalSub?.cancel();
     _accountStatusTimer?.cancel();
     _goPulseCtrl?.dispose();
+    _goThrobCtrl?.dispose();
     _goBtnColorCtrl?.dispose();
     _goGlossCtrl?.dispose();
     _goRadarCtrl?.dispose();

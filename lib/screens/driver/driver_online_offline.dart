@@ -1017,7 +1017,8 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
           style: const TextStyle(color: Colors.white),
         ),
         content: Text(
-          S.of(ctx).zoneOutsideBody,
+          S.of(ctx).zoneOutsideBody(
+              _pos == null ? null : ZoneService.stateOfPoint(_pos!)),
           style: TextStyle(color: Colors.white.withValues(alpha: 0.7)),
         ),
         actions: [
@@ -1108,12 +1109,13 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
                 builder: (context, box) => Align(
                   // Closed, the disc floats centred; as the sheet opens the
                   // alignment itself travels left and the pill ends up in the
-                  // left HALF of the row — with the 20 pt side padding its
-                  // right edge lands exactly on the screen's middle.
+                  // left of the row, a bit OVER half wide (user specs
+                  // 2026-10-14: "a la izquierda hasta la mitad" → "un poco
+                  // más de la mitad").
                   alignment: Alignment.lerp(
                       Alignment.center, Alignment.centerLeft, t)!,
                   child: SizedBox(
-                    width: ui.lerpDouble(_kGoCircleD, box.maxWidth * 0.5, t),
+                    width: ui.lerpDouble(_kGoCircleD, box.maxWidth * 0.62, t),
                     height: height,
                     child: _buildGoButton(radius: radius, morph: t),
                   ),
@@ -1155,7 +1157,7 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
           if (_goPulseAnim != null) _goPulseAnim!,
           if (_goBtnColorAnim != null) _goBtnColorAnim!,
           if (_goGlossCtrl != null) _goGlossCtrl!,
-          if (_goRadarCtrl != null) _goRadarCtrl!,
+          if (_goThrobAnim != null) _goThrobAnim!,
           if (_goIgniteCtrl != null) _goIgniteCtrl!,
         ]),
         builder: (_, __) {
@@ -1198,6 +1200,11 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
           // The ignite pop when a zone selection lights the GO up.
           final igniteScale = _goIgniteAnim?.value ?? 1.0;
 
+          // The heartbeat (2026-10-14 user spec: "un palpitar del botón" —
+          // the radar rings died on this button): a soft 1.0→1.04 throb
+          // while lit; a dimmed button (no zone picked) stays still.
+          final throb = dimmed ? 1.0 : (_goThrobAnim?.value ?? 1.0);
+
           // The pill label (user spec 2026-10-14: "no debe decir verify
           // first, debe decir selecciona una zona, y al seleccionarla
           // transiciona fluido a GO ONLINE"). VERIFY FIRST is dead: with no
@@ -1215,7 +1222,7 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
                           : S.of(context).goOnline;
 
           return Transform.scale(
-            scale: igniteScale,
+            scale: igniteScale * throb,
             child: ClipRRect(
             borderRadius: BorderRadius.circular(radius),
             child: Stack(
@@ -1434,22 +1441,6 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
                     ],
                   ),
                 ),
-                // Radar sweep — same animation on the circle AND the pill
-                // (user spec 2026-10-13: the pill must carry the same
-                // animation as the circular GO). The pill's ClipRRect trims
-                // the rings to its shape.
-                if (_goRadarCtrl != null && !dimmed)
-                  Positioned.fill(
-                    child: IgnorePointer(
-                      child: CustomPaint(
-                        painter: _GoRadarPainter(
-                          progress: _goRadarCtrl!.value,
-                          // Ondas NEGRAS sobre el GO dorado.
-                          color: const Color(0xFF0B0B0F),
-                        ),
-                      ),
-                    ),
-                  ),
               ],
             ),
           ),

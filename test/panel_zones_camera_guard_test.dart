@@ -51,4 +51,24 @@ void main() {
         reason: 'demand-heat ids validate against the LIVE map — a '
             'panel-added sector accepted heat after a server restart too');
   });
+
+  test('the state selector frames Florida or Alabama on demand', () {
+    // User spec 2026-10-14: "en el dispatch debe salirme para seleccionar
+    // florida y seleccionar alabama… que me muestre todo lo que ya he
+    // dibujado". Two chips fly the editor map to the state's drawn sectors
+    // (or the state frame when nothing is drawn there yet).
+    expect(chunk, contains('const fitStateView='),
+        reason: 'the state-fit helper exists in the editor component');
+    expect(chunk, contains('children:"Florida"'));
+    expect(chunk, contains('children:"Alabama"'));
+    expect(chunk, contains('fitStateView([-87.63,24.45,-79.87,31])'),
+        reason: 'Florida frame = the state bbox');
+    expect(chunk, contains('fitStateView([-88.47,30.22,-84.89,35.01])'),
+        reason: 'Alabama frame = the state bbox');
+    expect(chunk, contains('G.current??[]'),
+        reason: 'the fit prefers the sectors already drawn in the state');
+    expect(chunk, contains('guard-pin panel_zones_camera_guard_test'),
+        reason: 'the bundle edit carries its guard-pin so the next rebuild '
+            'of the out-of-repo React source re-applies it');
+  });
 }

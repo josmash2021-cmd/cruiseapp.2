@@ -78,6 +78,26 @@ _DOC_COPY = {
         "en": ("✅ Background check approved", "Your background check was approved.",
                "❌ Background check rejected"),
     },
+    # Identity docs reviewed separately in dispatch (2026-10-14 user spec:
+    # every document approved on its own, same notification flow).
+    "profile_photo": {
+        "es": ("✅ Foto de perfil aprobada", "Tu foto de perfil fue aprobada.",
+               "❌ Foto de perfil rechazada"),
+        "en": ("✅ Profile photo approved", "Your profile photo was approved.",
+               "❌ Profile photo rejected"),
+    },
+    "id_document": {
+        "es": ("✅ Documento aprobado", "Tu documento de identidad fue aprobado.",
+               "❌ Documento rechazado"),
+        "en": ("✅ ID approved", "Your identity document was approved.",
+               "❌ ID rejected"),
+    },
+    "selfie": {
+        "es": ("✅ Selfie aprobada", "Tu selfie biométrica fue aprobada.",
+               "❌ Selfie rechazada"),
+        "en": ("✅ Selfie approved", "Your biometric selfie was approved.",
+               "❌ Selfie rejected"),
+    },
 }
 
 

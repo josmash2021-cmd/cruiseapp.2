@@ -67,4 +67,24 @@ void main() {
     expect(syncPy.contains('data["vehicleInspectionUrl"] = inspection_url'),
         isTrue);
   });
+
+  test('identity docs get reviewable rows on the admin detail read', () {
+    // 2026-10-14 user spec: "poder aprobar todos los documentos por separado,
+    // así como está seguro, registración y licencia" — profile photo, ID and
+    // biometric selfie lived as plain user fields with no Document row, so
+    // the panel's per-doc buttons never rendered for them. The admin detail
+    // read backfills the pending rows; the review endpoint + push copy do
+    // the rest.
+    final adminPy = norm('backend/routers/admin.py');
+    expect(adminPy, contains('_ensure_identity_doc_rows'),
+        reason: 'the read-time backfill is wired into admin_get_user');
+    expect(adminPy, contains('("profile_photo", "photo_url")'));
+    expect(adminPy, contains('("id_document", "id_photo_url")'));
+    expect(adminPy, contains('("selfie", "selfie_url")'));
+    final approvalPy = norm('backend/services/driver_approval.py');
+    for (final kind in ['"profile_photo"', '"id_document"', '"selfie"']) {
+      expect(approvalPy, contains('$kind: {'),
+          reason: 'ES/EN push copy exists for $kind');
+    }
+  });
 }

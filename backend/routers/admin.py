@@ -1007,6 +1007,49 @@ async def admin_review_verification(user_id: int, request: Request, db: AsyncSes
 #  ADMIN ï¿½ User Detail, Edit, Delete, Documents, Photos
 # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
+# Identity uploads that live as plain User fields → the Document row each
+# should have so dispatch can review them one by one. Order matters: the
+# selfie still photo wins over the legacy liveness video for the same kind.
+_IDENTITY_DOC_SOURCES = (
+    ("profile_photo", "photo_url"),
+    ("id_document", "id_photo_url"),
+    ("selfie", "selfie_url"),
+    ("selfie", "video_url"),
+)
+
+
+async def _ensure_identity_doc_rows(db, user) -> None:
+    """Create the missing pending Document rows for a user's identity
+    uploads. Create-only: an existing row is NEVER touched — a rejected
+    document keeps its rejection until the driver re-uploads (the upload
+    flows reset the row to pending themselves)."""
+    try:
+        result = await db.execute(
+            select(Document.doc_type).where(Document.user_id == user.id))
+        have = {row[0] for row in result.all()}
+        created = False
+        for doc_type, attr in _IDENTITY_DOC_SOURCES:
+            if doc_type in have:
+                continue
+            url = getattr(user, attr, None)
+            if not url:
+                continue
+            db.add(Document(
+                user_id=user.id,
+                vehicle_id=None,
+                doc_type=doc_type,
+                status="pending",
+                file_path=url,
+            ))
+            have.add(doc_type)
+            created = True
+        if created:
+            await db.commit()
+    except Exception as e:
+        logging.warning("[Admin] identity doc backfill failed (user %s): %s",
+                        getattr(user, "id", "?"), e)
+
+
 @router.get("/admin/users/{user_id}", dependencies=[Depends(_require_dispatch_auth)])
 async def admin_get_user(user_id: int, db: AsyncSession = Depends(get_db)):
     """Get full user detail including documents and photo URL."""
@@ -1014,6 +1057,15 @@ async def admin_get_user(user_id: int, db: AsyncSession = Depends(get_db)):
     user = result.scalar_one_or_none()
     if not user:
         raise HTTPException(404, "User not found")
+    # The identity uploads (profile photo, ID, biometric selfie) live as
+    # plain user fields with no Document row, so dispatch could never approve
+    # them separately (2026-10-14 user spec: "poder aprobar todos los
+    # documentos por separado, así como está seguro, registración y
+    # licencia"). Read-time backfill: every present upload gets its pending
+    # row and the existing per-document approve/reject + push machinery
+    # covers it. Idempotent, fail-soft — a write failure never breaks the
+    # read.
+    await _ensure_identity_doc_rows(db, user)
     # Get documents
     docs_result = await db.execute(
         select(Document).where(Document.user_id == user_id).order_by(Document.created_at.desc())

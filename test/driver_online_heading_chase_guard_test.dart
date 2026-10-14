@@ -497,6 +497,11 @@ void main() {
           reason: 'the button throbs while lit');
       expect(offline, contains('igniteScale * throb'),
           reason: 'throb and the zone-select ignite pop compose');
+      expect(offline, contains('const goldTop1 = Color(0xFFC9981F)'),
+          reason: '2026-10-14 spec: ONE gold in every shape — the open pill '
+              'wears the disc’s deep gold, no morph lerp');
+      expect(offline.contains('goldBot = Color.lerp('), isFalse,
+          reason: 'the gold morph lerp is dead');
       final btnBlock = offline.substring(
           offline.indexOf('Widget _buildGoButton('),
           offline.indexOf('_offlineRadarDisc'));

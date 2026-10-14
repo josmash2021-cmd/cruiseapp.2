@@ -1167,15 +1167,13 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
           // vea desactivado, siempre normal en amarillo") — docs/verification
           // still gate the TAP (they route to the fix), never the paint.
 
-          // Gold body, black lettering. The disc breathes between two golds;
-          // the bar lands on the brighter one. Black reads cleanly on gold —
-          // and the wave rings stay black to match.
-          final goldTop1 = Color.lerp(
-              const Color(0xFFC9981F), const Color(0xFFF2D45E), morph)!;
-          final goldTop2 = Color.lerp(
-              const Color(0xFFD4A82A), const Color(0xFFF7DF72), morph)!;
-          final goldBot = Color.lerp(
-              const Color(0xFF9A7414), const Color(0xFFD4A82A), morph)!;
+          // Gold body, black lettering. ONE gold in every shape (user spec
+          // 2026-10-14: "cuando el sheet está abierto debe ser del mismo
+          // color que cuando está GO") — the disc's deep golds, no morph
+          // lerp. The pulse breathing between the two tops stays.
+          const goldTop1 = Color(0xFFC9981F);
+          const goldTop2 = Color(0xFFD4A82A);
+          const goldBot = Color(0xFF9A7414);
 
           final topColor0 = Color.lerp(goldTop1, goldTop2, p)!;
           // Zone selection (user spec 2026-10-11: "si no ha seleccionado una

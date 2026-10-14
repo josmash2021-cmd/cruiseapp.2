@@ -340,6 +340,15 @@ void main() {
         reason: 'the offline flip glides out to the driver-state zones');
     expect(ctrl, contains('_fitHomeZones(at: newLL)'),
         reason: 'the first-fix refit uses the fix itself, not a stale _pos');
+    // 2026-10-14 spec: the recenter FAB centres ON THE ARROW at the
+    // zone-view zoom — the state-centroid frame died.
+    expect(map, contains('_recenterArrowZoneZoom()'),
+        reason: 'the FAB centres the arrow, not the state centroid');
+    expect(map, contains('zoom: fitCam.zoom'),
+        reason: 'the zoom is the state-fit zoom ("con ese zoom mostrando '
+            'las zonas")');
+    expect(map, contains('_sectorsBBox('),
+        reason: 'the bbox union math is shared with the fit');
     expect(ctrl, contains('final zoomTarget = 15.5;'),
         reason: 'chase zoom = street parity everywhere — the home-state fit '
             'owns the offline resting view, the chase only follows at street '

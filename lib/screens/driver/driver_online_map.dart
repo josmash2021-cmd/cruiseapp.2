@@ -2184,17 +2184,17 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     // after a pan must not yank the camera back onto the driver and leave
     // the route behind. The driver explores freely until the offer closes.
     if (_previewingOffer != null) return;
-    // Recenter by mode (user specs 2026-10-13/14): OFFLINE = show the zones
-    // of the driver's STATE again ("para que centre todas las zonas
-    // mostrándolas" — Florida or Alabama, the driver's own, never the
-    // two-state union); ONLINE = centre the ARROW ("el de la derecha será
-    // para centrar en la flecha") — the zone frame lives on the LEFT
+    // Recenter by mode (user specs 2026-10-13/14): OFFLINE = centre ON THE
+    // ARROW at the zone-view zoom ("el botón de centrar solo va a centrar
+    // donde esté la flecha, pero con ese zoom mostrando las zonas") — never
+    // the state-centroid frame; ONLINE = centre the ARROW ("el de la derecha
+    // será para centrar en la flecha") — the zone frame lives on the LEFT
     // compass FAB (_onZoneCompassTap).
     if (_phase == _Phase.searching &&
         FeatureFlags.zonesMapEnabled &&
         !_driverOnline) {
-      ApiService.logClientEvent('recenter_fit', 'scope=home_zones');
-      unawaited(_fitHomeZones());
+      ApiService.logClientEvent('recenter_fit', 'scope=arrow_zone_zoom');
+      unawaited(_recenterArrowZoneZoom());
       return;
     }
     final bearing = _smoothedBearing;
@@ -2872,11 +2872,62 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     return true;
   }
 
-  Future<void> _fitSectors(List<Sector> sectors,
-      {bool animated = true}) async {
+  /// The offline zone-view recenter (2026-10-14 user spec: "el botón de
+  /// centrar solo va a centrar donde esté la flecha, pero con ese zoom
+  /// mostrando las zonas, pero centrando en la flecha"): the camera centres
+  /// ON THE ARROW at the zoom the home-state zone fit would use — the zones
+  /// of the driver's state stay in frame, the driver is the centre. No fix
+  /// (or no sectors) → the state-fit fallback of old.
+  Future<void> _recenterArrowZoneZoom() async {
     final map = _map;
-    if (map == null || kIsWeb || !ZoneService.sectorsReady) return;
-    if (sectors.isEmpty) return;
+    if (map == null || kIsWeb) return;
+    final pos = _pos;
+    if (pos == null || !ZoneService.sectorsReady) {
+      await _fitHomeZones();
+      return;
+    }
+    final secs =
+        ZoneService.sectorsForState(ZoneService.stateOfPoint(pos));
+    final bbox = _sectorsBBox(secs);
+    if (bbox == null) {
+      await _fitHomeZones();
+      return;
+    }
+    try {
+      // The zoom that frames the driver's state sectors, then the centre is
+      // replaced with the arrow's.
+      final fitCam = await map.cameraForCoordinatesPadding(
+        [
+          mapbox.Point(coordinates: mapbox.Position(bbox[0], bbox[1])),
+          mapbox.Point(coordinates: mapbox.Position(bbox[2], bbox[3])),
+        ],
+        mapbox.CameraOptions(pitch: 0, bearing: 0),
+        mapbox.MbxEdgeInsets(top: 130, left: 30, bottom: 210, right: 30),
+        null,
+        null,
+      );
+      // Programmatic — wear the suppression so the flight's own camera
+      // events never read as a manual rotate/gesture.
+      _camFlightUntil = DateTime.now()
+          .add(const Duration(milliseconds: _kRecenterFlightMs + 320));
+      await map.flyTo(
+          mapbox.CameraOptions(
+            center: mapbox.Point(
+                coordinates: mapbox.Position(pos.longitude, pos.latitude)),
+            zoom: fitCam.zoom,
+            bearing: 0,
+            pitch: 0,
+          ),
+          mapbox.MapAnimationOptions(duration: _kRecenterFlightMs));
+      if (mounted) _setState(() => _cameraFollowing = false);
+    } catch (e) {
+      debugPrint('[Zones] arrow zone-zoom recenter failed: $e');
+    }
+  }
+
+  /// Union bbox [w, s, e, n] of a sector list, or null when empty.
+  List<double>? _sectorsBBox(List<Sector> sectors) {
+    if (sectors.isEmpty) return null;
     var w = 999.0, s = 999.0, e = -999.0, n = -999.0;
     for (final sec in sectors) {
       w = math.min(w, sec.bbox[0]);
@@ -2884,7 +2935,16 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
       e = math.max(e, sec.bbox[2]);
       n = math.max(n, sec.bbox[3]);
     }
-    if (w > e || s > n) return;
+    return w > e || s > n ? null : [w, s, e, n];
+  }
+
+  Future<void> _fitSectors(List<Sector> sectors,
+      {bool animated = true}) async {
+    final map = _map;
+    if (map == null || kIsWeb || !ZoneService.sectorsReady) return;
+    final bbox = _sectorsBBox(sectors);
+    if (bbox == null) return;
+    final w = bbox[0], s = bbox[1], e = bbox[2], n = bbox[3];
     try {
       final cam = await map.cameraForCoordinatesPadding(
         [

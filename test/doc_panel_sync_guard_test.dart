@@ -87,4 +87,18 @@ void main() {
           reason: 'ES/EN push copy exists for $kind');
     }
   });
+
+  test('driver documents are approved MANUALLY, never by the agent', () {
+    // 2026-10-14 user decision: "los documentos para los drivers no se
+    // aprueban solo — por el momento eso será manual". The
+    // DocumentApprovalAgent's Phase 1 (insurance/registration auto-approval
+    // every 5 min) is OFF; every decision is a human one in the panel.
+    final agent = norm('backend/document_approval_agent.py');
+    expect(agent, contains('MANUAL_REVIEW_ONLY = True'),
+        reason: 'the kill switch is ON');
+    expect(agent, contains('if not MANUAL_REVIEW_ONLY:'),
+        reason: 'the Phase 1 scan is gated by it');
+    expect(agent, contains('"manual_review_only": MANUAL_REVIEW_ONLY'),
+        reason: 'the agent status reports it');
+  });
 }

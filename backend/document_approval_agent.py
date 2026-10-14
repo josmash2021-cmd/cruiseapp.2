@@ -48,6 +48,17 @@ from services.driver_approval import notify_document_reviewed
 logger = logging.getLogger(__name__)
 
 # ══════════════════════════════════════════════════════════════════════
+#  MANUAL REVIEW ONLY (2026-10-14, user decision: "los documentos para
+#  los drivers no se aprueban solo — por el momento eso será manual").
+#  Phase 1 (insurance/registration auto-approval) is OFF: every document
+#  waits for a HUMAN decision in the dispatch panel (the per-document
+#  approve/reject built the same day). The agent process keeps running so
+#  this stays a one-line revert — its scans are no-ops while the flag is
+#  on.
+# ══════════════════════════════════════════════════════════════════════
+MANUAL_REVIEW_ONLY = True
+
+# ══════════════════════════════════════════════════════════════════════
 #  MASTER SWITCH — set True to enable full driver verification
 # ══════════════════════════════════════════════════════════════════════
 FULL_VERIFICATION = False  # Phase 2: flip to True to activate all checks
@@ -128,6 +139,7 @@ class DocumentApprovalAgent:
             "running": self._running,
             **self._stats,
             "full_verification_enabled": FULL_VERIFICATION,
+            "manual_review_only": MANUAL_REVIEW_ONLY,
             "processed_cache_size": len(_processed),
         }
 
@@ -148,7 +160,10 @@ class DocumentApprovalAgent:
         now = datetime.now(timezone.utc)
 
         # ── PHASE 1: Vehicle document auto-approval ───────────
-        await self._scan_vehicle_docs(now)
+        # OFF while MANUAL_REVIEW_ONLY (2026-10-14 user decision: driver
+        # documents are approved by a human in dispatch, never by us).
+        if not MANUAL_REVIEW_ONLY:
+            await self._scan_vehicle_docs(now)
 
         # ── PHASE 2: Full driver verification (future) ────────
         if FULL_VERIFICATION:

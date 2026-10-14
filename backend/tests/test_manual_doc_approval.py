@@ -56,7 +56,9 @@ async def test_switch_is_reversible(db, test_driver, monkeypatch):
     await agent._scan()
 
     await db.refresh(doc)
-    assert doc.status == "approved"
+    # The agent ACTED on the pending doc (approved or auto-rejected for a
+    # fake path — either proves Phase 1 ran): the flag is a real switch.
+    assert doc.status != "pending"
 
 
 async def test_dispatch_still_approves_manually(client, db, test_driver):

@@ -12,7 +12,7 @@ import '../../services/user_session.dart';
 import '../../widgets/user_profile_photo.dart';
 import '../../widgets/verified_avatar.dart';
 import '../../widgets/neu_style.dart';
-import '../home_screen.dart';
+import '../welcome_screen.dart';
 import '../splash_screen.dart';
 import '../help_screen.dart';
 import 'driver_vehicle_screen.dart';
@@ -69,12 +69,14 @@ class _DriverMenuScreenState extends State<DriverMenuScreen>
   late AnimationController _entranceCtrl;
   late Animation<double> _entranceAnim;
 
-  /// Bounce non-driver users back to the rider home screen.
+  /// Bounce non-driver users to the role-select welcome screen (2026-10-14
+  /// user report: a driver deleted from dispatch landed on the RIDER pages —
+  /// the eject must land on Pasajero/Conductor, never the rider home).
   void _enforceDriverRole() {
     UserSession.getMode().then((mode) {
       if (mode != 'driver' && mounted) {
         Navigator.of(context).pushAndRemoveUntil(
-          fadeThroughRoute(const HomeScreen()),
+          fadeThroughRoute(const WelcomeScreen()),
           (_) => false,
         );
       }

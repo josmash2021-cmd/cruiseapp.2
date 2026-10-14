@@ -65,7 +65,6 @@ import 'driver_earnings_screen.dart';
 import 'driver_promos_screen.dart';
 import 'driver_analytics_screen.dart';
 import 'driver_inbox_screen.dart';
-import '../home_screen.dart';
 import '../../services/map_launcher_service.dart';
 import '../../services/preload_service.dart';
 import '../../services/user_session.dart';
@@ -906,7 +905,9 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   //  LIFECYCLE
   // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-  /// Bounce non-driver users back to the rider home screen.
+  /// Bounce non-driver users to the role-select welcome screen (2026-10-14
+  /// user report: a driver deleted from dispatch landed on the RIDER pages —
+  /// the eject must land on Pasajero/Conductor, never the rider home).
   void _enforceDriverRole() {
     // The browser build has no login, so the stored mode is never 'driver'
     // and both driver screens used to eject to the rider home a few
@@ -917,7 +918,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     UserSession.getMode().then((mode) {
       if (mode != 'driver' && mounted) {
         Navigator.of(context, rootNavigator: true).pushAndRemoveUntil(
-          fadeThroughRoute(const HomeScreen()),
+          fadeThroughRoute(const WelcomeScreen()),
           (_) => false,
         );
       }

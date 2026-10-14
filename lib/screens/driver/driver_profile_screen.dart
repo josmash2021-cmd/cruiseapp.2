@@ -7,7 +7,7 @@ import '../../l10n/app_localizations.dart';
 import '../../services/api_service.dart';
 import '../../services/local_data_service.dart';
 import '../../services/user_session.dart';
-import '../home_screen.dart';
+import '../welcome_screen.dart';
 import '../../widgets/user_profile_photo.dart';
 import '../../widgets/common/profile_avatar.dart';
 import '../../widgets/neu_style.dart';
@@ -71,7 +71,7 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
     UserSession.getMode().then((mode) {
       if (mode != 'driver' && mounted) {
         Navigator.of(context).pushAndRemoveUntil(
-          fadeThroughRoute(const HomeScreen()),
+          fadeThroughRoute(const WelcomeScreen()),
           (_) => false,
         );
       }

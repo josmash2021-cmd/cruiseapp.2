@@ -9,7 +9,7 @@ import '../../services/api_service.dart';
 import '../../services/user_session.dart';
 import '../../config/page_transitions.dart';
 import '../../l10n/app_localizations.dart';
-import '../home_screen.dart';
+import '../welcome_screen.dart';
 
 /// Vehicle management screen – view car details & upload vehicle documents.
 class DriverVehicleScreen extends StatefulWidget {
@@ -38,7 +38,7 @@ class _DriverVehicleScreenState extends State<DriverVehicleScreen> {
     UserSession.getMode().then((mode) {
       if (mode != 'driver' && mounted) {
         Navigator.of(context).pushAndRemoveUntil(
-          fadeThroughRoute(const HomeScreen()),
+          fadeThroughRoute(const WelcomeScreen()),
           (_) => false,
         );
       }

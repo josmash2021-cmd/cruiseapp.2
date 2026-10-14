@@ -47,7 +47,7 @@ import 'driver_online_screen.dart';
 import 'driver_nav_view.dart';
 import 'driver_online_screen.dart';
 import '../../services/user_session.dart';
-import '../home_screen.dart';
+import '../welcome_screen.dart';
 import 'driver_rate_rider_screen.dart';
 import '../../services/api_service.dart';
 import '../../services/masked_call_service.dart';
@@ -420,7 +420,7 @@ class _DriverTripAcceptScreenState extends State<DriverTripAcceptScreen>
     UserSession.getMode().then((mode) {
       if (mode != 'driver' && mounted) {
         Navigator.of(context).pushAndRemoveUntil(
-          fadeThroughRoute(const HomeScreen()),
+          fadeThroughRoute(const WelcomeScreen()),
           (_) => false,
         );
       }

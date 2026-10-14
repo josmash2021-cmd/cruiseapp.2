@@ -5,7 +5,7 @@ import '../../l10n/app_localizations.dart';
 import '../../services/api_service.dart';
 import '../../services/user_session.dart';
 import '../../config/page_transitions.dart';
-import '../home_screen.dart';
+import '../welcome_screen.dart';
 
 // ═══════════════════════════════════════════════════════════════
 //  CRUISE DRIVER — ANALYTICS / DRIVING TIME SCREEN
@@ -58,7 +58,7 @@ class _DriverAnalyticsScreenState extends State<DriverAnalyticsScreen> {
     UserSession.getMode().then((mode) {
       if (mode != 'driver' && mounted) {
         Navigator.of(context).pushAndRemoveUntil(
-          fadeThroughRoute(const HomeScreen()),
+          fadeThroughRoute(const WelcomeScreen()),
           (_) => false,
         );
       }

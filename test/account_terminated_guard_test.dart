@@ -44,4 +44,32 @@ void main() {
     final sec = File('backend/utils/security.py').readAsStringSync();
     expect(sec, contains('in ("deleted", "blocked")'));
   });
+
+  test('the driver-role eject lands on the role-select, never the rider home',
+      () {
+    // User report 2026-10-14: "cuando un driver se elimina desde el dispatch,
+    // la pantalla se pasa a las páginas del rider — debe llevarlo al screen
+    // de inicio donde seleccionan pasajero o conductor". Every driver screen
+    // carries _enforceDriverRole; once the session/mode is gone the eject
+    // must land on WelcomeScreen (Pasajero/Conductor), not the rider Home.
+    for (final f in [
+      'lib/screens/driver/driver_online_screen.dart',
+      'lib/screens/driver/driver_menu_screen.dart',
+      'lib/screens/driver/driver_profile_screen.dart',
+      'lib/screens/driver/driver_settings_screen.dart',
+      'lib/screens/driver/driver_inbox_screen.dart',
+      'lib/screens/driver/driver_vehicle_screen.dart',
+      'lib/screens/driver/driver_analytics_screen.dart',
+      'lib/screens/driver/driver_trip_accept_screen.dart',
+    ]) {
+      final s = File(f).readAsStringSync();
+      final i = s.indexOf('_enforceDriverRole()');
+      expect(i, isNonNegative, reason: '$f: the role guard exists');
+      final block = s.substring(i, i + 600);
+      expect(block, contains('fadeThroughRoute(const WelcomeScreen())'),
+          reason: '$f: ejects to the role-select screen');
+      expect(block.contains('HomeScreen()'), isFalse,
+          reason: '$f: the eject must NEVER land on the rider home');
+    }
+  });
 }

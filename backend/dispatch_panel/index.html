@@ -19,5 +19,29 @@
   </head>
   <body>
     <div id="root"></div>
+    <script>
+      // Boot watchdog (user report 2026-10-14: "a veces el dispatch no carga
+      // en teléfono y tengo que reiniciar la página"): on a flaky mobile
+      // network a bundle chunk can fail and #root stays empty forever. If
+      // nothing mounted after 9 s, reload ONCE per tab session — never a
+      // reload loop.
+      (function () {
+        var KEY = 'panel_boot_retried';
+        var ok = setInterval(function () {
+          var root = document.getElementById('root');
+          if (root && root.hasChildNodes()) {
+            sessionStorage.removeItem(KEY);
+            clearInterval(ok);
+          }
+        }, 1000);
+        setTimeout(function () {
+          var root = document.getElementById('root');
+          if (root && root.hasChildNodes()) return;
+          if (sessionStorage.getItem(KEY)) return;
+          sessionStorage.setItem(KEY, '1');
+          location.reload();
+        }, 9000);
+      })();
+    </script>
   </body>
 </html>

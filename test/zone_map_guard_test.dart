@@ -126,7 +126,11 @@ void main() {
     expect(s, contains('ZoneService.sectors'),
         reason: 'layers iterate the baked sectors');
     expect(s, contains('0xFFE8C547'), reason: 'gold heat/selection');
-    expect(s, contains('0xFF9AA3B8'), reason: 'gray thick boundary');
+    expect(s.contains('0xFF9AA3B8'), isFalse,
+        reason: '2026-10-15 spec: "las zonas deben estar amarillas" — el '
+            'gris/blanco murió; fill y borde son gold de marca');
+    expect(s, contains("fillColor: 0xFFE8C547, // 2026-10-15: zonas AMARILLAS"),
+        reason: 'the base fill is brand yellow, never gray');
     expect(s, contains('lineTranslate'), reason: 'the 3D shadow online');
     expect(s.contains('_zoneLookOnline'), isTrue,
         reason: 'the look flips with the mode');

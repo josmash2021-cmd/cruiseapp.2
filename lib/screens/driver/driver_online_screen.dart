@@ -1144,10 +1144,14 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
       ]).animate(_scheduledBounceCtrl!);
 
       // ── Relojes del GO button (puerto del home, merge 2026-09-26) ──
+      // 2026-10-15 (user spec: "que no tenga esa animación de latido o
+      // respiración"): el breathing de color y el palpitar MURIERON — sus
+      // relojes se crean parados (los campos quedan por las referencias
+      // viejas) y el brillo corre por _goGlossCtrl solo donde se pinta.
       _goPulseCtrl = AnimationController(
         vsync: this,
         duration: const Duration(milliseconds: 2000),
-      )..repeat(reverse: true);
+      );
       _goPulseAnim = Tween<double>(begin: 0.3, end: 1.0).animate(
           CurvedAnimation(parent: _goPulseCtrl!, curve: Curves.easeInOut));
       _goGlossCtrl = AnimationController(
@@ -1163,13 +1167,12 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
         vsync: this,
         duration: const Duration(milliseconds: 5200),
       )..repeat();
-      // El palpitar del GO (2026-10-14, user spec: "cámbialo por un palpitar
-      // del botón" — las ondas de radar en el botón murieron): un latido
-      // suave 1.0→1.04 que respira mientras el botón está encendido.
+      // El palpitar del GO murió 2026-10-15 (user spec: "que no tenga esa
+      // animación de latido o respiración") — el reloj queda parado.
       _goThrobCtrl = AnimationController(
         vsync: this,
         duration: const Duration(milliseconds: 1300),
-      )..repeat(reverse: true);
+      );
       _goThrobAnim = Tween<double>(begin: 1.0, end: 1.04).animate(
           CurvedAnimation(parent: _goThrobCtrl!, curve: Curves.easeInOut));
       _goBtnColorCtrl = AnimationController(

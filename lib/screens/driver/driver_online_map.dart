@@ -2622,7 +2622,7 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     final fill = mapbox.FillLayer(
       id: 'sec-fill-$sid',
       sourceId: 'sec-src-$sid',
-      fillColor: 0xFF9AA3B8, // gray base — heat rewrites it gold
+      fillColor: 0xFFE8C547, // 2026-10-15: zonas AMARILLAS (el gris/blanco murió)
       fillOpacity: 0.0,
     );
     return [
@@ -2642,7 +2642,7 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
       _guardedStyleWrite(map.style.addLayer(mapbox.LineLayer(
         id: 'sec-line-$sid',
         sourceId: 'sec-src-$sid',
-        lineColor: 0xFF9AA3B8, // gray, thick — the divisions always read
+        lineColor: 0xFFE8C547, // amarillo de marca — las divisiones leen gold (2026-10-15)
         lineWidth: 2.4,
         lineOpacity: 0.0,
       ))),
@@ -2812,7 +2812,7 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     // Heat paints in BOTH modes now (2026-10-14 spec): online it fills under
     // the road network; offline it fills on top as before.
     final level = visible ? (ZoneService.demand[sid]?.level ?? 0) : 0;
-    final fillColor = level == 0 ? 0xFF9AA3B8 : 0xFFE8C547;
+    final fillColor = 0xFFE8C547; // 2026-10-15: amarillo siempre; el nivel solo mueve la opacidad
     // Heat ladder (user spec 2026-10-13): Apagado = GRAY wash (offline only —
     // online an unheated sector paints nothing over the driving map), Busy =
     // gold ALMOST solid, Ocupado = more, Muy ocupado = 100% solid gold. Gray
@@ -3038,6 +3038,14 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
   /// ON THE ARROW at the zoom the home-state zone fit would use — the zones
   /// of the driver's state stay in frame, the driver is the centre. No fix
   /// (or no sectors) → the state-fit fallback of old.
+  /// El sheet abierto cubre la mitad baja de la pantalla (user spec
+  /// 2026-10-15: "debe centrar en lo visible") — las cámaras offline centran
+  /// en el área VISIBLE sobre el sheet, no en el centro de la pantalla.
+  double get _visibleSheetPx {
+    final h = MediaQuery.maybeOf(context)?.size.height ?? 700.0;
+    return h * _panelFrac + 20;
+  }
+
   Future<void> _recenterArrowZoneZoom() async {
     final map = _map;
     if (map == null || kIsWeb) return;
@@ -3062,7 +3070,8 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
           mapbox.Point(coordinates: mapbox.Position(bbox[2], bbox[3])),
         ],
         mapbox.CameraOptions(pitch: 0, bearing: 0),
-        mapbox.MbxEdgeInsets(top: 130, left: 30, bottom: 210, right: 30),
+        mapbox.MbxEdgeInsets(
+            top: 130, left: 30, bottom: _visibleSheetPx, right: 30),
         null,
         null,
       );
@@ -3077,6 +3086,9 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
             zoom: fitCam.zoom,
             bearing: 0,
             pitch: 0,
+            // Centrar en lo visible: el sheet abierto no se traga la flecha.
+            padding: mapbox.MbxEdgeInsets(
+                top: 120, left: 0, bottom: _visibleSheetPx, right: 0),
           ),
           mapbox.MapAnimationOptions(duration: _kRecenterFlightMs));
       if (mounted) _setState(() => _cameraFollowing = false);
@@ -3112,8 +3124,10 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
           mapbox.Point(coordinates: mapbox.Position(e, n)),
         ],
         mapbox.CameraOptions(pitch: 0, bearing: 0),
-        // Top clears the earnings pill, bottom the offline sheet + GO.
-        mapbox.MbxEdgeInsets(top: 130, left: 30, bottom: 210, right: 30),
+        // Top clears the earnings pill; bottom = el área visible real
+        // sobre el sheet abierto (2026-10-15 spec "centrar en lo visible").
+        mapbox.MbxEdgeInsets(
+            top: 130, left: 30, bottom: _visibleSheetPx, right: 30),
         null,
         null,
       );

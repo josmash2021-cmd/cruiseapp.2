@@ -492,12 +492,15 @@ void main() {
       expect(offline, contains('BlendMode.srcIn'),
           reason: 'the logo is rendered in the button foreground so it '
               'reads on gold');
-      // The heartbeat on the OPEN PILL, the radar of old on the CLOSED disc.
-      expect(offline, contains('_goThrobAnim'),
-          reason: 'the button throbs while lit');
-      expect(offline, contains('dimmed || morph <= 0.5'),
-          reason: '2026-10-14 spec: throb is pill-only — the closed disc '
-              'carries the radar instead');
+      // 2026-10-15 spec: heartbeat DEAD ("sin animación de latido o
+      // respiración"); the shine sweep lives on the OPEN pill only.
+      expect(offline, contains('const throb = 1.0'),
+          reason: 'the heartbeat is dead — the button holds a fixed scale');
+      expect(offline, contains('_goGlossCtrl!.value'),
+          reason: 'the shine sweep drives off the gloss clock');
+      expect(offline, contains('!dimmed && morph > 0.5'),
+          reason: '2026-10-15 spec: the bright sweep paints ONLY on the open '
+              'pill ("la animación brillante solo cuando el sheet esté abierto")');
       expect(offline, contains('!dimmed && morph <= 0.5'),
           reason: 'the radar rings live on the closed disc only ("la '
               'animación que tenía antes")');
@@ -643,10 +646,10 @@ void main() {
       // an accidental disabled look.
       expect(
           offline.contains(
-              'dimmed ? Colors.white54 : const Color(0xFF0B0B0F)'),
+              'dimmed ? Colors.white54 : Colors.white'),
           isTrue,
-          reason: 'black lettering on gold, always — the lone exception is '
-              'the deliberate zone-selection dim');
+          reason: '2026-10-15 spec: WHITE lettering on gold — the lone '
+              'exception is the deliberate zone-selection dim');
       expect(offline.contains('_selectedZoneName == null'), isTrue);
     });
 

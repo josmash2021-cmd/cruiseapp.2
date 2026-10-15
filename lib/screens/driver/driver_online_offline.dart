@@ -67,7 +67,7 @@ const Set<String> _kFinishedTripStatuses = {
 final RegExp _sqlPrefixRe = RegExp(r'^sql_');
 
 // ── GO button geometry, both ends of the morph ──
-const double _kGoPillH = 56.0;
+const double _kGoPillH = 62.0; // 2026-10-15: "un poquito más grande"
 const double _kGoCircleD = 74.0;
 const double _kGoSideInset = 20.0;
 
@@ -1052,7 +1052,8 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
   Widget _buildMorphingGoButton(EdgeInsets pad, {bool hidden = false}) {
     final t = (_panelFrac / _kSheetRestFrac).clamp(0.0, 1.0);
     final height = ui.lerpDouble(_kGoCircleD, _kGoPillH, t)!;
-    final radius = ui.lerpDouble(_kGoCircleD / 2, 16.0, t)!;
+    // estilo píldora (2026-10-15): esquinas = mitad de la altura
+    final radius = ui.lerpDouble(_kGoCircleD / 2, _kGoPillH / 2, t)!;
 
     // Closed: floating clear of the sheet's rounded top. Open: resting on the
     // sheet's floor, above the home indicator.
@@ -1181,7 +1182,9 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
           if (_goIgniteCtrl != null) _goIgniteCtrl!,
         ]),
         builder: (_, __) {
-          final p = _goPulseAnim?.value ?? 1.0;
+          // Breathing muerto (2026-10-15, spec "sin latido o respiración") —
+          // valor fijo; el brillo lo da el gloss barrido.
+          const p = 0.6;
           final docsOk = _vehicleDocsApproved || !_docStatusLoaded;
           // Look NORMAL always (user spec 2026-10-11: "el botón de GO no se
           // vea desactivado, siempre normal en amarillo") — docs/verification
@@ -1212,8 +1215,10 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
           const glowColor = Color(0xFFE8C547);
 
           // Black on gold — muted while dimmed.
+          // Letras BLANCAS sobre el dorado (2026-10-15: "las letras de GO
+          // ONLINE deben estar en blanco").
           final fgColor =
-              dimmed ? Colors.white54 : const Color(0xFF0B0B0F);
+              dimmed ? Colors.white54 : Colors.white;
 
           // The ignite pop when a zone selection lights the GO up.
           final igniteScale = _goIgniteAnim?.value ?? 1.0;
@@ -1222,9 +1227,7 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
           // with the sheet closed and the button just "GO", it carries the
           // radar of old instead) — a soft 1.0→1.04 throb while lit; a
           // dimmed button (no zone picked) stays still.
-          final throb = (dimmed || morph <= 0.5)
-              ? 1.0
-              : (_goThrobAnim?.value ?? 1.0);
+          const throb = 1.0; // el latido murió 2026-10-15; el pop de ignite queda
 
           // The pill label (user spec 2026-10-14: "no debe decir verify
           // first, debe decir selecciona una zona, y al seleccionarla
@@ -1462,6 +1465,39 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
                     ],
                   ),
                 ),
+                // Brillo SOLO con el sheet abierto (user spec 2026-10-15:
+                // "la animación brillante solo cuando el sheet esté
+                // abierto"): una banda de luz barre la píldora; el disco
+                // cerrado conserva su radar de siempre.
+                if (_goGlossCtrl != null && !dimmed && morph > 0.5)
+                  Positioned.fill(
+                    child: IgnorePointer(
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(radius),
+                        child: Builder(builder: (context) {
+                          final g = _goGlossCtrl!.value * 1.7 - 0.35;
+                          return Container(
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                begin: Alignment.centerLeft,
+                                end: Alignment.centerRight,
+                                colors: [
+                                  Colors.white.withValues(alpha: 0.0),
+                                  Colors.white.withValues(alpha: 0.22),
+                                  Colors.white.withValues(alpha: 0.0),
+                                ],
+                                stops: [
+                                  (g - 0.18).clamp(0.0, 1.0),
+                                  g.clamp(0.0, 1.0),
+                                  (g + 0.18).clamp(0.0, 1.0),
+                                ],
+                              ),
+                            ),
+                          );
+                        }),
+                      ),
+                    ),
+                  ),
                 // Radar sweep — SOLO en el disco cerrado (user spec
                 // 2026-10-14: "cuando el sheet esté cerrado y el botón
                 // solo diga GO, la animación que tenía antes"). El
@@ -2450,7 +2486,8 @@ class _GoWheelBadge extends StatelessWidget {
         child: SizedBox(
           width: 24,
           height: 24,
-          child: CustomPaint(painter: _GoWheelPainter(color: _offlineGold)),
+          // volante BLANCO (user spec 2026-10-15)
+          child: CustomPaint(painter: _GoWheelPainter(color: Colors.white)),
         ),
       ),
     );

@@ -1,12 +1,11 @@
-"""POST /auth/dispatch-unwaitlist/{user_id} — sacar al driver de la lista de
-espera (user spec 2026-10-13: "debe dejarme quitar el usuario de lista de
-espera por si tiene que subir nuevamente un documento").
+"""POST /auth/dispatch-unwaitlist/{user_id} — volver a pendiente.
 
-Espeja dispatch-waitlist: status vuelve a "pending" en DB, espejo Firestore
-via write_approval con action "unwaitlist" (mapea a "pending" — el default
-del dict es "rejected", trampa cerrada), Socket.IO + FCM localizado con
-type "driver_unwaitlisted". El driver aterriza en el hub y puede resubir.
+Sirve para salir de waitlist y para deshacer una aprobación global accidental:
+la cuenta vuelve a "pending" sin tocar los documentos ni sus decisiones.
+También sincroniza Firestore y avisa por Socket.IO + FCM localizado.
 """
+
+from datetime import datetime, timezone
 
 import pytest
 
@@ -63,8 +62,12 @@ def firestore(monkeypatch):
     return calls
 
 
-async def test_unwaitlist_back_to_pending_mirrors_firestore(client, db, push, firestore):
-    u = await _mk_user(db)
+async def test_unwaitlist_from_approved_clears_verified_and_mirrors(client, db, push, firestore):
+    u = await _mk_user(db, status="approved")
+    u.is_verified = True
+    u.verified_at = datetime.now(timezone.utc)
+    await db.commit()
+
     res = await client.post(
         f"/auth/dispatch-unwaitlist/{u.id}",
         headers=_make_auth_headers("test-dispatch-key"),
@@ -77,6 +80,7 @@ async def test_unwaitlist_back_to_pending_mirrors_firestore(client, db, push, fi
     await db.refresh(u)
     assert u.verification_status == "pending"
     assert not u.is_verified
+    assert u.verified_at is None
 
     assert firestore == [{"user_id": u.id, "action": "unwaitlist",
                           "reason": None, "role": "driver"}]
@@ -94,7 +98,7 @@ async def test_unwaitlist_push_spanish_phone(client, db, push):
     assert res.status_code == 200, res.text
     assert push["fcm"][0]["title"] == "Puedes actualizar tus documentos"
     assert push["fcm"][0]["body"] == (
-        "Tu cuenta salió de la lista de espera. Abre la app para revisar y resubir lo necesario."
+        "Tu cuenta volvió a pendiente. Abre la app para revisar y resubir lo necesario."
     )
 
 
@@ -107,7 +111,7 @@ async def test_unwaitlist_push_english_phone(client, db, push):
     assert res.status_code == 200, res.text
     assert push["fcm"][0]["title"] == "You can update your documents"
     assert push["fcm"][0]["body"] == (
-        "Your account left the waitlist. Open the app to review and re-upload what's needed."
+        "Your account is pending again. Open the app to review and re-upload what's needed."
     )
 
 

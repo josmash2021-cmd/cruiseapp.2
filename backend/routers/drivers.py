@@ -3824,10 +3824,9 @@ async def checkr_webhook(request: Request, db: AsyncSession = Depends(get_db)):
         _record_background_check_result(driver, now)
         if status == "clear":
             driver.background_check_status = "clear"
-            # The background check no longer approves the account by itself:
-            # it is one document in the set (license + background + vehicle
-            # docs). The driver hears about THIS document instantly, and the
-            # aggregation approves the account when the rest are green too.
+            # The driver hears about THIS document instantly. Account approval
+            # is never automatic — even with every other document green, only
+            # an explicit dispatch decision can approve the account.
             await _restore_recheck_suspension(driver)
         elif status == "consider":
             driver.background_check_status = "consider"

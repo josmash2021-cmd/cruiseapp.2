@@ -3341,18 +3341,22 @@ async def dispatch_waitlist_driver(user_id: int, db: AsyncSession = Depends(get_
 
 @router.post("/auth/dispatch-unwaitlist/{user_id}", dependencies=[Depends(_verify_dispatch_key)])
 async def dispatch_unwaitlist_driver(user_id: int, db: AsyncSession = Depends(get_db)):
-    """Dispatch pulls a driver OUT of the waitlist, back to plain pending
-    (user spec 2026-10-13): the app routes them to the to-do hub again so
-    they can re-upload a document. Mirror of dispatch-waitlist above."""
-    logging.info("[DISPATCH-UNWAITLIST] Un-waitlisting driver user_id=%d", user_id)
+    """Return a driver to plain pending and the to-do hub.
+
+    Used both to leave the waitlist and to undo an accidental account
+    approval. Documents and their individual review states are preserved.
+    """
+    logging.info("[DISPATCH-UNWAITLIST] Returning driver user_id=%d to pending", user_id)
     result = await db.execute(select(User).where(User.id == user_id, User.role == "driver"))
     db_user = result.scalar_one_or_none()
     if not db_user:
         raise HTTPException(404, "Driver not found")
-    # verification_reason is NOT touched — un-waitlisting decides nothing.
+    # verification_reason is NOT touched — pending decides nothing about the docs.
     db_user.verification_status = "pending"
+    db_user.is_verified = False
+    db_user.verified_at = None
     await db.commit()
-    logging.info("[DISPATCH-UNWAITLIST] DB updated for user %d: status=pending", user_id)
+    logging.info("[DISPATCH-UNWAITLIST] DB updated for user %d: status=pending, is_verified=False", user_id)
     # Atomic batch write to ALL 3 Firestore collections
     if _HAS_FIRESTORE:
         try:
@@ -3362,7 +3366,7 @@ async def dispatch_unwaitlist_driver(user_id: int, db: AsyncSession = Depends(ge
             logging.warning("[DISPATCH-UNWAITLIST] Firestore sync failed: %s", e)
     else:
         logging.warning("[DISPATCH-UNWAITLIST] _HAS_FIRESTORE=False - Firestore sync skipped")
-    # ── Real-time Socket.IO + FCM: the app leaves the waitlist page ──
+    # ── Real-time Socket.IO + FCM: the app returns to the to-do hub ──
     es = user_lang(db_user) == "es"
     try:
         await notify_user(
@@ -3371,8 +3375,8 @@ async def dispatch_unwaitlist_driver(user_id: int, db: AsyncSession = Depends(ge
             {
                 "status": "pending",
                 "role": "driver",
-                "message": ("Tu cuenta salió de la lista de espera. Puedes revisar y resubir tus documentos." if es
-                            else "Your account left the waitlist. You can review and re-upload your documents."),
+                "message": ("Tu cuenta volvió a pendiente. Puedes revisar y resubir tus documentos." if es
+                            else "Your account is pending again. You can review and re-upload your documents."),
             },
         )
         logging.info("[DISPATCH-UNWAITLIST] Socket.IO push sent to user %d", user_id)
@@ -3384,8 +3388,8 @@ async def dispatch_unwaitlist_driver(user_id: int, db: AsyncSession = Depends(ge
             await _send_fcm_push_async(
                 db_user.fcm_token,
                 "Puedes actualizar tus documentos" if es else "You can update your documents",
-                ("Tu cuenta salió de la lista de espera. Abre la app para revisar y resubir lo necesario." if es
-                 else "Your account left the waitlist. Open the app to review and re-upload what's needed."),
+                ("Tu cuenta volvió a pendiente. Abre la app para revisar y resubir lo necesario." if es
+                 else "Your account is pending again. Open the app to review and re-upload what's needed."),
                 {"type": "driver_unwaitlisted", "user_id": str(user_id)},
             )
             logging.info("[DISPATCH-UNWAITLIST] FCM push sent to user %d", user_id)

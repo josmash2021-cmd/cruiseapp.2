@@ -68,6 +68,19 @@ void main() {
         reason: '…and exports it');
   });
 
+  test('account approval is manual and pending reversal is available', () {
+    expect(chunk, contains('guard-pin panel_manual_account_approval_guard_test'));
+    expect(chunk, contains('Cuenta completa del driver'));
+    expect(chunk, contains('target.kind==="account"?await accountSet'),
+        reason: 'account decisions use their own endpoint, never a document one');
+    expect(chunk, contains('kind:"account",id:t},"pending"'),
+        reason: 'an accidental global approval can be returned to To-do');
+    expect(usersModule, contains('/auth/dispatch-approve/\${e}'));
+    expect(usersModule, contains('/auth/dispatch-reject/\${e}'));
+    expect(usersModule, contains('/auth/dispatch-unwaitlist/\${e}'));
+    expect(usersModule, contains('setDriverVerificationStatus};'));
+  });
+
   test('the vehicle is always reviewable and the dead duplicate grid is gone',
       () {
     expect(chunk.contains('d.approvalStatus!=="approved"'), isFalse,

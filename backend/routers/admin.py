@@ -2420,8 +2420,8 @@ async def admin_set_document_status(document_id: int, request: Request, db: Asyn
 
     # A document decision is a live event for the driver, not a row they
     # discover on the next app open: onboarding override (the To-do hub),
-    # instant FCM + socket, then re-evaluate the whole account - the last
-    # green document is what approves the driver.
+    # instant FCM + socket, then re-evaluate the vehicle. The ACCOUNT is
+    # approved only by an explicit dispatch decision, never by this recompute.
     u_r = await db.execute(select(User).where(User.id == doc.user_id))
     doc_user = u_r.scalar_one_or_none()
     if doc_user:

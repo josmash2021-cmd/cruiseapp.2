@@ -1,18 +1,15 @@
-"""Document-by-document driver approval (2026-08-31).
+"""Document-by-document driver review with MANUAL account approval.
 
-The model: a driver account approves ITSELF when every required piece is
-green — approved license document, clear background check, and the active
-vehicle's approved insurance + registration (plus inspection for Alabama).
 Pins the contract:
 
   * each document decision pushes the driver INSTANTLY (FCM + socket) —
     the old endpoint flipped the row and the driver found out on the next
     app open
   * the To-do hub override is written per document
-  * the full set approves the account AND the vehicle, with exactly one
-    "You're Approved!" push — never two
-  * the inspection gates only Alabama drivers
-  * the background check no longer approves the account alone
+  * a complete vehicle document set approves the vehicle
+  * NO document/background path approves the account, even when everything
+    is green: only dispatch's explicit global approval can do that
+  * the inspection gates only Alabama vehicles
 """
 import json
 import sys
@@ -144,9 +141,9 @@ class TestPerDocumentPushes:
         assert overrides["insurance"]["reason"] == "Foto borrosa"
 
 
-class TestTheFullSetApproves:
+class TestAccountApprovalStaysManual:
 
-    async def test_last_green_document_approves_once(
+    async def test_full_green_set_approves_vehicle_not_account(
             self, client, db, test_driver, captured_pushes):
         driver, _ = test_driver
         driver.fcm_token = "fcm-1"
@@ -161,16 +158,15 @@ class TestTheFullSetApproves:
         await db.refresh(driver)
         await db.refresh(veh)
 
-        assert driver.verification_status == "approved"
-        assert driver.is_verified is True
         assert veh.approval_status == "approved"
-        approved_pushes = [c for c in captured_pushes["fcm"]
-                           if c["title"] == "You're Approved! 🎉"]
-        assert len(approved_pushes) == 1
-        assert len(captured_pushes["email"]) == 1
-        assert any(s["event"] == "account_status_changed"
-                   and s["payload"]["status"] == "approved"
-                   for s in captured_pushes["socket"])
+        assert (driver.verification_status or "") != "approved"
+        assert driver.is_verified is False
+        assert not [c for c in captured_pushes["fcm"]
+                    if c["title"] == "You're Approved! 🎉"]
+        assert captured_pushes["email"] == []
+        assert not any(s["event"] == "account_status_changed"
+                       and s["payload"]["status"] == "approved"
+                       for s in captured_pushes["socket"])
 
     async def test_missing_piece_blocks_the_account(
             self, client, db, test_driver, captured_pushes):
@@ -182,7 +178,6 @@ class TestTheFullSetApproves:
         reg = await _add_doc(db, driver, veh, "registration")
         await db.commit()
 
-        # No license — the account must NOT approve.
         await _green_through_docs(client, db, [ins, reg])
         await db.refresh(driver)
         assert (driver.verification_status or "") != "approved"
@@ -202,14 +197,12 @@ class TestTheFullSetApproves:
         ]
         await db.commit()
 
-        # Alabama driver without the inspection: blocked.
         driver.drive_state = "AL"
         await db.commit()
         await _green_through_docs(client, db, docs)
-        await db.refresh(driver)
-        assert (driver.verification_status or "") != "approved"
+        await db.refresh(veh)
+        assert veh.approval_status != "approved"
 
-        # Add + approve the inspection: approved.
         insp = await _add_doc(db, driver, veh, "vehicle_inspection")
         await db.commit()
         resp = await client.post(
@@ -219,9 +212,11 @@ class TestTheFullSetApproves:
         )
         assert resp.status_code == 200, resp.text
         await db.refresh(driver)
-        assert driver.verification_status == "approved"
+        await db.refresh(veh)
+        assert veh.approval_status == "approved"
+        assert (driver.verification_status or "") != "approved"
 
-    async def test_no_second_approval_push(
+    async def test_no_account_approval_push_on_repeat(
             self, client, db, test_driver, captured_pushes):
         driver, _ = test_driver
         driver.fcm_token = "fcm-1"
@@ -235,24 +230,23 @@ class TestTheFullSetApproves:
         await db.commit()
         await _green_through_docs(client, db, docs)
 
-        # A late duplicate review (same doc re-approved) must not re-fire.
         resp = await client.post(
             f"/admin/documents/{docs[0].id}/status",
             headers=_headers(),
             json={"action": "approve"},
         )
         assert resp.status_code == 200
-        approved = [c for c in captured_pushes["fcm"]
+        assert not [c for c in captured_pushes["fcm"]
                     if c["title"] == "You're Approved! 🎉"]
-        assert len(approved) == 1
+        assert captured_pushes["email"] == []
 
 
 class TestBackgroundIsOneDocument:
 
-    async def test_checkr_clear_completes_the_set(
+    async def test_checkr_clear_does_not_approve_account_with_green_docs(
             self, db, test_driver, captured_pushes):
-        """The webhook path: everything else green, then Checkr says clear
-        — the account approves right there, pushed instantly."""
+        """Everything else green plus Checkr clear still leaves the ACCOUNT
+        pending: only dispatch can approve it manually."""
         driver, _ = test_driver
         driver.fcm_token = "fcm-1"
         driver.background_check_status = "pending"
@@ -262,24 +256,21 @@ class TestBackgroundIsOneDocument:
         await _add_doc(db, driver, veh, "registration", status="approved")
         await db.commit()
 
-        # Not yet: background pending.
         assert await driver_approval.recompute_driver_approval(
             db, driver) is False
 
         driver.background_check_status = "clear"
         await db.commit()
         assert await driver_approval.recompute_driver_approval(
-            db, driver) is True
+            db, driver) is False
         await db.refresh(driver)
-        assert driver.verification_status == "approved"
-        assert [c for c in captured_pushes["fcm"]
-                if c["title"] == "You're Approved! 🎉"]
+        assert (driver.verification_status or "") != "approved"
+        assert not [c for c in captured_pushes["fcm"]
+                    if c["title"] == "You're Approved! 🎉"]
+        assert captured_pushes["email"] == []
 
     async def test_checkr_clear_alone_approves_nothing(
             self, db, test_driver, captured_pushes):
-        """The 2026-08-31 fix: the background check used to set
-        verification_status=approved BY ITSELF (and silently). Alone, it
-        must approve nothing."""
         driver, _ = test_driver
         driver.fcm_token = "fcm-1"
         driver.background_check_status = "clear"

@@ -1,17 +1,9 @@
-"""Document-by-document driver approval.
+"""Document-by-document driver review.
 
-A driver account approves ITSELF the moment every required piece is green:
-an approved license document, a clear background check, and the active
-vehicle's approved insurance + registration (plus the inspection for
-Alabama drivers). Before this module the pieces flipped in isolation — a
-documents row here, a Checkr status there — and the driver found out by
-closing and reopening the app. Every writer now funnels through
-recompute_driver_approval, and every document flip pushes the driver
-instantly (FCM + socket), so the review arrives the second dispatch taps
-the button.
-
-The manual ops override stays: /auth/dispatch-approve force-approves an
-account even with pieces missing.
+Every document flip pushes the driver instantly (FCM + socket). A complete
+vehicle document set can approve the active vehicle, but it NEVER approves
+the driver account: account approval is always a manual dispatch decision via
+/auth/dispatch-approve.
 """
 
 import json
@@ -27,9 +19,6 @@ from services.socketio_service import notify_user
 from services.fcm_service import _send_fcm_push_async
 
 logger = logging.getLogger(__name__)
-
-# Doc types that count as "the license" (driver-level rows, vehicle_id NULL).
-_LICENSE_DOC_TYPES = ("drivers_license", "driver_license", "license")
 
 # doc_type → onboarding item name in the app's To-do hub (onboarding_items
 # JSON override — what GET /auth/onboarding-items reads).
@@ -268,44 +257,23 @@ async def send_approved_email(user: User) -> None:
 
 
 async def recompute_driver_approval(db: AsyncSession, user: User) -> bool:
-    """Approve the vehicle/account when every required piece is green.
+    """Re-evaluate the active vehicle after a document decision.
 
-    Required set (product spec 2026-08-31): approved license document,
-    background_check_status == "clear", and the ACTIVE vehicle's approved
-    insurance + registration (+ inspection for Alabama drivers). A green
-    vehicle set auto-approves the vehicle; the full set approves the
-    account and fires the "You're Approved!" push + socket + email on the
-    spot.
-
-    Idempotent: an already-approved account returns False and re-sends
-    nothing. Returns True only on the call that flips the account.
+    A complete, live document set can approve the vehicle. The driver ACCOUNT
+    is NEVER approved here: account approval is always a manual dispatch
+    decision via /auth/dispatch-approve. Returns False for compatibility with
+    callers that used the old account-flip result.
     """
     if (user.role or "") != "driver":
         return False
     now = datetime.now(timezone.utc)
 
-    # 1. License — an approved driver-level doc row.
-    lic_r = await db.execute(
-        select(Document).where(
-            Document.user_id == user.id,
-            Document.vehicle_id == None,  # noqa: E711 — SQL NULL comparison
-            Document.doc_type.in_(_LICENSE_DOC_TYPES),
-            Document.status == "approved",
-        )
-    )
-    license_ok = lic_r.scalars().first() is not None
-
-    # 2. Background check — Checkr is the only writer of "clear".
-    bg_ok = (user.background_check_status or "").lower() == "clear"
-
-    # 3. The active vehicle and its documents. Coverage mirrors
-    #    can_go_online's rule: the row names this vehicle, or — only with a
-    #    single car on the account — it is a legacy vehicle_id NULL row.
+    # Coverage mirrors can_go_online's rule: the row names this vehicle, or —
+    # only with a single car on the account — it is a legacy vehicle_id NULL row.
     veh_r = await db.execute(select(Vehicle).where(
         Vehicle.user_id == user.id, Vehicle.is_active == True,
     ))
     veh = veh_r.scalars().first()
-    vehicle_ok = False
     if veh:
         count_r = await db.execute(
             select(func.count()).select_from(Vehicle).where(
@@ -339,59 +307,10 @@ async def recompute_driver_approval(db: AsyncSession, user: User) -> bool:
 
         vehicle_ok = all(_approved_live(t) for t in required)
         if vehicle_ok and (veh.approval_status or "").lower() != "approved":
-            # The car approves itself with its documents — no separate
-            # panel click to forget.
             veh.approval_status = "approved"
             db.add(veh)
             await db.commit()
             logger.info("[DocApproval] vehicle %s auto-approved (docs green)",
                         veh.id)
 
-    if not (license_ok and bg_ok and vehicle_ok):
-        return False
-    if (user.verification_status or "").lower() == "approved":
-        return False  # already there — never a second push/email
-
-    user.verification_status = "approved"
-    user.is_verified = True
-    user.verified_at = now
-    await db.commit()
-
-    # Firestore mirror — the same 3-collection write dispatch-approve does.
-    try:
-        from config import firestore_sync, _HAS_FIRESTORE
-        if _HAS_FIRESTORE:
-            firestore_sync.write_approval(user.id, "approve")
-    except Exception as e:
-        logger.warning("[DocApproval] Firestore approve sync failed: %s", e)
-
-    # The instant trio: socket (open app flips live), FCM (closed app gets
-    # the banner), email (the welcome).
-    try:
-        await notify_user(
-            user.id,
-            "account_status_changed",
-            {
-                "status": "approved",
-                "role": "driver",
-                "message": "Your driver application has been approved!",
-            },
-        )
-    except Exception as e:
-        logger.warning("[DocApproval] socket push failed for %s: %s",
-                       user.id, e)
-    try:
-        if user.fcm_token:
-            await _send_fcm_push_async(
-                user.fcm_token,
-                "You're Approved! 🎉",
-                "Welcome to the Cruise family! Open the app to start driving.",
-                {"type": "driver_approved", "user_id": str(user.id)},
-            )
-    except Exception as e:
-        logger.warning("[DocApproval] FCM approval push failed for %s: %s",
-                       user.id, e)
-    await send_approved_email(user)
-    logger.info("[DocApproval] driver %s auto-approved — all documents green",
-                user.id)
-    return True
+    return False

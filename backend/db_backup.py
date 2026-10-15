@@ -49,6 +49,7 @@ _last_backup_time: datetime | None = None
 _last_backup_status: str = "never_run"
 _last_backup_file: str = ""
 _last_backup_size_kb: float = 0.0
+_last_offsite_key: str | None = None
 
 
 def _get_pg_url() -> str | None:
@@ -180,13 +181,64 @@ def _rotate_backups():
                 logger.warning("[Backup] Could not delete %s: %s", old.name, e)
 
 
+async def upload_backup_to_s3(path: Path) -> str | None:
+    """Copy one finished dump OFF Railway, to the S3 bucket (2026-10-15,
+    user spec: respaldo real ante cualquier problema).
+
+    The volume dumps die with the Railway project — this copy is the
+    disaster-recovery store that survives it. Fail-soft: a failed upload
+    never breaks the local backup, but it logs an ERROR so the failure is
+    visible instead of silent. Returns the S3 key, or None when S3 is not
+    configured.
+    """
+    from config import (S3_ACCESS_KEY, S3_BUCKET_NAME, S3_ENDPOINT,
+                        S3_REGION, S3_SECRET_KEY)
+    if not all([S3_ENDPOINT, S3_BUCKET_NAME, S3_ACCESS_KEY, S3_SECRET_KEY]):
+        return None
+    try:
+        import aiobotocore.session
+        session = aiobotocore.session.get_session()
+        key = f"backups/postgres/{path.name}"
+        async with session.create_client(
+            "s3",
+            region_name=S3_REGION,
+            endpoint_url=S3_ENDPOINT,
+            aws_access_key_id=S3_ACCESS_KEY,
+            aws_secret_access_key=S3_SECRET_KEY,
+        ) as client:
+            await client.put_object(
+                Bucket=S3_BUCKET_NAME,
+                Key=key,
+                Body=path.read_bytes(),
+                ContentType="application/gzip",
+                Metadata={
+                    "created-at": datetime.now(timezone.utc).isoformat(),
+                    "source": "db_backup",
+                },
+            )
+        logger.info("[Backup] ✅ off-site copy: s3://%s/%s (%.1f KB)",
+                    S3_BUCKET_NAME, key, path.stat().st_size / 1024)
+        global _last_offsite_key
+        _last_offsite_key = key
+        return key
+    except Exception as e:
+        logger.error("[Backup] ❌ off-site S3 copy FAILED for %s: %s — the "
+                     "local dump exists; the disaster-recovery copy does not",
+                     path.name, e)
+        return None
+
+
 async def backup_scheduler():
     """Background task: run backup every BACKUP_INTERVAL_HOURS hours."""
     # Wait 2 minutes after startup before first backup
     await asyncio.sleep(120)
     while True:
         try:
-            await asyncio.get_event_loop().run_in_executor(None, run_backup)
+            ok = await asyncio.get_event_loop().run_in_executor(None, run_backup)
+            if ok:
+                # The local dump only counts as a real backup once a copy
+                # exists off this host (the volume dies with the project).
+                await upload_backup_to_s3(BACKUP_DIR / _last_backup_file)
         except Exception as e:
             logger.error("[Backup] Scheduler error: %s", e)
         await asyncio.sleep(BACKUP_INTERVAL_HOURS * 3600)
@@ -203,4 +255,5 @@ def get_status() -> dict:
         "total_backups": len(backups),
         "interval_hours": BACKUP_INTERVAL_HOURS,
         "max_kept": MAX_BACKUPS,
+        "last_offsite_key": _last_offsite_key,
     }

@@ -185,3 +185,61 @@ async def test_plain_text_mentioning_a_supervisor_does_not_escalate(monkeypatch)
 
     out = await svc._openai_completion([{"role": "user", "content": "ok"}], [], "es")
     assert out["escalate"] is False
+
+
+async def test_read_only_tool_call_reasks_for_text_same_turn(monkeypatch):
+    """Prod bug (2026-10-15, driver Frandy, mid-trip): the model called
+    get_trip_details, the router skips the tool-result round-trip for
+    read-only tools (the data is already in the context block), and the
+    user got "I'll help you with that right away." and then silence. The
+    service now re-asks — same turn, tools off the table — for the text."""
+    _reload_with(monkeypatch, OPENAI_API_KEY="sk-test")
+
+    calls = []
+
+    async def _fake_completion(messages, tools, lang="en"):
+        calls.append(len(tools))
+        if tools:  # first pass, the tool belt is on the table
+            return {
+                "response": "I'll help you with that right away.",
+                "function_call": {"name": "get_trip_details", "arguments": {}},
+                "escalate": False,
+            }
+        return {"response": "I can see your active trip. What happened exactly?",
+                "escalate": False}
+
+    monkeypatch.setattr(svc, "_completion", _fake_completion)
+
+    out = await svc.generate_support_response(
+        [{"role": "user", "content": "I have a problem with the trip I am on"}],
+        {"lang": "en", "user": {"id": 1, "role": "driver"}},
+    )
+    assert calls and calls[0] > 0, "first pass carries the tool belt"
+    assert calls[-1] == 0, "the re-ask runs with no tools on the table"
+    assert out["response"] == "I can see your active trip. What happened exactly?"
+    assert "function_call" not in out
+    assert out["escalate"] is False
+
+
+async def test_read_only_tool_call_empty_second_pass_falls_back_localized(monkeypatch):
+    """If the re-ask still comes back empty, the canned line ships in the
+    chat's language — never the hardcoded English of the old path."""
+    _reload_with(monkeypatch, OPENAI_API_KEY="sk-test")
+
+    async def _fake_completion(messages, tools, lang="en"):
+        if tools:
+            return {
+                "response": "Te ayudo con eso ahora mismo.",
+                "function_call": {"name": "get_user_trips", "arguments": {}},
+                "escalate": False,
+            }
+        return {"response": "", "escalate": False}
+
+    monkeypatch.setattr(svc, "_completion", _fake_completion)
+
+    out = await svc.generate_support_response(
+        [{"role": "user", "content": "tengo un problema con mi viaje"}],
+        {"lang": "es", "user": {"id": 1, "role": "driver"}},
+    )
+    assert out["response"].startswith("Dame un momento")
+    assert "function_call" not in out

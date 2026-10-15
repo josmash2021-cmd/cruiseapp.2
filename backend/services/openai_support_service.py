@@ -778,6 +778,13 @@ def _tools_for_role(role: str) -> list[dict[str, Any]]:
             if (f.get("function") or {}).get("name") in names]
 
 
+# Read-only lookups. Their data already lives in the user-context block, so
+# the router never does a tool-result round-trip for them — and the service
+# re-asks for a plain-text answer instead of shipping the canned line
+# (prod 2026-10-15: "I'll help you with that right away." and then silence).
+_READ_ONLY_TOOLS = frozenset({"get_trip_details", "get_user_trips"})
+
+
 async def _check_fraud_patterns(user_context: dict[str, Any]) -> tuple[bool, str]:
     """Check for fraud patterns before processing refunds/credits.
     
@@ -927,16 +934,46 @@ async def generate_support_response(
             # Hard cap per turn (2026-10-14): a hung provider connection used
             # to hang the reply task forever — the silent failure. The cap
             # raises TimeoutError → the router's fallback chain answers.
-            return await asyncio.wait_for(
+            result = await asyncio.wait_for(
                 _completion(openai_messages, role_tools, lang), timeout=60)
         except (SupportAuthError, openai.AuthenticationError,
                 openai.RateLimitError) as e:
             # A rejected key or an exhausted quota demotes the primary for
             # the life of the process, and the standby answers this turn.
             if _demote_primary(str(e)[:120]):
-                return await asyncio.wait_for(
+                result = await asyncio.wait_for(
                     _completion(openai_messages, role_tools, lang), timeout=60)
-            raise
+            else:
+                raise
+        # A read-only tool call (get_trip_details / get_user_trips) must NOT
+        # end the turn on the canned "I'll help you with that right away" —
+        # prod 2026-10-15: a driver mid-trip got exactly that and silence,
+        # because the router deliberately skips the tool-result round-trip
+        # for those (their data already lives in the context block). Fold the
+        # call in and ask again for the actual answer, with no tools on the
+        # table so the model has to speak.
+        fc = result.get("function_call")
+        if fc and fc.get("name") in _READ_ONLY_TOOLS:
+            _log.info("[Support AI] read-only tool %s — re-asking for the "
+                      "text answer in the same turn", fc.get("name"))
+            openai_messages = openai_messages + [
+                {"role": "assistant", "content": result.get("response") or ""},
+                {"role": "user", "content": _localized(
+                    lang,
+                    "(Nota del sistema: los datos de ese viaje ya están en tu contexto. Responde AHORA al mensaje del usuario en texto plano, sin llamar herramientas.)",
+                    "(System note: that trip's data is already in your context. Answer the user's message NOW in plain text — no tool calls.)")},
+            ]
+            result = await asyncio.wait_for(
+                _completion(openai_messages, [], lang), timeout=60)
+            # Defensive: a provider that still tries to call something gets
+            # its text or nothing — the canned line never ships twice.
+            result.pop("function_call", None)
+            if not (result.get("response") or "").strip():
+                result["response"] = _localized(
+                    lang,
+                    "Dame un momento mientras reviso los detalles de tu viaje. ¿Qué pasó exactamente?",
+                    "Give me a moment while I review your trip details. What happened exactly?")
+        return result
     except (SupportAuthError, openai.AuthenticationError,
             openai.RateLimitError):
         _log.warning("[Support AI] credentials/quota rejected on every provider")

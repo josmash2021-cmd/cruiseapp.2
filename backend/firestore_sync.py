@@ -561,6 +561,26 @@ def sync_support_message(chat_id: int, msg_id: int, sender_id: int,
         log.error("❌ Support message sync failed: %s", e)
 
 
+def mark_support_messages_read(chat_id: int, msg_ids: list[int]) -> None:
+    """Flip isRead on the mirrored messages (2026-10-15, read receipts —
+    the panel's ✓✓ turn blue off this field; SQL flips it on the GET polls
+    and the mirror must follow or the panel never sees it).
+
+    Batched, fail-soft: receipts are cosmetic and must never break a poll.
+    """
+    _ensure_init()
+    if _db is None or not msg_ids:
+        return
+    try:
+        batch = _db.batch()
+        ref = _db.collection("support_chats").document(f"chat_{chat_id}").collection("messages")
+        for mid in msg_ids:
+            batch.set(ref.document(f"msg_{mid}"), {"isRead": True}, merge=True)
+        batch.commit()
+    except Exception as e:
+        log.warning("⚠️ mark_support_messages_read chat %s: %s", chat_id, e)
+
+
 def sync_dispatch_notification(chat_id: int, user_name: str, notif_type: str, message: str):
     """Write a notification event for the dispatch app to pick up via Firestore listener."""
     _ensure_init()

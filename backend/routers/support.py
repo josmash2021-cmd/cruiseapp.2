@@ -2863,10 +2863,19 @@ async def get_support_messages(chat_id: int, user: User = Depends(_get_current_u
     )
     messages = result.scalars().all()
     # Mark messages as read if current user is receiver
+    _flipped = []
     for m in messages:
         if m.sender_id != user.id and not m.is_read:
             m.is_read = True
+            _flipped.append(m.id)
     await db.commit()
+    if _flipped:
+        # Read receipts (2026-10-15): the panel's ✓✓ read off the Firestore
+        # mirror — it must flip together with SQL.
+        try:
+            firestore_sync.mark_support_messages_read(chat_id, _flipped)
+        except Exception as e:
+            logging.warning("[support] mirror read-mark failed: %s", e)
     # Build sender names
     sender_ids = {m.sender_id for m in messages if m.sender_id != 0}
     sender_names = {}
@@ -2917,10 +2926,23 @@ async def get_support_messages_dispatch(chat_id: int, db: AsyncSession = Depends
         .order_by(SupportMessage.created_at.asc())
     )
     messages = result.scalars().all()
+    _flipped = []
     for m in messages:
         if m.sender_role != "dispatch" and not m.is_read:
             m.is_read = True
+            _flipped.append(m)
     await db.commit()
+    # SQL flips everything non-dispatch (that's what the unread badge clears
+    # on), but the MIRROR's isRead means "the app user read it" — the panel's
+    # blue ✓✓. Only the user's own messages flip here; bot/system messages
+    # turn blue only through the app's poll.
+    _mirror = [m.id for m in _flipped
+               if m.sender_role in ("rider", "driver", "user")]
+    if _mirror:
+        try:
+            firestore_sync.mark_support_messages_read(chat_id, _mirror)
+        except Exception as e:
+            logging.warning("[support] mirror read-mark failed: %s", e)
     sender_ids = {m.sender_id for m in messages if m.sender_id != 0}
     sender_names = {}
     for sid in sender_ids:

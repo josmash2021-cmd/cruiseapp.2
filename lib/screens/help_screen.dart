@@ -1353,6 +1353,7 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
           role: role,
           time: DateTime.tryParse(m['created_at'] ?? '') ?? DateTime.now(),
           senderName: m['sender_name'] ?? '',
+          isRead: m['is_read'] == true,
         );
       }).toList();
 
@@ -2878,14 +2879,33 @@ class _CruiseSupportChatScreenState extends State<CruiseSupportChatScreen> {
                     ),
                   ),
                   const SizedBox(height: 2),
-                  Text(
-                    '${msg.time.hour.toString().padLeft(2, '0')}:${msg.time.minute.toString().padLeft(2, '0')}',
-                    style: TextStyle(
-                      fontSize: 10,
-                      color: isUser
-                          ? const Color(0xFF0A0800).withValues(alpha: 0.45)
-                          : Colors.white.withValues(alpha: 0.28),
-                    ),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      Text(
+                        '${msg.time.hour.toString().padLeft(2, '0')}:${msg.time.minute.toString().padLeft(2, '0')}',
+                        style: TextStyle(
+                          fontSize: 10,
+                          color: isUser
+                              ? const Color(0xFF0A0800).withValues(alpha: 0.45)
+                              : Colors.white.withValues(alpha: 0.28),
+                        ),
+                      ),
+                      // Read receipt on the sender's own bubble (user spec
+                      // 2026-10-15): ✓✓ grey = reached the server, blue =
+                      // the other side read it (their poll flips is_read).
+                      if (isUser) ...[
+                        const SizedBox(width: 3),
+                        Icon(
+                          Icons.done_all_rounded,
+                          size: 13,
+                          color: msg.isRead
+                              ? const Color(0xFF0B6ECE)
+                              : const Color(0xFF0A0800).withValues(alpha: 0.45),
+                        ),
+                      ],
+                    ],
                   ),
                 ],
               ),
@@ -3077,12 +3097,16 @@ class _ChatMsg {
   final String role; // rider, bot, system, dispatch
   final DateTime time;
   final String senderName;
+  // Read receipts (user spec 2026-10-15, WhatsApp-style): the sender's own
+  // bubble shows ✓✓ — grey until the other side polls it, blue once read.
+  final bool isRead;
   const _ChatMsg({
     this.id,
     required this.text,
     required this.role,
     required this.time,
     this.senderName = '',
+    this.isRead = false,
   });
 
   /// Identity for merging. Falls back to content for messages this device

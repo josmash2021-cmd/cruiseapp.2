@@ -1008,13 +1008,17 @@ async def admin_review_verification(user_id: int, request: Request, db: AsyncSes
 # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 # Identity uploads that live as plain User fields → the Document row each
-# should have so dispatch can review them one by one. Order matters: the
-# selfie still photo wins over the legacy liveness video for the same kind.
+# should have so dispatch can review them one by one. The liveness video is
+# its OWN row (biometric_video) — it used to be shadowed by the selfie still.
+# The license enters from license_front_url so legacy drivers whose license
+# only ever landed on the user columns (the /auth/verify flow) get a
+# reviewable row too; one row covers the whole license (front + back).
 _IDENTITY_DOC_SOURCES = (
     ("profile_photo", "photo_url"),
+    ("drivers_license", "license_front_url"),
     ("id_document", "id_photo_url"),
     ("selfie", "selfie_url"),
-    ("selfie", "video_url"),
+    ("biometric_video", "video_url"),
 )
 
 
@@ -1039,13 +1043,23 @@ async def _ensure_identity_doc_rows(db, user) -> None:
             d.file_path for d in existing
             if d.doc_type in ("drivers_license", "driver_license", "license")
         }
+        # The license photo on the user columns counts as "has license" too:
+        # the backfill below turns license_front_url into the license row, so
+        # the id_document row must never appear beside it (same photo — the
+        # "aparece doble" panel report).
+        user_license_files = {
+            p for p in (getattr(user, "license_front_url", None),
+                        getattr(user, "license_back_url", None)) if p
+        }
+        has_license = bool(license_paths) or bool(user_license_files)
 
         # Remove a duplicate id_document that is literally the license file.
         removed = False
         for d in existing:
             if (d.doc_type == "id_document"
-                    and d.file_path in license_paths
-                    and d.file_path):
+                    and d.file_path
+                    and (d.file_path in license_paths
+                         or d.file_path in user_license_files)):
                 await db.delete(d)
                 have.discard("id_document")
                 removed = True
@@ -1057,7 +1071,7 @@ async def _ensure_identity_doc_rows(db, user) -> None:
             if doc_type in have:
                 continue
             # A driver with a license on file never gets an id_document row.
-            if doc_type == "id_document" and license_paths:
+            if doc_type == "id_document" and has_license:
                 continue
             url = getattr(user, attr, None)
             if not url:
@@ -2430,4 +2444,50 @@ async def admin_set_document_status(document_id: int, request: Request, db: Asyn
         except Exception as e:
             logging.warning("[Admin] approval recompute failed: %s", e)
     return {"document": _doc_dict(doc)}
+
+
+@router.post("/admin/users/{user_id}/background-check-status", dependencies=[Depends(_require_dispatch_auth)])
+async def admin_set_background_check_status(user_id: int, request: Request, db: AsyncSession = Depends(get_db)):
+    """Manual background-check decision from dispatch (2026-10-15 user spec:
+    "aprobar o rechazar el social" en la ficha de la persona). Until now the
+    Checkr webhook was the only writer of `background_check_status`.
+
+    approve → "clear" (the value can_go_online / recompute_driver_approval
+    gate on); reject → "consider" — Checkr's own adverse word, so every
+    reader (app to-do hub, re-initiation guard) already understands it. The
+    driver is notified on every channel and the account recompute runs, same
+    as a document decision.
+    """
+    body = await request.json()
+    action = (body.get("action") or "").lower()
+    if action not in ("approve", "reject"):
+        raise HTTPException(400, "action must be 'approve' or 'reject'")
+    reason = (body.get("reason") or "").strip()
+
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(404, "User not found")
+
+    user.background_check_status = "clear" if action == "approve" else "consider"
+    if action == "approve":
+        user.background_check_completed_at = datetime.now(timezone.utc)
+    await db.commit()
+    _security_audit_log("ADMIN_BACKGROUND_CHECK_REVIEW", "admin",
+                        f"user_id={user_id} action={action}")
+    logging.info("[Admin] Background check %s by dispatch for user %s",
+                 action, user_id)
+
+    from services import driver_approval
+    try:
+        await driver_approval.notify_document_reviewed(
+            user, "background_check", action == "approve",
+            reason=reason or None)
+    except Exception as e:
+        logging.warning("[Admin] background-check notify failed: %s", e)
+    try:
+        await driver_approval.recompute_driver_approval(db, user)
+    except Exception as e:
+        logging.warning("[Admin] approval recompute failed: %s", e)
+    return {"background_check_status": user.background_check_status}
 

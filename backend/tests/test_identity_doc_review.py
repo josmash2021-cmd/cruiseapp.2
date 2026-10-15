@@ -147,3 +147,48 @@ async def test_driver_with_license_never_gets_id_document(client, db):
     res = await client.get(f"/admin/users/{u2.id}", headers=_dh())
     types2 = [d["doc_type"] for d in res.json()["documents"]]
     assert "id_document" not in types2
+
+
+async def test_liveness_video_gets_its_own_row(client, db):
+    """2026-10-15: the biometric video is one of the 8 uploads and must be
+    reviewable on its own — it used to be shadowed by the selfie still."""
+    u = await _mkuser(db, selfie_url="photos/u6/selfie.jpg",
+                      video_url="photos/u6/liveness.mp4")
+    res = await client.get(f"/admin/users/{u.id}", headers=_dh())
+    assert res.status_code == 200, res.text
+    by_type = {d["doc_type"]: d for d in res.json()["documents"]}
+    assert by_type["selfie"]["file_path"] == "photos/u6/selfie.jpg"
+    assert by_type["biometric_video"]["file_path"] == "photos/u6/liveness.mp4"
+    assert by_type["biometric_video"]["status"] == "pending"
+
+
+async def test_license_backfills_from_user_fields_and_blocks_id_document(
+        client, db):
+    """Legacy drivers whose license only ever landed on the user columns
+    (/auth/verify flow) get a reviewable drivers_license row — and the
+    id_document row (the same photo) must not appear beside it, even when no
+    license Document row existed before this read."""
+    u = await _mkuser(db, license_front_url="photos/u7/lic_front.jpg",
+                      license_back_url="photos/u7/lic_back.jpg",
+                      id_photo_url="photos/u7/lic_front.jpg")
+    res = await client.get(f"/admin/users/{u.id}", headers=_dh())
+    assert res.status_code == 200, res.text
+    docs = res.json()["documents"]
+    types = [d["doc_type"] for d in docs]
+    assert types.count("drivers_license") == 1
+    assert "id_document" not in types, \
+        "la foto de licencia en id_photo_url no crea fila aparte"
+    lic = [d for d in docs if d["doc_type"] == "drivers_license"][0]
+    assert lic["file_path"] == "photos/u7/lic_front.jpg"
+    assert lic["status"] == "pending"
+
+    # Y un id_document previamente creado con la foto de la licencia se
+    # elimina en la misma lectura, aunque no existiera fila de licencia.
+    u2 = await _mkuser(db, license_front_url="photos/u8/lic_front.jpg")
+    db.add(Document(user_id=u2.id, vehicle_id=None, doc_type="id_document",
+                    status="pending", file_path="photos/u8/lic_front.jpg"))
+    await db.commit()
+    res = await client.get(f"/admin/users/{u2.id}", headers=_dh())
+    types2 = [d["doc_type"] for d in res.json()["documents"]]
+    assert "id_document" not in types2
+    assert types2.count("drivers_license") == 1

@@ -42,6 +42,7 @@ _DOC_TO_ITEM = {
     "vehicle_registration": "registration",
     "vehicle_inspection": "inspection",
     "inspection": "inspection",
+    "background_check": "background",
 }
 
 # Push copy per document, per language (2026-10-05, user spec: the phone's
@@ -97,6 +98,12 @@ _DOC_COPY = {
                "❌ Selfie rechazada"),
         "en": ("✅ Selfie approved", "Your biometric selfie was approved.",
                "❌ Selfie rejected"),
+    },
+    "biometric_video": {
+        "es": ("✅ Video aprobado", "Tu video biométrico fue aprobado.",
+               "❌ Video rechazado"),
+        "en": ("✅ Video approved", "Your biometric video was approved.",
+               "❌ Video rejected"),
     },
 }
 

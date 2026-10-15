@@ -47,4 +47,22 @@ void main() {
         reason: 'the bundle edit carries its guard-pin so the next rebuild '
             'of the out-of-repo React source re-applies it');
   });
+
+  test('an open support chat RESUMES — new conversation only after a close',
+      () {
+    // User spec 2026-10-14: "si cierra la app o el chat y se vuelve a meter,
+    // debe abrir ya listo con la conversación; una conversación nueva solo si
+    // el driver o dispatch finalizó ese chat". The old phase-based
+    // auto-fresh closed the open chat and wiped the transcript on every
+    // visit — dead. Phantom silent phases flip back to the bot IN PLACE.
+    final s = File('backend/routers/support.py').readAsStringSync();
+    final i = s.indexOf('_BOT_ALIVE_PHASES');
+    expect(i, isNonNegative);
+    final block = s.substring(i, i + 1600);
+    expect(block.contains('fresh = True'), isFalse,
+        reason: 'the phase-based auto-fresh (close + wipe) is dead');
+    expect(block, contains('bot_phase = "agent_active"'),
+        reason: 'phantom silent phases rejoin the bot with the transcript '
+            'intact');
+  });
 }

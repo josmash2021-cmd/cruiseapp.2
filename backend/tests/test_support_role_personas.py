@@ -110,9 +110,12 @@ async def test_context_blocks_by_role(db, test_rider, test_driver):
     assert "next_payout" in dctx["driver"]
 
 
-# ── Dead-conversation rule (user report 2026-10-02) ─────────────────
-# Opening support must ALWAYS land on the bot with options. A chat in a
-# bot-dead phase only resumes while a dispatch human is genuinely active.
+# ── Resume rule (user spec 2026-10-14 — supersedes the 2026-10-02
+#    dead-conversation rule below) ─────────────────────────────────────
+# An OPEN chat resumes with its transcript; a new conversation starts only
+# after a close (driver or dispatch). A silent phase whose human never wrote
+# (or went quiet >30 min) flips back to the bot IN PLACE — the transcript
+# survives and the bot answers the next message.
 
 
 async def _open_chat_in_phase(user, db, phase: str) -> SupportChat:
@@ -124,13 +127,14 @@ async def _open_chat_in_phase(user, db, phase: str) -> SupportChat:
     return chat
 
 
-async def test_dead_phase_never_picked_up_starts_fresh(db, test_rider):
+async def test_dead_phase_never_picked_up_returns_to_the_bot(db, test_rider):
     rider, _ = test_rider
     old = await _open_chat_in_phase(rider, db, "escalated")
     out = await _get_or_create_support_chat(rider, db, locale="en")
-    assert out["id"] != old.id
+    assert out["id"] == old.id, "resume en el MISMO chat — no uno vacío"
     await db.refresh(old)
-    assert old.status == "closed"
+    assert old.status == "open", "la fase fantasma NO cierra el chat"
+    assert old.bot_phase == "agent_active", "el bot responde en el próximo mensaje"
 
 
 async def test_dead_phase_with_active_human_resumes(db, test_rider):
@@ -141,9 +145,12 @@ async def test_dead_phase_with_active_human_resumes(db, test_rider):
     await db.commit()
     out = await _get_or_create_support_chat(rider, db, locale="en")
     assert out["id"] == old.id
+    await db.refresh(old)
+    assert old.bot_phase == "dispatch_takeover", \
+        "un humano activo queda dueño del chat"
 
 
-async def test_dead_phase_with_stale_human_starts_fresh(db, test_rider):
+async def test_dead_phase_with_stale_human_returns_to_the_bot(db, test_rider):
     from datetime import timedelta as _td
     rider, _ = test_rider
     old = await _open_chat_in_phase(rider, db, "agent_active")
@@ -153,7 +160,10 @@ async def test_dead_phase_with_stale_human_starts_fresh(db, test_rider):
     db.add(msg)
     await db.commit()
     out = await _get_or_create_support_chat(rider, db, locale="en")
-    assert out["id"] != old.id
+    assert out["id"] == old.id, "resume — la transcripción sobrevive"
+    await db.refresh(old)
+    assert old.bot_phase == "agent_active", \
+        "el humano quieto >30 min devuelve el chat al bot"
 
 
 async def test_bot_alive_phase_resumes_as_before(db, test_rider):
@@ -164,18 +174,24 @@ async def test_bot_alive_phase_resumes_as_before(db, test_rider):
 
 
 async def test_driver_gets_the_same_rule_and_the_driver_assistant(db, test_driver):
-    """User ask 2026-10-02: "para el driver debe ser igual". The rule is
-    role-agnostic — a driver's dead chat freshes exactly like a rider's —
-    and the fresh chat opens on the DRIVER assistant."""
+    """User asks: 2026-10-02 "para el driver debe ser igual" + 2026-10-14
+    "una conversación nueva solo si el chat fue finalizado". Un driver cuyo
+    chat escalado nadie recogió lo REANUDA en el lugar; y cuando ese chat
+    está cerrado, el nuevo abre con el asistente de DRIVERS."""
     driver, _ = test_driver
     old = await _open_chat_in_phase(driver, db, "escalated")
     out = await _get_or_create_support_chat(driver, db, locale="en")
-    assert out["id"] != old.id
+    assert out["id"] == old.id, "el driver reanuda igual que el rider"
     await db.refresh(old)
-    assert old.status == "closed"
-    # …and what opens is the driver assistant, not the rider one.
-    assert out["agent_avatar"] == "driver"
-    assert out["agent_name"] in _DRIVER_AGENT_NAMES
+    assert old.status == "open"
+    assert old.bot_phase == "agent_active"
+    # Cerrado → el siguiente abre NUEVO, con el asistente de drivers.
+    old.status = "closed"
+    await db.commit()
+    out2 = await _get_or_create_support_chat(driver, db, locale="en")
+    assert out2["id"] != old.id
+    assert out2["agent_avatar"] == "driver"
+    assert out2["agent_name"] in _DRIVER_AGENT_NAMES
 
 
 async def test_asking_for_a_real_person_transfers_with_the_exact_phrase(db, test_rider):

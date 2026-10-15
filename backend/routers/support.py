@@ -2394,13 +2394,14 @@ async def _get_or_create_support_chat(user: User, db: AsyncSession, subject: str
     )
     chat = result.scalar_one_or_none()
 
-    # Dead-conversation rule (user report 2026-10-02, "lo conecta directo
-    # con un agente"): a phase where the bot no longer answers only resumes
-    # when a HUMAN from dispatch is genuinely inside and spoke recently.
-    # Escalated chats nobody picked up and proactive-agent chats (silent by
-    # design) otherwise hand the user a dead "agent phase" on every visit —
-    # support must always open on the bot, with options, that understands
-    # what they write. The phases where the bot IS alive resume as before.
+    # Resume rule (2026-10-14 user spec): an OPEN chat RESUMES with its full
+    # transcript — a NEW conversation starts only after a close (by the
+    # driver or by dispatch). The old phase-based auto-fresh (close the
+    # escalated chat and hand back an empty one) died: it wiped the
+    # transcript on every visit. A chat in a silent phase whose "human" never
+    # wrote (or went quiet >30 min) flips back to agent_active instead — the
+    # transcript survives AND the bot answers the next message (the watchdog
+    # does the same for chats that go stale while nobody visits).
     _BOT_ALIVE_PHASES = {"welcome", "awaiting_details", "awaiting_cancel_confirm"}
     if chat and not fresh and (chat.bot_phase or "") not in _BOT_ALIVE_PHASES:
         last_human_r = await db.execute(
@@ -2412,16 +2413,18 @@ async def _get_or_create_support_chat(user: User, db: AsyncSession, subject: str
         last_human = last_human_r.scalar_one_or_none()
         if last_human is None:
             logging.info(
-                "[support] chat %s in phase %r was never picked up by a human — fresh",
-                chat.id, chat.bot_phase)
-            fresh = True
+                "[support] chat %s in phase %r was never picked up by a human "
+                "— back to the bot, transcript intact", chat.id, chat.bot_phase)
+            chat.bot_phase = "agent_active"
+            await db.commit()
         else:
             quiet_for = datetime.now(timezone.utc) - _aware(last_human.created_at)
             if quiet_for > timedelta(minutes=30):
                 logging.info(
-                    "[support] chat %s: dispatch silent for %s — fresh",
+                    "[support] chat %s: dispatch silent for %s — back to the bot",
                     chat.id, quiet_for)
-                fresh = True
+                chat.bot_phase = "agent_active"
+                await db.commit()
 
     # A chat nobody has spoken in for hours is not a live conversation, and
     # handing it back is how users end up talking into a dead escalated

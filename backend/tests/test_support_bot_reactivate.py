@@ -146,55 +146,15 @@ def test_boot_sweep_wired_in_lifespan():
     body = src.read_text(encoding="utf-8")
     assert "async def sweep_stuck_bot_chats" in body
     assert "return await sweep_stuck_bot_chats(db, chat_id)" in body
-
-
-async def test_reply_task_crash_still_answers(db, test_rider, monkeypatch):
-    """The pipeline exploding mid-reply must still land a message."""
-    import routers.support as support
-
-    rider, _ = test_rider
-    chat = await _mkchat(db, rider.id, "agent_active")
-
-    async def _boom(*a, **k):
-        raise RuntimeError("LLM down mid-turn")
-
-    monkeypatch.setattr(support, "_generate_bot_replies", _boom)
-    await support._background_bot_reply(chat.id, "hola", "Test", "agent_active")
-
-    from sqlalchemy import select as _sel
-    last = (await db.execute(
-        _sel(SupportMessage).where(SupportMessage.chat_id == chat.id)
-        .order_by(SupportMessage.created_at.desc()).limit(1))
-    ).scalar_one()
-    assert last.sender_role == "bot"
-    assert "detalle" in last.message or "more detail" in last.message
-
-
-async def test_empty_replies_still_answers(db, test_rider, monkeypatch):
-    """A zero-reply branch owes the user the fallback line."""
-    import asyncio as _asyncio
-    import routers.support as support
-
-    rider, _ = test_rider
-    chat = await _mkchat(db, rider.id, "agent_active")
-
-    async def _empty(*a, **k):
-        return []
-
-    real_sleep = _asyncio.sleep
-
-    async def _fast_sleep(_s):
-        await real_sleep(0)
-
-    monkeypatch.setattr(support, "_generate_bot_replies", _empty)
-    monkeypatch.setattr(support.asyncio, "sleep", _fast_sleep)
-    await support._background_bot_reply(chat.id, "hola", "Test",
-                                        "agent_active")
-
-    from sqlalchemy import select as _sel
-    last = (await db.execute(
-        _sel(SupportMessage).where(SupportMessage.chat_id == chat.id)
-        .order_by(SupportMessage.created_at.desc()).limit(1))
-    ).scalar_one()
-    assert last.sender_role == "bot"
-    assert "detalle" in last.message or "more detail" in last.message
+    # Nunca silencio (2026-10-14, user mandate): un crash o una rama con
+    # cero respuestas ESCRIBE el fallback garantizado en el chat.
+    assert "reply task CRASHED for chat" in body
+    assert 'if not replies and (chat.bot_phase or "") != "escalated"' in body
+    # Timeout duro por turno del LLM: una conexión colgada ya no puede
+    # silenciar el chat para siempre (Fernando, 2026-10-14).
+    svc = (pathlib.Path(__file__).parent.parent / "services" /
+           "openai_support_service.py").read_text(encoding="utf-8")
+    assert "timeout=30.0" in svc, "per-request timeout on the OpenAI call"
+    assert "asyncio.wait_for(" in svc, "the per-turn hard cap"
+    # El watchdog cancela tasks colgados >5 min en vez de saltarlos.
+    assert "live.cancel()" in body

@@ -2057,6 +2057,11 @@ _inactivity_tasks: dict[int, "asyncio.Task"] = {}
 # One reply in flight per chat — a newer user message supersedes whatever
 # was still being composed (debounce; see send_support_message).
 _reply_tasks: dict[int, "asyncio.Task"] = {}
+# Monotonic start per in-flight reply (2026-10-14, Fernando's silence): a
+# task that never finishes (a hung provider call) used to block the watchdog
+# forever with "already being composed". Older than 5 min = presumed hung —
+# the sweep cancels it and answers itself.
+_reply_task_started: dict[int, float] = {}
 
 
 async def _followup_task(chat_id: int, user_id: int, lang: str) -> None:
@@ -2811,6 +2816,7 @@ async def send_support_attachment(
         _old = _reply_tasks.pop(chat_id, None)
         if _old is not None and not _old.done():
             _old.cancel()
+        _reply_task_started[chat_id] = time.monotonic()
         _reply_tasks[chat_id] = _safe_create_task(
             _background_bot_reply(chat_id, note, user.first_name or "Cliente", bot_phase_snapshot))
 
@@ -3030,6 +3036,7 @@ async def send_support_message(chat_id: int, request: Request, user: User = Depe
         _old = _reply_tasks.pop(chat_id, None)
         if _old is not None and not _old.done():
             _old.cancel()
+        _reply_task_started[chat_id] = time.monotonic()
         _reply_tasks[chat_id] = _safe_create_task(
             _background_bot_reply(chat_id, msg_text, user.first_name or "Cliente", bot_phase_snapshot))
 
@@ -3336,7 +3343,11 @@ async def _stuck_bot_chats(db: AsyncSession, chat_id: int | None = None):
         if chat_id is None:
             live = _reply_tasks.get(c.id)
             if live is not None and not live.done():
-                continue  # being composed in this process
+                started = _reply_task_started.get(c.id, 0.0)
+                if time.monotonic() - started < 300:
+                    continue  # being composed in this process
+                live.cancel()  # hung > 5 min — the sweep answers instead
+                _reply_tasks.pop(c.id, None)
         last = (await db.execute(
             select(SupportMessage).where(SupportMessage.chat_id == c.id)
             .order_by(SupportMessage.created_at.desc()).limit(1))
@@ -3404,6 +3415,7 @@ async def sweep_stuck_bot_chats(db: AsyncSession,
         user_r = await db.execute(select(User).where(User.id == chat.user_id))
         u = user_r.scalar_one_or_none()
         _reply_tasks.pop(chat.id, None)
+        _reply_task_started[chat.id] = time.monotonic()
         _reply_tasks[chat.id] = _safe_create_task(_background_bot_reply(
             chat.id, last_msg.message or "",
             (u.first_name if u else None) or "Cliente", "agent_active"))

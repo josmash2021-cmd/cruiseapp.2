@@ -18,6 +18,7 @@ policies, written down so the model does not invent them.
 """
 
 import json
+import asyncio
 import logging
 import os
 from typing import Any
@@ -246,12 +247,17 @@ async def _openai_completion(messages: list[dict[str, Any]],
         "tools": tools,
         "tool_choice": "auto",
     }
+    # One turn against OpenAI's chat completions. `timeout` rides EVERY call
+    # (2026-10-14, Fernando's silence: a hung TLS to the provider used to
+    # hang the reply task forever — a silent failure with nothing in the
+    # logs. A timeout raises, the router falls back, the user gets an answer).
     try:
         resp = await _openai_client.chat.completions.create(
             model=_MODEL,
             messages=messages,
             max_tokens=800,
             temperature=0.7,
+            timeout=30.0,
             **extra,
         )
     except openai.BadRequestError as e:
@@ -266,6 +272,7 @@ async def _openai_completion(messages: list[dict[str, Any]],
             messages=messages,
             max_tokens=800,
             temperature=0.7,
+            timeout=30.0,
         )
 
     message = resp.choices[0].message
@@ -899,13 +906,18 @@ async def generate_support_response(
 
     try:
         try:
-            return await _completion(openai_messages, role_tools, lang)
+            # Hard cap per turn (2026-10-14): a hung provider connection used
+            # to hang the reply task forever — the silent failure. The cap
+            # raises TimeoutError → the router's fallback chain answers.
+            return await asyncio.wait_for(
+                _completion(openai_messages, role_tools, lang), timeout=60)
         except (SupportAuthError, openai.AuthenticationError,
                 openai.RateLimitError) as e:
             # A rejected key or an exhausted quota demotes the primary for
             # the life of the process, and the standby answers this turn.
             if _demote_primary(str(e)[:120]):
-                return await _completion(openai_messages, role_tools, lang)
+                return await asyncio.wait_for(
+                    _completion(openai_messages, role_tools, lang), timeout=60)
             raise
     except (SupportAuthError, openai.AuthenticationError,
             openai.RateLimitError):

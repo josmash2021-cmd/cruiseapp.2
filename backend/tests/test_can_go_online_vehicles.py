@@ -28,12 +28,12 @@ async def _can_go(client, token):
     return resp.json()
 
 
-async def _add_vehicle(db, driver, *, active, approval="pending"):
+async def _add_vehicle(db, driver, *, active, approval="pending", year=2020):
     v = Vehicle(
         user_id=driver.id,
         make="Toyota",
         model="Camry",
-        year=2020,
+        year=year,
         plate="ABC123",
         vehicle_type="standard",
         is_active=active,
@@ -152,3 +152,49 @@ async def test_no_vehicle_blocks(client, db, test_driver):
     body = await _can_go(client, token)
     assert body["can_go_online"] is False
     assert "no_vehicle" in body["reasons"]
+
+
+@pytest.mark.asyncio
+async def test_pre_2018_active_car_cannot_go_online(client, db, test_driver):
+    """Hard floor (user spec 2026-10-15: "no aceptaremos carros viejos, es
+    de 2018 en adelante"). Registration refuses pre-2018 years; this gate is
+    for the cars that got in before the floor existed."""
+    driver, token = test_driver
+    driver.verification_status = "approved"
+    await db.commit()
+    await _add_vehicle(db, driver, active=True, approval="approved", year=2015)
+    await _add_doc(db, driver, "insurance")
+    await _add_doc(db, driver, "registration")
+
+    body = await _can_go(client, token)
+    assert body["can_go_online"] is False, body
+    assert "vehicle_too_old" in body["reasons"]
+
+
+@pytest.mark.asyncio
+async def test_2018_active_car_passes_the_year_gate(client, db, test_driver):
+    """The floor itself drives: a 2018 car with its docs in order is fine."""
+    driver, token = test_driver
+    driver.verification_status = "approved"
+    await db.commit()
+    await _add_vehicle(db, driver, active=True, approval="approved", year=2018)
+    await _add_doc(db, driver, "insurance")
+    await _add_doc(db, driver, "registration")
+
+    body = await _can_go(client, token)
+    assert body["can_go_online"] is True, body
+
+
+@pytest.mark.asyncio
+async def test_vehicle_update_shim_refuses_pre_2018(client, db, test_driver):
+    """POST /drivers/vehicle (the create-or-update shim) must not write a
+    pre-2018 year any more than the create endpoint may."""
+    _, token = test_driver
+    resp = await client.post(
+        "/drivers/vehicle",
+        headers={**_make_auth_headers(), "Authorization": f"Bearer {token}"},
+        json={"year": 2016, "make": "Toyota", "model": "Camry",
+              "color": "White", "plate": "OLD123"},
+    )
+    assert resp.status_code == 400, resp.text
+    assert "2018" in resp.text

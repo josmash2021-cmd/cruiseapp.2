@@ -5799,8 +5799,8 @@ class S {
       _es ? 'Necesitamos tu autorización' : 'Your authorization is needed';
   String get obItemVehicleTitle => _es ? 'Vehículo' : 'Vehicle';
   String get obItemVehicleSub => _es
-      ? 'Tengo un vehículo — 2012 o más nuevo, 4 puertas, 5 cinturones'
-      : 'I have a vehicle — 2012 or newer, 4 doors, 5 seatbelts';
+      ? 'Tengo un vehículo — 2018 o más nuevo, 4 puertas, 5 cinturones'
+      : 'I have a vehicle — 2018 or newer, 4 doors, 5 seatbelts';
   String get obInReview => _es ? 'En revisión' : 'In review';
   // Shown next to the "In review" pill so a new driver knows the wait up
   // front instead of wondering when the account gets reviewed.
@@ -5876,8 +5876,8 @@ class S {
   String get obIntroVehicleTitle =>
       _es ? 'Tengo un vehículo' : 'I have a vehicle';
   String get obIntroVehicleSub => _es
-      ? 'Importante: tu vehículo debe ser 2012 o más nuevo y tener un mínimo de 4 puertas y 5 cinturones de seguridad.'
-      : 'Heads up: Your vehicle must be 2012 or newer and have a minimum of 4 doors and 5 seatbelts.';
+      ? 'Importante: tu vehículo debe ser 2018 o más nuevo y tener un mínimo de 4 puertas y 5 cinturones de seguridad.'
+      : 'Heads up: Your vehicle must be 2018 or newer and have a minimum of 4 doors and 5 seatbelts.';
   String get obIntroVehicleButton =>
       _es ? 'Agrega tu vehículo' : 'Add your vehicle';
   String get obIntroPlateTitle =>

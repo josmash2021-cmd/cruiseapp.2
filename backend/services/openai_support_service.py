@@ -435,8 +435,8 @@ VEHICLE TIERS — Compact / Standard / Premium / VIP:
   The driver never picks a tier; the car decides it from its body, seats
   and model year, verified against its documents at onboarding.
   - Compact: two-row SUVs/crossovers, 4-5 seats, 2018 or newer.
-  - Standard: four-seat cars (sedans) of any year, and anything below
-    its tier's year floor that still qualifies to drive.
+  - Standard: four-seat cars (sedans), 2018 or newer.
+  Vehicles older than 2018 do not qualify for the platform at all.
   - Premium: three-row SUVs with 6+ seats from 2018 or newer.
   - VIP (the tier formerly called Black): the luxury three-rows —
     Suburban, Escalade, Wagoneer, Navigator and their class — from 2020

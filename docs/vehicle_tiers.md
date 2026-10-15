@@ -13,17 +13,21 @@ through `LEGACY_TIER_MAP` / `LEGACY_COMMISSION`.
 
 | Tier | Vehicle | Years |
 |---|---|---|
-| **Standard** | Four-seat cars (sedans) | any year (fallback) |
+| **Standard** | Four-seat cars (sedans) | any year (fallback tier) — but see the platform floor below |
 | **Compact** | SUV, 4–5 seats | 2018 or newer |
 | **Premium** | Three-row SUV or van, 6+ seats | 2018 or newer |
 | **VIP** | The luxury three-rows — Suburban, Escalade, Wagoneer, Navigator and their class | 2020 or newer |
 | **Electric Pro** | Listed battery-electric models | any year (EV check runs first) |
 
-A vehicle below its tier's year floor falls to the tier below. A car that
-qualifies for none — a 2011 sedan, a 2014 SUV — falls into Standard. It
-still drives; it just never reaches a higher tier. (Standard is the floor
-of the ladder — the 2018 floor gates upward mobility, it never kicks a
-car off the platform.)
+A vehicle below its tier's year floor falls to the tier below.
+
+**Platform floor: 2018 (2026-10-15, user spec: "no aceptaremos carros
+viejos, es de 2018 en adelante").** A pre-2018 car is refused at
+registration (`POST /drivers/vehicles`, `/auth/onboarding-items/vehicle`
+and the `/drivers/vehicle` shim all 400 it) and an old car already on
+file is gated offline by `can_go_online` (`vehicle_too_old`).
+`classify()` still answers "Standard" for one — what the car IS; the
+gate decides whether it may drive.
 
 The sedan→Premium path (a 2021+ sedan used to reach Premium) is dead:
 Premium is the three-row SUV tier, and four-seat cars never leave

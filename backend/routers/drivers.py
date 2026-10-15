@@ -2974,6 +2974,11 @@ async def can_go_online(user: User = Depends(_get_current_user), db: AsyncSessio
     vehicle_ok = False
     if not vehicle:
         reasons.append("no_vehicle")
+    elif (vehicle.year or 0) < 2018:
+        # Hard floor (user spec 2026-10-15: "no aceptaremos carros viejos,
+        # es de 2018 en adelante"). Registration already refuses pre-2018
+        # years — this gate is for the cars that got in before the floor.
+        reasons.append("vehicle_too_old")
     else:
         v_approved = (vehicle.approval_status or "").lower() == "approved"
         if v_approved or (single_vehicle and approved):
@@ -3186,6 +3191,10 @@ async def create_or_update_vehicle(body: VehicleIn, user: User = Depends(_get_cu
     # Compatibility shim: this endpoint updates the ACTIVE vehicle, or creates
     # the first one if the driver has none. New vehicles are added through
     # POST /drivers/vehicles.
+    # The 2018 floor rides here too (user spec 2026-10-15) — an update must
+    # not write a pre-2018 year any more than a create may.
+    if body.year is not None and body.year < 2018:
+        raise HTTPException(400, "Vehicle year must be 2018 or newer")
     v = await _get_active_vehicle(db, user.id)
     update_data = body.model_dump(exclude_unset=True)
     if v:

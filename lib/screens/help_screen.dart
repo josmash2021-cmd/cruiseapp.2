@@ -280,11 +280,11 @@ class _HelpScreenState extends State<HelpScreen> {
           title: 'Vehicle tiers',
           answer:
               'You never pick a tier — your car does, from its body style, seats and model year:\n\n'
-              '• Compact: two-row SUVs, 4-5 seats, ~2016 or newer\n'
-              '• Standard: sedans and SUVs ~2012-2016\n'
-              '• Premium: three-row SUVs (6+ seats) 2020 or newer, and sedans 2021 or newer\n'
-              '• Black: large SUVs (7+ seats) 2022 or newer — these also receive Premium requests\n\n'
-              'If your car landed in the wrong tier, contact support and we\'ll review it.',
+              '• Compact: two-row SUVs, 4-5 seats, 2018 or newer\n'
+              '• Standard: four-seat cars (sedans) — 2018 or newer\n'
+              '• Premium: three-row SUVs (6+ seats) 2018 or newer\n'
+              '• VIP: the luxury three-rows (Suburban, Escalade, Wagoneer and their class) 2020 or newer — these also receive Premium requests\n\n'
+              'Vehicles older than 2018 do not qualify for the platform. If your car landed in the wrong tier, contact support and we\'ll review it.',
         ),
         _HelpTopic(
           icon: Icons.card_giftcard_rounded,

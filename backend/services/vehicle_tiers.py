@@ -18,8 +18,12 @@ The 2026-10-15 eligibility rule (user spec), one tier per car:
   2018 or newer. A Traverse, a Pilot, a Highlander live here.
 * **Compact** — a two-row SUV/crossover (four or five seats), 2018+.
 * **Standard** — everything else: sedans of any year, and any car below
-  its tier's year floor. Standard is the floor of the ladder — a 2014
-  Suburban still drives, it just never reaches a higher tier.
+  its tier's year floor. Standard is the floor of the ladder as a TIER;
+  the PLATFORM floor is 2018 (user spec 2026-10-15: "no aceptaremos
+  carros viejos, es de 2018 en adelante") — registration refuses a
+  pre-2018 year and `can_go_online` gates the old cars already on file
+  (`vehicle_too_old`). classify() still answers "Standard" for one —
+  what the car IS; the gate decides whether it may drive.
 
 Electric Pro (2026-10-13, user spec) is the battery-electric tier: a BEV
 on the `_ELECTRIC_MODELS` list classifies here no matter what the

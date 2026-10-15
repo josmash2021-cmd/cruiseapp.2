@@ -4736,7 +4736,10 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                     context,
                     slideFromRightRoute(
                         const ScheduledRidesMapScreen()),
-                  ).then((_) {                    _fetchScheduledCount();                    _remountMapSurface();                  });
+                  ).then((_) {
+                    _fetchScheduledCount();
+                    _remountMapSurface();
+                  });
                 },
                 behavior: HitTestBehavior.opaque,
                 child: Container(
@@ -5270,8 +5273,11 @@ class _RecenterFabState extends State<_RecenterFab>
           decoration: BoxDecoration(
             shape: BoxShape.circle,
             color: const Color(0xFF1A1A22),
+            // Misma especificación que los `_fab` de la columna (2026-10-15,
+            // spec "el botón de help alineado con los que están a la
+            // derecha"): mismo disco oscuro, mismo borde dorado sutil.
             border:
-                Border.all(color: Colors.white.withValues(alpha: 0.2), width: 1.2),
+                Border.all(color: const Color(0xFFE8C547).withValues(alpha: 0.18), width: 1.2),
             boxShadow: [
               BoxShadow(
                 color: Colors.black.withValues(alpha: 0.35),

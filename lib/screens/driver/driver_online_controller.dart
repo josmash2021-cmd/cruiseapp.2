@@ -2340,6 +2340,8 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
 
   /// Bottom sheet: search a destination with the shared PlacesService
   /// autocomplete, POST it on pick, close.
+  // ignore: unused_element — la puerta flotante murió 2026-10-15 ("quítala
+  // por ahora"); el filtro de destino vuelve cuando se pida.
   void _showDestinationSheet() {
     HapticService.selectionClick();
     final places = PlacesService(ApiKeys.webServices);

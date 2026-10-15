@@ -136,6 +136,11 @@ void main() {
         reason: 'the look flips with the mode');
     // The demand level drives the fill, dispatch-side.
     expect(s, contains('ZoneService.demand[sid]?.level'));
+    // 2026-10-15 (user spec): ONLINE ninguna zona pinta relleno — el mapa
+    // vuelve a su color normal; las zonas amarillas se ven offline, que es
+    // donde se eligen.
+    expect(s, contains('!visible || online'),
+        reason: 'online the zone fills are zero — normal map while driving');
     // Labels/pills are FLUTTER OVERLAYS, never a native text layer
     // (2026-10-11 black-map incident).
     expect(s, isNot(contains('SymbolLayer')),

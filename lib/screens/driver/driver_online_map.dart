@@ -2817,10 +2817,14 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     // online an unheated sector paints nothing over the driving map), Busy =
     // gold ALMOST solid, Ocupado = more, Muy ocupado = 100% solid gold. Gray
     // is only for "off" — a busy zone must never read gray.
-    final fillOpacity = !visible
+    // 2026-10-15 (user spec: "cuando se conecten quítales ese amarillo
+    // debajo de las vías — el mapa como estaba, color normal"): ONLINE
+    // ninguna zona pinta relleno — las zonas se ven offline, que es donde
+    // se eligen; online el mapa es de manejar. Los bordes finos quedan.
+    final fillOpacity = !visible || online
         ? 0.0
         : level == 0
-            ? (online ? 0.0 : 0.07)
+            ? 0.07
             : level == 1
                 ? 0.80
                 : level == 2

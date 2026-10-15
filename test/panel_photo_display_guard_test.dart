@@ -13,12 +13,13 @@ void main() {
       .whereType<File>()
       .where((f) => f.path.contains('index-') && f.path.endsWith('.js'))
       .map((f) => f.readAsStringSync())
-      .firstWhere((s) => s.contains('PersonDetailScreen'), orElse: () => '');
+      .firstWhere((s) => s.contains('guard-pin panel_photo_display_guard_test'),
+          orElse: () => '');
 
-  test('the person detail chunk exists', () {
+  test('the document photo render chunk exists', () {
     expect(chunk, isNotEmpty,
-        reason: 'no built chunk exports PersonDetailScreen — a panel rebuild '
-            'rehashed it and this guard needs its needle refreshed');
+        reason: 'the chunk carrying the doc photo render (and its guard-pin) '
+            'must exist');
   });
 
   test('document photos render contained, never cropped', () {

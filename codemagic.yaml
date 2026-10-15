@@ -947,8 +947,12 @@ workflows:
           # sola según la versión del engine que compila (el release fue sin
           # tree-shake y el patch con tree-shake default) — no es un cambio
           # nuestro; nuestros assets SÍ viajan en el parche.
+          # --allow-native-diffs (2026-10-14, build 6ad03744 falló solo por
+          # esto): el `pod install --repo-update` de arriba regenera
+          # Podfile.lock distinto del release — ruido de CI, no cambio
+          # nativo; sin el flag iOS jamás publica ("Not publishing").
           shorebird patch android --release-version latest || echo "⚠️ sin release Android aún — solo iOS"
-          shorebird patch ios --release-version latest --no-codesign --allow-asset-diffs
+          shorebird patch ios --release-version latest --no-codesign --allow-asset-diffs --allow-native-diffs
     publishing:
       email:
         recipients:

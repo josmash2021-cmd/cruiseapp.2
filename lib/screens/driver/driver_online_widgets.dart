@@ -3851,7 +3851,6 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
         // Back to the money when it closes. Reserved is somewhere the driver
         // went, not a state the panel should still be in next time they pull
         // it up.
-        if (!_panelOpen) _panelShowsReserve = false;
       });
     });
   }
@@ -4037,17 +4036,24 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                         Icons.event_available_rounded,
                         isDark,
                         textMuted,
-                        active: _panelShowsReserve,
+                        active: false,
                         badge: _scheduledAvailCount,
                         semanticLabel: S.of(context).reservedLabel,
                         onTap: () {
                           HapticService.selectionClick();
-                          // Swaps the body below, in place. Reserved rides are
-                          // a different answer to the same question the panel
-                          // is already answering — not another screen.
-                          _setState(
-                              () => _panelShowsReserve = !_panelShowsReserve);
-                          if (_panelShowsReserve) _fetchScheduledCount();
+                          // La pantalla completa de agendados (user spec
+                          // 2026-10-15: la vista in-place "no avisa ni
+                          // muestra los viajes programados — tengo que entrar
+                          // y salir"). El badge refresca al volver y el mapa
+                          // se re-clama como toda salida de superficie.
+                          Navigator.push(
+                            context,
+                            slideFromRightRoute(
+                                const ScheduledRidesMapScreen()),
+                          ).then((_) {
+                            _fetchScheduledCount();
+                            _remountMapSurface();
+                          });
                         },
                       ),
                       const SizedBox(width: 14),
@@ -4107,9 +4113,8 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                               // "EARNINGS" over a list of scheduled rides
                               // is the same mistake the old
                               // "Recommended for you" made.
-                              (_panelShowsReserve
-                                      ? S.of(context).scheduledRidesTitle
-                                      : S.of(context).earningsTitle)
+                              S.of(context)
+                                  .earningsTitle
                                   .toUpperCase(),
                               style: TextStyle(
                                 fontFamily: 'Poppins',
@@ -4139,16 +4144,10 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                                   if (current != null) current,
                                 ],
                               ),
-                              child: _panelShowsReserve
-                                  ? KeyedSubtree(
-                                      key: const ValueKey('reserve'),
-                                      child: _panelReserveBody(isDark),
-                                    )
-                                  : KeyedSubtree(
-                                      key: const ValueKey('earnings'),
-                                      child:
-                                          _panelEarningsBody(isDark, borderC),
-                                    ),
+                              child: KeyedSubtree(
+                                key: const ValueKey('earnings'),
+                                child: _panelEarningsBody(isDark, borderC),
+                              ),
                             ),
                           ),
                           // Reserved by the pinned button below now.
@@ -4670,99 +4669,7 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
 
   /// The reserved-rides body: what is bookable near the driver, or the fact
   /// that nothing is.
-  Widget _panelReserveBody(bool isDark) {
-    final none = _scheduledAvailCount <= 0;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(14, 4, 14, 0),
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.symmetric(vertical: 26, horizontal: 18),
-        decoration: isDark
-            ? neuBox(radius: 18)
-            : BoxDecoration(
-                color: Colors.black.withValues(alpha: 0.03),
-                borderRadius: BorderRadius.circular(18),
-              ),
-        child: Column(
-          children: [
-            Container(
-              width: 44,
-              height: 44,
-              decoration: neuBox(radius: 15, pressed: true),
-              alignment: Alignment.center,
-              child: Icon(
-                none ? Icons.event_busy_rounded : Icons.event_available_rounded,
-                size: 21,
-                color: none ? Colors.white.withValues(alpha: 0.35) : _gold,
-              ),
-            ),
-            const SizedBox(height: 12),
-            Text(
-              none
-                  ? S.of(context).noScheduledNearby
-                  : '$_scheduledAvailCount '
-                      '${_scheduledAvailCount == 1 ? S.of(context).scheduledNearbyCountOne : S.of(context).scheduledNearbyCount}',
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                fontFamily: 'Poppins',
-                color: Colors.white,
-                fontSize: 16,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              // Each half of the card gets its own line. The "we'll tell you
-              // when one turns up" copy sat under both, so it contradicted
-              // the count it was printed beneath.
-              none
-                  ? S.of(context).noScheduledNearbySub
-                  : S.of(context).scheduledNearbySub,
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontFamily: 'Poppins',
-                color: Colors.white.withValues(alpha: 0.45),
-                fontSize: 12.5,
-                fontWeight: FontWeight.w500,
-                height: 1.35,
-              ),
-            ),
-            if (!none) ...[
-              const SizedBox(height: 16),
-              GestureDetector(
-                onTap: () {
-                  HapticService.selectionClick();
-                  Navigator.push(
-                    context,
-                    slideFromRightRoute(
-                        const ScheduledRidesMapScreen()),
-                  ).then((_) {
-                    _fetchScheduledCount();
-                    _remountMapSurface();
-                  });
-                },
-                behavior: HitTestBehavior.opaque,
-                child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
-                  decoration: neuBox(radius: 14),
-                  child: Text(
-                    S.of(context).viewAllScheduled,
-                    style: TextStyle(
-                      fontFamily: 'Poppins',
-                      color: _gold,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
+  
 
   /// Small sunken neu well holding a single icon (panel header controls).
   Widget _panelWell(IconData ic, bool isDark, Color iconC) {

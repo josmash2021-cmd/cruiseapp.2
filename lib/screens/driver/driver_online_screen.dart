@@ -896,7 +896,6 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   /// 0 = "Finding trips", 1 = "You're online".
   /// The panel body: false = earnings, true = the reserved-rides view.
   /// Reset to earnings every time the panel closes.
-  bool _panelShowsReserve = false;
 
   int _statusLine = 0;
   Timer? _statusLineTimer;

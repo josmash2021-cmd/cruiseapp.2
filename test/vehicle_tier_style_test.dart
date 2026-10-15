@@ -7,18 +7,21 @@ import 'package:cruise_app/utils/vehicle_tier_style.dart';
 /// tierKey decides which photo a rider is shown for the ride they are
 /// about to pay for, and it matches on substrings, which is the kind of
 /// rule that breaks quietly. Mirrors backend/tests/test_vehicle_tiers.py.
+///
+/// VIP is the 2026-10-15 rename of Black: the canonical key is 'vip' and
+/// the old 'black' rows/builds read through the alias tables.
 void main() {
   group('the canonical keys', () {
     test('pass through untouched', () {
       expect(tierKey('standard'), kTierStandard);
       expect(tierKey('compact'), kTierCompact);
       expect(tierKey('premium'), kTierPremium);
-      expect(tierKey('black'), kTierBlack);
+      expect(tierKey('vip'), kTierVip);
       expect(tierKey('electric_pro'), kTierElectricPro);
     });
 
     test('are case and separator insensitive', () {
-      expect(tierKey('BLACK'), kTierBlack);
+      expect(tierKey('VIP'), kTierVip);
       expect(tierKey('  Premium  '), kTierPremium);
       expect(tierKey('Electric Pro'), kTierElectricPro);
       expect(tierKey('electric-pro'), kTierElectricPro);
@@ -28,10 +31,10 @@ void main() {
   group('the strings already in the database', () {
     test('comfort is Standard', () => expect(tierKey('comfort'), kTierStandard));
     test('sedan is Standard', () => expect(tierKey('sedan'), kTierStandard));
-    test('vip is Black', () => expect(tierKey('vip'), kTierBlack));
+    test('black is VIP', () => expect(tierKey('black'), kTierVip));
     test('suv is Compact', () => expect(tierKey('suv'), kTierCompact));
 
-    // A Traverse: three rows, six seats. Black is the seven-seat tier.
+    // A Traverse: three rows, six seats. VIP is the luxury three-row tier.
     test('suv_xl is Premium', () => expect(tierKey('suv_xl'), kTierPremium));
     test('SUV XL, as the rider app sends it', () {
       expect(tierKey('SUV XL'), kTierPremium);
@@ -40,11 +43,11 @@ void main() {
   });
 
   group('display names with the tier buried in them', () {
-    test('Cruise VIP', () => expect(tierKey('Cruise VIP'), kTierBlack));
-    test('Cruise Black', () => expect(tierKey('Cruise Black'), kTierBlack));
+    test('Cruise VIP', () => expect(tierKey('Cruise VIP'), kTierVip));
+    test('Cruise Black', () => expect(tierKey('Cruise Black'), kTierVip));
     test('Premium SUV', () => expect(tierKey('Premium SUV'), kTierPremium));
     test('Compact SUV', () => expect(tierKey('Compact SUV'), kTierCompact));
-    test('Suburban', () => expect(tierKey('Suburban'), kTierBlack));
+    test('Suburban', () => expect(tierKey('Suburban'), kTierVip));
 
     // The reason _textTokens is ordered. "suv" appears inside "suv xl";
     // testing it first would send a six-seat booking a RAV4.
@@ -64,7 +67,7 @@ void main() {
       expect(tierCarImage('standard'), 'assets/images/cruisert3.png');
       expect(tierCarImage('compact'), 'assets/images/cruisert_compact.png');
       expect(tierCarImage('premium'), 'assets/images/cruisert_suvxl.png');
-      expect(tierCarImage('black'), 'assets/images/cruisert1.png');
+      expect(tierCarImage('vip'), 'assets/images/cruisert1.png');
     });
 
     test('Electric Pro carries its own render', () {
@@ -84,7 +87,7 @@ void main() {
     });
 
     test('an old string still lands on the right photo', () {
-      expect(tierCarImage('vip'), tierCarImage('black'));
+      expect(tierCarImage('black'), tierCarImage('vip'));
       expect(tierCarImage('comfort'), tierCarImage('standard'));
       expect(tierCarImage('suv_xl'), tierCarImage('premium'));
     });
@@ -95,6 +98,7 @@ void main() {
       expect(tierDriverShare('standard'), 0.70);
       expect(tierDriverShare('compact'), 0.70);
       expect(tierDriverShare('premium'), 0.70);
+      expect(tierDriverShare('vip'), 0.70);
       expect(tierDriverShare('black'), 0.70);
     });
 
@@ -110,7 +114,8 @@ void main() {
   group('label and colour', () {
     test('the label is the tier, uppercase', () {
       expect(tierLabel('comfort'), 'STANDARD');
-      expect(tierLabel('vip'), 'BLACK');
+      expect(tierLabel('vip'), 'VIP');
+      expect(tierLabel('black'), 'VIP');
     });
     test('each tier is its own colour', () {
       final colours = kVehicleTiers.map(tierColor).toSet();
@@ -131,7 +136,7 @@ void main() {
       expect(tripTierKey('Comfort'), kTierStandard);
       expect(tripTierKey('Sedan'), kTierCompact);
       expect(tripTierKey('SUV XL'), kTierPremium);
-      expect(tripTierKey('VIP'), kTierBlack);
+      expect(tripTierKey('VIP'), kTierVip);
       expect(tripTierKey('Electric Pro'), kTierElectricPro);
     });
 
@@ -139,7 +144,8 @@ void main() {
       expect(tripTierKey('standard'), kTierStandard);
       expect(tripTierKey('compact'), kTierCompact);
       expect(tripTierKey('premium'), kTierPremium);
-      expect(tripTierKey('black'), kTierBlack);
+      expect(tripTierKey('vip'), kTierVip);
+      expect(tripTierKey('black'), kTierVip);
       expect(tripTierKey('electric_pro'), kTierElectricPro);
     });
 

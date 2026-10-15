@@ -60,14 +60,14 @@ void main() {
         'Standard': 15,
         'Electric Pro': 20,
         'Premium': 25,
-        'Black': 35,
+        'VIP': 35,
       });
       expect(py, {
         'compact': 10.0,
         'standard': 15.0,
         'electric_pro': 20.0,
         'premium': 25.0,
-        'black': 35.0,
+        'vip': 35.0,
       });
       for (final e in dart.entries) {
         final key = e.key.toLowerCase().replaceAll(' ', '_');

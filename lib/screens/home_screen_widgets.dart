@@ -1401,7 +1401,7 @@ extension _HomeScreenWidgets on _HomeScreenState {
                   // the same search-then-ride the card used to fire.
                   final rideId = v['rideId'] as String;
                   final (tierName, tierKey) = switch (rideId) {
-                    'suburban' => ('Black', 'black'),
+                    'suburban' => ('VIP', 'vip'),
                     'suv_xl' => ('Premium', 'premium'),
                     'electric_pro' => ('Electric Pro', 'electric_pro'),
                     'fusion' => ('Standard', 'standard'),

@@ -9,11 +9,11 @@ import 'ota_image.dart';
 /// flow as the sheet's own Select button (close, then the caller's
 /// onSelect). Pure UI: no payment/dispatch logic lives here.
 class TierDetailSheet extends StatelessWidget {
-  /// Display name exactly as the rider sees it on the card ("Black",
+  /// Display name exactly as the rider sees it on the card ("VIP",
   /// "Premium", "Compact", "Standard") — brand names, not localized.
   final String tierName;
 
-  /// Tier key for the copy: 'black' | 'premium' | 'standard' | 'compact' |
+  /// Tier key for the copy: 'vip' | 'premium' | 'standard' | 'compact' |
   /// 'electric_pro'.
   final String tierKey;
 
@@ -221,7 +221,7 @@ class TierDetailSheet extends StatelessWidget {
 
   String _tagline(S s) {
     switch (tierKey) {
-      case 'black':
+      case 'vip':
         return s.tierTaglineBlack;
       case 'premium':
         return s.tierTaglinePremium;
@@ -236,7 +236,7 @@ class TierDetailSheet extends StatelessWidget {
 
   List<(IconData, String)> _bullets(S s) {
     switch (tierKey) {
-      case 'black':
+      case 'vip':
         return [
           (Icons.directions_car_rounded, s.tierBulletBlack1),
           (Icons.diamond_rounded, s.tierBulletBlack2),

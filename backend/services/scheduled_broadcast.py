@@ -69,7 +69,7 @@ async def notify_new_scheduled_ride(trip_id: int) -> None:
             drivers = res.scalars().all()
 
             # Vehicle tier per driver, one batch query (same rule as the
-            # browse: a Standard driver must not be pushed a Black ride —
+            # browse: a Standard driver must not be pushed a VIP ride —
             # the tap would 403 and read as a bug).
             veh_res = await db.execute(
                 select(Vehicle.user_id, Vehicle.vehicle_type).where(

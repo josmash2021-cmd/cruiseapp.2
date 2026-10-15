@@ -1500,3 +1500,17 @@ async def migrate_postgres(conn):
         logging.info("Multi-vehicle data migration: existing vehicles marked active")
     except Exception as _e:
         logging.warning("Multi-vehicle data migration skip: %s", _e)
+
+    # ── Tier rename data migration (2026-10-15) ──
+    # Black is now VIP — the canonical key changed, so the stored rows
+    # follow. Idempotent: matches nothing once migrated. Old app builds
+    # and old trip rows still saying "black" are read through
+    # LEGACY_TIER_MAP / LEGACY_COMMISSION, so nothing mid-flight
+    # misprices.
+    try:
+        await conn.execute(text("""
+            UPDATE vehicles SET vehicle_type = 'vip' WHERE vehicle_type = 'black'
+        """))
+        logging.info("Tier rename migration: vehicles black → vip")
+    except Exception as _e:
+        logging.warning("Tier rename migration skip: %s", _e)

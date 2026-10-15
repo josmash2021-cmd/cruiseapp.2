@@ -149,7 +149,7 @@ def test_wait_fee_schedule_consistent_between_ui_and_backend():
     for frag in (
         "$5.00 Standard/Compact",
         "$8.00 Premium",
-        "$10.00 Black/SUV XL",
+        "$10.00 VIP/SUV XL",
     ):
         assert frag in screen, f"terms screen missing no-show minimum figure: {frag}"
 

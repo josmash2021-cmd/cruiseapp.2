@@ -36,11 +36,11 @@ class TierInfo {
   /// Resolve tier from ride/vehicle name (case-insensitive).
   factory TierInfo.from(String rideName) {
     switch (tripTierKey(rideName)) {
-      case kTierBlack:
+      case kTierVip:
         return const TierInfo._(
           bgGradient: [Color(0xFF1A1A1A), Color(0xFF000000)],
           textColor: Colors.white,
-          label: 'Black',
+          label: 'VIP',
           icon: Icons.diamond,
           isVIP: true,
           isPremium: false,

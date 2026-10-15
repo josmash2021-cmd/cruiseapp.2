@@ -295,7 +295,7 @@ class RideOptionsSheet extends StatelessWidget {
     // VehicleTier is the older three-value enum the badge widget takes.
     // Compact rides under Comfort there; the four-tier name above is what
     // the rider actually reads.
-    final VehicleTier tier = key == kTierBlack
+    final VehicleTier tier = key == kTierVip
         ? VehicleTier.vip
         : key == kTierPremium
             ? VehicleTier.premium

@@ -2164,10 +2164,9 @@ async def web_create_booking(request: Request, db: AsyncSession = Depends(get_db
         logging.warning("[EMAIL] email_guest_welcome failed for trip %s: %s", trip.id, _email_err)
 
     # The drink menu goes to the top tier, whatever it is called this
-    # month. A literal == "vip" here stops firing the day the rider app
-    # starts sending "black", and silently: nobody gets an email and no
-    # log line says why.
-    if vehicle_tiers.normalize_tier(trip.vehicle_type) == vehicle_tiers.TIER_BLACK:
+    # month. normalize_tier maps the old "black" rows onto "vip", so an
+    # unmigrated trip still fires.
+    if vehicle_tiers.normalize_tier(trip.vehicle_type) == vehicle_tiers.TIER_VIP:
         try:
             from config import PUBLIC_URL
             trip.vip_menu_token = generate_vip_menu_token()

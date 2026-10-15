@@ -199,8 +199,9 @@ async def test_post_vehicle_creates_row_and_marks_submitted(client, db, test_dri
     assert veh.plate == "ABC123"  # plate step carried into the Vehicle row
     assert veh.seatbelts == 5
     # The tier is classified on submit — never left at the "comfort"
-    # default. A 2021 sedan is Premium (sedan floor 2021, 2026-08-29).
-    assert veh.vehicle_type == "premium"
+    # default. A 2021 sedan is Standard (2026-10-15 rule: Premium is the
+    # three-row SUV tier; four-seat cars never leave Standard).
+    assert veh.vehicle_type == "standard"
     assert (await _get_items(client, token))["vehicle"]["status"] == "submitted"
 
 
@@ -217,7 +218,7 @@ async def test_post_vehicle_classifies_tier_on_submit(client, db, test_driver):
     )
     assert resp.status_code == 200, resp.text
     veh = (await db.execute(select(Vehicle).where(Vehicle.user_id == test_driver[0].id))).scalar_one()
-    assert veh.vehicle_type == "black"  # 7 seats + 2022 or newer
+    assert veh.vehicle_type == "vip"  # luxury three-row + 2020 or newer
 
     # An unlisted model with no roomy body is Standard — the safe floor.
     resp = await client.post(

@@ -3,7 +3,7 @@
 The rider-facing policy page promises: free while the pickup is more than
 one hour out or while no driver has been found; inside the last hour with
 a driver assigned, the tier fee ($10 compact / $15 standard /
-$20 electric pro / $25 premium / $35 black), capped by the upfront fare.
+$20 electric pro / $25 premium / $35 VIP), capped by the upfront fare.
 The endpoint must charge exactly that — and a double cancel must never
 capture twice.
 """
@@ -113,7 +113,7 @@ def test_constants_match_the_policy_page():
         "standard": 15.0,
         "electric_pro": 20.0,
         "premium": 25.0,
-        "black": 35.0,
+        "vip": 35.0,
     }
 
 

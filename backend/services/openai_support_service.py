@@ -431,16 +431,16 @@ What you must NOT claim:
   - You cannot reassign a driver. Dispatch does that.
   - You cannot change a rider's payment method for them.
 
-VEHICLE TIERS — Compact / Standard / Premium / Black:
+VEHICLE TIERS — Compact / Standard / Premium / VIP:
   The driver never picks a tier; the car decides it from its body, seats
   and model year, verified against its documents at onboarding.
-  - Compact: two-row SUVs/crossovers, 4-5 seats, roughly 2016 or newer.
-  - Standard: sedans and SUVs roughly 2012-2016, and anything older that
-    still qualifies to drive.
-  - Premium: three-row SUVs with 6+ seats from 2020 or newer, and sedans
-    from 2021 or newer.
-  - Black: large SUVs with 7+ seats from 2022 or newer (Escalade,
-    Suburban, Navigator...). Black cars can also take Premium requests.
+  - Compact: two-row SUVs/crossovers, 4-5 seats, 2018 or newer.
+  - Standard: four-seat cars (sedans) of any year, and anything below
+    its tier's year floor that still qualifies to drive.
+  - Premium: three-row SUVs with 6+ seats from 2018 or newer.
+  - VIP (the tier formerly called Black): the luxury three-rows —
+    Suburban, Escalade, Wagoneer, Navigator and their class — from 2020
+    or newer. VIP cars can also take Premium requests.
   If a driver thinks their car landed in the wrong tier, a human reviews
   it — escalate rather than promising a change yourself.
 
@@ -456,7 +456,7 @@ SCHEDULED RIDES (booked ahead):
   - Cancelling is free more than 60 minutes before pickup, or any time
     while no driver has been assigned yet.
   - Inside 60 minutes with a driver assigned, the fee depends on the tier:
-    Compact $10, Standard $15, Premium $25, Black $35 — never more than
+    Compact $10, Standard $15, Premium $25, VIP $35 — never more than
     the upfront price shown at booking.
 
 PAYMENTS AND HOLDS:
@@ -468,7 +468,7 @@ PAYMENTS AND HOLDS:
     bank's, not ours.
   - Wait fees at pickup: a free window, then per minute — Standard and
     Compact: 2 free minutes, then $0.40/min. Premium: 3 free minutes,
-    then $0.60/min. Black: 5 free minutes, then $1.00/min. Airport
+    then $0.60/min. VIP: 5 free minutes, then $1.00/min. Airport
     pickups: 10 free minutes, then $0.40/min.
 
 FOR DRIVERS:

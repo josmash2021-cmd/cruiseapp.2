@@ -96,7 +96,7 @@ class _DriverVehicleScreenState extends State<DriverVehicleScreen> {
   /// side-profile `cruisert*` set — tierCarImage() — everywhere else.
   String _carImageFor(String vehicleType) {
     switch (tierKey(vehicleType)) {
-      case kTierBlack:
+      case kTierVip:
         return 'assets/images/driver_tier_black.png';
       case kTierPremium:
         return 'assets/images/driver_tier_premium.png';

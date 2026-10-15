@@ -471,7 +471,7 @@ async def get_nearby_drivers(
 
     The tier filter answers "who could actually take this request" —
     per-tier ETAs mean nothing if they count cars that would never see
-    the offer. Eligibility (Black also serves Premium) is the dispatch
+    the offer. Eligibility (VIP also serves Premium) is the dispatch
     rule in vehicle_tiers.eligible_tiers, so the count matches the offer.
     """
     # Cache key: round coordinates to ~100m grid for cache hits from same area
@@ -2875,7 +2875,7 @@ async def register_live_activity_token(
 # ═══════════════════════════════════════════════════════════════
 
 def _classify_vehicle_tier(make: str, model: str, year: int) -> str:
-    """Standard / Compact / Premium / Black, from the car alone.
+    """Standard / Compact / Premium / VIP, from the car alone.
 
     The rule and its table live in services/vehicle_tiers.py; this is
     the name the rest of this file already calls.
@@ -2887,7 +2887,7 @@ _TIER_LABELS = {
     vehicle_tiers.TIER_STANDARD: "Standard",
     vehicle_tiers.TIER_COMPACT: "Compact",
     vehicle_tiers.TIER_PREMIUM: "Premium",
-    vehicle_tiers.TIER_BLACK: "Black",
+    vehicle_tiers.TIER_VIP: "VIP",
 }
 
 

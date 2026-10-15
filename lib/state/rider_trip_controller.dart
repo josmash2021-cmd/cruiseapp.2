@@ -686,7 +686,7 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
     // on those days too.
     (double, double, double, double, double) anchorRates(String tier) {
       switch (tier) {
-        case 'black':
+        case 'vip':
           return (7.50, 2.75, 0.50, 3.00, 20.00);
         case 'premium':
           return (3.00, 1.75, 0.30, 2.75, 12.00);
@@ -740,7 +740,7 @@ class RiderTripController extends ChangeNotifier with WidgetsBindingObserver {
         id: 'suburban',
         name: 'VIP',
         description: 'Spacious • Leather • Snacks & Drinks',
-        priceEstimate: _round(flDiscount(withAirport(anchoredTotal('black')) * surge)),
+        priceEstimate: _round(flDiscount(withAirport(anchoredTotal('vip')) * surge)),
         etaMinutes: baseDuration + 3,
         icon: '🚐',
         capacity: 7,

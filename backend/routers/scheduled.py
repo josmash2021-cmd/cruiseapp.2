@@ -229,7 +229,7 @@ async def get_available_scheduled_trips(
     driver_state = await _state_for(lat, lng) if (lat and lng) else None
 
     # Tier guard (same rule as dispatch): a driver only sees cards their
-    # car can actually serve — showing a Black reservation to a Standard
+    # car can actually serve — showing a VIP reservation to a Standard
     # driver ends in a 403 on tap, which reads as a bug, not a rule.
     from services.vehicle_tiers import eligible_tiers, normalize_tier
     from models.database import Vehicle
@@ -241,7 +241,7 @@ async def get_available_scheduled_trips(
     )
     driver_vtype = (veh.scalar_one_or_none() or "standard")
     eligible_request_tiers = {
-        req for req in ("standard", "compact", "premium", "black")
+        req for req in ("standard", "compact", "premium", "vip")
         if driver_vtype.strip().lower() in eligible_tiers(req)
     }
 
@@ -321,7 +321,7 @@ async def claim_scheduled_trip(
 
     # Tier guard — claiming by hand must obey the same rule as every
     # dispatched offer (vehicle_tiers.eligible_tiers): a Standard car
-    # cannot take a Black reservation just because the marketplace showed
+    # cannot take a VIP reservation just because the marketplace showed
     # the card.
     from routers.dispatch import _filter_drivers_by_vehicle_tier  # lazy: import cycle
     tier_ok = await _filter_drivers_by_vehicle_tier(

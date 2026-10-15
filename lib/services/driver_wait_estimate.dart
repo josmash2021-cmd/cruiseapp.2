@@ -113,7 +113,7 @@ class DriverWaitEstimate {
   static const Duration _ttl = Duration(seconds: 30);
 
   /// Round to ~1 km so a rider nudging the pin does not re-fetch. The tier
-  /// is part of the key: "who takes Black" and "who takes Standard" are
+  /// is part of the key: "who takes VIP" and "who takes Standard" are
   /// different answers to the same point.
   static String _key(double lat, double lng, String tier) =>
       '${lat.toStringAsFixed(2)},${lng.toStringAsFixed(2)}|$tier';

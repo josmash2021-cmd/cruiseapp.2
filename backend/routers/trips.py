@@ -65,7 +65,7 @@ SCHEDULED_CANCEL_FEE_BY_TIER = {
     "standard": 15.0,
     "electric_pro": 20.0,
     "premium": 25.0,
-    "black": 35.0,
+    "vip": 35.0,
 }
 
 
@@ -182,8 +182,8 @@ _WAIT_POLICY_BY_TYPE = {
     "standard": (2, 0.40),
     "premium":  (3, 0.60),
     "suv_xl":   (5, 1.00),
-    "vip":      (5, 1.00),   # legacy name for black
-    "black":    (5, 1.00),
+    "vip":      (5, 1.00),
+    "black":    (5, 1.00),   # legacy name for vip
 }
 _DEFAULT_WAIT_POLICY = (2, 0.40)
 _AIRPORT_WAIT_POLICY = (10, 0.40)
@@ -1400,7 +1400,7 @@ async def _push_ride_live_activity(trip_id: int, new_status: str):
 
             tier = vehicle_tiers.normalize_tier(
                 getattr(trip, "vehicle_type", None))
-            car_image = ("CarSuv" if tier in ("premium", "black")
+            car_image = ("CarSuv" if tier in ("premium", "vip")
                          else "CarEconomy" if tier == "compact"
                          else "CarSedan")
 

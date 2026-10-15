@@ -1377,7 +1377,7 @@ extension _RideRequestWidgets on _RideRequestScreenState {
   String _tierKeyForOption(RideOption opt) {
     switch (opt.id) {
       case 'suburban':
-        return 'black';
+        return 'vip';
       case 'suv_xl':
         return 'premium';
       case 'electric_pro':

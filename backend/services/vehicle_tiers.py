@@ -1,9 +1,25 @@
 """What tier a car is, decided in one place.
 
-Standard / Compact / Electric Pro / Premium / Black. The tier is derived
+Standard / Compact / Electric Pro / Premium / VIP. The tier is derived
 from the vehicle — body, seats, year — and a driver never picks it. It
 decides which requests they are offered and what share of the fare they
 keep, so it is worth more than a `if` in the middle of an endpoint.
+
+VIP is the rename of Black (2026-10-15, user spec: "la categoría black se
+llamará ahora VIP para el cliente y para los drivers"). The canonical key
+is now `vip`; rows and app builds that still say `black` read through
+LEGACY_TIER_MAP / LEGACY_COMMISSION, so nothing mid-migration misprices.
+
+The 2026-10-15 eligibility rule (user spec), one tier per car:
+
+* **VIP** — the luxury three-row models on `_VIP_MODELS` (Suburban,
+  Escalade, Wagoneer and their class), model year 2020 or newer.
+* **Premium** — any OTHER three-row SUV or van (six seats or more),
+  2018 or newer. A Traverse, a Pilot, a Highlander live here.
+* **Compact** — a two-row SUV/crossover (four or five seats), 2018+.
+* **Standard** — everything else: sedans of any year, and any car below
+  its tier's year floor. Standard is the floor of the ladder — a 2014
+  Suburban still drives, it just never reaches a higher tier.
 
 Electric Pro (2026-10-13, user spec) is the battery-electric tier: a BEV
 on the `_ELECTRIC_MODELS` list classifies here no matter what the
@@ -23,13 +39,13 @@ Two things about the rule as implemented that the prose does not say
 outright, both chosen so the ladder is monotone — a better car is never
 worth less:
 
-* The year ranges are read as *minimums*. "Black, 2022 to 2026" means
-  2022 or newer; 2026 is just the newest year that exists today. A
-  hardcoded upper bound would silently drop every 2027 car to Standard
-  a few months from now, and that is a pay cut nobody would notice.
-* Premium is `seats >= 6`, not `seats == 6`. A seven-seat SUV that misses
-  Black on year is still at least a Premium car when it clears Premium's
-  own floor (2020 since 2026-08-29) instead of falling straight to
+* The year floors are read as *minimums*. "VIP, 2020 or newer" has no
+  upper bound: a hardcoded one would silently drop every 2027 car to
+  Standard a few months from now, and that is a pay cut nobody would
+  notice.
+* Premium is `seats >= 6`, not `seats == 6`. A seven-seat SUV that is
+  not on the VIP list (or misses VIP's year) is still at least a Premium
+  car when it clears Premium's own floor instead of falling straight to
   Standard beside a five-seat car.
 
 Seats are the input this codebase does not have. `vehicles` stores make,
@@ -45,7 +61,7 @@ from __future__ import annotations
 
 import re
 
-# ── The four tiers ────────────────────────────────────────────────────
+# ── The five tiers ────────────────────────────────────────────────────
 # These strings are written to vehicles.vehicle_type and read by the
 # commission table, so they are not display labels. Label them in the
 # apps.
@@ -53,23 +69,21 @@ TIER_STANDARD = "standard"
 TIER_COMPACT = "compact"
 TIER_ELECTRIC_PRO = "electric_pro"
 TIER_PREMIUM = "premium"
-TIER_BLACK = "black"
+TIER_VIP = "vip"
 
-TIERS = (TIER_STANDARD, TIER_COMPACT, TIER_ELECTRIC_PRO, TIER_PREMIUM, TIER_BLACK)
+TIERS = (TIER_STANDARD, TIER_COMPACT, TIER_ELECTRIC_PRO, TIER_PREMIUM, TIER_VIP)
 
 # Ordered worst to best. Used for "did this go up or down" comparisons;
 # do not reorder without checking the callers.
 TIER_ORDER = {t: i for i, t in enumerate(TIERS)}
 
 # ── Year floors ───────────────────────────────────────────────────────
-# Product rule 2026-08-29: Premium moved up to 2020+, Compact to 2016+,
-# and a 2021+ sedan can now reach Premium (it could never leave Standard
-# before). Standard is everything else — sedans and SUVs roughly
-# 2012-2016, and anything older still drives as Standard.
-BLACK_MIN_YEAR = 2022
-PREMIUM_MIN_YEAR = 2020
-COMPACT_MIN_YEAR = 2016
-SEDAN_PREMIUM_MIN_YEAR = 2021
+# Product rule 2026-10-15 (user spec): VIP 2020+, Premium and Compact
+# 2018+. Anything under its tier's floor falls to the tier below;
+# Standard has no floor — an old car still drives, as Standard.
+VIP_MIN_YEAR = 2020
+PREMIUM_MIN_YEAR = 2018
+COMPACT_MIN_YEAR = 2018
 
 # ── Commission, platform share first ──────────────────────────────────
 # Flat 60/40 in every tier (pricing policy 2026-10-06, user spec: "40% para
@@ -80,17 +94,19 @@ COMMISSION = {
     TIER_COMPACT: (0.40, 0.60),
     TIER_ELECTRIC_PRO: (0.40, 0.60),
     TIER_PREMIUM: (0.40, 0.60),
-    TIER_BLACK: (0.40, 0.60),
+    TIER_VIP: (0.40, 0.60),
 }
 
-# Rows written before the four tiers existed. Kept so a vehicle that has
+# Rows written before the five tiers existed, or with the old name of the
+# top tier ("black", renamed VIP 2026-10-15). Kept so a vehicle that has
 # not been migrated yet still resolves to a rate rather than falling
 # through to a default — the same flat 60/40 as everyone else.
 LEGACY_COMMISSION = {
     "sedan": (0.40, 0.60),
     "comfort": (0.40, 0.60),
     "suv_xl": (0.40, 0.60),
-    "vip": (0.40, 0.60),
+    "black": (0.40, 0.60),
+    "luxury": (0.40, 0.60),
 }
 
 # What an unrecognised tier string is worth. The safe direction is the
@@ -105,13 +121,13 @@ LEGACY_TIER_MAP = {
     "economy": TIER_STANDARD,
     "suv": TIER_COMPACT,
     # An SUV XL is a Traverse — three rows, six seats. That is Premium,
-    # not Black. The rider's ride picker has always shown it that way;
-    # mapping it to Black here would have started offering Black work to
+    # not VIP. The rider's ride picker has always shown it that way;
+    # mapping it to VIP here would have started offering VIP work to
     # six-seat cars.
     "suv_xl": TIER_PREMIUM,
-    "vip": TIER_BLACK,
-    "black": TIER_BLACK,
-    "luxury": TIER_BLACK,
+    # VIP is the 2026-10-15 rename of Black; old rows say black/luxury.
+    "black": TIER_VIP,
+    "luxury": TIER_VIP,
 }
 
 # ── Bodies ────────────────────────────────────────────────────────────
@@ -139,6 +155,24 @@ def _norm(text: str | None) -> str:
     """Lowercase, letters and digits only. "CX-9" and "cx 9" are one key."""
     return re.sub(r"[^a-z0-9]", "", (text or "").lower())
 
+
+# The VIP list (2026-10-15, user spec): "Suburban, Cadillac Escalade, Jeep
+# Wagoneer" and their class — the full-size truck-based and flagship
+# luxury three-rows. Every model here is also in the three-row table
+# below (the table answers body/seats; this set answers "is it luxury").
+# Any other three-row SUV is Premium, not VIP.
+_VIP_MODELS = {
+    _norm(m)
+    for m in (
+        "suburban", "tahoe", "yukon", "yukon xl",
+        "escalade", "escalade esv",
+        "wagoneer", "grand wagoneer",
+        "navigator", "navigator l",
+        "expedition", "expedition max",
+        "sequoia", "armada", "land cruiser", "qx80", "lx",
+        "gls", "x7",
+    )
+}
 
 # Large SUVs and vans — unambiguously seven or more, in every trim.
 _add(
@@ -184,8 +218,9 @@ _add(
 )
 
 # Sedans, coupes and hatchbacks. Listed so the table can answer "what is
-# this" rather than shrugging. Since 2026-08-29 a 2021+ sedan reaches
-# Premium; anything older stays Standard.
+# this" rather than shrugging. A sedan is Standard at any year — since
+# 2026-10-15 Premium is the three-row SUV tier and four-seat cars never
+# leave Standard.
 _add(
     BODY_SEDAN, 5,
     "camry", "corolla", "avalon", "crown", "prius", "yaris", "accord",
@@ -267,6 +302,33 @@ def _is_electric(make: str | None, model: str | None) -> bool:
     return bool(make_key) and make_key in _ELECTRIC_MODELS
 
 
+def _match_key(make: str | None, model: str | None, table) -> str | None:
+    """The matching discipline shared by lookup() and the VIP check:
+    full normalised model first, then every run of consecutive words
+    longest-first ("grand cherokee l" before "grand cherokee"), then the
+    make alone ("Cadillac Escalade" typed into the make field). Returns
+    the table KEY that matched (membership test — works for the dict and
+    the set alike), or None.
+    """
+    full = _norm(model)
+    if full and full in table:
+        return full
+
+    tokens = [t for t in re.split(r"[^a-z0-9]+", (model or "").lower()) if t]
+    for size in range(len(tokens), 0, -1):
+        for start in range(0, len(tokens) - size + 1):
+            key = "".join(tokens[start:start + size])
+            # Two characters is the floor: a bare "l" or "3" would match
+            # half the table by accident.
+            if len(key) >= 2 and key in table:
+                return key
+
+    make_key = _norm(make)
+    if make_key and make_key in table:
+        return make_key
+    return None
+
+
 def lookup(make: str | None, model: str | None) -> tuple[str, int] | None:
     """(body, seats) for a model name, or None if it is not on the list.
 
@@ -275,29 +337,14 @@ def lookup(make: str | None, model: str | None) -> tuple[str, int] | None:
     match wins: "grand cherokee l" is a different car from "grand
     cherokee" and must not be shadowed by it.
     """
-    full = _norm(model)
-    if not full:
-        return None
-    if full in _MODELS:
-        return _MODELS[full]
+    key = _match_key(make, model, _MODELS)
+    return _MODELS[key] if key is not None else None
 
-    tokens = [t for t in re.split(r"[^a-z0-9]+", (model or "").lower()) if t]
-    # Every run of consecutive words, longest first. "grand cherokee l"
-    # before "grand cherokee" before "cherokee".
-    for size in range(len(tokens), 0, -1):
-        for start in range(0, len(tokens) - size + 1):
-            key = "".join(tokens[start:start + size])
-            # Two characters is the floor: a bare "l" or "3" would match
-            # half the table by accident.
-            if len(key) >= 2 and key in _MODELS:
-                return _MODELS[key]
 
-    # Some makes are one model. "Cadillac Escalade" typed into the make
-    # field is still an Escalade.
-    make_key = _norm(make)
-    if make_key and make_key in _MODELS:
-        return _MODELS[make_key]
-    return None
+def _is_vip_model(make: str | None, model: str | None) -> bool:
+    """True when the model is on the VIP luxury list (same matching as
+    lookup(), so "Cadillac Escalade" in the make field counts too)."""
+    return _match_key(make, model, _VIP_MODELS) is not None
 
 
 def classify(
@@ -338,8 +385,11 @@ def classify(
         seats = 0
 
     if body in _ROOMY_BODIES:
-        if seats >= 7 and year >= BLACK_MIN_YEAR:
-            return TIER_BLACK
+        # VIP (2026-10-15): the luxury three-rows only — Suburban,
+        # Escalade, Wagoneer and their class — 2020 or newer.
+        if seats >= 6 and year >= VIP_MIN_YEAR and _is_vip_model(make, model):
+            return TIER_VIP
+        # Premium: any other three-row SUV or van, 2018 or newer.
         if seats >= 6 and year >= PREMIUM_MIN_YEAR:
             return TIER_PREMIUM
         if 4 <= seats <= 5 and year >= COMPACT_MIN_YEAR:
@@ -348,18 +398,17 @@ def classify(
         # reaches a higher tier.
         return TIER_STANDARD
 
-    # A recent sedan earns Premium too (product rule 2026-08-29) — a 2021+
-    # four-door is the Premium experience without the third row.
-    if body == BODY_SEDAN and year >= SEDAN_PREMIUM_MIN_YEAR:
-        return TIER_PREMIUM
+    # A sedan is Standard at any year (2026-10-15 rule: Premium is the
+    # three-row SUV tier; four-seat cars never leave Standard).
     return TIER_STANDARD
 
 
 def commission(tier: str | None) -> tuple[float, float]:
     """(platform share, driver share) for a tier string.
 
-    Accepts the old strings too, so a vehicle the migration has not
-    reached yet is still paid correctly rather than defaulted.
+    Accepts the old strings too ("black" included), so a vehicle the
+    migration has not reached yet is still paid correctly rather than
+    defaulted.
     """
     key = (tier or "").strip().lower().replace(" ", "_").replace("-", "_")
     if key in COMMISSION:
@@ -375,7 +424,7 @@ def driver_share(tier: str | None) -> float:
 
 
 def normalize_tier(tier: str | None) -> str:
-    """An old or misspelled tier string, mapped onto the four."""
+    """An old or misspelled tier string, mapped onto the five."""
     key = (tier or "").strip().lower().replace(" ", "_").replace("-", "_")
     if key in COMMISSION:
         return key
@@ -394,11 +443,11 @@ _TIER_ALIASES: dict[str, tuple[str, ...]] = {
 # Who may serve a request for each tier, product rule 2026-08-04:
 # read from the driver's seat — Standard drivers get Standard work
 # only; Compact drivers get Compact AND Standard; Premium drivers get
-# Premium only; Black drivers get Black AND Premium. Keyed by the
+# Premium only; VIP drivers get VIP AND Premium. Keyed by the
 # REQUESTED tier, that inverts to the map below: a Standard request may
 # go to a Standard or a Compact car, a Compact request to Compact cars
-# only, a Premium request to Premium or Black cars, a Black request to
-# Black cars only.
+# only, a Premium request to Premium or VIP cars, a VIP request to
+# VIP cars only.
 #
 # Electric Pro (2026-10-13) is closed on both sides: an Electric Pro
 # request goes to Electric Pro cars only, and no other request reaches
@@ -408,22 +457,23 @@ _REQUEST_RULE: dict[str, tuple[str, ...]] = {
     TIER_STANDARD: (TIER_STANDARD, TIER_COMPACT),
     TIER_COMPACT: (TIER_COMPACT,),
     TIER_ELECTRIC_PRO: (TIER_ELECTRIC_PRO,),
-    TIER_PREMIUM: (TIER_PREMIUM, TIER_BLACK),
-    TIER_BLACK: (TIER_BLACK,),
+    TIER_PREMIUM: (TIER_PREMIUM, TIER_VIP),
+    TIER_VIP: (TIER_VIP,),
 }
 
 
 def eligible_tiers(requested: str | None) -> tuple[str, ...]:
     """Stored tier strings that can serve a request for `requested`.
 
-    The 2026-08 rule in [_REQUEST_RULE]: own tier only, plus Black
+    The 2026-08 rule in [_REQUEST_RULE]: own tier only, plus VIP
     serving Premium too. It replaces the older "own tier or one rung
     up" ladder, which let Compact cars into Standard work and Premium
     cars into Compact work — neither side of that was wanted.
 
     Both the old strings and the new ones come back through the alias
     table, so the same list is correct before, during and after the
-    data migration.
+    data migration — a VIP request still reaches a row that says
+    "black".
     """
     tier = normalize_tier(requested)
     out: list[str] = []

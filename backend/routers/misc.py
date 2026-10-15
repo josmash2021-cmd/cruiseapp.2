@@ -430,19 +430,20 @@ _TIER_ALIASES_PRICING = {
     "compact": "compact", "suv": "compact",
     "electric_pro": "electric_pro",
     "premium": "premium", "suv_xl": "premium",
-    "black": "black", "vip": "black", "luxury": "black",
+    "vip": "vip", "black": "vip", "luxury": "vip",
 }
 
 # (base, per_mile, per_minute, booking_fee, min_fare) — cheaper-of-two
 # published composite per tier, 2026 rate cards. Electric Pro is our own
 # card, not a composite (user spec 2026-10-13): the clean midpoint
-# between Standard and Premium.
+# between Standard and Premium. VIP is the 2026-10-15 rename of Black —
+# same rate card, new key.
 _ANCHOR_RATES = {
     "standard": (2.00, 1.00, 0.20, 2.50, 8.00),
     "compact":  (2.50, 1.15, 0.22, 2.50, 9.00),
     "electric_pro": (2.50, 1.40, 0.25, 2.60, 10.00),
     "premium":  (3.00, 1.75, 0.30, 2.75, 12.00),
-    "black":    (7.50, 2.75, 0.50, 3.00, 20.00),
+    "vip":      (7.50, 2.75, 0.50, 3.00, 20.00),
 }
 
 

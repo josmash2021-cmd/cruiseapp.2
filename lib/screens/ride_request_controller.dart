@@ -3334,7 +3334,7 @@ void _showPaymentMethodPickerLegacy(AppColors c, RideOption? option) {
     if (p == null || !mounted) return;
     await Future.wait([
       DriverWaitEstimate.fetch(lat: p.lat, lng: p.lng, force: true),
-      for (final t in const ['black', 'premium', 'compact', 'standard'])
+      for (final t in const ['vip', 'premium', 'compact', 'standard'])
         DriverWaitEstimate.fetch(lat: p.lat, lng: p.lng, tier: t, force: true),
     ]);
     if (mounted) _setState(() {});

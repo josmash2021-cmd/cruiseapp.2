@@ -1022,14 +1022,42 @@ async def _ensure_identity_doc_rows(db, user) -> None:
     """Create the missing pending Document rows for a user's identity
     uploads. Create-only: an existing row is NEVER touched — a rejected
     document keeps its rejection until the driver re-uploads (the upload
-    flows reset the row to pending themselves)."""
+    flows reset the row to pending themselves).
+
+    Dedup (2026-10-14, panel report "aparece doble"): for a DRIVER the
+    identity document IS the driver's license — id_photo_url carries the
+    license photo. A license-type row already exists → no id_document row;
+    and a duplicate created by this backfill earlier (same file as the
+    license row) is removed on read. Riders have no license row — their
+    id_document stays (it's their whole KYC)."""
     try:
         result = await db.execute(
-            select(Document.doc_type).where(Document.user_id == user.id))
-        have = {row[0] for row in result.all()}
+            select(Document).where(Document.user_id == user.id))
+        existing = result.scalars().all()
+        have = {d.doc_type for d in existing}
+        license_paths = {
+            d.file_path for d in existing
+            if d.doc_type in ("drivers_license", "driver_license", "license")
+        }
+
+        # Remove a duplicate id_document that is literally the license file.
+        removed = False
+        for d in existing:
+            if (d.doc_type == "id_document"
+                    and d.file_path in license_paths
+                    and d.file_path):
+                await db.delete(d)
+                have.discard("id_document")
+                removed = True
+        if removed:
+            await db.commit()
+
         created = False
         for doc_type, attr in _IDENTITY_DOC_SOURCES:
             if doc_type in have:
+                continue
+            # A driver with a license on file never gets an id_document row.
+            if doc_type == "id_document" and license_paths:
                 continue
             url = getattr(user, attr, None)
             if not url:

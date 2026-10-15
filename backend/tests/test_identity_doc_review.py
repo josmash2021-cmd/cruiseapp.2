@@ -112,3 +112,38 @@ async def test_ensured_row_reviews_like_any_document(client, db):
     d = res.json()["document"]
     assert d["status"] == "rejected"
     assert d["rejection_reason"] == "ilegible"
+
+
+async def test_driver_with_license_never_gets_id_document(client, db):
+    """2026-10-14 panel report ("aparece doble"): for a DRIVER the identity
+    document IS the license — the backfill must not add an id_document row
+    beside the drivers_license one, and a duplicate already created (same
+    file) is removed on read."""
+    u = await _mkuser(db, id_photo_url="photos/u4/license_front.jpg",
+                      selfie_url="photos/u4/selfie.jpg")
+    db.add(Document(user_id=u.id, vehicle_id=None, doc_type="drivers_license",
+                    status="pending",
+                    file_path="photos/u4/license_front.jpg"))
+    # El duplicado que mi backfill de esta mañana ya creó en prod:
+    db.add(Document(user_id=u.id, vehicle_id=None, doc_type="id_document",
+                    status="pending",
+                    file_path="photos/u4/license_front.jpg"))
+    await db.commit()
+
+    res = await client.get(f"/admin/users/{u.id}", headers=_dh())
+    assert res.status_code == 200, res.text
+    types = [d["doc_type"] for d in res.json()["documents"]]
+    assert types.count("id_document") == 0, \
+        "el duplicado se elimina al leer (era el mismo archivo)"
+    assert types.count("drivers_license") == 1
+    assert "selfie" in types  # los otros tipos de identidad siguen entrando
+
+    # Y sin duplicado previo: no se crea junto a una licencia.
+    u2 = await _mkuser(db, id_photo_url="photos/u5/license_front.jpg")
+    db.add(Document(user_id=u2.id, vehicle_id=None, doc_type="drivers_license",
+                    status="approved",
+                    file_path="photos/u5/license_front.jpg"))
+    await db.commit()
+    res = await client.get(f"/admin/users/{u2.id}", headers=_dh())
+    types2 = [d["doc_type"] for d in res.json()["documents"]]
+    assert "id_document" not in types2

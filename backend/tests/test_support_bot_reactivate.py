@@ -142,6 +142,8 @@ def test_boot_sweep_wired_in_lifespan():
     assert "sweep_stuck_bot_chats" in s
     assert "_is_scheduler_leader" in s, "multi-worker safe: leader only"
     assert "await asyncio.sleep(600)" in s, "the 10-min loop"
+    assert "_standby_logged_at" in s, "the leader standby flood is latched"
+    assert "watchdog tick:" in s, "every sweep reports its summary"
     src = (pathlib.Path(__file__).parent.parent / "routers" / "support.py")
     body = src.read_text(encoding="utf-8")
     assert "async def sweep_stuck_bot_chats" in body

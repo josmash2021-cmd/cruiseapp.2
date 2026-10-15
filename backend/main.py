@@ -578,6 +578,9 @@ def _get_leader_guard() -> asyncio.Lock:
     return _leader_guard
 
 
+_standby_logged_at = 0.0  # monotonic — the "standing by" line logs once per 10 min per process
+
+
 async def _try_become_scheduler_leader() -> bool:
     """True if THIS worker process should run the background schedulers.
 
@@ -618,7 +621,15 @@ async def _try_become_scheduler_leader() -> bool:
                 logging.info("[Leader] This worker owns the background schedulers")
                 return True
             await conn.close()
-            logging.info("[Leader] Another worker owns the schedulers — standing by")
+            # 2026-10-15: the standby line used to fire on EVERY check per
+            # worker — thousands of lines/hour drowning every real log
+            # (the support-bot diagnosis was blind under the flood). Once
+            # per 10 min per process.
+            global _standby_logged_at
+            _now = time.monotonic()
+            if _now - _standby_logged_at > 600:
+                _standby_logged_at = _now
+                logging.info("[Leader] Another worker owns the schedulers — standing by")
             return False
         except Exception as e:
             # Never let lock trouble take the API down. Failing closed (no
@@ -908,10 +919,11 @@ async def _start_scheduler_agents() -> None:
                     from routers.support import sweep_stuck_bot_chats
                     async with SessionLocal() as db:
                         res = await sweep_stuck_bot_chats(db)
-                    if res["reactivated"]:
-                        logging.warning(
-                            "[SupportBot] watchdog attended silent chats %s",
-                            res["reactivated"])
+                    # Every tick reports — a silent watchdog is as blind as a
+                    # silent bot (2026-10-15: the leader flood hid everything).
+                    logging.warning(
+                        "[SupportBot] watchdog tick: reactivated=%s skipped_human=%s",
+                        res["reactivated"], res["skipped_attended_by_human"])
                 except Exception as e:
                     logging.warning("[SupportBot] watchdog sweep failed: %s", e)
             await asyncio.sleep(600)

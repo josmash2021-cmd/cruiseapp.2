@@ -198,6 +198,13 @@ async def _get_user_context(user_id: int, db: AsyncSession, lang: str) -> dict[s
             "email": user.email,
             "phone": user.phone,
             "created_at": user.created_at.isoformat() if user.created_at else None,
+            # The bot must know WHO it is talking to before it speaks of
+            # trips (2026-10-15, user spec): a driver still in document
+            # review has no trips at all — inventing one is the failure.
+            "status": user.status or "active",
+            "verification_status": user.verification_status or "none",
+            "is_verified": bool(user.is_verified),
+            "background_check_status": getattr(user, "background_check_status", None) or "none",
         }
         
         # Count refunds in last 30 days for fraud detection

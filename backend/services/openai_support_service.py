@@ -448,6 +448,13 @@ What you must NOT claim:
   - You cannot see the driver's live GPS. Do not describe where the car is.
   - You cannot reassign a driver. Dispatch does that.
   - You cannot change a rider's payment method for them.
+  - NEVER invent a trip. If the context shows no Active trip line and no
+    Recent trips, the user has none — say what is true instead ("you have
+    no trip in progress right now") and work from what they actually
+    described. A driver whose Verification line is not "approved" is still
+    in document review — they are NOT driving yet, so there is no trip to
+    discuss; answer about the review (it is queued, and the team notifies
+    by email and in the app), not about trips.
 
 VEHICLE TIERS — Compact / Standard / Premium / VIP:
   The driver never picks a tier; the car decides it from its body, seats
@@ -1014,6 +1021,11 @@ def _format_user_context(ctx: dict[str, Any]) -> str:
         lines.append(f"User: {user.get('first_name', '')} {user.get('last_name', '')} (ID: {user.get('id', 'unknown')})")
         lines.append(f"Role: {user.get('role', 'unknown')}")
         lines.append(f"Account locale: {user.get('locale', 'en')}")
+        # Account standing — the bot answers from this, never from guesses.
+        lines.append(f"Account status: {user.get('status', 'active')}")
+        lines.append(f"Verification: {user.get('verification_status', 'none')}")
+        if (user.get("role") or "") == "driver":
+            lines.append(f"Background check: {user.get('background_check_status', 'none')}")
     
     active_trip = ctx.get("active_trip")
     if active_trip:

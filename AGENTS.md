@@ -13,7 +13,7 @@
 3. El mapa dice DÓNDE; antes de editar lee igual la región exacta (los números de línea se mueven con cada commit). La forma de trabajar NO cambia: diffs mínimos, estilo del archivo, verificación obligatoria.
 4. Verificación tras editar: `flutter analyze` (Dart) · `cd backend && ./.venv/Scripts/python.exe -m pytest tests/ -q` (Python).
 5. `CLAUDE.md` (biblia: stack, trip lifecycle, 29 patrones aprendidos) y `PROJECT_MAP.md` (estatus 🔴/🟡/🟢 de cada archivo): léelos SOLO si el flujo no está mapeado aquí o dudas del estatus de un archivo raro. Ya no son lectura obligatoria de cada sesión.
-6. Antes de commitear: `git status` — el usuario suele tener WIP propio sin commitear; no arrastres archivos ajenos al commit (si no hay forma, decláralo en el mensaje). Nunca commitees `.claude/scheduled_tasks.lock`. Mensajes en español, estilo conventional (`fix(fcm): ...`). Push al remote después de cada change set (preferencia durable del usuario).
+6. Antes de commitear: `git status` — el usuario suele tener WIP propio sin commitear; no arrastres archivos ajenos al commit (si no hay forma, decláralo en el mensaje). Nunca commitees `.claude/scheduled_tasks.lock`. Mensajes en español, estilo conventional (`fix(fcm): ...`). Push al remote después de cada change set (preferencia durable del usuario). **Deploys del servidor (2026-10-15, preferencia durable): NO `railway up` por cada change set — un SOLO deploy al final de la tanda de la sesión (o cuando el usuario lo pida). Cada redeploy tumba las conexiones vivas (socket tracking, SSE de ofertas) y el boot largo ha dejado la app 'sin conexión' a usuarios. App-only (lib/) va por Shorebird patch sin tocar el servidor.**
 
 ---
 

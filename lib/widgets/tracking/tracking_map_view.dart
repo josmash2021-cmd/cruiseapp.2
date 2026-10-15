@@ -33,8 +33,14 @@ extension _RiderTrackingMapView on _RiderTrackingScreenState {
   /// distance in meters, and the projected arc-length in meters.
   (int, double, double) _projectInSegRange(LatLng p, int from, int to) {
     final n = _routePts.length;
-    from = from.clamp(0, n - 1);
-    to = to.clamp(from + 1, n);
+    if (n < 2) return (0, double.infinity, 0.0);
+    // Segment indices run 0..n-2 and `to` is exclusive, so it clamps to
+    // n-1 — NEVER n: a hint near the route's end (or from a longer route,
+    // pre-refresh) used to clamp to n and the loop read _routePts[n] —
+    // the RangeError (length) crash of iOS 1.1.2(727), 2026-10-11 (16
+    // crashes, one rider, flagged by the Crashlytics stability alert).
+    from = from.clamp(0, n - 2);
+    to = to.clamp(from + 1, n - 1);
     double bestDist = double.infinity;
     int bestSeg = from;
     double bestM = _segDist[from];

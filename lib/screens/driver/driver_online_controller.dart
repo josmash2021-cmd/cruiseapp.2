@@ -2114,6 +2114,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
             zoom: zoom,
             bearing: camBearing,
             pitch: 0,
+            padding: _kZeroCamPadding,
           ),
         );
       }
@@ -2127,6 +2128,7 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
           zoom: 17.5,
           bearing: _heading,
           pitch: 55,
+          padding: _kZeroCamPadding,
         ),
       );
     }

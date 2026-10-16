@@ -45,6 +45,30 @@ void main() {
           reason: 'the manual-rotate detector needs the last written value');
     });
 
+    test('every follow/recenter camera write clears the padding '
+        '(2026-10-16 noche)', () {
+      // "El boton de centrar online no funciona / la flecha queda en otro
+      // lugar": las vistas de zona escriben padding del sheet y Mapbox lo
+      // CONSERVA si la escritura no lo trae — toda cámara de seguimiento o
+      // recenter debe escribir padding cero explícito o el driver renderiza
+      // fuera del centro para siempre.
+      expect(ctrl, contains('_kZeroCamPadding'),
+          reason: 'the per-frame chase clears the padding');
+      final scr = File('lib/screens/driver/driver_online_screen.dart')
+          .readAsStringSync();
+      expect(scr, contains('final _kZeroCamPadding'),
+          reason: 'the shared zero padding exists');
+      expect('padding: _kZeroCamPadding,'.allMatches(scr).length,
+          greaterThanOrEqualTo(1),
+          reason: 'the recenter flight clears it too');
+      final map = File('lib/screens/driver/driver_online_map.dart')
+          .readAsStringSync();
+      expect(map, contains('pitch: settleTilt,'),
+          reason: 'the settle write exists');
+      expect(map, contains('padding: _kZeroCamPadding,'),
+          reason: 'the settle write clears it too');
+    });
+
     test('the camera mirrors the arrow directly WHILE MOVING; parked, the '
         'compass never swings the map (user reports 2026-09-27/30, '
         '2026-10-16)', () {

@@ -237,6 +237,15 @@ const int _kRerouteCooldownSec = 10;
 /// Cross-fade duration (ms) when a re-routed line replaces the old one.
 const int _kRerouteFadeMs = 350;
 
+/// Padding cero explícito para las cámaras de seguimiento/recenter —
+/// Mapbox CONSERVA el padding si no se escribe, y el de las vistas de zona
+/// (sheet) dejaba al driver renderizando fuera del centro para siempre
+/// (2026-10-16-noche: "el botón de centrar online no funciona / la flecha
+/// en otro lugar"). Top-level: las part files son extensiones y no ven los
+/// static de la clase.
+final _kZeroCamPadding =
+    mapbox.MbxEdgeInsets(top: 0, left: 0, bottom: 0, right: 0);
+
 class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     with TickerProviderStateMixin, WidgetsBindingObserver, RouteAware {
   void _setState(VoidCallback fn) {
@@ -391,6 +400,12 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
           zoom: zoom,
           bearing: bearing,
           pitch: tilt,
+          // 2026-10-16-noche (reporte: "el boton de centrar online no
+          // funciona / la flecha queda en otro lugar"): las vistas de zona
+          // escriben padding del sheet y Mapbox lo CONSERVA si no se
+          // escribe — toda cámara de seguimiento/recenter lo limpia a cero o
+          // el driver renderiza desplazado del centro para siempre.
+          padding: _kZeroCamPadding,
         ),
         mapbox.MapAnimationOptions(duration: _kRecenterFlightMs),
       )

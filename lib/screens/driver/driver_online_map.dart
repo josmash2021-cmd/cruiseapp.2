@@ -2296,6 +2296,7 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
         zoom: settleZoom,
         bearing: bearing,
         pitch: settleTilt,
+        padding: _kZeroCamPadding,
       ))
           .catchError((Object e) {
         debugPrint('[DriverOnline] recenter settle setCamera failed: $e');
@@ -3279,6 +3280,9 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     final map = _map;
     if (map == null || kIsWeb) return;
     final b = sec.bbox;
+    // Mismo token anti-stale que los otros fits (2026-10-16-noche): un fit
+    // de zona viejo jamás aterriza sobre una cámara más nueva.
+    final seq = ++_zoneFitSeq;
     try {
       final cam = await map.cameraForCoordinatesPadding(
         [
@@ -3290,6 +3294,7 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
         null,
         null,
       );
+      if (seq != _zoneFitSeq) return;
       _camFlightUntil = DateTime.now()
           .add(const Duration(milliseconds: _kRecenterFlightMs + 320));
       await map.flyTo(

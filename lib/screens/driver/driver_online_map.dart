@@ -2345,6 +2345,17 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     return _dotScreenOffset != null;
   }
 
+  /// The camera padding shifts where the camera centre actually renders:
+  /// Mapbox centres the frame INSIDE the padded viewport, so every overlay
+  /// pixel from the flat projection moves by half the inset imbalance
+  /// (user report 2026-10-16: tras el recenter offline la flecha y las
+  /// píldoras de zona quedaban corridas — la cámara traía el padding del
+  /// sheet y la proyección lo ignoraba).
+  Offset _camPadShift(mapbox.CameraState cam) {
+    final p = cam.padding;
+    return Offset((p.left - p.right) / 2, (p.top - p.bottom) / 2);
+  }
+
   /// Where to draw the marker while the camera is parked, or null if we
   /// cannot say — off screen, or a tilted camera we refuse to guess at.
   Offset? get _dotScreenOffset {
@@ -2383,8 +2394,9 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
       viewport: size,
     );
     if (off == null) return null;
-    if (!FlatMapProjection.isOnScreen(off, size)) return null;
-    return off;
+    final shifted = off + _camPadShift(cam);
+    if (!FlatMapProjection.isOnScreen(shifted, size)) return null;
+    return shifted;
   }
 
 
@@ -3263,10 +3275,12 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
             pitchDeg: cam.pitch,
             viewport: size,
           );
-          if (off == null || !FlatMapProjection.isOnScreen(off, size)) {
+          if (off == null) return null;
+          final shifted = off + _camPadShift(cam);
+          if (!FlatMapProjection.isOnScreen(shifted, size)) {
             return null;
           }
-          return off;
+          return shifted;
         }
 
         final children = <Widget>[];

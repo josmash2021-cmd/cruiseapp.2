@@ -523,4 +523,29 @@ void main() {
     expect(w, contains('_zoneSectorIds = []'),
         reason: 'a style reload wipes the tracking list with the layers');
   });
+
+  test('overlays honour the camera padding (2026-10-16: arrow + zone pills '
+      'ran displaced after the offline recenter)', () {
+    // The zone-zoom recenter flies WITH camera padding (sheet inset); Mapbox
+    // renders the camera centre inside the PADDED frame, so the flat
+    // projection must shift by half the inset imbalance or every overlay
+    // (arrow, zone labels, demand pills) floats off its ground truth.
+    final map = File('lib/screens/driver/driver_online_map.dart')
+        .readAsStringSync();
+    expect(map, contains('Offset _camPadShift(mapbox.CameraState cam)'),
+        reason: 'the padding-shift helper exists');
+    expect(map,
+        contains('return Offset((p.left - p.right) / 2, (p.top - p.bottom) / 2);'),
+        reason: 'half the inset imbalance, in the right direction');
+    expect(
+        map,
+        contains('final shifted = off + _camPadShift(cam);\n'
+            '    if (!FlatMapProjection.isOnScreen(shifted, size)) return null;'),
+        reason: 'the arrow pixel applies the shift before the on-screen gate');
+    expect(
+        map,
+        contains('final shifted = off + _camPadShift(cam);\n'
+            '          if (!FlatMapProjection.isOnScreen(shifted, size)) {'),
+        reason: 'the zone labels/pills apply the shift too');
+  });
 }

@@ -928,27 +928,54 @@ class _HomeScreenState extends State<HomeScreen>
       return;
     }
 
-    if (_homeMiniMapCtrl == null || _miniCamBusy) return;
+    if (_homeMiniMapCtrl == null) return;
 
     final point = safePoint(lng, lat);
     if (point == null) return;
 
+    // Latest-wins coalescing (el patrón de `_writeCamera` del driver): los
+    // frames que llegan con el canal ocupado ya NO mueren — el más nuevo
+    // queda pendiente y sale en cuanto el anterior aterriza. El drop-gate de
+    // antes (`_miniCamBusy` a secas) perdía esos frames y el mapa avanzaba a
+    // tirones (user report 2026-10-16-noche: "el dot se pausa cada vez que
+    // avanza el rider").
+    _pendingMiniCamWrite = point;
+    if (_miniCamBusy) return;
+    _flushMiniCamWrite();
+  }
+
+  /// El último centro pedido, a la espera de que el canal drene.
+  mapbox.Point? _pendingMiniCamWrite;
+
+  void _flushMiniCamWrite() {
+    final ctrl = _homeMiniMapCtrl;
+    // Una escritura que quedó en cola de una suspensión muere aquí — el
+    // handle reciclado del comentario de arriba jamás recibe nuestro centro.
+    if (_miniMapSuspended || ctrl == null) {
+      _pendingMiniCamWrite = null;
+      return;
+    }
+    final point = _pendingMiniCamWrite;
+    if (point == null) return;
+    _pendingMiniCamWrite = null;
     _miniCamBusy = true;
     try {
-      _homeMiniMapCtrl!
+      ctrl
           .setCamera(mapbox.CameraOptions(
         center: point,
         zoom: 15.0,
         pitch: 0,
         bearing: 0,
       ))
+          // Un write que nunca aterriza no puede trabar el gate: el timeout
+          // lo libera y el flush pendiente lleva el frame más nuevo.
+          .timeout(const Duration(seconds: 2))
           .then((_) {
         _miniCamBusy = false;
-      }).catchError((Object e) {
-        // The native map can be torn down mid-write (backgrounding, style
-        // reload) and rejects asynchronously; the try/catch below only sees
-        // synchronous throws.
+        _flushMiniCamWrite();
+      }).catchError((Object _) {
         _miniCamBusy = false;
+        _flushMiniCamWrite();
       });
     } catch (e) {
       _miniCamBusy = false;

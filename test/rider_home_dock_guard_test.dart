@@ -222,4 +222,24 @@ void main() {
       expect(block, contains('RiderPermissionsScreen'));
     });
   });
+
+  group('home mini map (2026-10-16 noche)', () {
+    test('the dot camera coalesces latest-wins — no dropped frames', () {
+      // User report: "el dot del mini mapa no funciona fluida, se pausa cada
+      // vez que avanza el rider" — el drop-gate (`_miniCamBusy` a secas)
+      // perdía los frames que llegaban con el canal ocupado. Ahora el más
+      // nuevo queda pendiente y sale al drenar (el patrón de `_writeCamera`
+      // del driver), con timeout para que un write colgado no lo trabe.
+      final home =
+          File('lib/screens/home_screen.dart').readAsStringSync();
+      expect(home, contains('_pendingMiniCamWrite = point;'),
+          reason: 'the newest centre is queued, never dropped');
+      expect(home, contains('void _flushMiniCamWrite()'),
+          reason: 'the trailing flush exists');
+      expect(home, contains('_flushMiniCamWrite();\n      }).catchError'),
+          reason: 'a settled or failed write flushes the newest pending');
+      expect(home, contains('.timeout(const Duration(seconds: 2))'),
+          reason: 'a hung native write frees the gate');
+    });
+  });
 }

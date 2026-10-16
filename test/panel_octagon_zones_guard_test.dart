@@ -51,4 +51,22 @@ void main() {
     expect(chunk, contains('map.getSource("zonas-oct-preview").setData'),
         reason: 'a dropped piece previews live behind the naming modal');
   });
+
+  test('the Ciudad tool pulls real city boundaries (user spec: zonas con '
+      'forma de ciudad como Sunrise/Davie)', () {
+    expect(chunk, contains('guard-pin panel_city_zone_guard_test'),
+        reason: 'the city tool carries its own pin for rebuilds');
+    expect(chunk, contains('children:"Ciudad"'),
+        reason: 'the Ciudad button lives in the piece palette');
+    expect(chunk, contains('nominatim.openstreetmap.org/search'),
+        reason: 'city boundaries come from OpenStreetMap Nominatim');
+    expect(chunk, contains('polygon_geojson=1'),
+        reason: 'the request asks for the boundary polygon, not a point');
+    expect(chunk, contains('countrycodes=us'),
+        reason: 'the operation is US — no worldwide fuzz');
+    expect(chunk, contains('x.geojson.type==="Polygon"'),
+        reason: 'only boundary polygons get through');
+    expect(chunk, contains('X((hit.display_name||q).split(",")[0])'),
+        reason: 'the city name pre-fills the sector name field');
+  });
 }

@@ -271,5 +271,55 @@ void main() {
       expect(l10n, contains('Tu zona está pidiendo drivers'));
       expect(l10n, contains('Ver viajes agendados'));
     });
+
+    test('the menu is an in-screen left drawer (Dash style, 2026-10-16)', () {
+      final scr = File('lib/screens/driver/driver_online_screen.dart')
+          .readAsStringSync();
+      final ctrl = File('lib/screens/driver/driver_online_controller.dart')
+          .readAsStringSync();
+      expect(off, contains('Widget _buildMenuDrawer()'),
+          reason: 'the drawer overlay builder exists');
+      expect(off, isNot(contains('const DriverMenuScreen()')),
+          reason: 'the hamburger no longer pushes the full-screen menu — the '
+              'drawer slides over the map (the page survives for the trip '
+              'screen)');
+      expect(scr, contains('if (_menuOpen) Positioned.fill(child: _buildMenuDrawer())'),
+          reason: 'the drawer rides the root stack, topmost');
+      expect(ctrl, contains('if (_menuOpen) {'),
+          reason: 'back closes the drawer before flipping offline');
+      expect(scr, contains('_menuCtrl?.dispose()'),
+          reason: 'the controller dies with the screen');
+    });
+
+    test('the drawer carries the profile bubble and the existing options',
+        () {
+      expect(off, contains('_menuPhotoImage()'),
+          reason: 'the photo bubble resolves url/local/server paths');
+      expect(off, contains('_loadMenuIdentity'),
+          reason: 'name + photo load cache-first from the session');
+      for (final label in [
+        's.earningsTitle',
+        's.helpAndSafety',
+        's.settingsTitle',
+        's.cruiseLevelLabel',
+        's.workHub',
+        's.referFriends',
+        's.scheduledTripsMenu',
+        's.vehiclesLabel',
+        's.documentsLabel',
+        's.taxInfo',
+        's.payoutMethodsLabel',
+        's.learningCenter',
+        's.bugReporter',
+        's.aboutLabel',
+        's.signOut',
+      ]) {
+        expect(off, contains(label), reason: 'menu option $label missing');
+      }
+      expect(off, contains('_menuScheduled'),
+          reason: 'scheduled rides reuse the surface-reclaiming opener');
+      expect(off, contains('UserSession.logout()'),
+          reason: 'sign out keeps the offline-then-logout flow');
+    });
   });
 }

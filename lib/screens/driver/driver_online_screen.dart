@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io' show Platform;
+import 'dart:io' show Platform, File;
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
@@ -88,8 +88,15 @@ import '../../services/local_data_service.dart';
 import '../welcome_screen.dart';
 import '../account_deactivated_screen.dart';
 import 'cruise_level_screen.dart';
-import 'driver_menu_screen.dart';
 import 'driver_documents_screen.dart';
+// Drawer del menú (2026-10-16): destinos que antes vivían en DriverMenuScreen.
+import '../about_screen.dart';
+import '../help_screen.dart';
+import '../splash_screen.dart'; // logout del drawer → Splash (como el menú)
+import 'driver_referral_screen.dart';
+import 'driver_settings_screen.dart';
+import 'driver_vehicle_screen.dart';
+import 'payout_methods_screen.dart';
 import 'driver_agreement_screen.dart';
 import 'onboarding/driver_notifications_screen.dart';
 import 'scheduled_rides_screen.dart';
@@ -1382,6 +1389,16 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   Timer? _zoneWaveTimer;
   String? _zoneWaveSectorId;
   double _zoneWavePhase = 0;
+  // Drawer lateral del menú (2026-10-16, estilo Dash): overlay DENTRO de esta
+  // pantalla (no un push de ruta) — el mapa no cambia de manos y no hay
+  // riesgo de mapa negro. DriverMenuScreen (página completa) sigue viva para
+  // la pantalla de viaje.
+  AnimationController? _menuCtrl;
+  Animation<double>? _menuAnim;
+  bool _menuOpen = false;
+  String _menuDriverName = '';
+  String? _menuPhotoUrl;
+  bool _menuIdentityLoaded = false;
   // Live boundary swap (2026-10-13): the sector ids whose sources/layers
   // exist on the style right now — _animateZoneSwap reconciles the new set
   // against this list; the latch serializes one swap at a time.
@@ -1628,6 +1645,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   void dispose() {
     mapRouteObserver.unsubscribe(this);
     _zoneDemandTimer?.cancel();
+    _menuCtrl?.dispose();
     ZoneService.sectorsChanged.removeListener(_onSectorsChanged);
     DriverOnlineScreen.mountedCount--;
     WidgetsBinding.instance.removeObserver(this);
@@ -2859,6 +2877,11 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                   ],
                 ),
               ),
+
+            // ── Drawer del menú (estilo Dash, 2026-10-16) — el overlay
+            // topmost: por encima de ofertas, tarjetas y nav. Vivo mientras
+            // _menuOpen; la salida animada corre dentro (reverse del ctrl). ──
+            if (_menuOpen) Positioned.fill(child: _buildMenuDrawer()),
           ],
         ),
       ),

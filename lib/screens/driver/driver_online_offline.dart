@@ -2498,23 +2498,343 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
   //  MENU BUTTON (the home top bar's `_glassBtn`, menu flavour)
   // ═══════════════════════════════════════════════════
 
-  /// The driver menu, with the fade the home top bar gave it.
+  /// The driver menu is now a Dash-style LEFT DRAWER over the map (user spec
+  /// 2026-10-16, foto: "cuando le den al boton de las 3 rayas haga eso de
+  /// forma smooth y fluida") — the panel slides in from the left with a
+  /// dimmed barrier, the map stays alive on the right. An in-screen overlay,
+  /// NOT a pushed route: the single map surface never changes hands and a
+  /// black map on return is impossible by construction.
   void _openDriverMenu() {
     HapticService.selectionClick();
-    Navigator.of(context).push(
-      PageRouteBuilder(
-        pageBuilder: (ctx, a, sa) => const DriverMenuScreen(),
-        transitionDuration: const Duration(milliseconds: 350),
-        reverseTransitionDuration: const Duration(milliseconds: 300),
-        transitionsBuilder: (ctx2, anim, sa, child) {
-          return FadeTransition(
-            opacity: CurvedAnimation(
-              parent: anim,
-              curve: Curves.easeInOut,
+    _menuCtrl ??= AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 320),
+      reverseDuration: const Duration(milliseconds: 260),
+    );
+    _menuAnim ??= CurvedAnimation(
+      parent: _menuCtrl!,
+      curve: Curves.easeOutCubic,
+      reverseCurve: Curves.easeInCubic,
+    );
+    _loadMenuIdentity();
+    _setState(() => _menuOpen = true);
+    _menuCtrl!.forward();
+  }
+
+  Future<void> _closeDriverMenu() async {
+    final ctrl = _menuCtrl;
+    if (ctrl == null) return;
+    await ctrl.reverse();
+    if (mounted) _setState(() => _menuOpen = false);
+  }
+
+  /// Cierra el drawer y luego navega — las dos animaciones no se pelean.
+  Future<void> _menuNav(Widget page) async {
+    await _closeDriverMenu();
+    if (!mounted) return;
+    Navigator.of(context).push(slideFromRightRoute(page));
+  }
+
+  /// El mapa de agendados toma la única superficie nativa — la reclamación
+  /// al volver vive en `_openScheduledRides` (misma disciplina del toast).
+  Future<void> _menuScheduled() async {
+    await _closeDriverMenu();
+    if (!mounted) return;
+    _openScheduledRides();
+  }
+
+  /// Nombre + foto para el header del drawer — cache-first como el menú
+  /// completo (sesión en disco primero; el notifier por si la foto rotó).
+  Future<void> _loadMenuIdentity() async {
+    if (_menuIdentityLoaded) return;
+    _menuIdentityLoaded = true;
+    final cachedPhoto = UserSession.photoUrlNotifier.value;
+    if (cachedPhoto.isNotEmpty) _menuPhotoUrl = cachedPhoto;
+    final user = await UserSession.getUser();
+    if (user == null || !mounted) return;
+    final first = (user['firstName'] ?? '').toString();
+    final last = (user['lastName'] ?? '').toString();
+    final photo = (user['photoUrl'] ?? '').toString();
+    if (!mounted) return;
+    _setState(() {
+      if (first.isNotEmpty) {
+        _menuDriverName =
+            last.isNotEmpty ? '$first ${last[0].toUpperCase()}' : first;
+      }
+      if (photo.isNotEmpty) _menuPhotoUrl = photo;
+    });
+  }
+
+  /// La foto puede ser URL absoluta, path local o path del servidor — la
+  /// misma resolución del menú completo.
+  ImageProvider? _menuPhotoImage() {
+    final p = _menuPhotoUrl;
+    if (p == null || p.isEmpty) return null;
+    if (p.startsWith('http')) return CachedNetworkImageProvider(p);
+    if (p.startsWith('/')) {
+      final f = File(p);
+      if (f.existsSync()) return FileImage(f);
+      return CachedNetworkImageProvider('${ApiService.publicBaseUrl}$p');
+    }
+    return CachedNetworkImageProvider('${ApiService.publicBaseUrl}/$p');
+  }
+
+  // ═══════════════════════════════════════════════════
+  //  MENU DRAWER (estilo Dash, foto 2026-10-16)
+  // ═══════════════════════════════════════════════════
+
+  Widget _buildMenuDrawer() {
+    final anim = _menuAnim;
+    if (anim == null) return const SizedBox.shrink();
+    final size = MediaQuery.of(context).size;
+    final panelW = math.min(320.0, size.width * 0.78);
+    final topPad = MediaQuery.of(context).padding.top;
+    final s = S.of(context);
+    final photo = _menuPhotoImage();
+    final initial = _menuDriverName.isNotEmpty ? _menuDriverName[0] : '·';
+    return AnimatedBuilder(
+      animation: anim,
+      builder: (context, _) {
+        final v = anim.value;
+        return Stack(
+          children: [
+            // Barrera tenue — tap cierra.
+            GestureDetector(
+              onTap: _closeDriverMenu,
+              behavior: HitTestBehavior.opaque,
+              child: Container(
+                color: Colors.black.withValues(alpha: 0.45 * v),
+              ),
             ),
-            child: child,
-          );
-        },
+            Positioned(
+              left: -panelW * (1 - v),
+              top: 0,
+              bottom: 0,
+              width: panelW,
+              child: Container(
+                color: neuBase,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // ── Header: burbuja de foto a la IZQUIERDA del nombre ──
+                    Padding(
+                      padding: EdgeInsets.fromLTRB(20, topPad + 18, 20, 14),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 52,
+                            height: 52,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: const Color(0xFF2A2A33),
+                              border: Border.all(
+                                color: _offlineGold.withValues(alpha: 0.5),
+                                width: 1.4,
+                              ),
+                            ),
+                            clipBehavior: Clip.antiAlias,
+                            child: photo != null
+                                ? Image(
+                                    image: photo,
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (_, __, ___) =>
+                                        _menuInitial(initial),
+                                  )
+                                : _menuInitial(initial),
+                          ),
+                          const SizedBox(width: 14),
+                          Expanded(
+                            child: Text(
+                              _menuDriverName,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 22,
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: -0.3,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Divider(
+                      color: Colors.white.withValues(alpha: 0.08),
+                      height: 1,
+                    ),
+                    // ── Opciones (las de siempre, con sus iconos) ──
+                    Expanded(
+                      child: ListView(
+                        physics: const BouncingScrollPhysics(),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 10),
+                        children: [
+                          _menuItem(Icons.attach_money_rounded,
+                              s.earningsTitle,
+                              () => _menuNav(const DriverEarningsScreen())),
+                          _menuItem(Icons.health_and_safety_outlined,
+                              s.helpAndSafety,
+                              () => _menuNav(const HelpScreen())),
+                          _menuItem(Icons.settings_rounded, s.settingsTitle,
+                              () => _menuNav(const DriverSettingsScreen())),
+                          _menuDivider(),
+                          _menuItem(Icons.workspace_premium_rounded,
+                              s.cruiseLevelLabel,
+                              () => _menuNav(const CruiseLevelScreen())),
+                          _menuItem(Icons.work_outline_rounded, s.workHub,
+                              () => _menuNav(const WorkHubScreen())),
+                          _menuItem(Icons.person_add_rounded, s.referFriends,
+                              () => _menuNav(const DriverReferralScreen())),
+                          _menuDivider(),
+                          _menuItem(Icons.event_note_rounded,
+                              s.scheduledTripsMenu, _menuScheduled),
+                          _menuItem(Icons.directions_car_rounded,
+                              s.vehiclesLabel,
+                              () => _menuNav(const DriverVehicleScreen())),
+                          _menuItem(Icons.description_rounded,
+                              s.documentsLabel,
+                              () => _menuNav(const DriverDocumentsScreen())),
+                          _menuDivider(),
+                          _menuItem(Icons.receipt_long_rounded, s.taxInfo,
+                              () => _menuNav(const TaxInfoScreen())),
+                          _menuItem(Icons.account_balance_rounded,
+                              s.payoutMethodsLabel,
+                              () => _menuNav(const PayoutMethodsScreen())),
+                          _menuDivider(),
+                          _menuItem(Icons.school_rounded, s.learningCenter,
+                              () => _menuNav(const LearningCenterScreen())),
+                          _menuItem(Icons.bug_report_rounded, s.bugReporter,
+                              () => _menuNav(const BugReporterScreen())),
+                          _menuItem(Icons.info_outline_rounded, s.aboutLabel,
+                              () => _menuNav(const AboutScreen())),
+                          _menuDivider(),
+                          _menuItem(Icons.logout_rounded, s.signOut,
+                              _menuSignOut,
+                              danger: true),
+                          const SizedBox(height: 12),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _menuInitial(String initial) => Center(
+        child: Text(
+          initial,
+          style: const TextStyle(
+            color: Color(0xFFE8C547),
+            fontSize: 20,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+      );
+
+  Widget _menuDivider() => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 12),
+        child: Divider(
+          color: Colors.white.withValues(alpha: 0.08),
+          height: 1,
+        ),
+      );
+
+  Widget _menuItem(IconData icon, String label, VoidCallback onTap,
+      {bool danger = false}) {
+    final color = danger ? const Color(0xFFFF5252) : Colors.white;
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 13),
+        child: Row(
+          children: [
+            Icon(icon,
+                color: danger ? color : Colors.white.withValues(alpha: 0.85),
+                size: 22),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: color,
+                  fontSize: 15.5,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Sign-out desde el drawer — el mismo flujo del menú completo (offline en
+  /// backend antes del logout, luego Splash limpio).
+  Future<void> _menuSignOut() async {
+    await _closeDriverMenu();
+    if (!mounted) return;
+    final s = S.of(context);
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: neuSurface,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Text(
+          s.signOutTitle,
+          style: const TextStyle(
+              color: Colors.white, fontWeight: FontWeight.w800),
+        ),
+        content: Text(
+          s.signOutConfirmation,
+          style: TextStyle(color: Colors.white.withValues(alpha: 0.6)),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text(
+              s.cancel,
+              style: TextStyle(color: Colors.white.withValues(alpha: 0.4)),
+            ),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              Navigator.pop(ctx);
+              try {
+                final user = await UserSession.getUser();
+                final id = int.tryParse(user?['userId'] ?? '');
+                if (id != null) {
+                  await ApiService.updateDriverLocation(
+                      driverId: id, lat: 0, lng: 0, isOnline: false);
+                }
+              } catch (_) {}
+              await UserSession.logout();
+              if (!context.mounted) return;
+              Navigator.of(context).pushAndRemoveUntil(
+                smoothFadeRoute(const SplashScreen()),
+                (_) => false,
+              );
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFFF5252),
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12)),
+            ),
+            child: Text(
+              s.signOutButton,
+              style: const TextStyle(fontWeight: FontWeight.w700),
+            ),
+          ),
+        ],
       ),
     );
   }

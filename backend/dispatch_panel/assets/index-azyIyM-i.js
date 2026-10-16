@@ -70,9 +70,9 @@ function na({sqliteId:t,onChanged:s}){
       e.jsx(Ke,{status:meta.verificationStatus})]}),
     e.jsx("p",{className:"text-[12px] text-textSecondary",children:"Solo se aprueba por decisión manual; ningún documento la aprueba automáticamente."}),
     e.jsxs("div",{className:"mt-2 grid grid-cols-3 gap-2",children:[
-      e.jsx(F,{variant:"ghost",size:"sm",icon:je,disabled:busy,onClick:()=>void act({kind:"account",id:t},"approve"),className:"border-success/40 text-success hover:bg-success/10",children:"Aprobar"}),
-      e.jsx(F,{variant:"ghost",size:"sm",disabled:busy,onClick:()=>void act({kind:"account",id:t},"pending"),className:"border-warning/40 text-warning hover:bg-warning/10",children:"Pendiente"}),
-      e.jsx(F,{variant:"ghost",size:"sm",icon:Le,disabled:busy,onClick:()=>{setReason(""),setRejectTarget({kind:"account",id:t})},className:"border-error/40 text-error hover:bg-error/10",children:"Rechazar"})]})]},"account-review");
+      e.jsx(F,{variant:"ghost",size:"sm",icon:je,disabled:busyKey==="account:"+t,onClick:()=>void act({kind:"account",id:t},"approve"),className:"border-success/40 text-success hover:bg-success/10",children:"Aprobar"}),
+      e.jsx(F,{variant:"ghost",size:"sm",disabled:busyKey==="account:"+t,onClick:()=>void act({kind:"account",id:t},"pending"),className:"border-warning/40 text-warning hover:bg-warning/10",children:"Pendiente"}),
+      e.jsx(F,{variant:"ghost",size:"sm",icon:Le,disabled:busyKey==="account:"+t,onClick:()=>{setReason(""),setRejectTarget({kind:"account",id:t})},className:"border-error/40 text-error hover:bg-error/10",children:"Rechazar"})]})]},"account-review");
   const vehicleCard=d=>{const vdocs=all.filter(g=>g.vehicleId===d.id);
     return e.jsxs("div",{className:U("mb-3.5 rounded-card border bg-surfaceHigh p-3.5",d.isActive?"border-primary/50":"border-white/5"),children:[
       e.jsxs("div",{className:"flex items-center gap-2",children:[

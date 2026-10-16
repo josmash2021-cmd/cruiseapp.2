@@ -78,7 +78,19 @@ void main() {
     expect(usersModule, contains('/auth/dispatch-approve/\${e}'));
     expect(usersModule, contains('/auth/dispatch-reject/\${e}'));
     expect(usersModule, contains('/auth/dispatch-unwaitlist/\${e}'));
-    expect(usersModule, contains('setDriverVerificationStatus};'));
+    expect(usersModule, contains('setDriverVerificationStatus'),
+        reason: 'la decisión de cuenta sale por sus endpoints propios (approve/reject/unwaitlist)');
+  });
+
+  test('per-card busy: no stray global busy reference survives', () {
+    expect(chunk, contains('busyKey==='),
+        reason: 'buttons disable per card (busyKey=kind:id)');
+    expect(
+        chunk.contains('disabled:busy,') || chunk.contains('disabled:busy}'),
+        isFalse,
+        reason: 'prod crash 2026-10-15 ("busy is not defined" en la ficha de '
+            'persona): the account card buttons kept the dead global busy — '
+            'never again');
   });
 
   test('the vehicle is always reviewable and the dead duplicate grid is gone',

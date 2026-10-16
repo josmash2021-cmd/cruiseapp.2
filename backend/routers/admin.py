@@ -2224,6 +2224,70 @@ async def delete_promo(promo_id: str):
     return {"status": "ok"}
 
 
+@router.get("/admin/driver-fleet-stats", dependencies=[Depends(_require_dispatch_auth)])
+async def admin_driver_fleet_stats(db: AsyncSession = Depends(get_db)):
+    """Fleet breakdown for the Drivers page (2026-10-15 user spec: "quiero
+    ver cuánto hay por categorías y cuántos ya han subido los documentos y
+    cuántos no han subido todos").
+
+    Tier = the ACTIVE vehicle's vehicle_type, normalized (legacy 'black'
+    counts as VIP); a driver with no active vehicle lands in "none".
+    Docs complete = the driver has ON FILE (any review status — uploaded is
+    uploaded): license + insurance + registration (+ inspection for Alabama
+    drivers). Document rows AND the legacy user *_url columns both count.
+    """
+    drivers = (await db.execute(
+        select(User.id, User.drive_state, User.license_front_url,
+               User.insurance_url, User.vehicle_registration_url,
+               User.inspection_url)
+        .where(User.role == "driver")
+    )).all()
+    vehicles = (await db.execute(
+        select(Vehicle.user_id, Vehicle.vehicle_type).where(
+            Vehicle.is_active == True))) .all()
+    docs = (await db.execute(
+        select(Document.user_id, Document.doc_type)
+        .where(Document.doc_type.in_(
+            ["drivers_license", "driver_license", "license", "insurance",
+             "registration", "vehicle_registration", "vehicle_inspection",
+             "inspection"]))
+    )).all()
+
+    from services import vehicle_tiers
+    tier_by_driver: dict[int, str] = {}
+    for v in vehicles:
+        tier_by_driver[v.user_id] = vehicle_tiers.normalize_tier(
+            v.vehicle_type)
+    doc_types_by_driver: dict[int, set] = {}
+    for d in docs:
+        doc_types_by_driver.setdefault(d.user_id, set()).add(d.doc_type)
+
+    tiers = {"standard": 0, "compact": 0, "electric_pro": 0,
+             "premium": 0, "vip": 0, "none": 0}
+    complete = 0
+    for u in drivers:
+        tiers[tier_by_driver.get(u.id, "none")] += 1
+        have = doc_types_by_driver.get(u.id, set())
+        has_license = bool(have & {"drivers_license", "driver_license",
+                                   "license"}) or bool(u.license_front_url)
+        has_insurance = "insurance" in have or bool(u.insurance_url)
+        has_registration = bool(have & {"registration",
+                                        "vehicle_registration"}) or bool(
+                                            u.vehicle_registration_url)
+        needs_inspection = (u.drive_state or "").strip().upper() == "AL"
+        has_inspection = (not needs_inspection or
+                          bool(have & {"vehicle_inspection", "inspection"})
+                          or bool(u.inspection_url))
+        if has_license and has_insurance and has_registration and has_inspection:
+            complete += 1
+
+    return {
+        "drivers_total": len(drivers),
+        "tiers": tiers,
+        "docs": {"complete": complete, "incomplete": len(drivers) - complete},
+    }
+
+
 @router.get("/admin/platform-stats", dependencies=[Depends(_require_dispatch_auth)])
 async def admin_platform_stats(db: AsyncSession = Depends(get_db)):
     """Install split by device platform (2026-10-14 user request: "quiero

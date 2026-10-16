@@ -27,4 +27,24 @@ void main() {
     expect(chunk.contains('return"Black"'), isFalse,
         reason: 'no reader may still label the top tier Black');
   });
+
+  test('trip and reservation cards render tiers through the VIP mapper', () {
+    final assets = Directory('backend/dispatch_panel/assets');
+    String? viajes;
+    String? reservas;
+    for (final f in assets.listSync().whereType<File>()) {
+      // Windows paths use backslashes — contains, not basename split.
+      if (f.path.contains('index-B68')) {
+        viajes = f.readAsStringSync();
+      } else if (f.path.contains('index-BZa')) {
+        reservas = f.readAsStringSync();
+      }
+    }
+    expect(viajes, isNotNull, reason: 'the Viajes chunk exists');
+    expect(viajes!, contains('tierLabel(s.vehicleType)'),
+        reason: 'trip cards label the tier through the mapper (black→VIP)');
+    expect(reservas, isNotNull, reason: 'the Reservas chunk exists');
+    expect(reservas!, contains('tierLabel(a.vehicleType)'),
+        reason: 'reservation details label the tier through the mapper');
+  });
 }

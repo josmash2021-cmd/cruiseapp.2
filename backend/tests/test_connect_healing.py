@@ -184,3 +184,27 @@ async def test_stripe_connect_link_heals_before_creating_the_account_link(
     assert len(dead_account_stripe.links) == 1
     assert dead_account_stripe.links[0]["account"] == "acct_healed_fresh"
     assert r.json()["stripe_account_id"] == "acct_healed_fresh"
+
+
+# ── Capability instant_payouts por cuenta (2026-10-16) ───────────────────
+# Stripe: cada cuenta Connect necesita instant_payouts activa para el
+# Payout(method=instant). Pedirla ANTES de que la plataforma esté aprobada
+# hace que Stripe rechace la creación de la cuenta entera — por eso va
+# condicionada al gate de plataforma, y el attach de tarjeta la pide en
+# cuentas viejas.
+
+def test_creation_requests_instant_payouts_only_when_platform_approved():
+    import inspect
+    src = inspect.getsource(drivers_mod._create_driver_connect_account)
+    gate = src.find("_platform_instant_payouts_active()")
+    cap = src.find('"instant_payouts"')
+    assert gate != -1 and cap != -1
+    assert gate < cap, "la capability se pide solo tras el gate de plataforma"
+
+
+def test_debit_card_attach_upgrades_old_accounts():
+    import inspect
+    src = inspect.getsource(drivers_mod.add_debit_card_payout)
+    assert "_platform_instant_payouts_active()" in src
+    assert 'capabilities={"instant_payouts": {"requested": True}}' in src
+    assert 'cap_err' in src, "el upgrade es no-fatal (warning, no rompe el attach)"

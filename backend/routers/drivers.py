@@ -131,7 +131,15 @@ def _create_driver_connect_account(_stripe, email: str, **extra):
             settings=_payout_settings, **extra)
 
     try:
-        acct = _mk({"transfers": {"requested": True}})
+        # 2026-10-16: pedir instant_payouts SOLO cuando la plataforma ya está
+        # aprobada (el gate cached lo sabe) — pedirla antes de la aprobación
+        # hace que Stripe rechace la creación de la cuenta entera. Una cuenta
+        # creada antes de la aprobación la gana en el attach de la tarjeta
+        # (add_debit_card_payout la solicita por Account.modify).
+        _caps = {"transfers": {"requested": True}}
+        if _platform_instant_payouts_active():
+            _caps["instant_payouts"] = {"requested": True}
+        acct = _mk(_caps)
         logging.info("[Connect] account created transfers-only (recipient)")
         return acct
     except Exception as e:
@@ -2080,6 +2088,26 @@ async def add_debit_card_payout(
         # Heal a dead id before using it, or the driver gets "key does not
         # have access to account" on a form they filled in correctly.
         _cid = await _usable_connect_id(_stripe, user, db)
+        # 2026-10-16: la cuenta además necesita la capability instant_payouts
+        # activa para cobrar al instante. Si la plataforma ya está aprobada
+        # pero ESTA cuenta no la tiene (creada antes de la aprobación),
+        # pídela ahora — el driver está ligando la tarjeta justo para eso.
+        # No fatal: el payout diario estándar funciona sin ella.
+        if _platform_instant_payouts_active():
+            try:
+                _cap_acct = _stripe.Account.retrieve(_cid)
+                if ((_cap_acct.get("capabilities") or {})
+                        .get("instant_payouts")) != "active":
+                    _stripe.Account.modify(
+                        _cid,
+                        capabilities={"instant_payouts": {"requested": True}},
+                    )
+                    logging.info(
+                        "[StripeDebitCard] instant_payouts requested on %s", _cid)
+            except Exception as cap_err:
+                logging.warning(
+                    "[StripeDebitCard] instant_payouts request failed for %s: %s",
+                    _cid, str(cap_err)[:200])
         ext = _stripe.Account.create_external_account(
             _cid,
             external_account=card_token,

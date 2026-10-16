@@ -860,6 +860,12 @@ def write_approval(user_id: int, action: str, reason: str = None,
                   "waitlist": "waitlist", "unwaitlist": "pending"}.get(action, "rejected")
     ts = _ts()
     payload = {
+        # userId/role son la llave con la que la cola de verificación del panel
+        # mergea la fila con el roster del backend — sin ellos la ficha cae al
+        # default "rider" y se ocultan las acciones de driver (y "Ver página"
+        # navega a /personas/rider/sql_N, que no existe para un driver).
+        "userId": user_id,
+        "role": role,
         "status": status_str,
         "driver_status": status_str,
         "approvalStatus": status_str,

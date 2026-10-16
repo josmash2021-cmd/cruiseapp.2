@@ -180,3 +180,69 @@ def test_dispatch_panel_bundle_wires_the_unwaitlist_button():
     assert 'n==="unwaitlist"?"pending"' in src
     assert 'Quitar de lista de espera' in src
     assert 'unwaitlistMut' in src
+
+
+def test_write_approval_payload_carries_userid_and_role(monkeypatch):
+    """La ficha verifications/sql_N del espejo DEBE llevar userId y role:
+    la cola de verificación del panel los usa para mergear con el roster del
+    backend. Sin ellos la fila cae al default "rider" — se ocultan las
+    acciones de driver (incl. "Quitar de lista de espera") y "Ver página"
+    navega a /personas/rider/sql_N, que no existe para un driver."""
+    import firestore_sync
+
+    writes = []
+
+    class _Doc:
+        def __init__(self, coll, doc):
+            self.coll, self.doc = coll, doc
+
+    class _Collection:
+        def __init__(self, name):
+            self.name = name
+
+        def document(self, doc):
+            return _Doc(self.name, doc)
+
+    class _Batch:
+        def set(self, doc, payload, merge=False):
+            writes.append((doc.coll, doc.doc, payload, merge))
+
+        def commit(self):
+            pass
+
+    class _Db:
+        def collection(self, name):
+            return _Collection(name)
+
+        def batch(self):
+            return _Batch()
+
+    monkeypatch.setattr(firestore_sync, "_ensure_init", lambda: None)
+    monkeypatch.setattr(firestore_sync, "_db", _Db())
+
+    assert firestore_sync.write_approval(256, "waitlist", role="driver") is True
+    by_doc = {(c, d): p for c, d, p, m in writes}
+    assert ("verifications", "sql_256") in by_doc
+    payload = by_doc[("verifications", "sql_256")]
+    assert payload["userId"] == 256
+    assert payload["role"] == "driver"
+    assert payload["status"] == "waitlist"
+
+
+def test_panel_verification_queue_userid_fallback_guard_test():
+    """El mapper de la cola de verificación (Zs en el entry bundle) parsea
+    userId del docId sql_N cuando la ficha Firestore no lo trae — fichas
+    escritas por write_approval antes del fix no llevaban userId/role y la
+    fila caía al default "rider" (ocultaba las acciones de driver y "Ver
+    página" navegaba a /personas/rider/sql_N, inexistente para un driver).
+
+    OJO: el source React del panel vive FUERA de este repo — la edición es
+    directa sobre el bundle; un rebuild debe re-aplicarla o este test se
+    pone rojo.
+    """
+    import pathlib
+
+    bundle = (pathlib.Path(__file__).parent.parent
+              / 'dispatch_panel' / 'assets' / 'index-CuQT_62K.js')
+    src = bundle.read_text(encoding='utf-8')
+    assert 'userId:I(t.userId)??I(/^sql_(\\d+)$/.exec(e)?.[1])??0' in src

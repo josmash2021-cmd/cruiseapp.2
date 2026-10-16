@@ -4030,6 +4030,10 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     _smoothTicker?.stop();
     _routeDrawTicker?.stop();
     _pinPopTicker?.stop();
+    // La onda de selección muere con la superficie — sus capas también.
+    _zoneWaveTimer?.cancel();
+    _zoneWaveTimer = null;
+    _zoneWaveSectorId = null;
     // Bump the generation so any in-flight annotation work recognises its
     // handles as dead instead of poking a destroyed native object.
     _mapGeneration++;

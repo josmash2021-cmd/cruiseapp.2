@@ -1880,13 +1880,16 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
         : level == 2
             ? s.offlineHeroHeadlineMedium
             : s.offlineHeroHeadlineIdle;
+    // Escala del dispatcher (user spec 2026-10-16): zona APAGADA (sin calor)
+    // = "Muy lenta"; nivel 1 (dorado) = "Normal"; 2 = "Ocupado"; 3 = "Muy
+    // ocupado".
     final demandLabel = level >= 3
         ? s.offlineDemandVeryBusy
         : level == 2
             ? s.offlineDemandBusy
             : level == 1
-                ? s.offlineDemandActive
-                : s.offlineDemandNormal;
+                ? s.offlineDemandNormal
+                : s.offlineDemandVerySlow;
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 18, 20, 0),
       child: Column(

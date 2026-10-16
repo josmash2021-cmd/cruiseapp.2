@@ -1376,6 +1376,12 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   // else does.
   String? _zoneDemandSig;
   Timer? _zoneDemandTimer;
+  // Onda de selección en el borde del sector (2026-10-16) — los campos viven
+  // en la clase (las extensiones no declaran campos); la lógica está en
+  // driver_online_map.dart.
+  Timer? _zoneWaveTimer;
+  String? _zoneWaveSectorId;
+  double _zoneWavePhase = 0;
   // Live boundary swap (2026-10-13): the sector ids whose sources/layers
   // exist on the style right now — _animateZoneSwap reconciles the new set
   // against this list; the latch serializes one swap at a time.

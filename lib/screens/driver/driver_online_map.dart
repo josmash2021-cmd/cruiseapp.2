@@ -2485,9 +2485,11 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
       final id = s?.id;
       if (forceHighlight || id != _zoneHighlightName) {
         _zoneHighlightName = id;
-        await _writeZoneHighlight(map, s);
         _markerFrame.value++;
       }
+      // La selección enciende el BORDE con onda (no un fill amarillo) —
+      // se evalúa en cada sync (spec 2026-10-16).
+      _syncZoneWave();
     } catch (e) {
       debugPrint('[Zones] sector sync failed: $e');
     }
@@ -2620,8 +2622,10 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
   Future<void> _addSectorSource(
       mapbox.MapboxMap map, Sector s, String emptyFc) {
     final sid = s.id;
-    return _guardedStyleWrite(map.style.addSource(
-        mapbox.GeoJsonSource(id: 'sec-src-$sid', data: emptyFc)));
+    // lineMetrics: true — habilita line-progress para la onda de selección
+    // (el gradiente viajero del borde, spec 2026-10-16).
+    return _guardedStyleWrite(map.style.addSource(mapbox.GeoJsonSource(
+        id: 'sec-src-$sid', data: emptyFc, lineMetrics: true)));
   }
 
   /// The look per the user's specs (2026-10-12/14, ajustados 2026-10-16):
@@ -2744,11 +2748,10 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
       for (final s in ZoneService.sectors)
         _writeSectorLook(map, s, visible && visibleIds.contains(s.id), online),
     ]);
-    // The selection highlight: strong offline, OFF online (user spec
-    // 2026-10-16: "quítale el amarillo que se ve cuando el driver está
-    // activo" — online la zona lleva el color normal del mapa debajo de las
-    // vías; quedan el borde negro y su sombra). Never while an offer preview
-    // owns the frame — the route must read.
+    // The selection highlight fill MURIÓ (user spec 2026-10-16: "no se
+    // prendera en amarillo si no el borde se iluminara") — la selección es
+    // ahora el BORDE con la onda viajera (_syncZoneWave). La capa
+    // sec-hl-fill se queda creada pero jamás pinta.
     final sel = _selectedZoneName;
     // The spotlight (user spec 2026-10-12, REVIVED 2026-10-14 "sí"): online
     // + a chosen zone → everything OUTSIDE the zone dims to barely-visible.
@@ -2757,8 +2760,8 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
         visible && online && sel != null && _previewingOffer == null;
     await _writeZoneDim(map, spotlight ? ZoneService.sectorById(sel) : null);
     try {
-      await map.style.setStyleLayerProperty('sec-hl-fill', 'fill-opacity',
-          !visible || online ? 0.0 : 0.50);
+      await map.style
+          .setStyleLayerProperty('sec-hl-fill', 'fill-opacity', 0.0);
     } catch (_) {}
   }
 
@@ -2848,22 +2851,110 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     } catch (_) {}
   }
 
-  Future<void> _writeZoneHighlight(mapbox.MapboxMap map, Sector? sec) async {
-    final feats = sec == null
-        ? <Map<String, dynamic>>[]
-        : ZoneService.sectorFeatures
-            .where((f) =>
-                (((f['properties'] as Map?)?['id']) ?? '') == sec.id)
-            .toList();
-    try {
-      await map.style.setStyleSourceProperty(
-        'sec-hl-src',
-        'data',
-        jsonEncode({'type': 'FeatureCollection', 'features': feats}),
-      );
-    } catch (e) {
-      debugPrint('[Zones] sector highlight write failed: $e');
+  // ── Onda de selección en el BORDE (user spec 2026-10-16: "si el driver
+  // selecciona una zona no se prendera en amarillo si no el borde se
+  // iluminara en tendra animacion de onda smooth y fluida") — el fill gold
+  // de selección murió; el borde del sector elegido se enciende y una banda
+  // brillante lo recorre en loop (lineGradient sobre line-progress; el
+  // source nace con lineMetrics: true). Solo offline + searching. Los campos
+  // (`_zoneWaveTimer`/`_zoneWaveSectorId`/`_zoneWavePhase`) viven en la clase
+  // State — una extension no declara campos.
+  void _syncZoneWave() {
+    final sel = _selectedZoneName;
+    final active = _map != null &&
+        !kIsWeb &&
+        _mapMounted &&
+        _zoneLayersReady &&
+        !_driverOnline &&
+        _phase == _Phase.searching &&
+        sel != null;
+    if (!active) {
+      _stopZoneWave();
+      return;
     }
+    if (_zoneWaveSectorId != sel) {
+      _stopZoneWave(); // restaura el borde anterior
+      _zoneWaveSectorId = sel;
+      _zoneWavePhase = 0;
+      _paintZoneWaveBase(sel);
+    }
+    _zoneWaveTimer ??= Timer.periodic(const Duration(milliseconds: 100), (_) {
+      _tickZoneWave();
+    });
+  }
+
+  /// El borde seleccionado se enciende: dorado de base, un pelo más grueso.
+  Future<void> _paintZoneWaveBase(String sid) async {
+    final map = _map;
+    if (map == null || kIsWeb) return;
+    try {
+      await Future.wait([
+        map.style.setStyleLayerProperty(
+            'sec-line-$sid', 'line-color', 0xFFE8C547),
+        map.style.setStyleLayerProperty('sec-line-$sid', 'line-width', 3.0),
+      ]);
+    } catch (_) {}
+  }
+
+  void _tickZoneWave() {
+    final map = _map;
+    final sid = _zoneWaveSectorId;
+    if (map == null || sid == null || !mounted || !_mapMounted) {
+      _zoneWaveTimer?.cancel();
+      _zoneWaveTimer = null;
+      return;
+    }
+    // En background no escribe nada (el timer queda vivo y retoma solo al
+    // volver — una escritura nativa por tick con la app tapada es gasto
+    // puro).
+    if (!_appInForeground) return;
+    // Una vuelta en ~5 s a 100 ms por tick — lento y fluido, no un strobe.
+    _zoneWavePhase = (_zoneWavePhase + 0.02) % 1.0;
+    _guardedStyleWrite(map.style.setStyleLayerProperty(
+        'sec-line-$sid', 'line-gradient', _zoneWaveStops(_zoneWavePhase)));
+  }
+
+  /// Banda dorada viajera sobre el anillo negro. Tres copias de la banda
+  /// (fase−1, fase, fase+1) para que al cruzar el cierre del anillo salga
+  /// por un lado y entre por el otro sin salto — el anillo es cerrado.
+  List<dynamic> _zoneWaveStops(double phase) {
+    const half = 0.09; // media anchura de la banda
+    const dim = '#000000';
+    const lit = '#FFE066';
+    final stops = <double, String>{0.0: dim, 1.0: dim};
+    for (final c in [phase - 1.0, phase, phase + 1.0]) {
+      for (final p in [c - half, c, c + half]) {
+        if (p > 0.0001 && p < 0.9999) stops[p] = p == c ? lit : dim;
+      }
+    }
+    final entries = stops.entries.toList()
+      ..sort((a, b) => a.key.compareTo(b.key));
+    return [
+      'interpolate',
+      ['linear'],
+      ['line-progress'],
+      for (final e in entries) ...[e.key, e.value],
+    ];
+  }
+
+  void _stopZoneWave() {
+    _zoneWaveTimer?.cancel();
+    _zoneWaveTimer = null;
+    final map = _map;
+    final prev = _zoneWaveSectorId;
+    _zoneWaveSectorId = null;
+    if (map == null || kIsWeb || prev == null) return;
+    // Restaura el borde negro de siempre y "limpia" el gradiente: la firma
+    // del plugin no acepta null, así que se escribe un gradiente plano
+    // negro (visualmente idéntico a quitarlo).
+    _guardedStyleWrite(map.style.setStyleLayerProperty(
+        'sec-line-$prev',
+        'line-gradient',
+        ['interpolate', ['linear'], ['line-progress'], 0.0, '#000000', 1.0, '#000000']));
+    _guardedStyleWrite(map.style
+        .setStyleLayerProperty('sec-line-$prev', 'line-color', 0xFF000000));
+    _guardedStyleWrite(map.style
+        .setStyleLayerProperty('sec-line-$prev', 'line-width', 2.4));
   }
 
   /// Live boundary refresh (2026-10-13, user spec: "instantáneo, que se
@@ -2987,14 +3078,10 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
           visible && online && sel != null && _previewingOffer == null;
       await _writeZoneDim(map, spotlight ? ZoneService.sectorById(sel) : null);
       try {
-        await map.style.setStyleLayerProperty(
-            'sec-hl-fill',
-            'fill-opacity',
-            !visible
-                ? 0.0
-                : (!online
-                    ? 0.50
-                    : (sel != null && _previewingOffer == null ? 0.30 : 0.0)));
+        // El fill de selección no pinta NUNCA (2026-10-16) — la selección
+        // es el borde con onda viajera.
+        await map.style
+            .setStyleLayerProperty('sec-hl-fill', 'fill-opacity', 0.0);
       } catch (_) {}
       _zoneLayersVisible = visible;
       _zoneLookOnline = online;
@@ -3004,7 +3091,7 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
           .join('|');
       final hl = _sectorForHighlight;
       _zoneHighlightName = hl?.id;
-      await _writeZoneHighlight(map, hl);
+      _syncZoneWave();
       _markerFrame.value++; // the label/pill overlay re-reads the sectors
     } catch (e) {
       debugPrint('[Zones] animated swap failed: $e');

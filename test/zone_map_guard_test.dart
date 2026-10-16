@@ -146,9 +146,19 @@ void main() {
     // amarillo con el driver activo, solo borde negro + sombra.
     expect(s, contains('lineColor: 0xFF000000,\n        lineWidth: 2.4,'),
         reason: 'the sector boundary line is black');
-    expect(s, contains("'sec-hl-fill', 'fill-opacity',\n"
-            '          !visible || online ? 0.0 : 0.50'),
-        reason: 'online the selection highlight paints nothing either');
+    // 2026-10-16 bis: el FILL de selección murió del todo ("no se prendera
+    // en amarillo") — la selección es el BORDE con onda viajera
+    // (lineGradient sobre line-progress; sources con lineMetrics).
+    expect(s, contains("'sec-hl-fill', 'fill-opacity', 0.0"),
+        reason: 'the selection fill never paints, in any mode');
+    expect(s, contains('lineMetrics: true'),
+        reason: 'the sector sources carry lineMetrics for the border wave');
+    expect(s, contains('void _syncZoneWave()'),
+        reason: 'the selection wave sync exists');
+    expect(s, contains("'line-gradient'"),
+        reason: 'the traveling gold band rides lineGradient');
+    expect(s, contains('_stopZoneWave'),
+        reason: 'deselect/online/dispose restores the black border');
     // Labels/pills are FLUTTER OVERLAYS, never a native text layer
     // (2026-10-11 black-map incident).
     expect(s, isNot(contains('SymbolLayer')),
@@ -172,9 +182,10 @@ void main() {
         File('lib/screens/driver/driver_online_map.dart').readAsStringSync();
     expect(
       map.contains(
-          "mapbox.GeoJsonSource(id: 'sec-src-\$sid', data: emptyFc)"),
+          "id: 'sec-src-\$sid', data: emptyFc, lineMetrics: true"),
       isTrue,
-      reason: 'each sector source is born EMPTY — inline data never drew',
+      reason: 'each sector source is born EMPTY (inline data never drew) '
+          'and carries lineMetrics for the selection border wave',
     );
     expect(map.contains("'sec-src-\$sid'"), isTrue);
     expect(map.contains('zones_src_write_failed'), isTrue,

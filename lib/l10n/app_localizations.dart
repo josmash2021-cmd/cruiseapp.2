@@ -1047,8 +1047,10 @@ class S {
       _es ? 'Conéctate y empieza a ganar' : 'Go online and start earning';
   String get offlineDemandTitle =>
       _es ? 'Demanda en tu zona' : 'Demand in your area';
+  // Escala 2026-10-16 (user spec): apagada en el dispatcher = "Very slow";
+  // nivel 1 (dorado) = "Normal"; 2 = "Ocupado"; 3 = "Muy ocupado".
+  String get offlineDemandVerySlow => _es ? 'Muy lenta' : 'Very slow';
   String get offlineDemandNormal => _es ? 'Normal' : 'Normal';
-  String get offlineDemandActive => _es ? 'Activa' : 'Active';
   String get offlineDemandBusy => _es ? 'Ocupado' : 'Busy';
   String get offlineDemandVeryBusy => _es ? 'Muy ocupado' : 'Very busy';
   String get offlineDemandYourArea => _es ? 'tu zona' : 'your area';

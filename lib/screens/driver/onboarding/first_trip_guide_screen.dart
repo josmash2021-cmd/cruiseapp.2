@@ -8,7 +8,9 @@ import '../driver_online_screen.dart';
 
 /// First-trip guide — 4 swipeable pages shown exactly ONCE after approval
 /// (flag `first_trip_guide_seen_v1`, set by the celebration flow before
-/// pushing this and re-set here on finish/skip).
+/// pushing this and re-set here on finish). 2026-10-16: el Skip superior
+/// AVANZA a la página siguiente (user spec); solo la última página termina
+/// el flujo y va al home.
 ///
 /// Page 1 is a static, non-interactive replica of the real offer card from
 /// `driver_online_widgets.dart` (`_buildNormalCardContent`): fare + "+ Tips",
@@ -98,6 +100,9 @@ class _FirstTripGuideScreenState extends State<FirstTripGuideScreen> {
         child: Column(
           children: [
             // Title left ("Instructions", user spec 2026-08-28) + Skip right.
+            // 2026-10-16 (user spec: "el skip debe ir a la siguiente pagina
+            // de las instrucciones, no al home"): Skip AVANZA una página;
+            // solo en la última termina el flujo (misma acción que _next).
             Row(
               children: [
                 Padding(
@@ -114,7 +119,7 @@ class _FirstTripGuideScreenState extends State<FirstTripGuideScreen> {
                 ),
                 const Spacer(),
                 TextButton(
-                  onPressed: _finish,
+                  onPressed: _next,
                   child: Text(
                     s.skip,
                     style: TextStyle(

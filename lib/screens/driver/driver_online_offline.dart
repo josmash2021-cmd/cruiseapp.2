@@ -2512,19 +2512,28 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
   /// black map on return is impossible by construction.
   void _openDriverMenu() {
     HapticService.selectionClick();
-    _menuCtrl ??= AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 320),
-      reverseDuration: const Duration(milliseconds: 260),
-    );
-    _menuAnim ??= CurvedAnimation(
-      parent: _menuCtrl!,
-      curve: Curves.easeOutCubic,
-      reverseCurve: Curves.easeInCubic,
-    );
-    _loadMenuIdentity();
-    _setState(() => _menuOpen = true);
-    _menuCtrl!.forward();
+    // Breadcrumb al servidor (user report 2026-10-16-noche: "presiono el
+    // boton flotante del menu y no sale") — si el tap llega y el overlay
+    // monta, lo vemos en prod sin el dispositivo en la mano.
+    ApiService.logClientEvent(
+        'menu_drawer', 'tap open=$_menuOpen hasCtrl=${_menuCtrl != null}');
+    try {
+      _menuCtrl ??= AnimationController(
+        vsync: this,
+        duration: const Duration(milliseconds: 320),
+        reverseDuration: const Duration(milliseconds: 260),
+      );
+      _menuAnim ??= CurvedAnimation(
+        parent: _menuCtrl!,
+        curve: Curves.easeOutCubic,
+        reverseCurve: Curves.easeInCubic,
+      );
+      _loadMenuIdentity();
+      _setState(() => _menuOpen = true);
+      _menuCtrl!.forward();
+    } catch (e) {
+      ApiService.logClientEvent('menu_drawer', 'open_error=$e');
+    }
   }
 
   Future<void> _closeDriverMenu() async {

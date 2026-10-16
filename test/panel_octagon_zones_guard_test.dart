@@ -2,14 +2,20 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-/// Guardian for the Octágono zone tool in the dispatch zone editor (user
-/// spec 2026-10-15: "para armar las zonas me de figuras geométricas de
-/// octágonos"). The editor gains an Octágono button: first map click sets
-/// the center, second click fixes the radius, with a live preview, and the
-/// generated regular 8-gon enters the same validation/naming pipeline as
-/// freehand polygons. The panel is a compiled bundle whose React source
-/// lives outside this repo — the guard-pin comment is what the next
-/// rebuild must re-apply.
+/// Guardian for the puzzle-piece zones in the dispatch zone editor (user
+/// spec 2026-10-15: "colócame las piezas de rompecabezas para yo solo
+/// ponerlas en el mapa y unirlas... y cambia esas piezas que eso no son
+/// piezas de rompecabezas").
+///
+/// The editor ships a piece PALETTE (▸ ◂ ▴ ▾ — knob on that side, hole on
+/// the opposite): one click drops a ready-made jigsaw piece at the map's
+/// current center, sized to the view, previewed live, named through the
+/// same modal as freehand polygons, and draggable/editable after like any
+/// sector. The octagon tool's edges are real rounded jigsaw bumps
+/// (knob/hole alternate per edge) — the square crenellation died.
+///
+/// The panel is a compiled bundle whose React source lives outside this
+/// repo — the guard-pin comment is what the next rebuild must re-apply.
 void main() {
   final chunk = Directory('backend/dispatch_panel/assets')
       .listSync()
@@ -20,38 +26,29 @@ void main() {
           (s) => s.contains('guard-pin panel_octagon_zones_guard_test'),
           orElse: () => '');
 
-  test('the zones editor carries the octagon tool and its pin', () {
+  test('the zones editor carries the puzzle-piece palette and its pin', () {
     expect(chunk, isNotEmpty,
         reason: 'a rebuild of the out-of-repo React source must re-apply '
             'this edit (the pin says how)');
-    expect(chunk, contains('children:"Octágono"'),
-        reason: 'the Octágono button sits next to Nuevo sector');
-    expect(chunk, contains('function _octFeature('),
-        reason: 'the regular 8-gon generator exists');
-    expect(chunk, contains('22.5+45*k'),
-        reason: 'eight vertices at 45° steps, flat-side up like the spec');
-    // 2026-10-15 (user spec: "las piezas como rompecabezas" — la foto
-    // Sunrise/Davie): TODAS las aristas llevan muescas rectangulares
-    // alternadas (tab afuera / muesca adentro) — look de rompecabezas.
-    expect(chunk, contains('const ringM=[]'),
-        reason: 'the jigsaw builds in meter space');
-    expect(chunk, contains('(i%2===1)?D:-D'),
-        reason: 'tabs and notches alternate along every edge');
-    expect(chunk, contains('nx=-nx;ny=-ny'),
-        reason: 'the outward normal is flipped per edge via the centroid '
-            'test — notches always point inward');
-    expect(chunk, contains('ringM.push([B[0],B[1]])'),
-        reason: 'vertices stay clean — the jigsaw lives between them');
-    expect(chunk, contains('zonas-oct-preview'),
-        reason: 'the live radius preview source/layers exist');
-    expect(chunk, contains('!ot8.current&&b.changeMode("draw_polygon")'),
-        reason: 'freehand drawing never hijacks an octagon click');
-  });
-
-  test('octagon refs are declared before use', () {
-    const declaration = 'const ot8=c.useRef(!1),c8=c.useRef(null);';
-    expect(chunk, contains(declaration),
-        reason: 'module scope is strict — ot8 without const crashes Zonas');
-    expect(chunk.indexOf('!ot8.current'), greaterThan(chunk.indexOf(declaration)));
+    expect(chunk, contains('children:"Piezas:"'),
+        reason: 'the palette row labels the piece buttons');
+    expect(chunk, contains('onClick:()=>pieceDrop('),
+        reason: 'piece buttons drop ready-made pieces');
+    for (final dir in ['"R"', '"L"', '"T"', '"B"']) {
+      expect(chunk, contains('onClick:()=>pieceDrop($dir)'),
+          reason: 'piece variant $dir exists in the palette');
+    }
+    expect(chunk, contains('function _pieceFeature('),
+        reason: 'the square jigsaw piece generator (knob one side, hole '
+            'the other) exists');
+    expect(chunk, contains('function _pieceBump('),
+        reason: 'the rounded bump/hole builder exists');
+    expect(chunk, contains('Math.sin(a)*r*mode*1.25'),
+        reason: 'the bump is a real rounded jigsaw tab, not square teeth');
+    expect(chunk.contains('const steps=Math.max(3,Math.round(R/300))'),
+        isFalse,
+        reason: 'the square-teeth staircase is dead — jigsaw bumps instead');
+    expect(chunk, contains('map.getSource("zonas-oct-preview").setData'),
+        reason: 'a dropped piece previews live behind the naming modal');
   });
 }

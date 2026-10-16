@@ -408,6 +408,27 @@ async def _payout_one_driver(driver_id: int, _s) -> None:
     """Claim → transfer → settle for exactly one driver."""
     global _payout_in_flight
 
+    # ── 0. HEAL the Connect id BEFORE claiming (2026-10-16, driver 54): the
+    # attach endpoints route through `_usable_connect_id`, which replaces an
+    # account this key can't reach (test/live mix-ups, foreign platforms) —
+    # this path used the raw stored id, so one dead account failed every
+    # weekly run with PermissionError and the driver never got paid. A failed
+    # heal skips the driver this week with the balance INTACT (no claim).
+    try:
+        from routers.drivers import _usable_connect_id
+        async with SessionLocal() as heal_db:
+            drv0 = (
+                await heal_db.execute(select(User).where(User.id == driver_id))
+            ).scalar_one_or_none()
+            if drv0 is None or not drv0.stripe_connect_id:
+                return
+            await _usable_connect_id(_s, drv0, heal_db)
+    except Exception as e:
+        logging.error(
+            "[AutoPayout] connect heal failed for driver %s — skipping this run: %s",
+            driver_id, e)
+        return
+
     # ── 1. CLAIM (committed before a cent moves) ──────────────────────────
     async with SessionLocal() as db:
         drv = (

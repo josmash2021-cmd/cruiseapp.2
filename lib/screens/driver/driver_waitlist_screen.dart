@@ -349,7 +349,9 @@ class _DriverWaitlistScreenState extends State<DriverWaitlistScreen>
               top: 8,
               right: 8,
               child: _cornerButton(
-                icon: Icons.close_rounded,
+                // 2026-10-16 (user spec): icono de SALIR, no una X — el
+                // botón hace logout, que lo diga el glifo.
+                icon: Icons.logout_rounded,
                 tooltip: S.of(context).waitlistExitHint,
                 onPressed: _exit,
               ),

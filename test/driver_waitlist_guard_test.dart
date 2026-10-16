@@ -125,18 +125,22 @@ void main() {
   });
 
   group('corner buttons + not a prison', () {
-    test('support top-LEFT, exit X top-RIGHT', () {
+    test('support top-LEFT, exit top-RIGHT (logout icon, 2026-10-16)', () {
       expect(screen, contains('left: 8,'),
           reason: 'support button Positioned top-left');
       expect(screen, contains('right: 8,'),
-          reason: 'exit X Positioned top-right');
-      expect(screen, contains('Icons.close_rounded'));
+          reason: 'exit button Positioned top-right');
+      expect(screen, contains('Icons.logout_rounded'),
+          reason: 'user spec 2026-10-16: logout glyph, not an X — the '
+              'button logs out, so it should say so');
+      expect(screen, isNot(contains('Icons.close_rounded')),
+          reason: 'the X is dead on this page');
       expect(screen, contains('HelpScreen'),
           reason: 'support opens the existing dispatch support chat');
       expect(screen, contains('UserSession.logout()'),
-          reason: 'X mirrors the retired page\'s explicit exit (logout → '
-              'welcome) — a bare pop is unsafe: the splash can make this '
-              'page the root route');
+          reason: 'the exit mirrors the retired page\'s explicit exit '
+              '(logout → welcome) — a bare pop is unsafe: the splash can '
+              'make this page the root route');
       expect(screen, contains('WelcomeScreen'));
     });
 

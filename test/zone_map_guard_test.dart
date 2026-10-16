@@ -141,6 +141,14 @@ void main() {
     // donde se eligen.
     expect(s, contains('!visible || online'),
         reason: 'online the zone fills are zero — normal map while driving');
+    // 2026-10-16 (user specs): el borde de la zona es NEGRO (el gold del
+    // borde murió) y ONLINE el highlight de selección también es cero — sin
+    // amarillo con el driver activo, solo borde negro + sombra.
+    expect(s, contains('lineColor: 0xFF000000,\n        lineWidth: 2.4,'),
+        reason: 'the sector boundary line is black');
+    expect(s, contains("'sec-hl-fill', 'fill-opacity',\n"
+            '          !visible || online ? 0.0 : 0.50'),
+        reason: 'online the selection highlight paints nothing either');
     // Labels/pills are FLUTTER OVERLAYS, never a native text layer
     // (2026-10-11 black-map incident).
     expect(s, isNot(contains('SymbolLayer')),

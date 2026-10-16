@@ -2624,10 +2624,11 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
         mapbox.GeoJsonSource(id: 'sec-src-$sid', data: emptyFc)));
   }
 
-  /// The look per the user's specs (2026-10-12/14): offline every sector is
-  /// gray with a THICK gray boundary; dispatch heat turns the fill gold
-  /// (three levels); online the heated sectors keep their gold UNDER the
-  /// roads and only the boundary + its 3D shadow sit on top.
+  /// The look per the user's specs (2026-10-12/14, ajustados 2026-10-16):
+  /// offline every sector paints its heat gold (tres niveles) con un borde
+  /// NEGRO con su sombra 3D; online ninguna zona pinta relleno ni highlight
+  /// — el mapa queda en su color normal debajo de las vías y solo quedan
+  /// el borde negro y su sombra.
   List<Future<void>> _addSectorLayers(mapbox.MapboxMap map, Sector s,
       [String? fillBelowId]) {
     final sid = s.id;
@@ -2654,7 +2655,9 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
       _guardedStyleWrite(map.style.addLayer(mapbox.LineLayer(
         id: 'sec-line-$sid',
         sourceId: 'sec-src-$sid',
-        lineColor: 0xFFE8C547, // amarillo de marca — las divisiones leen gold (2026-10-15)
+        // 2026-10-16 (user spec: "la linea que bordea la zona quiero que sea
+        // linea negra"): el borde gold murió — negro, como la sombra 3D.
+        lineColor: 0xFF000000,
         lineWidth: 2.4,
         lineOpacity: 0.0,
       ))),
@@ -2722,13 +2725,12 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
   }
 
   /// Fill/line visibility + color per sector. Base (no dispatch heat): thin
-  /// gray wash offline, invisible online + the thick gray boundary. Level 1
-  /// ("Dorado"): gold semi-transparent. Level 2 ("Ocupado"): more gold.
-  /// Level 3 ("Muy ocupado"): 100% solid gold (user spec 2026-10-12).
-  /// ONLINE the heat keeps painting (2026-10-14 spec: "todas las zonas con
-  /// calor" debajo del mapa) — the fills live below the road network since
-  /// creation, so the streets and the boundary lines read on top of the
-  /// gold. The old dark spotlight died with that spec.
+  /// gold wash offline, nothing online + the black boundary with its shadow.
+  /// Level 1 ("Dorado"): gold semi-transparent. Level 2 ("Ocupado"): more
+  /// gold. Level 3 ("Muy ocupado"): 100% solid gold (user spec 2026-10-12).
+  /// ONLINE ninguna zona pinta relleno (2026-10-15/16 specs: "debajo de las
+  /// vías el color normal del mapa", "quítale el amarillo cuando el driver
+  /// está activo") — solo quedan el borde negro y su sombra sobre las calles.
   Future<void> _writeZoneVisibility(mapbox.MapboxMap map, bool visible,
       bool online, Set<String> visibleIds) async {
     // The fill stacking follows the mode (offline on top / online under the
@@ -2742,26 +2744,21 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
       for (final s in ZoneService.sectors)
         _writeSectorLook(map, s, visible && visibleIds.contains(s.id), online),
     ]);
-    // The selection highlight: strong offline, a softer gold under the
-    // roads online, off otherwise. Never while an offer preview owns the
-    // frame — the route must read.
+    // The selection highlight: strong offline, OFF online (user spec
+    // 2026-10-16: "quítale el amarillo que se ve cuando el driver está
+    // activo" — online la zona lleva el color normal del mapa debajo de las
+    // vías; quedan el borde negro y su sombra). Never while an offer preview
+    // owns the frame — the route must read.
     final sel = _selectedZoneName;
     // The spotlight (user spec 2026-10-12, REVIVED 2026-10-14 "sí"): online
-    // + a chosen zone → everything OUTSIDE the zone dims to barely-visible;
-    // the zone keeps its heat gold through the hole. No selection → no mask
-    // (all heated zones read, the 2026-10-14 heat-online spec intact).
+    // + a chosen zone → everything OUTSIDE the zone dims to barely-visible.
+    // No selection → no mask.
     final spotlight =
         visible && online && sel != null && _previewingOffer == null;
     await _writeZoneDim(map, spotlight ? ZoneService.sectorById(sel) : null);
     try {
-      await map.style.setStyleLayerProperty(
-          'sec-hl-fill',
-          'fill-opacity',
-          !visible
-              ? 0.0
-              : (!online
-                  ? 0.50
-                  : (sel != null && _previewingOffer == null ? 0.30 : 0.0)));
+      await map.style.setStyleLayerProperty('sec-hl-fill', 'fill-opacity',
+          !visible || online ? 0.0 : 0.50);
     } catch (_) {}
   }
 
@@ -2821,18 +2818,13 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
   Future<void> _writeSectorLook(
       mapbox.MapboxMap map, Sector s, bool visible, bool online) async {
     final sid = s.id;
-    // Heat paints in BOTH modes now (2026-10-14 spec): online it fills under
-    // the road network; offline it fills on top as before.
     final level = visible ? (ZoneService.demand[sid]?.level ?? 0) : 0;
-    final fillColor = 0xFFE8C547; // 2026-10-15: amarillo siempre; el nivel solo mueve la opacidad
-    // Heat ladder (user spec 2026-10-13): Apagado = GRAY wash (offline only —
-    // online an unheated sector paints nothing over the driving map), Busy =
-    // gold ALMOST solid, Ocupado = more, Muy ocupado = 100% solid gold. Gray
-    // is only for "off" — a busy zone must never read gray.
-    // 2026-10-15 (user spec: "cuando se conecten quítales ese amarillo
-    // debajo de las vías — el mapa como estaba, color normal"): ONLINE
-    // ninguna zona pinta relleno — las zonas se ven offline, que es donde
-    // se eligen; online el mapa es de manejar. Los bordes finos quedan.
+    final fillColor = 0xFFE8C547; // amarillo siempre; el nivel solo mueve la opacidad
+    // Heat ladder (user spec 2026-10-13): Apagado = wash mínimo, Busy = gold
+    // ALMOST solid, Ocupado = more, Muy ocupado = 100% solid gold — OFFLINE
+    // only: ONLINE ninguna zona pinta relleno (2026-10-15/16: "debajo de las
+    // vías el color normal del mapa"; el highlight de selección también
+    // murió online 2026-10-16 — quedan borde negro + sombra).
     final fillOpacity = !visible || online
         ? 0.0
         : level == 0

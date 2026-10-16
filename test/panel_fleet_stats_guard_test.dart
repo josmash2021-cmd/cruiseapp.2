@@ -68,6 +68,17 @@ void main() {
         reason: 'the old horizontal row clipped Docs completos/incompletos');
   });
 
+  test('every tier exposes complete and incomplete drivers', () {
+    expect(chunk, contains('rows=fleet.drivers.filter(d=>d.tier===tier)'),
+        reason: 'each category computes its own doc breakdown');
+    expect(chunk, contains(r'chipBtn(`${tier}:docs_ok`'));
+    expect(chunk, contains(r'chipBtn(`${tier}:docs_no`'));
+    expect(chunk, contains('driver.tier===tier&&(doc==="all"||driver.docs===doc)'),
+        reason: 'tier + document status filters compose, not one global bucket');
+    expect(chunk, contains('filterLabel(statF)'),
+        reason: 'the active composite filter remains visible in the summary');
+  });
+
   test('filtered rows are initialized before their first use', () {
     final declaration = chunk.indexOf('const w2=');
     final firstUse = chunk.indexOf('P=w2.slice');

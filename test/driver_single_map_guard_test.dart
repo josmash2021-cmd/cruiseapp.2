@@ -38,8 +38,10 @@ void main() {
       expect(enter, isNonNegative);
       final enterBody = ctrl.substring(enter, enter + 5000);
       expect(enterBody.contains('_goOnlineBackend()'), isTrue);
-      expect(enterBody.contains('_connectSse()') ||
-          enterBody.contains('_startPolling()'), isTrue,
+      expect(
+          enterBody.contains('_connectSse()') ||
+              enterBody.contains('_startPolling()'),
+          isTrue,
           reason: 'entering online starts the offer channels');
       expect(enterBody.contains('_showOnlinePresence()'), isTrue);
 
@@ -65,7 +67,8 @@ void main() {
           reason: 'the old _goOffline ended in a home push — dead now');
     });
 
-    test('leaving offline ends the shift for real — GO never reads RESUME '
+    test(
+        'leaving offline ends the shift for real — GO never reads RESUME '
         'afterwards (user report 2026-09-27)', () {
       final exit = ctrl.indexOf('Future<void> _exitOnlineMode(');
       expect(exit, isNonNegative);
@@ -75,7 +78,8 @@ void main() {
               'survived and the GO button read RESUME forever');
     });
 
-    test('the earnings pill hotspot is translucent — it must never absorb '
+    test(
+        'the earnings pill hotspot is translucent — it must never absorb '
         'taps meant for the menu button (user report 2026-09-27: "el botón '
         'del menú no abre")', () {
       final hotspot = screen.indexOf('onLongPress: toggleMotionDiag');
@@ -88,7 +92,8 @@ void main() {
               'Stack — the bell survived only because it stacks ABOVE it');
     });
 
-    test('the GPS background flag is bound to the mode and the stream '
+    test(
+        'the GPS background flag is bound to the mode and the stream '
         'is recreated on every flip', () {
       expect(ctrl.contains('background: _driverOnline'), isTrue,
           reason: 'regla 2026-08-22: offline = foreground-only GPS');
@@ -159,8 +164,8 @@ void main() {
     // the right of the open GO pill.
     final off = File('lib/screens/driver/driver_online_offline.dart')
         .readAsStringSync();
-    final scr = File('lib/screens/driver/driver_online_screen.dart')
-        .readAsStringSync();
+    final scr =
+        File('lib/screens/driver/driver_online_screen.dart').readAsStringSync();
     final l10n = File('lib/l10n/app_localizations.dart').readAsStringSync();
 
     test('the status clock flips in BOTH modes now', () {
@@ -189,15 +194,58 @@ void main() {
       expect(l10n, contains("You won't receive any ride requests"));
     });
 
-    test('a steering-wheel badge rides right of the open GO pill', () {
-      expect(off, contains('_GoWheelBadge()'),
-          reason: 'the wheel badge is mounted beside the pill');
+    test('a calendar button rides right of the open GO pill (2026-10-16)', () {
+      expect(off, contains('_GoScheduleButton('),
+          reason: 'the calendar button is mounted beside the pill (replaces '
+              'the decorative wheel)');
       expect(off, contains('Alignment.centerRight'),
           reason: 'it hugs the right edge of the GO row');
-      expect(off, contains('class _GoWheelPainter extends CustomPainter'),
-          reason: 'hand-painted wheel (no glyph in Material)');
-      expect(off, contains('IgnorePointer'),
-          reason: 'decorative — the pill owns the tap');
+      expect(off, contains('Icons.calendar_month_rounded'),
+          reason: 'calendar glyph, white on the dark disc with the gold rim');
+      expect(off, contains('ignoring: t < 0.5'),
+          reason: 'tappable only once the pill form is on — invisible must '
+              'not eat map taps');
+      expect(off, isNot(contains('_GoWheelBadge()')),
+          reason: 'the decorative steering-wheel badge is gone');
+    });
+
+    test(
+        'the calendar opens the scheduled-rides map and reclaims the '
+        'surface on return', () {
+      expect(
+          off, contains('slideFromRightRoute(const ScheduledRidesMapScreen())'),
+          reason: 'opens the scheduled map');
+      final i = off.indexOf('void _openScheduledRides(');
+      expect(i, isNonNegative);
+      final block = off.substring(i, i + 700);
+      expect(block, contains('_remountMapSurface()'),
+          reason: 'the scheduled map takes the one native surface — claim it '
+              'back on pop or the driver returns to a black map');
+      expect(block, contains('_fetchScheduledCount()'),
+          reason: 'the count badge refreshes too');
+    });
+
+    test(
+        'the offline sheet crossfades hero (half-open) to the normal '
+        'content (fully open)', () {
+      expect(off, contains('_buildOfflineHero('),
+          reason: 'the Dash-style hero face');
+      expect(off, contains('(1 - (panelFrac - _kSheetRestFrac) / 0.3)'),
+          reason: 'the hero owns the half-open rest and fades out on the way '
+              'to fully open');
+      expect(off, contains('((panelFrac - 0.55) / 0.3)'),
+          reason: 'the normal list fades in as the sheet opens fully');
+    });
+
+    test('the hero demand card reads the live sector demand', () {
+      expect(off, contains('ZoneService.sectorContaining('),
+          reason: 'the driver position resolves its sector');
+      expect(off, contains('ZoneService.demand['),
+          reason: 'the card shows that sector demand level/bonus');
+      expect(l10n, contains('Demanda en tu zona'));
+      expect(l10n, contains('Demand in your area'));
+      expect(l10n, contains('Tu zona está pidiendo drivers'));
+      expect(l10n, contains('Ver viajes agendados'));
     });
   });
 }

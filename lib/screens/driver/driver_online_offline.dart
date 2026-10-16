@@ -1124,17 +1124,22 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
                         child: _buildGoButton(radius: radius, morph: t),
                       ),
                     ),
-                    // El volante al lado DERECHO del pill (user spec
-                    // 2026-10-14: "al lado del botón go online quiero que
-                    // tenga un icono de volante") — decorativo, aparece con
-                    // la forma pill.
+                    // El calendario al lado DERECHO del pill (user spec
+                    // 2026-10-16: "el lado derecho donde esta el bolante
+                    // colocaras igualmente el calendario") — abre la página
+                    // de agendados; aparece con la forma pill. Tappable solo
+                    // cuando la forma pill está puesta: invisible no puede
+                    // comer taps del mapa.
                     Positioned.fill(
                       child: Align(
                         alignment: Alignment.centerRight,
                         child: IgnorePointer(
+                          ignoring: t < 0.5,
                           child: Opacity(
                             opacity: t,
-                            child: const _GoWheelBadge(),
+                            child: _GoScheduleButton(
+                              onTap: _openScheduledRides,
+                            ),
                           ),
                         ),
                       ),
@@ -1147,6 +1152,21 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
         ),
       ),
     );
+  }
+
+  /// El calendario junto al GO pill abre el mapa de agendados (user spec
+  /// 2026-10-16). La página de agendados toma la única superficie nativa;
+  /// al volver la reclamamos — la misma disciplina del toast de agendados
+  /// (driver_online_screen.dart) reforzada por la red `didPopNext`.
+  void _openScheduledRides() {
+    HapticService.selectionClick();
+    Navigator.of(context)
+        .push(slideFromRightRoute(const ScheduledRidesMapScreen()))
+        .then((_) {
+      if (!mounted) return;
+      _fetchScheduledCount();
+      _remountMapSurface();
+    });
   }
 
   /// Collapsed height of the sheet the closed GO disc floats above — home's
@@ -1604,6 +1624,11 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
       Color textMuted, EdgeInsets pad, double panelFrac) {
     final dc = DriverColors.of(context);
     final s = S.of(context);
+    // Dos caras con crossfade (user spec 2026-10-16, estilo Dash): en el
+    // reposo a MEDIO abrir domina el hero (headline + tarjeta de demanda);
+    // al abrir completo toma el contenido normal de siempre.
+    final heroT = (1 - (panelFrac - _kSheetRestFrac) / 0.3).clamp(0.0, 1.0);
+    final fullT = ((panelFrac - 0.55) / 0.3).clamp(0.0, 1.0);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1709,11 +1734,17 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
             ],
           ),
         ),
-        // ── Body — scrollable, where it used to be locked. The content grew
-        // (Cruise Level, the earnings chart) and locked physics do not shrink
-        // to fit, they clip. ──
+        // ── Body — two faces crossfading on panelFrac: the Dash-style hero
+        // owns the half-open rest; the scrollable list (Cruise Level,
+        // earnings chart…) owns the fully-open sheet. ──
         Expanded(
-          child: SingleChildScrollView(
+          child: Stack(
+            children: [
+              Opacity(
+                opacity: fullT,
+                child: IgnorePointer(
+                  ignoring: fullT < 1.0,
+                  child: SingleChildScrollView(
             // Misma regla que el body online (user report 2026-09-27: "se
             // hace scroll cuando no he hecho scroll"): con el sheet cerrado
             // el gesto vertical es del SHEET (lo arrastra / lo cierra), no
@@ -1809,9 +1840,131 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
                 SizedBox(height: pad.bottom + 16),
               ],
             ),
+                  ),
+                ),
+              ),
+              if (heroT > 0)
+                Opacity(
+                  opacity: heroT,
+                  child: IgnorePointer(
+                    ignoring: heroT < 1.0,
+                    child: _buildOfflineHero(dc, s, pad),
+                  ),
+                ),
+            ],
           ),
         ),
       ],
+    );
+  }
+
+  /// La cara Dash del sheet a medio abrir (user spec 2026-10-16): headline
+  /// grande que responde a la demanda del sector + UNA tarjeta con la
+  /// demanda de la zona (nivel + bonus) — dato real de ZoneService, polled
+  /// cada 60 s. Los botones (GO dorado + calendario) flotan encima por la
+  /// vía del morphing button, no van aquí.
+  Widget _buildOfflineHero(DriverColors dc, S s, EdgeInsets pad) {
+    final pos = _pos;
+    final sector = pos != null ? ZoneService.sectorContaining(pos) : null;
+    final d = sector != null ? ZoneService.demand[sector.id] : null;
+    final level = d?.level ?? 0;
+    final bonus = d?.bonus ?? 0;
+    final headline = level >= 3
+        ? s.offlineHeroHeadlineHigh
+        : level == 2
+            ? s.offlineHeroHeadlineMedium
+            : s.offlineHeroHeadlineIdle;
+    final demandLabel = level >= 3
+        ? s.offlineDemandVeryBusy
+        : level == 2
+            ? s.offlineDemandBusy
+            : level == 1
+                ? s.offlineDemandActive
+                : s.offlineDemandNormal;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 18, 20, 0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            headline,
+            maxLines: 3,
+            overflow: TextOverflow.clip,
+            style: TextStyle(
+              color: dc.text,
+              fontSize: 30,
+              fontWeight: FontWeight.w800,
+              height: 1.12,
+              letterSpacing: -0.4,
+            ),
+          ),
+          const SizedBox(height: 18),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            decoration: neuBox(radius: 18),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  s.offlineDemandTitle,
+                  style: TextStyle(
+                    color: dc.textSecondary,
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 5),
+                Row(
+                  children: [
+                    Text(
+                      demandLabel,
+                      style: TextStyle(
+                        color: dc.text,
+                        fontSize: 20,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    if (bonus > 0) ...[
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: _offlineGold.withValues(alpha: 0.16),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                              color: _offlineGold.withValues(alpha: 0.45)),
+                        ),
+                        child: Text(
+                          '+\$${bonus.toStringAsFixed(2)}',
+                          style: const TextStyle(
+                            color: _offlineGold,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  sector?.name ?? s.offlineDemandYourArea,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: dc.textSecondary,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -2459,70 +2612,43 @@ class _GoRadarPainter extends CustomPainter {
 }
 
 
-/// The steering-wheel badge riding to the RIGHT of the open GO pill (user
-/// spec 2026-10-14: "al lado del botón go online quiero que tenga un icono
-/// de volante"). Decorative — the pill owns the tap (IgnorePointer).
-class _GoWheelBadge extends StatelessWidget {
-  const _GoWheelBadge();
+/// The calendar button riding to the RIGHT of the open GO pill (user spec
+/// 2026-10-16: "el lado derecho donde esta el bolante colocaras igualmente
+/// el calendario") — opens the scheduled-rides map. Same dark disc with the
+/// gold rim the wheel badge had, but this one owns its tap.
+class _GoScheduleButton extends StatelessWidget {
+  const _GoScheduleButton({required this.onTap});
+
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: 46,
-      height: 46,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        color: const Color(0xFF141420),
-        border: Border.all(color: _offlineGold.withValues(alpha: 0.4)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.35),
-            blurRadius: 10,
-            offset: const Offset(0, 3),
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        width: 46,
+        height: 46,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: const Color(0xFF141420),
+          border: Border.all(color: _offlineGold.withValues(alpha: 0.4)),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.35),
+              blurRadius: 10,
+              offset: const Offset(0, 3),
+            ),
+          ],
+        ),
+        child: const Center(
+          child: Icon(
+            Icons.calendar_month_rounded,
+            color: Colors.white,
+            size: 22,
           ),
-        ],
-      ),
-      child: const Center(
-        child: SizedBox(
-          width: 24,
-          height: 24,
-          // volante BLANCO (user spec 2026-10-15)
-          child: CustomPaint(painter: _GoWheelPainter(color: Colors.white)),
         ),
       ),
     );
   }
-}
-
-/// Hand-painted steering wheel (Material has no steering-wheel glyph) — the
-/// same construction as the welcome screen's role button: rim, three spokes
-/// at 90°/210°/330°, hub.
-class _GoWheelPainter extends CustomPainter {
-  const _GoWheelPainter({required this.color});
-
-  final Color color;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final c = Offset(size.width / 2, size.height / 2);
-    final r = size.width / 2 - 0.8;
-    final p = Paint()
-      ..color = color
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = size.width * 0.115
-      ..strokeCap = StrokeCap.round;
-    canvas.drawCircle(c, r, p);
-    for (final deg in [90.0, 210.0, 330.0]) {
-      final a = deg * math.pi / 180;
-      canvas.drawLine(
-        c + Offset(math.cos(a), math.sin(a)) * (r * 0.45),
-        c + Offset(math.cos(a), math.sin(a)) * (r * 0.88),
-        p,
-      );
-    }
-    canvas.drawCircle(c, size.width * 0.15, Paint()..color = color);
-  }
-
-  @override
-  bool shouldRepaint(_GoWheelPainter old) => old.color != color;
 }

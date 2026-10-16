@@ -4079,13 +4079,40 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
   /// direction.
   Future<void> _remountMapSurface() async {
     if (_mapMounted || !mounted) return;
-    await _acquireMapSurface();
-    if (!mounted || _mapMounted) return;
-    debugPrint('[DriverOnline] remounting map surface');
-    _setState(() => _mapMounted = true);
-    // onMapCreated redraws the driver annotation; the watchdog re-asserts
-    // it if the bitmap wasn't ready on the first pass.
-    _startDotWatchdog();
+    // Reintento con verificación (user report 2026-10-16: "cuando regresa la
+    // homescreen no quiero que se quede en negro el mapa"): si el handoff de
+    // la superficie quedó medio muerto, el MapWidget monta pero onMapCreated
+    // jamás dispara — mapa negro para siempre. Montamos, esperamos la señal
+    // de vida y si no llega soltamos y reintentamos (máx 3 intentos).
+    for (var attempt = 0; attempt < 3; attempt++) {
+      if (attempt > 0) {
+        await Future.delayed(Duration(milliseconds: attempt == 1 ? 300 : 800));
+        if (_mapMounted || !mounted) return;
+      }
+      await _acquireMapSurface();
+      if (!mounted || _mapMounted) return;
+      debugPrint('[DriverOnline] remounting map surface (attempt $attempt)');
+      final genAtMount = _mapGeneration;
+      _setState(() => _mapMounted = true);
+      // onMapCreated redraws the driver annotation; the watchdog re-asserts
+      // it if the bitmap wasn't ready on the first pass.
+      _startDotWatchdog();
+      // onMapCreated bumps _mapGeneration — that bump is the alive signal.
+      var alive = false;
+      for (var waited = 0; waited < 1200 && mounted; waited += 100) {
+        await Future.delayed(const Duration(milliseconds: 100));
+        if (_mapGeneration != genAtMount) {
+          alive = true;
+          break;
+        }
+      }
+      if (!mounted || !_mapMounted) return;
+      if (alive) return;
+      debugPrint('[DriverOnline] remount attempt $attempt never saw '
+          'onMapCreated — releasing and retrying');
+      _releaseMapSurface();
+      MapSurfaceCoordinator.instance.release(_kMapSurfaceOwner);
+    }
   }
 
   /// Give an assigned trip back to dispatch.

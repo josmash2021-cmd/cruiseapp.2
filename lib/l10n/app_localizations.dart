@@ -1036,6 +1036,24 @@ class S {
       : "You won't receive any ride requests";
   String get goOnlineToEarn =>
       _es ? 'Conéctate para empezar a ganar' : 'Go online to start earning';
+  // Hero del sheet offline a medio abrir (user spec 2026-10-16, estilo Dash):
+  // headline grande por nivel de demanda + tarjeta con la demanda del sector.
+  String get offlineHeroHeadlineHigh => _es
+      ? 'Tu zona está pidiendo drivers'
+      : 'Your area is asking for drivers';
+  String get offlineHeroHeadlineMedium =>
+      _es ? 'Hay demanda cerca de ti' : "There's demand near you";
+  String get offlineHeroHeadlineIdle =>
+      _es ? 'Conéctate y empieza a ganar' : 'Go online and start earning';
+  String get offlineDemandTitle =>
+      _es ? 'Demanda en tu zona' : 'Demand in your area';
+  String get offlineDemandNormal => _es ? 'Normal' : 'Normal';
+  String get offlineDemandActive => _es ? 'Activa' : 'Active';
+  String get offlineDemandBusy => _es ? 'Ocupado' : 'Busy';
+  String get offlineDemandVeryBusy => _es ? 'Muy ocupado' : 'Very busy';
+  String get offlineDemandYourArea => _es ? 'tu zona' : 'your area';
+  String get offlineSchedulesTooltip =>
+      _es ? 'Ver viajes agendados' : 'See scheduled rides';
   String get tapGoForTrips => _es
       ? 'Toca IR para encontrar viajes cercanos'
       : 'Tap GO to find trips nearby';

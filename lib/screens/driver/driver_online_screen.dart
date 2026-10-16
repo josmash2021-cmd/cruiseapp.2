@@ -977,6 +977,9 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
       if (!mounted) return;
       ZoneService.loadDemand().then((_) {
         if (mounted) _syncZoneLayers();
+        // La tarjeta de demanda del hero offline lee ZoneService.demand en
+        // build — un rebuild por minuto la pone al día con el poll.
+        if (mounted && !_driverOnline) _setState(() {});
       });
     });
     // Live boundary edits (2026-10-13): a sectorsChanged ping re-draws the

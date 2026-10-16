@@ -1679,19 +1679,23 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
                     ),
                     // The consequence, under the status line (same spec:
                     // "abajo de ese texto dirá 'no recibirás ningún pedido
-                    // de viaje'") — a sheet-open read: collapses away with
-                    // the sheet so the collapsed strip keeps its 52 pt.
+                    // de viaje'"). 2026-10-16 (user spec: "cuando el sheet
+                    // esta por casi la mitad no sale el texto debajo del
+                    // titulo"): el umbral era 0.6 y el reposo es 0.5 — la
+                    // descripción nunca salía a medio abrir. Ahora aparece
+                    // desde temprano en la apertura (> 0.25) y sigue
+                    // colapsando con el sheet cerrado (el strip mantiene 52).
                     AnimatedSize(
                       duration: const Duration(milliseconds: 250),
                       curve: Curves.easeInOut,
                       alignment: Alignment.topCenter,
-                      child: panelFrac > 0.6
+                      child: panelFrac > 0.25
                           ? Padding(
                               padding:
                                   const EdgeInsets.only(left: 16, top: 3),
                               child: AnimatedOpacity(
                                 duration: const Duration(milliseconds: 250),
-                                opacity: panelFrac > 0.6 ? 1.0 : 0.0,
+                                opacity: panelFrac > 0.25 ? 1.0 : 0.0,
                                 child: Text(
                                   s.offlineNoRideRequests,
                                   maxLines: 1,

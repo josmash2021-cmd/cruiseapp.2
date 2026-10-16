@@ -181,17 +181,35 @@ void main() {
     test('the header swaps smoothly and the subtitle gates on the open sheet',
         () {
       expect(off, contains('_SequentialSwapLabel('),
-          reason: 'the header reuses the sequential fade swap');
+          reason: 'the header reuses the swap label');
       expect(off, contains('s.youreOffline : s.notOnline'),
           reason: 'the two phrasings alternate');
       expect(off, contains('s.offlineNoRideRequests'),
           reason: 'the subtitle under the status line');
-      expect(off, contains('panelFrac > 0.6'),
-          reason: 'the subtitle collapses with the sheet — the collapsed '
-              'strip keeps its height');
+      // 2026-10-16 spec: the description shows at the half-open rest — the
+      // old 0.6 gate kept it hidden there; it still collapses with the
+      // closed sheet (the strip keeps its 52 pt).
+      expect(off, contains('panelFrac > 0.25'),
+          reason: 'the subtitle is on at the half-open rest');
+      expect(off, isNot(contains('panelFrac > 0.6')),
+          reason: 'the 0.6 gate hid the subtitle at rest — dead');
       expect(l10n, contains('No estás en línea'));
       expect(l10n, contains('No recibirás ningún pedido de viaje'));
       expect(l10n, contains("You won't receive any ride requests"));
+    });
+
+    test('the status label crossfades — no cut, no empty beat (2026-10-16)',
+        () {
+      final w = File('lib/screens/driver/driver_online_widgets.dart')
+          .readAsStringSync();
+      expect(w, contains('child: AnimatedSwitcher('),
+          reason: 'true crossfade: outgoing fades as incoming fades in');
+      expect(w, contains('duration: const Duration(milliseconds: 400)'),
+          reason: 'a smooth 400 ms both ways, not the old 180 ms blink');
+      expect(w, contains('layoutBuilder:'),
+          reason: 'the lines stack so the width glides instead of popping');
+      expect(w, isNot(contains('_SequentialSwapLabelState')),
+          reason: 'the sequential fade-out→gap→fade-in state machine died');
     });
 
     test('a calendar button rides right of the open GO pill (2026-10-16)', () {

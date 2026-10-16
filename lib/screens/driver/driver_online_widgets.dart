@@ -5402,38 +5402,18 @@ class _SizeReporterState extends State<_SizeReporter> {
 /// is rebuilt with the new text, then it fades back in. Unlike
 /// AnimatedSwitcher (which stacks outgoing+incoming children), two lines can
 /// never overlap — rapid flips just restart the cycle.
-class _SequentialSwapLabel extends StatefulWidget {
+///
+/// 2026-10-16 (user spec: "mejor transicion estilo fade in y fade out smooth
+/// y fluido — se ve que se corta y pasa de golpe"): the sequential blink
+/// (fade out → empty beat → fade in) read as a CUT. Now it is a true
+/// crossfade via AnimatedSwitcher — the outgoing line fades as the incoming
+/// one fades in over it, 400 ms easeInOut both ways, with the Stack
+/// layoutBuilder so the size glides instead of snapping.
+class _SequentialSwapLabel extends StatelessWidget {
   const _SequentialSwapLabel({required this.textKey, required this.builder});
 
   final int textKey;
   final Widget Function() builder;
-
-  @override
-  State<_SequentialSwapLabel> createState() => _SequentialSwapLabelState();
-}
-
-class _SequentialSwapLabelState extends State<_SequentialSwapLabel> {
-  double _opacity = 1.0;
-  late Widget _child = widget.builder();
-
-  @override
-  void didUpdateWidget(covariant _SequentialSwapLabel oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.textKey != widget.textKey) {
-      _swap();
-    }
-  }
-
-  Future<void> _swap() async {
-    if (!mounted) return;
-    setState(() => _opacity = 0.0);
-    await Future<void>.delayed(const Duration(milliseconds: 180));
-    if (!mounted) return;
-    setState(() {
-      _child = widget.builder();
-      _opacity = 1.0;
-    });
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -5441,11 +5421,24 @@ class _SequentialSwapLabelState extends State<_SequentialSwapLabel> {
       duration: const Duration(milliseconds: 300),
       curve: Curves.easeInOut,
       alignment: Alignment.centerLeft,
-      child: AnimatedOpacity(
-        duration: const Duration(milliseconds: 180),
-        curve: Curves.easeOut,
-        opacity: _opacity,
-        child: _child,
+      child: AnimatedSwitcher(
+        duration: const Duration(milliseconds: 400),
+        switchInCurve: Curves.easeOut,
+        switchOutCurve: Curves.easeIn,
+        // The outgoing and incoming lines stack over each other (the fade
+        // crossfades, no empty beat); the box takes the WIDEST of the two so
+        // the width never pops mid-swap — the outer AnimatedSize glides it.
+        layoutBuilder: (currentChild, previousChildren) => Stack(
+          alignment: Alignment.centerLeft,
+          children: [
+            ...previousChildren,
+            if (currentChild != null) currentChild,
+          ],
+        ),
+        child: KeyedSubtree(
+          key: ValueKey<int>(textKey),
+          child: builder(),
+        ),
       ),
     );
   }

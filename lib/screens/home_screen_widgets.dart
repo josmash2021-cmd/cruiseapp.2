@@ -1340,7 +1340,8 @@ extension _HomeScreenWidgets on _HomeScreenState {
     final s = S.of(context);
     final vehicles = [
       {
-        'displayName': 'BLACK',
+        // 2026-10-15: Black se renombra VIP (el id interno sigue 'suburban').
+        'displayName': 'VIP',
         'desc': s.fleetBlackDesc,
         'image': 'cruisert1.png',
         'rideId': 'suburban',

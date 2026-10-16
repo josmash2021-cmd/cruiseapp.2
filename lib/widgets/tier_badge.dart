@@ -5,9 +5,9 @@ import '../utils/vehicle_tier_style.dart';
 /// Tier color/label info derived from a trip's ride name.
 ///
 /// The catalogue is the current four — Standard / Compact / Premium /
-/// Black — resolved through [tripTierKey], so rows that still carry a
-/// legacy booking name ("Comfort", "SUV XL", "VIP") read in the current
-/// names everywhere this badge appears. Black keeps the old VIP look
+/// VIP — resolved through [tripTierKey], so rows that still carry a
+/// legacy booking name ("Comfort", "SUV XL", "Black") read in the current
+/// names everywhere this badge appears. VIP keeps the old Black look
 /// (black-on-gold-border-with-diamond), Premium the gold-with-star,
 /// Standard the silver-with-sparkle; Compact takes the green gap.
 class TierInfo {

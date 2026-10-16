@@ -771,7 +771,8 @@ extension _RideRequestWidgets on _RideRequestScreenState {
   /// Single source of truth for the tier display name used by the sheet
   /// (rows AND the "Select {tier}" button — before 2026-08-24 the button
   /// read TierInfo.displayTitle, the legacy VIP/Premium/Comfort naming).
-  /// Lyft-style casing: first letter only ("Black", not "BLACK").
+  /// 2026-10-15: Black se renombra VIP (clave interna 'vip'; 'suburban' es
+  /// el id legacy) — VIP va en mayúsculas por ser acrónimo.
   static String _tierDisplayName(RideOption opt) {
     final isSuv = opt.id == 'suburban';
     final isFusion = opt.id == 'fusion';
@@ -779,7 +780,7 @@ extension _RideRequestWidgets on _RideRequestScreenState {
     final isElectric = opt.id == 'electric_pro';
     final isPremium = !isSuv && !isSuvXl && !isFusion && !isElectric;
     return isSuv
-        ? 'Black'
+        ? 'VIP'
         : isSuvXl
             ? 'Premium'
             : isElectric

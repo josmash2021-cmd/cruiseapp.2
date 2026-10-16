@@ -132,15 +132,18 @@ void main() {
           reason: 'the four-across Row was replaced by the carousel');
     });
 
-    test('five tiers in BLACK → PREMIUM → ELECTRIC PRO → COMPACT → STANDARD '
+    test('five tiers in VIP → PREMIUM → ELECTRIC PRO → COMPACT → STANDARD '
         'order', () {
-      final black = block.indexOf("'BLACK'");
+      // 2026-10-15: Black se renombra VIP — la primera tarjeta lee 'VIP'.
+      final vip = block.indexOf("'VIP'");
       final premium = block.indexOf("'PREMIUM'");
       final electric = block.indexOf("'ELECTRIC PRO'");
       final compact = block.indexOf("'COMPACT'");
       final standard = block.indexOf("'STANDARD'");
-      expect(black, greaterThan(-1));
-      expect(black, lessThan(premium));
+      expect(vip, greaterThan(-1));
+      expect(block.contains("'BLACK'"), isFalse,
+          reason: 'Black murió como nombre visible — ahora es VIP');
+      expect(vip, lessThan(premium));
       expect(premium, lessThan(electric));
       expect(electric, lessThan(compact));
       expect(compact, lessThan(standard));

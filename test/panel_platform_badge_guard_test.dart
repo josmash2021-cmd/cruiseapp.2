@@ -7,7 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// tienen ios"). The app reports Platform.operatingSystem at boot; the
 /// backend stores users.platform, mirrors it to Firestore and serves
 /// /admin/platform-stats; the panel's people grid shows an Android/iOS
-/// badge per card and the two count chips.
+/// badge per card and the two count tiles in the filters submenu.
 void main() {
   test('app reports platform at boot', () {
     final main = File('lib/main.dart').readAsStringSync();
@@ -68,12 +68,12 @@ void main() {
     expect(
         gridChunk,
         contains(
-            'e.jsx(re,{label:"Android",count:w.filter(d=>d.platform==="android").length'),
-        reason: 'the Android count chip');
+            'statTile("Android",w.filter(d=>d.platform==="android").length'),
+        reason: 'the Android count tile in the filters submenu');
     expect(
         gridChunk,
         contains(
-            'e.jsx(re,{label:"iOS",count:w.filter(d=>d.platform==="ios").length'),
-        reason: 'the iOS count chip');
+            'statTile("iOS",w.filter(d=>d.platform==="ios").length'),
+        reason: 'the iOS count tile in the filters submenu');
   });
 }

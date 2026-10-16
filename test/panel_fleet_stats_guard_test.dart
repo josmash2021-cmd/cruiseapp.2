@@ -68,6 +68,19 @@ void main() {
         reason: 'the old horizontal row clipped Docs completos/incompletos');
   });
 
+  test('the submenu uses compact tiles instead of wrapping pills', () {
+    expect(chunk, contains('const statTile='),
+        reason: 'summary counts render as clean two-column tiles');
+    expect(chunk, contains('grid grid-cols-2 gap-2 rounded-xl'),
+        reason: 'each category is a compact grid, not stacked wrapping text');
+    expect(chunk, contains('wide?"col-span-2"'),
+        reason: 'the category row spans both columns above its doc counts');
+    expect(chunk, contains('w-[min(360px,calc(100vw-2rem))]'),
+        reason: 'the popover keeps a stable, pleasant mobile width');
+    expect(chunk, contains('Todos los documentos'),
+        reason: 'the global complete/incomplete buttons remain grouped below');
+  });
+
   test('every tier exposes complete and incomplete drivers', () {
     expect(chunk, contains('rows=fleet.drivers.filter(d=>d.tier===tier)'),
         reason: 'each category computes its own doc breakdown');

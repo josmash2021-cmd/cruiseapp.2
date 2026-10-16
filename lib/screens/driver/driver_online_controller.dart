@@ -4102,8 +4102,12 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       // it if the bitmap wasn't ready on the first pass.
       _startDotWatchdog();
       // onMapCreated bumps _mapGeneration — that bump is the alive signal.
+      // 3 s de ventana (2026-10-16-noche): un remount sano pero lento (iOS
+      // recreando la PlatformView al volver de otra página) NO se tumba —
+      // con 1.2 s matábamos un montaje que estaba a punto de vivir y el
+      // mapa quedaba negro el DOBLE de tiempo por el reintento.
       var alive = false;
-      for (var waited = 0; waited < 1200 && mounted; waited += 100) {
+      for (var waited = 0; waited < 3000 && mounted; waited += 100) {
         await Future.delayed(const Duration(milliseconds: 100));
         if (_mapGeneration != genAtMount) {
           alive = true;

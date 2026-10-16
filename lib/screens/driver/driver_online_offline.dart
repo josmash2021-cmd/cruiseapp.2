@@ -1891,12 +1891,14 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
                 ? s.offlineDemandNormal
                 : s.offlineDemandVerySlow;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 18, 20, 0),
+      // El hero va compacto ARRIBA (estilo Dash — foto 2 del spec
+      // 2026-10-16-noche), y el padding de abajo libra la fila de botones
+      // flotante (GO pill + calendario) para que la tarjeta jamás quede
+      // cortada debajo de ella (foto 1 del mismo spec: la tarjeta se veía
+      // cortada y el headline a media pantalla con el spaceEvenly).
+      padding: EdgeInsets.fromLTRB(20, 18, 20, _kGoPillH + 26 + pad.bottom),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
-        // Reparte el alto del cuerpo del sheet: headline y tarjeta
-        // distribuidos, sin banda muerta sobre los botones (foto 1).
-        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: [
           Text(
             headline,

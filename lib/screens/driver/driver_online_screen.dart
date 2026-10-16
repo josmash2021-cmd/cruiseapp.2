@@ -1383,6 +1383,10 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   // else does.
   String? _zoneDemandSig;
   Timer? _zoneDemandTimer;
+  // Token anti-stale de los fits de zonas (2026-10-16): un fit que quedó en
+  // vuelo muere si otro fit/recenter arrancó después (nunca pisa un recenter
+  // más nuevo — el "recenter no funciona después del flip").
+  int _zoneFitSeq = 0;
   // Onda de selección en el borde del sector (2026-10-16) — los campos viven
   // en la clase (las extensiones no declaran campos); la lógica está en
   // driver_online_map.dart.

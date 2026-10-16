@@ -253,12 +253,16 @@ void main() {
               'to fully open');
       expect(off, contains('((panelFrac - 0.55) / 0.3)'),
           reason: 'the normal list fades in as the sheet opens fully');
-      // 2026-10-16 (foto 1 vs foto 2): the hero fills the sheet body and
-      // distributes — no dead band between the card and the button row.
+      // 2026-10-16 noche (foto 2 = Dash): contenido compacto ARRIBA y el
+      // padding de abajo libra la fila de botones flotante — el spaceEvenly
+      // dejaba el headline a media pantalla y la tarjeta cortada debajo del
+      // botón GO (foto 1).
       expect(off, contains('Positioned.fill('),
           reason: 'the hero gets the full body height');
-      expect(off, contains('mainAxisAlignment: MainAxisAlignment.spaceEvenly'),
-          reason: 'headline and card spread across the sheet');
+      expect(off, isNot(contains('MainAxisAlignment.spaceEvenly')),
+          reason: 'spaceEvenly spread the hero wrong — compact top-down now');
+      expect(off, contains('_kGoPillH + 26 + pad.bottom'),
+          reason: 'the hero clears the floating GO pill + calendar row');
     });
 
     test('the hero demand card reads the live sector demand', () {

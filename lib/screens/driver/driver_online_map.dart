@@ -3144,6 +3144,9 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
   Future<void> _recenterArrowZoneZoom() async {
     final map = _map;
     if (map == null || kIsWeb) return;
+    // Este recenter es lo más nuevo — cualquier fit de zonas en vuelo (el
+    // glide-out del flip online→offline) muere y no puede pisarlo al caer.
+    final seq = ++_zoneFitSeq;
     final pos = _pos;
     if (pos == null || !ZoneService.sectorsReady) {
       await _fitHomeZones();
@@ -3170,6 +3173,7 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
         null,
         null,
       );
+      if (seq != _zoneFitSeq) return; // otro recenter llegó detrás
       // Programmatic — wear the suppression so the flight's own camera
       // events never read as a manual rotate/gesture.
       _camFlightUntil = DateTime.now()
@@ -3188,7 +3192,27 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
           mapbox.MapAnimationOptions(duration: _kRecenterFlightMs));
       if (mounted) _setState(() => _cameraFollowing = false);
     } catch (e) {
+      // Nunca en silencio (2026-10-16): si la medición nativa falla, el
+      // recenter igual vuela a la flecha al zoom de vista de zonas.
       debugPrint('[Zones] arrow zone-zoom recenter failed: $e');
+      ApiService.logClientEvent('recenter_fit', 'scope=arrow_zone_zoom_fallback');
+      if (!mounted || seq != _zoneFitSeq) return;
+      try {
+        _camFlightUntil = DateTime.now()
+            .add(const Duration(milliseconds: _kRecenterFlightMs + 320));
+        await map.flyTo(
+            mapbox.CameraOptions(
+              center: mapbox.Point(
+                  coordinates: mapbox.Position(pos.longitude, pos.latitude)),
+              zoom: 10.8,
+              bearing: 0,
+              pitch: 0,
+              padding: mapbox.MbxEdgeInsets(
+                  top: 120, left: 0, bottom: _visibleSheetPx, right: 0),
+            ),
+            mapbox.MapAnimationOptions(duration: _kRecenterFlightMs));
+        if (mounted) _setState(() => _cameraFollowing = false);
+      } catch (_) {}
     }
   }
 
@@ -3212,6 +3236,12 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
     final bbox = _sectorsBBox(sectors);
     if (bbox == null) return;
     final w = bbox[0], s = bbox[1], e = bbox[2], n = bbox[3];
+    // Token anti-stale (user report 2026-10-16-noche: "cuando me pongo
+    // online y me desconecto el boton de centrar no funciona despues"): el
+    // fit del flip quedaba en vuelo cuando el driver tocaba recentrar y
+    // aterrizaba DESPUÉS, pisando el recenter — un fit viejo muere si otro
+    // fit/recenter arrancó después.
+    final seq = ++_zoneFitSeq;
     try {
       final cam = await map.cameraForCoordinatesPadding(
         [
@@ -3226,6 +3256,7 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
         null,
         null,
       );
+      if (seq != _zoneFitSeq) return; // un recenter/fit más nuevo manda
       // Programmatic — wear the suppression so the flight's own camera
       // events never read as a manual rotate/gesture.
       _camFlightUntil = DateTime.now()
@@ -3340,6 +3371,12 @@ extension _DriverOnlineMap on _DriverOnlineScreenState {
         if (!FeatureFlags.zonesMapEnabled) return const SizedBox.shrink();
         if (_driverOnline) return const SizedBox.shrink();
         if (_phase != _Phase.searching) return const SizedBox.shrink();
+        // Nunca sobre el velo/negro de un remount (user report 2026-10-16-
+        // noche: al volver de Schedule el mapa tarda y las etiquetas
+        // flotaban sobre el vacío) — solo con el mapa real renderizando.
+        if (!_mapStyleLoaded || !_firstRenderDone) {
+          return const SizedBox.shrink();
+        }
         final cam = _onlineCamState;
         final size = _onlineMapSize;
         if (cam == null || size == null) return const SizedBox.shrink();

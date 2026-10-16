@@ -567,4 +567,35 @@ void main() {
             '          if (!FlatMapProjection.isOnScreen(shifted, size)) {'),
         reason: 'the zone labels/pills apply the shift too');
   });
+
+  test('a stale zone fit can never clobber a newer recenter (2026-10-16 '
+      'noche)', () {
+    // "Cuando me pongo online y me desconecto el boton de centrar no
+    // funciona despues": el glide-out del flip quedaba en vuelo y aterrizaba
+    // sobre el recenter. Ahora ambos llevan token `_zoneFitSeq` y el viejo
+    // muere antes de su flyTo.
+    final map = File('lib/screens/driver/driver_online_map.dart')
+        .readAsStringSync();
+    expect(map, contains('final seq = ++_zoneFitSeq;'),
+        reason: 'both zone fits take the token');
+    expect(
+        map, contains('if (seq != _zoneFitSeq) return;'),
+        reason: 'a superseded fit dies before flying');
+    expect(map, contains('scope=arrow_zone_zoom_fallback'),
+        reason: 'the recenter never dies silent — fallback flies to the '
+            'arrow at the zones-view zoom');
+  });
+
+  test('zone labels never float over the remount veil (2026-10-16 noche)',
+      () {
+    // Al volver de Schedule el mapa tarda ~1-2 s en revivir — las etiquetas
+    // no pintan sobre el velo/negro, solo con el mapa ya renderizando.
+    final map = File('lib/screens/driver/driver_online_map.dart')
+        .readAsStringSync();
+    final i = map.indexOf('Widget _zoneLabelOverlay()');
+    final block = map.substring(i, i + 700);
+    expect(block,
+        contains('if (!_mapStyleLoaded || !_firstRenderDone)'),
+        reason: 'labels gate on the map actually rendering');
+  });
 }

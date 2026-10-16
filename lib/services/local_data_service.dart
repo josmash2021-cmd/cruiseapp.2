@@ -848,6 +848,12 @@ class LocalDataService {
   static Future<void> setDriverApprovalStatus(String status) async {
     final prefs = _p;
     await prefs.setString(_driverApprovalKey, status);
+    // A rollback (waitlist/pending/rejected) must retire every legacy approval
+    // marker too — otherwise the next boot reads the old 'approved' key and
+    // skips the live status check straight into the driver home.
+    if (status != 'approved') {
+      await prefs.remove('driver_status');
+    }
     // Save timestamp so we know how fresh this is
     await prefs.setInt(_driverApprovalTimeKey, DateTime.now().millisecondsSinceEpoch);
   }
@@ -904,6 +910,7 @@ class LocalDataService {
     final prefs = _p;
     await prefs.remove(_driverApprovalKey);
     await prefs.remove(_driverApprovalTimeKey);
+    await prefs.remove('driver_status');
   }
 
   static Future<String?> getIdDocumentType() async {

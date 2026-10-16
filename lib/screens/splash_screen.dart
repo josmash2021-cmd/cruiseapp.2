@@ -352,16 +352,6 @@ class _SplashScreenState extends State<SplashScreen> {
           _driverResumeScreen(await UserSession.getUser());
       if (driverResume != null) return driverResume;
 
-      // ── CRITICAL FIX: Check if driver was EVER approved ──
-      // If driver was approved before, NEVER send them back to pending review
-      // even if backend is down or cache is stale.
-      final wasEverApproved = await LocalDataService.wasDriverEverApproved();
-      if (wasEverApproved) {
-        debugPrint('[SplashScreen] Driver was previously approved — going to home');
-        unawaited(_refreshApprovalStatusInBackground());
-        return const DriverOnlineScreen();
-      }
-
       // ── Read approval status from local cache first (instant) ──
       final cachedStatus = await LocalDataService.getDriverApprovalStatus();
 
@@ -369,6 +359,25 @@ class _SplashScreenState extends State<SplashScreen> {
         // Verified → go straight to DriverHomeScreen
         unawaited(_backgroundProfileSync());
         return const DriverOnlineScreen();
+      }
+
+      // Waitlist is a live non-approved state and must never be overridden by
+      // the "was ever approved" latch (prod report: driver reopened the app
+      // from waitlist and landed on the driver home).
+      if (cachedStatus == 'waitlist') {
+        return const DriverWaitlistScreen();
+      }
+
+      // The legacy approval latch only applies when the primary cache has no
+      // live answer. Pending/rejected/waitlist must always reach the live
+      // status branch below instead of being promoted by an old marker.
+      if (cachedStatus == 'none') {
+        final wasEverApproved = await LocalDataService.wasDriverEverApproved();
+        if (wasEverApproved) {
+          debugPrint('[SplashScreen] Driver was previously approved — going to home');
+          unawaited(_refreshApprovalStatusInBackground());
+          return const DriverOnlineScreen();
+        }
       }
 
       if (cachedStatus == 'pending' || cachedStatus == 'rejected') {
@@ -553,15 +562,13 @@ class _SplashScreenState extends State<SplashScreen> {
     return status.toLowerCase().trim() == 'approved';
   }
 
-  /// Returns true if the user object from getMe() indicates an approved driver.
-  /// Checks both verification_status and is_verified fields.
+  /// Returns true only when getMe() has BOTH server approval markers.
+  /// A stale is_verified=true beside waitlist/pending/rejected is a rollback
+  /// artifact, never approval. Account liveness is not approval.
   bool _meIndicatesApproved(Map<String, dynamic> me) {
     final vStatus = (me['verification_status'] as String? ?? '').toLowerCase().trim();
-    if (_isApprovedStatus(vStatus)) return true;
     final isVerified = me['is_verified'] == true || me['isVerified'] == true;
-    if (isVerified) return true;
-    final accountStatus = (me['status'] as String? ?? '').toLowerCase().trim();
-    return _isApprovedStatus(accountStatus);
+    return _isApprovedStatus(vStatus) && isVerified;
   }
 
   /// Checks Firestore directly (one-time .get()) to see if this driver has
@@ -597,9 +604,12 @@ class _SplashScreenState extends State<SplashScreen> {
           .timeout(const Duration(seconds: 4));
       if (driversDoc.exists) {
         final d = driversDoc.data() ?? {};
-        if (_isApprovedData(d)) return 'approved';
-        if (_isRejectedData(d)) return 'rejected';
+        // Non-approved decisions win over any stale approval marker in the
+        // same Firestore document (waitlist writes can coexist with an old
+        // isApproved=true until the mirror rotates).
         if (_isWaitlistData(d)) return 'waitlist';
+        if (_isRejectedData(d)) return 'rejected';
+        if (_isApprovedData(d)) return 'approved';
       }
 
       // Fall back to verifications doc — cache-first
@@ -618,9 +628,12 @@ class _SplashScreenState extends State<SplashScreen> {
           .timeout(const Duration(seconds: 4));
       if (verDoc.exists) {
         final d = verDoc.data() ?? {};
-        if (_isApprovedData(d)) return 'approved';
-        if (_isRejectedData(d)) return 'rejected';
+        // Non-approved decisions win over any stale approval marker in the
+        // same Firestore document (waitlist writes can coexist with an old
+        // isApproved=true until the mirror rotates).
         if (_isWaitlistData(d)) return 'waitlist';
+        if (_isRejectedData(d)) return 'rejected';
+        if (_isApprovedData(d)) return 'approved';
       }
     } catch (e) {
       debugPrint('[SplashScreen] Firestore driver check failed: $e');
@@ -629,6 +642,7 @@ class _SplashScreenState extends State<SplashScreen> {
   }
 
   bool _isApprovedData(Map<String, dynamic> d) {
+    if (_isWaitlistData(d) || _isRejectedData(d)) return false;
     final status = (d['status'] as String? ?? '').toLowerCase().trim();
     final driverStatus = (d['driver_status'] as String? ?? '').toLowerCase().trim();
     final verificationStatus = (d['verificationStatus'] as String? ?? '').toLowerCase().trim();

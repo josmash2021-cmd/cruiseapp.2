@@ -24,34 +24,37 @@ void main() {
       );
     });
 
-    test('approved verification_status passes', () {
+    test('approved status AND is_verified pass together', () {
       expect(
         DriverWelcomeScreen.isApprovedDriverMap(const {
           'status': 'active',
           'verification_status': 'approved',
-          'is_verified': false,
-        }),
-        isTrue,
-      );
-    });
-
-    test('is_verified passes (either casing)', () {
-      expect(
-        DriverWelcomeScreen.isApprovedDriverMap(const {
-          'verification_status': 'none', 'is_verified': true,
+          'is_verified': true,
         }),
         isTrue,
       );
       expect(
         DriverWelcomeScreen.isApprovedDriverMap(const {
-          'verification_status': 'none', 'isVerified': true,
+          'verification_status': 'approved',
+          'isVerified': true,
         }),
         isTrue,
       );
     });
 
-    test('pending and rejected do not pass', () {
-      for (final s in const ['pending', 'rejected', 'none', '']) {
+    test('is_verified alone does not pass', () {
+      for (final s in const ['none', 'pending', 'waitlist', 'rejected']) {
+        expect(
+          DriverWelcomeScreen.isApprovedDriverMap(
+              {'verification_status': s, 'is_verified': true}),
+          isFalse,
+          reason: 'a stale verified flag after $s must not open the home',
+        );
+      }
+    });
+
+    test('pending, waitlist and rejected do not pass', () {
+      for (final s in const ['pending', 'waitlist', 'rejected', 'none', '']) {
         expect(
           DriverWelcomeScreen.isApprovedDriverMap(
               {'verification_status': s, 'is_verified': false}),

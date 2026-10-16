@@ -22,6 +22,8 @@ void main() {
   final todo = File('lib/screens/driver/onboarding/driver_todo_screen.dart')
       .readAsStringSync();
   final splash = File('lib/screens/splash_screen.dart').readAsStringSync();
+  final welcome = File('lib/screens/driver/driver_welcome_screen.dart')
+      .readAsStringSync();
 
   test('submitting documents is NOT an approval witness', () {
     expect(
@@ -69,8 +71,8 @@ void main() {
     expect(
       splash.contains('LocalDataService.wasDriverEverApproved()'),
       isTrue,
-      reason: 'the ever-approved fast path is the first gate — it must '
-          'stay backed by the decontaminated service',
+      reason: 'the ever-approved fast path stays, but only when the primary '
+          'cache has no live answer',
     );
     expect(splash.contains('const DriverWaitlistScreen()'), isTrue,
         reason: 'the waitlist gate');
@@ -80,5 +82,23 @@ void main() {
     expect(splash.contains('const DriverTodoScreen()'), isTrue,
         reason: 'an unfinished onboarding resumes on the hub, not the '
             'waitlist page and never the home');
+  });
+
+  test('a waitlist rollback clears legacy approval and wins every boot', () {
+    expect(lds, contains("status != 'approved'"));
+    expect(lds, contains("prefs.remove('driver_status')"),
+        reason: 'the old driver_status=approved key must not survive waitlist');
+    expect(splash, contains("cachedStatus == 'waitlist'"));
+    expect(
+      splash.indexOf("cachedStatus == 'waitlist'"),
+      lessThan(splash.indexOf('wasDriverEverApproved()')),
+      reason: 'waitlist is evaluated before the ever-approved latch',
+    );
+    expect(splash, contains('if (_isWaitlistData(d)) return \'waitlist\';'),
+        reason: 'Firestore waitlist wins before any stale isApproved marker');
+    expect(welcome, contains("s == 'approved' && isVerified"),
+        reason: 'login requires BOTH server markers — never the stale flag');
+    expect(welcome, contains("} else if (s == 'waitlist') {"),
+        reason: 'login routes waitlist to the waitlist page, not the hub/home');
   });
 }

@@ -3294,9 +3294,13 @@ async def dispatch_waitlist_driver(user_id: int, db: AsyncSession = Depends(get_
     if not db_user:
         raise HTTPException(404, "Driver not found")
     # verification_reason is NOT touched — the waitlist is not a rejection.
+    # It is also NOT approved: a stale is_verified=True must never let the app
+    # treat waitlist as the driver home on the next login/reboot.
     db_user.verification_status = "waitlist"
+    db_user.is_verified = False
+    db_user.verified_at = None
     await db.commit()
-    logging.info("[DISPATCH-WAITLIST] DB updated for user %d: status=waitlist", user_id)
+    logging.info("[DISPATCH-WAITLIST] DB updated for user %d: status=waitlist, is_verified=False", user_id)
     # Atomic batch write to ALL 3 Firestore collections
     if _HAS_FIRESTORE:
         try:

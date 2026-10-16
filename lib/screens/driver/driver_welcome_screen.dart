@@ -24,23 +24,18 @@ class DriverWelcomeScreen extends StatefulWidget {
   const DriverWelcomeScreen({super.key});
 
   /// Routing by driver account state — shared by every driver sign-in path:
-  /// approved → home; pending → the to-do hub (which already shows
-  /// "In review" — no more pending-review prison); rejected → pending
-  /// review (navigable legacy status screen); never-registered
-  /// (`none`/anything else) → the Phase 2 to-do hub (the legacy
-  /// DriverSignupScreen stays for legacy users).
-  /// The ONLY approval test that counts: the verification fields.
-  /// user['status'] is account LIVENESS (active/deactivated/blocked) — a
-  /// live, never-reviewed account read as "approved" through that branch
-  /// and the driver landed on the approved UI (user report 2026-10-06).
-  /// Prod verification_status values: none/pending/approved/rejected.
+  /// approved → home; pending → the to-do hub; waitlist → waitlist; rejected →
+  /// rejected variant; never-registered → to-do hub.
+  /// Approval requires BOTH server markers. A stale is_verified=true next to
+  /// waitlist/pending/rejected is evidence of a decision rollback, never of
+  /// an approved account.
   static bool isApprovedDriverMap(Map<String, dynamic> user) {
     final s = (user['verification_status'] as String? ?? 'none')
         .toLowerCase()
         .trim();
     final isVerified =
         user['is_verified'] == true || user['isVerified'] == true;
-    return isVerified || s == 'approved';
+    return s == 'approved' && isVerified;
   }
 
   static Future<void> routeExistingDriver(
@@ -54,7 +49,7 @@ class DriverWelcomeScreen extends StatefulWidget {
 
     if (approved) {
       await LocalDataService.setDriverApprovalStatus('approved');
-    } else if (s == 'pending' || s == 'rejected') {
+    } else if (s == 'pending' || s == 'rejected' || s == 'waitlist') {
       await LocalDataService.setDriverApprovalStatus(s);
     }
     if (!context.mounted) return;
@@ -72,6 +67,11 @@ class DriverWelcomeScreen extends StatefulWidget {
     } else if (s == 'pending') {
       Navigator.of(context).pushAndRemoveUntil(
         onboardingFadeSlideRoute(const DriverTodoScreen()),
+        (_) => false,
+      );
+    } else if (s == 'waitlist') {
+      Navigator.of(context).pushAndRemoveUntil(
+        slideFromRightRoute(const DriverWaitlistScreen()),
         (_) => false,
       );
     } else if (s == 'rejected') {

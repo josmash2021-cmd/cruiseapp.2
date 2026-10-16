@@ -6,6 +6,8 @@ users.locale. La lista de espera NO es un rechazo: verification_reason
 queda intacto y el push lleva type "driver_waitlisted".
 """
 
+from datetime import datetime, timezone
+
 import pytest
 
 from models.database import User
@@ -83,6 +85,25 @@ async def test_waitlist_sets_status_mirrors_firestore_and_keeps_reason(client, d
     assert push["socket"][0]["payload"]["status"] == "waitlist"
     assert push["fcm"][0]["data"]["type"] == "driver_waitlisted"
     assert push["fcm"][0]["data"]["user_id"] == str(u.id)
+
+
+async def test_waitlist_clears_accidental_approval(client, db, push):
+    u = await _mk_user(db)
+    u.verification_status = "approved"
+    u.is_verified = True
+    u.verified_at = datetime.now(timezone.utc)
+    await db.commit()
+
+    res = await client.post(
+        f"/auth/dispatch-waitlist/{u.id}",
+        headers=_make_auth_headers("test-dispatch-key"),
+    )
+    assert res.status_code == 200, res.text
+    await db.refresh(u)
+    assert u.verification_status == "waitlist"
+    assert not u.is_verified
+    assert u.verified_at is None
+    assert push["fcm"][0]["data"]["type"] == "driver_waitlisted"
 
 
 async def test_waitlist_push_spanish_phone(client, db, push):

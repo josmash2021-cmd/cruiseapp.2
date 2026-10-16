@@ -34,8 +34,8 @@ void main() {
     // cuadrado" — la foto muestra bordes pixelados en escalera): las 4
     // aristas diagonales del octágono se vuelven escaleras de bloques
     // (horizontal-vertical alternado), los 4 lados rectos quedan rectos.
-    expect(chunk, contains('const steps=Math.max(4,Math.round(R/160))'),
-        reason: 'diagonal edges become block staircases (~160 m teeth)');
+    expect(chunk, contains('const steps=Math.max(3,Math.round(R/300))'),
+        reason: 'diagonal edges become block staircases (~300 m teeth)');
     expect(chunk, contains('ring.push([nx,py]);ring.push([nx,ny])'),
         reason: 'horizontal-then-vertical steps = the squared-teeth look');
     expect(chunk, contains('if(Math.abs(dx)<1e-12||Math.abs(dy)<1e-12)'),

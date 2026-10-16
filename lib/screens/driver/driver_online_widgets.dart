@@ -112,7 +112,20 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
         builder: (context, constraints) {
           // The projection turns a coordinate into a pixel of THIS box, so
           // it has to be measured rather than assumed.
-          _onlineMapSize = Size(constraints.maxWidth, constraints.maxHeight);
+          final newSize =
+              Size(constraints.maxWidth, constraints.maxHeight);
+          // Rotación del teléfono (user report 2026-10-16: "cuando el
+          // telefono se gira la flecha se mueve del sitio donde esta el
+          // driver"): un resize puro no emite evento de cámara y el overlay
+          // seguía proyectando con el viewport VIEJO hasta el próximo fix —
+          // bump del frame de marcador al cambiar el tamaño, post-frame (un
+          // notify durante build es setState-en-build).
+          if (_onlineMapSize != null && _onlineMapSize != newSize) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted) _markerFrame.value++;
+            });
+          }
+          _onlineMapSize = newSize;
           final offset = _dotScreenOffset;
           return Stack(
             children: [

@@ -166,6 +166,15 @@ class SmoothMotion {
   static const double _stationaryExitMps = 1.2;
   bool _stationary = false;
 
+  /// Fixes lentos seguidos. 2026-10-16 (reporte: "cuando el driver va
+  /// manejando se detiene la flecha y luego avanza"): UN solo fix leyendo
+  /// <0.9 m/s puede ser ruido del GPS en tráfico lento — congelar de una
+  /// vez paraba la flecha en movimiento y el siguiente fix la hacía saltar.
+  /// Ahora el freeze pide DOS fixes lentos seguidos. La protección de
+  /// estacionado queda intacta: un fix lento que además SALTA >8 m es
+  /// wander y se salta sin mover en el primer intento (y entra al freeze).
+  int _slowFixes = 0;
+
   /// The last fix the stationary freeze SKIPPED, kept for the release.
   /// Without it the release fix is measured against the pre-freeze target:
   /// the gap spans the whole frozen spell, the implied speed reads 2-3x
@@ -283,15 +292,33 @@ class SmoothMotion {
           return;
         }
         _stationary = false; // real movement reported — release the hold
+        _slowFixes = 0;
       } else if (speedMps < _stationaryEnterMps) {
-        _stationary = true;
-        _vLat = 0;
-        _vLng = 0;
-        _consecutiveHolds = 0;
-        _lastTargetAt = now;
-        if (fixTsMs != null) _lastTargetTsMs = fixTsMs;
-        _rememberFrozenSkip(lat, lng, now, fixTsMs);
-        return;
+        // 2026-10-16: dos fixes lentos seguidos para congelar (un dip de
+        // lectura manejando ya no para la flecha); un salto >8 m con
+        // velocidad ~0 es wander de estacionado y entra al freeze de una vez.
+        final cosLat = math.cos(_targetLat! * math.pi / 180.0);
+        final dLat = lat - _targetLat!;
+        final dLng = lng - _targetLng!;
+        final distM = math.sqrt(
+          math.pow(dLng * 111320.0 * cosLat, 2) +
+              math.pow(dLat * 110540.0, 2),
+        );
+        _slowFixes++;
+        if (distM > 8.0 || _slowFixes >= 2) {
+          _stationary = true;
+          _vLat = 0;
+          _vLng = 0;
+          _consecutiveHolds = 0;
+          _lastTargetAt = now;
+          if (fixTsMs != null) _lastTargetTsMs = fixTsMs;
+          _rememberFrozenSkip(lat, lng, now, fixTsMs);
+          return;
+        }
+        // Un solo dip lento y cerca: el fix cae al path normal de abajo —
+        // el marcador apenas se mueve, pero jamás se congela en falso.
+      } else {
+        _slowFixes = 0;
       }
     }
     if (_targetLat != null && _lastTargetAt != null) {

@@ -432,6 +432,22 @@ void main() {
           reason: 'a missing fix must never crash the map build');
       expect(mapW.contains('_mapAnchor'), isTrue);
     });
+
+    test('a viewport resize re-projects the arrow NOW (2026-10-16)', () {
+      // User report: "cuando el telefono se gira la flecha se mueve del
+      // sitio donde esta el driver" — a pure rotation emits no camera event,
+      // so the overlay kept the pixel computed with the OLD viewport until
+      // the next fix. The LayoutBuilder bumps the marker frame on a size
+      // change (post-frame: a notify mid-build is setState-in-build).
+      final w = File('lib/screens/driver/driver_online_widgets.dart')
+          .readAsStringSync();
+      expect(w, contains('if (_onlineMapSize != null && _onlineMapSize != newSize)'),
+          reason: 'the size change is detected in the LayoutBuilder');
+      expect(w, contains('addPostFrameCallback((_) {'),
+          reason: 'the bump is post-frame, never mid-build');
+      expect(w.contains('_markerFrame.value++'), isTrue,
+          reason: 'the bump re-projects the overlay immediately');
+    });
   });
 
   group('offline recenter FAB + button looks (2026-10-11)', () {

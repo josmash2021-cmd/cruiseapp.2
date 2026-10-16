@@ -131,4 +131,51 @@ void main() {
         reason: 'no speed reading, a precise fix 40 m away — the old '
             'behaviour must still follow it');
   });
+
+  test('ONE slow fix while driving does NOT freeze (2026-10-16)', () async {
+    // User report: "cuando el driver va manejando se detiene la flecha y
+    // luego avanza" — one noisy low-speed reading in traffic used to enter
+    // the freeze instantly; the next moving fix released it into a jump.
+    // The freeze now asks for TWO slow fixes in a row.
+    final m = SmoothMotion()..snapTo(startLat, startLng, bearing: 0);
+    await gap();
+
+    // Moving north at a steady 2.5 m/s, 2.5 m per fix.
+    for (var i = 1; i <= 3; i++) {
+      m.setTarget(north(2.5 * i), startLng, accuracyM: 5, speedMps: 2.5);
+      await gap();
+      run(m, 0.2);
+    }
+    final before = m.lat!;
+
+    // The dip: one fix reading 0.4 m/s (< 0.9 enter) but barely moved.
+    m.setTarget(north(8.1), startLng, accuracyM: 5, speedMps: 0.4);
+    await gap();
+    run(m, 0.2);
+    expect(m.lat!, greaterThan(before),
+        reason: 'a single slow reading mid-drive must not freeze the marker');
+
+    // And the next moving fix just continues — no backlog jump.
+    m.setTarget(north(10.6), startLng, accuracyM: 5, speedMps: 2.5);
+    await gap();
+    run(m, 0.3);
+    expect(m.lat! * 110540.0 - startLat * 110540.0, greaterThan(8.0),
+        reason: 'the drive continues smoothly after the dip');
+  });
+
+  test('two slow fixes in a row DO freeze (parked protection intact)',
+      () async {
+    final m = SmoothMotion()..snapTo(startLat, startLng, bearing: 0);
+    await gap();
+    // Two genuinely parked fixes (speed ~0, a couple metres apart).
+    m.setTarget(north(1.5), startLng, accuracyM: 25, speedMps: 0.0);
+    await gap();
+    run(m, 0.2);
+    m.setTarget(north(3.0), startLng, accuracyM: 25, speedMps: 0.0);
+    await gap();
+    final frozenAt = m.lat!;
+    run(m, 0.5);
+    expect((m.lat! - frozenAt).abs() * 110540.0, lessThan(0.5),
+        reason: 'the second parked fix parks the marker for real');
+  });
 }

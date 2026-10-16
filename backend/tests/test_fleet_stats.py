@@ -85,3 +85,22 @@ async def test_fleet_stats_alabama_needs_inspection(client, db):
 async def test_fleet_stats_requires_dispatch_key(client):
     res = await client.get("/admin/driver-fleet-stats")
     assert res.status_code in (401, 403)
+
+
+async def test_per_driver_rows_for_the_filter_chips(client, db):
+    """The chips are clickable filters (user spec 2026-10-15: "si selecciono
+    uno de esos botones debe mostrarme los usuarios") — the endpoint carries
+    per-driver {id, tier, docs} so the panel can match by sqliteId."""
+    d1 = await _driver(db, "Uno")
+    await _veh(db, d1, "vip")
+    for t in ("drivers_license", "insurance", "registration"):
+        await _doc(db, d1, t)
+    d2 = await _driver(db, "Dos")
+    await _veh(db, d2, "compact")
+    await _doc(db, d2, "drivers_license")
+
+    res = await client.get("/admin/driver-fleet-stats", headers=_dh())
+    assert res.status_code == 200, res.text
+    rows = {r["id"]: r for r in res.json()["drivers"]}
+    assert rows[d1.id] == {"id": d1.id, "tier": "vip", "docs": True}
+    assert rows[d2.id] == {"id": d2.id, "tier": "compact", "docs": False}

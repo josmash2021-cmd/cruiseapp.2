@@ -32,14 +32,28 @@ void main() {
     expect(chunk, contains('getFleetStats as gfs'),
         reason: 'the chunk imports the stats fetch');
     for (final label in [
-      'Standard', 'Compact', 'Electric Pro', 'Premium', 'VIP',
-      'Sin vehículo', 'Docs completos', 'Docs incompletos',
+      '"Standard"', '"Compact"', '"Electric Pro"', '"Premium"', '"VIP"',
+      '"Sin vehículo"', '"Docs completos"', '"Docs incompletos"',
     ]) {
-      expect(chunk, contains('label:"$label"'),
-          reason: 'chip "$label" present in the Drivers page stats row');
+      expect(chunk.contains('chipBtn('), isTrue,
+          reason: 'chips are filter buttons');
+      expect(chunk.contains(label), isTrue,
+          reason: 'chip $label present in the Drivers page stats row');
     }
     expect(chunk.contains('label:"Black"'), isFalse,
         reason: 'the top tier shows VIP, never Black (2026-10-15 rename)');
+  });
+
+  test('the chips are clickable filters wired to the grid by sqliteId', () {
+    expect(chunk, contains('chipBtn('),
+        reason: 'each stat chip is a toggle button, not a dead label');
+    expect(chunk, contains('ids.has(d.sqliteId)'),
+        reason: 'the grid filters the people list by SQL id against the '
+            'fleet-stats rows');
+    expect(chunk, contains('statF===k?null:k'),
+        reason: 'tap again clears the filter');
+    expect(chunk, contains('Limpiar filtro'),
+        reason: 'a visible clear control appears while a filter is active');
   });
 
   test('the users module fetches the fleet stats endpoint', () {

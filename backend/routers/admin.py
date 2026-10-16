@@ -2265,8 +2265,10 @@ async def admin_driver_fleet_stats(db: AsyncSession = Depends(get_db)):
     tiers = {"standard": 0, "compact": 0, "electric_pro": 0,
              "premium": 0, "vip": 0, "none": 0}
     complete = 0
+    per_driver = []
     for u in drivers:
-        tiers[tier_by_driver.get(u.id, "none")] += 1
+        tier = tier_by_driver.get(u.id, "none")
+        tiers[tier] += 1
         have = doc_types_by_driver.get(u.id, set())
         has_license = bool(have & {"drivers_license", "driver_license",
                                    "license"}) or bool(u.license_front_url)
@@ -2278,13 +2280,18 @@ async def admin_driver_fleet_stats(db: AsyncSession = Depends(get_db)):
         has_inspection = (not needs_inspection or
                           bool(have & {"vehicle_inspection", "inspection"})
                           or bool(u.inspection_url))
-        if has_license and has_insurance and has_registration and has_inspection:
-            complete += 1
+        docs_ok = (has_license and has_insurance and has_registration
+                   and has_inspection)
+        complete += 1 if docs_ok else 0
+        # Por driver — los chips del panel son filtros clicables (2026-10-15:
+        # "si selecciono uno de esos botones debe mostrarme los usuarios").
+        per_driver.append({"id": u.id, "tier": tier, "docs": docs_ok})
 
     return {
         "drivers_total": len(drivers),
         "tiers": tiers,
         "docs": {"complete": complete, "incomplete": len(drivers) - complete},
+        "drivers": per_driver,
     }
 
 

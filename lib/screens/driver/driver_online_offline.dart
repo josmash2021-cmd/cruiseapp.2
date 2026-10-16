@@ -1112,14 +1112,14 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
                     Align(
                       // Closed, the disc floats centred; as the sheet opens
                       // the alignment itself travels left and the pill ends
-                      // up in the left of the row, a bit OVER half wide
-                      // (user specs 2026-10-14: "a la izquierda hasta la
-                      // mitad" → "un poco más de la mitad").
+                      // up LONG on the left of the row, leaving room for the
+                      // calendar disc (46 + 12 de aire) — user spec
+                      // 2026-10-16: "el botón largo así como la foto 3".
                       alignment: Alignment.lerp(
                           Alignment.center, Alignment.centerLeft, t)!,
                       child: SizedBox(
                         width:
-                            ui.lerpDouble(_kGoCircleD, box.maxWidth * 0.62, t),
+                            ui.lerpDouble(_kGoCircleD, box.maxWidth - 58, t),
                         height: height,
                         child: _buildGoButton(radius: radius, morph: t),
                       ),
@@ -1333,14 +1333,11 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
                         ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
-                    // Left-aligned on the open pill (user spec 2026-10-14:
-                    // "el texto del botón go online cuando el sheet esté
-                    // abierto estará de izquierda a derecha, no centrado") —
-                    // centred on the closed disc, where the word GO is all
-                    // there is.
-                    mainAxisAlignment: morph > 0.5
-                        ? MainAxisAlignment.start
-                        : MainAxisAlignment.center,
+                    // Centrado SIEMPRE (user spec 2026-10-16: "centrado el
+                    // Go online" — la pill larga como la foto 3 de Dash) —
+                    // la alineación a la izquierda de 2026-10-14 murió. En el
+                    // disco cerrado ya era centro: una sola regla.
+                    mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       // A power symbol, in its own disc, to the left of the
                       // label.
@@ -1415,11 +1412,9 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
                       // the row as it fades.
                       Flexible(
                         child: Stack(
-                          // Left on the pill (same 2026-10-14 spec), centred
-                          // on the disc.
-                          alignment: morph > 0.5
-                              ? Alignment.centerLeft
-                              : Alignment.center,
+                          // Centrado en disco y en pill (misma spec
+                          // 2026-10-16 que la fila de arriba).
+                          alignment: Alignment.center,
                           children: [
                             Opacity(
                               opacity: (1 - morph * 1.6).clamp(0.0, 1.0),
@@ -1844,11 +1839,18 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
                 ),
               ),
               if (heroT > 0)
-                Opacity(
-                  opacity: heroT,
-                  child: IgnorePointer(
-                    ignoring: heroT < 1.0,
-                    child: _buildOfflineHero(dc, s, pad),
+                // Positioned.fill: el hero recibe TODA la altura del cuerpo
+                // del sheet y reparte el espacio (spaceEvenly) — sin él el
+                // contenido se apiñaba arriba y quedaba una banda muerta
+                // entre la tarjeta y los botones (user spec 2026-10-16,
+                // foto 1 vs foto 2).
+                Positioned.fill(
+                  child: Opacity(
+                    opacity: heroT,
+                    child: IgnorePointer(
+                      ignoring: heroT < 1.0,
+                      child: _buildOfflineHero(dc, s, pad),
+                    ),
                   ),
                 ),
             ],
@@ -1885,6 +1887,9 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
       padding: const EdgeInsets.fromLTRB(20, 18, 20, 0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
+        // Reparte el alto del cuerpo del sheet: headline y tarjeta
+        // distribuidos, sin banda muerta sobre los botones (foto 1).
+        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: [
           Text(
             headline,

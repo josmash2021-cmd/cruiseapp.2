@@ -466,27 +466,26 @@ void main() {
               'the collapsed sheet leaves it untappable');
     });
 
-    test('the pill GO: left ~62%, Cruise logo, heartbeat, zone label', () {
-      // User specs 2026-10-14: with the sheet open the pill hugs the LEFT, a
-      // bit over half wide ("un poco más de la mitad"), the radar rings on
-      // the button died for a heartbeat ("cámbialo por un palpitar del
-      // botón"); with no zone picked the label reads "Selecciona zona" —
-      // NEVER "Verify first" — and picking a zone crossfades it into
-      // "GO ONLINE".
-      expect(offline, contains('box.maxWidth * 0.62'),
-          reason: 'the open pill occupies the left ~62% of the row');
+    test('the pill GO: long + centred label (2026-10-16), Cruise logo, zone '
+        'label', () {
+      // User spec 2026-10-16 (Dash foto 3): the open pill is LONG — the row
+      // minus the calendar disc (46) and a 12 gap — and the GO ONLINE label
+      // reads CENTRED. The 2026-10-14 left/~62% spec is dead. With no zone
+      // picked the label reads "Selecciona zona" — NEVER "Verify first" —
+      // and picking a zone crossfades it into "GO ONLINE".
+      expect(offline, contains('box.maxWidth - 58'),
+          reason: 'the open pill is long: the full row minus the calendar '
+              'disc (46) and its 12 pt of air');
       expect(offline, contains('Alignment.centerLeft'),
-          reason: 'the alignment travels centre → left with the morph, so '
-              'the closed disc stays centred and the open pill hugs the left');
+          reason: 'the pill still hugs the left so the calendar rides right');
       expect(offline.contains('verifyFirst'), isFalse,
           reason: '"VERIFY FIRST" is dead — no zone picked names the task');
       expect(offline, contains('AnimatedSwitcher'),
           reason: 'the fluid "Select zone" → "GO ONLINE" crossfade');
-      expect(offline, contains('MainAxisAlignment.start'),
-          reason: '2026-10-14 spec: the open pill’s icon+label run left-to-'
-              'right from the left edge, never centred');
-      expect(offline, contains('Alignment.centerLeft'),
-          reason: 'the label stack aligns left on the pill too');
+      expect(offline, contains('mainAxisAlignment: MainAxisAlignment.center'),
+          reason: '2026-10-16 spec: the label is centred on the long pill');
+      expect(offline, contains('alignment: Alignment.center'),
+          reason: 'the two crossing labels centre too');
       expect(offline, contains('assets/images/cruise_logo.png'),
           reason: 'the Cruise logo beside the label');
       expect(offline, contains('BlendMode.srcIn'),

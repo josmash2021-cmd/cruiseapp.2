@@ -235,6 +235,12 @@ void main() {
               'to fully open');
       expect(off, contains('((panelFrac - 0.55) / 0.3)'),
           reason: 'the normal list fades in as the sheet opens fully');
+      // 2026-10-16 (foto 1 vs foto 2): the hero fills the sheet body and
+      // distributes — no dead band between the card and the button row.
+      expect(off, contains('Positioned.fill('),
+          reason: 'the hero gets the full body height');
+      expect(off, contains('mainAxisAlignment: MainAxisAlignment.spaceEvenly'),
+          reason: 'headline and card spread across the sheet');
     });
 
     test('the hero demand card reads the live sector demand', () {

@@ -46,3 +46,16 @@ async def test_the_prompt_forbids_inventing_trips():
 
     assert "NEVER invent a trip" in _CORE_PROMPT
     assert "document review" in _CORE_PROMPT
+
+
+async def test_the_prompt_carries_the_waitlist_first100_message():
+    """Owner's words 2026-10-15: waitlisted drivers hear they are part of
+    the FIRST 100 — pilot coming, early notice, exclusive benefits, inner
+    team, riders being recruited too. Never a rejection, never a date."""
+    from services.openai_support_service import _CORE_PROMPT
+
+    assert "FIRST 100" in _CORE_PROMPT
+    assert "EXCLUSIVE benefits" in _CORE_PROMPT
+    assert "pilot test" in _CORE_PROMPT
+    assert "Never call it a rejection" in _CORE_PROMPT
+    assert "never promise a specific" in _CORE_PROMPT

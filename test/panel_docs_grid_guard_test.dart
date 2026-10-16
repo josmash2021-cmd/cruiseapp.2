@@ -75,11 +75,14 @@ void main() {
         reason: 'account decisions use their own endpoint, never a document one');
     expect(chunk, contains('kind:"account",id:t},"pending"'),
         reason: 'an accidental global approval can be returned to To-do');
+    expect(chunk, contains('kind:"account",id:t},"waitlist"'),
+        reason: 'the full driver profile keeps the Lista de espera action');
     expect(usersModule, contains('/auth/dispatch-approve/\${e}'));
     expect(usersModule, contains('/auth/dispatch-reject/\${e}'));
+    expect(usersModule, contains('/auth/dispatch-waitlist/\${e}'));
     expect(usersModule, contains('/auth/dispatch-unwaitlist/\${e}'));
     expect(usersModule, contains('setDriverVerificationStatus'),
-        reason: 'la decisión de cuenta sale por sus endpoints propios (approve/reject/unwaitlist)');
+        reason: 'la decisión de cuenta sale por sus endpoints propios (approve/reject/waitlist/unwaitlist)');
   });
 
   test('per-card busy: no stray global busy reference survives', () {

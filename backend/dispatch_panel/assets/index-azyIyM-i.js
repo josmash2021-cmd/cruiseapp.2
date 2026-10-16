@@ -104,8 +104,9 @@ function na({sqliteId:t,onChanged:s}){
       e.jsx("p",{className:"min-w-0 flex-1 truncate text-[12px] font-semibold uppercase tracking-[0.3px] text-textPrimary",children:"Cuenta completa del driver"}),
       e.jsx(Ke,{status:meta.verificationStatus})]}),
     e.jsx("p",{className:"text-[12px] text-textSecondary",children:"Solo se aprueba por decisión manual; ningún documento la aprueba automáticamente."}),
-    e.jsxs("div",{className:"mt-2 grid grid-cols-3 gap-2",children:[
+    e.jsxs("div",{className:"mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4",children:[
       e.jsx(F,{variant:"ghost",size:"sm",icon:je,disabled:busyKey==="account:"+t,onClick:()=>void act({kind:"account",id:t},"approve"),className:"border-success/40 text-success hover:bg-success/10",children:"Aprobar"}),
+      e.jsx(F,{variant:"ghost",size:"sm",icon:me,disabled:busyKey==="account:"+t,onClick:()=>void act({kind:"account",id:t},"waitlist"),className:"border-primary/40 text-primary hover:bg-primary/10",children:"Lista de espera"}),
       e.jsx(F,{variant:"ghost",size:"sm",disabled:busyKey==="account:"+t,onClick:()=>void act({kind:"account",id:t},"pending"),className:"border-warning/40 text-warning hover:bg-warning/10",children:"Pendiente"}),
       e.jsx(F,{variant:"ghost",size:"sm",icon:Le,disabled:busyKey==="account:"+t,onClick:()=>{setReason(""),setRejectTarget({kind:"account",id:t})},className:"border-error/40 text-error hover:bg-error/10",children:"Rechazar"})]})]},"account-review");
   const vehicleCard=d=>{const vdocs=all.filter(g=>g.vehicleId===d.id);

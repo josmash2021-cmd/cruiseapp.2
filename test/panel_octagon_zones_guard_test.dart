@@ -30,19 +30,18 @@ void main() {
         reason: 'the regular 8-gon generator exists');
     expect(chunk, contains('22.5+45*k'),
         reason: 'eight vertices at 45° steps, flat-side up like the spec');
-    // 2026-10-15 (user spec: "las esquinas como si fueran dientes pero
-    // cuadrado" — la foto muestra bordes pixelados en escalera): las 4
-    // aristas diagonales del octágono se vuelven escaleras de bloques
-    // (horizontal-vertical alternado), los 4 lados rectos quedan rectos.
-    expect(chunk, contains('const steps=Math.max(3,Math.round(R/300))'),
-        reason: 'diagonal edges become block staircases (~300 m teeth)');
-    expect(chunk, contains('ring.push([nx,py]);ring.push([nx,ny])'),
-        reason: 'horizontal-then-vertical steps = the squared-teeth look');
-    expect(chunk, contains('if(Math.abs(dx)<1e-12||Math.abs(dy)<1e-12)'),
-        reason: 'axis-aligned edges stay straight');
-    expect(chunk, contains('const ring=[V[0]]'),
-        reason: 'the ring starts and ends at the same vertex — closed '
-            'polygon, GeoJSON-valid');
+    // 2026-10-15 (user spec: "las piezas como rompecabezas" — la foto
+    // Sunrise/Davie): TODAS las aristas llevan muescas rectangulares
+    // alternadas (tab afuera / muesca adentro) — look de rompecabezas.
+    expect(chunk, contains('const ringM=[]'),
+        reason: 'the jigsaw builds in meter space');
+    expect(chunk, contains('(i%2===1)?D:-D'),
+        reason: 'tabs and notches alternate along every edge');
+    expect(chunk, contains('nx=-nx;ny=-ny'),
+        reason: 'the outward normal is flipped per edge via the centroid '
+            'test — notches always point inward');
+    expect(chunk, contains('ringM.push([B[0],B[1]])'),
+        reason: 'vertices stay clean — the jigsaw lives between them');
     expect(chunk, contains('zonas-oct-preview'),
         reason: 'the live radius preview source/layers exist');
     expect(chunk, contains('!ot8.current&&b.changeMode("draw_polygon")'),

@@ -56,6 +56,15 @@ void main() {
         reason: 'a visible clear control appears while a filter is active');
   });
 
+  test('filtered rows are initialized before their first use', () {
+    final declaration = chunk.indexOf('const w2=');
+    final firstUse = chunk.indexOf('P=w2.slice');
+    expect(declaration, greaterThan(-1));
+    expect(firstUse, greaterThan(declaration),
+        reason: 'w2 must exist before P=w2.slice(0,c) is evaluated, otherwise '
+            'Drivers crashes with "Cannot access w2 before initialization"');
+  });
+
   test('the users module fetches the fleet stats endpoint', () {
     expect(usersModule, contains('"/admin/driver-fleet-stats"'));
     expect(usersModule, contains('getFleetStats as getFleetStats'),

@@ -45,17 +45,26 @@ void main() {
           reason: 'the manual-rotate detector needs the last written value');
     });
 
-    test('the camera mirrors the arrow directly — no chase layer, no '
-        'freeze (user reports 2026-09-27/30)', () {
+    test('the camera mirrors the arrow directly WHILE MOVING; parked, the '
+        'compass never swings the map (user reports 2026-09-27/30, '
+        '2026-10-16)', () {
       final body = bodyOf(
           ctrl, "if (_phase == _Phase.searching && !offerActive && _cameraFollowing)",
-          maxLen: 4000);
-      expect(body.contains('final camBearing = _heading;'), isTrue,
-          reason: 'ONE source of truth for rotation: the arrow — its own '
-              'smoothing (compass EMA, adaptive blend, turn-rate glide) is '
-              'what the map shows, fluid and in real time at every speed');
+          maxLen: 4600);
+      expect(
+          body.contains(
+              'parkedCompass ? (_lastCamWriteBearing ?? _heading) : _heading'),
+          isTrue,
+          reason: 'ONE source while driving (the arrow); parked, the map '
+              'keeps its last bearing — the phone-in-hand compass swing '
+              '(2026-10-16 report) never rotates the map');
+      expect(body.contains('final parkedCompass = _motion.speedMps < 1.5;'),
+          isTrue,
+          reason: 'parked = where the compass owns the arrow (the engine '
+              'field is _motion)');
       expect(body.contains('_currentSpeedMph < 3'), isFalse,
-          reason: 'no speed gate — the 12° freeze chunked real slow turns');
+          reason: 'the old mph gate stays dead — the freeze is on the '
+              'measured glide speed');
       expect(body.contains('if (!unchanged) {'), isTrue,
           reason: 'identical parked cameras are still not re-written 60×/s');
     });

@@ -2071,19 +2071,6 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
         zoom = _zoomEaseFrom - (_zoomEaseFrom - zoomTarget) * e;
         if (t >= 1.0) _zoomEaseDone = true;
       }
-      // Heading-up top-down chase (user spec 2026-09-19): the map stays
-      // flat but rotates WITH the arrow — _heading is SmoothMotion's
-      // per-frame lerped bearing, so the whole view sweeps fluidly as the
-      // driver turns, exactly like the arrow itself.
-      //
-      // Parked/crawling (user report 2026-09-27, "la camara no sigue
-      // continuo y fluido; la flecha gira paso a paso y a veces se mueve
-      // hasta estabilizarse"): the compass owns the arrow there, and even
-      // EMA-smoothed magnetometer drift would swing the whole map with it.
-      // Under ~3 mph the map's rotation freezes unless the turn is real
-      // (>12° from the last write) — the arrow still turns inside a steady
-      // street grid, Lyft-style. Moving faster, the chase sweeps per frame
-      // exactly as before.
       // Heading-up top-down chase (user spec 2026-09-19; reset 2026-09-30
       // after the chase experiments): the camera simply carries the arrow's
       // bearing — ONE source of truth for rotation. All the smoothing lives
@@ -2091,7 +2078,18 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       // turn-rate glide between 1 Hz fixes), so whatever the arrow does is
       // what the map shows — fluid and in real time at every speed, with no
       // second filter to step, lag or fight it.
-      final camBearing = _heading;
+      //
+      // EXCEPT parked (2026-10-16-noche, user report: "cuando muevo el
+      // telefono se mueve la camara al mismo tiempo / la flecha se mueve de
+      // lugar"): parado la flecha la manda la BRÚJULA (hacia dónde mira el
+      // teléfono) — moverlo/inclinarlo en la mano la gira y el mapa giraba
+      // detrás. Bajo ~3.3 mph (donde la brújula es dueña de la flecha) la
+      // rotación del MAPA se congela en el último rumbo escrito y solo la
+      // flecha gira dentro de la retícula quieta — Lyft parado en el
+      // semáforo. Manejando (curso GPS), la cámara espeja como siempre.
+      final parkedCompass = _motion.speedMps < 1.5;
+      final camBearing =
+          parkedCompass ? (_lastCamWriteBearing ?? _heading) : _heading;
       final lastWrittenB = _lastCamWriteBearing;
       // A parked car on a frozen bearing produces the IDENTICAL camera
       // every frame — skip ONLY the write (never the rest of the tick: the

@@ -1191,7 +1191,11 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
       onTap: _isVerified
           ? _onGoTap
           : () async {
-              await _ensureVerified();
+              // El primer tap no puede morir en "marcar verificado" (user
+              // report 2026-10-16-noche: "al boton de go online hay que
+              // darle dos veces para que se conecte") — verificar y
+              // CONTINUAR al flip en el mismo tap.
+              if (await _ensureVerified()) _onGoTap();
             },
       child: AnimatedBuilder(
         animation: Listenable.merge([

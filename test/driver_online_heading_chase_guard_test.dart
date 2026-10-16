@@ -690,6 +690,16 @@ void main() {
           reason: 'the panel AND the sheet share the disc (sibling paths)');
     });
 
+    test('GO connects on the FIRST tap even before the flag lands '
+        '(2026-10-16-noche)', () {
+      // User report: "al boton de go online hay que darle dos veces para que
+      // se conecte" — tap 1 ran _ensureVerified() (flips the flag) and NEVER
+      // continued to the flip; only tap 2 connected. Now verification
+      // chains INTO _onGoTap in the same tap.
+      expect(offline, contains('if (await _ensureVerified()) _onGoTap();'),
+          reason: 'a not-yet-verified tap verifies and CONNECTS, same tap');
+    });
+
     test('ONE recenter FAB everywhere, blur-in/pop-out (photo style)', () {
       // User spec 2026-10-11: every recenter button is the photo's dark disc
       // with the white nav arrow, appearing with blur-in and leaving with

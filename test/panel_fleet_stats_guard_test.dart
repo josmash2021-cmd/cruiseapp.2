@@ -56,6 +56,18 @@ void main() {
         reason: 'a visible clear control appears while a filter is active');
   });
 
+  test('all stats and doc filters live in a dropdown submenu', () {
+    expect(chunk, contains('guard-pin panel_fleet_stats_submenu_guard_test'),
+        reason: 'a rebuild must keep the submenu, not restore the clipped row');
+    expect(chunk, contains('e.jsxs("details"'));
+    expect(chunk, contains('Filtros: todos'));
+    expect(chunk, contains('closest("details")?.removeAttribute("open")'),
+        reason: 'selecting an option closes the submenu and shows the filter');
+    expect(chunk.contains('flex items-center gap-2 overflow-x-auto pb-3'),
+        isFalse,
+        reason: 'the old horizontal row clipped Docs completos/incompletos');
+  });
+
   test('filtered rows are initialized before their first use', () {
     final declaration = chunk.indexOf('const w2=');
     final firstUse = chunk.indexOf('P=w2.slice');

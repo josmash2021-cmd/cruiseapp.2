@@ -37,4 +37,11 @@ void main() {
     expect(chunk, contains('!ot8.current&&b.changeMode("draw_polygon")'),
         reason: 'freehand drawing never hijacks an octagon click');
   });
+
+  test('octagon refs are declared before use', () {
+    const declaration = 'const ot8=c.useRef(!1),c8=c.useRef(null);';
+    expect(chunk, contains(declaration),
+        reason: 'module scope is strict — ot8 without const crashes Zonas');
+    expect(chunk.indexOf('!ot8.current'), greaterThan(chunk.indexOf(declaration)));
+  });
 }

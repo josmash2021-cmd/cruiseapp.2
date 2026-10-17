@@ -1418,6 +1418,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   String _menuDriverName = '';
   String? _menuPhotoUrl;
   bool _menuIdentityLoaded = false;
+  bool _menuBuildLogged = false;
   // Live boundary swap (2026-10-13): the sector ids whose sources/layers
   // exist on the style right now — _animateZoneSwap reconciles the new set
   // against this list; the latch serializes one swap at a time.

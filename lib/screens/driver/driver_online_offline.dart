@@ -2601,6 +2601,13 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
   Widget _buildMenuDrawer() {
     final anim = _menuAnim;
     if (anim == null) return const SizedBox.shrink();
+    // Breadcrumb lado build (2026-10-16-noche): el tap abre pero el panel es
+    // invisible — si el overlay construye y con qué valor animado.
+    if (!_menuBuildLogged) {
+      _menuBuildLogged = true;
+      ApiService.logClientEvent('menu_drawer',
+          'build open=$_menuOpen anim=${anim.value}');
+    }
     final size = MediaQuery.of(context).size;
     final panelW = math.min(320.0, size.width * 0.78);
     final topPad = MediaQuery.of(context).padding.top;

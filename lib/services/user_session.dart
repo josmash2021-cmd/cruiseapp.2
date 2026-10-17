@@ -200,9 +200,16 @@ class UserSession {
 
         // Sync driver approval status from backend profile so local cache
         // stays fresh even if SharedPreferences are cleared on app update.
-        final vStatus = profile['verification_status']?.toString();
-        if (vStatus == 'approved' || vStatus == 'pending' || vStatus == 'rejected') {
-          await LocalDataService.setDriverApprovalStatus(vStatus!);
+        // SIN lista (2026-10-17, spec "eso nunca puede pasar"): CUALQUIER
+        // status del backend pisa el cache — con una lista hardcodeada, el
+        // próximo status nuevo (como 'waitlist' ayer) vuelve a dejar el
+        // cache zombi en 'approved' y el driver vive en el home. Todo
+        // camino al home exige 'approved' explícito, así que lo desconocido
+        // cae al to-do, nunca al home.
+        final vStatus =
+            profile['verification_status']?.toString().toLowerCase().trim();
+        if (vStatus != null && vStatus.isNotEmpty) {
+          await LocalDataService.setDriverApprovalStatus(vStatus);
         }
         if (cachedPhotoPath.isNotEmpty) {
           photoNotifier.value = cachedPhotoPath;

@@ -278,4 +278,60 @@ void main() {
       expect(l10n, contains("waitlistExitHint => _es ? 'Salir' : 'Exit'"));
     });
   });
+
+  group('stale approved cache (prod Victor Galue, 2026-10-17)', () {
+    test('the profile sync caches ANY backend status — no hardcoded list',
+        () {
+      // The sync ran on every boot with a hardcoded status list that
+      // skipped 'waitlist' — a driver approved → moved to the waitlist
+      // kept the 'approved' cache forever and lived in the full app. A
+      // list would re-open the hole for the NEXT new status, so any
+      // non-empty status now overwrites the cache (every route to the
+      // home demands an explicit 'approved'; the unknown falls to the hub).
+      final session =
+          File('lib/services/user_session.dart').readAsStringSync();
+      final syncIdx =
+          session.indexOf("profile['verification_status']?.toString()");
+      expect(syncIdx, isNonNegative);
+      final region = session.substring(syncIdx, syncIdx + 500);
+      expect(region, contains('vStatus.isNotEmpty'),
+          reason: 'any backend status overwrites the cache');
+      expect(region, isNot(contains("vStatus == 'rejected'")),
+          reason: 'the hardcoded whitelist is dead');
+    });
+  });
+
+  group('the home ejects itself (spec 2026-10-17: "eso nunca puede pasar")',
+      () {
+    final online = File('lib/screens/driver/driver_online_screen.dart')
+        .readAsStringSync();
+
+    test('an approval gate runs at mount, live, and on the socket', () {
+      expect(online, contains('_enforceAccountApproval();'),
+          reason: 'the gate runs from initState');
+      expect(online, contains('LocalDataService.getDriverApprovalStatus()'),
+          reason: 'a cached non-approved status bounces at mount');
+      expect(online, contains('ApiService.getDriverApprovalStatus()'),
+          reason: 'a live re-check refreshes the truth (fail-open on '
+              'network failure)');
+      expect(online, contains('SocketService.accountStatusStream.listen'),
+          reason: 'the account_status_changed socket ejects live');
+      expect(online, contains('_approvalStatusSub?.cancel();'),
+          reason: 'the listener dies with the screen');
+    });
+
+    test('every non-approved status bounces to its page', () {
+      expect(
+          online,
+          contains(
+              "status == 'waitlist' || status == 'pending' || status == 'rejected'"),
+          reason: 'waitlist/pending/rejected all gate out');
+      expect(online, contains('const DriverWaitlistScreen()'));
+      expect(online, contains('const DriverWaitlistScreen.rejected()'));
+      expect(online, contains('const DriverTodoScreen()'));
+      expect(online, contains("import 'driver_waitlist_screen.dart';"));
+      expect(online,
+          contains("import 'onboarding/driver_todo_screen.dart';"));
+    });
+  });
 }

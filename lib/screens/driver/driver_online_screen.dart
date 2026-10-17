@@ -100,6 +100,8 @@ import 'driver_vehicle_screen.dart';
 import 'payout_methods_screen.dart';
 import 'driver_agreement_screen.dart';
 import 'onboarding/driver_notifications_screen.dart';
+import 'onboarding/driver_todo_screen.dart'; // gate de aprobación en el destino
+import 'driver_waitlist_screen.dart'; // gate de aprobación en el destino
 import 'scheduled_rides_screen.dart';
 import 'scheduled_ride_details_screen.dart';
 import '../../utils/responsive.dart';
@@ -947,11 +949,79 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
     });
   }
 
+  /// Account-approval gate AT THE DESTINATION (2026-10-17, user spec "eso
+  /// nunca puede pasar si trabajamos en la app o el dispatch en algun
+  /// cambio"): the splash trusts the local cache to land here, and a stale
+  /// 'approved' cache after ANY rollback (waitlist/pending/rejected — or a
+  /// status that does not exist yet) used to keep the driver in the full
+  /// app forever. The home now ejects itself: a cached non-approved status
+  /// bounces at mount, a live re-check refreshes the truth (fail-open — a
+  /// dead network never ejects; the backend can_go_online blocks work
+  /// anyway), and the account_status_changed socket ejects live.
+  void _enforceAccountApproval() {
+    if (kIsWeb) return;
+    unawaited(() async {
+      final cached = (await LocalDataService.getDriverApprovalStatus())
+          .toLowerCase()
+          .trim();
+      if (_approvalGatesOut(cached)) {
+        _bounceToApprovalScreen(cached);
+        return;
+      }
+      try {
+        final res = await ApiService.getDriverApprovalStatus()
+            .timeout(const Duration(seconds: 4));
+        final live = (res['approval_status'] as String? ??
+                res['status'] as String? ??
+                '')
+            .toLowerCase()
+            .trim();
+        if (live.isNotEmpty && live != cached) {
+          await LocalDataService.setDriverApprovalStatus(live);
+        }
+        if (mounted && _approvalGatesOut(live)) {
+          _bounceToApprovalScreen(live);
+        }
+      } catch (_) {
+        // Network down → stay (fail-open): the backend gate blocks work.
+      }
+    }());
+    _approvalStatusSub =
+        SocketService.accountStatusStream.listen((data) {
+      final s = (data['status'] as String? ?? '').toLowerCase().trim();
+      if (_approvalGatesOut(s)) {
+        unawaited(LocalDataService.setDriverApprovalStatus(s));
+        _bounceToApprovalScreen(s);
+      }
+    });
+  }
+
+  bool _approvalGatesOut(String status) =>
+      status == 'waitlist' || status == 'pending' || status == 'rejected';
+
+  void _bounceToApprovalScreen(String status) {
+    if (!mounted || _approvalBounced) return;
+    _approvalBounced = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final Widget page = status == 'waitlist'
+          ? const DriverWaitlistScreen()
+          : status == 'rejected'
+              ? const DriverWaitlistScreen.rejected()
+              : const DriverTodoScreen();
+      Navigator.of(context, rootNavigator: true).pushAndRemoveUntil(
+        slideFromRightRoute(page),
+        (_) => false,
+      );
+    });
+  }
+
   @override
   void initState() {
     super.initState();
     DriverOnlineScreen.mountedCount++;
     _enforceDriverRole();
+    _enforceAccountApproval();
     WidgetsBinding.instance.addObserver(this);
     _startMotionDiag();
     // The trip screen handed us a cancelled trip: show the notice as soon
@@ -1418,6 +1488,14 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   bool _menuIdentityLoaded = false;
   // Guard anti doble-tap: la ruta del drawer solo se empuja una vez.
   bool _menuRouteOpen = false;
+  // Gate de aprobación EN EL DESTINO (2026-10-17, spec "eso nunca puede
+  // pasar si trabajamos en la app o el dispatch"): el splash confía en el
+  // cache local para llegar aquí — si el cache quedó zombi tras CUALQUIER
+  // rollback, esta pantalla se auto-expulsa (cache no-aprobado al montar,
+  // re-check en vivo fail-open, y el socket account_status_changed saca en
+  // caliente).
+  bool _approvalBounced = false;
+  StreamSubscription<Map<String, dynamic>>? _approvalStatusSub;
   /// Foto real del mapa capturada al entregar la superficie (2026-10-17,
   /// cero negro al volver de otra página). El velo del remount la prefiere
   /// sobre el snapshot estático de red; se limpia cuando el remount
@@ -1669,6 +1747,7 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   void dispose() {
     mapRouteObserver.unsubscribe(this);
     _zoneDemandTimer?.cancel();
+    _approvalStatusSub?.cancel();
     ZoneService.sectorsChanged.removeListener(_onSectorsChanged);
     DriverOnlineScreen.mountedCount--;
     WidgetsBinding.instance.removeObserver(this);

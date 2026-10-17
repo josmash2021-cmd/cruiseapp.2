@@ -2506,37 +2506,20 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
     // Breadcrumb al servidor (user report 2026-10-16-noche: "presiono el
     // boton flotante del menu y no sale") — si el tap llega y el overlay
     // monta, lo vemos en prod sin el dispositivo en la mano.
-    ApiService.logClientEvent(
-        'menu_drawer', 'tap open=$_menuOpen hasCtrl=${_menuCtrl != null}');
-    try {
-      _menuCtrl ??= AnimationController(
-        vsync: this,
-        duration: const Duration(milliseconds: 320),
-        reverseDuration: const Duration(milliseconds: 260),
-      );
-      _menuAnim ??= CurvedAnimation(
-        parent: _menuCtrl!,
-        curve: Curves.easeOutCubic,
-        reverseCurve: Curves.easeInCubic,
-      );
-      _loadMenuIdentity();
-      _setState(() => _menuOpen = true);
-      _menuCtrl!.forward();
-    } catch (e) {
-      ApiService.logClientEvent('menu_drawer', 'open_error=$e');
-    }
+    ApiService.logClientEvent('menu_drawer', 'tap open=$_menuOpen');
+    _loadMenuIdentity();
+    _setState(() => _menuOpen = true);
   }
 
-  Future<void> _closeDriverMenu() async {
-    final ctrl = _menuCtrl;
-    if (ctrl == null) return;
-    await ctrl.reverse();
-    if (mounted) _setState(() => _menuOpen = false);
+  void _closeDriverMenu() {
+    _setState(() => _menuOpen = false);
   }
 
   /// Cierra el drawer y luego navega — las dos animaciones no se pelean.
   Future<void> _menuNav(Widget page) async {
-    await _closeDriverMenu();
+    _closeDriverMenu();
+    // El cierre animado dura 260 ms; navegar encima a la vez se ve brusco.
+    await Future.delayed(const Duration(milliseconds: 280));
     if (!mounted) return;
     Navigator.of(context).push(slideFromRightRoute(page));
   }
@@ -2544,7 +2527,8 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
   /// El mapa de agendados toma la única superficie nativa — la reclamación
   /// al volver vive en `_openScheduledRides` (misma disciplina del toast).
   Future<void> _menuScheduled() async {
-    await _closeDriverMenu();
+    _closeDriverMenu();
+    await Future.delayed(const Duration(milliseconds: 280));
     if (!mounted) return;
     _openScheduledRides();
   }
@@ -2589,28 +2573,15 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
   //  MENU DRAWER (estilo Dash, foto 2026-10-16)
   // ═══════════════════════════════════════════════════
 
-  Widget _buildMenuDrawer() {
-    final anim = _menuAnim;
-    if (anim == null) return const SizedBox.shrink();
-    // Breadcrumb lado build (2026-10-16-noche): el tap abre pero el panel es
-    // invisible — si el overlay construye y con qué valor animado.
-    if (!_menuBuildLogged) {
-      _menuBuildLogged = true;
-      ApiService.logClientEvent('menu_drawer',
-          'build open=$_menuOpen anim=${anim.value}');
-    }
+  Widget _buildMenuDrawerPanel(double v) {
     final size = MediaQuery.of(context).size;
     final panelW = math.min(320.0, size.width * 0.78);
     final topPad = MediaQuery.of(context).padding.top;
     final s = S.of(context);
     final photo = _menuPhotoImage();
     final initial = _menuDriverName.isNotEmpty ? _menuDriverName[0] : '·';
-    return AnimatedBuilder(
-      animation: anim,
-      builder: (context, _) {
-        final v = anim.value;
-        return Stack(
-          children: [
+    return Stack(
+      children: [
             // Barrera tenue — tap cierra.
             GestureDetector(
               onTap: _closeDriverMenu,
@@ -2735,8 +2706,6 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
             ),
           ],
         );
-      },
-    );
   }
 
   Widget _menuInitial(String initial) => Center(
@@ -2793,7 +2762,8 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
   /// Sign-out desde el drawer — el mismo flujo del menú completo (offline en
   /// backend antes del logout, luego Splash limpio).
   Future<void> _menuSignOut() async {
-    await _closeDriverMenu();
+    _closeDriverMenu();
+    await Future.delayed(const Duration(milliseconds: 280));
     if (!mounted) return;
     final s = S.of(context);
     showDialog(

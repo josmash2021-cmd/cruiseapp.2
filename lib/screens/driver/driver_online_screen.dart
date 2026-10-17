@@ -1410,11 +1410,10 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   String? _zoneWaveSectorId;
   double _zoneWavePhase = 0;
   // Drawer lateral del menú (2026-10-16, estilo Dash): overlay DENTRO de esta
-  // pantalla (no un push de ruta) — el mapa no cambia de manos y no hay
-  // riesgo de mapa negro. DriverMenuScreen (página completa) sigue viva para
-  // la pantalla de viaje.
-  AnimationController? _menuCtrl;
-  Animation<double>? _menuAnim;
+  // pantalla con TweenAnimationBuilder montado siempre (2026-10-17: el
+  // controller+CurvedAnimation dejaba el drawer abierto pero invisible en
+  // iOS — v clavada en 0; animación implícita infalible ahora). La página
+  // completa DriverMenuScreen sigue viva para la pantalla de viaje.
   bool _menuOpen = false;
   String _menuDriverName = '';
   String? _menuPhotoUrl;
@@ -1671,7 +1670,6 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   void dispose() {
     mapRouteObserver.unsubscribe(this);
     _zoneDemandTimer?.cancel();
-    _menuCtrl?.dispose();
     ZoneService.sectorsChanged.removeListener(_onSectorsChanged);
     DriverOnlineScreen.mountedCount--;
     WidgetsBinding.instance.removeObserver(this);
@@ -2904,10 +2902,29 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                 ),
               ),
 
-            // ── Drawer del menú (estilo Dash, 2026-10-16) — el overlay
-            // topmost: por encima de ofertas, tarjetas y nav. Vivo mientras
-            // _menuOpen; la salida animada corre dentro (reverse del ctrl). ──
-            if (_menuOpen) Positioned.fill(child: _buildMenuDrawer()),
+            // ── Drawer del menú (estilo Dash) — TweenAnimationBuilder
+            // montado SIEMPRE: la apertura y el cierre son la MISMA
+            // animación implícita dirigida por `_menuOpen` (2026-10-17: el
+            // controller+CurvedAnimation dejaba el drawer abierto pero
+            // invisible — v clavada en 0 = panel fuera + barrera
+            // transparente; sin controller, nada que falle). ──
+            Positioned.fill(
+              child: TweenAnimationBuilder<double>(
+                tween: Tween(begin: 0.0, end: _menuOpen ? 1.0 : 0.0),
+                duration:
+                    Duration(milliseconds: _menuOpen ? 320 : 260),
+                curve: Curves.easeOutCubic,
+                builder: (context, v, _) {
+                  if (!_menuBuildLogged) {
+                    _menuBuildLogged = true;
+                    ApiService.logClientEvent(
+                        'menu_drawer', 'builder_mounted');
+                  }
+                  if (v <= 0.001) return const SizedBox.shrink();
+                  return _buildMenuDrawerPanel(v);
+                },
+              ),
+            ),
           ],
         ),
       ),

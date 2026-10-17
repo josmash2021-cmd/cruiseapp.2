@@ -303,18 +303,23 @@ void main() {
           .readAsStringSync();
       final ctrl = File('lib/screens/driver/driver_online_controller.dart')
           .readAsStringSync();
-      expect(off, contains('Widget _buildMenuDrawer()'),
-          reason: 'the drawer overlay builder exists');
+      expect(off, contains('Widget _buildMenuDrawerPanel(double v)'),
+          reason: 'the drawer panel builder exists');
       expect(off, isNot(contains('const DriverMenuScreen()')),
           reason: 'the hamburger no longer pushes the full-screen menu — the '
               'drawer slides over the map (the page survives for the trip '
               'screen)');
-      expect(scr, contains('if (_menuOpen) Positioned.fill(child: _buildMenuDrawer())'),
-          reason: 'the drawer rides the root stack, topmost');
+      // 2026-10-17 (drawer invisible con open=true): TweenAnimationBuilder
+      // montado SIEMPRE dirigido por _menuOpen — el controller+CurvedAnimation
+      // que dejaba el drawer abierto pero invisible (v clavada en 0) murió.
+      expect(scr, contains('TweenAnimationBuilder<double>('),
+          reason: 'implicit animation, nothing to fail');
+      expect(scr, contains('tween: Tween(begin: 0.0, end: _menuOpen ? 1.0 : 0.0)'),
+          reason: 'open AND close are the same directed tween');
+      expect(scr, isNot(contains('_menuAnim')),
+          reason: 'no CurvedAnimation to get stuck at 0');
       expect(ctrl, contains('if (_menuOpen) {'),
           reason: 'back closes the drawer before flipping offline');
-      expect(scr, contains('_menuCtrl?.dispose()'),
-          reason: 'the controller dies with the screen');
     });
 
     test('the drawer carries the profile bubble and the existing options',

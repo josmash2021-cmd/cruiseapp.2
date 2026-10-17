@@ -144,8 +144,19 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
                     child: AnimatedOpacity(
                       opacity: (_mapStyleLoaded && _firstRenderDone) ? 0.0 : 1.0,
                       duration: const Duration(milliseconds: 200),
-                      child: StaticMapSnapshot(
-                          center: here, zoom: 16, veilAlpha: 0.60),
+                      // 2026-10-17 (cero negro al volver de otra página): la
+                      // foto REAL del mapa capturada al entregar la
+                      // superficie gana siempre; sin ella, el snapshot de red
+                      // de antes (que volvía a pedir el fetch y se veía negro
+                      // mientras cargaba).
+                      child: _surfaceStillBytes != null
+                          ? Image.memory(
+                              _surfaceStillBytes!,
+                              fit: BoxFit.cover,
+                              gaplessPlayback: true,
+                            )
+                          : StaticMapSnapshot(
+                              center: here, zoom: 16, veilAlpha: 0.60),
                     ),
                   ),
                 ),
@@ -277,7 +288,12 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
         // overlay — style-loaded alone was too early (2026-08-25).
         onMapIdleListener: (_) {
           if (!_firstRenderDone && mounted) {
-            _setState(() => _firstRenderDone = true);
+            _setState(() {
+              _firstRenderDone = true;
+              // La foto del handoff ya no hace falta (2026-10-17): el mapa
+              // real renderiza — libera los bytes y el velo se desvanece.
+              _surfaceStillBytes = null;
+            });
             // Boot breadcrumb: how long each stage took on THIS device —
             // the ~30 s black map survived the zones kill switch, so the
             // next boot tells us which stage actually eats it.
@@ -389,6 +405,10 @@ extension _DriverOnlineWidgets on _DriverOnlineScreenState {
   /// MapWidget's onMapCreated.
   void _onOnlineMapReady(mapbox.MapboxMap ctrl, {required bool isDark}) {
     _map = ctrl;
+    // textureView en Android: el snapshot estándar puede salir negro por
+    // vendor — el legacy mode captura del renderer (2026-10-17, velo del
+    // remount con la foto real del mapa).
+    unawaited(ctrl.setSnapshotLegacyMode(true).catchError((_) {}));
     _lastStyleDark = isDark;
     _mapBootAt = DateTime.now();
     _mapStyleMs = null;

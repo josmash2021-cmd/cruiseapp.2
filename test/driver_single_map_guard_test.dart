@@ -147,6 +147,23 @@ void main() {
       expect(scr.contains('mapRouteObserver.subscribe(this, route)'), isTrue);
       expect(scr.contains('mapRouteObserver.unsubscribe(this)'), isTrue);
       expect(scr.contains("logClientEvent('map_remount'"), isTrue);
+      // 2026-10-17 ("no quiero que se quede en negro al volver de Schedule"):
+      // el handoff captura la foto REAL del mapa antes de soltarlo y el velo
+      // la prefiere sobre el snapshot de red — cero negro en el remount.
+      final ctrl = File('lib/screens/driver/driver_online_controller.dart')
+          .readAsStringSync();
+      expect(scr, contains('Uint8List? _surfaceStillBytes'),
+          reason: 'the still field exists');
+      expect(ctrl, contains('_captureSurfaceStill()'),
+          reason: 'the handoff captures the real map before releasing');
+      final w2 = File('lib/screens/driver/driver_online_widgets.dart')
+          .readAsStringSync();
+      expect(w2, contains('Image.memory('),
+          reason: 'the veil prefers the captured still');
+      expect(w2, contains('setSnapshotLegacyMode(true)'),
+          reason: 'Android textureView vendor workaround for the snapshot');
+      expect(ctrl, contains('m.snapshot().timeout(const Duration(seconds: 2))'),
+          reason: 'the capture is bounded, never hangs the handoff');
       final w = File('lib/screens/driver/driver_online_widgets.dart')
           .readAsStringSync();
       expect(w, contains("logClientEvent('map_veil_watchdog'"),

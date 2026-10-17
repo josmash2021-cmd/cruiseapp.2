@@ -4014,6 +4014,21 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
     );
   }
 
+  /// Foto real del mapa tal cual está AHORA y la guarda para el velo
+  /// del remount (cero negro al volver de otra página). No bloquea: corre en
+  /// paralelo con el teardown; si falla, el velo cae al snapshot de red.
+  Future<void> _captureSurfaceStill() async {
+    final m = _map;
+    if (m == null || kIsWeb) return;
+    try {
+      final bytes = await m.snapshot().timeout(const Duration(seconds: 2));
+      if (!mounted || bytes.isEmpty) return;
+      _setState(() => _surfaceStillBytes = bytes);
+    } catch (e) {
+      debugPrint('[DriverOnline] surface still capture failed: $e');
+    }
+  }
+
   /// Tear down our native map so the screen on top of us can own the only
   /// live Mapbox surface. Every annotation handle belongs to the
   /// PlatformView being destroyed, so they all go with it; onMapCreated
@@ -4022,6 +4037,11 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
   void _releaseMapSurface() {
     if (!_mapMounted) return;
     debugPrint('[DriverOnline] releasing map surface');
+    // Captura REAL del mapa ANTES de soltarlo (user report 2026-10-17: "al
+    // volver de Schedule el mapa se queda negro unos segundos y no quiero
+    // que se quede en negro") — la foto del estado actual cubre la ventana
+    // del remount en lugar del snapshot de red (que pedía fetch otra vez).
+    _captureSurfaceStill();
     _dotWatchdog?.cancel();
     _smoothTicker?.stop();
     _routeDrawTicker?.stop();

@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io' show Platform, File;
+import 'dart:typed_data';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
@@ -1419,6 +1420,11 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   String? _menuPhotoUrl;
   bool _menuIdentityLoaded = false;
   bool _menuBuildLogged = false;
+  /// Foto real del mapa capturada al entregar la superficie (2026-10-17,
+  /// cero negro al volver de otra página). El velo del remount la prefiere
+  /// sobre el snapshot estático de red; se limpia cuando el remount
+  /// renderiza su primer frame.
+  Uint8List? _surfaceStillBytes;
   // Live boundary swap (2026-10-13): the sector ids whose sources/layers
   // exist on the style right now — _animateZoneSwap reconciles the new set
   // against this list; the latch serializes one swap at a time.

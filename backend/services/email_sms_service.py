@@ -201,6 +201,16 @@ def _send_email(to_email: str, subject: str, html_body: str, template_params: di
         return False
 
 
+async def send_sms_async(phone_number: str, message: str):
+    """_send_sms (sync Twilio client) from async code without pinning the
+    event loop (2026-10-17: SMS fallback for account pushes — the user
+    without an FCM token always has a phone, signup is phone OTP)."""
+    import asyncio
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(
+        None, lambda: _send_sms(phone_number, message))
+
+
 def _send_sms(phone_number: str, message: str):
     """Send SMS via Twilio. Returns Twilio message SID on success, None on failure.
 

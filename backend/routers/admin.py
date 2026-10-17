@@ -36,6 +36,7 @@ from utils.helpers import (
 )
 from utils.ssn_encryption import is_ssn_provided, decrypt_ssn, get_ssn_masked, format_ssn_for_display
 from services.fcm_service import _send_fcm_push_async
+from services.email_sms_service import send_sms_async
 from services.socketio_service import notify_user, emit_trip_status
 from config import (
     PUBLIC_URL, UPLOADS_DIR,
@@ -994,22 +995,24 @@ async def admin_review_verification(user_id: int, request: Request, db: AsyncSes
         logging.warning("[ADMIN-VERIFY] Socket.IO push failed: %s", e)
 
     try:
-        if user.fcm_token:
-            if action == "approve":
-                if is_driver:
-                    title = "¡Aprobado! 🎉" if es else "You're Approved! 🎉"
-                    body = ("¡Bienvenido a la familia Cruise! Abre la app para empezar a manejar." if es
-                            else "Welcome to the Cruise family! Open the app to start driving.")
-                else:
-                    title = "Cuenta verificada ✓" if es else "Account Verified ✓"
-                    body = ("Tu identidad ha sido verificada. Ya puedes pedir viajes." if es
-                            else "Your identity has been verified. You can now request rides.")
-                payload_type = "driver_approved" if is_driver else "rider_approved"
+        # title/body se resuelven ANTES del canal — el SMS fallback (sin
+        # token) los necesita igual que el push.
+        if action == "approve":
+            if is_driver:
+                title = "¡Aprobado! 🎉" if es else "You're Approved! 🎉"
+                body = ("¡Bienvenido a la familia Cruise! Abre la app para empezar a manejar." if es
+                        else "Welcome to the Cruise family! Open the app to start driving.")
             else:
-                title = "Actualización de verificación" if es else "Verification Update"
-                body = reason or ("Tu verificación no fue aprobada. Inténtalo de nuevo." if es
-                                  else "Your verification was not approved. Please try again.")
-                payload_type = "driver_rejected" if is_driver else "rider_rejected"
+                title = "Cuenta verificada ✓" if es else "Account Verified ✓"
+                body = ("Tu identidad ha sido verificada. Ya puedes pedir viajes." if es
+                        else "Your identity has been verified. You can now request rides.")
+            payload_type = "driver_approved" if is_driver else "rider_approved"
+        else:
+            title = "Actualización de verificación" if es else "Verification Update"
+            body = reason or ("Tu verificación no fue aprobada. Inténtalo de nuevo." if es
+                              else "Your verification was not approved. Please try again.")
+            payload_type = "driver_rejected" if is_driver else "rider_rejected"
+        if user.fcm_token:
             # NOTE: the `await` that used to sit here made this
             # _safe_create_task(None) — _send_fcm_push_async returns None — which
             # raised TypeError on every approval and got logged by the handler
@@ -1025,8 +1028,14 @@ async def admin_review_verification(user_id: int, request: Request, db: AsyncSes
                 name=f"admin_verify_push_{user_id}",
             )
             logging.info("[ADMIN-VERIFY] FCM push queued for user %d (%s)", user_id, action)
+        elif user.phone:
+            # Sin token (app nunca abierta, permiso negado, token en otra
+            # cuenta del mismo teléfono): el SMS es el canal que siempre
+            # tiene — el signup es OTP por teléfono (2026-10-17 user spec).
+            await send_sms_async(user.phone, f"Cruise — {title}: {body}")
+            logging.info("[ADMIN-VERIFY] SMS fallback sent to user %d (%s)", user_id, action)
     except Exception as e:
-        logging.warning("[ADMIN-VERIFY] FCM push failed: %s", e)
+        logging.warning("[ADMIN-VERIFY] FCM/SMS failed: %s", e)
 
     _security_audit_log("ADMIN_VERIFICATION", "admin", f"user_id={user_id} action={action} reason={reason}")
     return {

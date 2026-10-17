@@ -29,7 +29,7 @@ from utils.helpers import _safe_create_task, utc_now, _user_dict, _haversine, _t
 from utils.image_validation import validate_image_bytes, shrink_image_bytes
 from services import vehicle_tiers
 from services.fcm_service import _send_fcm_push_async
-from services.email_sms_service import _send_email
+from services.email_sms_service import _send_email, send_sms_async
 from services.guest_link_service import link_guest_trips_to_user
 from services.socketio_service import notify_user
 # n8n welcome/driver onboarding email triggers removed from register
@@ -3244,18 +3244,26 @@ async def dispatch_approve_driver(user_id: int, db: AsyncSession = Depends(get_d
     except Exception as e:
         logging.warning("[DISPATCH-APPROVE] Socket.IO push failed: %s", e)
 
+    title = "¡Aprobado! 🎉" if es else "You're Approved! 🎉"
+    body = ("¡Bienvenido a la familia Cruise! Abre la app para empezar a manejar." if es
+            else "Welcome to the Cruise family! Open the app to start driving.")
     try:
         if db_user.fcm_token:
             await _send_fcm_push_async(
                 db_user.fcm_token,
-                "¡Aprobado! 🎉" if es else "You're Approved! 🎉",
-                ("¡Bienvenido a la familia Cruise! Abre la app para empezar a manejar." if es
-                 else "Welcome to the Cruise family! Open the app to start driving."),
+                title,
+                body,
                 {"type": "driver_approved", "user_id": str(user_id)},
             )
             logging.info("[DISPATCH-APPROVE] FCM push sent to user %d", user_id)
+        elif db_user.phone:
+            # Sin token (app nunca abierta, permiso negado, token en otra
+            # cuenta del mismo teléfono): el SMS es el canal que siempre
+            # tiene — el signup es OTP por teléfono (2026-10-17 user spec).
+            await send_sms_async(db_user.phone, f"Cruise — {title}: {body}")
+            logging.info("[DISPATCH-APPROVE] SMS fallback sent to user %d", user_id)
     except Exception as e:
-        logging.warning("[DISPATCH-APPROVE] FCM push failed: %s", e)
+        logging.warning("[DISPATCH-APPROVE] FCM/SMS failed: %s", e)
 
     try:
         from services.driver_approval import send_approved_email
@@ -3315,31 +3323,32 @@ async def dispatch_reject_driver(user_id: int, request: Request, db: AsyncSessio
     except Exception as e:
         logging.warning("[DISPATCH-REJECT] Socket.IO push failed: %s", e)
 
+    # Push copy follows the phone's locale — "Documento rechazado"
+    # hardcodeado le llegaba en español a los teléfonos en inglés.
+    if item:
+        title = "Documento rechazado" if es else "Document rejected"
+        body = ((f"Motivo: {reason}" if reason else
+                 "Corrígelo y reenvíalo desde la app.") if es
+                else (f"Reason: {reason}" if reason else
+                      "Fix it and resubmit it from the app."))
+        data = {"type": "onboarding_item_rejected", "user_id": str(user_id), "item": item, "reason": reason}
+    else:
+        title = "Actualización de verificación" if es else "Verification Update"
+        body = reason or ("Tu solicitud de driver no fue aprobada. Inténtalo de nuevo." if es
+                          else "Your driver application was not approved. Please try again.")
+        data = {"type": "driver_rejected", "user_id": str(user_id), "reason": reason}
     try:
         if db_user.fcm_token:
-            if item:
-                # Push copy follows the phone's locale — "Documento rechazado"
-                # hardcodeado le llegaba en español a los teléfonos en inglés.
-                await _send_fcm_push_async(
-                    db_user.fcm_token,
-                    "Documento rechazado" if es else "Document rejected",
-                    (f"Motivo: {reason}" if reason else
-                     "Corrígelo y reenvíalo desde la app.") if es
-                    else (f"Reason: {reason}" if reason else
-                          "Fix it and resubmit it from the app."),
-                    {"type": "onboarding_item_rejected", "user_id": str(user_id), "item": item, "reason": reason},
-                )
-            else:
-                await _send_fcm_push_async(
-                    db_user.fcm_token,
-                    "Actualización de verificación" if es else "Verification Update",
-                    reason or ("Tu solicitud de driver no fue aprobada. Inténtalo de nuevo." if es
-                               else "Your driver application was not approved. Please try again."),
-                    {"type": "driver_rejected", "user_id": str(user_id), "reason": reason},
-                )
+            await _send_fcm_push_async(db_user.fcm_token, title, body, data)
             logging.info("[DISPATCH-REJECT] FCM push sent to user %d", user_id)
+        elif db_user.phone:
+            # Sin token (app nunca abierta, permiso negado, token en otra
+            # cuenta del mismo teléfono): el SMS es el canal que siempre
+            # tiene — el signup es OTP por teléfono (2026-10-17 user spec).
+            await send_sms_async(db_user.phone, f"Cruise — {title}: {body}")
+            logging.info("[DISPATCH-REJECT] SMS fallback sent to user %d", user_id)
     except Exception as e:
-        logging.warning("[DISPATCH-REJECT] FCM push failed: %s", e)
+        logging.warning("[DISPATCH-REJECT] FCM/SMS failed: %s", e)
 
     return {"ok": True, "message": f"Driver {user_id} rejected", "status": "rejected", "approval_status": "rejected"}
 
@@ -3387,18 +3396,26 @@ async def dispatch_waitlist_driver(user_id: int, db: AsyncSession = Depends(get_
     except Exception as e:
         logging.warning("[DISPATCH-WAITLIST] Socket.IO push failed: %s", e)
 
+    title = "Estás en lista de espera" if es else "You're on the waitlist"
+    body = ("Tu cuenta está en revisión. Te avisaremos cuando sea aprobada." if es
+            else "Your account is under review. We'll notify you as soon as it's approved.")
     try:
         if db_user.fcm_token:
             await _send_fcm_push_async(
                 db_user.fcm_token,
-                "Estás en lista de espera" if es else "You're on the waitlist",
-                ("Tu cuenta está en revisión. Te avisaremos cuando sea aprobada." if es
-                 else "Your account is under review. We'll notify you as soon as it's approved."),
+                title,
+                body,
                 {"type": "driver_waitlisted", "user_id": str(user_id)},
             )
             logging.info("[DISPATCH-WAITLIST] FCM push sent to user %d", user_id)
+        elif db_user.phone:
+            # Sin token (app nunca abierta, permiso negado, token en otra
+            # cuenta del mismo teléfono): el SMS es el canal que siempre
+            # tiene — el signup es OTP por teléfono (2026-10-17 user spec).
+            await send_sms_async(db_user.phone, f"Cruise — {title}: {body}")
+            logging.info("[DISPATCH-WAITLIST] SMS fallback sent to user %d", user_id)
     except Exception as e:
-        logging.warning("[DISPATCH-WAITLIST] FCM push failed: %s", e)
+        logging.warning("[DISPATCH-WAITLIST] FCM/SMS failed: %s", e)
 
     return {"ok": True, "message": f"Driver {user_id} waitlisted", "status": "waitlist", "approval_status": "waitlist"}
 

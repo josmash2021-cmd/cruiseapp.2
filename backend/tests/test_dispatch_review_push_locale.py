@@ -140,3 +140,68 @@ async def test_admin_verifications_push_follows_locale(client, db, push):
     await asyncio.sleep(0)
     assert push[-1]["title"] == "Actualización de verificación"
     assert "no fue aprobada" in push[-1]["body"]
+
+
+# ── SMS fallback cuando no hay token FCM (2026-10-17, user spec: nadie se
+#    queda sin enterarse — el signup es OTP por teléfono) ──
+
+@pytest.fixture
+def sms(monkeypatch):
+    sent = []
+
+    async def _fake_sms(phone, message):
+        sent.append({"phone": phone, "message": message})
+
+    monkeypatch.setattr("routers.auth.send_sms_async", _fake_sms)
+    monkeypatch.setattr("routers.admin.send_sms_async", _fake_sms)
+    return sent
+
+
+async def test_dispatch_approve_without_token_sends_sms(client, db, push, sms):
+    u = await _mk_user(db, locale="es")
+    u.fcm_token = None
+    u.phone = "+13055550888"
+    await db.commit()
+    res = await client.post(
+        f"/auth/dispatch-approve/{u.id}",
+        headers=_make_auth_headers("test-dispatch-key"),
+    )
+    assert res.status_code == 200, res.text
+    assert push == []
+    assert len(sms) == 1
+    assert sms[0]["phone"] == "+13055550888"
+    assert "Aprobado" in sms[0]["message"]
+
+
+async def test_dispatch_reject_item_without_token_sends_sms(client, db, push, sms):
+    u = await _mk_user(db, locale="en")
+    u.fcm_token = None
+    u.phone = "+13055550887"
+    await db.commit()
+    res = await client.post(
+        f"/auth/dispatch-reject/{u.id}",
+        headers=_make_auth_headers("test-dispatch-key"),
+        json={"reason": "blurry", "item": "license"},
+    )
+    assert res.status_code == 200, res.text
+    assert push == []
+    assert len(sms) == 1
+    assert "Document rejected" in sms[0]["message"]
+    assert "blurry" in sms[0]["message"]
+
+
+async def test_admin_verifications_without_token_sends_sms(client, db, push, sms):
+    u = await _mk_user(db, role="rider", locale="en")
+    u.fcm_token = None
+    u.phone = "+13055550886"
+    await db.commit()
+    res = await client.patch(
+        f"/admin/verifications/{u.id}",
+        headers=_make_auth_headers("test-dispatch-key"),
+        json={"action": "approve", "reason": ""},
+    )
+    assert res.status_code == 200, res.text
+    await asyncio.sleep(0)
+    assert push == []
+    assert len(sms) == 1
+    assert "Account Verified" in sms[0]["message"]

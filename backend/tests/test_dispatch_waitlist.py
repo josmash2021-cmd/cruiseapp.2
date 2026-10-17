@@ -165,3 +165,29 @@ async def test_waitlist_requires_dispatch_key(client, db):
     assert res2.status_code in (401, 403, 422), res2.text
     await db.refresh(u)
     assert u.verification_status == "pending"
+
+
+async def test_waitlist_without_token_falls_back_to_sms(client, db, push, monkeypatch):
+    """Sin token FCM, el aviso de waitlist sale por SMS (2026-10-17 user
+    spec: nadie se queda sin enterarse — el signup es OTP por teléfono)."""
+    sms = []
+
+    async def _fake_sms(phone, message):
+        sms.append({"phone": phone, "message": message})
+
+    monkeypatch.setattr("routers.auth.send_sms_async", _fake_sms)
+
+    u = await _mk_user(db, locale="es")
+    u.fcm_token = None
+    u.phone = "+13055550999"
+    await db.commit()
+
+    res = await client.post(
+        f"/auth/dispatch-waitlist/{u.id}",
+        headers=_make_auth_headers("test-dispatch-key"),
+    )
+    assert res.status_code == 200, res.text
+    assert push["fcm"] == []
+    assert len(sms) == 1
+    assert sms[0]["phone"] == "+13055550999"
+    assert "lista de espera" in sms[0]["message"]

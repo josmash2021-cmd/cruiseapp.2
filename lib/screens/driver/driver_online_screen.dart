@@ -1409,16 +1409,15 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   Timer? _zoneWaveTimer;
   String? _zoneWaveSectorId;
   double _zoneWavePhase = 0;
-  // Drawer lateral del menú (2026-10-16, estilo Dash): overlay DENTRO de esta
-  // pantalla con TweenAnimationBuilder montado siempre (2026-10-17: el
-  // controller+CurvedAnimation dejaba el drawer abierto pero invisible en
-  // iOS — v clavada en 0; animación implícita infalible ahora). La página
-  // completa DriverMenuScreen sigue viva para la pantalla de viaje.
-  bool _menuOpen = false;
+  // Drawer lateral del menú (2026-10-16, estilo Dash; 2026-10-17 = RUTA
+  // transparente del Navigator — el overlay in-screen nunca se pintó en el
+  // device del usuario). La página completa DriverMenuScreen sigue viva
+  // para la pantalla de viaje.
   String _menuDriverName = '';
   String? _menuPhotoUrl;
   bool _menuIdentityLoaded = false;
-  bool _menuBuildLogged = false;
+  // Guard anti doble-tap: la ruta del drawer solo se empuja una vez.
+  bool _menuRouteOpen = false;
   /// Foto real del mapa capturada al entregar la superficie (2026-10-17,
   /// cero negro al volver de otra página). El velo del remount la prefiere
   /// sobre el snapshot estático de red; se limpia cuando el remount
@@ -2901,30 +2900,6 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                   ],
                 ),
               ),
-
-            // ── Drawer del menú (estilo Dash) — TweenAnimationBuilder
-            // montado SIEMPRE: la apertura y el cierre son la MISMA
-            // animación implícita dirigida por `_menuOpen` (2026-10-17: el
-            // controller+CurvedAnimation dejaba el drawer abierto pero
-            // invisible — v clavada en 0 = panel fuera + barrera
-            // transparente; sin controller, nada que falle). ──
-            Positioned.fill(
-              child: TweenAnimationBuilder<double>(
-                tween: Tween(begin: 0.0, end: _menuOpen ? 1.0 : 0.0),
-                duration:
-                    Duration(milliseconds: _menuOpen ? 320 : 260),
-                curve: Curves.easeOutCubic,
-                builder: (context, v, _) {
-                  if (!_menuBuildLogged) {
-                    _menuBuildLogged = true;
-                    ApiService.logClientEvent(
-                        'menu_drawer', 'builder_mounted');
-                  }
-                  if (v <= 0.001) return const SizedBox.shrink();
-                  return _buildMenuDrawerPanel(v);
-                },
-              ),
-            ),
           ],
         ),
       ),

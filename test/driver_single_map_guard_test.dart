@@ -298,28 +298,35 @@ void main() {
       expect(l10n, contains('Ver viajes agendados'));
     });
 
-    test('the menu is an in-screen left drawer (Dash style, 2026-10-16)', () {
+    test('the menu opens as a transparent drawer route (Dash style)', () {
       final scr = File('lib/screens/driver/driver_online_screen.dart')
           .readAsStringSync();
       final ctrl = File('lib/screens/driver/driver_online_controller.dart')
           .readAsStringSync();
-      expect(off, contains('Widget _buildMenuDrawerPanel(double v)'),
+      // 2026-10-17 (prod: el tap llegaba al servidor pero el overlay
+      // in-screen jamás se pintó en el device del usuario — ni con
+      // AnimationController ni con TweenAnimationBuilder): el drawer es una
+      // RUTA transparente del Navigator, que lo dibuja por encima de todo
+      // como hacía el menú viejo.
+      expect(off, contains('PageRouteBuilder<void>('),
+          reason: 'the drawer is a route the Navigator paints above '
+              'everything');
+      expect(off, contains('opaque: false'),
+          reason: 'transparent — the map keeps rendering underneath');
+      expect(off, contains('barrierDismissible: true'),
+          reason: 'tap on the dimmed barrier closes the drawer');
+      expect(off, contains('SlideTransition('),
+          reason: 'the panel slides in from the left');
+      expect(off, contains('Widget _buildMenuDrawerContent()'),
           reason: 'the drawer panel builder exists');
       expect(off, isNot(contains('const DriverMenuScreen()')),
           reason: 'the hamburger no longer pushes the full-screen menu — the '
               'drawer slides over the map (the page survives for the trip '
               'screen)');
-      // 2026-10-17 (drawer invisible con open=true): TweenAnimationBuilder
-      // montado SIEMPRE dirigido por _menuOpen — el controller+CurvedAnimation
-      // que dejaba el drawer abierto pero invisible (v clavada en 0) murió.
-      expect(scr, contains('TweenAnimationBuilder<double>('),
-          reason: 'implicit animation, nothing to fail');
-      expect(scr, contains('tween: Tween(begin: 0.0, end: _menuOpen ? 1.0 : 0.0)'),
-          reason: 'open AND close are the same directed tween');
-      expect(scr, isNot(contains('_menuAnim')),
-          reason: 'no CurvedAnimation to get stuck at 0');
-      expect(ctrl, contains('if (_menuOpen) {'),
-          reason: 'back closes the drawer before flipping offline');
+      expect(scr, isNot(contains('_menuOpen')),
+          reason: 'the in-screen overlay state died with the overlay');
+      expect(ctrl, isNot(contains('_menuOpen')),
+          reason: 'back pops the drawer route by itself — no interception');
     });
 
     test('the drawer carries the profile bubble and the existing options',

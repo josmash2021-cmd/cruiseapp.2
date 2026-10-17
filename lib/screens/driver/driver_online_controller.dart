@@ -4607,12 +4607,6 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
   /// nada (salir del turno es GO OFFLINE, con sus guards); offline, el OS
   /// minimiza. El FAB de home murió con la pantalla vieja.
   void _goBack() {
-    // Con el drawer del menú abierto, back lo cierra a él — nunca flipea el
-    // modo ni sale de la pantalla por debajo del panel (2026-10-16).
-    if (_menuOpen) {
-      _closeDriverMenu();
-      return;
-    }
     if (_driverOnline) unawaited(_exitOnlineMode());
   }
 

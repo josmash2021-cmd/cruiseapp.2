@@ -2495,24 +2495,69 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
   //  MENU BUTTON (the home top bar's `_glassBtn`, menu flavour)
   // ═══════════════════════════════════════════════════
 
-  /// The driver menu is now a Dash-style LEFT DRAWER over the map (user spec
-  /// 2026-10-16, foto: "cuando le den al boton de las 3 rayas haga eso de
-  /// forma smooth y fluida") — the panel slides in from the left with a
-  /// dimmed barrier, the map stays alive on the right. An in-screen overlay,
-  /// NOT a pushed route: the single map surface never changes hands and a
-  /// black map on return is impossible by construction.
-  void _openDriverMenu() {
+  /// The driver menu is a Dash-style LEFT DRAWER pushed as a TRANSPARENT
+  /// ROUTE of the Navigator (2026-10-17, tras "el menú no abre" en prod: el
+  /// overlay in-screen — AnimationController primero, TweenAnimationBuilder
+  /// después — nunca se pintó en el device del usuario aunque el tap sí
+  /// llegaba al servidor; la ruta la dibuja el Navigator por encima de todo,
+  /// la misma vía del menú viejo que sí abría). No es opaca: el mapa sigue
+  /// montado debajo, nunca cambia de manos y el negro es imposible.
+  Future<void> _openDriverMenu() async {
     HapticService.selectionClick();
-    // Breadcrumb al servidor (user report 2026-10-16-noche: "presiono el
-    // boton flotante del menu y no sale") — si el tap llega y el overlay
-    // monta, lo vemos en prod sin el dispositivo en la mano.
-    ApiService.logClientEvent('menu_drawer', 'tap open=$_menuOpen');
-    _loadMenuIdentity();
-    _setState(() => _menuOpen = true);
+    // Breadcrumb al servidor — si el tap llega, lo vemos en prod.
+    ApiService.logClientEvent('menu_drawer', 'tap route');
+    if (_menuRouteOpen) return;
+    _menuRouteOpen = true;
+    // Identidad ANTES de empujar: la ruta no se reconstruye con el setState
+    // de la pantalla, así que nombre/foto deben estar listos al montarla.
+    await _loadMenuIdentity();
+    if (!mounted) {
+      _menuRouteOpen = false;
+      return;
+    }
+    unawaited(Navigator.of(context)
+        .push(_driverMenuRoute())
+        .whenComplete(() => _menuRouteOpen = false));
+  }
+
+  /// Drawer transparente con slide desde la izquierda (estilo Dash). La
+  /// barrera atenúa y cierra al tap; back la popea solo — la ruta responde
+  /// al pop, `_goBack` ya no intercepta nada.
+  PageRoute<void> _driverMenuRoute() {
+    return PageRouteBuilder<void>(
+      opaque: false,
+      barrierDismissible: true,
+      barrierColor: Colors.black.withValues(alpha: 0.45),
+      barrierLabel: 'menu_drawer',
+      transitionDuration: const Duration(milliseconds: 320),
+      reverseTransitionDuration: const Duration(milliseconds: 260),
+      pageBuilder: (routeContext, _, __) {
+        final size = MediaQuery.of(routeContext).size;
+        final panelW = math.min(320.0, size.width * 0.78);
+        return Align(
+          alignment: Alignment.centerLeft,
+          child: SizedBox(
+            width: panelW,
+            height: size.height,
+            child: _buildMenuDrawerContent(),
+          ),
+        );
+      },
+      transitionsBuilder: (context, animation, _, child) {
+        return SlideTransition(
+          position: Tween<Offset>(
+            begin: const Offset(-1, 0),
+            end: Offset.zero,
+          ).animate(
+              CurvedAnimation(parent: animation, curve: Curves.easeOutCubic)),
+          child: child,
+        );
+      },
+    );
   }
 
   void _closeDriverMenu() {
-    _setState(() => _menuOpen = false);
+    Navigator.of(context).pop();
   }
 
   /// Cierra el drawer y luego navega — las dos animaciones no se pelean.
@@ -2573,139 +2618,111 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
   //  MENU DRAWER (estilo Dash, foto 2026-10-16)
   // ═══════════════════════════════════════════════════
 
-  Widget _buildMenuDrawerPanel(double v) {
-    final size = MediaQuery.of(context).size;
-    final panelW = math.min(320.0, size.width * 0.78);
+  Widget _buildMenuDrawerContent() {
     final topPad = MediaQuery.of(context).padding.top;
     final s = S.of(context);
     final photo = _menuPhotoImage();
     final initial = _menuDriverName.isNotEmpty ? _menuDriverName[0] : '·';
-    return Stack(
-      children: [
-            // Barrera tenue — tap cierra.
-            GestureDetector(
-              onTap: _closeDriverMenu,
-              behavior: HitTestBehavior.opaque,
-              child: Container(
-                color: Colors.black.withValues(alpha: 0.45 * v),
-              ),
-            ),
-            Positioned(
-              left: -panelW * (1 - v),
-              top: 0,
-              bottom: 0,
-              width: panelW,
-              child: Container(
-                color: neuBase,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // ── Header: burbuja de foto a la IZQUIERDA del nombre ──
-                    Padding(
-                      padding: EdgeInsets.fromLTRB(20, topPad + 18, 20, 14),
-                      child: Row(
-                        children: [
-                          Container(
-                            width: 52,
-                            height: 52,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              color: const Color(0xFF2A2A33),
-                              border: Border.all(
-                                color: _offlineGold.withValues(alpha: 0.5),
-                                width: 1.4,
-                              ),
-                            ),
-                            clipBehavior: Clip.antiAlias,
-                            child: photo != null
-                                ? Image(
-                                    image: photo,
-                                    fit: BoxFit.cover,
-                                    errorBuilder: (_, __, ___) =>
-                                        _menuInitial(initial),
-                                  )
-                                : _menuInitial(initial),
-                          ),
-                          const SizedBox(width: 14),
-                          Expanded(
-                            child: Text(
-                              _menuDriverName,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 22,
-                                fontWeight: FontWeight.w800,
-                                letterSpacing: -0.3,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
+    return Container(
+      color: neuBase,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // ── Header: burbuja de foto a la IZQUIERDA del nombre ──
+          Padding(
+            padding: EdgeInsets.fromLTRB(20, topPad + 18, 20, 14),
+            child: Row(
+              children: [
+                Container(
+                  width: 52,
+                  height: 52,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: const Color(0xFF2A2A33),
+                    border: Border.all(
+                      color: _offlineGold.withValues(alpha: 0.5),
+                      width: 1.4,
                     ),
-                    Divider(
-                      color: Colors.white.withValues(alpha: 0.08),
-                      height: 1,
-                    ),
-                    // ── Opciones (las de siempre, con sus iconos) ──
-                    Expanded(
-                      child: ListView(
-                        physics: const BouncingScrollPhysics(),
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 10, vertical: 10),
-                        children: [
-                          _menuItem(Icons.attach_money_rounded,
-                              s.earningsTitle,
-                              () => _menuNav(const DriverEarningsScreen())),
-                          _menuItem(Icons.health_and_safety_outlined,
-                              s.helpAndSafety,
-                              () => _menuNav(const HelpScreen())),
-                          _menuItem(Icons.settings_rounded, s.settingsTitle,
-                              () => _menuNav(const DriverSettingsScreen())),
-                          _menuDivider(),
-                          _menuItem(Icons.workspace_premium_rounded,
-                              s.cruiseLevelLabel,
-                              () => _menuNav(const CruiseLevelScreen())),
-                          _menuItem(Icons.work_outline_rounded, s.workHub,
-                              () => _menuNav(const WorkHubScreen())),
-                          _menuItem(Icons.person_add_rounded, s.referFriends,
-                              () => _menuNav(const DriverReferralScreen())),
-                          _menuDivider(),
-                          _menuItem(Icons.event_note_rounded,
-                              s.scheduledTripsMenu, _menuScheduled),
-                          _menuItem(Icons.directions_car_rounded,
-                              s.vehiclesLabel,
-                              () => _menuNav(const DriverVehicleScreen())),
-                          _menuItem(Icons.description_rounded,
-                              s.documentsLabel,
-                              () => _menuNav(const DriverDocumentsScreen())),
-                          _menuDivider(),
-                          _menuItem(Icons.receipt_long_rounded, s.taxInfo,
-                              () => _menuNav(const TaxInfoScreen())),
-                          _menuItem(Icons.account_balance_rounded,
-                              s.payoutMethodsLabel,
-                              () => _menuNav(const PayoutMethodsScreen())),
-                          _menuDivider(),
-                          _menuItem(Icons.school_rounded, s.learningCenter,
-                              () => _menuNav(const LearningCenterScreen())),
-                          _menuItem(Icons.bug_report_rounded, s.bugReporter,
-                              () => _menuNav(const BugReporterScreen())),
-                          _menuItem(Icons.info_outline_rounded, s.aboutLabel,
-                              () => _menuNav(const AboutScreen())),
-                          _menuDivider(),
-                          _menuItem(Icons.logout_rounded, s.signOut,
-                              _menuSignOut,
-                              danger: true),
-                          const SizedBox(height: 12),
-                        ],
-                      ),
-                    ),
-                  ],
+                  ),
+                  clipBehavior: Clip.antiAlias,
+                  child: photo != null
+                      ? Image(
+                          image: photo,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) => _menuInitial(initial),
+                        )
+                      : _menuInitial(initial),
                 ),
-              ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Text(
+                    _menuDriverName,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 22,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: -0.3,
+                    ),
+                  ),
+                ),
+              ],
             ),
-          ],
-        );
+          ),
+          Divider(
+            color: Colors.white.withValues(alpha: 0.08),
+            height: 1,
+          ),
+          // ── Opciones (las de siempre, con sus iconos) ──
+          Expanded(
+            child: ListView(
+              physics: const BouncingScrollPhysics(),
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+              children: [
+                _menuItem(Icons.attach_money_rounded, s.earningsTitle,
+                    () => _menuNav(const DriverEarningsScreen())),
+                _menuItem(Icons.health_and_safety_outlined, s.helpAndSafety,
+                    () => _menuNav(const HelpScreen())),
+                _menuItem(Icons.settings_rounded, s.settingsTitle,
+                    () => _menuNav(const DriverSettingsScreen())),
+                _menuDivider(),
+                _menuItem(Icons.workspace_premium_rounded, s.cruiseLevelLabel,
+                    () => _menuNav(const CruiseLevelScreen())),
+                _menuItem(Icons.work_outline_rounded, s.workHub,
+                    () => _menuNav(const WorkHubScreen())),
+                _menuItem(Icons.person_add_rounded, s.referFriends,
+                    () => _menuNav(const DriverReferralScreen())),
+                _menuDivider(),
+                _menuItem(Icons.event_note_rounded, s.scheduledTripsMenu,
+                    _menuScheduled),
+                _menuItem(Icons.directions_car_rounded, s.vehiclesLabel,
+                    () => _menuNav(const DriverVehicleScreen())),
+                _menuItem(Icons.description_rounded, s.documentsLabel,
+                    () => _menuNav(const DriverDocumentsScreen())),
+                _menuDivider(),
+                _menuItem(Icons.receipt_long_rounded, s.taxInfo,
+                    () => _menuNav(const TaxInfoScreen())),
+                _menuItem(Icons.account_balance_rounded, s.payoutMethodsLabel,
+                    () => _menuNav(const PayoutMethodsScreen())),
+                _menuDivider(),
+                _menuItem(Icons.school_rounded, s.learningCenter,
+                    () => _menuNav(const LearningCenterScreen())),
+                _menuItem(Icons.bug_report_rounded, s.bugReporter,
+                    () => _menuNav(const BugReporterScreen())),
+                _menuItem(Icons.info_outline_rounded, s.aboutLabel,
+                    () => _menuNav(const AboutScreen())),
+                _menuDivider(),
+                _menuItem(Icons.logout_rounded, s.signOut, _menuSignOut,
+                    danger: true),
+                const SizedBox(height: 12),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _menuInitial(String initial) => Center(

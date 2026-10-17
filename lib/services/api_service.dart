@@ -764,14 +764,14 @@ class ApiService {
       onSessionExpiredNewDevice?.call();
       throw ApiException(401, 'session_expired_new_device');
     }
-    // Account blocked/deleted server-side with a live session (2026-10-06,
-    // user report): the 403 used to carry prose and every screen's catch
-    // swallowed it — the driver kept the app open as normal. The detail is
-    // now machine-readable and ANY endpoint answer carrying it ends the
-    // session here.
+    // Terminal account state or revocation while a session is alive: every
+    // endpoint carrying one of these codes ends the session locally too.
     if (res.statusCode == 403 && body is Map) {
       final d = body['detail']?.toString();
-      if (d == 'account_blocked' || d == 'account_deleted') {
+      if (d == 'account_blocked' ||
+          d == 'account_deleted' ||
+          d == 'account_deactivated' ||
+          d == 'account_revoked') {
         clearToken().ignore();
         onAccountTerminated?.call();
         throw ApiException(403, d!);
@@ -2015,6 +2015,21 @@ class ApiService {
     final res = await _client
         .get(Uri.parse('$_baseUrl/auth/account-status'), headers: _jsonHeaders(token))
         .timeout(const Duration(seconds: 4));
+    if (res.statusCode == 401 || res.statusCode == 403 || res.statusCode == 404) {
+      dynamic body;
+      try {
+        body = jsonDecode(res.body);
+      } on FormatException {
+        body = null;
+      }
+      final detail = body is Map ? body['detail']?.toString() : null;
+      if (detail == 'User not found') return 'deleted';
+      if (res.statusCode == 403 &&
+          detail != null &&
+          detail.startsWith('account_')) {
+        return detail;
+      }
+    }
     // Handle 401 gracefully
     if (res.statusCode == 401) {
       final refreshed = await refreshAccessToken();

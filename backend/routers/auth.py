@@ -2091,6 +2091,10 @@ async def web_get_me(request: Request, db: AsyncSession = Depends(get_db)):
     user = r.scalar_one_or_none()
     if not user:
         raise HTTPException(404, "User not found")
+    from utils.security import account_revocation_reason
+    reason = await account_revocation_reason(db, user, payload)
+    if reason:
+        raise HTTPException(403, reason)
     data = {
         "id": user.id, "first_name": user.first_name, "last_name": user.last_name,
         "email": user.email, "phone": user.phone, "role": user.role,

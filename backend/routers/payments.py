@@ -3729,6 +3729,10 @@ async def _web_jwt_user(request: Request, db: AsyncSession) -> User:
             break
     if not user:
         raise HTTPException(404, "User not found")
+    from utils.security import account_revocation_reason
+    reason = await account_revocation_reason(db, user, payload)
+    if reason:
+        raise HTTPException(403, reason)
     return user
 
 

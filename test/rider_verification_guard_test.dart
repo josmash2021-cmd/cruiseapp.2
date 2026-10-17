@@ -109,10 +109,11 @@ void main() {
               'the existing stream pattern of this file');
     });
 
-    test('home reacts to the push', () {
-      final home = File('lib/screens/home_screen.dart').readAsStringSync();
-      expect(home.contains('accountStatusStream'), isTrue);
-      expect(home.contains('AccountDeactivatedScreen'), isTrue);
+    test('global session guard reacts to the push', () {
+      final guard = File('lib/services/account_session_guard.dart')
+          .readAsStringSync();
+      expect(guard.contains('accountStatusStream'), isTrue);
+      expect(guard.contains('handleStatus'), isTrue);
     });
   });
 

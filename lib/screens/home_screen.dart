@@ -46,8 +46,6 @@ import '../services/firebase_auth_recovery.dart';
 import '../l10n/app_localizations.dart';
 import '../widgets/cancel_reason_sheet.dart';
 import '../services/user_session.dart';
-import 'welcome_screen.dart';
-import 'account_deactivated_screen.dart';
 import 'rider_permissions_screen.dart';
 import '../widgets/neu_style.dart';
 import '../widgets/gold_location_dot.dart';
@@ -314,15 +312,6 @@ class _HomeScreenState extends State<HomeScreen>
       const Duration(seconds: 60),
       (_) => _updateImminentRide(),
     );
-    // Defer account status check to post-frame — don't block UI startup
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _checkAccountStatus();
-    });
-    _accountStatusTimer = Timer.periodic(
-      const Duration(seconds: 300),
-      (_) => _checkAccountStatus(),
-    );
-    // Real-time account status push — the poll above stays as fallback.
     _accountStatusSub =
         SocketService.accountStatusStream.listen(_onAccountStatusPush);
     // Pending-approval poll. Every real-time approval channel can be dead
@@ -371,7 +360,6 @@ class _HomeScreenState extends State<HomeScreen>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.paused) {
-      _accountStatusTimer?.cancel();
       _pendingVerifyTimer?.cancel();
       _countdownTimer?.cancel();
       _imminentRideTimer?.cancel();
@@ -390,12 +378,6 @@ class _HomeScreenState extends State<HomeScreen>
       _startLocationWatchdogs();
       // Ensure the mini map dot ticker is running after resume.
       _homeDot.ensureRunning();
-      _checkAccountStatus();
-      _accountStatusTimer?.cancel();
-      _accountStatusTimer = Timer.periodic(
-        const Duration(seconds: 300),
-        (_) => _checkAccountStatus(),
-      );
       // Restart the pending-approval poll (cancelled on pause) and fire
       // one check immediately: an approval that landed while backgrounded
       // should unlock the instant the rider comes back, not 20 s later.
@@ -525,7 +507,6 @@ class _HomeScreenState extends State<HomeScreen>
     _headingSource.dispose();
     _miniDotFrame.dispose();
     _rideFadeCtrl.dispose();
-    _accountStatusTimer?.cancel();
     _pendingVerifyTimer?.cancel();
     _accountStatusSub?.cancel();
     _countdownTimer?.cancel();
@@ -991,7 +972,6 @@ class _HomeScreenState extends State<HomeScreen>
   /// same notifier on the driver screens.
   final ValueNotifier<int> _miniDotFrame = ValueNotifier<int>(0);
 
-  Timer? _accountStatusTimer;
   Timer? _pendingVerifyTimer;
   StreamSubscription<Map<String, dynamic>>? _accountStatusSub;
 
@@ -1006,54 +986,10 @@ class _HomeScreenState extends State<HomeScreen>
     await _checkBackendVerification();
   }
 
-  /// Server-pushed account status (SocketService.accountStatusStream):
-  /// blocked/deleted → logout to Welcome; deactivated → deactivated screen;
-  /// approved → refresh the local verification state so booking unlocks.
-  /// The 300 s poll in [_checkAccountStatus] stays as the fallback.
   Future<void> _onAccountStatusPush(Map<String, dynamic> data) async {
     final status = (data['status'] ?? '').toString();
-    if (!mounted) return;
-    if (status == 'blocked' || status == 'deleted') {
-      _accountStatusTimer?.cancel();
-      await UserSession.logout();
-      if (!mounted) return;
-      Navigator.of(context).pushAndRemoveUntil(
-        smoothFadeRoute(const WelcomeScreen()),
-        (_) => false,
-      );
-    } else if (status == 'deactivated') {
-      _accountStatusTimer?.cancel();
-      if (!mounted) return;
-      Navigator.of(context).pushAndRemoveUntil(
-        smoothFadeRoute(const AccountDeactivatedScreen()),
-        (_) => false,
-      );
-    } else if (status == 'approved') {
-      _checkBackendVerification();
-    }
-  }
-
-  Future<void> _checkAccountStatus() async {
-    try {
-      final status = await ApiService.getAccountStatus();
-      if (!mounted) return;
-      if (status == 'blocked' || status == 'deleted') {
-        _accountStatusTimer?.cancel();
-        await UserSession.logout();
-        if (!mounted) return;
-        Navigator.of(context).pushAndRemoveUntil(
-          smoothFadeRoute(const WelcomeScreen()),
-          (_) => false,
-        );
-      } else if (status == 'deactivated') {
-        _accountStatusTimer?.cancel();
-        if (!mounted) return;
-        Navigator.of(context).pushAndRemoveUntil(
-          smoothFadeRoute(const AccountDeactivatedScreen()),
-          (_) => false,
-        );
-      }
-    } catch (_) {}
+    if (!mounted || status != 'approved') return;
+    _checkBackendVerification();
   }
 
   Future<void> _loadSavedData() async {

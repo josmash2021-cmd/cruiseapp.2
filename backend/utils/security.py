@@ -209,6 +209,53 @@ async def revoke_token(jti: str, user_id: int, exp_timestamp: float):
         logging.warning("[REVOKE] DB persist failed (token still revoked in memory): %s", e)
 
 
+async def revoke_account_sessions(db: AsyncSession, user_id: int):
+    """Revoke every JWT issued before the current account-status change."""
+    now = datetime.now(timezone.utc)
+    result = await db.execute(
+        select(RevokedToken).where(RevokedToken.jti == f"account:{user_id}")
+    )
+    marker = result.scalar_one_or_none()
+    if marker is None:
+        db.add(RevokedToken(
+            jti=f"account:{user_id}",
+            user_id=user_id,
+            revoked_at=now,
+            expires_at=now + timedelta(days=365),
+        ))
+    else:
+        marker.revoked_at = now
+        marker.expires_at = now + timedelta(days=365)
+    await db.commit()
+
+
+async def account_revocation_reason(db: AsyncSession, user: User, payload: dict):
+    status = user.status or "active"
+    if status in ("blocked", "inactive", "suspended"):
+        return "account_blocked"
+    if status in ("deleted", "pending_deletion"):
+        return "account_deleted"
+    if status == "deactivated":
+        return "account_deactivated"
+
+    result = await db.execute(
+        select(RevokedToken).where(RevokedToken.jti == f"account:{user.id}")
+    )
+    marker = result.scalar_one_or_none()
+    if marker is None:
+        return None
+    issued_at = payload.get("iat")
+    if issued_at is None:
+        return "account_revoked"
+    issued_ts = issued_at.timestamp() if isinstance(issued_at, datetime) else float(issued_at)
+    revoked_at = marker.revoked_at
+    if revoked_at.tzinfo is None:
+        revoked_at = revoked_at.replace(tzinfo=timezone.utc)
+    if int(issued_ts) < int(revoked_at.timestamp()):
+        return "account_revoked"
+    return None
+
+
 async def load_revoked_tokens_from_db():
     """On startup: load all non-expired revoked tokens from DB into memory."""
     try:
@@ -507,12 +554,9 @@ async def _get_current_user(
             raise
     if not user:
         raise HTTPException(401, "User not found")
-    if (user.status or "active") in ("deleted", "blocked"):
-        # Machine-readable code (same convention as session_expired_new_device):
-        # the app force-logouts on this — before, the detail was prose and the
-        # app's status check swallowed the 403, so a blocked/deleted driver
-        # with a live session kept the app open (user report 2026-10-06).
-        raise HTTPException(403, f"account_{user.status}")
+    reason = await account_revocation_reason(db, user, payload)
+    if reason:
+        raise HTTPException(403, reason)
 
     # Driver single-device enforcement: check session_id matches
     jwt_sid = payload.get("sid")

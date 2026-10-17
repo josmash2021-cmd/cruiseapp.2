@@ -291,24 +291,6 @@ extension _HomeScreenController on _HomeScreenState {
         await _maybeShowWelcomeOnApproval();
       }
       
-      // Check account status in same call
-      final account = dashboard['account'] as Map<String, dynamic>?;
-      final accountStatus = (account?['status'] ?? 'active').toString();
-      if (accountStatus == 'blocked' || accountStatus == 'deleted') {
-        await UserSession.logout();
-        if (!mounted) return;
-        Navigator.of(context).pushAndRemoveUntil(
-          smoothFadeRoute(const WelcomeScreen()),
-          (_) => false,
-        );
-      } else if (accountStatus == 'deactivated') {
-        if (!mounted) return;
-        Navigator.of(context).pushAndRemoveUntil(
-          smoothFadeRoute(const AccountDeactivatedScreen()),
-          (_) => false,
-        );
-      }
-      
       // Check active trip in same call
       final activeTrip = dashboard['active_trip'] as Map<String, dynamic>?;
       if (activeTrip != null && mounted) {

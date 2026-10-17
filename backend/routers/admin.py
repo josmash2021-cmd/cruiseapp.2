@@ -26,7 +26,7 @@ from models.schemas import (
 from utils.security import (
     _get_current_user, _require_admin, _verify_api_key,
     _require_dispatch_auth, _security_audit_log,
-    pwd, _sanitize_string,
+    pwd, _sanitize_string, revoke_account_sessions,
 )
 from utils.helpers import (
     utc_now, utc_today_start, utc_month_start,
@@ -43,6 +43,40 @@ from config import (
 )
 
 router = APIRouter()
+
+_ACCOUNT_TERMINAL_STATUSES = {"blocked", "deleted", "deactivated", "pending_deletion", "inactive", "suspended"}
+
+
+async def _terminate_account_session(db: AsyncSession, user: User, status: str):
+    if status not in _ACCOUNT_TERMINAL_STATUSES:
+        return
+    await revoke_account_sessions(db, user.id)
+    role = user.role or "rider"
+    try:
+        await notify_user(user.id, "account_status_changed", {
+            "status": status,
+            "role": role,
+        })
+    except Exception as e:
+        logging.warning("[Admin] account status socket failed for %s: %s", user.id, e)
+    if user.fcm_token:
+        es = user_lang(user) == "es"
+        if status in ("deleted", "pending_deletion"):
+            title = "Cuenta eliminada" if es else "Account deleted"
+        elif status == "deactivated":
+            title = "Cuenta desactivada" if es else "Account deactivated"
+        else:
+            title = "Cuenta bloqueada" if es else "Account blocked"
+        body = "Tu sesión fue cerrada por seguridad." if es else "Your session was closed for security."
+        _safe_create_task(
+            _send_fcm_push_async(
+                user.fcm_token,
+                title,
+                body,
+                {"type": "account_status_changed", "status": status, "role": role},
+            ),
+            name=f"account_terminated_{user.id}",
+        )
 
 # ══════════════════════════════════════════════════════════
 #  In-memory pricing configuration (admin-editable at runtime)
@@ -103,6 +137,7 @@ async def admin_update_user_status(user_id: int, status: str = Body(..., embed=T
         raise HTTPException(404, "User not found")
     user.status = status
     await db.commit()
+    await _terminate_account_session(db, user, status)
     # Sync to Firestore
     if _HAS_FIRESTORE:
         try:
@@ -1281,6 +1316,7 @@ async def admin_delete_user(user_id: int, db: AsyncSession = Depends(get_db)):
         photo_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), user.photo_url.lstrip("/"))
         if os.path.exists(photo_path):
             os.remove(photo_path)
+    await _terminate_account_session(db, user, "deleted")
     await _purge_user_cascade(db, user_id)
     await db.execute(delete(User).where(User.id == user_id))
     await db.commit()
@@ -1336,6 +1372,11 @@ async def admin_bulk_update_user_status(
                     logging.warning("Firestore bulk status sync failed: %s", e)
 
     await db.commit()
+    for user_id in user_ids:
+        result = await db.execute(select(User).where(User.id == user_id))
+        user = result.scalar_one_or_none()
+        if user:
+            await _terminate_account_session(db, user, status)
     _security_audit_log("ADMIN_BULK_STATUS_UPDATE", "admin", f"updated={updated}, status={status}")
     return {"updated": updated, "status": status}
 

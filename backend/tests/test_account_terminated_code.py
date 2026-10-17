@@ -5,8 +5,8 @@ catch swallowed it. The detail is now a machine-readable code
 (`account_blocked` / `account_deleted`, same convention as
 `session_expired_new_device`) that the app force-logouts on.
 
-Deactivated accounts keep API access on purpose: the deactivated screen
-offers support chat, which needs working endpoints.
+Deactivated accounts also terminate the session: dispatch revocation must
+return the same machine-readable code on web and app.
 """
 
 import jwt as _jwt
@@ -62,9 +62,8 @@ async def test_active_passes(client, db):
     assert res.status_code == 200, res.text
 
 
-async def test_deactivated_keeps_api_access(client, db):
-    """Deactivated ≠ gone: the app shows the deactivated screen with a
-    support chat, which needs working endpoints — never 403 them at auth."""
+async def test_deactivated_gets_machine_readable_403(client, db):
     _, token = await _user(db, "deactivated")
     res = await _me(client, token)
-    assert res.status_code == 200, res.text
+    assert res.status_code == 403
+    assert res.json()["detail"] == "account_deactivated"

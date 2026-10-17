@@ -549,6 +549,10 @@ void main() {
       expect(offline, contains('Colors.white, BlendMode.srcIn'),
           reason: '"el carrito blanco" — the badge icon is white in its '
               'dark well');
+      // 2026-10-17 (foto 2): SIN franja de pie — los botones van directos
+      // sobre el sheet; el footer con fondo/hairline/sombra murió.
+      expect(offline, isNot(contains('color: neuSurface.withValues(alpha: t)')),
+          reason: 'no footer strip behind the GO pill + calendar row');
       expect(offline, contains('const goldTop1 = Color(0xFFC9981F)'),
           reason: 'ONE gold in every shape — the open pill wears the disc’s '
               'deep gold, no morph lerp');

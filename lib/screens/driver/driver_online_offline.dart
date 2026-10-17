@@ -1091,21 +1091,9 @@ extension _DriverOnlineOfflineChrome on _DriverOnlineScreenState {
                 ui.lerpDouble(0, 20, t)!,
                 ui.lerpDouble(0, 14 + pad.bottom, t)!,
               ),
-              decoration: BoxDecoration(
-                color: neuSurface.withValues(alpha: t),
-                border: Border(
-                  top: BorderSide(
-                    color: Colors.white.withValues(alpha: 0.05 * t),
-                  ),
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.45 * t),
-                    blurRadius: 14 * t,
-                    offset: Offset(0, -4 * t),
-                  ),
-                ],
-              ),
+              // SIN franja de pie (user spec 2026-10-17, foto 2): el footer
+              // con fondo + hairline + sombra se leía como una barra aparte;
+              // los botones van directos sobre el sheet, transparentes.
               child: LayoutBuilder(
                 builder: (context, box) => Stack(
                   children: [

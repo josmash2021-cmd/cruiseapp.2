@@ -920,6 +920,12 @@ async def admin_list_verifications(
         "video_url": u.video_url,
         "is_verified": u.is_verified,
         "verified_at": u.verified_at.isoformat() if u.verified_at else None,
+        # Panel: la ficha de Verificación muestra la ciudad de trabajo y la
+        # fecha de nacimiento del driver (2026-10-17 user spec) — el roster
+        # /admin/users ya los lleva; esta cola los necesita igual.
+        "drive_city": getattr(u, 'drive_city', None),
+        "drive_state": getattr(u, 'drive_state', None),
+        "date_of_birth": u.date_of_birth.isoformat() if getattr(u, 'date_of_birth', None) else None,
         # The panel sorts its verification queue by submission date; without
         # the account creation date these rows carried submittedAt=null and
         # sank to the bottom of the list regardless of how recent they were.

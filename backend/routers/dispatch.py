@@ -1568,7 +1568,26 @@ async def resync_all_drivers(db: AsyncSession = Depends(get_db)):
             synced += 1
         except Exception as e:
             logging.error("Resync driver %d failed: %s", d.id, e)
-    return {"ok": True, "synced": synced, "total": len(drivers)}
+    # Riders too (2026-10-15, panel report: "algunos no cargan la foto de
+    # perfil que enviaron") — same mirror gap on the clients collection.
+    riders = (await db.execute(select(User).where(User.role == "rider"))).scalars().all()
+    synced_riders = 0
+    for u in riders:
+        try:
+            firestore_sync.sync_client(
+                user_id=u.id, first_name=u.first_name or "",
+                last_name=u.last_name or "", phone=u.phone or "",
+                email=u.email, photo_url=u.photo_url,
+                created_at=u.created_at,
+                is_verified=u.verification_status == "approved",
+                verification_status=u.verification_status or "none",
+                status=u.status or "active",
+            )
+            synced_riders += 1
+        except Exception as e:
+            logging.error("Resync rider %d failed: %s", u.id, e)
+    return {"ok": True, "synced": synced, "total": len(drivers),
+            "riders_synced": synced_riders, "riders_total": len(riders)}
 
 
 def _compute_driver_level(completed_trips: int, avg_rating: float) -> str:

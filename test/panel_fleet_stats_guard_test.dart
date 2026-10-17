@@ -86,8 +86,13 @@ void main() {
         reason: 'each category computes its own doc breakdown');
     expect(chunk, contains(r'chipBtn(`${tier}:docs_ok`'));
     expect(chunk, contains(r'chipBtn(`${tier}:docs_no`'));
-    expect(chunk, contains('driver.tier===tier&&(doc==="all"||driver.docs===doc)'),
-        reason: 'tier + document status filters compose, not one global bucket');
+    expect(
+        chunk,
+        contains(
+            'driver.tier===tier&&(doc==="all"||driver.docs===(doc==="docs_ok"))'),
+        reason: 'tier + document status filters compose, boolean vs boolean '
+            '(el pin viejo pineaba el bug: driver.docs===doc comparaba '
+            'booleano contra string — prod 2026-10-15, los chips no filtraban)');
     expect(chunk, contains('filterLabel(statF)'),
         reason: 'the active composite filter remains visible in the summary');
   });
@@ -105,5 +110,24 @@ void main() {
     expect(usersModule, contains('"/admin/driver-fleet-stats"'));
     expect(usersModule, contains('getFleetStats as getFleetStats'),
         reason: 'exported for the people grid chunk');
+  });
+
+  test('matchesFilter compares booleans to booleans (prod bug 2026-10-15)',
+      () {
+    expect(chunk, contains('guard-pin panel_fleet_filter_guard_test'),
+        reason: 'the fix carries its pin');
+    expect(chunk, contains('driver.docs===!0'),
+        reason: 'docs_ok compares against boolean true — never the string '
+            'key (that bug made every filter return nobody)');
+    expect(chunk, contains('if(!key.includes(":"))return driver.tier===key'),
+        reason: 'a bare tier chip filters by tier alone');
+  });
+
+  test('person cards fall back to the conventional photo path', () {
+    expect(chunk, contains('guard-pin panel_photo_fallback_guard_test'),
+        reason: 'the photo fallback carries its pin');
+    expect(chunk, contains('photoUrl:s.photoUrl??(s.sqliteId!=null?'),
+        reason: 'a card with an empty mirror photoUrl tries the '
+            'conventional photos/user_<id>/profile.jpg');
   });
 }

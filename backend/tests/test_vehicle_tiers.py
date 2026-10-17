@@ -37,13 +37,14 @@ CASES = [
     ("a 2020 Wagoneer is VIP", tier("Jeep", "Wagoneer", 2020), vt.TIER_VIP),
     ("a Grand Wagoneer is VIP", tier("Jeep", "Grand Wagoneer", 2023), vt.TIER_VIP),
     ("a Navigator is VIP", tier("Lincoln", "Navigator", 2022), vt.TIER_VIP),
-    ("2020 is the floor, not 2021", tier("GMC", "Yukon XL", 2020), vt.TIER_VIP),
+    ("2020 sigue siendo VIP, pero el piso bajó", tier("GMC", "Yukon XL", 2020), vt.TIER_VIP),
+    ("2018 es el piso VIP (spec 2026-10-15)", tier("GMC", "Yukon XL", 2018), vt.TIER_VIP),
     # The floor reads as a minimum: a 2027 Suburban is not a Standard sedan.
     ("a 2027 Suburban is still VIP", tier("Chevrolet", "Suburban", 2027), vt.TIER_VIP),
 
     # ── A VIP model that misses the 2020 floor falls to Premium ───────
-    ("a 2019 Suburban is Premium", tier("Chevrolet", "Suburban", 2019), vt.TIER_PREMIUM),
-    ("a 2018 Tahoe is Premium", tier("Chevrolet", "Tahoe", 2018), vt.TIER_PREMIUM),
+    ("un Suburban 2019 es VIP (piso 2018)", tier("Chevrolet", "Suburban", 2019), vt.TIER_VIP),
+    ("un Tahoe 2018 es VIP (piso 2018)", tier("Chevrolet", "Tahoe", 2018), vt.TIER_VIP),
     ("a 2017 Suburban misses Premium's floor too",
      tier("Chevrolet", "Suburban", 2017), vt.TIER_STANDARD),
     ("a 2014 Suburban is Standard", tier("Chevrolet", "Suburban", 2014), vt.TIER_STANDARD),

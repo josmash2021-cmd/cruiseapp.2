@@ -13,7 +13,9 @@ LEGACY_TIER_MAP / LEGACY_COMMISSION, so nothing mid-migration misprices.
 The 2026-10-15 eligibility rule (user spec), one tier per car:
 
 * **VIP** — the luxury three-row models on `_VIP_MODELS` (Suburban,
-  Escalade, Wagoneer and their class), model year 2020 or newer.
+  Escalade, Wagoneer and their class), model year 2018 or newer
+  (floor bajado de 2020 a 2018, user spec 2026-10-15: "que acepte esa
+  categoría con carros de 2018 estilo Suburban/Cadillac de 3 filas").
 * **Premium** — any OTHER three-row SUV or van (six seats or more),
   2018 or newer. A Traverse, a Pilot, a Highlander live here.
 * **Compact** — a two-row SUV/crossover (four or five seats), 2018+.
@@ -85,7 +87,7 @@ TIER_ORDER = {t: i for i, t in enumerate(TIERS)}
 # Product rule 2026-10-15 (user spec): VIP 2020+, Premium and Compact
 # 2018+. Anything under its tier's floor falls to the tier below;
 # Standard has no floor — an old car still drives, as Standard.
-VIP_MIN_YEAR = 2020
+VIP_MIN_YEAR = 2018
 PREMIUM_MIN_YEAR = 2018
 COMPACT_MIN_YEAR = 2018
 

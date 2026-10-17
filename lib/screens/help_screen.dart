@@ -283,7 +283,7 @@ class _HelpScreenState extends State<HelpScreen> {
               '• Compact: two-row SUVs, 4-5 seats, 2018 or newer\n'
               '• Standard: four-seat cars (sedans) — 2018 or newer\n'
               '• Premium: three-row SUVs (6+ seats) 2018 or newer\n'
-              '• VIP: the luxury three-rows (Suburban, Escalade, Wagoneer and their class) 2020 or newer — these also receive Premium requests\n\n'
+              '• VIP: the luxury three-rows (Suburban, Escalade, Wagoneer and their class) 2018 or newer — these also receive Premium requests\n\n'
               'Vehicles older than 2018 do not qualify for the platform. If your car landed in the wrong tier, contact support and we\'ll review it.',
         ),
         _HelpTopic(

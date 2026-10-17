@@ -464,7 +464,7 @@ VEHICLE TIERS — Compact / Standard / Premium / VIP:
   Vehicles older than 2018 do not qualify for the platform at all.
   - Premium: three-row SUVs with 6+ seats from 2018 or newer.
   - VIP (the tier formerly called Black): the luxury three-rows —
-    Suburban, Escalade, Wagoneer, Navigator and their class — from 2020
+    Suburban, Escalade, Wagoneer, Navigator and their class — from 2018
     or newer. VIP cars can also take Premium requests.
   If a driver thinks their car landed in the wrong tier, a human reviews
   it — escalate rather than promising a change yourself.

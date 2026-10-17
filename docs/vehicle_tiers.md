@@ -16,7 +16,7 @@ through `LEGACY_TIER_MAP` / `LEGACY_COMMISSION`.
 | **Standard** | Four-seat cars (sedans) | any year (fallback tier) — but see the platform floor below |
 | **Compact** | SUV, 4–5 seats | 2018 or newer |
 | **Premium** | Three-row SUV or van, 6+ seats | 2018 or newer |
-| **VIP** | The luxury three-rows — Suburban, Escalade, Wagoneer, Navigator and their class | 2020 or newer |
+| **VIP** | The luxury three-rows — Suburban, Escalade, Wagoneer, Navigator and their class | 2018 or newer (bajado de 2020, spec 2026-10-15) |
 | **Electric Pro** | Listed battery-electric models | any year (EV check runs first) |
 
 A vehicle below its tier's year floor falls to the tier below.

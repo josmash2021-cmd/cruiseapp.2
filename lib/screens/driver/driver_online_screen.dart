@@ -954,20 +954,16 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
   /// cambio"): the splash trusts the local cache to land here, and a stale
   /// 'approved' cache after ANY rollback (waitlist/pending/rejected — or a
   /// status that does not exist yet) used to keep the driver in the full
-  /// app forever. The home now ejects itself: a cached non-approved status
-  /// bounces at mount, a live re-check refreshes the truth (fail-open — a
-  /// dead network never ejects; the backend can_go_online blocks work
-  /// anyway), and the account_status_changed socket ejects live.
+  /// app forever. The home ejects itself — but ONLY on live truth: the
+  /// cached status NEVER bounces by itself (a stale 'pending' cache on a
+  /// JUST-approved driver would otherwise bounce him out of the home —
+  /// prod 2026-10-17). The live re-check always runs and refreshes the
+  /// cache (fail-open — a dead network never ejects; the backend
+  /// can_go_online blocks work anyway), and the account_status_changed
+  /// socket ejects live.
   void _enforceAccountApproval() {
     if (kIsWeb) return;
     unawaited(() async {
-      final cached = (await LocalDataService.getDriverApprovalStatus())
-          .toLowerCase()
-          .trim();
-      if (_approvalGatesOut(cached)) {
-        _bounceToApprovalScreen(cached);
-        return;
-      }
       try {
         final res = await ApiService.getDriverApprovalStatus()
             .timeout(const Duration(seconds: 4));
@@ -976,9 +972,8 @@ class _DriverOnlineScreenState extends State<DriverOnlineScreen>
                 '')
             .toLowerCase()
             .trim();
-        if (live.isNotEmpty && live != cached) {
-          await LocalDataService.setDriverApprovalStatus(live);
-        }
+        if (live.isEmpty) return;
+        await LocalDataService.setDriverApprovalStatus(live);
         if (mounted && _approvalGatesOut(live)) {
           _bounceToApprovalScreen(live);
         }

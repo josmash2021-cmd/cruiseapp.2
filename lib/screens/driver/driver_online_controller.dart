@@ -2079,17 +2079,13 @@ extension _DriverOnlineController on _DriverOnlineScreenState {
       // what the map shows — fluid and in real time at every speed, with no
       // second filter to step, lag or fight it.
       //
-      // EXCEPT parked (2026-10-16-noche, user report: "cuando muevo el
-      // telefono se mueve la camara al mismo tiempo / la flecha se mueve de
-      // lugar"): parado la flecha la manda la BRÚJULA (hacia dónde mira el
-      // teléfono) — moverlo/inclinarlo en la mano la gira y el mapa giraba
-      // detrás. Bajo ~3.3 mph (donde la brújula es dueña de la flecha) la
-      // rotación del MAPA se congela en el último rumbo escrito y solo la
-      // flecha gira dentro de la retícula quieta — Lyft parado en el
-      // semáforo. Manejando (curso GPS), la cámara espeja como siempre.
-      final parkedCompass = _motion.speedMps < 1.5;
-      final camBearing =
-          parkedCompass ? (_lastCamWriteBearing ?? _heading) : _heading;
+      // 2026-10-16-noche (decisión final del usuario): la variante "congelar
+      // la cámara parado" murió — el usuario quiere heading-up SIEMPRE
+      // (mover/inclinar el teléfono gira la cámara, suavizada por el EMA de
+      // brújula; el "no apunta para el lugar correcto" era la flecha
+      // desplazada por el padding viejo, ya corregido con `_kZeroCamPadding`
+      // — la flecha queda centrada mientras el mapa gira).
+      final camBearing = _heading;
       final lastWrittenB = _lastCamWriteBearing;
       // A parked car on a frozen bearing produces the IDENTICAL camera
       // every frame — skip ONLY the write (never the rest of the tick: the

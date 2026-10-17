@@ -69,26 +69,18 @@ void main() {
           reason: 'the settle write clears it too');
     });
 
-    test('the camera mirrors the arrow directly WHILE MOVING; parked, the '
-        'compass never swings the map (user reports 2026-09-27/30, '
-        '2026-10-16)', () {
+    test('the camera mirrors the arrow directly at every speed — heading-up '
+        'always (2026-10-16 noche, final spec)', () {
       final body = bodyOf(
           ctrl, "if (_phase == _Phase.searching && !offerActive && _cameraFollowing)",
-          maxLen: 4600);
-      expect(
-          body.contains(
-              'parkedCompass ? (_lastCamWriteBearing ?? _heading) : _heading'),
-          isTrue,
-          reason: 'ONE source while driving (the arrow); parked, the map '
-              'keeps its last bearing — the phone-in-hand compass swing '
-              '(2026-10-16 report) never rotates the map');
-      expect(body.contains('final parkedCompass = _motion.speedMps < 1.5;'),
-          isTrue,
-          reason: 'parked = where the compass owns the arrow (the engine '
-              'field is _motion)');
-      expect(body.contains('_currentSpeedMph < 3'), isFalse,
-          reason: 'the old mph gate stays dead — the freeze is on the '
-              'measured glide speed');
+          maxLen: 4000);
+      expect(body.contains('final camBearing = _heading;'), isTrue,
+          reason: 'ONE source while moving AND parked — the user wants the '
+              'map to rotate with the phone (heading-up), the arrow centred '
+              'by the zero-padding write; the parked camera freeze is dead');
+      expect(body.contains('parkedCompass'), isFalse,
+          reason: 'no parked freeze — tilting/moving the phone must rotate '
+              'the camera, not lock it at a stale bearing');
       expect(body.contains('if (!unchanged) {'), isTrue,
           reason: 'identical parked cameras are still not re-written 60×/s');
     });

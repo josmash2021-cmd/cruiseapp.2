@@ -2505,6 +2505,25 @@ async def admin_set_vehicle_status(vehicle_id: int, request: Request, db: AsyncS
     await db.commit()
     await db.refresh(vehicle)
     logging.info("[Admin] Vehicle %s %s by dispatch", vehicle_id, vehicle.approval_status)
+
+    # The vehicle is one of the reviewable items too (2026-10-17, user
+    # report: "cuando apruebo cada documento no llega la notificación") —
+    # the driver hears the decision instantly on every channel, same as a
+    # document, and the approval recompute runs.
+    u_r = await db.execute(select(User).where(User.id == vehicle.user_id))
+    veh_user = u_r.scalar_one_or_none()
+    if veh_user:
+        from services import driver_approval
+        try:
+            await driver_approval.notify_document_reviewed(
+                veh_user, "vehicle", action == "approve",
+                reason=reason or None)
+        except Exception as e:
+            logging.warning("[Admin] vehicle notify failed: %s", e)
+        try:
+            await driver_approval.recompute_driver_approval(db, veh_user)
+        except Exception as e:
+            logging.warning("[Admin] approval recompute failed: %s", e)
     return {"vehicle": _vehicle_dict(vehicle)}
 
 

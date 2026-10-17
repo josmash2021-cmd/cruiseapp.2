@@ -68,6 +68,14 @@ _DOC_COPY = {
         "en": ("✅ Background check approved", "Your background check was approved.",
                "❌ Background check rejected"),
     },
+    # The vehicle itself is reviewable from the dispatch person page
+    # (2026-10-17) — decided on its own, same multi-channel flow.
+    "vehicle": {
+        "es": ("✅ Vehículo aprobado", "Tu vehículo fue aprobado.",
+               "❌ Vehículo rechazado"),
+        "en": ("✅ Vehicle approved", "Your vehicle was approved.",
+               "❌ Vehicle rejected"),
+    },
     # Identity docs reviewed separately in dispatch (2026-10-14 user spec:
     # every document approved on its own, same notification flow).
     "profile_photo": {

@@ -187,7 +187,13 @@ class _FaceLivenessScreenState extends State<FaceLivenessScreen>
     _blurCtrl.dispose();
     _sweepCtrl.dispose();
     _fillCtrl.dispose();
-    _cam?.dispose();
+    // Null-swap: la animación de salida de la ruta rebuilda este widget
+    // DESPUÉS de dispose() — con el campo en null el build cae al
+    // placeholder en vez de llamar buildPreview sobre un controller
+    // dispuesto (Crashlytics 2026-10-17: "Disposed CameraController").
+    final c = _cam;
+    _cam = null;
+    c?.dispose();
     _detector?.close();
     super.dispose();
   }
@@ -688,7 +694,7 @@ class _FaceLivenessScreenState extends State<FaceLivenessScreen>
       backgroundColor: _black,
       body: _cameraFailure != null
           ? _buildError()
-          : _camReady
+          : _camReady && _cam != null
               ? _buildLive()
               : _buildLoading(),
     );
@@ -820,7 +826,8 @@ class _FaceLivenessScreenState extends State<FaceLivenessScreen>
 
   // ── Camera fill (no Transform.scale zoom) ────────────────────────────────
   Widget _buildCameraFill() {
-    final camCtrl = _cam!;
+    final camCtrl = _cam;
+    if (camCtrl == null) return const SizedBox.expand();
     final preview = camCtrl.value.previewSize;
     if (preview == null) return const SizedBox.expand();
     // Size the FittedBox child from the REAL texture frame, not previewSize:

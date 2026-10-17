@@ -71,4 +71,52 @@ void main() {
       }
     });
   });
+
+  group('FIX 4 — Crashlytics noise filter (clusters 2026-10-17, build 733)', () {
+    test('ambient network failures are never recorded as crashes', () {
+      final src = _read('lib/main.dart');
+      expect(src, contains('bool _isExpectedNetworkError(Object error)'));
+      expect(src, contains("s.contains('HandshakeException')"));
+      expect(src, contains("s.contains('SocketException')"));
+      expect(src, contains("s.contains('HTTP request failed')"));
+      // Los 3 handlers globales pasan por el filtro (FlutterError,
+      // platformDispatcher y el zone de runZonedGuarded).
+      expect(
+          src,
+          contains(
+              'if (kReleaseMode && !_isExpectedNetworkError(details.exception)) {'));
+      expect(
+          src,
+          contains('if (kReleaseMode && !_isExpectedNetworkError(error)) {'));
+      // El build-error logger tampoco graba la carrera del teardown de
+      // cámara.
+      expect(
+          src,
+          contains(
+              "!'\${details.exception}'.contains('Disposed CameraController')"));
+    });
+
+    test('every camera screen null-swaps its controller on dispose', () {
+      // La animación de salida de la ruta rebuilda el widget DESPUÉS de
+      // dispose() — sin null-swap el build llama buildPreview sobre un
+      // controller dispuesto (26 fallas / 18 usuarios, build 733).
+      const fields = {
+        'lib/screens/face_liveness_screen.dart': '_cam',
+        'lib/screens/identity_verification_screen.dart': '_ctrl',
+        'lib/screens/card_scan_screen.dart': '_ctrl',
+        'lib/screens/driver/license_scanner_screen.dart': '_ctrl',
+        'lib/screens/driver/onboarding/license_capture_screen.dart': '_ctrl',
+        'lib/screens/driver/onboarding/profile_photo_capture_screen.dart':
+            '_ctrl',
+      };
+      fields.forEach((path, field) {
+        final src = _read(path);
+        expect(
+            src,
+            contains(
+                'final c = $field;\n    $field = null;\n    c?.dispose();'),
+            reason: '$path must null-swap $field in dispose()');
+      });
+    });
+  });
 }

@@ -74,7 +74,12 @@ class _LicenseCaptureScreenState extends State<LicenseCaptureScreen> {
 
   @override
   void dispose() {
-    _ctrl?.dispose();
+    // Null-swap: la animación de salida rebuilda tras dispose() — con el
+    // campo en null el build no llama buildPreview sobre un controller
+    // dispuesto (Crashlytics 2026-10-17: "Disposed CameraController").
+    final c = _ctrl;
+    _ctrl = null;
+    c?.dispose();
     super.dispose();
   }
 
@@ -102,6 +107,7 @@ class _LicenseCaptureScreenState extends State<LicenseCaptureScreen> {
     } catch (e) {
       debugPrint('⚠️ Onboarding license camera init failed: $e');
       await Future.delayed(const Duration(milliseconds: 500));
+      if (!mounted) return;
       try {
         _ctrl?.dispose();
         _ctrl = CameraController(rear, _capturePreset, enableAudio: false);

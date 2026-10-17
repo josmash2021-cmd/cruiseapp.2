@@ -1425,6 +1425,7 @@ class _InlineDocScannerState extends State<_InlineDocScanner>
     } catch (e) {
       debugPrint('Camera init failed: $e');
       await Future.delayed(const Duration(milliseconds: 500));
+      if (!mounted) return;
       try {
         _ctrl?.dispose();
         // Same preset as the first attempt — see _capturePreset.
@@ -1545,7 +1546,12 @@ class _InlineDocScannerState extends State<_InlineDocScanner>
   void dispose() {
     _cornerAnim.dispose();
     _textRecognizer.close();
-    _ctrl?.dispose();
+    // Null-swap: la animación de salida rebuilda tras dispose() — con el
+    // campo en null el build no llama buildPreview sobre un controller
+    // dispuesto (Crashlytics 2026-10-17: "Disposed CameraController").
+    final c = _ctrl;
+    _ctrl = null;
+    c?.dispose();
     super.dispose();
   }
 

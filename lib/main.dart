@@ -38,6 +38,7 @@ import 'screens/driver/onboarding/driver_approved_celebration_screen.dart';
 import 'screens/driver/driver_trip_accept_screen.dart';
 import 'screens/driver/scheduled_rides_map_screen.dart';
 import 'services/api_service.dart';
+import 'services/account_session_guard.dart';
 import 'services/map_controller_cache.dart';
 import 'services/notification_service.dart';
 import 'services/live_activity_service.dart';
@@ -903,7 +904,7 @@ void main() async {
       // M1: Catch platform-level errors (native threads, plugin exceptions)
       WidgetsBinding.instance.platformDispatcher.onError = (error, stack) {
         debugPrint('[PlatformError] $error\n$stack');
-        if (kReleaseMode) {
+        if (kReleaseMode && !_isExpectedNetworkError(error)) {
           FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
         }
         return true; // mark as handled — prevents default crash dialog
@@ -913,7 +914,11 @@ void main() async {
       FlutterError.onError = (FlutterErrorDetails details) {
         FlutterError.presentError(details);
         debugPrint('[FlutterError] ${details.exception}\n${details.stack}');
-        if (kReleaseMode) {
+        // Los errores de red ambientales (imágenes/requests que fallan en
+        // túneles, VPN o señal mala) NO son crashes — no se graban
+        // (2026-10-17: clusters "HTTP request" / "HandshakeException" del
+        // build 733, 80 fallas grabadas como si fueran crashes).
+        if (kReleaseMode && !_isExpectedNetworkError(details.exception)) {
           FirebaseCrashlytics.instance.recordFlutterFatalError(details);
         }
       };
@@ -940,13 +945,19 @@ void main() async {
           errorTimes.removeWhere((t) => now.difference(t).inSeconds > 10);
           errorTimes.add(now);
 
-          // Always log the error
-          FirebaseCrashlytics.instance.recordError(
-            details.exception,
-            details.stack,
-            fatal: false,
-            reason: 'Build error: ${details.exception.toString().substring(0, details.exception.toString().length.clamp(0, 200))}',
-          );
+          // Always log the error — except benign noise: network failures
+          // (bad signal, VPN, tunnels) and camera-teardown races are not
+          // bugs (2026-10-17 Crashlytics clusters: "HTTP request",
+          // "HandshakeException", "Disposed CameraController").
+          if (!_isExpectedNetworkError(details.exception) &&
+              !'${details.exception}'.contains('Disposed CameraController')) {
+            FirebaseCrashlytics.instance.recordError(
+              details.exception,
+              details.stack,
+              fatal: false,
+              reason: 'Build error: ${details.exception.toString().substring(0, details.exception.toString().length.clamp(0, 200))}',
+            );
+          }
 
           // Fatal threshold: >5 build errors in 10 seconds
           if (errorTimes.length > 5) {
@@ -1042,6 +1053,7 @@ void main() async {
         _safeInit('BackgroundService', DriverBackgroundService().initialize().timeout(const Duration(seconds: 3))),
       ]);
       debugPrint('[Perf] Group 2 init: ${perfStopwatch.elapsedMilliseconds}ms (results: $group2Results)');
+      AccountSessionGuard.init();
 
       // Limit in-memory image cache to prevent OOM on long sessions
       PaintingBinding.instance.imageCache.maximumSizeBytes = 50 * 1024 * 1024; // 50 MB — prevents OOM on low-end devices
@@ -1072,11 +1084,32 @@ void main() async {
     },
     (error, stack) {
       debugPrint('[ZoneError] $error\n$stack');
-      if (kReleaseMode) {
+      if (kReleaseMode && !_isExpectedNetworkError(error)) {
         FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
       }
     },
   );
+}
+
+/// True para errores de red ambientales (túnel, VPN, señal mala, DNS): NO
+/// son bugs y no se graban en Crashlytics (2026-10-17: los clusters del
+/// build 733 "HTTP request" / "HandshakeException" — 80 fallas entre 3
+/// usuarios — eran requests/imágenes fallando en redes malas, grabados
+/// como si fueran crashes).
+bool _isExpectedNetworkError(Object error) {
+  final s = '$error';
+  return s.contains('HandshakeException') ||
+      s.contains('SocketException') ||
+      s.contains('HttpException') ||
+      s.contains('HTTP request failed') ||
+      s.contains('ClientException') ||
+      s.contains('Failed host lookup') ||
+      s.contains('Connection closed') ||
+      s.contains('Connection reset') ||
+      s.contains('Connection refused') ||
+      s.contains('Network is unreachable') ||
+      s.contains('Connection timed out') ||
+      s.contains('TimeoutException');
 }
 
 /// Wraps an async init with try/catch so one failure doesn't crash the app.
@@ -1558,6 +1591,7 @@ class _UberCloneAppState extends State<UberCloneApp>
     // connected socket is left alone: routine token refreshes must not
     // drop it mid-trip.
     ApiService.onTokenSaved = () {
+      AccountSessionGuard.reset();
       if (!SocketService.isConnected) {
         unawaited(SocketService.reconnectWithFreshToken());
       }
@@ -1664,6 +1698,7 @@ class _UberCloneAppState extends State<UberCloneApp>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _appUpdateGateSub?.cancel();
+    AccountSessionGuard.dispose();
     super.dispose();
   }
 
@@ -1681,6 +1716,7 @@ class _UberCloneAppState extends State<UberCloneApp>
     } else if (state == AppLifecycleState.resumed) {
       // getMe marks user as online on the backend
       ApiService.getMe();
+      unawaited(AccountSessionGuard.check());
       KeepAliveService.instance.start();
     }
   }

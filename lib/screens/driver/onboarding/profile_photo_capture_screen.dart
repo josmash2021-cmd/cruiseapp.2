@@ -40,7 +40,12 @@ class _ProfilePhotoCaptureScreenState
 
   @override
   void dispose() {
-    _ctrl?.dispose();
+    // Null-swap: la animación de salida rebuilda tras dispose() — con el
+    // campo en null el build no llama buildPreview sobre un controller
+    // dispuesto (Crashlytics 2026-10-17: "Disposed CameraController").
+    final c = _ctrl;
+    _ctrl = null;
+    c?.dispose();
     super.dispose();
   }
 

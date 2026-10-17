@@ -151,6 +151,7 @@ class _LicenseScannerScreenState extends State<LicenseScannerScreen>
       debugPrint('⚠️ Camera init failed: $e');
       // Retry once after a short delay
       await Future.delayed(const Duration(milliseconds: 500));
+      if (!mounted) return;
       try {
         _ctrl?.dispose();
         _ctrl = CameraController(
@@ -280,7 +281,13 @@ class _LicenseScannerScreenState extends State<LicenseScannerScreen>
   void dispose() {
     _cornerAnim.dispose();
     _textRecognizer.close();
-    _ctrl?.dispose();
+    // Null-swap: la animación de salida de la ruta rebuilda este widget
+    // DESPUÉS de dispose() — con el campo en null el build cae al
+    // placeholder en vez de llamar buildPreview sobre un controller
+    // dispuesto (Crashlytics 2026-10-17: "Disposed CameraController").
+    final c = _ctrl;
+    _ctrl = null;
+    c?.dispose();
     super.dispose();
   }
 

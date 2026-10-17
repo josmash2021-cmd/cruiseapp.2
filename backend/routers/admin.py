@@ -1077,7 +1077,22 @@ async def _ensure_identity_doc_rows(db, user) -> None:
     license photo. A license-type row already exists → no id_document row;
     and a duplicate created by this backfill earlier (same file as the
     license row) is removed on read. Riders have no license row — their
-    id_document stays (it's their whole KYC)."""
+    id_document stays (it's their whole KYC).
+
+    Concurrency guard (2026-10-17, prod: 18 drivers with the profile_photo
+    row DUPLICATED 3 ms apart): the panel opens the person page with
+    parallel GET /admin/users/{id} requests — both read "no row" before
+    either commits and both inserted. A per-user advisory xact lock
+    serializes the backfill: the second request waits, then sees the row
+    the first created. SQLite (tests) has no advisory locks — no-op there."""
+    try:
+        from sqlalchemy import text as _text
+        await db.execute(
+            _text("SELECT pg_advisory_xact_lock(:k)"),
+            {"k": 770_000_000 + int(user.id)},
+        )
+    except Exception:
+        pass
     try:
         result = await db.execute(
             select(Document).where(Document.user_id == user.id))

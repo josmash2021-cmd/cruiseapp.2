@@ -192,3 +192,25 @@ async def test_license_backfills_from_user_fields_and_blocks_id_document(
     types2 = [d["doc_type"] for d in res.json()["documents"]]
     assert "id_document" not in types2
     assert types2.count("drivers_license") == 1
+
+
+async def test_identity_backfill_serialized_against_parallel_reads(client, db):
+    """2026-10-17 prod: 18 drivers ended with the profile_photo row
+    DUPLICATED 3 ms apart (same file_path) — the panel opens the person
+    page with parallel GET /admin/users/{id} requests and both read "no
+    row" before either committed. The backfill now runs under a per-user
+    advisory xact lock (no-op on SQLite, where the shared test session
+    serializes anyway) so the second request sees the first one's rows."""
+    import pathlib
+
+    src = pathlib.Path("routers/admin.py").read_text(encoding="utf-8")
+    assert "pg_advisory_xact_lock" in src, \
+        "the per-user advisory lock is the concurrency guard — do not drop it"
+
+    u = await _mkuser(db, photo_url="photos/u9/profile.jpg")
+    for _ in range(2):
+        res = await client.get(f"/admin/users/{u.id}", headers=_dh())
+        assert res.status_code == 200, res.text
+    rows = [d for d in res.json()["documents"]
+            if d["doc_type"] == "profile_photo"]
+    assert len(rows) == 1

@@ -78,7 +78,10 @@ const double _kGoSideInset = 20.0;
 /// "Go online" fully formed at the sheet floor), 1 fully open.
 /// Top-level, not a static on the extension: part-file access to extension
 /// constants has failed the iOS build before.
-const double _kSheetRestFrac = 0.5;
+/// 0.42 (2026-10-17, spec "un poquito mas cerrado el sheet o compacto" —
+/// foto 2): el reposo abraza el contenido (header + hero + botones) sin la
+/// banda muerta debajo de la tarjeta de demanda que dejaba el 0.5.
+const double _kSheetRestFrac = 0.42;
 
 /// The offline chrome's gold (home's `_gold`). This library's top-level
 /// `_gold` is a different shade (0xFFD4A843) that belongs to the online

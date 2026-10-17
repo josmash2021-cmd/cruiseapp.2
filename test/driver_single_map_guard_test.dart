@@ -261,6 +261,11 @@ void main() {
           reason: 'the hero gets the full body height');
       expect(off, isNot(contains('MainAxisAlignment.spaceEvenly')),
           reason: 'spaceEvenly spread the hero wrong — compact top-down now');
+      // 2026-10-17 (foto 2 bis, "un poquito mas cerrado"): el reposo del
+      // sheet abraza el contenido — 0.42, no 0.5 con banda muerta debajo de
+      // la tarjeta de demanda.
+      expect(off, contains('const double _kSheetRestFrac = 0.42;'),
+          reason: 'the sheet rests compact, hugging the content');
       expect(off, contains('_kGoPillH + 26 + pad.bottom'),
           reason: 'the hero clears the floating GO pill + calendar row');
     });
